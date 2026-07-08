@@ -309,6 +309,19 @@ function buildColumns({ category, incidentId, flags, toggleFlag }) {
     render: (row) => <TimeCell event={row} />,
   }
 
+  const sourceColumn = {
+    key: 'sourceName',
+    label: 'Source',
+    sortable: true,
+    sortAccessor: (row) => row.sourceName ?? '',
+    render: (row) =>
+      row.sourceName ? (
+        <Badge color="slate">{row.sourceName}</Badge>
+      ) : (
+        <span className="text-slate-400 dark:text-slate-500">—</span>
+      ),
+  }
+
   const fieldColumns = category.columns.map((column) => ({
     key: column.key,
     label: column.label,
@@ -324,5 +337,5 @@ function buildColumns({ category, incidentId, flags, toggleFlag }) {
     render: (row) => <DetectionCell event={row} />,
   }
 
-  return [flagColumn, timeColumn, ...fieldColumns, detectionColumn]
+  return [flagColumn, timeColumn, sourceColumn, ...fieldColumns, detectionColumn]
 }

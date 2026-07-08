@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { FolderInput, Sparkles, Terminal, Trash2, Upload } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Info, Sparkles, Terminal, Trash2, Upload } from 'lucide-react'
 import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from '../browser/FileUploadZone.jsx'
 import ArtifactSection from './ArtifactSection.jsx'
 import ScriptBlock from './ScriptBlock.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
-import { parseArtifactFile } from '../../../services/artifactParsers.js'
+import { parseArtifactImport } from '../../../services/artifactParsers.js'
 import { getDemoArtifactData } from '../../../services/demoData.js'
 import {
   ARTIFACT_CATEGORIES,
@@ -13,31 +13,37 @@ import {
   buildDefaultArtifactData,
   artifactSourcesFor,
 } from '../../../config/artifacts.js'
+import { combineCategoryRecords } from '../../../utils/artifacts.js'
 import { getOsById, DEFAULT_OS } from '../../../config/os.js'
 
 /*
- * "Endpoint Artifacts" tab: one SUB-TAB per forensic category (Program
- * Execution, Persistence, File & Folder Access, USB & Devices), mirroring the
- * Browser Forensics and Command History tabs. Each category imports a CSV/JSON
- * export (the format DFIR tools produce) into a flaggable table with SOC
- * detection. The "where to find it / how to export it" guidance is driven by
- * the incident's host OS.
+ * "Endpoint Artifacts" tab: one sub-tab per forensic category. Each category is
+ * built from one or more SOURCES, imported per-source in one of two ways
+ * (never a third-party tool, see config/artifacts.js):
+ *   - mode 'file'   → upload the existing raw file; parsed in-browser.
+ *   - mode 'script' → run the shown native script, import the CSV it writes.
+ * The table below shows the union of every source's records, tagged by source.
  */
 
 /** Filesystem-safe slug for the downloaded script filename. */
 function slugify(text) {
-  return String(text)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+  return String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+/** Total records across a category's sources. */
+function totalRecords(catData) {
+  return Object.values(catData?.sources ?? {}).reduce(
+    (n, s) => n + (s?.records?.length ?? 0),
+    0,
+  )
 }
 
 export default function EndpointArtifactsTab({ incident }) {
-  const { updateArtifactData, clearArtifactData } = useIncidents()
+  const { updateArtifactSource, clearArtifactSource, clearArtifactCategory } = useIncidents()
 
   const [activeCategoryId, setActiveCategoryId] = useState(ARTIFACT_CATEGORIES[0].id)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState({}) // { [sourceKey]: bool }
+  const [errors, setErrors] = useState({}) // { [sourceKey]: string }
   const [confirmClear, setConfirmClear] = useState(false)
 
   const endpointData = incident.data.endpoint
@@ -45,68 +51,59 @@ export default function EndpointArtifactsTab({ incident }) {
   const osLabel = getOsById(os)?.label ?? os
 
   const category = getArtifactCategoryById(activeCategoryId) ?? ARTIFACT_CATEGORIES[0]
-  const current = endpointData.categories[activeCategoryId] ?? buildDefaultArtifactData()
-  const meta = current.meta ?? null
-  const hasData = (current.records?.length ?? 0) > 0
-
+  const catData = endpointData.categories[activeCategoryId] ?? buildDefaultArtifactData(category)
   const sources = useMemo(() => artifactSourcesFor(category, os), [category, os])
 
-  useEffect(() => {
-    setError(null)
-    setLoading(false)
-  }, [activeCategoryId, incident.id])
+  const combined = useMemo(
+    () => combineCategoryRecords(category, catData),
+    [category, catData],
+  )
+  const hasData = combined.length > 0
 
-  const handleFile = async (file) => {
-    setError(null)
-    setLoading(true)
+  /* ---- Import a file for a specific source ---- */
+  const handleFile = async (source, file) => {
+    setErrors((p) => ({ ...p, [source.key]: null }))
+    setLoading((p) => ({ ...p, [source.key]: true }))
     try {
-      const { records, format } = await parseArtifactFile(file, category)
-      updateArtifactData(
+      const { records, format } = await parseArtifactImport(file, category, source)
+      updateArtifactSource(
         incident.id,
-        activeCategoryId,
+        category.id,
+        source.key,
         {
           records,
-          meta: {
-            fileName: file.name,
-            format,
-            rows: records.length,
-            importedAt: new Date().toISOString(),
-          },
+          meta: { fileName: file.name, format, rows: records.length, importedAt: new Date().toISOString() },
         },
-        {
-          action: 'endpoint.upload',
-          details: `Imported ${category.label} (${records.length} records)`,
-        },
+        { action: 'endpoint.upload', details: `Imported ${category.label} / ${source.name} (${records.length})` },
       )
     } catch (err) {
-      setError(err?.message ?? 'Unexpected error while parsing the file.')
+      setErrors((p) => ({ ...p, [source.key]: err?.message ?? 'Unexpected error while parsing the file.' }))
     } finally {
-      setLoading(false)
+      setLoading((p) => ({ ...p, [source.key]: false }))
     }
   }
 
+  /* ---- Load demo data into the first available source ---- */
   const handleLoadDemo = () => {
+    if (sources.length === 0) return
+    const target = sources[0]
     const demo = getDemoArtifactData(category, os)
-    setError(null)
-    updateArtifactData(
+    setErrors({})
+    updateArtifactSource(
       incident.id,
-      activeCategoryId,
+      category.id,
+      target.key,
       {
         records: demo.records,
-        meta: {
-          fileName: 'Demo data',
-          format: 'demo',
-          rows: demo.records.length,
-          importedAt: new Date().toISOString(),
-        },
+        meta: { fileName: 'Demo data', format: 'demo', rows: demo.records.length, importedAt: new Date().toISOString() },
       },
       { action: 'endpoint.demo', details: `Loaded demo ${category.label}` },
     )
   }
 
   const handleConfirmClear = () => {
-    clearArtifactData(incident.id, activeCategoryId)
-    setError(null)
+    clearArtifactCategory(incident.id, category.id)
+    setErrors({})
     setConfirmClear(false)
   }
 
@@ -121,7 +118,7 @@ export default function EndpointArtifactsTab({ incident }) {
         {ARTIFACT_CATEGORIES.map((c) => {
           const isActive = c.id === activeCategoryId
           const CatIcon = c.icon
-          const count = endpointData.categories[c.id]?.records?.length ?? 0
+          const count = totalRecords(endpointData.categories[c.id])
           return (
             <button
               key={c.id}
@@ -156,34 +153,59 @@ export default function EndpointArtifactsTab({ incident }) {
         })}
       </div>
 
-      {/* -------- OS-aware "where to find it / how to collect" note -------- */}
-      {!meta && (
-        <div className="flex gap-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 text-sm dark:border-cyan-500/30 dark:bg-cyan-500/5">
-          <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
-          <div className="min-w-0 flex-1 space-y-2.5">
-            <p className="font-medium text-slate-700 dark:text-slate-200">
-              {category.label} sources on {osLabel} — run the collection script on the host, then
-              import the resulting CSV here
-            </p>
-            <ul className="space-y-2">
-              {sources.map((source) => (
-                <li
-                  key={source.name}
-                  className="rounded-lg border border-slate-200 bg-white/60 p-2.5 dark:border-slate-800 dark:bg-slate-900/40"
+      {/* -------- Sources: per-source collection + import -------- */}
+      <Card
+        title={`Sources — ${category.label} (${osLabel})`}
+        icon={Upload}
+        actions={
+          <div className="flex items-center gap-2">
+            {sources.length > 0 && (
+              <Button variant="secondary" size="sm" icon={Sparkles} onClick={handleLoadDemo}>
+                Load demo data
+              </Button>
+            )}
+            {hasData && (
+              <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
+                Clear
+              </Button>
+            )}
+          </div>
+        }
+      >
+        {sources.length === 0 ? (
+          <div className="flex items-start gap-2 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              No fully-custom collection method for <strong>{category.label.toLowerCase()}</strong>{' '}
+              on {osLabel}: the standard artifacts here require third-party DFIR parsers, so this
+              category is empty for this host OS. Switch the incident OS, or use another tab.
+            </span>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {sources.map((source) => {
+              const meta = catData.sources?.[source.key]?.meta ?? null
+              const isFile = source.mode === 'file'
+              return (
+                <div
+                  key={source.key}
+                  className="flex flex-col gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800"
                 >
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                       {source.name}
-                    </span>{' '}
-                    <span className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                    </p>
+                    <p className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
                       {source.path}
-                    </span>
+                    </p>
                     {source.tool && (
-                      <span className="text-slate-400 dark:text-slate-500"> — {source.tool}</span>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500">{source.tool}</p>
                     )}
-                  </p>
-                  {source.script && (
-                    <details className="group mt-1">
+                  </div>
+
+                  {/* Script sources: show the native script to run, then import its CSV. */}
+                  {!isFile && source.script && (
+                    <details className="group">
                       <summary className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-medium text-cyan-700 hover:underline dark:text-cyan-400">
                         <Terminal className="h-3 w-3" />
                         Collection script ({source.script.lang === 'powershell' ? 'PowerShell' : 'Bash'})
@@ -194,52 +216,31 @@ export default function EndpointArtifactsTab({ incident }) {
                       />
                     </details>
                   )}
-                </li>
-              ))}
-            </ul>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">
-              Native scripts write a ready-to-import CSV; tool commands need the named DFIR parser on
-              your analysis box. Copy or download each script with the buttons on its header.
-            </p>
-          </div>
-        </div>
-      )}
 
-      {/* -------- Data source card -------- */}
-      <Card
-        title={`Data source — ${category.label}`}
-        icon={Upload}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" icon={Sparkles} onClick={handleLoadDemo}>
-              Load demo data
-            </Button>
-            {hasData && (
-              <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
-                Clear
-              </Button>
-            )}
+                  <FileUploadZone
+                    label={isFile ? source.name : `${source.name} — CSV`}
+                    description={
+                      isFile
+                        ? 'Upload the existing file from the host (parsed here).'
+                        : 'Upload the CSV the script produced.'
+                    }
+                    icon={category.icon}
+                    accept={isFile ? source.accept || '' : '.csv,.json'}
+                    meta={meta}
+                    loading={!!loading[source.key]}
+                    error={errors[source.key] ?? null}
+                    onFile={(file) => handleFile(source, file)}
+                    onClear={() => clearArtifactSource(incident.id, category.id, source.key)}
+                  />
+                </div>
+              )
+            })}
           </div>
-        }
-      >
-        <div className="grid gap-4 md:grid-cols-1">
-          <FileUploadZone
-            label={`${category.label} export`}
-            description="CSV (with a header row) or JSON array from your DFIR tool."
-            icon={category.icon}
-            accept=".csv,.json,.tsv,.txt"
-            pathHint={sources[0]?.path ?? null}
-            meta={meta}
-            loading={loading}
-            error={error}
-            onFile={handleFile}
-            onClear={() => clearArtifactData(incident.id, activeCategoryId)}
-          />
-        </div>
+        )}
       </Card>
 
-      {/* -------- Records section -------- */}
-      <ArtifactSection incident={incident} category={category} records={current.records} />
+      {/* -------- Combined records table -------- */}
+      <ArtifactSection incident={incident} category={category} records={combined} />
 
       {/* -------- Confirm clear modal -------- */}
       <Modal
@@ -258,9 +259,9 @@ export default function EndpointArtifactsTab({ incident }) {
         }
       >
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          You are about to delete all imported <strong>{category.label}</strong> records in the
-          incident <strong>{incident.name}</strong>. Other categories are left untouched. This action
-          is irreversible.
+          You are about to delete all imported <strong>{category.label}</strong> records (every
+          source) in the incident <strong>{incident.name}</strong>. Other categories are left
+          untouched. This action is irreversible.
         </p>
       </Modal>
     </div>

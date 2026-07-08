@@ -24,6 +24,7 @@ import {
 import {
   ARTIFACT_CATEGORIES,
   getArtifactCategoryById,
+  categorySourceKeys,
   buildDefaultArtifactData,
   buildDefaultArtifactsMap,
 } from '../config/artifacts.js'
@@ -152,19 +153,22 @@ function normalizeCommandsData(raw) {
   }
 }
 
-/* ---- endpoint artifact data normalization (per-category) ---- */
+/* ---- endpoint artifact data normalization (per-category, per-source) ---- */
 function normalizeEndpointData(raw) {
-  const fallback = { categories: buildDefaultArtifactsMap() }
-  if (!raw || typeof raw !== 'object') return fallback
-
   const categories = buildDefaultArtifactsMap()
-  const source = raw.categories && typeof raw.categories === 'object' ? raw.categories : raw
+  if (!raw || typeof raw !== 'object') return { categories }
+
+  const src = raw.categories && typeof raw.categories === 'object' ? raw.categories : {}
   for (const category of ARTIFACT_CATEGORIES) {
-    const rc = source[category.id]
-    if (rc && typeof rc === 'object') {
-      categories[category.id] = {
-        records: Array.isArray(rc.records) ? rc.records : [],
-        meta: rc.meta ?? null,
+    const rc = src[category.id]
+    if (!rc || typeof rc !== 'object' || !rc.sources) continue
+    for (const key of categorySourceKeys(category)) {
+      const rs = rc.sources[key]
+      if (rs && typeof rs === 'object') {
+        categories[category.id].sources[key] = {
+          records: Array.isArray(rs.records) ? rs.records : [],
+          meta: rs.meta ?? null,
+        }
       }
     }
   }
@@ -572,20 +576,28 @@ export function IncidentProvider({ children }) {
     [audit, persist],
   )
 
-  /* ---- per-category endpoint artifact data (Endpoint Artifacts tab) ---- */
+  /* ---- per-source endpoint artifact data (Endpoint Artifacts tab) ---- */
 
-  const updateArtifactData = useCallback(
-    (incidentId, categoryId, patch, auditInfo) => {
+  /** Replace ONE source's records+meta within a category. */
+  const updateArtifactSource = useCallback(
+    (incidentId, categoryId, sourceKey, patch, auditInfo) => {
       const prev = find(incidentId)
       if (!prev) return
       const endpoint = prev.data.endpoint
-      const current = endpoint.categories[categoryId] ?? buildDefaultArtifactData()
+      const cat = endpoint.categories[categoryId] ?? { sources: {} }
+      const currentSource = cat.sources[sourceKey] ?? { records: [], meta: null }
       const updatedAt = nowIso()
       const data = {
         ...prev.data,
         endpoint: {
           ...endpoint,
-          categories: { ...endpoint.categories, [categoryId]: { ...current, ...patch } },
+          categories: {
+            ...endpoint.categories,
+            [categoryId]: {
+              ...cat,
+              sources: { ...cat.sources, [sourceKey]: { ...currentSource, ...patch } },
+            },
+          },
         },
       }
       setIncidents((list) =>
@@ -597,10 +609,42 @@ export function IncidentProvider({ children }) {
     [audit, persist],
   )
 
-  const clearArtifactData = useCallback(
+  /** Clear ONE source within a category. */
+  const clearArtifactSource = useCallback(
+    (incidentId, categoryId, sourceKey) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const endpoint = prev.data.endpoint
+      const cat = endpoint.categories[categoryId] ?? { sources: {} }
+      const updatedAt = nowIso()
+      const data = {
+        ...prev.data,
+        endpoint: {
+          ...endpoint,
+          categories: {
+            ...endpoint.categories,
+            [categoryId]: {
+              ...cat,
+              sources: { ...cat.sources, [sourceKey]: { records: [], meta: null } },
+            },
+          },
+        },
+      }
+      setIncidents((list) =>
+        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
+      )
+      audit('endpoint.clearSource', `Cleared ${categoryId}/${sourceKey}`, { ...prev, updatedAt, data })
+      persist(incidentId, { data, updatedAt })
+    },
+    [audit, persist],
+  )
+
+  /** Clear ALL sources of a category. */
+  const clearArtifactCategory = useCallback(
     (incidentId, categoryId) => {
       const prev = find(incidentId)
       if (!prev) return
+      const category = getArtifactCategoryById(categoryId)
       const updatedAt = nowIso()
       const data = {
         ...prev.data,
@@ -608,7 +652,7 @@ export function IncidentProvider({ children }) {
           ...prev.data.endpoint,
           categories: {
             ...prev.data.endpoint.categories,
-            [categoryId]: buildDefaultArtifactData(),
+            [categoryId]: category ? buildDefaultArtifactData(category) : { sources: {} },
           },
         },
       }
@@ -820,8 +864,9 @@ export function IncidentProvider({ children }) {
     updateShellData,
     setActiveShell,
     clearShellData,
-    updateArtifactData,
-    clearArtifactData,
+    updateArtifactSource,
+    clearArtifactSource,
+    clearArtifactCategory,
     toggleFlag,
     addFlagComment,
     removeFlagComment,

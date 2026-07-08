@@ -20,7 +20,7 @@ import { SHELLS } from '../config/shells.js'
 import { ARTIFACT_CATEGORIES } from '../config/artifacts.js'
 import { buildEvents } from './events.js'
 import { buildCommandEvents } from './commands.js'
-import { buildArtifactEvents } from './artifacts.js'
+import { buildArtifactEvents, combineCategoryRecords } from './artifacts.js'
 import { extractDomain, truncate } from './url.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
@@ -114,9 +114,9 @@ export function buildTimelineEvents(incident, engine) {
   /* ---- Endpoint artifacts (per category) ---- */
   const categories = data.endpoint?.categories ?? {}
   for (const category of ARTIFACT_CATEGORIES) {
-    const cd = categories[category.id]
-    if (!cd?.records?.length) continue
-    const events = buildArtifactEvents({ records: cd.records, category, engine })
+    const combined = combineCategoryRecords(category, categories[category.id])
+    if (combined.length === 0) continue
+    const events = buildArtifactEvents({ records: combined, category, engine })
     const [, secondCol] = category.columns
     for (const event of events) {
       if (!hasTime(event)) continue

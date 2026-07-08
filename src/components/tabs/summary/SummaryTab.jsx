@@ -117,7 +117,11 @@ export default function SummaryTab({ incident }) {
     for (const s of SHELLS) commands += shells[s.id]?.commands?.length ?? 0
     const cats = incident.data?.endpoint?.categories ?? {}
     let artifacts = 0
-    for (const c of ARTIFACT_CATEGORIES) artifacts += cats[c.id]?.records?.length ?? 0
+    for (const c of ARTIFACT_CATEGORIES) {
+      for (const s of Object.values(cats[c.id]?.sources ?? {})) {
+        artifacts += s?.records?.length ?? 0
+      }
+    }
     return { events, bookmarks, commands, artifacts }
   }, [incident.data])
 

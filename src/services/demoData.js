@@ -251,27 +251,29 @@ function buildDemoCommands(rows) {
  */
 
 function demoExecution(os) {
+  // Windows demo = BAM (last-execution per user; no run count). macOS demo =
+  // KnowledgeC app usage. (Linux execution has no fully-custom source.)
   const win = [
-    [1, 9, 20, 'chrome.exe', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 214, 'Prefetch'],
-    [1, 10, 2, 'Code.exe', 'C:\\Users\\analyst\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe', 88, 'Amcache'],
-    [2, 2, 33, 'le.exe', 'C:\\Users\\analyst\\AppData\\Local\\Temp\\le.exe', 3, 'Prefetch'],
-    [2, 2, 41, 'mimikatz.exe', 'C:\\Windows\\Temp\\mimikatz.exe', 1, 'Amcache'],
-    [2, 2, 52, 'rundll32.exe', 'C:\\Windows\\System32\\rundll32.exe C:\\Users\\analyst\\Downloads\\evil.dll,Start', 2, 'ShimCache'],
-    [2, 3, 4, 'procdump.exe', 'C:\\Windows\\Temp\\procdump.exe', 1, 'Prefetch'],
+    [1, 9, 20, 'chrome.exe', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'],
+    [1, 10, 2, 'Code.exe', 'C:\\Users\\analyst\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe'],
+    [2, 2, 33, 'le.exe', 'C:\\Users\\analyst\\AppData\\Local\\Temp\\le.exe'],
+    [2, 2, 41, 'mimikatz.exe', 'C:\\Windows\\Temp\\mimikatz.exe'],
+    [2, 2, 52, 'rundll32.exe', 'C:\\Users\\analyst\\Downloads\\evil.dll'],
+    [2, 3, 4, 'procdump.exe', 'C:\\Windows\\Temp\\procdump.exe'],
   ]
   const nix = [
-    [1, 9, 15, 'bash', '/usr/bin/bash', 402, 'auditd'],
-    [1, 11, 5, 'python3', '/usr/bin/python3', 57, 'auditd'],
-    [2, 2, 21, 'enum.sh', '/tmp/enum.sh', 1, 'auditd'],
-    [2, 2, 34, 'le', '/tmp/le', 4, 'auditd'],
-    [2, 2, 55, 'linpeas.sh', '/dev/shm/linpeas.sh', 1, 'auditd'],
-    [2, 3, 8, 'rclone', '/home/analyst/.cache/rclone', 2, 'auditd'],
+    [1, 9, 15, 'Terminal', '/System/Applications/Utilities/Terminal.app'],
+    [1, 11, 5, 'Python', '/usr/bin/python3'],
+    [2, 2, 21, 'enum', '/tmp/enum.sh'],
+    [2, 2, 55, 'linpeas', '/private/tmp/linpeas.sh'],
+    [2, 3, 8, 'osascript', '/usr/bin/osascript'],
   ]
   const rows = os === 'windows' ? win : nix
-  return rows.map(([d, h, m, name, path, runCount, source]) => ({
+  const source = os === 'windows' ? 'BAM' : 'KnowledgeC'
+  return rows.map(([d, h, m, name, path]) => ({
     id: generateId(),
     time: daysAgoAt(d, h, m),
-    fields: { name, path, runCount: String(runCount), source },
+    fields: { name, path, runCount: '', source },
   }))
 }
 

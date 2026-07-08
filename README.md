@@ -649,7 +649,8 @@ change.
     │   ├── sqliteParser.js         # Chromium (History/Shortcuts) and Firefox (places.sqlite)
     │   │                           #   parsers via sql.js (lazy WASM)
     │   ├── shellParsers.js         # parseShellHistory(file, shell): bash/zsh/fish/PSReadLine
-    │   ├── artifactParsers.js      # parseArtifactFile(file, category): CSV/JSON lenient map
+    │   ├── artifactParsers.js      # parseArtifactImport(file, category, source): xbel/plist/
+    │   │                           #   configlines/setupapi/knowledgeC + CSV/JSON (script mode)
     │   └── demoData.js             # getDemoBrowserData/getDemoShellData/getDemoArtifactData
     │
     ├── utils/
@@ -700,23 +701,34 @@ tampering…) — can be flagged, searched, filtered by the suspicious window, a
 appear on the incident timeline exactly like browser events.
 
 The **Endpoint Artifacts** tab covers host forensic artifacts that neither the
-browser nor the shell captures, one sub-tab per category (see
-`src/config/artifacts.js`): **Program Execution** (Prefetch, Amcache,
-ShimCache, UserAssist, BAM), **Persistence** (Run keys, Scheduled Tasks,
-services, cron, systemd, LaunchAgents, SSH keys), **File & Folder Access** (LNK,
-JumpLists, ShellBags, RecentDocs) and **USB & Devices** (USBSTOR, setupapi).
-Each category imports a CSV/JSON export from a DFIR tool (KAPE, Eric Zimmerman's
-tools, RegRipper…) with lenient column mapping, shows per-OS guidance on where
-to find the source, and runs the shared keywords plus a built-in artifact
+browser nor the shell captures, one sub-tab per category built from one or more
+**sources** (see `src/config/artifacts.js`): **Program Execution** (BAM,
+KnowledgeC), **Persistence** (Run keys, Scheduled Tasks, services, startup,
+WMI, cron, systemd, SSH keys, rc files, LaunchAgents), **File & Folder Access**
+(GTK recently-used) and **USB & Devices** (USBSTOR, setupapi log, kernel
+journal). The table shows the union of every source's records, tagged by which
+source produced them, and runs the shared keywords plus a built-in artifact
 ruleset (`DEFAULT_ARTIFACT_KEYWORDS`: execution from temp/user-writable paths,
 LOLBins, double extensions, suspicious persistence, known offensive tool names).
 
-Because many of these artifacts are not files you can just copy but data you
-have to collect (registry hives, journals, parser output), each source ships a
-**collection script** (see `src/config/collectionScripts.js`) shown in the tab
-with copy/download buttons: native PowerShell/bash scripts write a ready-to-
-import CSV whose headers match the importer 1:1, while the rest give the exact
-DFIR-tool command. The script language and OS follow the incident's host OS.
+Crucially, every source is collected **without any third-party tool**, in one
+of two ways driven by the incident's host OS:
+
+- **file** — the data already lives in a plain text / XML / log / SQLite file,
+  so the analyst uploads that existing file and it is parsed in-browser (custom
+  parsers in `src/services/artifactParsers.js`: `recently-used.xbel`,
+  `authorized_keys` / cron / rc files, LaunchAgent `.plist`, `setupapi.dev.log`,
+  and `knowledgeC.db` via sql.js).
+- **script** — the data is live system state (registry, service manager,
+  kernel journal), so the tab shows a native collection script
+  (`src/config/collectionScripts.js`, PowerShell / systemctl / journalctl only)
+  with copy/download buttons; it writes a CSV whose headers match the importer
+  1:1, which the analyst then imports.
+
+Artifacts that can only be recovered with third-party DFIR parsers (Prefetch,
+Amcache, ShimCache, UserAssist, LNK, JumpLists, ShellBags, RecentDocs) are
+intentionally left out; a category with no custom source on a given OS shows an
+explicit note rather than a dead end.
 
 The **Timeline** tab is the super-timeline: it merges every *timestamped* event
 from the Browser, Command History and Endpoint Artifacts tabs into a single
@@ -764,8 +776,9 @@ const {
   setActiveShell,         // (id, shellId) => void — switch shell sub-tab (local only)
   clearShellData,         // (id, shellId) => void — clear ONE shell's commands
 
-  updateArtifactData,     // (id, categoryId, patch, auditInfo?) => void — per-category merge
-  clearArtifactData,      // (id, categoryId) => void — clear ONE endpoint category
+  updateArtifactSource,   // (id, categoryId, sourceKey, patch, auditInfo?) => void — per-source
+  clearArtifactSource,    // (id, categoryId, sourceKey) => void — clear ONE source
+  clearArtifactCategory,  // (id, categoryId) => void — clear ALL sources of a category
 
   toggleFlag,             // (id, flaggable) => void — flag/unflag an entry
   addFlagComment,         // (id, flagKey, text) => void
