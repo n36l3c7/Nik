@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FolderInput, Sparkles, Trash2, Upload } from 'lucide-react'
+import { FolderInput, Sparkles, Terminal, Trash2, Upload } from 'lucide-react'
 import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from '../browser/FileUploadZone.jsx'
 import ArtifactSection from './ArtifactSection.jsx'
+import ScriptBlock from './ScriptBlock.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { parseArtifactFile } from '../../../services/artifactParsers.js'
 import { getDemoArtifactData } from '../../../services/demoData.js'
@@ -22,6 +23,14 @@ import { getOsById, DEFAULT_OS } from '../../../config/os.js'
  * detection. The "where to find it / how to export it" guidance is driven by
  * the incident's host OS.
  */
+
+/** Filesystem-safe slug for the downloaded script filename. */
+function slugify(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
 
 export default function EndpointArtifactsTab({ incident }) {
   const { updateArtifactData, clearArtifactData } = useIncidents()
@@ -147,27 +156,51 @@ export default function EndpointArtifactsTab({ incident }) {
         })}
       </div>
 
-      {/* -------- OS-aware "where to find it / how to export" note -------- */}
+      {/* -------- OS-aware "where to find it / how to collect" note -------- */}
       {!meta && (
         <div className="flex gap-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 text-sm dark:border-cyan-500/30 dark:bg-cyan-500/5">
           <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
-          <div className="min-w-0 space-y-1.5">
+          <div className="min-w-0 flex-1 space-y-2.5">
             <p className="font-medium text-slate-700 dark:text-slate-200">
-              {category.label} sources on {osLabel} — export to CSV/JSON, then import here
+              {category.label} sources on {osLabel} — run the collection script on the host, then
+              import the resulting CSV here
             </p>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {sources.map((source) => (
-                <li key={source.name} className="text-xs text-slate-600 dark:text-slate-400">
-                  <span className="font-medium">{source.name}:</span>{' '}
-                  <span className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                    {source.path}
-                  </span>
-                  {source.tool && (
-                    <span className="text-slate-400 dark:text-slate-500"> — {source.tool}</span>
+                <li
+                  key={source.name}
+                  className="rounded-lg border border-slate-200 bg-white/60 p-2.5 dark:border-slate-800 dark:bg-slate-900/40"
+                >
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                      {source.name}
+                    </span>{' '}
+                    <span className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                      {source.path}
+                    </span>
+                    {source.tool && (
+                      <span className="text-slate-400 dark:text-slate-500"> — {source.tool}</span>
+                    )}
+                  </p>
+                  {source.script && (
+                    <details className="group mt-1">
+                      <summary className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-medium text-cyan-700 hover:underline dark:text-cyan-400">
+                        <Terminal className="h-3 w-3" />
+                        Collection script ({source.script.lang === 'powershell' ? 'PowerShell' : 'Bash'})
+                      </summary>
+                      <ScriptBlock
+                        script={source.script}
+                        filename={`collect-${category.id}-${slugify(source.name)}`}
+                      />
+                    </details>
                   )}
                 </li>
               ))}
             </ul>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              Native scripts write a ready-to-import CSV; tool commands need the named DFIR parser on
+              your analysis box. Copy or download each script with the buttons on its header.
+            </p>
           </div>
         </div>
       )}

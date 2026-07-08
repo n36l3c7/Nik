@@ -711,6 +711,13 @@ to find the source, and runs the shared keywords plus a built-in artifact
 ruleset (`DEFAULT_ARTIFACT_KEYWORDS`: execution from temp/user-writable paths,
 LOLBins, double extensions, suspicious persistence, known offensive tool names).
 
+Because many of these artifacts are not files you can just copy but data you
+have to collect (registry hives, journals, parser output), each source ships a
+**collection script** (see `src/config/collectionScripts.js`) shown in the tab
+with copy/download buttons: native PowerShell/bash scripts write a ready-to-
+import CSV whose headers match the importer 1:1, while the rest give the exact
+DFIR-tool command. The script language and OS follow the incident's host OS.
+
 The **Timeline** tab is the super-timeline: it merges every *timestamped* event
 from the Browser, Command History and Endpoint Artifacts tabs into a single
 chronological, filterable table (by source, detection and time window). Entries

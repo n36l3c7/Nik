@@ -1,4 +1,34 @@
 import { CirclePlay, HardDrive, KeyRound, Usb } from 'lucide-react'
+import {
+  EXEC_WIN_PREFETCH,
+  EXEC_WIN_AMCACHE,
+  EXEC_WIN_SHIMCACHE,
+  EXEC_WIN_USERASSIST,
+  EXEC_WIN_BAM,
+  EXEC_LINUX_AUDITD,
+  EXEC_MAC_KNOWLEDGEC,
+  PERS_WIN_RUN,
+  PERS_WIN_TASKS,
+  PERS_WIN_SERVICES,
+  PERS_WIN_STARTUP,
+  PERS_WIN_WMI,
+  PERS_LINUX_CRON,
+  PERS_LINUX_SYSTEMD,
+  PERS_LINUX_SSHKEYS,
+  PERS_LINUX_RC,
+  PERS_MAC_LAUNCH,
+  PERS_MAC_CRON,
+  FA_WIN_LNK,
+  FA_WIN_JUMPLISTS,
+  FA_WIN_SHELLBAGS,
+  FA_WIN_RECENTDOCS,
+  FA_LINUX_RECENT,
+  FA_MAC_RECENT,
+  USB_WIN_USBSTOR,
+  USB_WIN_SETUPAPI,
+  USB_LINUX_JOURNAL,
+  USB_MAC_PROFILER,
+} from './collectionScripts.js'
 
 /*
  * ============================================================================
@@ -38,32 +68,30 @@ const EXECUTION = {
     { key: 'source', label: 'Artifact' },
   ],
   fields: {
-    name: ['name', 'program', 'executable', 'application', 'filename', 'process', 'value'],
-    path: ['path', 'fullpath', 'full_path', 'file_path', 'image', 'devicepath', 'programpath'],
+    name: ['name', 'program', 'executable', 'executablename', 'application', 'applicationname', 'filename', 'sourcefilename', 'process', 'value'],
+    path: ['path', 'fullpath', 'full_path', 'file_path', 'sourcefilename', 'image', 'devicepath', 'programpath'],
     runCount: ['runcount', 'run_count', 'count', 'executioncount', 'timesexecuted'],
     source: ['source', 'artifact', 'sourcetype', 'type', 'hive'],
   },
   timeAliases: [
     'lastrun', 'last_run', 'lastexecuted', 'last_executed', 'runtime', 'executiontime',
-    'timestamp', 'time', 'lastmodified', 'date', 'lastrbuntime', 'lastruntime',
+    'timestamp', 'time', 'lastmodified', 'date', 'lastruntime', 'filekeylastwritetimestamp',
   ],
   detectFields: ['name', 'path'],
   timestamped: true,
   sources: {
     windows: [
-      { name: 'Prefetch', path: 'C:\\Windows\\Prefetch\\*.pf', tool: 'PECmd (Eric Zimmerman) → CSV' },
-      { name: 'Amcache', path: 'C:\\Windows\\AppCompat\\Programs\\Amcache.hve', tool: 'AmcacheParser → CSV' },
-      { name: 'ShimCache (AppCompatCache)', path: 'SYSTEM hive → ControlSet\\Control\\Session Manager\\AppCompatCache', tool: 'AppCompatCacheParser → CSV' },
-      { name: 'UserAssist', path: 'NTUSER.dat → …\\Explorer\\UserAssist', tool: 'RegRipper / EZ → CSV' },
-      { name: 'BAM/DAM', path: 'SYSTEM hive → …\\Services\\bam\\State\\UserSettings', tool: 'RegRipper → CSV' },
+      { name: 'Prefetch', path: 'C:\\Windows\\Prefetch\\*.pf', tool: 'PECmd (Eric Zimmerman) → CSV', script: EXEC_WIN_PREFETCH },
+      { name: 'Amcache', path: 'C:\\Windows\\AppCompat\\Programs\\Amcache.hve', tool: 'AmcacheParser → CSV', script: EXEC_WIN_AMCACHE },
+      { name: 'ShimCache (AppCompatCache)', path: 'SYSTEM hive → ControlSet\\Control\\Session Manager\\AppCompatCache', tool: 'AppCompatCacheParser → CSV', script: EXEC_WIN_SHIMCACHE },
+      { name: 'UserAssist', path: 'NTUSER.dat → …\\Explorer\\UserAssist', tool: 'RECmd / RegRipper → CSV', script: EXEC_WIN_USERASSIST },
+      { name: 'BAM/DAM', path: 'SYSTEM hive → …\\Services\\bam\\State\\UserSettings', tool: 'native PowerShell → CSV', script: EXEC_WIN_BAM },
     ],
     macos: [
-      { name: 'KnowledgeC (app usage)', path: '~/Library/Application Support/Knowledge/knowledgeC.db', tool: 'mac_apt / SQLite → CSV' },
-      { name: 'Spotlight / LaunchServices', path: '~/Library/Preferences/com.apple.LaunchServices*', tool: 'mac_apt → CSV' },
+      { name: 'KnowledgeC (app usage)', path: '~/Library/Application Support/Knowledge/knowledgeC.db', tool: 'sqlite3 → CSV', script: EXEC_MAC_KNOWLEDGEC },
     ],
     linux: [
-      { name: 'auditd execve', path: '/var/log/audit/audit.log', tool: 'ausearch -m EXECVE → CSV' },
-      { name: 'systemd journal', path: 'journalctl _COMM / _EXE', tool: 'journalctl -o json → CSV' },
+      { name: 'auditd execve', path: '/var/log/audit/audit.log', tool: 'ausearch -m EXECVE → CSV', script: EXEC_LINUX_AUDITD },
     ],
   },
 }
@@ -95,22 +123,21 @@ const PERSISTENCE = {
   timestamped: true,
   sources: {
     windows: [
-      { name: 'Run / RunOnce keys', path: 'NTUSER.dat & SOFTWARE → …\\CurrentVersion\\Run', tool: 'RegRipper → CSV' },
-      { name: 'Scheduled Tasks', path: 'C:\\Windows\\System32\\Tasks\\', tool: 'KAPE / TaskScheduler → CSV' },
-      { name: 'Services', path: 'SYSTEM hive → …\\Services', tool: 'RegRipper → CSV' },
-      { name: 'Startup folder', path: '%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup', tool: 'directory listing → CSV' },
-      { name: 'WMI subscriptions', path: 'OBJECTS.DATA', tool: 'PyWMIPersistenceFinder → CSV' },
+      { name: 'Run / RunOnce keys', path: 'NTUSER.dat & SOFTWARE → …\\CurrentVersion\\Run', tool: 'native PowerShell → CSV', script: PERS_WIN_RUN },
+      { name: 'Scheduled Tasks', path: 'C:\\Windows\\System32\\Tasks\\', tool: 'native PowerShell → CSV', script: PERS_WIN_TASKS },
+      { name: 'Services', path: 'SYSTEM hive → …\\Services', tool: 'native PowerShell → CSV', script: PERS_WIN_SERVICES },
+      { name: 'Startup folder', path: '%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup', tool: 'native PowerShell → CSV', script: PERS_WIN_STARTUP },
+      { name: 'WMI subscriptions', path: 'root\\Subscription', tool: 'native PowerShell → CSV', script: PERS_WIN_WMI },
     ],
     macos: [
-      { name: 'LaunchAgents / LaunchDaemons', path: '~/Library/LaunchAgents, /Library/Launch*', tool: 'plist listing → CSV' },
-      { name: 'Login items', path: '~/Library/Preferences/com.apple.loginitems*', tool: 'mac_apt → CSV' },
-      { name: 'cron', path: '/usr/lib/cron/tabs/', tool: 'listing → CSV' },
+      { name: 'LaunchAgents / LaunchDaemons', path: '~/Library/LaunchAgents, /Library/Launch*', tool: 'shell script → CSV', script: PERS_MAC_LAUNCH },
+      { name: 'cron', path: '/usr/lib/cron/tabs/', tool: 'shell script → CSV', script: PERS_MAC_CRON },
     ],
     linux: [
-      { name: 'cron', path: '/etc/crontab, /etc/cron.*, /var/spool/cron/', tool: 'listing → CSV' },
-      { name: 'systemd units', path: '/etc/systemd/system/, ~/.config/systemd/user/', tool: 'systemctl list-unit-files → CSV' },
-      { name: 'shell rc / profile', path: '~/.bashrc, ~/.profile, /etc/rc.local', tool: 'listing → CSV' },
-      { name: 'SSH authorized_keys', path: '~/.ssh/authorized_keys', tool: 'listing → CSV' },
+      { name: 'cron', path: '/etc/crontab, /etc/cron.*, /var/spool/cron/', tool: 'shell script → CSV', script: PERS_LINUX_CRON },
+      { name: 'systemd units', path: '/etc/systemd/system/, ~/.config/systemd/user/', tool: 'shell script → CSV', script: PERS_LINUX_SYSTEMD },
+      { name: 'shell rc / profile', path: '~/.bashrc, ~/.profile, /etc/rc.local', tool: 'shell script → CSV', script: PERS_LINUX_RC },
+      { name: 'SSH authorized_keys', path: '~/.ssh/authorized_keys', tool: 'shell script → CSV', script: PERS_LINUX_SSHKEYS },
     ],
   },
 }
@@ -140,18 +167,16 @@ const FILE_ACCESS = {
   timestamped: true,
   sources: {
     windows: [
-      { name: 'LNK shortcuts', path: '%APPDATA%\\Microsoft\\Windows\\Recent\\', tool: 'LECmd → CSV' },
-      { name: 'JumpLists', path: '…\\Recent\\AutomaticDestinations\\', tool: 'JLECmd → CSV' },
-      { name: 'ShellBags', path: 'USRCLASS.dat → …\\Shell\\BagMRU', tool: 'ShellBags Explorer → CSV' },
-      { name: 'RecentDocs', path: 'NTUSER.dat → …\\Explorer\\RecentDocs', tool: 'RegRipper → CSV' },
+      { name: 'LNK shortcuts', path: '%APPDATA%\\Microsoft\\Windows\\Recent\\', tool: 'LECmd → CSV', script: FA_WIN_LNK },
+      { name: 'JumpLists', path: '…\\Recent\\AutomaticDestinations\\', tool: 'JLECmd → CSV', script: FA_WIN_JUMPLISTS },
+      { name: 'ShellBags', path: 'USRCLASS.dat → …\\Shell\\BagMRU', tool: 'SBECmd → CSV', script: FA_WIN_SHELLBAGS },
+      { name: 'RecentDocs', path: 'NTUSER.dat → …\\Explorer\\RecentDocs', tool: 'RECmd / RegRipper → CSV', script: FA_WIN_RECENTDOCS },
     ],
     macos: [
-      { name: 'Recent items / sfl', path: '~/Library/Application Support/com.apple.sharedfilelist/', tool: 'sfltool / mac_apt → CSV' },
-      { name: 'Finder recent', path: '~/Library/Preferences/com.apple.finder.plist', tool: 'plutil → CSV' },
+      { name: 'Finder recent', path: '~/Library/Preferences/com.apple.finder.plist', tool: 'defaults read → txt', script: FA_MAC_RECENT },
     ],
     linux: [
-      { name: 'GTK recently-used', path: '~/.local/share/recently-used.xbel', tool: 'xbel parse → CSV' },
-      { name: 'GTK bookmarks', path: '~/.config/gtk-3.0/bookmarks', tool: 'listing → CSV' },
+      { name: 'GTK recently-used', path: '~/.local/share/recently-used.xbel', tool: 'shell script → CSV', script: FA_LINUX_RECENT },
     ],
   },
 }
@@ -183,15 +208,14 @@ const USB = {
   timestamped: true,
   sources: {
     windows: [
-      { name: 'USBSTOR', path: 'SYSTEM hive → …\\Enum\\USBSTOR', tool: 'RegRipper / USBDeviceForensics → CSV' },
-      { name: 'setupapi log', path: 'C:\\Windows\\INF\\setupapi.dev.log', tool: 'text parse → CSV' },
-      { name: 'MountedDevices', path: 'SYSTEM hive → MountedDevices', tool: 'RegRipper → CSV' },
+      { name: 'USBSTOR', path: 'SYSTEM hive → …\\Enum\\USBSTOR', tool: 'native PowerShell → CSV', script: USB_WIN_USBSTOR },
+      { name: 'setupapi log', path: 'C:\\Windows\\INF\\setupapi.dev.log', tool: 'native PowerShell → CSV', script: USB_WIN_SETUPAPI },
     ],
     macos: [
-      { name: 'IORegistry / system.log', path: '/var/log/system.log', tool: 'ioreg / log show → CSV' },
+      { name: 'IORegistry / system_profiler', path: 'system_profiler SPUSBDataType', tool: 'system_profiler → txt', script: USB_MAC_PROFILER },
     ],
     linux: [
-      { name: 'kernel USB events', path: '/var/log/syslog, /var/log/messages, journal', tool: 'journalctl -k → CSV' },
+      { name: 'kernel USB events', path: '/var/log/syslog, journal', tool: 'shell script → CSV', script: USB_LINUX_JOURNAL },
     ],
   },
 }
