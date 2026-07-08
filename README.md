@@ -78,9 +78,14 @@ cp .env.example .env          # then edit DB_PASSWORD and SECRET_KEY
 docker compose up -d --build  # build the images and start db + api + web
 ```
 
-Open **http://localhost:8080** and create the first user — that account becomes
+Open **https://localhost:8443** and create the first user — that account becomes
 the **admin**. Database tables are created automatically on the API's first
 start, so there is nothing to migrate.
+
+> On first start the `web` container self-signs a TLS certificate, so the
+> browser shows a one-time "connection not private" warning — accept it to
+> proceed (or mount a real certificate, see §2.1). Plain HTTP stays available
+> on **http://localhost:8080**.
 
 ```bash
 docker compose logs -f api    # follow backend logs
@@ -89,7 +94,7 @@ docker compose down           # stop (keeps the database volume)
 docker compose down -v        # stop AND delete the database volume (wipes data)
 ```
 
-Podman is a drop-in replacement (rootless is fine for port 8080):
+Podman is a drop-in replacement (rootless is fine for ports 8080/8443):
 
 ```bash
 cp .env.example .env
@@ -163,15 +168,18 @@ is no `tailwind.config.js` and no extra setup step.
 |---|---|---|
 | `DB_PASSWORD` | `csap` | PostgreSQL password (shared by the `db` and `api` services). |
 | `SECRET_KEY` | — | Backend secret. Use a long random value (e.g. `openssl rand -hex 32`). |
-| `COOKIE_SECURE` | `false` | Keep `false` only for plain-HTTP testing on `:8080`; set `true` behind HTTPS. |
-| `WEB_PORT` | `8080` | Host port the UI is published on. |
+| `COOKIE_SECURE` | `false` | Keep `false` while anyone still uses plain HTTP on `:8080`; set `true` (recommended) once everyone is on HTTPS. |
+| `WEB_PORT` | `8080` | Host port the UI is published on (plain HTTP). |
+| `WEB_TLS_PORT` | `8443` | Host port the UI is published on (HTTPS). |
+| `TLS_HOSTNAME` | `localhost` | Name embedded in the auto-generated certificate (CN + SAN) — set it to what users type in the browser. |
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
 
 > **Two things that will bite you over plain HTTP:**
 >
 > 1. With `COOKIE_SECURE=true` the browser **drops** the `csap_session` cookie
->    on `http://` origins, so login won't stick. Serve over HTTPS in production
->    (a self-signed or internal-CA certificate is fine on an internal network).
+>    on `http://` origins, so login won't stick. Use the HTTPS port (`:8443`)
+>    in production — the self-signed certificate the stack generates is fine
+>    on an internal network, an internal-CA one is better.
 > 2. The copy-to-clipboard buttons use the Clipboard API, which only works in a
 >    **secure context** (`https://` or `http://localhost`).
 
@@ -181,14 +189,25 @@ is no `tailwind.config.js` and no extra setup step.
 
 ### 2.1 Docker / Podman in production
 
-The Compose file publishes plain HTTP on `:8080` for a fast start. For a real
-deployment, put TLS in front and set `COOKIE_SECURE=true`:
+The Compose stack publishes plain HTTP on `:8080` and HTTPS on `:8443`. On
+first start the `web` container **self-signs a certificate** (for
+`TLS_HOSTNAME`, default `localhost`) into the `web-certs` volume, so HTTPS
+works out of the box — browsers show the usual warning until the certificate
+is trusted or replaced. For a real deployment set `COOKIE_SECURE=true` and
+pick one of:
 
-- **Option A (recommended):** keep the container on `:8080` and front it with a
-  host reverse proxy that terminates TLS (nginx, Caddy, Traefik), proxying to
-  `127.0.0.1:8080`.
-- **Option B:** add a `443` listener + certificate to `deploy/nginx.conf`,
-  mount the certificate into the `web` container, and map `- "8443:443"`.
+- **Option A (recommended):** provide your own certificate — internal CA or
+  Let's Encrypt — as `csap.crt` / `csap.key` in `/etc/nginx/certs`; the
+  startup script never overwrites an existing pair. Easiest wiring: swap the
+  named volume for a bind mount in `docker-compose.yml`
+  (`- ./certs:/etc/nginx/certs`).
+- **Option B:** front the stack with a host reverse proxy that terminates TLS
+  (nginx, Caddy, Traefik) proxying to `127.0.0.1:8080`, and remove the
+  `8443` port mapping.
+
+To regenerate the self-signed certificate (e.g. after changing
+`TLS_HOSTNAME`): `docker compose down && docker volume rm csap_web-certs`,
+then start the stack again.
 
 Notes for Podman on RHEL:
 

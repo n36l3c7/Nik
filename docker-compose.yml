@@ -5,7 +5,9 @@
 #
 #   docker compose up -d --build      # or: podman-compose up -d --build
 #
-# The app is then reachable on http://localhost:8080  (see the README for TLS).
+# The app is then reachable on https://localhost:8443 (self-signed certificate
+# generated on first start — the browser warning is expected) and on plain
+# http://localhost:8080. See the README for using a real certificate.
 
 services:
   db:
@@ -41,11 +43,20 @@ services:
     build:
       context: .
       dockerfile: deploy/web.Dockerfile
+    environment:
+      # Name users type in the browser; goes into the self-signed certificate.
+      TLS_HOSTNAME: ${TLS_HOSTNAME:-localhost}
     ports:
       - "${WEB_PORT:-8080}:80"
+      - "${WEB_TLS_PORT:-8443}:443"
+    volumes:
+      # Keeps the auto-generated certificate across container recreations.
+      # Mount your own csap.crt / csap.key here to use a real certificate.
+      - web-certs:/etc/nginx/certs
     depends_on:
       - api
     restart: unless-stopped
 
 volumes:
   db-data:
+  web-certs:
