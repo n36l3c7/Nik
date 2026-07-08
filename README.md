@@ -640,14 +640,35 @@ change.
         ├── audit/                  # AuditLogView (read-only modal)
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsModal (keywords + business hours)
-        ├── layout/                 # Sidebar, Header, TabBar
+        ├── layout/                 # Sidebar, Header, TabBar, OsPicker
         └── tabs/
             ├── NetworkLogsTab.jsx      # Placeholder, ready for expansion
-            ├── EndpointArtifactsTab.jsx# Placeholder, ready for expansion
             ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
-            └── browser/                # BrowserAnalysisTab, FileUploadZone, EventsSection,
-                                        #   filters, widgets, bookmarks/shortcuts tables
+            ├── browser/                # BrowserAnalysisTab, FileUploadZone, EventsSection,
+            │                           #   filters, widgets, bookmarks/shortcuts tables
+            └── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
 ```
+
+Each incident is tied to a single host and carries an **operating system**
+(`windows` | `macos` | `linux`, see `src/config/os.js`), chosen when the
+incident is created and editable from the Summary tab. The OS drives the
+host-specific bits of the UI: the artifact paths suggested in Browser
+Forensics, which shells appear in Command History, and the incident icon shown
+in the sidebar and header.
+
+The **Command History** tab mirrors Browser Forensics for terminal activity:
+one sub-tab per shell (Bash / Zsh / Fish / PowerShell, see
+`src/config/shells.js`), parsing the native history files (`.bash_history`,
+`.zsh_history`, `fish_history`, PSReadLine `ConsoleHost_history.txt`) plus
+JSON/CSV exports. Commands run through the SOC engine — the shared keyword
+rules plus a built-in command ruleset (`DEFAULT_COMMAND_KEYWORDS` in
+`src/config/detectionRules.js`: download-and-execute, encoded payloads, reverse
+shells, credential access, defense evasion, persistence, exfiltration, history
+tampering…) — can be flagged, searched, filtered by the suspicious window, and
+appear on the incident timeline exactly like browser events.
+
+The **sidebar is resizable**: drag its right edge to widen the incident list up
+to a quarter of the window; the width is remembered per browser.
 
 ### 3.4 State and the data model
 
@@ -664,8 +685,8 @@ const {
   loading,                // boolean — true until the initial API load finishes
   storageError,           // string | null — persistence error surfaced in the UI
 
-  createIncident,         // ({host, username}) => Incident — creates AND activates
-  updateIncidentMeta,     // (id, patch) => void — edit host/username/suspicious window
+  createIncident,         // ({host, username, os}) => Incident — creates AND activates
+  updateIncidentMeta,     // (id, patch) => void — edit host/username/os/suspicious window
   deleteIncident,         // (id) => void — if active, activates the first remaining one
   selectIncident,         // (id) => void
 
@@ -676,6 +697,10 @@ const {
   setActiveBrowser,       // (id, browserId) => void — switch browser sub-tab (local only)
   clearBrowserData,       // (id, browserId) => void — clear ONE browser
   removeBrowserSource,    // (id, browserId, sourceKey, producedKeys) => void — remove ONE file
+
+  updateShellData,        // (id, shellId, patch, auditInfo?) => void — per-shell merge
+  setActiveShell,         // (id, shellId) => void — switch shell sub-tab (local only)
+  clearShellData,         // (id, shellId) => void — clear ONE shell's commands
 
   toggleFlag,             // (id, flaggable) => void — flag/unflag an entry
   addFlagComment,         // (id, flagKey, text) => void
