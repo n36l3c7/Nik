@@ -1,0 +1,13 @@
+# Keep the web build context (repo root) lean.
+node_modules
+dist
+.git
+backend
+*.md
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+places.sqlite
+History
+Bookmarks
+Shortcuts

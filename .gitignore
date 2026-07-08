@@ -1,0 +1,22 @@
+node_modules
+dist
+*.local
+.DS_Store
+
+# Test forensic artifacts (may contain real data: do not commit)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+places.sqlite
+History
+Bookmarks
+Shortcuts
+
+# Environment files with real secrets (docker-compose reads ./.env)
+.env
+
+# Backend (Python)
+backend/.venv/
+backend/**/__pycache__/
+backend/*.db
+backend/.env

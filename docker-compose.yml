@@ -1,0 +1,51 @@
+# CSAP — full stack (nginx static + FastAPI + PostgreSQL) in three containers.
+#
+# Works with both `docker compose` and `podman-compose` (and `podman compose`).
+# Copy .env.example to .env and adjust the secrets before running in production.
+#
+#   docker compose up -d --build      # or: podman-compose up -d --build
+#
+# The app is then reachable on http://localhost:8080  (see the README for TLS).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: csap
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-csap}
+      POSTGRES_DB: csap
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U csap -d csap"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://csap:${DB_PASSWORD:-csap}@db:5432/csap
+      SECRET_KEY: ${SECRET_KEY:-please-change-this-secret}
+      # HTTP quick-start on :8080 → cookie cannot be Secure. Set to true once you
+      # put the app behind HTTPS (see the README).
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db-data:

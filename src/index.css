@@ -1,0 +1,55 @@
+@import 'tailwindcss';
+
+/*
+ * Class-based dark mode: the `dark:` variant activates when the
+ * <html> element has the .dark class (managed by ThemeContext).
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Monospace font used for URLs, timestamps and "technical" data */
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    'Liberation Mono', monospace;
+}
+
+/* ---- Base ---- */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-100 text-slate-800 antialiased;
+}
+
+.dark body {
+  @apply bg-slate-950 text-slate-200;
+}
+
+/* ---- Thin dashboard-style scrollbar ---- */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-slate-300;
+}
+.dark *::-webkit-scrollbar-thumb {
+  @apply bg-slate-700;
+}
+*::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400;
+}
+.dark *::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-600;
+}
+
+/* ---- Text selection with a cyber accent ---- */
+::selection {
+  @apply bg-cyan-500/30;
+}
