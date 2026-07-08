@@ -433,6 +433,10 @@ server {
     ssl_certificate     /etc/pki/nginx/csap.crt;
     ssl_certificate_key /etc/pki/nginx/private/csap.key;
 
+    # Large JSON payloads (backup restore, incidents with parsed artifacts)
+    # blow past nginx's 1m default and get rejected with 413.
+    client_max_body_size 200m;
+
     root  /var/www/csap;
     index index.html;
 
