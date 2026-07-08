@@ -1,7 +1,8 @@
 import { lazy } from 'react'
-import { LayoutDashboard, Globe, Network, TerminalSquare } from 'lucide-react'
+import { LayoutDashboard, Globe, HardDrive, ListTree, Network, TerminalSquare } from 'lucide-react'
 import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
 import { buildDefaultShellsMap, SHELLS } from './shells.js'
+import { buildDefaultArtifactsMap } from './artifacts.js'
 
 /*
  * ============================================================================
@@ -28,6 +29,10 @@ const BrowserAnalysisTab = lazy(
 const CommandHistoryTab = lazy(
   () => import('../components/tabs/commands/CommandHistoryTab.jsx'),
 )
+const EndpointArtifactsTab = lazy(
+  () => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'),
+)
+const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
 
 export const ANALYSIS_TABS = [
@@ -66,6 +71,29 @@ export const ANALYSIS_TABS = [
       activeShell: SHELLS[0].id,
       shells: buildDefaultShellsMap(),
     },
+  },
+  {
+    id: 'endpoint',
+    label: 'Endpoint Artifacts',
+    icon: HardDrive,
+    component: EndpointArtifactsTab,
+    dataKey: 'endpoint',
+    // Endpoint data is organized PER CATEGORY (execution/persistence/
+    // fileaccess/usb): each holds its own records array and imported-file
+    // metadata. See config/artifacts.js.
+    defaultData: {
+      categories: buildDefaultArtifactsMap(),
+    },
+  },
+  {
+    id: 'timeline',
+    label: 'Timeline',
+    icon: ListTree,
+    component: TimelineTab,
+    dataKey: 'timelineView',
+    // The Timeline aggregates timestamped events from every other tab; it
+    // stores no data of its own (this key just holds view preferences, if any).
+    defaultData: {},
   },
   {
     id: 'network',

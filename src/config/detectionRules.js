@@ -179,6 +179,66 @@ export const DEFAULT_COMMAND_KEYWORDS = [
 ]
 
 /*
+ * ENDPOINT ARTIFACT DETECTION RULES — FACTORY DEFAULTS.
+ *
+ * Applied by the "Endpoint Artifacts" tab (program execution, persistence,
+ * file access, removable devices) on top of the shared keyword rules. These
+ * target file-system / registry tradecraft: execution from temp or user-writable
+ * paths, living-off-the-land binaries, script droppers, suspicious persistence
+ * locations. Matched case-insensitively against the artifact's path/name/detail
+ * fields. Same shape as the keyword rules.
+ */
+export const DEFAULT_ARTIFACT_KEYWORDS = [
+  {
+    id: 'art-temp-exec',
+    label: 'runs from temp',
+    pattern:
+      '\\\\(temp|tmp|windows\\\\temp)\\\\[^\\\\]*\\.(exe|dll|ps1|bat|cmd|scr|js|vbs)|/tmp/[^/]*\\.(sh|elf|py)|/dev/shm/',
+    severity: 'high',
+    description: 'Executable or script running from a temporary directory — classic malware staging.',
+  },
+  {
+    id: 'art-user-writable-exec',
+    label: 'runs from user path',
+    pattern:
+      '\\\\(users\\\\[^\\\\]+\\\\(appdata|downloads|desktop|documents))\\\\[^\\\\]*\\.(exe|dll|ps1|scr|js|vbs)|/home/[^/]+/(downloads|\\.cache)/[^/]*\\.(sh|elf)',
+    severity: 'medium',
+    description: 'Execution from a user-writable location (AppData/Downloads/Desktop) rather than Program Files.',
+  },
+  {
+    id: 'art-lolbin',
+    label: 'LOLBin',
+    pattern:
+      '\\b(mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|cscript|wscript|installutil|msbuild|hh|forfiles)\\.exe\\b',
+    severity: 'medium',
+    description: 'Living-off-the-land binary frequently abused for execution or download.',
+  },
+  {
+    id: 'art-double-ext',
+    label: 'double extension',
+    pattern: '\\.(pdf|doc|docx|xls|xlsx|jpg|png|txt)\\s*\\.(exe|scr|js|vbs|bat|cmd|lnk)\\b',
+    severity: 'high',
+    description: 'Double-extension file masquerading as a document — a common phishing lure.',
+  },
+  {
+    id: 'art-suspicious-task',
+    label: 'suspicious persistence',
+    pattern:
+      'currentversion\\\\run|\\\\tasks\\\\|authorized_keys|/etc/cron|launchagents|launchdaemons|\\.service\\b|rc\\.local',
+    severity: 'medium',
+    description: 'Common persistence location (Run key, scheduled task, cron, systemd, LaunchAgent, SSH keys).',
+  },
+  {
+    id: 'art-suspicious-name',
+    label: 'suspicious name',
+    pattern:
+      '\\b(mimikatz|psexec|procdump|lazagne|rubeus|cobalt|meterpreter|beacon|nc\\.exe|ncat|winpeas|linpeas|svch0st|scvhost)\\b',
+    severity: 'high',
+    description: 'File or process name matching a known offensive tool or a masquerading system name.',
+  },
+]
+
+/*
  * BUSINESS HOURS.
  *
  * Events that occur OUTSIDE this window are highlighted as a temporal anomaly

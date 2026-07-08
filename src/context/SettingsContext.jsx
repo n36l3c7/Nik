@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_SUSPICIOUS_KEYWORDS,
   DEFAULT_COMMAND_KEYWORDS,
+  DEFAULT_ARTIFACT_KEYWORDS,
   DEFAULT_BUSINESS_HOURS,
 } from '../config/detectionRules.js'
 import { api } from '../services/api.js'
@@ -204,13 +205,14 @@ export function useSettings() {
 export function useSocEngine() {
   const { keywords, businessHours } = useSettings()
   return useMemo(
-    // The user-editable keywords apply to both browsers and commands; the
-    // built-in command ruleset adds shell/PowerShell tradecraft detection on
-    // top, only for command entries (see createSocEngine).
+    // The user-editable keywords apply to every entry; the built-in command
+    // and artifact rulesets add shell and filesystem/registry tradecraft
+    // detection on top, each only for its own entry kind (see createSocEngine).
     () =>
       createSocEngine({
         keywords,
         commandKeywords: DEFAULT_COMMAND_KEYWORDS,
+        artifactKeywords: DEFAULT_ARTIFACT_KEYWORDS,
         businessHours,
       }),
     [keywords, businessHours],

@@ -48,6 +48,7 @@ export function isOutsideBusinessHours(ms, businessHours = DEFAULT_BUSINESS_HOUR
 export function createSocEngine({
   keywords = [],
   commandKeywords = [],
+  artifactKeywords = [],
   businessHours = DEFAULT_BUSINESS_HOURS,
 } = {}) {
   const compile = (rules) =>
@@ -62,15 +63,18 @@ export function createSocEngine({
       .filter(Boolean)
 
   const compiled = compile(keywords)
-  // Command rules run in addition to the shared keywords, but only for
-  // command entries (kind === 'command') so shell tradecraft patterns never
-  // fire against URLs.
+  // Specialized rulesets run in addition to the shared keywords, but each only
+  // for its own entry kind, so shell/filesystem patterns never fire against
+  // URLs (and vice versa).
   const compiledCommands = compile(commandKeywords)
+  const compiledArtifacts = compile(artifactKeywords)
 
   /** Keyword rules matching URL + title (+ file name for downloads). */
   function matchKeywords(entry) {
     const haystack = `${entry.url ?? ''} ${entry.title ?? ''} ${entry.fileName ?? ''}`
-    const rules = entry.kind === 'command' ? [...compiled, ...compiledCommands] : compiled
+    let rules = compiled
+    if (entry.kind === 'command') rules = [...compiled, ...compiledCommands]
+    else if (entry.kind === 'endpoint') rules = [...compiled, ...compiledArtifacts]
     return rules.filter((rule) => rule.regex.test(haystack))
   }
 

@@ -6,6 +6,7 @@ import {
   CalendarClock,
   FileText,
   Flag,
+  HardDrive,
   ListTree,
   MonitorCog,
   Save,
@@ -20,6 +21,7 @@ import OsPicker from '../../layout/OsPicker.jsx'
 import { useIncidents, deriveIncidentName } from '../../../context/IncidentContext.jsx'
 import { BROWSERS } from '../../../config/browsers.js'
 import { SHELLS } from '../../../config/shells.js'
+import { ARTIFACT_CATEGORIES } from '../../../config/artifacts.js'
 import { normalizeOs } from '../../../config/os.js'
 import { formatDateTime } from '../../../utils/time.js'
 
@@ -113,7 +115,10 @@ export default function SummaryTab({ incident }) {
     const shells = incident.data?.commands?.shells ?? {}
     let commands = 0
     for (const s of SHELLS) commands += shells[s.id]?.commands?.length ?? 0
-    return { events, bookmarks, commands }
+    const cats = incident.data?.endpoint?.categories ?? {}
+    let artifacts = 0
+    for (const c of ARTIFACT_CATEGORIES) artifacts += cats[c.id]?.records?.length ?? 0
+    return { events, bookmarks, commands, artifacts }
   }, [incident.data])
 
   const flaggedCount = Object.keys(incident.flags ?? {}).length
@@ -206,9 +211,10 @@ export default function SummaryTab({ incident }) {
       </Card>
 
       {/* ---- 2. Recap StatCards ---- */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard icon={Activity} label="Browser events" value={recap.events} />
         <StatCard icon={Terminal} label="Commands" value={recap.commands} />
+        <StatCard icon={HardDrive} label="Endpoint artifacts" value={recap.artifacts} />
         <StatCard
           icon={Flag}
           label="Flagged"

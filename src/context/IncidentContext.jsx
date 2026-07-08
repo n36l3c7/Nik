@@ -21,6 +21,12 @@ import {
   buildDefaultShellData,
   buildDefaultShellsMap,
 } from '../config/shells.js'
+import {
+  ARTIFACT_CATEGORIES,
+  getArtifactCategoryById,
+  buildDefaultArtifactData,
+  buildDefaultArtifactsMap,
+} from '../config/artifacts.js'
 import { normalizeOs } from '../config/os.js'
 import { generateId } from '../utils/id.js'
 import { useAuth } from './AuthContext.jsx'
@@ -41,7 +47,7 @@ import { useAudit } from './AuditContext.jsx'
  *   suspiciousStart,      // Unix ms | null — start of suspicious activity
  *   suspiciousEnd,        // Unix ms | null — end of suspicious activity
  *   createdAt, updatedAt, createdBy,
- *   data: { summary, browser, commands, network },
+ *   data: { summary, browser, commands, endpoint, network },
  *   flags: { [key]: { key, browserId, section, eventType, title, url, time,
  *                     flaggedAt, flaggedBy, comments: [...] } },
  *   notes: [ { id, text, createdAt, updatedAt, author } ],
@@ -146,6 +152,25 @@ function normalizeCommandsData(raw) {
   }
 }
 
+/* ---- endpoint artifact data normalization (per-category) ---- */
+function normalizeEndpointData(raw) {
+  const fallback = { categories: buildDefaultArtifactsMap() }
+  if (!raw || typeof raw !== 'object') return fallback
+
+  const categories = buildDefaultArtifactsMap()
+  const source = raw.categories && typeof raw.categories === 'object' ? raw.categories : raw
+  for (const category of ARTIFACT_CATEGORIES) {
+    const rc = source[category.id]
+    if (rc && typeof rc === 'object') {
+      categories[category.id] = {
+        records: Array.isArray(rc.records) ? rc.records : [],
+        meta: rc.meta ?? null,
+      }
+    }
+  }
+  return { categories }
+}
+
 /** Normalize a loaded/imported incident (also migrates old "project" shape). */
 function normalizeIncident(raw) {
   const defaults = buildDefaultIncidentData()
@@ -155,6 +180,7 @@ function normalizeIncident(raw) {
   }
   data.browser = normalizeBrowserData(raw.data?.browser)
   data.commands = normalizeCommandsData(raw.data?.commands)
+  data.endpoint = normalizeEndpointData(raw.data?.endpoint)
 
   const host = typeof raw.host === 'string' ? raw.host.trim() : ''
   const username = typeof raw.username === 'string' ? raw.username.trim() : ''
@@ -546,6 +572,55 @@ export function IncidentProvider({ children }) {
     [audit, persist],
   )
 
+  /* ---- per-category endpoint artifact data (Endpoint Artifacts tab) ---- */
+
+  const updateArtifactData = useCallback(
+    (incidentId, categoryId, patch, auditInfo) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const endpoint = prev.data.endpoint
+      const current = endpoint.categories[categoryId] ?? buildDefaultArtifactData()
+      const updatedAt = nowIso()
+      const data = {
+        ...prev.data,
+        endpoint: {
+          ...endpoint,
+          categories: { ...endpoint.categories, [categoryId]: { ...current, ...patch } },
+        },
+      }
+      setIncidents((list) =>
+        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
+      )
+      if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
+      persist(incidentId, { data, updatedAt })
+    },
+    [audit, persist],
+  )
+
+  const clearArtifactData = useCallback(
+    (incidentId, categoryId) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const updatedAt = nowIso()
+      const data = {
+        ...prev.data,
+        endpoint: {
+          ...prev.data.endpoint,
+          categories: {
+            ...prev.data.endpoint.categories,
+            [categoryId]: buildDefaultArtifactData(),
+          },
+        },
+      }
+      setIncidents((list) =>
+        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
+      )
+      audit('endpoint.clear', `Cleared ${categoryId} artifacts`, { ...prev, updatedAt, data })
+      persist(incidentId, { data, updatedAt })
+    },
+    [audit, persist],
+  )
+
   /* ---- flagging (mark entries as part of malicious activity) ---- */
 
   /**
@@ -745,6 +820,8 @@ export function IncidentProvider({ children }) {
     updateShellData,
     setActiveShell,
     clearShellData,
+    updateArtifactData,
+    clearArtifactData,
     toggleFlag,
     addFlagComment,
     removeFlagComment,
