@@ -1,6 +1,7 @@
 import { lazy } from 'react'
-import { LayoutDashboard, Globe, Network, HardDrive } from 'lucide-react'
+import { LayoutDashboard, Globe, Network, TerminalSquare } from 'lucide-react'
 import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
+import { buildDefaultShellsMap, SHELLS } from './shells.js'
 
 /*
  * ============================================================================
@@ -24,10 +25,10 @@ const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'
 const BrowserAnalysisTab = lazy(
   () => import('../components/tabs/browser/BrowserAnalysisTab.jsx'),
 )
-const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
-const EndpointArtifactsTab = lazy(
-  () => import('../components/tabs/EndpointArtifactsTab.jsx'),
+const CommandHistoryTab = lazy(
+  () => import('../components/tabs/commands/CommandHistoryTab.jsx'),
 )
+const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
 
 export const ANALYSIS_TABS = [
   {
@@ -53,19 +54,25 @@ export const ANALYSIS_TABS = [
     },
   },
   {
+    id: 'commands',
+    label: 'Command History',
+    icon: TerminalSquare,
+    component: CommandHistoryTab,
+    dataKey: 'commands',
+    // Command data is organized PER SHELL (Bash/Zsh/Fish/PowerShell): each
+    // shell has its own commands array and imported-file metadata. See
+    // config/shells.js.
+    defaultData: {
+      activeShell: SHELLS[0].id,
+      shells: buildDefaultShellsMap(),
+    },
+  },
+  {
     id: 'network',
     label: 'Network Logs',
     icon: Network,
     component: NetworkLogsTab,
     dataKey: 'network',
-    defaultData: {},
-  },
-  {
-    id: 'endpoint',
-    label: 'Endpoint Artifacts',
-    icon: HardDrive,
-    component: EndpointArtifactsTab,
-    dataKey: 'endpoint',
     defaultData: {},
   },
 ]
