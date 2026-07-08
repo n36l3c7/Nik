@@ -90,6 +90,95 @@ export const DEFAULT_SUSPICIOUS_KEYWORDS = [
 ]
 
 /*
+ * COMMAND-LINE DETECTION RULES — FACTORY DEFAULTS.
+ *
+ * Applied by the "Command History" tab on top of the user-editable keyword
+ * rules above (which also run against commands, so custom keywords added in
+ * the Settings cover both browsers and shells). These defaults target
+ * shell/PowerShell tradecraft rather than web navigation. Same shape as the
+ * keyword rules; matched case-insensitively against the command line.
+ */
+export const DEFAULT_COMMAND_KEYWORDS = [
+  {
+    id: 'cmd-download-exec',
+    label: 'download → execute',
+    pattern: '(curl|wget)[^|;&]*\\|\\s*(ba|z|da)?sh\\b|iwr\\b.*\\|\\s*iex|iex\\s*\\(.*(iwr|downloadstring)',
+    severity: 'high',
+    description: 'Remote content downloaded and piped straight into a shell interpreter.',
+  },
+  {
+    id: 'cmd-encoded',
+    label: 'encoded payload',
+    pattern: 'base64\\s+(-d|--decode)|frombase64string|-encodedcommand|\\s-enc\\s|certutil.*-decode',
+    severity: 'high',
+    description: 'Base64/encoded payload decoding, a common obfuscation step.',
+  },
+  {
+    id: 'cmd-reverse-shell',
+    label: 'reverse shell',
+    pattern: '\\bnc(at)?\\b[^|]*\\s-e\\s|/dev/tcp/|bash\\s+-i\\s+>&|mkfifo\\s+/tmp|socat\\b.*exec',
+    severity: 'high',
+    description: 'Classic reverse/bind shell one-liners (netcat -e, /dev/tcp, socat exec…).',
+  },
+  {
+    id: 'cmd-history-tampering',
+    label: 'history tampering',
+    pattern: 'history\\s+-c|unset\\s+histfile|histsize=0|histfilesize=0|clear-history|rm\\s+[^|;&]*_history',
+    severity: 'high',
+    description: 'Attempt to clear or disable the shell history (anti-forensics).',
+  },
+  {
+    id: 'cmd-cred-access',
+    label: 'credential access',
+    pattern: '/etc/shadow|mimikatz|lazagne|secretsdump|hashdump|ntds\\.dit|lsass|procdump[^|;&]*lsass',
+    severity: 'high',
+    description: 'Access to credential stores (shadow file, LSASS, NTDS) or dumping tools.',
+  },
+  {
+    id: 'cmd-defense-evasion',
+    label: 'defense evasion',
+    pattern: 'set-mppreference|amsi(utils|\\.dll)|setenforce\\s+0|systemctl\\s+(stop|disable)\\s+(falcon|sentinel|cb|auditd)|auditctl\\s+-e\\s*0',
+    severity: 'high',
+    description: 'Disabling AV/EDR/auditing (Defender, SELinux, auditd, EDR services).',
+  },
+  {
+    id: 'cmd-priv-escalation',
+    label: 'privilege escalation',
+    pattern: 'sudo\\s+su\\b|chmod\\s+\\+s\\b|chmod\\s+4755|/etc/sudoers|pkexec\\b',
+    severity: 'medium',
+    description: 'Privilege escalation attempts (setuid bits, sudoers edits, pkexec).',
+  },
+  {
+    id: 'cmd-persistence',
+    label: 'persistence',
+    pattern: 'crontab\\s+-|authorized_keys|systemctl\\s+enable|schtasks\\b|reg\\s+add\\b[^|;&]*\\\\run|launchctl\\s+(load|bootstrap)',
+    severity: 'medium',
+    description: 'Persistence mechanisms: cron, SSH keys, services, Run keys, LaunchAgents.',
+  },
+  {
+    id: 'cmd-recon',
+    label: 'recon / scanning',
+    pattern: '\\bnmap\\b|masscan|whoami\\s*/priv|net\\s+group\\s+.domain|smbclient\\b|bloodhound|sharphound',
+    severity: 'medium',
+    description: 'Network/AD reconnaissance and scanning tools.',
+  },
+  {
+    id: 'cmd-exfil',
+    label: 'exfiltration',
+    pattern: '\\brclone\\b|curl\\s+(-T|--upload-file)|tar\\b[^|;&]*\\|\\s*ssh|scp\\s+[^|;&]*@',
+    severity: 'medium',
+    description: 'Bulk data transfer toward remote hosts (rclone, scp, curl upload, tar over ssh).',
+  },
+  {
+    id: 'cmd-destructive',
+    label: 'destructive',
+    pattern: 'rm\\s+-rf\\s+(/|~)(\\s|$)|mkfs\\.|dd\\s+if=[^|;&]*of=/dev/(sd|nvme|vd)|vssadmin\\s+delete\\s+shadows',
+    severity: 'high',
+    description: 'Destructive commands: filesystem wipe, shadow-copy deletion (ransomware pattern).',
+  },
+]
+
+/*
  * BUSINESS HOURS.
  *
  * Events that occur OUTSIDE this window are highlighted as a temporal anomaly

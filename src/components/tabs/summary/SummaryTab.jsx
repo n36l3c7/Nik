@@ -7,16 +7,20 @@ import {
   FileText,
   Flag,
   ListTree,
+  MonitorCog,
   Save,
   Server,
   StickyNote,
+  Terminal,
   User,
-  Zap,
 } from 'lucide-react'
 import { Button, Card, StatCard } from '../../ui/index.js'
 import IncidentTimeline from './IncidentTimeline.jsx'
+import OsPicker from '../../layout/OsPicker.jsx'
 import { useIncidents, deriveIncidentName } from '../../../context/IncidentContext.jsx'
 import { BROWSERS } from '../../../config/browsers.js'
+import { SHELLS } from '../../../config/shells.js'
+import { normalizeOs } from '../../../config/os.js'
 import { formatDateTime } from '../../../utils/time.js'
 
 /*
@@ -65,6 +69,7 @@ export default function SummaryTab({ incident }) {
   /* ---- editable draft, reseeded whenever the active incident changes ---- */
   const [host, setHost] = useState(incident.host)
   const [username, setUsername] = useState(incident.username)
+  const [os, setOs] = useState(normalizeOs(incident.os))
   const [start, setStart] = useState(msToLocalInput(incident.suspiciousStart))
   const [end, setEnd] = useState(msToLocalInput(incident.suspiciousEnd))
 
@@ -73,6 +78,7 @@ export default function SummaryTab({ incident }) {
     // (which bumps updatedAt but keeps the same id), so typed edits survive.
     setHost(incident.host)
     setUsername(incident.username)
+    setOs(normalizeOs(incident.os))
     setStart(msToLocalInput(incident.suspiciousStart))
     setEnd(msToLocalInput(incident.suspiciousEnd))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,25 +93,27 @@ export default function SummaryTab({ incident }) {
     updateIncidentMeta(incident.id, {
       host,
       username,
+      os,
       suspiciousStart: startMs,
       suspiciousEnd: endMs,
     })
   }
 
-  /* ---- recap figures across every browser ---- */
+  /* ---- recap figures across every browser and shell ---- */
   const recap = useMemo(() => {
     const browsers = incident.data?.browser?.browsers ?? {}
     let events = 0
     let bookmarks = 0
-    let shortcuts = 0
     for (const b of BROWSERS) {
       const bd = browsers[b.id]
       if (!bd) continue
       events += (bd.history?.length ?? 0) + (bd.downloads?.length ?? 0)
       bookmarks += bd.bookmarks?.length ?? 0
-      shortcuts += bd.shortcuts?.length ?? 0
     }
-    return { events, bookmarks, shortcuts }
+    const shells = incident.data?.commands?.shells ?? {}
+    let commands = 0
+    for (const s of SHELLS) commands += shells[s.id]?.commands?.length ?? 0
+    return { events, bookmarks, commands }
   }, [incident.data])
 
   const flaggedCount = Object.keys(incident.flags ?? {}).length
@@ -138,6 +146,14 @@ export default function SummaryTab({ incident }) {
               className={INPUT_CLASS}
             />
           </Field>
+
+          <div className="sm:col-span-2">
+            <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <MonitorCog className="h-3.5 w-3.5" aria-hidden="true" />
+              Host operating system
+            </span>
+            <OsPicker value={os} onChange={setOs} idPrefix="summary-os" />
+          </div>
 
           <Field id="incident-start" label="Suspicious activity — start" icon={CalendarClock}>
             <input
@@ -192,6 +208,7 @@ export default function SummaryTab({ incident }) {
       {/* ---- 2. Recap StatCards ---- */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard icon={Activity} label="Browser events" value={recap.events} />
+        <StatCard icon={Terminal} label="Commands" value={recap.commands} />
         <StatCard
           icon={Flag}
           label="Flagged"
@@ -199,7 +216,6 @@ export default function SummaryTab({ incident }) {
           tone={flaggedCount > 0 ? 'accent' : 'default'}
         />
         <StatCard icon={Bookmark} label="Bookmarks" value={recap.bookmarks} />
-        <StatCard icon={Zap} label="Shortcuts" value={recap.shortcuts} />
         <StatCard icon={StickyNote} label="Notes" value={notesCount} />
       </div>
 

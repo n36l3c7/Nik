@@ -1,9 +1,9 @@
-import { CornerDownRight, Download, Link2, Search } from 'lucide-react'
+import { CornerDownRight, Download, Link2, Search, Terminal } from 'lucide-react'
 import { EVENT_TYPE_META } from '../../../utils/events.js'
 
 /*
- * Event-type icon + label (visit / search / redirect / download), used inside
- * the tables to tell at a glance what kind of row each entry is.
+ * Event-type icon + label (visit / search / redirect / download / command),
+ * used inside the tables to tell at a glance what kind of row each entry is.
  */
 
 const ICONS = {
@@ -11,6 +11,7 @@ const ICONS = {
   search: Search,
   redirect: CornerDownRight,
   download: Download,
+  command: Terminal,
 }
 
 // Per-type icon colors, each with its dark counterpart.
@@ -19,6 +20,7 @@ const ICON_COLORS = {
   search: 'text-cyan-600 dark:text-cyan-400',
   redirect: 'text-amber-600 dark:text-amber-400',
   download: 'text-emerald-600 dark:text-emerald-400',
+  command: 'text-violet-600 dark:text-violet-400',
 }
 
 /**

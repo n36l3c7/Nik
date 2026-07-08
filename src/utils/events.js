@@ -34,6 +34,8 @@ export const EVENT_TYPE_META = {
   search: { label: 'Search', color: 'cyan' },
   redirect: { label: 'Redirect', color: 'amber' },
   download: { label: 'Download', color: 'emerald' },
+  // Terminal command from the Command History tab (shell history files).
+  command: { label: 'Command', color: 'violet' },
 }
 
 /** Classifies a history entry into an event type. */

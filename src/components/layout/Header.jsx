@@ -2,6 +2,7 @@ import { FolderOpen, LogOut, Moon, Settings, Sun, UserCircle } from 'lucide-reac
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useTheme } from '../../context/ThemeContext.jsx'
+import { getOsById } from '../../config/os.js'
 import { formatRelative } from '../../utils/time.js'
 
 /*
@@ -16,6 +17,8 @@ export default function Header({ onOpenSettings }) {
   const { theme, toggleTheme } = useTheme()
 
   const isDark = theme === 'dark'
+  const os = activeIncident ? getOsById(activeIncident.os) : null
+  const OsIcon = os?.icon
 
   // Shared styling for the square icon buttons on the right.
   const iconButton =
@@ -31,8 +34,11 @@ export default function Header({ onOpenSettings }) {
         <FolderOpen className="h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
         {activeIncident ? (
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold leading-tight text-slate-900 dark:text-white">
-              {activeIncident.name}
+            <h1 className="flex items-center gap-1.5 truncate text-lg font-semibold leading-tight text-slate-900 dark:text-white">
+              {OsIcon && (
+                <OsIcon className={`h-4 w-4 shrink-0 ${os.accent}`} aria-label={os.label} />
+              )}
+              <span className="truncate">{activeIncident.name}</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               updated {formatRelative(activeIncident.updatedAt)}

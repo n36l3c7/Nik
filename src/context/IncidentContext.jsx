@@ -15,6 +15,13 @@ import {
   buildDefaultBrowserData,
   buildDefaultBrowsersMap,
 } from '../config/browsers.js'
+import {
+  SHELLS,
+  getShellById,
+  buildDefaultShellData,
+  buildDefaultShellsMap,
+} from '../config/shells.js'
+import { normalizeOs } from '../config/os.js'
 import { generateId } from '../utils/id.js'
 import { useAuth } from './AuthContext.jsx'
 import { useAudit } from './AuditContext.jsx'
@@ -29,11 +36,12 @@ import { useAudit } from './AuditContext.jsx'
  * {
  *   id,
  *   host, username,       // identity (NOT unique; the id is the DB key)
+ *   os,                   // 'windows' | 'macos' | 'linux' — the host OS
  *   name,                 // derived: "host - username" | host | username
  *   suspiciousStart,      // Unix ms | null — start of suspicious activity
  *   suspiciousEnd,        // Unix ms | null — end of suspicious activity
  *   createdAt, updatedAt, createdBy,
- *   data: { summary, browser, network, endpoint },
+ *   data: { summary, browser, commands, network },
  *   flags: { [key]: { key, browserId, section, eventType, title, url, time,
  *                     flaggedAt, flaggedBy, comments: [...] } },
  *   notes: [ { id, text, createdAt, updatedAt, author } ],
@@ -114,6 +122,30 @@ function normalizeBrowserData(raw) {
   return fallback
 }
 
+/* ---- command data normalization (per-shell) ---- */
+function normalizeCommandsData(raw) {
+  const fallback = { activeShell: SHELLS[0].id, shells: buildDefaultShellsMap() }
+  if (!raw || typeof raw !== 'object') return fallback
+
+  const shells = buildDefaultShellsMap()
+  if (raw.shells && typeof raw.shells === 'object') {
+    for (const shell of SHELLS) {
+      const rs = raw.shells[shell.id]
+      if (rs && typeof rs === 'object') {
+        const def = buildDefaultShellData()
+        shells[shell.id] = {
+          commands: Array.isArray(rs.commands) ? rs.commands : [],
+          meta: { ...def.meta, ...(rs.meta ?? {}) },
+        }
+      }
+    }
+  }
+  return {
+    activeShell: getShellById(raw.activeShell) ? raw.activeShell : SHELLS[0].id,
+    shells,
+  }
+}
+
 /** Normalize a loaded/imported incident (also migrates old "project" shape). */
 function normalizeIncident(raw) {
   const defaults = buildDefaultIncidentData()
@@ -122,6 +154,7 @@ function normalizeIncident(raw) {
     ...(typeof raw.data === 'object' && raw.data !== null ? raw.data : {}),
   }
   data.browser = normalizeBrowserData(raw.data?.browser)
+  data.commands = normalizeCommandsData(raw.data?.commands)
 
   const host = typeof raw.host === 'string' ? raw.host.trim() : ''
   const username = typeof raw.username === 'string' ? raw.username.trim() : ''
@@ -137,6 +170,7 @@ function normalizeIncident(raw) {
     id: typeof raw.id === 'string' && raw.id ? raw.id : generateId(),
     host,
     username,
+    os: normalizeOs(raw.os),
     name,
     suspiciousStart: Number.isFinite(raw.suspiciousStart) ? raw.suspiciousStart : null,
     suspiciousEnd: Number.isFinite(raw.suspiciousEnd) ? raw.suspiciousEnd : null,
@@ -245,12 +279,13 @@ export function IncidentProvider({ children }) {
   /* ---- incident CRUD ---- */
 
   const createIncident = useCallback(
-    ({ host, username } = {}) => {
+    ({ host, username, os } = {}) => {
       const now = nowIso()
       const incident = {
         id: generateId(),
         host: (host ?? '').trim(),
         username: (username ?? '').trim(),
+        os: normalizeOs(os),
         name: deriveIncidentName(host, username),
         suspiciousStart: null,
         suspiciousEnd: null,
@@ -281,11 +316,13 @@ export function IncidentProvider({ children }) {
       if (!prev) return
       const host = patch.host !== undefined ? patch.host.trim() : prev.host
       const username = patch.username !== undefined ? patch.username.trim() : prev.username
+      const os = patch.os !== undefined ? normalizeOs(patch.os) : prev.os
       const updatedAt = nowIso()
       const next = {
         ...prev,
         host,
         username,
+        os,
         name: host || username ? deriveIncidentName(host, username) : prev.name,
         suspiciousStart:
           patch.suspiciousStart !== undefined ? patch.suspiciousStart : prev.suspiciousStart,
@@ -298,6 +335,7 @@ export function IncidentProvider({ children }) {
       persist(incidentId, {
         host: next.host,
         username: next.username,
+        os: next.os,
         name: next.name,
         suspiciousStart: next.suspiciousStart,
         suspiciousEnd: next.suspiciousEnd,
@@ -445,6 +483,64 @@ export function IncidentProvider({ children }) {
         updatedAt,
         data,
       })
+      persist(incidentId, { data, updatedAt })
+    },
+    [audit, persist],
+  )
+
+  /* ---- per-shell command data (Command History tab) ---- */
+
+  const updateShellData = useCallback(
+    (incidentId, shellId, patch, auditInfo) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const commands = prev.data.commands
+      const current = commands.shells[shellId] ?? buildDefaultShellData()
+      const updatedAt = nowIso()
+      const data = {
+        ...prev.data,
+        commands: {
+          ...commands,
+          shells: { ...commands.shells, [shellId]: { ...current, ...patch } },
+        },
+      }
+      setIncidents((list) =>
+        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
+      )
+      if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
+      persist(incidentId, { data, updatedAt })
+    },
+    [audit, persist],
+  )
+
+  // View preference only (like setActiveBrowser): never re-sends the data blob.
+  const setActiveShell = useCallback((incidentId, shellId) => {
+    setIncidents((prev) =>
+      prev.map((i) =>
+        i.id === incidentId
+          ? { ...i, data: { ...i.data, commands: { ...i.data.commands, activeShell: shellId } } }
+          : i,
+      ),
+    )
+  }, [])
+
+  const clearShellData = useCallback(
+    (incidentId, shellId) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const def = buildDefaultShellData()
+      const updatedAt = nowIso()
+      const data = {
+        ...prev.data,
+        commands: {
+          ...prev.data.commands,
+          shells: { ...prev.data.commands.shells, [shellId]: def },
+        },
+      }
+      setIncidents((list) =>
+        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
+      )
+      audit('command.clear', `Cleared ${shellId} command history`, { ...prev, updatedAt, data })
       persist(incidentId, { data, updatedAt })
     },
     [audit, persist],
@@ -646,6 +742,9 @@ export function IncidentProvider({ children }) {
     setActiveBrowser,
     clearBrowserData,
     removeBrowserSource,
+    updateShellData,
+    setActiveShell,
+    clearShellData,
     toggleFlag,
     addFlagComment,
     removeFlagComment,

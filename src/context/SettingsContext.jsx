@@ -9,6 +9,7 @@ import {
 } from 'react'
 import {
   DEFAULT_SUSPICIOUS_KEYWORDS,
+  DEFAULT_COMMAND_KEYWORDS,
   DEFAULT_BUSINESS_HOURS,
 } from '../config/detectionRules.js'
 import { api } from '../services/api.js'
@@ -203,7 +204,15 @@ export function useSettings() {
 export function useSocEngine() {
   const { keywords, businessHours } = useSettings()
   return useMemo(
-    () => createSocEngine({ keywords, businessHours }),
+    // The user-editable keywords apply to both browsers and commands; the
+    // built-in command ruleset adds shell/PowerShell tradecraft detection on
+    // top, only for command entries (see createSocEngine).
+    () =>
+      createSocEngine({
+        keywords,
+        commandKeywords: DEFAULT_COMMAND_KEYWORDS,
+        businessHours,
+      }),
     [keywords, businessHours],
   )
 }

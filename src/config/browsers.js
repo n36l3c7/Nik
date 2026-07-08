@@ -10,8 +10,9 @@ import { Chrome, Compass, Database, Flame, Globe, Shield, Bookmark, Zap } from '
  *  - id / label / icon:  identity and entry in the sub-tab bar
  *  - engine:             'chromium' | 'firefox' — determines the parsers used
  *  - accent:             accent color of the sub-tab (Tailwind classes)
- *  - profilePath:        path of the profile on Windows (for the "where to
- *                        find the files" note)
+ *  - profilePaths:       path of the profile PER OS (windows/macos/linux) for
+ *                        the "where to find the files" note, driven by the
+ *                        incident's host OS
  *  - artifacts:          which analysis sections to show
  *                        ('history' | 'downloads' | 'bookmarks' | 'shortcuts')
  *  - sources:            the FILES the user uploads. Each source produces one
@@ -20,17 +21,26 @@ import { Chrome, Compass, Database, Flame, Globe, Shield, Bookmark, Zap } from '
  *                        places.sqlite contains history, bookmarks and downloads).
  *
  * Source:
- *  { key, label, icon, accept, produces: string[], path, hint }
+ *  { key, label, icon, accept, produces: string[], paths, hint }
  *   - key:      unique key within the browser (also used for metadata/removal)
  *   - produces: artifacts populated by parsing this file
- *   - path:     typical path of the file (shown in the note)
+ *   - paths:    typical path of the file per OS (shown in the note)
  *   - hint:     short description of the file
  */
+
+/** Append `fileName` to every per-OS base path (joiner inferred per path). */
+function joinPaths(bases, fileName) {
+  const paths = {}
+  for (const [os, base] of Object.entries(bases)) {
+    paths[os] = base + fileName
+  }
+  return paths
+}
 
 /* ---- Chromium-based browsers (Chrome, Edge, Brave, Opera) ---------------- */
 // They all share Chrome's SQLite schema (urls/visits/downloads) and the JSON
 // format of the Bookmarks, so they reuse the same sources.
-function chromiumSources(base) {
+function chromiumSources(bases) {
   return [
     {
       key: 'history',
@@ -38,7 +48,7 @@ function chromiumSources(base) {
       icon: Database,
       accept: '', // Chrome's files have no extension
       produces: ['history', 'downloads'],
-      path: base + 'History',
+      paths: joinPaths(bases, 'History'),
       hint: "SQLite database 'History': contains browsing history AND downloads. Copy the file (without extension).",
     },
     {
@@ -47,7 +57,7 @@ function chromiumSources(base) {
       icon: Bookmark,
       accept: '.json,.csv',
       produces: ['bookmarks'],
-      path: base + 'Bookmarks',
+      paths: joinPaths(bases, 'Bookmarks'),
       hint: "JSON file 'Bookmarks' (without extension) or a JSON/CSV export.",
     },
     {
@@ -56,7 +66,7 @@ function chromiumSources(base) {
       icon: Zap,
       accept: '',
       produces: ['shortcuts'],
-      path: base + 'Shortcuts',
+      paths: joinPaths(bases, 'Shortcuts'),
       hint: "SQLite database 'Shortcuts': shortcuts typed in the omnibox.",
     },
   ]
@@ -65,7 +75,7 @@ function chromiumSources(base) {
 /* ---- Firefox ------------------------------------------------------------- */
 // Firefox uses a single `places.sqlite` database (moz_* schema) that gathers
 // history, bookmarks and downloads; Shortcuts do not exist.
-function firefoxSources(base) {
+function firefoxSources(bases) {
   return [
     {
       key: 'places',
@@ -73,10 +83,37 @@ function firefoxSources(base) {
       icon: Database,
       accept: '', // may have a .sqlite extension: we do not restrict
       produces: ['history', 'bookmarks', 'downloads'],
-      path: base + 'places.sqlite',
+      paths: joinPaths(bases, 'places.sqlite'),
       hint: 'Firefox SQLite database: history, bookmarks and downloads together.',
     },
   ]
+}
+
+/* Per-OS profile directories for each browser. */
+const CHROME_PROFILES = {
+  windows: '%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\',
+  macos: '~/Library/Application Support/Google/Chrome/Default/',
+  linux: '~/.config/google-chrome/Default/',
+}
+const FIREFOX_PROFILES = {
+  windows: '%APPDATA%\\Mozilla\\Firefox\\Profiles\\<profile>.default-release\\',
+  macos: '~/Library/Application Support/Firefox/Profiles/<profile>.default-release/',
+  linux: '~/.mozilla/firefox/<profile>.default-release/',
+}
+const EDGE_PROFILES = {
+  windows: '%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default\\',
+  macos: '~/Library/Application Support/Microsoft Edge/Default/',
+  linux: '~/.config/microsoft-edge/Default/',
+}
+const BRAVE_PROFILES = {
+  windows: '%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\Default\\',
+  macos: '~/Library/Application Support/BraveSoftware/Brave-Browser/Default/',
+  linux: '~/.config/BraveSoftware/Brave-Browser/Default/',
+}
+const OPERA_PROFILES = {
+  windows: '%APPDATA%\\Opera Software\\Opera Stable\\',
+  macos: '~/Library/Application Support/com.operasoftware.Opera/',
+  linux: '~/.config/opera/',
 }
 
 export const BROWSERS = [
@@ -86,9 +123,9 @@ export const BROWSERS = [
     icon: Chrome,
     engine: 'chromium',
     accent: 'text-amber-500',
-    profilePath: '%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\',
+    profilePaths: CHROME_PROFILES,
     artifacts: ['history', 'downloads', 'bookmarks', 'shortcuts'],
-    sources: chromiumSources('%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\'),
+    sources: chromiumSources(CHROME_PROFILES),
   },
   {
     id: 'firefox',
@@ -96,9 +133,9 @@ export const BROWSERS = [
     icon: Flame,
     engine: 'firefox',
     accent: 'text-orange-500',
-    profilePath: '%APPDATA%\\Mozilla\\Firefox\\Profiles\\<profile>.default-release\\',
+    profilePaths: FIREFOX_PROFILES,
     artifacts: ['history', 'downloads', 'bookmarks'],
-    sources: firefoxSources('%APPDATA%\\Mozilla\\Firefox\\Profiles\\<profile>.default-release\\'),
+    sources: firefoxSources(FIREFOX_PROFILES),
   },
   {
     id: 'edge',
@@ -106,9 +143,9 @@ export const BROWSERS = [
     icon: Globe,
     engine: 'chromium',
     accent: 'text-sky-500',
-    profilePath: '%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default\\',
+    profilePaths: EDGE_PROFILES,
     artifacts: ['history', 'downloads', 'bookmarks', 'shortcuts'],
-    sources: chromiumSources('%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default\\'),
+    sources: chromiumSources(EDGE_PROFILES),
   },
   {
     id: 'brave',
@@ -116,9 +153,9 @@ export const BROWSERS = [
     icon: Shield,
     engine: 'chromium',
     accent: 'text-orange-600',
-    profilePath: '%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\Default\\',
+    profilePaths: BRAVE_PROFILES,
     artifacts: ['history', 'downloads', 'bookmarks', 'shortcuts'],
-    sources: chromiumSources('%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\Default\\'),
+    sources: chromiumSources(BRAVE_PROFILES),
   },
   {
     id: 'opera',
@@ -126,11 +163,16 @@ export const BROWSERS = [
     icon: Compass,
     engine: 'chromium',
     accent: 'text-red-500',
-    profilePath: '%APPDATA%\\Opera Software\\Opera Stable\\',
+    profilePaths: OPERA_PROFILES,
     artifacts: ['history', 'downloads', 'bookmarks', 'shortcuts'],
-    sources: chromiumSources('%APPDATA%\\Opera Software\\Opera Stable\\'),
+    sources: chromiumSources(OPERA_PROFILES),
   },
 ]
+
+/** Path of a source file for a given OS (windows fallback for legacy data). */
+export function sourcePathFor(source, osId) {
+  return source.paths?.[osId] ?? source.paths?.windows ?? ''
+}
 
 /** All supported artifacts (keys of a browser's data arrays). */
 export const BROWSER_ARTIFACT_KEYS = ['history', 'downloads', 'bookmarks', 'shortcuts']

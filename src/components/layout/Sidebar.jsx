@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { formatRelative } from '../../utils/time.js'
+import { getOsById } from '../../config/os.js'
 import { Button, Modal } from '../ui/index.js'
 import BackupModal from '../backup/BackupModal.jsx'
 
@@ -59,9 +60,10 @@ function RowAction({ icon: Icon, label, danger = false, onClick }) {
  *   onCreateIncident: () => void,  // opens the "New incident" modal owned by App
  *   onOpenAudit: () => void,       // opens the Audit log modal
  *   onOpenUsers: () => void,       // opens the User management modal
+ *   width?: number,                // pixel width (resizable), defaults to 288
  * }} props
  */
-export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers }) {
+export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, width = 288 }) {
   const {
     incidents,
     activeIncidentId,
@@ -117,7 +119,10 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers }) 
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <aside
+      style={{ width }}
+      className="flex h-full shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+    >
       {/* ----- Brand ----- */}
       <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-600 text-white">
@@ -161,6 +166,8 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers }) 
           <ul className="space-y-1">
             {sortedIncidents.map((incident) => {
               const isActive = incident.id === activeIncidentId
+              const os = getOsById(incident.os)
+              const OsIcon = os?.icon
               return (
                 <li key={incident.id} className="group relative">
                   {/* Clickable row: selects the incident */}
@@ -178,13 +185,19 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers }) 
                   >
                     <span
                       className={[
-                        'block truncate pr-14 text-sm font-semibold',
+                        'flex items-center gap-1.5 truncate pr-14 text-sm font-semibold',
                         isActive
                           ? 'text-cyan-700 dark:text-cyan-300'
                           : 'text-slate-700 dark:text-slate-200',
                       ].join(' ')}
                     >
-                      {incident.name}
+                      {OsIcon && (
+                        <OsIcon
+                          className={`h-3.5 w-3.5 shrink-0 ${os.accent}`}
+                          aria-label={os.label}
+                        />
+                      )}
+                      <span className="truncate">{incident.name}</span>
                     </span>
                     <span className="block text-[11px] text-slate-500 dark:text-slate-400">
                       updated {formatRelative(incident.updatedAt)}

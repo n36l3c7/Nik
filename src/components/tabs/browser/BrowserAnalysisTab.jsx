@@ -17,7 +17,13 @@ import ShortcutsSection from './ShortcutsSection.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { parseBrowserSource } from '../../../services/fileParsers.js'
 import { getDemoBrowserData } from '../../../services/demoData.js'
-import { BROWSERS, getBrowserById, buildDefaultBrowserData } from '../../../config/browsers.js'
+import {
+  BROWSERS,
+  getBrowserById,
+  buildDefaultBrowserData,
+  sourcePathFor,
+} from '../../../config/browsers.js'
+import { getOsById, DEFAULT_OS } from '../../../config/os.js'
 
 /*
  * "Browser Forensics" tab: one SUB-TAB per known browser (Chrome, Firefox,
@@ -62,6 +68,10 @@ export default function BrowserAnalysisTab({ incident }) {
     ? browserData.activeBrowser
     : BROWSERS[0].id
   const browser = getBrowserById(activeBrowserId)
+
+  // Host OS drives the artifact paths shown in the "where to find files" note.
+  const os = getOsById(incident.os) ? incident.os : DEFAULT_OS
+  const osLabel = getOsById(os)?.label ?? os
 
   // Data of the active browser (defensive fallback for partial incidents).
   const current = browserData.browsers[activeBrowserId] ?? buildDefaultBrowserData(browser)
@@ -222,14 +232,14 @@ export default function BrowserAnalysisTab({ incident }) {
           <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
           <div className="min-w-0 space-y-1.5">
             <p className="font-medium text-slate-700 dark:text-slate-200">
-              Where to find {browser.label} files (Windows)
+              Where to find {browser.label} files ({osLabel})
             </p>
             <ul className="space-y-1">
               {missingSources.map((source) => (
                 <li key={source.key} className="text-xs text-slate-600 dark:text-slate-400">
                   <span className="font-medium">{source.label}:</span>{' '}
                   <span className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                    {source.path}
+                    {sourcePathFor(source, os)}
                   </span>
                 </li>
               ))}
@@ -281,7 +291,7 @@ export default function BrowserAnalysisTab({ incident }) {
               description={source.hint}
               icon={source.icon}
               accept={source.accept}
-              pathHint={source.path}
+              pathHint={sourcePathFor(source, os)}
               meta={current.meta?.[source.key] ?? null}
               loading={!!loading[source.key]}
               error={errors[source.key] ?? null}

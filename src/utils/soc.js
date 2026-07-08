@@ -45,21 +45,33 @@ export function isOutsideBusinessHours(ms, businessHours = DEFAULT_BUSINESS_HOUR
  * The regexes are compiled once; rules with an invalid pattern are silently
  * ignored (the Settings UI validates the input).
  */
-export function createSocEngine({ keywords = [], businessHours = DEFAULT_BUSINESS_HOURS } = {}) {
-  const compiled = keywords
-    .map((rule) => {
-      try {
-        return { ...rule, regex: new RegExp(rule.pattern, 'i') }
-      } catch {
-        return null // invalid pattern: rule skipped
-      }
-    })
-    .filter(Boolean)
+export function createSocEngine({
+  keywords = [],
+  commandKeywords = [],
+  businessHours = DEFAULT_BUSINESS_HOURS,
+} = {}) {
+  const compile = (rules) =>
+    rules
+      .map((rule) => {
+        try {
+          return { ...rule, regex: new RegExp(rule.pattern, 'i') }
+        } catch {
+          return null // invalid pattern: rule skipped
+        }
+      })
+      .filter(Boolean)
+
+  const compiled = compile(keywords)
+  // Command rules run in addition to the shared keywords, but only for
+  // command entries (kind === 'command') so shell tradecraft patterns never
+  // fire against URLs.
+  const compiledCommands = compile(commandKeywords)
 
   /** Keyword rules matching URL + title (+ file name for downloads). */
   function matchKeywords(entry) {
     const haystack = `${entry.url ?? ''} ${entry.title ?? ''} ${entry.fileName ?? ''}`
-    return compiled.filter((rule) => rule.regex.test(haystack))
+    const rules = entry.kind === 'command' ? [...compiled, ...compiledCommands] : compiled
+    return rules.filter((rule) => rule.regex.test(haystack))
   }
 
   /**

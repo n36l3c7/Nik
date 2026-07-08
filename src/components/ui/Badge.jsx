@@ -20,6 +20,9 @@ const COLORS = {
   emerald:
     'bg-emerald-50 text-emerald-700 border-emerald-200 ' +
     'dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30',
+  violet:
+    'bg-violet-50 text-violet-700 border-violet-200 ' +
+    'dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/30',
 }
 
 export default function Badge({ color = 'slate', children, title, className = '' }) {

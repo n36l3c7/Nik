@@ -1,4 +1,4 @@
-import { Suspense, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, FolderOpen, Plus, RefreshCw, ServerCrash } from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
@@ -7,6 +7,8 @@ import { Button, EmptyState, Modal, Spinner } from './components/ui/index.js'
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
+import OsPicker from './components/layout/OsPicker.jsx'
+import { DEFAULT_OS } from './config/os.js'
 import SettingsModal from './components/settings/SettingsModal.jsx'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
@@ -30,6 +32,53 @@ import AuditLogView from './components/audit/AuditLogView.jsx'
  * Layout: fixed sidebar (incident management) + right column with header,
  * analysis tab bar and a scrollable content area.
  */
+
+// Sidebar width bounds. The maximum is a quarter of the viewport (computed at
+// drag time); this is the hard floor so the incident list stays usable.
+const SIDEBAR_MIN_WIDTH = 240
+const SIDEBAR_DEFAULT_WIDTH = 288
+const SIDEBAR_WIDTH_KEY = 'csap.sidebarWidth'
+
+/** Clamp a sidebar width to [MIN, 25% of the viewport]. */
+function clampSidebarWidth(width) {
+  const max = Math.max(SIDEBAR_MIN_WIDTH, Math.round(window.innerWidth / 4))
+  return Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), max)
+}
+
+/**
+ * Draggable divider between the sidebar and the main column. Reports the new
+ * width (already clamped) to the parent while the pointer moves.
+ */
+function SidebarResizer({ onResize }) {
+  const onPointerDown = (event) => {
+    event.preventDefault()
+    const move = (e) => onResize(clampSidebarWidth(e.clientX))
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      onPointerDown={onPointerDown}
+      className="group relative z-10 w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-cyan-500/30"
+      title="Drag to resize the sidebar"
+    >
+      {/* Wider invisible hit area for easier grabbing. */}
+      <span className="absolute inset-y-0 -left-1 -right-1" />
+    </div>
+  )
+}
 
 /** Full-screen boot splash shown while the session probe is in flight. */
 function ConnectingScreen() {
@@ -81,10 +130,30 @@ export default function App() {
   const [createOpen, setCreateOpen] = useState(false)
   const [host, setHost] = useState('')
   const [username, setUsername] = useState('')
+  const [os, setOs] = useState(DEFAULT_OS)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [usersOpen, setUsersOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
+
+  // Resizable sidebar width (persisted, re-clamped on load and on window resize).
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
+    return Number.isFinite(stored) && stored > 0 ? stored : SIDEBAR_DEFAULT_WIDTH
+  })
+  const handleSidebarResize = useCallback((width) => {
+    setSidebarWidth(width)
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width))
+  }, [])
+
+  // Keep the sidebar within a quarter of the viewport when the window shrinks.
+  useEffect(() => {
+    const onResize = () => setSidebarWidth((w) => clampSidebarWidth(w))
+    window.addEventListener('resize', onResize)
+    // Clamp once on mount too (stored value may exceed the current viewport).
+    setSidebarWidth((w) => clampSidebarWidth(w))
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const activeTab = getTabById(activeTabId) ?? ANALYSIS_TABS[0]
   const ActiveTabComponent = activeTab.component
@@ -100,13 +169,14 @@ export default function App() {
   const openCreateModal = () => {
     setHost('')
     setUsername('')
+    setOs(DEFAULT_OS)
     setCreateOpen(true)
   }
 
   const handleCreateSubmit = (event) => {
     event.preventDefault()
     if (!host.trim() && !username.trim()) return // need host and/or username
-    createIncident({ host, username })
+    createIncident({ host, username, os })
     setCreateOpen(false)
   }
 
@@ -125,10 +195,12 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
+        width={sidebarWidth}
         onCreateIncident={openCreateModal}
         onOpenAudit={() => setAuditOpen(true)}
         onOpenUsers={() => setUsersOpen(true)}
       />
+      <SidebarResizer onResize={handleSidebarResize} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header onOpenSettings={() => setSettingsOpen(true)} />
@@ -219,6 +291,15 @@ export default function App() {
               placeholder="e.g. m.rossi"
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
             />
+          </div>
+          <div>
+            <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Host operating system
+            </span>
+            <OsPicker value={os} onChange={setOs} idPrefix="new-os" />
+            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+              Drives the suggested artifact paths and the available shells.
+            </p>
           </div>
         </form>
       </Modal>
