@@ -1,25 +1,45 @@
 # CSAP — Cyber Security Analysis Platform
 
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker%20%2F%20Podman-Compose-2496ED?logo=docker&logoColor=white)
+![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+
 A full-stack web platform for analysing digital-forensics artifacts, laid out
 like a SOC dashboard. Analysts organise their work into **incidents** (forensic
-cases identified by a host and/or username), import browser artifacts, flag
-suspicious events and build a timeline of the malicious activity — with every
-action attributed to a named analyst and recorded in a global audit log.
+cases identified by a host and/or username), import artifacts from a machine,
+flag suspicious events and build a timeline of the malicious activity — with
+every action attributed to a named analyst and recorded in a global audit log.
 
 **Key traits:**
 
 - **Client-side artifact parsing** — SQLite artifacts (Chromium `History`,
   Firefox `places.sqlite`, …) are parsed **in the analyst's browser** via
-  WebAssembly (`sql.js`). Raw forensic files are never uploaded anywhere: only
-  the normalized entries reach the server.
+  WebAssembly (`sql.js`); shell histories and DFIR CSV/JSON exports are parsed
+  the same way. Raw forensic files are never uploaded anywhere: only the
+  normalized entries reach the server.
 - **Centralized storage** — incidents, users, settings and the audit log live
   in PostgreSQL behind a FastAPI REST API. Every analyst who signs in sees the
   same data, from any machine, and work is attributable across the team.
+- **Host-OS aware** — each incident is tied to a host OS (Windows / macOS /
+  Linux) that drives the suggested artifact paths, the available shells and the
+  incident icon.
 - **Browser forensics** — one sub-tab per browser (Chrome, Firefox, Edge,
   Brave, Opera): browsing history, downloads, bookmarks and omnibox shortcuts,
   with event classification (visit / search / redirect).
-- **SOC detection engine** — editable suspicious-keyword rules and a
-  configurable business-hours window highlight suspicious events automatically.
+- **Command history** — one sub-tab per shell (Bash, Zsh, Fish, PowerShell):
+  parses the native history files and detects shell/PowerShell tradecraft.
+- **Endpoint artifacts** — program execution, persistence, file & folder
+  access and removable devices, imported from DFIR tool CSV/JSON exports with
+  OS-specific guidance on where to find each source.
+- **Super-timeline** — every timestamped event across all tabs merged into one
+  chronological, filterable view.
+- **SOC detection engine** — editable suspicious-keyword rules plus built-in
+  command and endpoint rulesets, and a configurable business-hours window,
+  highlight suspicious events automatically.
 - **Case management** — per-event flags with comments, free-form notes, a
   vertical incident timeline, and self-contained JSON export/import for
   exchanging cases between analysts.
@@ -28,7 +48,8 @@ action attributed to a named analyst and recorded in a global audit log.
   later, e.g. when moving the deployment to another machine.
 - **Authentication & audit** — session-based login (bcrypt hashes, httpOnly
   cookie), `admin` / `analyst` roles, and a global audit trail of every
-  meaningful action.
+  meaningful action. Detection rules, business hours, accounts and the audit
+  log all live in one sectioned **Settings** panel.
 
 ### Stack
 
@@ -603,10 +624,13 @@ change.
     ├── config/                     # ★ DECLARATIVE EXTENSION POINTS ★
     │   ├── tabs.js                 # ANALYSIS_TABS registry: the ONLY file to touch
     │   │                           #   to register a new tab. buildDefaultIncidentData().
-    │   ├── browsers.js             # BROWSER registry (Chrome/Firefox/Edge/Brave/Opera):
-    │   │                           #   engine, file sources, paths, artifacts.
-    │   └── detectionRules.js       # Factory keyword rules and business hours
-    │                               #   (managed at runtime from Settings).
+    │   ├── os.js                   # Host OS registry (Windows/macOS/Linux)
+    │   ├── browsers.js             # BROWSER registry: engine, file sources, per-OS paths
+    │   ├── shells.js               # SHELL registry (Bash/Zsh/Fish/PowerShell): per-OS paths
+    │   ├── artifacts.js            # ENDPOINT ARTIFACT registry (execution/persistence/
+    │   │                           #   fileaccess/usb): columns, CSV aliases, per-OS sources
+    │   └── detectionRules.js       # Factory keyword + command + artifact rules, business
+    │                               #   hours (keywords managed at runtime from Settings).
     │
     ├── context/
     │   ├── ThemeContext.jsx        # useTheme() → { theme, setTheme, toggleTheme }
@@ -624,29 +648,37 @@ change.
     │   │                           #   SQLite/JSON/CSV + lenient field mapping
     │   ├── sqliteParser.js         # Chromium (History/Shortcuts) and Firefox (places.sqlite)
     │   │                           #   parsers via sql.js (lazy WASM)
-    │   └── demoData.js             # getDemoBrowserData(browser): demonstration dataset
+    │   ├── shellParsers.js         # parseShellHistory(file, shell): bash/zsh/fish/PSReadLine
+    │   ├── artifactParsers.js      # parseArtifactFile(file, category): CSV/JSON lenient map
+    │   └── demoData.js             # getDemoBrowserData/getDemoShellData/getDemoArtifactData
     │
     ├── utils/
     │   ├── id.js                   # generateId() → crypto.randomUUID (with fallback)
     │   ├── time.js                 # webkitToMs, firefoxToMs, anyToMs, formatDateTime…
     │   ├── url.js                  # extractDomain, extractSearchQuery, topDomains…
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
-    │   └── soc.js                  # createSocEngine({keywords, businessHours}) → analyze()
+    │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
+    │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
+    │   ├── timeline.js             # buildTimelineEvents (merge all timestamped events)
+    │   └── soc.js                  # createSocEngine({keywords, commandKeywords,
+    │                               #   artifactKeywords, businessHours}) → analyze()
     │
     └── components/
         ├── ui/                     # Reusable UI kit (Button, Card, Badge, Modal, DataTable,
         │                           #   EmptyState, SearchInput, Select, StatCard, Spinner)
-        ├── auth/                   # FirstRunSetup, LoginScreen, UserManagement
-        ├── audit/                  # AuditLogView (read-only modal)
+        ├── auth/                   # FirstRunSetup, LoginScreen
         ├── backup/                 # BackupModal (full export/restore, admin only)
-        ├── settings/               # SettingsModal (keywords + business hours)
+        ├── settings/               # SettingsPanel + sections/ (detection rules, business
+        │                           #   hours, accounts, audit log)
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker
         └── tabs/
             ├── NetworkLogsTab.jsx      # Placeholder, ready for expansion
             ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
             ├── browser/                # BrowserAnalysisTab, FileUploadZone, EventsSection,
             │                           #   filters, widgets, bookmarks/shortcuts tables
-            └── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
+            ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
+            ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
+            └── timeline/               # TimelineTab (the super-timeline)
 ```
 
 Each incident is tied to a single host and carries an **operating system**
@@ -667,8 +699,31 @@ shells, credential access, defense evasion, persistence, exfiltration, history
 tampering…) — can be flagged, searched, filtered by the suspicious window, and
 appear on the incident timeline exactly like browser events.
 
+The **Endpoint Artifacts** tab covers host forensic artifacts that neither the
+browser nor the shell captures, one sub-tab per category (see
+`src/config/artifacts.js`): **Program Execution** (Prefetch, Amcache,
+ShimCache, UserAssist, BAM), **Persistence** (Run keys, Scheduled Tasks,
+services, cron, systemd, LaunchAgents, SSH keys), **File & Folder Access** (LNK,
+JumpLists, ShellBags, RecentDocs) and **USB & Devices** (USBSTOR, setupapi).
+Each category imports a CSV/JSON export from a DFIR tool (KAPE, Eric Zimmerman's
+tools, RegRipper…) with lenient column mapping, shows per-OS guidance on where
+to find the source, and runs the shared keywords plus a built-in artifact
+ruleset (`DEFAULT_ARTIFACT_KEYWORDS`: execution from temp/user-writable paths,
+LOLBins, double extensions, suspicious persistence, known offensive tool names).
+
+The **Timeline** tab is the super-timeline: it merges every *timestamped* event
+from the Browser, Command History and Endpoint Artifacts tabs into a single
+chronological, filterable table (by source, detection and time window). Entries
+without a reliable timestamp (e.g. PSReadLine commands) are intentionally left
+out. Any row can be flagged straight from the timeline.
+
 The **sidebar is resizable**: drag its right edge to widen the incident list up
 to a quarter of the window; the width is remembered per browser.
+
+Platform configuration lives in one sectioned **Settings** panel (opened from
+the header, or deep-linked from the sidebar's Accounts / Audit buttons):
+detection rules (with the built-in rulesets shown for reference), business
+hours, account management and the audit log.
 
 ### 3.4 State and the data model
 
@@ -701,6 +756,9 @@ const {
   updateShellData,        // (id, shellId, patch, auditInfo?) => void — per-shell merge
   setActiveShell,         // (id, shellId) => void — switch shell sub-tab (local only)
   clearShellData,         // (id, shellId) => void — clear ONE shell's commands
+
+  updateArtifactData,     // (id, categoryId, patch, auditInfo?) => void — per-category merge
+  clearArtifactData,      // (id, categoryId) => void — clear ONE endpoint category
 
   toggleFlag,             // (id, flaggable) => void — flag/unflag an entry
   addFlagComment,         // (id, flagKey, text) => void
