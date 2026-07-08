@@ -28,7 +28,10 @@ services:
   api:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg://csap:${DB_PASSWORD:-csap}@db:5432/csap
+      # Passed as separate parts: the backend assembles the URL itself with
+      # proper escaping, so DB_PASSWORD may contain %, @, : and friends.
+      DB_HOST: db
+      DB_PASSWORD: ${DB_PASSWORD:-csap}
       SECRET_KEY: ${SECRET_KEY:-please-change-this-secret}
       # HTTP quick-start on :8080 → cookie cannot be Secure. Set to true once you
       # put the app behind HTTPS (see the README).

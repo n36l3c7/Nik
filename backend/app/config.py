@@ -9,6 +9,7 @@ defaults to a local SQLite file so the backend boots without PostgreSQL.
 from __future__ import annotations
 
 import os
+from urllib.parse import quote_plus
 
 # Load a local .env file if python-dotenv is installed. This is optional: in
 # production the environment is typically populated by systemd / the container
@@ -19,6 +20,33 @@ try:  # pragma: no cover - trivial import guard
     load_dotenv()
 except Exception:  # pragma: no cover - dotenv is optional
     pass
+
+
+def _database_url() -> str:
+    """Resolve the database connection URL.
+
+    Precedence:
+
+    1. An explicit ``DATABASE_URL`` is used verbatim (dev SQLite, custom DSNs).
+    2. Otherwise, when ``DB_PASSWORD`` is set, a PostgreSQL URL is assembled
+       from the ``DB_*`` parts with each credential percent-escaped — so the
+       password may freely contain ``%``, ``@``, ``:``, ``/`` and friends,
+       which would corrupt a URL spliced together by hand.
+    3. Otherwise fall back to the local SQLite dev database.
+    """
+    explicit = os.getenv("DATABASE_URL")
+    if explicit:
+        return explicit
+
+    password = os.getenv("DB_PASSWORD")
+    if password:
+        user = quote_plus(os.getenv("DB_USER", "csap"))
+        host = os.getenv("DB_HOST", "localhost")
+        port = os.getenv("DB_PORT", "5432")
+        name = os.getenv("DB_NAME", "csap")
+        return f"postgresql+psycopg://{user}:{quote_plus(password)}@{host}:{port}/{name}"
+
+    return "sqlite:///./csap.db"
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -51,9 +79,10 @@ class Settings:
 
     def __init__(self) -> None:
         # Database connection string. Defaults to a local SQLite file so the
-        # backend runs out-of-the-box in development. In production set this to
-        # a PostgreSQL URL, e.g. ``postgresql+psycopg://csap:PASS@localhost/csap``.
-        self.DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./csap.db")
+        # backend runs out-of-the-box in development. In production either set
+        # a full PostgreSQL URL or the individual DB_* parts (safer: the
+        # password gets escaped automatically) — see _database_url().
+        self.DATABASE_URL: str = _database_url()
 
         # Secret key. Reserved for signing/entropy purposes. Session tokens are
         # random hex, but a stable secret is still good practice in production.

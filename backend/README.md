@@ -61,6 +61,7 @@ All settings come from environment variables (see `.env.example`):
 | Variable            | Default                 | Purpose                                            |
 | ------------------- | ----------------------- | -------------------------------------------------- |
 | `DATABASE_URL`      | `sqlite:///./csap.db`   | SQLAlchemy URL. Prod: `postgresql+psycopg://…`.    |
+| `DB_PASSWORD` (+ `DB_USER`/`DB_HOST`/`DB_PORT`/`DB_NAME`) | — | Alternative to `DATABASE_URL`: PostgreSQL URL assembled by the app with escaping (password may contain any character). |
 | `SECRET_KEY`        | `dev-insecure-change-me`| Signing/entropy secret. Set a strong value in prod.|
 | `COOKIE_SECURE`     | `true`                  | Mark the session cookie Secure (HTTPS only).       |
 | `SESSION_TTL_HOURS` | `12`                    | Session lifetime in hours.                         |

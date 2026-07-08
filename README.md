@@ -157,7 +157,8 @@ is no `tailwind.config.js` and no extra setup step.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `sqlite:///./csap.db` | SQLAlchemy URL. Production: `postgresql+psycopg://csap:PASS@host/csap`. |
+| `DATABASE_URL` | `sqlite:///./csap.db` | SQLAlchemy URL. Production: `postgresql+psycopg://csap:PASS@host/csap` (password must be URL-encoded). |
+| `DB_PASSWORD` + `DB_USER`/`DB_HOST`/`DB_PORT`/`DB_NAME` | — | Alternative to `DATABASE_URL`: the app assembles the PostgreSQL URL itself with escaping, so the password may contain any character. |
 | `SECRET_KEY` | `dev-insecure-change-me` | Signing/entropy secret. Set a long random value in production. |
 | `COOKIE_SECURE` | `true` | `Secure` flag on the session cookie (HTTPS only). Set `false` only for plain-HTTP local dev. |
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
