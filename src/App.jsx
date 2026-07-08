@@ -9,11 +9,9 @@ import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
 import OsPicker from './components/layout/OsPicker.jsx'
 import { DEFAULT_OS } from './config/os.js'
-import SettingsModal from './components/settings/SettingsModal.jsx'
+import SettingsPanel from './components/settings/SettingsPanel.jsx'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
-import UserManagement from './components/auth/UserManagement.jsx'
-import AuditLogView from './components/audit/AuditLogView.jsx'
 
 /*
  * ============================================================================
@@ -132,9 +130,14 @@ export default function App() {
   const [username, setUsername] = useState('')
   const [os, setOs] = useState(DEFAULT_OS)
 
+  // Unified settings panel: a single dialog with sections. `settingsSection`
+  // lets the header/sidebar deep-link into Detection rules / Accounts / Audit.
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [usersOpen, setUsersOpen] = useState(false)
-  const [auditOpen, setAuditOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState('detection')
+  const openSettings = (section = 'detection') => {
+    setSettingsSection(section)
+    setSettingsOpen(true)
+  }
 
   // Resizable sidebar width (persisted, re-clamped on load and on window resize).
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -197,13 +200,13 @@ export default function App() {
       <Sidebar
         width={sidebarWidth}
         onCreateIncident={openCreateModal}
-        onOpenAudit={() => setAuditOpen(true)}
-        onOpenUsers={() => setUsersOpen(true)}
+        onOpenAudit={() => openSettings('audit')}
+        onOpenUsers={() => openSettings('accounts')}
       />
       <SidebarResizer onResize={handleSidebarResize} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header onOpenSettings={() => setSettingsOpen(true)} />
+        <Header onOpenSettings={() => openSettings('detection')} />
         <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />
 
         {storageError && (
@@ -304,9 +307,12 @@ export default function App() {
         </form>
       </Modal>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <UserManagement open={usersOpen} onClose={() => setUsersOpen(false)} />
-      <AuditLogView open={auditOpen} onClose={() => setAuditOpen(false)} />
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        section={settingsSection}
+        onSectionChange={setSettingsSection}
+      />
     </div>
   )
 }
