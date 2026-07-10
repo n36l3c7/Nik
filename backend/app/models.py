@@ -89,10 +89,18 @@ class Setting(Base):
 class ApiKey(Base):
     """An API key for external, browser-less access.
 
-    Only the bcrypt ``key_hash`` is stored; the plaintext key is shown to the
+    Only the SHA-256 ``key_hash`` is stored; the plaintext key is shown to the
     admin exactly once at creation. ``prefix`` is the first few characters
-    (safe to display) so a key can be recognised in listings. A revoked key has
-    a non-null ``revoked_at`` and is rejected.
+    (safe to display) so a key can be recognised in listings.
+
+    Permissions are set by the admin at creation and tied to the key:
+    - ``role``   'admin' | 'analyst' — an admin key can reach the admin-data
+      endpoints (users, backup, keys); an analyst key cannot.
+    - ``scopes`` comma-separated subset of read/write/admin controlling which
+      operations the key may perform.
+    - ``expires_at`` optional ISO timestamp after which the key is rejected.
+
+    A revoked key has a non-null ``revoked_at`` and is rejected.
     """
 
     __tablename__ = "api_keys"
@@ -101,7 +109,10 @@ class ApiKey(Base):
     label: Mapped[str] = mapped_column(String, nullable=False)
     prefix: Mapped[str] = mapped_column(String, nullable=False)
     key_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False, default="analyst")
+    scopes: Mapped[str] = mapped_column(String, nullable=False, default="read,write")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    expires_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_used_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revoked_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

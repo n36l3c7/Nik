@@ -111,9 +111,19 @@ class SettingsOut(BaseModel):
 # API keys
 # ---------------------------------------------------------------------------
 class ApiKeyCreate(BaseModel):
-    """Request body to create an API key."""
+    """Request body to create an API key.
+
+    The admin creating the key sets its permissions: ``role`` ('admin' or
+    'analyst') and ``scopes`` (subset of read/write). An admin key can reach the
+    admin-data endpoints; scopes further restrict an analyst key (e.g. a
+    read-only key with ``scopes: ["read"]``). ``expiresInDays`` optionally sets
+    an expiry.
+    """
 
     label: str
+    role: Optional[str] = "analyst"
+    scopes: Optional[list[str]] = None
+    expiresInDays: Optional[int] = None
 
 
 class ApiKeyOut(BaseModel):
@@ -122,8 +132,11 @@ class ApiKeyOut(BaseModel):
     id: str
     label: str
     prefix: str
+    role: str
+    scopes: list[str]
     createdAt: str
     createdBy: Optional[str] = None
+    expiresAt: Optional[str] = None
     lastUsedAt: Optional[str] = None
 
 

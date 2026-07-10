@@ -55,6 +55,9 @@ export default function ApiKeysSection() {
 
   const [keys, setKeys] = useState([])
   const [label, setLabel] = useState('')
+  const [role, setRole] = useState('analyst')
+  const [readOnly, setReadOnly] = useState(false)
+  const [expiresDays, setExpiresDays] = useState('')
   const [created, setCreated] = useState(null) // plaintext key shown once
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -79,11 +82,19 @@ export default function ApiKeysSection() {
     setBusy(true)
     setError(null)
     try {
-      const res = await api.post('/keys', { label: name })
+      const payload = { label: name, role }
+      // Admin keys always get full scopes; for analyst keys, offer read-only.
+      if (role !== 'admin' && readOnly) payload.scopes = ['read']
+      const days = Number(expiresDays)
+      if (Number.isFinite(days) && days > 0) payload.expiresInDays = days
+      const res = await api.post('/keys', payload)
       setCreated(res.key)
       setLabel('')
+      setRole('analyst')
+      setReadOnly(false)
+      setExpiresDays('')
       await reload()
-      log({ actor: currentUser?.username, action: 'apikey.create', details: `Created API key "${name}"` })
+      log({ actor: currentUser?.username, action: 'apikey.create', details: `Created ${role} API key "${name}"` })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -138,17 +149,20 @@ export default function ApiKeysSection() {
           {keys.map((key) => (
             <li key={key.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
                     {key.label}
                   </span>
                   <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                     {key.prefix}…
                   </code>
+                  <Badge color={key.role === 'admin' ? 'cyan' : 'slate'}>{key.role}</Badge>
+                  {!(key.scopes || []).includes('write') && <Badge color="amber">read-only</Badge>}
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                   Created {formatRelative(key.createdAt)}
                   {key.lastUsedAt ? ` · last used ${formatRelative(key.lastUsedAt)}` : ' · never used'}
+                  {key.expiresAt ? ` · expires ${formatRelative(key.expiresAt)}` : ''}
                 </p>
               </div>
               <Button
@@ -169,23 +183,71 @@ export default function ApiKeysSection() {
         </p>
       )}
 
-      <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-2">
-        <div className="flex-1">
-          <label htmlFor="new-key-label" className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-            New key label
-          </label>
-          <input
-            id="new-key-label"
-            type="text"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. ingest-pipeline"
-            className={INPUT_CLASS}
-          />
+      <form onSubmit={handleCreate} className="space-y-3 rounded-lg border border-dashed border-slate-300 p-3 dark:border-slate-700">
+        <p className="text-xs font-medium text-slate-600 dark:text-slate-300">Create a key</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[10rem] flex-1">
+            <label htmlFor="new-key-label" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              Label
+            </label>
+            <input
+              id="new-key-label"
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. ingest-pipeline"
+              className={INPUT_CLASS}
+            />
+          </div>
+          <div>
+            <label htmlFor="new-key-role" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              Permissions
+            </label>
+            <select
+              id="new-key-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className={INPUT_CLASS}
+            >
+              <option value="analyst">Analyst (incidents, notes, uploads)</option>
+              <option value="admin">Admin (also users &amp; backup)</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="new-key-expiry" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+              Expires (days)
+            </label>
+            <input
+              id="new-key-expiry"
+              type="number"
+              min="1"
+              value={expiresDays}
+              onChange={(e) => setExpiresDays(e.target.value)}
+              placeholder="never"
+              className={`${INPUT_CLASS} w-28`}
+            />
+          </div>
         </div>
-        <Button type="submit" icon={Plus} disabled={busy || !label.trim()}>
-          {busy ? 'Creating…' : 'Create key'}
-        </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label
+            className={[
+              'flex items-center gap-2 text-sm',
+              role === 'admin' ? 'text-slate-400 dark:text-slate-600' : 'text-slate-600 dark:text-slate-300',
+            ].join(' ')}
+          >
+            <input
+              type="checkbox"
+              checked={readOnly}
+              disabled={role === 'admin'}
+              onChange={(e) => setReadOnly(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-600 dark:bg-slate-800"
+            />
+            Read-only (no writes)
+          </label>
+          <Button type="submit" icon={Plus} disabled={busy || !label.trim()}>
+            {busy ? 'Creating…' : 'Create key'}
+          </Button>
+        </div>
       </form>
     </section>
   )

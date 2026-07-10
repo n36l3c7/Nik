@@ -17,10 +17,11 @@ from ..db import get_db
 from ..models import User
 from ..schemas import UserCreate, UserEnvelope, UsersEnvelope
 from ..security import (
-    current_user,
+    Principal,
+    admin_principal,
     hash_password,
     now_iso,
-    require_admin,
+    optional_principal,
     user_to_dict,
 )
 
@@ -30,28 +31,6 @@ router = APIRouter(prefix="/users", tags=["users"])
 MIN_PASSWORD_LENGTH = 8
 
 
-def _resolve_optional_user(request: Request, db: OrmSession) -> User | None:
-    """Resolve the session cookie to a user without raising when absent.
-
-    Used by the create-user endpoint, which must handle both the unauthenticated
-    first-run case and the authenticated admin-gated case.
-    """
-    from datetime import datetime, timezone
-
-    from ..models import Session as SessionModel
-    from ..security import _parse_iso  # reuse the same parser
-
-    token = request.cookies.get("nik_session")
-    if not token:
-        return None
-    session = db.get(SessionModel, token)
-    if session is None:
-        return None
-    if _parse_iso(session.expires_at) <= datetime.now(timezone.utc):
-        return None
-    return db.get(User, session.user_id)
-
-
 @router.post("", response_model=UserEnvelope, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: UserCreate, request: Request, db: OrmSession = Depends(get_db)
@@ -59,7 +38,7 @@ def create_user(
     """Create a user.
 
     - Zero users exist  → allowed without auth; role forced to 'admin'.
-    - Otherwise         → requires an admin session.
+    - Otherwise         → requires admin permissions (admin session OR admin key).
     """
     username = body.username.strip()
     if not username:
@@ -78,14 +57,13 @@ def create_user(
         role = "admin"
         created_by = None
     else:
-        # Admin session required.
-        actor = _resolve_optional_user(request, db)
-        if actor is None:
+        caller = optional_principal(request, db)
+        if caller is None:
             raise HTTPException(status_code=401, detail="Not authenticated")
-        if actor.role != "admin":
+        if caller.role != "admin" or "admin" not in caller.scopes:
             raise HTTPException(status_code=403, detail="Admin privileges required")
         role = body.role if body.role in {"admin", "analyst"} else "analyst"
-        created_by = actor.username
+        created_by = caller.actor
 
     # Case-insensitive duplicate check.
     existing = db.scalar(
@@ -109,9 +87,9 @@ def create_user(
 
 @router.get("", response_model=UsersEnvelope)
 def list_users(
-    _user: User = Depends(current_user), db: OrmSession = Depends(get_db)
+    _admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
-    """List all users (any authenticated user)."""
+    """List all users (admin session or admin key)."""
     users = db.scalars(select(User).order_by(User.created_at.asc())).all()
     return {"users": [user_to_dict(u) for u in users]}
 
@@ -119,10 +97,10 @@ def list_users(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: str,
-    admin: User = Depends(require_admin),
+    admin: Principal = Depends(admin_principal),
     db: OrmSession = Depends(get_db),
 ):
-    """Delete a user (admin only).
+    """Delete a user (admin session or admin key).
 
     Refuses to delete the last remaining user or the caller's own account.
     """
@@ -131,7 +109,9 @@ def delete_user(
         # Idempotent-ish: nothing to delete.
         raise HTTPException(status_code=404, detail="User not found")
 
-    if target.id == admin.id:
+    # A signed-in admin can't delete their own account; an API key has no
+    # "own account", so this only applies to session callers.
+    if admin.user is not None and target.id == admin.user.id:
         raise HTTPException(status_code=400, detail="You cannot delete yourself")
 
     total = db.scalar(select(func.count()).select_from(User)) or 0

@@ -24,7 +24,7 @@ from ..db import get_db
 from ..models import AuditEntry, Incident
 from ..parsing.registry import apply_upload
 from ..schemas import NoteIn
-from ..security import Principal, now_iso, principal
+from ..security import Principal, now_iso, principal, writer_principal
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
@@ -100,7 +100,7 @@ def get_incident(
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_incident(
     doc: dict[str, Any] = Body(...),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Create (or upsert) an incident from a full client-built document.
@@ -132,7 +132,7 @@ def create_incident(
 def patch_incident(
     incident_id: str,
     partial: dict[str, Any] = Body(...),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Shallow-merge changed top-level keys into the stored document.
@@ -155,7 +155,7 @@ def patch_incident(
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_incident(
     incident_id: str,
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ):
     """Delete an incident (idempotent-ish; 204 regardless if it existed)."""
@@ -182,7 +182,7 @@ async def upload_artifact(
     source: str | None = Query(None, description="Source key (browser/endpoint), e.g. history"),
     shell: str | None = Query(None, description="Shell id (tab=commands), e.g. bash"),
     category: str | None = Query(None, description="Category id (tab=endpoint), e.g. persistence"),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Upload a raw artifact file; the server parses it and merges the result.
@@ -236,7 +236,7 @@ def _save_doc(db: OrmSession, row: Incident, doc: dict) -> None:
 def add_note(
     incident_id: str,
     body: NoteIn,
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Append a free-form note to the incident timeline."""
@@ -259,7 +259,7 @@ def edit_note(
     incident_id: str,
     note_id: str,
     body: NoteIn,
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Edit the text of an existing note."""
@@ -286,7 +286,7 @@ def edit_note(
 def delete_note(
     incident_id: str,
     note_id: str,
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ):
     """Remove a note from the incident."""

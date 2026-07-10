@@ -31,6 +31,11 @@ and upload raw artifact files (parsed server-side).
 or an **API key**. Send the key in the `X-API-Key` header. Create keys in the
 app under *Settings → API keys* (admin only), then click **Authorize** above to
 try the endpoints here.
+
+**Key permissions.** Each key is created with a role and scopes bound to it:
+an *analyst* key can work with incidents, notes and uploads; an *admin* key can
+also manage users and backups. A read-only key (`scopes: ["read"]`) cannot
+mutate anything. Keys may carry an expiry.
 """.strip()
 
 TAGS_METADATA = [
@@ -38,11 +43,11 @@ TAGS_METADATA = [
     {"name": "incidents/notes", "description": "Add, edit and remove incident notes."},
     {"name": "incidents/upload", "description": "Upload raw artifact files; parsed server-side."},
     {"name": "settings", "description": "Shared detection rules and business hours (read via key)."},
-    {"name": "api-keys", "description": "Manage API keys (admin session only)."},
+    {"name": "api-keys", "description": "Manage API keys (admin session or admin key). Set each key's role/scopes/expiry."},
     {"name": "auth", "description": "Session login/logout (browser)."},
-    {"name": "users", "description": "User management (admin session only)."},
+    {"name": "users", "description": "User management (admin session or admin key)."},
     {"name": "audit", "description": "Global audit log."},
-    {"name": "backup", "description": "Full platform export/restore (admin session only)."},
+    {"name": "backup", "description": "Full platform export/restore (admin session or admin key)."},
     {"name": "health", "description": "Liveness probe."},
 ]
 

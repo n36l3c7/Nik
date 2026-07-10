@@ -35,7 +35,7 @@ from ..config import settings as app_settings
 from ..db import get_db
 from ..models import AuditEntry, Incident, Setting, User
 from ..models import Session as SessionModel
-from ..security import now_iso, require_admin
+from ..security import Principal, admin_principal, now_iso
 from .incidents import _sync_columns
 from .settings import SETTINGS_ID
 
@@ -63,9 +63,9 @@ def _log(db: OrmSession, actor: str, action: str, details: str) -> None:
 
 @router.get("/export")
 def export_backup(
-    admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+    caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
-    """Return a full backup envelope of the platform (admin only).
+    """Return a full backup envelope of the platform (admin session or admin key).
 
     The envelope contains password hashes: treat the downloaded file as a
     secret, like any database dump.
@@ -75,7 +75,7 @@ def export_backup(
     audit = db.scalars(select(AuditEntry).order_by(AuditEntry.at.desc())).all()
     setting_row = db.get(Setting, SETTINGS_ID)
 
-    _log(db, admin.username, "backup.export", "Exported a full platform backup")
+    _log(db, caller.actor, "backup.export", "Exported a full platform backup")
     db.commit()
 
     return {
@@ -156,22 +156,33 @@ def _validate_envelope(body: dict[str, Any]) -> tuple[list, list, list, dict | N
 @router.post("/import")
 def import_backup(
     body: dict[str, Any] = Body(...),
-    admin: User = Depends(require_admin),
+    caller: Principal = Depends(admin_principal),
     db: OrmSession = Depends(get_db),
     nik_session: str | None = Cookie(default=None),
 ) -> dict:
-    """Restore a full backup, replacing ALL current data (admin only)."""
+    """Restore a full backup, replacing ALL current data (admin session or key).
+
+    A signed-in admin is preserved and kept logged in across the restore. An
+    admin **API key** has no user account to preserve — the restore simply
+    replaces the users from the backup; the key itself (in a separate table) is
+    untouched, so it keeps working afterwards.
+    """
     users, incidents, audit, settings_doc = _validate_envelope(body)
 
-    # Snapshot the importing admin before wiping the tables.
-    keep_admin = {
-        "id": admin.id,
-        "username": admin.username,
-        "password_hash": admin.password_hash,
-        "role": admin.role,
-        "created_at": admin.created_at,
-        "created_by": admin.created_by,
-    }
+    # Snapshot the importing admin (session callers only) before wiping.
+    session_admin = caller.user
+    keep_admin = (
+        {
+            "id": session_admin.id,
+            "username": session_admin.username,
+            "password_hash": session_admin.password_hash,
+            "role": session_admin.role,
+            "created_at": session_admin.created_at,
+            "created_by": session_admin.created_by,
+        }
+        if session_admin is not None
+        else None
+    )
 
     try:
         # 1. Wipe everything. Sessions first (FK on users). The Core deletes
@@ -199,40 +210,42 @@ def import_backup(
             db.add(row)
             imported_by_name[row.username.lower()] = row
 
-        # 3. Keep the importing admin signed in and never locked out.
-        session_user = imported_by_name.get(keep_admin["username"].lower())
-        if session_user is None:
-            # Their account is not in the backup: re-insert it unchanged
-            # (with a fresh id if an imported user already took theirs).
-            admin_id = keep_admin["id"]
-            if any(str(u["id"]) == admin_id for u in users):
-                admin_id = str(uuid.uuid4())
-            session_user = User(
-                id=admin_id,
-                username=keep_admin["username"],
-                password_hash=keep_admin["password_hash"],
-                role="admin",
-                created_at=keep_admin["created_at"],
-                created_by=keep_admin["created_by"],
-            )
-            db.add(session_user)
-
-        # 4. Re-attach the current session token to the surviving account so
-        #    the cookie keeps working after the restore (fresh expiry). Flush
-        #    the users first: sessions.user_id has a FK on users.id and no ORM
-        #    relationship orders the inserts for us.
-        db.flush()
-        if nik_session:
-            created = datetime.now(timezone.utc)
-            expires = created + timedelta(hours=app_settings.SESSION_TTL_HOURS)
-            db.add(
-                SessionModel(
-                    token=nik_session,
-                    user_id=session_user.id,
-                    created_at=created.isoformat(),
-                    expires_at=expires.isoformat(),
+        # 3. Keep the importing admin signed in and never locked out — but only
+        #    for a session caller. An admin API key has no account to preserve;
+        #    the key itself lives in a separate table and survives the wipe.
+        if keep_admin is not None:
+            session_user = imported_by_name.get(keep_admin["username"].lower())
+            if session_user is None:
+                # Their account is not in the backup: re-insert it unchanged
+                # (with a fresh id if an imported user already took theirs).
+                admin_id = keep_admin["id"]
+                if any(str(u["id"]) == admin_id for u in users):
+                    admin_id = str(uuid.uuid4())
+                session_user = User(
+                    id=admin_id,
+                    username=keep_admin["username"],
+                    password_hash=keep_admin["password_hash"],
+                    role="admin",
+                    created_at=keep_admin["created_at"],
+                    created_by=keep_admin["created_by"],
                 )
-            )
+                db.add(session_user)
+
+            # 4. Re-attach the current session token to the surviving account so
+            #    the cookie keeps working after the restore (fresh expiry). Flush
+            #    the users first: sessions.user_id has a FK on users.id.
+            db.flush()
+            if nik_session:
+                created = datetime.now(timezone.utc)
+                expires = created + timedelta(hours=app_settings.SESSION_TTL_HOURS)
+                db.add(
+                    SessionModel(
+                        token=nik_session,
+                        user_id=session_user.id,
+                        created_at=created.isoformat(),
+                        expires_at=expires.isoformat(),
+                    )
+                )
 
         # 5. Incidents (mirror the scalar columns used for listing/sorting).
         for doc in incidents:
@@ -269,7 +282,7 @@ def import_backup(
         # 8. Record the restore itself in the (restored) audit log.
         _log(
             db,
-            keep_admin["username"],
+            caller.actor,
             "backup.import",
             f"Restored a full backup: {len(users)} users, "
             f"{len(incidents)} incidents, {len(seen_audit)} audit entries",
