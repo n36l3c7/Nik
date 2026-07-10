@@ -11,13 +11,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application code.
+# Application code + migrations + entrypoint.
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x entrypoint.sh
 
 EXPOSE 8000
 
-# Worker count comes from the WEB_CONCURRENCY env var (gunicorn honours it;
-# default 2). Access logging is handled by the app's own request middleware.
-ENV WEB_CONCURRENCY=2
+# Alembic owns the schema in the container (the entrypoint runs migrations),
+# so the app's startup create_all is disabled here. Worker count comes from
+# WEB_CONCURRENCY (gunicorn honours it); access logs from the app middleware.
+ENV WEB_CONCURRENCY=2 \
+    RUN_CREATE_ALL=false
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", \
      "--bind", "0.0.0.0:8000"]
