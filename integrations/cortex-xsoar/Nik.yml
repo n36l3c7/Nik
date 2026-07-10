@@ -1,0 +1,317 @@
+commonfields:
+  id: Nik
+  version: -1
+name: Nik
+display: Nik Forensic Platform
+category: Forensics & Malware Analysis
+description: Query and manage incidents in the Nik forensic analysis platform via its REST API — list/read/create/update/delete incidents, add and remove notes, upload raw artifact files for server-side parsing, and read the audit log and detection settings.
+configuration:
+- display: Server URL (e.g. https://nik.example.internal:8443)
+  name: url
+  type: 0
+  required: true
+  additionalinfo: The base URL of the Nik web app. The API lives under /api on the same host.
+- display: API Key
+  name: credentials
+  type: 9
+  required: true
+  displaypassword: API Key
+  hiddenusername: true
+  additionalinfo: A Nik API key (Settings → API keys). Analyst scope covers incidents/notes/uploads; admin scope is needed for admin-data commands.
+- display: Trust any certificate (not secure)
+  name: insecure
+  type: 8
+  required: false
+  additionalinfo: Check when Nik uses a self-signed certificate.
+- display: Use system proxy settings
+  name: proxy
+  type: 8
+  required: false
+- display: Fetch incidents
+  name: isFetch
+  type: 8
+  required: false
+- display: First fetch time
+  name: first_fetch
+  type: 0
+  defaultvalue: 3 days
+  required: false
+  additionalinfo: How far back to pull incidents on the first fetch (e.g. "3 days", "12 hours").
+- display: Maximum incidents per fetch
+  name: max_fetch
+  type: 0
+  defaultvalue: "50"
+  required: false
+- display: Incident type
+  name: incidentType
+  type: 13
+  required: false
+script:
+  script: '-'
+  type: python
+  subtype: python3
+  dockerimage: demisto/python3:3.11.10.116949
+  isfetch: true
+  runonce: false
+  commands:
+  - name: nik-get-incidents
+    description: List incidents, newest-updated first. Use view=summary for light rows (no heavy document body); view=full to return the whole document.
+    arguments:
+    - name: query
+      description: Free-text match against name/host/username.
+    - name: host
+      description: Filter by host (substring, case-insensitive).
+    - name: username
+      description: Filter by username (substring, case-insensitive).
+    - name: view
+      description: 'summary = light rows; full = whole documents.'
+      auto: PREDEFINED
+      predefined:
+      - summary
+      - full
+      defaultValue: summary
+    - name: limit
+      description: Maximum number of incidents to return.
+      defaultValue: "50"
+    - name: offset
+      description: Number of incidents to skip (pagination).
+    outputs:
+    - contextPath: Nik.Incident.id
+      description: Incident id (UUID v4).
+      type: String
+    - contextPath: Nik.Incident.name
+      description: Display name (host - username).
+      type: String
+    - contextPath: Nik.Incident.host
+      description: Host of the incident.
+      type: String
+    - contextPath: Nik.Incident.username
+      description: Username of the incident.
+      type: String
+    - contextPath: Nik.Incident.os
+      description: Host operating system (windows/macos/linux).
+      type: String
+    - contextPath: Nik.Incident.createdAt
+      description: Creation time (ISO-8601).
+      type: Date
+    - contextPath: Nik.Incident.updatedAt
+      description: Last-update time (ISO-8601).
+      type: Date
+  - name: nik-get-incident
+    description: Return a single incident's full document (identity, flags, notes, and all parsed artifact data).
+    arguments:
+    - name: incident_id
+      description: The incident id.
+      required: true
+    outputs:
+    - contextPath: Nik.Incident.id
+      description: Incident id.
+      type: String
+    - contextPath: Nik.Incident.name
+      description: Display name.
+      type: String
+    - contextPath: Nik.Incident.host
+      description: Host.
+      type: String
+    - contextPath: Nik.Incident.username
+      description: Username.
+      type: String
+    - contextPath: Nik.Incident.os
+      description: Host OS.
+      type: String
+    - contextPath: Nik.Incident.suspiciousStart
+      description: Start of the suspicious activity window (Unix ms).
+      type: Number
+    - contextPath: Nik.Incident.suspiciousEnd
+      description: End of the suspicious activity window (Unix ms).
+      type: Number
+    - contextPath: Nik.Incident.createdAt
+      description: Creation time.
+      type: Date
+    - contextPath: Nik.Incident.updatedAt
+      description: Last-update time.
+      type: Date
+    - contextPath: Nik.Incident.createdBy
+      description: Creator (username or api:<label>).
+      type: String
+  - name: nik-create-incident
+    description: Create a new incident. Returns the created document (the server assigns a UUID v4 id).
+    arguments:
+    - name: name
+      description: Display name. If omitted, Nik derives it from host/username.
+    - name: host
+      description: Host of the incident (e.g. WKS-FINANCE-01).
+    - name: username
+      description: Username of the incident (e.g. m.rossi).
+    - name: os
+      description: Host operating system.
+      auto: PREDEFINED
+      predefined:
+      - windows
+      - macos
+      - linux
+      defaultValue: windows
+    outputs:
+    - contextPath: Nik.Incident.id
+      description: Id of the created incident.
+      type: String
+    - contextPath: Nik.Incident.name
+      description: Display name.
+      type: String
+    - contextPath: Nik.Incident.os
+      description: Host OS.
+      type: String
+    - contextPath: Nik.Incident.createdAt
+      description: Creation time.
+      type: Date
+  - name: nik-update-incident
+    description: Edit an incident's identity/window fields.
+    arguments:
+    - name: incident_id
+      description: The incident id.
+      required: true
+    - name: host
+      description: New host value.
+    - name: username
+      description: New username value.
+    - name: os
+      description: New host OS.
+      auto: PREDEFINED
+      predefined:
+      - windows
+      - macos
+      - linux
+    - name: suspicious_start
+      description: Start of the suspicious activity window (Unix epoch milliseconds).
+    - name: suspicious_end
+      description: End of the suspicious activity window (Unix epoch milliseconds).
+    outputs:
+    - contextPath: Nik.Incident.id
+      description: Incident id.
+      type: String
+    - contextPath: Nik.Incident.updatedAt
+      description: Last-update time.
+      type: Date
+  - name: nik-delete-incident
+    description: Delete an incident permanently.
+    arguments:
+    - name: incident_id
+      description: The incident id.
+      required: true
+  - name: nik-add-note
+    description: Append a free-form note to an incident's timeline.
+    arguments:
+    - name: incident_id
+      description: The incident id.
+      required: true
+    - name: text
+      description: The note text.
+      required: true
+    outputs:
+    - contextPath: Nik.Note.id
+      description: The created note id.
+      type: String
+    - contextPath: Nik.Note.incidentId
+      description: Incident the note belongs to.
+      type: String
+    - contextPath: Nik.Note.text
+      description: The note text.
+      type: String
+    - contextPath: Nik.Note.author
+      description: Author (username or api:<label>).
+      type: String
+    - contextPath: Nik.Note.createdAt
+      description: Creation time.
+      type: Date
+  - name: nik-delete-note
+    description: Remove a note from an incident.
+    arguments:
+    - name: incident_id
+      description: The incident id.
+      required: true
+    - name: note_id
+      description: The note id.
+      required: true
+  - name: nik-upload-artifact
+    description: Upload a raw artifact file (a War Room file entry) to an incident; Nik parses it server-side and merges the result. Routing mirrors the app's tabs.
+    arguments:
+    - name: incident_id
+      description: The incident id.
+      required: true
+    - name: entry_id
+      description: War Room entry id of the file to upload.
+      required: true
+    - name: tab
+      description: Which analysis area the file belongs to.
+      required: true
+      auto: PREDEFINED
+      predefined:
+      - browser
+      - commands
+      - endpoint
+    - name: browser
+      description: 'Browser id (tab=browser): chrome/firefox/edge/brave/opera.'
+    - name: shell
+      description: 'Shell id (tab=commands): bash/zsh/fish/powershell.'
+    - name: category
+      description: 'Category id (tab=endpoint): execution/persistence/fileaccess/usb.'
+    - name: source
+      description: 'Source key (tab=browser or endpoint), e.g. history / places / cron.'
+    outputs:
+    - contextPath: Nik.Upload.incidentId
+      description: Incident the file was merged into.
+      type: String
+    - contextPath: Nik.Upload.rows
+      description: Number of records parsed and merged.
+      type: Number
+    - contextPath: Nik.Upload.format
+      description: Detected format (sqlite/json/csv/text/xbel/…).
+      type: String
+    - contextPath: Nik.Upload.target
+      description: The data slot it was merged into (e.g. browser/chrome/history).
+      type: String
+  - name: nik-get-audit
+    description: Read the global audit log, newest-first (filterable).
+    arguments:
+    - name: query
+      description: Free-text match against actor/action/details/incident.
+    - name: actor
+      description: Filter by actor (substring).
+    - name: incident_id
+      description: Filter by incident id.
+    - name: limit
+      description: Maximum number of entries to return.
+      defaultValue: "100"
+    outputs:
+    - contextPath: Nik.AuditEntry.id
+      description: Entry id.
+      type: String
+    - contextPath: Nik.AuditEntry.at
+      description: Timestamp (ISO-8601).
+      type: Date
+    - contextPath: Nik.AuditEntry.actor
+      description: Who performed the action (username or api:<label>).
+      type: String
+    - contextPath: Nik.AuditEntry.action
+      description: Action code (e.g. incident.create, note.add).
+      type: String
+    - contextPath: Nik.AuditEntry.details
+      description: Human-readable details.
+      type: String
+    - contextPath: Nik.AuditEntry.incidentId
+      description: Related incident id, if any.
+      type: String
+    - contextPath: Nik.AuditEntry.incidentName
+      description: Related incident name, if any.
+      type: String
+  - name: nik-get-settings
+    description: Read the shared detection rules (keywords) and business hours.
+    arguments: []
+    outputs:
+    - contextPath: Nik.Settings.keywords
+      description: Suspicious-keyword detection rules (label/pattern/severity/description).
+      type: Unknown
+    - contextPath: Nik.Settings.businessHours
+      description: Business-hours window (startHour/endHour/flagWeekends).
+      type: Unknown
+fromversion: 6.5.0
