@@ -16,7 +16,8 @@ COPY app ./app
 
 EXPOSE 8000
 
-# 2 workers is a sane default for a small team; tune with the WEB_CONCURRENCY env
-# var if needed. Tables are auto-created on startup (create_all).
+# Worker count comes from the WEB_CONCURRENCY env var (gunicorn honours it;
+# default 2). Access logging is handled by the app's own request middleware.
+ENV WEB_CONCURRENCY=2
 CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", \
-     "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile", "-"]
+     "--bind", "0.0.0.0:8000"]

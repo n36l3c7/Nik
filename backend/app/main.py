@@ -12,15 +12,25 @@ public to view; calling the write endpoints requires an ``X-API-Key`` header
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session as OrmSession
 
-from .db import Base, engine
+from .config import settings as app_settings
+from .db import Base, engine, get_db
+from .observability import metrics_response, observability_middleware, setup_logging
+from .ratelimit import limiter
 from .routers import audit, auth, backup, incidents, keys, settings, users
 
 # Import models so their tables are registered on the shared metadata before
 # create_all runs. (The routers already import the models, but importing here
 # makes the dependency explicit and order-independent.)
 from . import models  # noqa: F401
+
+setup_logging(app_settings.LOG_LEVEL)
 
 API_DESCRIPTION = """
 Nik is a forensic analysis platform. This REST API lets external clients drive
@@ -61,17 +71,43 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
+# Request ids + structured access logs + Prometheus metrics.
+app.middleware("http")(observability_middleware)
+
+# Per-IP rate limiting (blanket default; login adds a stricter limit).
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Create all tables on first run (no Alembic needed for v1)."""
-    Base.metadata.create_all(bind=engine)
+    """Create all tables when not using migrations.
+
+    In production run Alembic (``alembic upgrade head``, see backend/alembic).
+    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema.
+    """
+    if app_settings.RUN_CREATE_ALL:
+        Base.metadata.create_all(bind=engine)
 
 
 @app.get("/api/health", tags=["health"])
 def health() -> dict:
-    """Simple liveness probe."""
+    """Liveness probe (process is up)."""
     return {"status": "ok"}
+
+
+@app.get("/api/ready", tags=["health"])
+def ready(db: OrmSession = Depends(get_db)) -> dict:
+    """Readiness probe: also checks the database is reachable."""
+    db.execute(text("SELECT 1"))
+    return {"status": "ready"}
+
+
+@app.get("/api/metrics", tags=["health"], include_in_schema=False)
+def metrics():
+    """Prometheus metrics exposition."""
+    return metrics_response()
 
 
 # Mount routers under /api. Each router declares its own sub-prefix.

@@ -15,3 +15,8 @@ bcrypt>=4.0,<4.1
 pydantic>=2.5,<3.0
 python-multipart>=0.0.9
 python-dotenv>=1.0
+# Observability + abuse protection.
+prometheus-client>=0.20
+slowapi>=0.1.9
+# Database migrations (production schema evolution).
+alembic>=1.13,<2.0

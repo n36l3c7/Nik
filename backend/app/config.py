@@ -98,6 +98,18 @@ class Settings:
         # Name of the session cookie (per API contract).
         self.SESSION_COOKIE_NAME: str = "nik_session"
 
+        # Observability / ops.
+        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+        # When false, startup does NOT create tables (Alembic owns the schema).
+        self.RUN_CREATE_ALL: bool = _get_bool("RUN_CREATE_ALL", True)
+
+        # PostgreSQL connection pool + a safety statement timeout (ignored on
+        # SQLite). Tune for the deployment's concurrency.
+        self.DB_POOL_SIZE: int = _get_int("DB_POOL_SIZE", 5)
+        self.DB_MAX_OVERFLOW: int = _get_int("DB_MAX_OVERFLOW", 10)
+        self.DB_POOL_RECYCLE: int = _get_int("DB_POOL_RECYCLE", 1800)
+        self.DB_STATEMENT_TIMEOUT_MS: int = _get_int("DB_STATEMENT_TIMEOUT_MS", 30000)
+
     @property
     def is_sqlite(self) -> bool:
         """True when the configured database is SQLite."""

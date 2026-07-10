@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..db import get_db
+from ..ratelimit import limiter
 from ..models import User
 from ..schemas import BootstrapOut, LoginIn, UserEnvelope
 from ..security import (
@@ -30,8 +31,14 @@ def bootstrap(db: OrmSession = Depends(get_db)) -> dict:
 
 
 @router.post("/login", response_model=UserEnvelope)
-def login(body: LoginIn, response: Response, db: OrmSession = Depends(get_db)) -> dict:
-    """Verify credentials, create a server-side session, and set the cookie."""
+@limiter.limit("10/minute")
+def login(
+    request: Request, body: LoginIn, response: Response, db: OrmSession = Depends(get_db)
+) -> dict:
+    """Verify credentials, create a server-side session, and set the cookie.
+
+    Rate-limited per IP to blunt brute-force attempts.
+    """
     # Case-insensitive username match.
     user = db.scalar(
         select(User).where(func.lower(User.username) == body.username.strip().lower())

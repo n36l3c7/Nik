@@ -25,15 +25,23 @@ class Base(DeclarativeBase):
 # Build engine-specific connect args. SQLite needs check_same_thread disabled
 # because FastAPI may access the connection from different threads.
 _connect_args: dict = {}
+_engine_kwargs: dict = {"future": True, "pool_pre_ping": True}
 if settings.is_sqlite:
     _connect_args["check_same_thread"] = False
+else:
+    # PostgreSQL: size the pool and apply a server-side statement timeout so a
+    # runaway query can't pin a worker forever.
+    _engine_kwargs.update(
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_recycle=settings.DB_POOL_RECYCLE,
+    )
+    _connect_args["options"] = f"-c statement_timeout={settings.DB_STATEMENT_TIMEOUT_MS}"
 
 engine: Engine = create_engine(
     settings.DATABASE_URL,
     connect_args=_connect_args,
-    future=True,
-    # A modest pool_pre_ping guards against stale PostgreSQL connections.
-    pool_pre_ping=True,
+    **_engine_kwargs,
 )
 
 
