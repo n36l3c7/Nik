@@ -96,3 +96,18 @@ gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 127.0.0.1:8000
 Set `DATABASE_URL` to your PostgreSQL instance and `COOKIE_SECURE=true` (served
 over HTTPS). See the root `README.md` for the full RHEL deployment guide
 (PostgreSQL setup, systemd unit, SELinux, nginx).
+
+## Migrations, tests and ops
+
+- **Migrations (Alembic).** `cd backend && alembic upgrade head` applies the
+  schema; `alembic revision -m "msg"` (add `--autogenerate`) creates a new one.
+  The Docker image runs `alembic upgrade head` on start (entrypoint) with
+  `RUN_CREATE_ALL=false`; the dev flow keeps `create_all` for zero setup.
+- **Tests.** `pip install -r requirements-dev.txt && pytest` (fresh SQLite per
+  test). CI runs them on every push (`.github/workflows/ci.yml`).
+- **Observability.** Every response carries `X-Request-ID`; `/api/metrics`
+  exposes Prometheus metrics; `/api/ready` checks the DB. Logs are structured
+  with the request id.
+- **Tunables (env).** `WEB_CONCURRENCY` (gunicorn workers), `LOG_LEVEL`,
+  `DB_POOL_SIZE`/`DB_MAX_OVERFLOW`/`DB_POOL_RECYCLE`/`DB_STATEMENT_TIMEOUT_MS`,
+  `RATE_LIMIT_DEFAULT`/`RATE_LIMIT_STORAGE_URI` (point at Redis for multi-node).

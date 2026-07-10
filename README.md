@@ -562,27 +562,60 @@ curl -H "X-API-Key: nik_XXXXXXXX…" https://localhost:8443/api/incidents
 ```
 
 Create and revoke keys in the app under **Settings → API keys** (admin only). The
-plaintext key is shown **once**, at creation. A key grants analyst-level access
-(incidents, notes, uploads, read settings); it **cannot** manage users or keys.
+plaintext key is shown **once**, at creation. Each key carries **permissions set
+at creation** (bound to the key):
+
+- **role** — `analyst` (incidents, notes, uploads, read settings) or `admin`
+  (also users, backup, keys, webhooks).
+- **scopes** — `read` / `write`; a read-only key (`scopes:["read"]`) can fetch
+  but not mutate.
+- **expiry** — optional; an expired key is rejected.
+
 Actions performed with a key are recorded in the audit log as `api:<label>`.
 
 ### Endpoints
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/incidents` | List all incidents (full documents). |
-| `GET /api/incidents/{id}` | One incident. |
-| `POST /api/incidents` | Create/upsert from a full incident document (needs an `id`). |
-| `PATCH /api/incidents/{id}` | Edit any top-level field: `host`, `username`, `os`, `suspiciousStart/End`, `notes`, `flags`, `data`. |
+| `GET /api/incidents` | List incidents. Query: `limit`/`offset`, `q`/`host`/`username`, `view=summary` (light rows, no document body). `X-Total-Count` header. |
+| `GET /api/incidents/{id}` | One incident (returns an `ETag`). |
+| `POST /api/incidents` | Create/upsert (id generated if omitted). |
+| `PATCH /api/incidents/{id}` | Edit any top-level field. Honors `If-Match` (→ `412` on a stale version). |
 | `DELETE /api/incidents/{id}` | Delete an incident. |
-| `POST /api/incidents/{id}/notes` | Add a note `{ "text": "…" }`. |
-| `PATCH /api/incidents/{id}/notes/{noteId}` | Edit a note. |
-| `DELETE /api/incidents/{id}/notes/{noteId}` | Remove a note. |
-| `POST /api/incidents/{id}/upload` | Upload a raw artifact file (multipart), parsed server-side. |
+| `POST /api/incidents/{id}/notes` · `PATCH`/`DELETE …/{noteId}` | Add / edit / remove notes. |
+| `POST /api/incidents/{id}/upload` | Upload a raw artifact file (multipart). `?async=true` → `202 { jobId }`. |
+| `GET /api/jobs/{id}` | Poll an async upload job. |
 | `GET /api/settings` | Read the shared detection rules / business hours. |
+| `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
+| `GET/POST/DELETE /api/users` | User management (**admin**). |
+| `GET/POST/DELETE /api/keys` | API-key management (**admin**). |
+| `GET/POST /api/backup/{export,import}` | Full platform backup (**admin**). |
+| `GET /api/health` · `/api/ready` · `/api/metrics` | Liveness · readiness (DB) · Prometheus metrics. |
 
-Key management (`/api/keys`), user management (`/api/users`) and full backup
-(`/api/backup`) remain **admin-session only** (not usable with an API key).
+The endpoints marked **admin** accept an admin session **or an admin-role API
+key** (a non-admin/read-only key gets `403`).
+
+### Automation & ops
+
+- **Pagination & filtering** on `GET /incidents` and `/audit`
+  (`limit`/`offset`/`q`/…); `view=summary` returns light rows without the heavy
+  document — list at scale, then fetch one incident's full document. Total in
+  the `X-Total-Count` header.
+- **Optimistic concurrency**: `GET` returns an `ETag`; send it back as
+  `If-Match` on `PATCH` — a stale write gets `412`, so an automation and an
+  analyst can't clobber each other.
+- **Idempotency**: send an `Idempotency-Key` header on `POST` notes/upload to
+  make retries safe (the first result is replayed).
+- **Async uploads**: `POST …/upload?async=true` → `202 { jobId }`, parsed in
+  the background; poll `GET /api/jobs/{jobId}`.
+- **Webhooks**: subscribe URLs to events (`incident.created/updated/deleted`,
+  `note.added`, `upload.completed`). Each delivery is HMAC-SHA256 signed
+  (`X-Nik-Signature: sha256=…`) with the subscription secret (shown once).
+- **Rate limiting** (per IP) protects the API; **`/api/metrics`** exposes
+  Prometheus counters/latency and every response carries an `X-Request-ID`.
+- **Versioning**: the current API is v1 under `/api`; breaking changes would
+  ship under a new prefix. Generate a typed client from the live spec, e.g.
+  `openapi-generator generate -i https://HOST/api/openapi.json -g python`.
 
 ### Uploading files
 
