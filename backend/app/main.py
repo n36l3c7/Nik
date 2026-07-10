@@ -23,7 +23,7 @@ from .config import settings as app_settings
 from .db import Base, engine, get_db
 from .observability import metrics_response, observability_middleware, setup_logging
 from .ratelimit import limiter
-from .routers import audit, auth, backup, incidents, keys, settings, users
+from .routers import audit, auth, backup, incidents, jobs, keys, settings, users, webhooks
 
 # Import models so their tables are registered on the shared metadata before
 # create_all runs. (The routers already import the models, but importing here
@@ -51,7 +51,9 @@ mutate anything. Keys may carry an expiry.
 TAGS_METADATA = [
     {"name": "incidents", "description": "Create, read, edit and delete incidents."},
     {"name": "incidents/notes", "description": "Add, edit and remove incident notes."},
-    {"name": "incidents/upload", "description": "Upload raw artifact files; parsed server-side."},
+    {"name": "incidents/upload", "description": "Upload raw artifact files; parsed server-side (optionally async)."},
+    {"name": "jobs", "description": "Status of async jobs (e.g. background uploads)."},
+    {"name": "webhooks", "description": "Outbound event subscriptions (admin session or admin key)."},
     {"name": "settings", "description": "Shared detection rules and business hours (read via key)."},
     {"name": "api-keys", "description": "Manage API keys (admin session or admin key). Set each key's role/scopes/expiry."},
     {"name": "auth", "description": "Session login/logout (browser)."},
@@ -115,6 +117,8 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
+app.include_router(jobs.router, prefix="/api")
+app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")

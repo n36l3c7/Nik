@@ -16,14 +16,17 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, Query, Response, UploadFile, status,
+)
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..db import get_db
-from ..models import AuditEntry, Incident, IdempotencyRecord
+from ..db import SessionLocal, get_db
+from ..events import emit, emit_now
+from ..models import AuditEntry, Incident, IdempotencyRecord, Job
 from ..parsing.registry import apply_upload
 from ..schemas import NoteIn
 from ..security import Principal, now_iso, principal, writer_principal
@@ -182,6 +185,7 @@ def create_incident(
     doc: dict[str, Any] = Body(...),
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Create (or upsert) an incident from a full client-built document.
 
@@ -205,6 +209,7 @@ def create_incident(
 
     _audit(db, caller, "incident.create", f'Created incident "{doc.get("name") or incident_id}"', incident)
     db.commit()
+    emit(db, background_tasks, "incident.created", {"id": incident_id, "name": doc.get("name")})
     return incident.doc
 
 
@@ -215,6 +220,7 @@ def patch_incident(
     partial: dict[str, Any] = Body(...),
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
     if_match: str | None = Header(None, alias="If-Match"),
 ) -> dict:
     """Shallow-merge changed top-level keys into the stored document.
@@ -237,6 +243,7 @@ def patch_incident(
     _sync_columns(row)
     _audit(db, caller, "incident.update", f'Updated attributes of "{merged.get("name") or incident_id}"', row)
     db.commit()
+    emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": merged.get("name")})
     response.headers["ETag"] = _etag(row.doc)
     return row.doc
 
@@ -246,13 +253,16 @@ def delete_incident(
     incident_id: str,
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ):
     """Delete an incident (idempotent-ish; 204 regardless if it existed)."""
     row = db.get(Incident, incident_id)
     if row is not None:
-        _audit(db, caller, "incident.delete", f'Deleted incident "{(row.doc or {}).get("name") or incident_id}"', row)
+        name = (row.doc or {}).get("name") or incident_id
+        _audit(db, caller, "incident.delete", f'Deleted incident "{name}"', row)
         db.delete(row)
         db.commit()
+        emit(db, background_tasks, "incident.deleted", {"id": incident_id, "name": name})
     # 204 No Content
 
 
@@ -260,6 +270,56 @@ def delete_incident(
 # File upload (server-side parsing) — API clients send raw artifact files
 # ---------------------------------------------------------------------------
 _UPLOAD_ACTIONS = {"browser": "browser.upload", "commands": "command.upload", "endpoint": "endpoint.upload"}
+
+
+def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor):
+    """Background worker for an async upload: parse + merge, then record result.
+
+    Runs after the 202 response, with its OWN DB session (the request's is
+    already closed). Sets the Job to done/error and fires the webhook.
+    """
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if job is not None:
+            job.status = "running"
+            job.updated_at = now_iso()
+            db.commit()
+        row = db.get(Incident, incident_id)
+        if row is None:
+            raise ValueError("Incident not found")
+        doc = dict(row.doc or {})
+        summary = apply_upload(doc, tab, params, data, filename)
+        doc["updatedAt"] = now_iso()
+        row.doc = doc
+        flag_modified(row, "doc")
+        _sync_columns(row)
+        db.add(
+            AuditEntry(
+                id=str(uuid.uuid4()), at=now_iso(), actor=actor,
+                action=_UPLOAD_ACTIONS.get(tab, "upload"),
+                target=(doc.get("name")),
+                details=f"Uploaded {filename} → {summary['target']} ({summary['rows']} rows)",
+                incident_id=incident_id, incident_name=doc.get("name"),
+            )
+        )
+        job = db.get(Job, job_id)
+        if job is not None:
+            job.status = "done"
+            job.result_json = json.dumps(summary)
+            job.updated_at = now_iso()
+        db.commit()
+        emit_now(db, "upload.completed", {"incidentId": incident_id, **summary})
+    except Exception as exc:  # pragma: no cover - defensive
+        db.rollback()
+        job = db.get(Job, job_id)
+        if job is not None:
+            job.status = "error"
+            job.error = str(exc)
+            job.updated_at = now_iso()
+            db.commit()
+    finally:
+        db.close()
 
 
 @router.post("/{incident_id}/upload", tags=["incidents/upload"])
@@ -271,10 +331,12 @@ async def upload_artifact(
     source: str | None = Query(None, description="Source key (browser/endpoint), e.g. history"),
     shell: str | None = Query(None, description="Shell id (tab=commands), e.g. bash"),
     category: str | None = Query(None, description="Category id (tab=endpoint), e.g. persistence"),
+    async_: bool = Query(False, alias="async", description="Return 202 + a jobId; parse in the background."),
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
-) -> dict:
+):
     """Upload a raw artifact file; the server parses it and merges the result.
 
     Routing (query params) mirrors the app's tabs:
@@ -282,15 +344,31 @@ async def upload_artifact(
     - `tab=commands&shell=bash` → a `.bash_history`
     - `tab=endpoint&category=persistence&source=cron` → a cron file / tool CSV
 
-    Send an ``Idempotency-Key`` header to make retries safe.
+    With `async=true` the file is parsed in the background: the call returns
+    `202 { jobId }` immediately — poll `GET /api/jobs/{jobId}` for the result
+    (good for large files). Send an `Idempotency-Key` header to make retries safe.
     """
     replay = _idempotent_replay(db, idempotency_key)
     if replay is not None:
         return replay
     row = _get_or_404(db, incident_id)
     data = await file.read()
-    doc = dict(row.doc or {})
     params = {"browser": browser, "shell": shell, "category": category, "source": source}
+
+    if async_:
+        now = now_iso()
+        job = Job(
+            id=str(uuid.uuid4()), kind="upload", status="queued",
+            incident_id=incident_id, created_at=now, updated_at=now,
+        )
+        db.add(job)
+        db.commit()
+        background_tasks.add_task(
+            _process_upload_job, job.id, incident_id, tab, params, data, file.filename or "upload", caller.actor
+        )
+        return JSONResponse({"jobId": job.id, "status": "queued"}, status_code=202)
+
+    doc = dict(row.doc or {})
     try:
         summary = apply_upload(doc, tab, params, data, file.filename or "upload")
     except ValueError as exc:
@@ -309,6 +387,7 @@ async def upload_artifact(
         always=True,
     )
     db.commit()
+    emit(db, background_tasks, "upload.completed", {"incidentId": incident_id, **summary})
     _idempotent_save(db, idempotency_key, 200, summary)
     return summary
 
@@ -334,6 +413,7 @@ def add_note(
     body: NoteIn,
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ) -> dict:
     """Append a free-form note to the incident timeline.
@@ -355,6 +435,7 @@ def add_note(
     _save_doc(db, row, doc)
     _audit(db, caller, "note.add", "Added a note", row, always=True)
     db.commit()
+    emit(db, background_tasks, "note.added", {"incidentId": incident_id, "noteId": note["id"]})
     _idempotent_save(db, idempotency_key, 201, note)
     return note
 

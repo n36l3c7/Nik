@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -84,6 +84,41 @@ class Setting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class Job(Base):
+    """An async background job (currently: server-side artifact upload parsing).
+
+    Status flow: queued → running → done | error. ``result_json`` holds the
+    endpoint's normal response on success; ``error`` a message on failure.
+    """
+
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    result_json: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class Webhook(Base):
+    """An outbound webhook subscription. Deliveries are signed with ``secret``
+    (HMAC-SHA256) so the receiver can verify authenticity. ``events`` is a
+    comma-separated list of event names."""
+
+    __tablename__ = "webhooks"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    secret: Mapped[str] = mapped_column(String, nullable=False)
+    events: Mapped[str] = mapped_column(String, nullable=False, default="")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class IdempotencyRecord(Base):

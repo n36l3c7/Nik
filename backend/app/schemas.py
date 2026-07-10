@@ -160,3 +160,53 @@ class NoteIn(BaseModel):
     """Request body to add or edit an incident note."""
 
     text: str
+
+
+# ---------------------------------------------------------------------------
+# Webhooks
+# ---------------------------------------------------------------------------
+class WebhookCreate(BaseModel):
+    """Request body to register a webhook."""
+
+    url: str
+    events: list[str] = Field(default_factory=list)
+
+
+class WebhookOut(BaseModel):
+    """Public webhook representation. Never includes the secret."""
+
+    id: str
+    url: str
+    events: list[str]
+    active: bool
+    createdAt: str
+    createdBy: Optional[str] = None
+
+
+class WebhooksEnvelope(BaseModel):
+    """Wrapper for a list of webhooks: {webhooks}."""
+
+    webhooks: list[WebhookOut]
+
+
+class WebhookCreated(BaseModel):
+    """Create response: the webhook plus its signing secret (shown ONCE)."""
+
+    webhook: WebhookOut
+    secret: str
+
+
+# ---------------------------------------------------------------------------
+# Async jobs
+# ---------------------------------------------------------------------------
+class JobOut(BaseModel):
+    """Async job status."""
+
+    id: str
+    kind: str
+    status: str
+    incidentId: Optional[str] = None
+    createdAt: str
+    updatedAt: str
+    result: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
