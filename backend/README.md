@@ -1,8 +1,27 @@
-# CSAP Backend (FastAPI)
+# Nik Backend (FastAPI)
 
-Centralized REST API for CSAP. Incidents, users, audit log and settings live in
+Centralized REST API for Nik. Incidents, users, audit log and settings live in
 a database (PostgreSQL in production, SQLite in development). Authentication
-uses server-side sessions delivered via an httpOnly `csap_session` cookie.
+uses server-side sessions delivered via an httpOnly `nik_session` cookie, and —
+for external clients — **API keys** sent in the `X-API-Key` header.
+
+## API keys & interactive docs
+
+The `principal` dependency (`app/security.py`) resolves a caller from **either**
+the session cookie **or** an `X-API-Key` header, so incident / note / upload /
+settings-read endpoints work for both the browser and API clients. Keys are
+managed by an admin at `/api/keys` (create returns the plaintext once; only a
+SHA-256 digest is stored). Swagger UI is public at **`/api/docs`** (view without
+login; *Authorize* with a key to call).
+
+## Server-side file parsing
+
+`app/parsing/` ports the client-side parsers (`src/services/*Parsers.js`) to
+Python (stdlib `sqlite3`, `csv`, `json`, `xml.etree`, `plistlib`) so the upload
+endpoint `POST /api/incidents/{id}/upload` can accept raw artifact files and
+merge the normalized result into the incident. `parsing/registry.py` maps the
+`tab`/`browser`/`shell`/`category`/`source` params to the right parser and merge
+target. The JS and Python parsers must stay in sync on the normalized shapes.
 
 ## Requirements
 
@@ -60,7 +79,7 @@ All settings come from environment variables (see `.env.example`):
 
 | Variable            | Default                 | Purpose                                            |
 | ------------------- | ----------------------- | -------------------------------------------------- |
-| `DATABASE_URL`      | `sqlite:///./csap.db`   | SQLAlchemy URL. Prod: `postgresql+psycopg://…`.    |
+| `DATABASE_URL`      | `sqlite:///./nik.db`    | SQLAlchemy URL. Prod: `postgresql+psycopg://…`.    |
 | `DB_PASSWORD` (+ `DB_USER`/`DB_HOST`/`DB_PORT`/`DB_NAME`) | — | Alternative to `DATABASE_URL`: PostgreSQL URL assembled by the app with escaping (password may contain any character). |
 | `SECRET_KEY`        | `dev-insecure-change-me`| Signing/entropy secret. Set a strong value in prod.|
 | `COOKIE_SECURE`     | `true`                  | Mark the session cookie Secure (HTTPS only).       |

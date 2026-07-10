@@ -1,4 +1,4 @@
-# CSAP — Cyber Security Analysis Platform
+# Nik — Forensic analysis platform
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
@@ -6,7 +6,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker%20%2F%20Podman-Compose-2496ED?logo=docker&logoColor=white)
-![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 A full-stack web platform for analysing digital-forensics artifacts, laid out
 like a SOC dashboard. Analysts organise their work into **incidents** (forensic
@@ -71,6 +71,7 @@ every action attributed to a named analyst and recorded in a global audit log.
 2. [Production deployment](#2-production-deployment)
    - [Docker / Podman in production](#21-docker--podman-in-production)
    - [Manual deployment on RHEL](#22-manual-deployment-on-rhel)
+- [REST API and interactive docs](#rest-api-and-interactive-docs)
 3. [Architecture](#3-architecture)
    - [High-level design](#31-high-level-design)
    - [Why parsing is client-side](#32-why-parsing-is-client-side)
@@ -178,7 +179,7 @@ is no `tailwind.config.js` and no extra setup step.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `sqlite:///./csap.db` | SQLAlchemy URL. Production: `postgresql+psycopg://csap:PASS@host/csap` (password must be URL-encoded). |
+| `DATABASE_URL` | `sqlite:///./nik.db` | SQLAlchemy URL. Production: `postgresql+psycopg://nik:PASS@host/nik` (password must be URL-encoded). |
 | `DB_PASSWORD` + `DB_USER`/`DB_HOST`/`DB_PORT`/`DB_NAME` | — | Alternative to `DATABASE_URL`: the app assembles the PostgreSQL URL itself with escaping, so the password may contain any character. |
 | `SECRET_KEY` | `dev-insecure-change-me` | Signing/entropy secret. Set a long random value in production. |
 | `COOKIE_SECURE` | `true` | `Secure` flag on the session cookie (HTTPS only). Set `false` only for plain-HTTP local dev. |
@@ -188,7 +189,7 @@ is no `tailwind.config.js` and no extra setup step.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DB_PASSWORD` | `csap` | PostgreSQL password (shared by the `db` and `api` services). |
+| `DB_PASSWORD` | `nik` | PostgreSQL password (shared by the `db` and `api` services). |
 | `SECRET_KEY` | — | Backend secret. Use a long random value (e.g. `openssl rand -hex 32`). |
 | `COOKIE_SECURE` | `false` | Keep `false` while anyone still uses plain HTTP on `:8080`; set `true` (recommended) once everyone is on HTTPS. |
 | `WEB_PORT` | `8080` | Host port the UI is published on (plain HTTP). |
@@ -198,7 +199,7 @@ is no `tailwind.config.js` and no extra setup step.
 
 > **Two things that will bite you over plain HTTP:**
 >
-> 1. With `COOKIE_SECURE=true` the browser **drops** the `csap_session` cookie
+> 1. With `COOKIE_SECURE=true` the browser **drops** the `nik_session` cookie
 >    on `http://` origins, so login won't stick. Use the HTTPS port (`:8443`)
 >    in production — the self-signed certificate the stack generates is fine
 >    on an internal network, an internal-CA one is better.
@@ -208,6 +209,14 @@ is no `tailwind.config.js` and no extra setup step.
 ---
 
 ## 2. Production deployment
+
+> **Upgrading from a "CSAP"-era deployment?** The database role and name are now
+> `nik` (was `csap`). A pre-existing Postgres volume still holds the old `csap`
+> role/database, so either start on a **fresh** volume (`docker volume rm
+> nik_db-data` / your project's `*_db-data`), or keep the old names by setting
+> `DB_USER`, `DB_NAME` and the compose `POSTGRES_*` back to `csap`, or rename in
+> place with `ALTER ROLE csap RENAME TO nik;` and `ALTER DATABASE csap RENAME TO
+> nik;`. The session cookie also changed name, so everyone re-logs in once.
 
 ### 2.1 Docker / Podman in production
 
@@ -219,7 +228,7 @@ is trusted or replaced. For a real deployment set `COOKIE_SECURE=true` and
 pick one of:
 
 - **Option A (recommended):** provide your own certificate — internal CA or
-  Let's Encrypt — as `csap.crt` / `csap.key` in `/etc/nginx/certs`; the
+  Let's Encrypt — as `nik.crt` / `nik.key` in `/etc/nginx/certs`; the
   startup script never overwrites an existing pair. Easiest wiring: swap the
   named volume for a bind mount in `docker-compose.yml`
   (`- ./certs:/etc/nginx/certs`).
@@ -228,7 +237,7 @@ pick one of:
   `8443` port mapping.
 
 To regenerate the self-signed certificate (e.g. after changing
-`TLS_HOSTNAME`): `docker compose down && docker volume rm csap_web-certs`,
+`TLS_HOSTNAME`): `docker compose down && docker volume rm nik_web-certs`,
 then start the stack again.
 
 Notes for Podman on RHEL:
@@ -248,8 +257,8 @@ across database engines), use the in-app **Full backup**
 
 ```bash
 # Backup / restore the database
-docker compose exec db pg_dump -U csap csap > csap-backup.sql
-cat csap-backup.sql | docker compose exec -T db psql -U csap csap
+docker compose exec db pg_dump -U nik nik > nik-backup.sql
+cat nik-backup.sql | docker compose exec -T db psql -U nik nik
 
 # Update to a new version (rebuild images, recreate containers, keep data)
 git pull
@@ -294,25 +303,25 @@ sudo postgresql-setup --initdb
 sudo systemctl enable --now postgresql
 
 # Application role and database:
-sudo -u postgres createuser --pwprompt csap
-sudo -u postgres createdb -O csap csap
+sudo -u postgres createuser --pwprompt nik
+sudo -u postgres createdb -O nik nik
 ```
 
 **Enable password authentication.** A fresh RHEL cluster uses `ident`/`peer`
-auth for local TCP connections, which rejects the app's `csap` login. Edit
+auth for local TCP connections, which rejects the app's `nik` login. Edit
 `/var/lib/pgsql/data/pg_hba.conf` so the local lines use `scram-sha-256`:
 
 ```conf
 # TYPE  DATABASE  USER  ADDRESS         METHOD
-host    csap      csap  127.0.0.1/32    scram-sha-256
-host    csap      csap  ::1/128         scram-sha-256
+host    nik      nik  127.0.0.1/32    scram-sha-256
+host    nik      nik  ::1/128         scram-sha-256
 ```
 
 Then `sudo systemctl reload postgresql`. The connection string for the backend
 is:
 
 ```
-postgresql+psycopg://csap:STRONG_PASSWORD@localhost/csap
+postgresql+psycopg://nik:STRONG_PASSWORD@localhost/nik
 ```
 
 Tables (`users`, `sessions`, `incidents`, `audit_log`, `settings`) are created
@@ -321,52 +330,52 @@ automatically on the API's first startup — no migration step.
 #### Step 3 — Deploy the FastAPI backend (systemd)
 
 The backend needs **Python 3.11+** (RHEL 9 ships it; on RHEL 8 install
-`python3.11`). Copy `backend/` to `/opt/csap/backend` and build a virtualenv:
+`python3.11`). Copy `backend/` to `/opt/nik/backend` and build a virtualenv:
 
 ```bash
 sudo dnf install -y python3 python3-pip
-sudo useradd --system --home /opt/csap --shell /sbin/nologin csap
+sudo useradd --system --home /opt/nik --shell /sbin/nologin nik
 
-sudo mkdir -p /opt/csap
-sudo cp -r backend /opt/csap/backend
-cd /opt/csap/backend
+sudo mkdir -p /opt/nik
+sudo cp -r backend /opt/nik/backend
+cd /opt/nik/backend
 
 sudo python3 -m venv .venv
 sudo .venv/bin/pip install --upgrade pip
 sudo .venv/bin/pip install -r requirements.txt
-sudo chown -R csap:csap /opt/csap
+sudo chown -R nik:nik /opt/nik
 ```
 
-Keep the secrets in `/etc/csap/csap.env` (readable only by root and the
+Keep the secrets in `/etc/nik/nik.env` (readable only by root and the
 service account):
 
 ```bash
-sudo mkdir -p /etc/csap
-sudo tee /etc/csap/csap.env >/dev/null <<'EOF'
-DATABASE_URL=postgresql+psycopg://csap:STRONG_PASSWORD@localhost/csap
+sudo mkdir -p /etc/nik
+sudo tee /etc/nik/nik.env >/dev/null <<'EOF'
+DATABASE_URL=postgresql+psycopg://nik:STRONG_PASSWORD@localhost/nik
 SECRET_KEY=replace-with-a-long-random-string   # e.g. `openssl rand -hex 32`
 COOKIE_SECURE=true                             # requires HTTPS
 EOF
-sudo chmod 640 /etc/csap/csap.env
-sudo chown root:csap /etc/csap/csap.env
+sudo chmod 640 /etc/nik/nik.env
+sudo chown root:nik /etc/nik/nik.env
 ```
 
-Create `/etc/systemd/system/csap-api.service` — the API binds to **loopback
+Create `/etc/systemd/system/nik-api.service` — the API binds to **loopback
 only**; nginx is the sole public entry point:
 
 ```ini
 [Unit]
-Description=CSAP FastAPI backend (gunicorn/uvicorn)
+Description=Nik FastAPI backend (gunicorn/uvicorn)
 After=network.target postgresql.service
 Wants=postgresql.service
 
 [Service]
 Type=simple
-User=csap
-Group=csap
-WorkingDirectory=/opt/csap/backend
-EnvironmentFile=/etc/csap/csap.env
-ExecStart=/opt/csap/backend/.venv/bin/gunicorn \
+User=nik
+Group=nik
+WorkingDirectory=/opt/nik/backend
+EnvironmentFile=/etc/nik/nik.env
+ExecStart=/opt/nik/backend/.venv/bin/gunicorn \
     -k uvicorn.workers.UvicornWorker \
     app.main:app \
     --bind 127.0.0.1:8000 \
@@ -380,7 +389,7 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now csap-api.service
+sudo systemctl enable --now nik-api.service
 curl -s http://127.0.0.1:8000/api/health      # → {"status":"ok"}
 ```
 
@@ -390,8 +399,8 @@ curl -s http://127.0.0.1:8000/api/health      # → {"status":"ok"}
 sudo dnf install -y nginx
 sudo systemctl enable --now nginx
 
-sudo mkdir -p /var/www/csap
-sudo cp -r dist/* /var/www/csap/
+sudo mkdir -p /var/www/nik
+sudo cp -r dist/* /var/www/nik/
 ```
 
 #### Step 5 — SELinux (enforced by default on RHEL)
@@ -403,8 +412,8 @@ sudo setsebool -P httpd_can_network_connect 1
 
 # b) Label the static-file directory — or nginx returns 403 Forbidden:
 sudo dnf install -y policycoreutils-python-utils
-sudo semanage fcontext -a -t httpd_sys_content_t "/var/www/csap(/.*)?"
-sudo restorecon -Rv /var/www/csap
+sudo semanage fcontext -a -t httpd_sys_content_t "/var/www/nik(/.*)?"
+sudo restorecon -Rv /var/www/nik
 ```
 
 #### Step 6 — TLS certificate
@@ -415,10 +424,10 @@ or accept the browser warning). Replace the CN/SANs with your host:
 ```bash
 sudo mkdir -p /etc/pki/nginx/private
 sudo openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
-  -keyout /etc/pki/nginx/private/csap.key \
-  -out    /etc/pki/nginx/csap.crt \
-  -subj "/CN=csap.example.internal" \
-  -addext "subjectAltName=DNS:csap.example.internal,IP:10.0.0.10"
+  -keyout /etc/pki/nginx/private/nik.key \
+  -out    /etc/pki/nginx/nik.crt \
+  -subj "/CN=nik.example.internal" \
+  -addext "subjectAltName=DNS:nik.example.internal,IP:10.0.0.10"
 ```
 
 For an internet-facing host use a real certificate instead (e.g. Let's Encrypt:
@@ -436,29 +445,29 @@ application/wasm  wasm;
 
 #### Step 8 — nginx server block
 
-Create `/etc/nginx/conf.d/csap.conf`:
+Create `/etc/nginx/conf.d/nik.conf`:
 
 ```nginx
 # Redirect plain HTTP to HTTPS (the app requires a secure context)
 server {
     listen 80;
-    server_name csap.example.internal;
+    server_name nik.example.internal;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
     http2 on;
-    server_name csap.example.internal;
+    server_name nik.example.internal;
 
-    ssl_certificate     /etc/pki/nginx/csap.crt;
-    ssl_certificate_key /etc/pki/nginx/private/csap.key;
+    ssl_certificate     /etc/pki/nginx/nik.crt;
+    ssl_certificate_key /etc/pki/nginx/private/nik.key;
 
     # Large JSON payloads (backup restore, incidents with parsed artifacts)
     # blow past nginx's 1m default and get rejected with 413.
     client_max_body_size 200m;
 
-    root  /var/www/csap;
+    root  /var/www/nik;
     index index.html;
 
     # Reverse-proxy the REST API to the gunicorn/uvicorn backend.
@@ -489,7 +498,7 @@ server {
 ```
 
 > If `/api/` returns `502 Bad Gateway`, the usual culprit is SELinux — confirm
-> `httpd_can_network_connect` is on (Step 5a) and that `csap-api.service` is
+> `httpd_can_network_connect` is on (Step 5a) and that `nik-api.service` is
 > running (`curl http://127.0.0.1:8000/api/health`).
 
 #### Step 9 — Open the firewall and reload
@@ -504,7 +513,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Browse to `https://csap.example.internal`, create the first (admin) user and
+Browse to `https://nik.example.internal`, create the first (admin) user and
 sign in.
 
 #### Updating to a new version
@@ -512,20 +521,95 @@ sign in.
 ```bash
 # Frontend — rebuild and replace the static files:
 npm ci && npm run build
-sudo rm -rf /var/www/csap/*
-sudo cp -r dist/* /var/www/csap/
-sudo restorecon -Rv /var/www/csap
+sudo rm -rf /var/www/nik/*
+sudo cp -r dist/* /var/www/nik/
+sudo restorecon -Rv /var/www/nik
 
 # Backend — refresh code and dependencies, restart the service:
-sudo cp -r backend/* /opt/csap/backend/
-sudo /opt/csap/backend/.venv/bin/pip install -r /opt/csap/backend/requirements.txt
-sudo chown -R csap:csap /opt/csap
-sudo systemctl restart csap-api.service
+sudo cp -r backend/* /opt/nik/backend/
+sudo /opt/nik/backend/.venv/bin/pip install -r /opt/nik/backend/requirements.txt
+sudo chown -R nik:nik /opt/nik
+sudo systemctl restart nik-api.service
 ```
 
 Upgrades do **not** wipe data: everything persists in PostgreSQL, and new
 tables are created on startup. Take a `pg_dump` (or an in-app full backup,
 [§6](#6-full-platform-backup)) before upgrading if you want a rollback point.
+
+---
+
+## REST API and interactive docs
+
+Nik can be driven without the browser through a REST API. It is the same API the
+web app uses, so anything the UI does — create / edit / delete incidents, add and
+remove notes, and upload raw artifact files (parsed **server-side**) — is
+available programmatically.
+
+### Interactive documentation
+
+Open **`/api/docs`** (e.g. `https://localhost:8443/api/docs`) for the Swagger UI.
+It is **public to view** (no login) and always in sync with the running server.
+Click **Authorize**, paste an API key, and every endpoint gains a *Try it out*
+button. A link is also shown on the sign-in screen.
+
+### Authentication
+
+Write endpoints accept **either** a browser session **or** an **API key**. Send
+the key in the `X-API-Key` header:
+
+```bash
+curl -H "X-API-Key: nik_XXXXXXXX…" https://localhost:8443/api/incidents
+```
+
+Create and revoke keys in the app under **Settings → API keys** (admin only). The
+plaintext key is shown **once**, at creation. A key grants analyst-level access
+(incidents, notes, uploads, read settings); it **cannot** manage users or keys.
+Actions performed with a key are recorded in the audit log as `api:<label>`.
+
+### Endpoints
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/incidents` | List all incidents (full documents). |
+| `GET /api/incidents/{id}` | One incident. |
+| `POST /api/incidents` | Create/upsert from a full incident document (needs an `id`). |
+| `PATCH /api/incidents/{id}` | Edit any top-level field: `host`, `username`, `os`, `suspiciousStart/End`, `notes`, `flags`, `data`. |
+| `DELETE /api/incidents/{id}` | Delete an incident. |
+| `POST /api/incidents/{id}/notes` | Add a note `{ "text": "…" }`. |
+| `PATCH /api/incidents/{id}/notes/{noteId}` | Edit a note. |
+| `DELETE /api/incidents/{id}/notes/{noteId}` | Remove a note. |
+| `POST /api/incidents/{id}/upload` | Upload a raw artifact file (multipart), parsed server-side. |
+| `GET /api/settings` | Read the shared detection rules / business hours. |
+
+Key management (`/api/keys`), user management (`/api/users`) and full backup
+(`/api/backup`) remain **admin-session only** (not usable with an API key).
+
+### Uploading files
+
+`POST /api/incidents/{id}/upload` takes a multipart `file` plus query parameters
+that route it to the right parser (mirroring the app's tabs). The server parses
+the raw file and merges the normalized result into the incident.
+
+```bash
+# Browser history (Chromium History SQLite → data.browser.browsers.chrome)
+curl -H "X-API-Key: $KEY" -F file=@History \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=browser&browser=chrome&source=history"
+
+# Shell history (.bash_history → data.commands.shells.bash)
+curl -H "X-API-Key: $KEY" -F file=@.bash_history \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=commands&shell=bash"
+
+# Endpoint artifact (cron file or tool CSV → data.endpoint.categories.persistence)
+curl -H "X-API-Key: $KEY" -F file=@crontab \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=endpoint&category=persistence&source=cron"
+```
+
+Routing parameters: `tab=browser` needs `browser` (chrome/firefox/edge/brave/opera)
+and `source` (history/bookmarks/shortcuts/places); `tab=commands` needs `shell`
+(bash/zsh/fish/powershell); `tab=endpoint` needs `category`
+(execution/persistence/fileaccess/usb) and `source` (the source key, e.g. cron).
+The server ports the client-side parsers (`backend/app/parsing/`), so uploads
+produce exactly the same normalized shapes the browser does.
 
 ---
 
@@ -670,7 +754,7 @@ change.
         ├── auth/                   # FirstRunSetup, LoginScreen
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
-        │                           #   hours, accounts, audit log)
+        │                           #   hours, accounts, API keys, audit log)
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker
         └── tabs/
             ├── NetworkLogsTab.jsx      # Placeholder, ready for expansion
@@ -865,7 +949,7 @@ existing incidents receive the new tab's `defaultData` automatically (see
 | Database `users` / `sessions` | accounts (bcrypt hash) and server-side sessions |
 | Database `audit_log` | the global audit trail |
 | Database `settings` | detection keywords + business hours (shared by all analysts) |
-| Browser `localStorage csap:theme` | `'dark'` \| `'light'` — the only per-device value |
+| Browser `localStorage nik:theme` | `'dark'` \| `'light'` — the only per-device value |
 
 ### 3.5 Authentication, sessions and the audit log
 
@@ -873,7 +957,7 @@ existing incidents receive the new tab's `defaultData` automatically (see
 
 Passwords are hashed with **bcrypt on the server** (`backend/app/security.py`).
 A successful `POST /api/auth/login` creates a server-side session row and sets
-the **httpOnly** `csap_session` cookie (with the `Secure` flag when
+the **httpOnly** `nik_session` cookie (with the `Secure` flag when
 `COOKIE_SECURE=true`); `credentials: 'include'` on every fetch keeps it
 flowing. Sessions expire after `SESSION_TTL_HOURS`.
 
@@ -1270,11 +1354,11 @@ Spinner({ className = '' })
 ### Export
 
 `exportIncident(id)` (from `useIncidents()`) downloads
-`csap-<normalized-name>.json` with this envelope:
+`nik-<normalized-name>.json` with this envelope:
 
 ```json
 {
-  "app": "CSAP",
+  "app": "Nik",
   "version": 3,
   "exportedAt": "2026-07-07T11:30:00.000Z",
   "incident": {
@@ -1341,7 +1425,7 @@ incident object**. Minimal validation: `data` must be an object, otherwise an
 - is recorded as `incident.import` in the audit log.
 
 > The JSON export is self-contained (it holds all imported data, flags and
-> notes), which makes it a convenient exchange/archival format between CSAP
+> notes), which makes it a convenient exchange/archival format between Nik
 > installations.
 
 ---
@@ -1362,11 +1446,11 @@ backup is database-agnostic).
 ### Export
 
 `GET /api/backup/export` (admin only, logged as `backup.export`) downloads
-`csap-backup-<timestamp>.json`:
+`nik-backup-<timestamp>.json`:
 
 ```json
 {
-  "app": "CSAP",
+  "app": "Nik",
   "type": "backup",
   "version": 1,
   "exportedAt": "2026-07-08T09:00:00.000Z",
