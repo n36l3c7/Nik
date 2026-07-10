@@ -223,27 +223,60 @@ function downloadJson(filename, obj) {
   URL.revokeObjectURL(url)
 }
 
+/* ---- URL <-> active incident (permalink: /incident/<id>) ---- */
+// Opening an incident reflects its id in the URL so every incident has a
+// shareable, bookmarkable permalink; back/forward navigate between them. nginx
+// (and the Vite dev server) serve index.html for these paths (SPA fallback).
+const INCIDENT_PATH_RE = /^\/incident\/([^/?#]+)/
+
+/** Read the incident id from the current URL, or null. */
+function incidentIdFromUrl() {
+  if (typeof window === 'undefined') return null
+  const match = window.location.pathname.match(INCIDENT_PATH_RE)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+/** Reflect the active incident in the URL (push adds a history entry). */
+function syncUrl(incidentId, { replace = false } = {}) {
+  if (typeof window === 'undefined') return
+  const path = incidentId ? `/incident/${encodeURIComponent(incidentId)}` : '/'
+  if (window.location.pathname === path) return
+  const state = { incidentId: incidentId ?? null }
+  if (replace) window.history.replaceState(state, '', path)
+  else window.history.pushState(state, '', path)
+}
+
 export function IncidentProvider({ children }) {
   const { currentUser, isAuthenticated } = useAuth()
   const { log } = useAudit()
 
   const [incidents, setIncidents] = useState([])
-  // Active incident is a pure view preference (in-memory only since v3).
-  const [activeIncidentId, setActiveIncidentId] = useState(null)
+  // The active incident is seeded from the URL so a permalink deep-links into
+  // the right incident on first load (and survives the sign-in gate).
+  const [activeIncidentId, setActiveIncidentId] = useState(incidentIdFromUrl)
   const [loading, setLoading] = useState(true)
   const [storageError, setStorageError] = useState(null)
 
-  // Always-current snapshot of the incident list, so event handlers can read
-  // the latest state (to build audit/persist payloads) without stale-closure
-  // issues and without putting side effects inside the setIncidents updater.
+  // Always-current snapshots so event handlers read the latest state without
+  // stale-closure issues and without side effects inside a setState updater.
   const incidentsRef = useRef(incidents)
   incidentsRef.current = incidents
+  const activeIncidentIdRef = useRef(activeIncidentId)
+  activeIncidentIdRef.current = activeIncidentId
+
+  // Browser back/forward: follow the URL to the corresponding incident.
+  useEffect(() => {
+    const onPopState = () => setActiveIncidentId(incidentIdFromUrl())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   // Load the incident list from the server once authenticated; reset on logout.
+  // Note: the active id is NOT cleared here, so a permalink opened before
+  // sign-in still resolves once the list loads.
   useEffect(() => {
     if (!isAuthenticated) {
       setIncidents([])
-      setActiveIncidentId(null)
       setLoading(true)
       return
     }
@@ -254,7 +287,14 @@ export function IncidentProvider({ children }) {
       .then((res) => {
         if (cancelled) return
         const list = Array.isArray(res?.incidents) ? res.incidents : []
-        setIncidents(list.map(normalizeIncident))
+        const normalized = list.map(normalizeIncident)
+        setIncidents(normalized)
+        // Drop an invalid permalink (unknown id) so the UI shows a clean state.
+        const active = activeIncidentIdRef.current
+        if (active && !normalized.some((i) => i.id === active)) {
+          setActiveIncidentId(null)
+          syncUrl(null, { replace: true })
+        }
         setStorageError(null)
       })
       .catch((err) => {
@@ -328,6 +368,7 @@ export function IncidentProvider({ children }) {
       }
       setIncidents((prev) => [incident, ...prev])
       setActiveIncidentId(incident.id)
+      syncUrl(incident.id)
       audit('incident.create', `Created incident "${incident.name}"`, incident)
       // Persist the full document; the server stamps its own createdBy.
       api
@@ -380,9 +421,13 @@ export function IncidentProvider({ children }) {
       const target = find(incidentId)
       const remaining = incidentsRef.current.filter((i) => i.id !== incidentId)
       setIncidents(remaining)
-      setActiveIncidentId((current) =>
-        current === incidentId ? (remaining[0]?.id ?? null) : current,
-      )
+      // If the deleted incident was open, fall back to the newest remaining one
+      // (or none) and update the permalink to match.
+      if (activeIncidentIdRef.current === incidentId) {
+        const next = remaining[0]?.id ?? null
+        setActiveIncidentId(next)
+        syncUrl(next, { replace: true })
+      }
       if (target) audit('incident.delete', `Deleted incident "${target.name}"`, target)
       api
         .del(`/incidents/${incidentId}`)
@@ -394,6 +439,7 @@ export function IncidentProvider({ children }) {
 
   const selectIncident = useCallback((incidentId) => {
     setActiveIncidentId(incidentId)
+    syncUrl(incidentId)
   }, [])
 
   /* ---- generic tab data ---- */
@@ -834,6 +880,7 @@ export function IncidentProvider({ children }) {
       const incident = normalizeIncident({ ...raw, id: generateId(), updatedAt: nowIso() })
       setIncidents((prev) => [incident, ...prev])
       setActiveIncidentId(incident.id)
+      syncUrl(incident.id)
       audit('incident.import', `Imported incident "${incident.name}"`, incident)
       // Persist the imported incident as a new document on the server.
       api

@@ -107,11 +107,10 @@ def create_incident(
 
     The server stamps ``createdBy`` from the caller (username, or ``api:<label>``).
     """
-    incident_id = doc.get("id")
-    if not incident_id:
-        raise HTTPException(status_code=400, detail="Incident id is required")
-
     doc = dict(doc)
+    # Guarantee a v4 UUID id: use the client's if present, else generate one.
+    incident_id = doc.get("id") or str(uuid.uuid4())
+    doc["id"] = incident_id
     doc["createdBy"] = caller.actor
 
     existing = db.get(Incident, incident_id)
