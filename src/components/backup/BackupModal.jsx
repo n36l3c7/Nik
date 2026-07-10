@@ -62,7 +62,7 @@ export default function BackupModal({ open, onClose }) {
     try {
       const data = await api.get('/backup/export')
       const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-')
-      downloadJson(`csap-backup-${stamp}.json`, data)
+      downloadJson(`nik-backup-${stamp}.json`, data)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -78,9 +78,10 @@ export default function BackupModal({ open, onClose }) {
     setError(null)
     try {
       const parsed = JSON.parse(await file.text())
-      if (parsed?.app !== 'CSAP' || parsed?.type !== 'backup') {
+      // Accept the new 'Nik' envelope and legacy 'CSAP' exports.
+      if ((parsed?.app !== 'Nik' && parsed?.app !== 'CSAP') || parsed?.type !== 'backup') {
         throw new Error(
-          'Not a CSAP backup file: a full-backup export is expected.',
+          'Not a Nik backup file: a full-backup export is expected.',
         )
       }
       setPending({ fileName: file.name, data: parsed })

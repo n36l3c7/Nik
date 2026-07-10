@@ -12,7 +12,7 @@
  */
 
 const LS_KEYS = {
-  theme: 'csap:theme',
+  theme: 'nik:theme',
 }
 
 /** Persisted theme: 'dark' | 'light' | null (never set). */

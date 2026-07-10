@@ -1,5 +1,5 @@
 /**
- * CSAP UI kit barrel — re-exports all the base components.
+ * Nik UI kit barrel — re-exports all the base components.
  * Enables compact imports: `import { Button, DataTable } from '../ui'`.
  */
 export { default as Button } from './Button.jsx'

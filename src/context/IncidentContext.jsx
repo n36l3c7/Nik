@@ -807,8 +807,8 @@ export function IncidentProvider({ children }) {
         .toLowerCase()
         .replace(/[^a-z0-9]+/gi, '-')
         .replace(/^-+|-+$/g, '')
-      downloadJson(`csap-${safeName || 'incident'}.json`, {
-        app: 'CSAP',
+      downloadJson(`nik-${safeName || 'incident'}.json`, {
+        app: 'Nik',
         version: 3,
         exportedAt: nowIso(),
         incident,
@@ -829,7 +829,7 @@ export function IncidentProvider({ children }) {
       // Accept the v3 envelope, the older "project" envelope, or a bare object.
       const raw = parsed?.incident ?? parsed?.project ?? parsed
       if (typeof raw?.data !== 'object' || raw?.data === null) {
-        throw new Error('Unrecognized file: a CSAP export with a "data" field is expected.')
+        throw new Error('Unrecognized file: a Nik export with a "data" field is expected.')
       }
       const incident = normalizeIncident({ ...raw, id: generateId(), updatedAt: nowIso() })
       setIncidents((prev) => [incident, ...prev])

@@ -41,7 +41,7 @@ from .settings import SETTINGS_ID
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
-logger = logging.getLogger("csap.backup")
+logger = logging.getLogger("nik.backup")
 
 BACKUP_TYPE = "backup"
 BACKUP_VERSION = 1
@@ -79,7 +79,7 @@ def export_backup(
     db.commit()
 
     return {
-        "app": "CSAP",
+        "app": "Nik",
         "type": BACKUP_TYPE,
         "version": BACKUP_VERSION,
         "exportedAt": now_iso(),
@@ -119,7 +119,7 @@ def _validate_envelope(body: dict[str, Any]) -> tuple[list, list, list, dict | N
         return HTTPException(status_code=400, detail=message)
 
     if not isinstance(body, dict) or body.get("type") != BACKUP_TYPE:
-        raise bad("Not a CSAP backup file: a full-backup export is expected.")
+        raise bad("Not a Nik backup file: a full-backup export is expected.")
 
     users = body.get("users")
     incidents = body.get("incidents", [])
@@ -158,7 +158,7 @@ def import_backup(
     body: dict[str, Any] = Body(...),
     admin: User = Depends(require_admin),
     db: OrmSession = Depends(get_db),
-    csap_session: str | None = Cookie(default=None),
+    nik_session: str | None = Cookie(default=None),
 ) -> dict:
     """Restore a full backup, replacing ALL current data (admin only)."""
     users, incidents, audit, settings_doc = _validate_envelope(body)
@@ -222,12 +222,12 @@ def import_backup(
         #    the users first: sessions.user_id has a FK on users.id and no ORM
         #    relationship orders the inserts for us.
         db.flush()
-        if csap_session:
+        if nik_session:
             created = datetime.now(timezone.utc)
             expires = created + timedelta(hours=app_settings.SESSION_TTL_HOURS)
             db.add(
                 SessionModel(
-                    token=csap_session,
+                    token=nik_session,
                     user_id=session_user.id,
                     created_at=created.isoformat(),
                     expires_at=expires.isoformat(),

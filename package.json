@@ -1,6 +1,6 @@
 {
-  "name": "csap",
-  "description": "CSAP — Cyber Security Analysis Platform",
+  "name": "nik",
+  "description": "Nik — Forensic analysis platform",
   "private": true,
   "version": "1.0.0",
   "type": "module",

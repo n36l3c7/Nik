@@ -1,5 +1,5 @@
 /**
- * Card — standard container of the CSAP design system.
+ * Card — standard container of the Nik design system.
  *
  * Optional header (title + icon on the left, `actions` on the right),
  * body customizable with `bodyClassName`.

@@ -1,4 +1,4 @@
-# CSAP — full stack (nginx static + FastAPI + PostgreSQL) in three containers.
+# Nik — full stack (nginx static + FastAPI + PostgreSQL) in three containers.
 #
 # Works with both `docker compose` and `podman-compose` (and `podman compose`).
 # Copy .env.example to .env and adjust the secrets before running in production.
@@ -13,13 +13,13 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: csap
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-csap}
-      POSTGRES_DB: csap
+      POSTGRES_USER: nik
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nik}
+      POSTGRES_DB: nik
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U csap -d csap"]
+      test: ["CMD-SHELL", "pg_isready -U nik -d nik"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -31,7 +31,7 @@ services:
       # Passed as separate parts: the backend assembles the URL itself with
       # proper escaping, so DB_PASSWORD may contain %, @, : and friends.
       DB_HOST: db
-      DB_PASSWORD: ${DB_PASSWORD:-csap}
+      DB_PASSWORD: ${DB_PASSWORD:-nik}
       SECRET_KEY: ${SECRET_KEY:-please-change-this-secret}
       # HTTP quick-start on :8080 → cookie cannot be Secure. Set to true once you
       # put the app behind HTTPS (see the README).
@@ -54,7 +54,7 @@ services:
       - "${WEB_TLS_PORT:-8443}:443"
     volumes:
       # Keeps the auto-generated certificate across container recreations.
-      # Mount your own csap.crt / csap.key here to use a real certificate.
+      # Mount your own nik.crt / nik.key here to use a real certificate.
       - web-certs:/etc/nginx/certs
     depends_on:
       - api

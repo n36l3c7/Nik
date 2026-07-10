@@ -130,10 +130,10 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
         </div>
         <div className="min-w-0">
           <p className="text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-            CSAP
+            Nik
           </p>
           <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-            Cyber Security Analysis Platform
+            Forensic analysis platform
           </p>
         </div>
       </div>
@@ -303,7 +303,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
 
         <p className="flex items-start gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Artifacts are parsed locally; cases are stored on the CSAP server
+          Artifacts are parsed locally; cases are stored on the Nik server
         </p>
       </div>
 

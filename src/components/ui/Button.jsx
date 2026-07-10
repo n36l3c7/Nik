@@ -1,5 +1,5 @@
 /**
- * Button — reusable button of the CSAP design system.
+ * Button — reusable button of the Nik design system.
  *
  * Variants: 'primary' (solid cyan), 'secondary' (border, surface),
  * 'ghost' (transparent), 'danger' (solid red).

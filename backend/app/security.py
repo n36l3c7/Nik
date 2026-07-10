@@ -1,24 +1,30 @@
 """Security helpers: password hashing, sessions, and auth dependencies.
 
-- Passwords are hashed with bcrypt via passlib.
+- Passwords and API keys are hashed with bcrypt via passlib.
 - Sessions are server-side rows keyed by a random hex token delivered in the
-  ``csap_session`` httpOnly cookie.
-- ``current_user`` and ``require_admin`` are FastAPI dependencies that resolve
-  the cookie to a live (non-expired) user, raising 401/403 as appropriate.
+  ``nik_session`` httpOnly cookie.
+- ``current_user`` and ``require_admin`` resolve the session cookie to a live
+  user. ``principal`` additionally accepts an ``X-API-Key`` header, so the same
+  endpoints can be driven by the browser (cookie) or by external API clients
+  (key). Raises 401/403 as appropriate.
 """
 
 from __future__ import annotations
 
+import hashlib
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Cookie, Depends, HTTPException, Response, status
+from fastapi import Cookie, Depends, HTTPException, Response, Security, status
+from fastapi.security import APIKeyHeader
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from .config import settings
 from .db import get_db
+from .models import ApiKey
 from .models import Session as SessionModel
 from .models import User
 
@@ -121,17 +127,17 @@ def _unauthorized() -> HTTPException:
 
 def current_user(
     db: OrmSession = Depends(get_db),
-    csap_session: str | None = Cookie(default=None),
+    nik_session: str | None = Cookie(default=None),
 ) -> User:
     """Resolve the session cookie to the authenticated user.
 
     Raises 401 when the cookie is missing, unknown, or the session has expired.
     Expired sessions are proactively deleted.
     """
-    if not csap_session:
+    if not nik_session:
         raise _unauthorized()
 
-    session = db.get(SessionModel, csap_session)
+    session = db.get(SessionModel, nik_session)
     if session is None:
         raise _unauthorized()
 
@@ -155,6 +161,79 @@ def require_admin(user: User = Depends(current_user)) -> User:
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
         )
     return user
+
+
+# ---------------------------------------------------------------------------
+# API keys
+# ---------------------------------------------------------------------------
+# API keys are 256-bit random tokens (high entropy), so a fast digest with an
+# exact-match lookup is both safe and O(1) — unlike passwords, they don't need
+# a slow bcrypt hash. Only the digest is stored; the plaintext is shown once.
+API_KEY_PREFIX = "nik_"
+
+
+def generate_api_key() -> tuple[str, str]:
+    """Return a new (plaintext_key, prefix). Store only ``hash_api_key(key)``."""
+    token = API_KEY_PREFIX + secrets.token_urlsafe(32)
+    return token, token[: len(API_KEY_PREFIX) + 8]
+
+
+def hash_api_key(key: str) -> str:
+    """SHA-256 hex digest of an API key (used for storage and lookup)."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+# Documented in OpenAPI so Swagger UI shows an "Authorize" box for the header.
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+@dataclass
+class Principal:
+    """The authenticated caller: a logged-in user or an API key."""
+
+    kind: str  # 'user' | 'apikey'
+    actor: str  # username, or 'api:<label>'
+    role: str  # 'admin' | 'analyst'
+    user: User | None = None
+
+
+def principal(
+    db: OrmSession = Depends(get_db),
+    nik_session: str | None = Cookie(default=None),
+    api_key: str | None = Security(api_key_header),
+) -> Principal:
+    """Resolve the caller from an API key header OR the session cookie.
+
+    Endpoints usable both from the browser and by external clients depend on
+    this instead of ``current_user``. An API key grants analyst-level access.
+    """
+    # 1. API key (external clients): exact digest match against a live key.
+    if api_key:
+        row = db.scalar(
+            select(ApiKey).where(
+                ApiKey.key_hash == hash_api_key(api_key),
+                ApiKey.revoked_at.is_(None),
+            )
+        )
+        if row is None:
+            raise _unauthorized()
+        row.last_used_at = now_iso()
+        db.commit()
+        return Principal(kind="apikey", actor=f"api:{row.label}", role="analyst")
+
+    # 2. Session cookie (browser): reuse the same validation as current_user.
+    if nik_session:
+        session = db.get(SessionModel, nik_session)
+        if session is not None and _parse_iso(session.expires_at) > datetime.now(
+            timezone.utc
+        ):
+            user = db.get(User, session.user_id)
+            if user is not None:
+                return Principal(
+                    kind="user", actor=user.username, role=user.role, user=user
+                )
+
+    raise _unauthorized()
 
 
 # ---------------------------------------------------------------------------

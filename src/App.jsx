@@ -35,7 +35,7 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 // drag time); this is the hard floor so the incident list stays usable.
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_DEFAULT_WIDTH = 288
-const SIDEBAR_WIDTH_KEY = 'csap.sidebarWidth'
+const SIDEBAR_WIDTH_KEY = 'nik.sidebarWidth'
 
 /** Clamp a sidebar width to [MIN, 25% of the viewport]. */
 function clampSidebarWidth(width) {

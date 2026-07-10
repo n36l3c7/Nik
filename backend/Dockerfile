@@ -1,4 +1,4 @@
-# CSAP backend image — FastAPI served by gunicorn + uvicorn workers.
+# Nik backend image — FastAPI served by gunicorn + uvicorn workers.
 FROM python:3.12-slim
 
 # Don't buffer stdout/stderr (so logs show up promptly) and don't write .pyc.

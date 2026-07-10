@@ -84,3 +84,24 @@ class Setting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class ApiKey(Base):
+    """An API key for external, browser-less access.
+
+    Only the bcrypt ``key_hash`` is stored; the plaintext key is shown to the
+    admin exactly once at creation. ``prefix`` is the first few characters
+    (safe to display) so a key can be recognised in listings. A revoked key has
+    a non-null ``revoked_at`` and is rejected.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    prefix: Mapped[str] = mapped_column(String, nullable=False)
+    key_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_used_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revoked_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

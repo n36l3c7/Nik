@@ -105,3 +105,45 @@ class SettingsOut(BaseModel):
 
     keywords: list[dict[str, Any]]
     businessHours: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# API keys
+# ---------------------------------------------------------------------------
+class ApiKeyCreate(BaseModel):
+    """Request body to create an API key."""
+
+    label: str
+
+
+class ApiKeyOut(BaseModel):
+    """Public API-key representation. Never includes the secret."""
+
+    id: str
+    label: str
+    prefix: str
+    createdAt: str
+    createdBy: Optional[str] = None
+    lastUsedAt: Optional[str] = None
+
+
+class ApiKeysEnvelope(BaseModel):
+    """Wrapper for a list of API keys: {keys}."""
+
+    keys: list[ApiKeyOut]
+
+
+class ApiKeyCreated(BaseModel):
+    """Create response: the plaintext key (shown ONCE) plus its record."""
+
+    key: str
+    apiKey: ApiKeyOut
+
+
+# ---------------------------------------------------------------------------
+# Incident notes (dedicated API endpoints)
+# ---------------------------------------------------------------------------
+class NoteIn(BaseModel):
+    """Request body to add or edit an incident note."""
+
+    text: str

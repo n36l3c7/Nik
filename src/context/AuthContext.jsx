@@ -15,7 +15,7 @@ import { useAudit } from './AuditContext.jsx'
  * ============================================================================
  *
  * Credentials are verified by the backend, which hashes passwords (bcrypt) and
- * issues an httpOnly session cookie (`csap_session`). The client NEVER hashes
+ * issues an httpOnly session cookie (`nik_session`). The client NEVER hashes
  * passwords and never sees the hash — the old crypto.subtle code is gone.
  *
  * User shape (as returned by the API): { id, username, role, createdAt, createdBy }.

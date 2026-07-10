@@ -51,15 +51,15 @@ def login(body: LoginIn, response: Response, db: OrmSession = Depends(get_db)) -
 def logout(
     response: Response,
     db: OrmSession = Depends(get_db),
-    csap_session: str | None = Cookie(default=None),
+    nik_session: str | None = Cookie(default=None),
 ) -> Response:
     """Delete the current session and clear the cookie.
 
     Tolerant by design: succeeds (204) even if the cookie is missing or the
     session was already removed/expired.
     """
-    if csap_session:
-        delete_session(db, csap_session)
+    if nik_session:
+        delete_session(db, nik_session)
     result = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_session_cookie(result)
     return result

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Shield, LogIn, AlertCircle } from 'lucide-react'
+import { Shield, LogIn, AlertCircle, BookOpen } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { Button } from '../ui/index.js'
 
@@ -28,9 +28,9 @@ function BrandHeader() {
       <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-600 text-white shadow-sm">
         <Shield className="h-6 w-6" aria-hidden="true" />
       </div>
-      <h1 className="text-xl font-semibold text-slate-900 dark:text-white">CSAP</h1>
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Nik</h1>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-        Cyber Security Analysis Platform
+        Forensic analysis platform
       </p>
     </div>
   )
@@ -117,6 +117,17 @@ export default function LoginScreen() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
+
+        {/* Public interactive API docs (no login to view; calls need an API key) */}
+        <p className="mt-5 border-t border-slate-200 pt-4 text-center text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <a
+            href="/api/docs"
+            className="inline-flex items-center gap-1 font-medium text-cyan-700 hover:underline dark:text-cyan-400"
+          >
+            <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+            API documentation
+          </a>
+        </p>
       </div>
     </div>
   )

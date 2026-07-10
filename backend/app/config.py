@@ -40,13 +40,13 @@ def _database_url() -> str:
 
     password = os.getenv("DB_PASSWORD")
     if password:
-        user = quote_plus(os.getenv("DB_USER", "csap"))
+        user = quote_plus(os.getenv("DB_USER", "nik"))
         host = os.getenv("DB_HOST", "localhost")
         port = os.getenv("DB_PORT", "5432")
-        name = os.getenv("DB_NAME", "csap")
+        name = os.getenv("DB_NAME", "nik")
         return f"postgresql+psycopg://{user}:{quote_plus(password)}@{host}:{port}/{name}"
 
-    return "sqlite:///./csap.db"
+    return "sqlite:///./nik.db"
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -96,7 +96,7 @@ class Settings:
         self.SESSION_TTL_HOURS: int = _get_int("SESSION_TTL_HOURS", 12)
 
         # Name of the session cookie (per API contract).
-        self.SESSION_COOKIE_NAME: str = "csap_session"
+        self.SESSION_COOKIE_NAME: str = "nik_session"
 
     @property
     def is_sqlite(self) -> bool:

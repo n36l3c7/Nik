@@ -1,4 +1,4 @@
-# CSAP web image — build the static SPA, then serve it with nginx (which also
+# Nik web image — build the static SPA, then serve it with nginx (which also
 # reverse-proxies /api to the backend container).
 #
 # Build context is the REPOSITORY ROOT (see docker-compose.yml), so this file

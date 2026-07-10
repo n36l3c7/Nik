@@ -41,7 +41,7 @@ def _resolve_optional_user(request: Request, db: OrmSession) -> User | None:
     from ..models import Session as SessionModel
     from ..security import _parse_iso  # reuse the same parser
 
-    token = request.cookies.get("csap_session")
+    token = request.cookies.get("nik_session")
     if not token:
         return None
     session = db.get(SessionModel, token)

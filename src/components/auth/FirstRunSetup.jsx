@@ -28,9 +28,9 @@ function BrandHeader() {
       <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-600 text-white shadow-sm">
         <Shield className="h-6 w-6" aria-hidden="true" />
       </div>
-      <h1 className="text-xl font-semibold text-slate-900 dark:text-white">CSAP</h1>
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Nik</h1>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-        Cyber Security Analysis Platform
+        Forensic analysis platform
       </p>
     </div>
   )

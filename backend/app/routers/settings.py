@@ -14,7 +14,7 @@ from ..db import get_db
 from ..defaults import default_settings_doc
 from ..models import Setting, User
 from ..schemas import SettingsIn, SettingsOut
-from ..security import current_user
+from ..security import Principal, current_user, principal
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -24,7 +24,7 @@ SETTINGS_ID = 1
 
 @router.get("", response_model=SettingsOut)
 def get_settings(
-    _user: User = Depends(current_user), db: OrmSession = Depends(get_db)
+    _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Return the shared settings, falling back to factory defaults."""
     row = db.get(Setting, SETTINGS_ID)

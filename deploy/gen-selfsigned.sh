@@ -7,8 +7,8 @@
 set -eu
 
 CERT_DIR=/etc/nginx/certs
-CRT="$CERT_DIR/csap.crt"
-KEY="$CERT_DIR/csap.key"
+CRT="$CERT_DIR/nik.crt"
+KEY="$CERT_DIR/nik.key"
 HOST="${TLS_HOSTNAME:-localhost}"
 DAYS="${TLS_SELFSIGNED_DAYS:-825}"
 
