@@ -12,16 +12,18 @@ server-side (browser actions are logged by the frontend).
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..db import get_db
-from ..models import AuditEntry, Incident
+from ..models import AuditEntry, Incident, IdempotencyRecord
 from ..parsing.registry import apply_upload
 from ..schemas import NoteIn
 from ..security import Principal, now_iso, principal, writer_principal
@@ -78,23 +80,101 @@ def _get_or_404(db: OrmSession, incident_id: str) -> Incident:
     return row
 
 
+def _etag(doc: dict | None) -> str:
+    """Weak version tag for an incident (changes on every write via updatedAt)."""
+    return '"' + str((doc or {}).get("updatedAt") or "") + '"'
+
+
+def _idempotent_replay(db: OrmSession, key: str | None):
+    """Return the stored response for a seen Idempotency-Key, or None."""
+    if not key:
+        return None
+    rec = db.get(IdempotencyRecord, key)
+    if rec is None:
+        return None
+    return JSONResponse(content=json.loads(rec.response_json), status_code=rec.status_code)
+
+
+def _idempotent_save(db: OrmSession, key: str | None, status_code: int, body: Any) -> None:
+    if not key or db.get(IdempotencyRecord, key) is not None:
+        return
+    db.add(
+        IdempotencyRecord(
+            key=key, created_at=now_iso(), status_code=status_code, response_json=json.dumps(body)
+        )
+    )
+    db.commit()
+
+
 @router.get("")
 def list_incidents(
-    _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    response: Response,
+    _caller: Principal = Depends(principal),
+    db: OrmSession = Depends(get_db),
+    limit: int | None = Query(None, ge=1, le=1000, description="Page size (default: all)."),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(None, description="Match name/host/username."),
+    host: str | None = Query(None),
+    username: str | None = Query(None),
+    view: str = Query("full", pattern="^(full|summary)$", description="full = whole documents; summary = light rows (no data)."),
 ) -> dict:
-    """Return all incidents as full documents, newest-updated first."""
-    rows = db.scalars(select(Incident).order_by(Incident.updated_at.desc())).all()
-    return {"incidents": [row.doc for row in rows]}
+    """List incidents newest-updated first, filterable and paginated.
+
+    ``view=summary`` returns light rows (id/name/host/username/timestamps) WITHOUT
+    the heavy document body — use it for lists at scale, then fetch a single
+    incident's full document from ``GET /incidents/{id}``. Backward compatible:
+    with no params it returns every full document. Total count is also in the
+    ``X-Total-Count`` header.
+    """
+    conditions = []
+    if q:
+        like = f"%{q}%"
+        conditions.append(
+            or_(Incident.name.ilike(like), Incident.host.ilike(like), Incident.username.ilike(like))
+        )
+    if host:
+        conditions.append(Incident.host.ilike(f"%{host}%"))
+    if username:
+        conditions.append(Incident.username.ilike(f"%{username}%"))
+
+    total = db.scalar(select(func.count()).select_from(Incident).where(*conditions)) or 0
+    response.headers["X-Total-Count"] = str(total)
+    order = Incident.updated_at.desc()
+
+    if view == "summary":
+        stmt = select(
+            Incident.id, Incident.name, Incident.host, Incident.username,
+            Incident.created_at, Incident.updated_at,
+        ).where(*conditions).order_by(order)
+        stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
+        incidents = [
+            {"id": r.id, "name": r.name, "host": r.host, "username": r.username,
+             "createdAt": r.created_at, "updatedAt": r.updated_at}
+            for r in db.execute(stmt).all()
+        ]
+    else:
+        stmt = select(Incident).where(*conditions).order_by(order)
+        stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
+        incidents = [row.doc for row in db.scalars(stmt).all()]
+
+    return {"incidents": incidents, "total": total}
 
 
 @router.get("/{incident_id}")
 def get_incident(
     incident_id: str,
+    response: Response,
     _caller: Principal = Depends(principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    """Return a single incident's full document; 404 if missing."""
-    return _get_or_404(db, incident_id).doc
+    """Return a single incident's full document; 404 if missing.
+
+    The response carries an ``ETag`` (the incident version); pass it back as
+    ``If-Match`` on PATCH for optimistic concurrency.
+    """
+    row = _get_or_404(db, incident_id)
+    response.headers["ETag"] = _etag(row.doc)
+    return row.doc
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -131,16 +211,24 @@ def create_incident(
 @router.patch("/{incident_id}")
 def patch_incident(
     incident_id: str,
+    response: Response,
     partial: dict[str, Any] = Body(...),
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    if_match: str | None = Header(None, alias="If-Match"),
 ) -> dict:
     """Shallow-merge changed top-level keys into the stored document.
 
     Any incident field can be edited this way: ``host``, ``username``, ``os``,
     ``suspiciousStart``/``suspiciousEnd``, ``notes``, ``flags``, ``data``, …
+
+    Optimistic concurrency: if an ``If-Match`` header is sent it must equal the
+    incident's current ``ETag`` (from GET), else ``412 Precondition Failed`` —
+    so a stale writer can't silently clobber a newer version.
     """
     row = _get_or_404(db, incident_id)
+    if if_match is not None and if_match.strip() != _etag(row.doc):
+        raise HTTPException(status_code=412, detail="Incident was modified by someone else (ETag mismatch)")
     merged = dict(row.doc or {})
     for key, value in partial.items():
         merged[key] = value
@@ -149,6 +237,7 @@ def patch_incident(
     _sync_columns(row)
     _audit(db, caller, "incident.update", f'Updated attributes of "{merged.get("name") or incident_id}"', row)
     db.commit()
+    response.headers["ETag"] = _etag(row.doc)
     return row.doc
 
 
@@ -184,6 +273,7 @@ async def upload_artifact(
     category: str | None = Query(None, description="Category id (tab=endpoint), e.g. persistence"),
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ) -> dict:
     """Upload a raw artifact file; the server parses it and merges the result.
 
@@ -191,7 +281,12 @@ async def upload_artifact(
     - `tab=browser&browser=chrome&source=history` → a Chromium `History` DB
     - `tab=commands&shell=bash` → a `.bash_history`
     - `tab=endpoint&category=persistence&source=cron` → a cron file / tool CSV
+
+    Send an ``Idempotency-Key`` header to make retries safe.
     """
+    replay = _idempotent_replay(db, idempotency_key)
+    if replay is not None:
+        return replay
     row = _get_or_404(db, incident_id)
     data = await file.read()
     doc = dict(row.doc or {})
@@ -214,6 +309,7 @@ async def upload_artifact(
         always=True,
     )
     db.commit()
+    _idempotent_save(db, idempotency_key, 200, summary)
     return summary
 
 
@@ -238,8 +334,16 @@ def add_note(
     body: NoteIn,
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ) -> dict:
-    """Append a free-form note to the incident timeline."""
+    """Append a free-form note to the incident timeline.
+
+    Send an ``Idempotency-Key`` header to make retries safe (a repeated request
+    returns the first result instead of adding a second note).
+    """
+    replay = _idempotent_replay(db, idempotency_key)
+    if replay is not None:
+        return replay
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Note text is required")
@@ -251,6 +355,7 @@ def add_note(
     _save_doc(db, row, doc)
     _audit(db, caller, "note.add", "Added a note", row, always=True)
     db.commit()
+    _idempotent_save(db, idempotency_key, 201, note)
     return note
 
 

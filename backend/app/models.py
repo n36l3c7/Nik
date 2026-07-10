@@ -86,6 +86,18 @@ class Setting(Base):
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class IdempotencyRecord(Base):
+    """Stored response for a processed ``Idempotency-Key`` so a retried POST
+    returns the same result instead of acting twice."""
+
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_json: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class ApiKey(Base):
     """An API key for external, browser-less access.
 
