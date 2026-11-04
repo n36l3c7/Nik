@@ -40,6 +40,7 @@ def _sync_columns(incident: Incident) -> None:
     incident.name = str(doc.get("name") or "")
     incident.host = str(doc.get("host") or "")
     incident.username = str(doc.get("username") or "")
+    incident.os = str(doc.get("os") or "")
     incident.updated_at = str(doc.get("updatedAt") or "")
     incident.created_at = str(doc.get("createdAt") or "")
 
@@ -123,7 +124,7 @@ def list_incidents(
 ) -> dict:
     """List incidents newest-updated first, filterable and paginated.
 
-    ``view=summary`` returns light rows (id/name/host/username/timestamps) WITHOUT
+    ``view=summary`` returns light rows (id/name/host/username/os/timestamps) WITHOUT
     the heavy document body — use it for lists at scale, then fetch a single
     incident's full document from ``GET /incidents/{id}``. Backward compatible:
     with no params it returns every full document. Total count is also in the
@@ -146,12 +147,12 @@ def list_incidents(
 
     if view == "summary":
         stmt = select(
-            Incident.id, Incident.name, Incident.host, Incident.username,
+            Incident.id, Incident.name, Incident.host, Incident.username, Incident.os,
             Incident.created_at, Incident.updated_at,
         ).where(*conditions).order_by(order)
         stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
         incidents = [
-            {"id": r.id, "name": r.name, "host": r.host, "username": r.username,
+            {"id": r.id, "name": r.name, "host": r.host, "username": r.username, "os": r.os,
              "createdAt": r.created_at, "updatedAt": r.updated_at}
             for r in db.execute(stmt).all()
         ]
@@ -163,18 +164,28 @@ def list_incidents(
     return {"incidents": incidents, "total": total}
 
 
-@router.get("/{incident_id}")
+@router.get("/{incident_id}", response_model=None)
 def get_incident(
     incident_id: str,
     response: Response,
     _caller: Principal = Depends(principal),
     db: OrmSession = Depends(get_db),
-) -> dict:
+    if_none_match: str | None = Header(None, alias="If-None-Match"),
+) -> dict | Response:
     """Return a single incident's full document; 404 if missing.
 
     The response carries an ``ETag`` (the incident version); pass it back as
-    ``If-Match`` on PATCH for optimistic concurrency.
+    ``If-Match`` on PATCH for optimistic concurrency, or as ``If-None-Match``
+    here to get ``304 Not Modified`` (no body) while your copy is current. The
+    304 check reads only the version column, never the document body.
     """
+    if if_none_match is not None:
+        updated_at = db.scalar(select(Incident.updated_at).where(Incident.id == incident_id))
+        if updated_at is None:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        etag = '"' + updated_at + '"'
+        if etag in {tag.strip() for tag in if_none_match.split(",")}:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
     row = _get_or_404(db, incident_id)
     response.headers["ETag"] = _etag(row.doc)
     return row.doc
@@ -213,6 +224,26 @@ def create_incident(
     return incident.doc
 
 
+MERGE_PATCH_MEDIA_TYPE = "application/merge-patch+json"
+
+
+def merge_patch(target: Any, patch: Any) -> Any:
+    """Apply an RFC 7396 JSON Merge Patch to ``target`` and return the result.
+
+    Objects are merged recursively, ``null`` removes a member, and any other
+    value (arrays included) replaces the target value. ``target`` is not mutated.
+    """
+    if not isinstance(patch, dict):
+        return patch
+    result = dict(target) if isinstance(target, dict) else {}
+    for key, value in patch.items():
+        if value is None:
+            result.pop(key, None)
+        else:
+            result[key] = merge_patch(result.get(key), value)
+    return result
+
+
 @router.patch("/{incident_id}")
 def patch_incident(
     incident_id: str,
@@ -222,8 +253,15 @@ def patch_incident(
     db: OrmSession = Depends(get_db),
     background_tasks: BackgroundTasks = None,
     if_match: str | None = Header(None, alias="If-Match"),
+    content_type: str | None = Header(None, alias="Content-Type"),
 ) -> dict:
-    """Shallow-merge changed top-level keys into the stored document.
+    """Update an incident document, in one of two modes chosen by ``Content-Type``.
+
+    - ``application/json`` (default): shallow-merge the given top-level keys —
+      each key replaces the stored value as a whole.
+    - ``application/merge-patch+json``: apply an RFC 7396 JSON Merge Patch —
+      nested objects are merged recursively and ``null`` removes a member, so
+      a client can send only the part of ``data`` that actually changed.
 
     Any incident field can be edited this way: ``host``, ``username``, ``os``,
     ``suspiciousStart``/``suspiciousEnd``, ``notes``, ``flags``, ``data``, …
@@ -235,9 +273,14 @@ def patch_incident(
     row = _get_or_404(db, incident_id)
     if if_match is not None and if_match.strip() != _etag(row.doc):
         raise HTTPException(status_code=412, detail="Incident was modified by someone else (ETag mismatch)")
-    merged = dict(row.doc or {})
-    for key, value in partial.items():
-        merged[key] = value
+    media_type = (content_type or "").split(";")[0].strip().lower()
+    if media_type == MERGE_PATCH_MEDIA_TYPE:
+        merged = merge_patch(row.doc or {}, partial)
+        merged["id"] = row.id
+    else:
+        merged = dict(row.doc or {})
+        for key, value in partial.items():
+            merged[key] = value
     row.doc = merged
     flag_modified(row, "doc")
     _sync_columns(row)

@@ -57,6 +57,7 @@ class Incident(Base):
     name: Mapped[str] = mapped_column(String, nullable=False, default="")
     host: Mapped[str] = mapped_column(String, nullable=False, default="")
     username: Mapped[str] = mapped_column(String, nullable=False, default="")
+    os: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

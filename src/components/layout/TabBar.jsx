@@ -14,9 +14,10 @@ import { ANALYSIS_TABS } from '../../config/tabs.js'
  * @param {{ activeTabId: string, onChange: (tabId: string) => void }} props
  */
 export default function TabBar({ activeTabId, onChange }) {
-  const { activeIncident } = useIncidents()
+  const { activeSummary } = useIncidents()
   // Without an active incident there is nothing to analyze: tabs are disabled.
-  const disabled = !activeIncident
+  // They stay usable while the selected incident is still loading.
+  const disabled = !activeSummary
 
   return (
     <nav

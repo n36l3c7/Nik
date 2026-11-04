@@ -25,7 +25,8 @@ ADMIN = {"username": "admin", "password": "supersecret"}
 
 @pytest.fixture()
 def client():
-    """A TestClient on a freshly-created schema."""
+    """A TestClient on a freshly-created schema and empty rate-limit counters."""
+    app.state.limiter.reset()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     return TestClient(app)

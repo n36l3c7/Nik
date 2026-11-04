@@ -11,7 +11,8 @@
  * can surface the server's message directly (the backend returns
  * `{ "detail": "<message>" }` on errors — FastAPI's default shape).
  *
- * 204 (No Content) resolves to `null`.
+ * 204 (No Content) resolves to `null`; 304 (Not Modified, after a conditional
+ * request with `If-None-Match`) resolves to the `NOT_MODIFIED` sentinel.
  *
  * This is the ONLY file that knows how to talk to the server; every context
  * (auth, audit, settings, incidents) builds on top of it.
@@ -19,23 +20,33 @@
 
 const BASE = '/api'
 
+/** Returned instead of a payload when the server answers 304 Not Modified. */
+export const NOT_MODIFIED = Symbol('NOT_MODIFIED')
+
 /**
  * Perform an API request.
  * @param {string} method  HTTP verb.
  * @param {string} path    Path relative to `/api` (e.g. '/incidents').
  * @param {*} [body]       Optional JSON-serializable request body.
- * @returns {Promise<*>}   Parsed JSON payload, or null for empty responses.
- * @throws {Error} With the server's `detail` message on non-2xx.
+ * @param {object} [opts]
+ * @param {object} [opts.headers]      Extra request headers (e.g. If-None-Match).
+ * @param {AbortSignal} [opts.signal]  Cancels the request when aborted.
+ * @param {string} [opts.contentType]  Body media type (default application/json).
+ * @returns {Promise<*>}   Parsed JSON payload, null for empty responses, or
+ *                         NOT_MODIFIED for a 304.
+ * @throws {Error} With the server's `detail` message on non-2xx; an aborted
+ *                 request rejects with the fetch AbortError.
  */
-async function request(method, path, body) {
+async function request(method, path, body, { headers = {}, signal, contentType } = {}) {
   const options = {
     method,
     credentials: 'include', // send/receive the httpOnly session cookie
-    headers: {},
+    headers: { ...headers },
+    signal,
   }
 
   if (body !== undefined) {
-    options.headers['Content-Type'] = 'application/json'
+    options.headers['Content-Type'] = contentType ?? 'application/json'
     options.body = JSON.stringify(body)
   }
 
@@ -43,12 +54,14 @@ async function request(method, path, body) {
   try {
     response = await fetch(`${BASE}${path}`, options)
   } catch (networkError) {
+    if (networkError?.name === 'AbortError') throw networkError
     // fetch only rejects on network failure (server unreachable, DNS, CORS…).
     throw new Error(networkError?.message || 'Cannot reach the server.')
   }
 
-  // 204 No Content — nothing to parse.
+  // 204 No Content — nothing to parse; 304 — the caller's copy is current.
   if (response.status === 204) return null
+  if (response.status === 304) return NOT_MODIFIED
 
   // Parse the body defensively: some error responses may be empty.
   let payload = null
@@ -72,11 +85,11 @@ async function request(method, path, body) {
 }
 
 export const api = {
-  get: (path) => request('GET', path),
-  post: (path, body) => request('POST', path, body),
-  patch: (path, body) => request('PATCH', path, body),
-  put: (path, body) => request('PUT', path, body),
-  del: (path) => request('DELETE', path),
+  get: (path, opts) => request('GET', path, undefined, opts),
+  post: (path, body, opts) => request('POST', path, body, opts),
+  patch: (path, body, opts) => request('PATCH', path, body, opts),
+  put: (path, body, opts) => request('PUT', path, body, opts),
+  del: (path, opts) => request('DELETE', path, undefined, opts),
 }
 
 /**

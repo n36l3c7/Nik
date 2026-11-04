@@ -24,6 +24,10 @@ every action attributed to a named analyst and recorded in a global audit log.
 - **Centralized storage** — incidents, users, settings and the audit log live
   in PostgreSQL behind a FastAPI REST API. Every analyst who signs in sees the
   same data, from any machine, and work is attributable across the team.
+- **Lazy loading** — sign-in downloads only the light incident list; an
+  incident's artifacts are fetched when it is opened (with a non-blocking
+  loading state) and edits send only what changed, so many large incidents
+  never slow the platform down.
 - **Host-OS aware** — each incident is tied to a host OS (Windows / macOS /
   Linux) that drives the suggested artifact paths, the available shells and the
   incident icon.
@@ -167,7 +171,16 @@ Other npm scripts:
 ```bash
 npm run build      # production build (static site in dist/)
 npm run preview    # serve the production build locally
+npm test           # frontend unit tests (Node's built-in test runner, no deps)
 ```
+
+Backend tests run with `pytest` from `backend/` after
+`pip install -r requirements-dev.txt`. CI runs both suites plus the build.
+
+**Upgrading an existing database:** run `alembic upgrade head` from `backend/`
+after pulling a release that adds a migration (the Docker image does this on
+start). A database created by the dev-mode `create_all` is adopted by the
+baseline migration.
 
 Tailwind v4 is wired in through the Vite plugin (`@tailwindcss/vite`), so there
 is no `tailwind.config.js` and no extra setup step.
@@ -577,10 +590,10 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/incidents` | List incidents. Query: `limit`/`offset`, `q`/`host`/`username`, `view=summary` (light rows, no document body). `X-Total-Count` header. |
-| `GET /api/incidents/{id}` | One incident (returns an `ETag`). |
+| `GET /api/incidents` | List incidents. Query: `limit`/`offset`, `q`/`host`/`username`, `view=summary` (light rows: id, name, host, username, os, timestamps — no document body). `X-Total-Count` header. |
+| `GET /api/incidents/{id}` | One incident (returns an `ETag`). Send `If-None-Match: <ETag>` to get `304` (no body) while your copy is current. |
 | `POST /api/incidents` | Create/upsert (id generated if omitted). |
-| `PATCH /api/incidents/{id}` | Edit any top-level field. Honors `If-Match` (→ `412` on a stale version). |
+| `PATCH /api/incidents/{id}` | `application/json`: replace the given top-level fields. `application/merge-patch+json`: apply an [RFC 7396](https://www.rfc-editor.org/rfc/rfc7396) merge patch (nested merge, `null` deletes). Honors `If-Match` (→ `412` on a stale version). |
 | `DELETE /api/incidents/{id}` | Delete an incident. |
 | `POST /api/incidents/{id}/notes` · `PATCH`/`DELETE …/{noteId}` | Add / edit / remove notes. |
 | `POST /api/incidents/{id}/upload` | Upload a raw artifact file (multipart). `?async=true` → `202 { jobId }`. |
@@ -604,6 +617,12 @@ key** (a non-admin/read-only key gets `403`).
 - **Optimistic concurrency**: `GET` returns an `ETag`; send it back as
   `If-Match` on `PATCH` — a stale write gets `412`, so an automation and an
   analyst can't clobber each other.
+- **Conditional GET**: send the `ETag` as `If-None-Match` on
+  `GET /incidents/{id}` to get `304 Not Modified` while nothing changed (the
+  check reads only the version column, not the document).
+- **Partial updates**: `PATCH` with `Content-Type: application/merge-patch+json`
+  updates only the nested members you send, e.g.
+  `{"flags": {"<key>": null}}` removes one flag without resending the rest.
 - **Idempotency**: send an `Idempotency-Key` header on `POST` notes/upload to
   make retries safe (the first result is replayed).
 - **Async uploads**: `POST …/upload?async=true` → `202 { jobId }`, parsed in
@@ -772,6 +791,7 @@ change.
     │
     ├── utils/
     │   ├── id.js                   # generateId() → crypto.randomUUID (with fallback)
+    │   ├── mergePatch.js           # createMergePatch(prev, next) — RFC 7396 diff (+ .test.js)
     │   ├── time.js                 # webkitToMs, firefoxToMs, anyToMs, formatDateTime…
     │   ├── url.js                  # extractDomain, extractSearchQuery, topDomains…
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
@@ -788,7 +808,7 @@ change.
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
         │                           #   hours, accounts, API keys, audit log)
-        ├── layout/                 # Sidebar, Header, TabBar, OsPicker
+        ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState
         └── tabs/
             ├── NetworkLogsTab.jsx      # Placeholder, ready for expansion
             ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
@@ -870,10 +890,14 @@ the `useIncidents()` hook:
 
 ```js
 const {
-  incidents,              // Incident[] — all incidents
-  activeIncident,         // Incident | null — selected incident
+  incidents,              // IncidentSummary[] — light rows {id, name, host, username, os, createdAt, updatedAt}
+  activeIncident,         // Incident | null — full document of the selected incident, once loaded
   activeIncidentId,       // string | null
-  loading,                // boolean — true until the initial API load finishes
+  activeSummary,          // IncidentSummary | null — the selected row (available immediately)
+  activeLoading,          // boolean — the selected incident's document is downloading
+  activeLoadError,        // string | null — the download failed
+  retryActiveIncident,    // () => void — retry after activeLoadError
+  loading,                // boolean — true until the incident LIST has loaded
   storageError,           // string | null — persistence error surfaced in the UI
 
   createIncident,         // ({host, username, os}) => Incident — creates AND activates
@@ -905,17 +929,26 @@ const {
   updateNote,             // (id, noteId, text) => void
   removeNote,             // (id, noteId) => void
 
-  exportIncident,         // (id) => void — download the JSON (see §5)
+  exportIncident,         // async (id) => void — download the JSON (fetches it if not opened yet; see §5)
   importIncidentFromFile, // async (file) => Incident — throws Error(msg) if invalid
 } = useIncidents()
 ```
 
-Incidents are loaded once after authentication (`GET /api/incidents`) and kept
-in memory as an **optimistic model**: every mutation updates local state
-immediately and persists the changed top-level keys to the server
-(`POST` / `PATCH` / `DELETE /api/incidents/{id}`). A failed write surfaces in
-`storageError`, shown by `App.jsx` as a red banner. `setActiveBrowser` is the
-one exception — a pure view preference, never sent to the server.
+Loading is **lazy**. After authentication only the light list is fetched
+(`GET /api/incidents?view=summary`). Opening an incident downloads its full
+document (`GET /api/incidents/{id}`) while the main area shows a non-blocking
+loading state — the sidebar stays usable and opening another incident cancels
+the pending download. Documents stay cached in memory for the session;
+reopening one shows it at once and revalidates it with `If-None-Match`
+(`304` when unchanged, refreshed when someone else edited it).
+
+The cache is an **optimistic model**: every mutation updates local state
+immediately and persists only what changed, as an RFC 7396 JSON Merge Patch
+generated by `src/utils/mergePatch.js` from the previous and next document
+(`POST` / `PATCH` / `DELETE /api/incidents/{id}`). Toggling a flag therefore
+sends the flag, not the incident's artifacts. A failed write surfaces in
+`storageError`, shown by `App.jsx` as a red banner. `setActiveBrowser` and
+`setActiveShell` are view preferences, never sent on their own.
 
 #### Shape of an incident
 
