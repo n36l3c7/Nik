@@ -1,4 +1,15 @@
-import { Chrome, Compass, Database, Flame, Globe, Shield, Bookmark, Zap } from 'lucide-react'
+import {
+  Bookmark,
+  Chrome,
+  Compass,
+  Database,
+  Download,
+  Flame,
+  Globe,
+  Navigation,
+  Shield,
+  Zap,
+} from 'lucide-react'
 
 /*
  * ============================================================================
@@ -8,11 +19,13 @@ import { Chrome, Compass, Database, Flame, Globe, Shield, Bookmark, Zap } from '
  * The "Browser Forensics" tab shows a sub-tab for each browser listed here.
  * Each browser declares:
  *  - id / label / icon:  identity and entry in the sub-tab bar
- *  - engine:             'chromium' | 'firefox' — determines the parsers used
+ *  - engine:             'chromium' | 'firefox' | 'safari' — determines the parsers used
  *  - accent:             accent color of the sub-tab (Tailwind classes)
+ *  - platforms:          (optional) host OSes the browser exists on; omitted =
+ *                        all. The UI warns when the incident's OS is not listed.
  *  - profilePaths:       path of the profile PER OS (windows/macos/linux) for
  *                        the "where to find the files" note, driven by the
- *                        incident's host OS
+ *                        incident's host OS (only the OSes in `platforms`)
  *  - artifacts:          which analysis sections to show
  *                        ('history' | 'downloads' | 'bookmarks' | 'shortcuts')
  *  - sources:            the FILES the user uploads. Each source produces one
@@ -89,6 +102,42 @@ function firefoxSources(bases) {
   ]
 }
 
+/* ---- Safari (macOS only) ------------------------------------------------ */
+// History is a SQLite database (History.db); downloads and bookmarks are
+// property lists, usually binary (bplist00). Reading the folder on a live Mac
+// requires Full Disk Access for the copying process.
+function safariSources(bases) {
+  return [
+    {
+      key: 'history',
+      label: 'History.db',
+      icon: Database,
+      accept: '',
+      produces: ['history'],
+      paths: joinPaths(bases, 'History.db'),
+      hint: "SQLite database 'History.db': browsing history. Copy History.db-wal too and checkpoint the copy, or recent visits may be missing.",
+    },
+    {
+      key: 'downloads',
+      label: 'Downloads.plist',
+      icon: Download,
+      accept: '.plist,.xml',
+      produces: ['downloads'],
+      paths: joinPaths(bases, 'Downloads.plist'),
+      hint: "Property list 'Downloads.plist' (binary or XML): the download list.",
+    },
+    {
+      key: 'bookmarks',
+      label: 'Bookmarks.plist',
+      icon: Bookmark,
+      accept: '.plist,.xml',
+      produces: ['bookmarks'],
+      paths: joinPaths(bases, 'Bookmarks.plist'),
+      hint: "Property list 'Bookmarks.plist' (binary or XML): Favorites, bookmarks and Reading List.",
+    },
+  ]
+}
+
 /* Per-OS profile directories for each browser. */
 const CHROME_PROFILES = {
   windows: '%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\',
@@ -109,6 +158,9 @@ const BRAVE_PROFILES = {
   windows: '%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\Default\\',
   macos: '~/Library/Application Support/BraveSoftware/Brave-Browser/Default/',
   linux: '~/.config/BraveSoftware/Brave-Browser/Default/',
+}
+const SAFARI_PROFILES = {
+  macos: '~/Library/Safari/',
 }
 const OPERA_PROFILES = {
   windows: '%APPDATA%\\Opera Software\\Opera Stable\\',
@@ -167,11 +219,31 @@ export const BROWSERS = [
     artifacts: ['history', 'downloads', 'bookmarks', 'shortcuts'],
     sources: chromiumSources(OPERA_PROFILES),
   },
+  {
+    id: 'safari',
+    label: 'Safari',
+    icon: Navigation,
+    engine: 'safari',
+    accent: 'text-blue-500',
+    platforms: ['macos'],
+    profilePaths: SAFARI_PROFILES,
+    artifacts: ['history', 'downloads', 'bookmarks'],
+    sources: safariSources(SAFARI_PROFILES),
+  },
 ]
 
-/** Path of a source file for a given OS (windows fallback for legacy data). */
+/**
+ * Path of a source file for a given OS. Falls back to Windows (legacy data),
+ * then to the first OS the browser has a path for (e.g. macOS for Safari).
+ */
 export function sourcePathFor(source, osId) {
-  return source.paths?.[osId] ?? source.paths?.windows ?? ''
+  const paths = source.paths ?? {}
+  return paths[osId] ?? paths.windows ?? Object.values(paths)[0] ?? ''
+}
+
+/** True if the browser exists on the given host OS (no `platforms` = all). */
+export function isBrowserAvailableOn(browser, osId) {
+  return !browser?.platforms || browser.platforms.includes(osId)
 }
 
 /** All supported artifacts (keys of a browser's data arrays). */

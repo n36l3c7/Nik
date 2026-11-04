@@ -17,9 +17,9 @@ every action attributed to a named analyst and recorded in a global audit log.
 **Key traits:**
 
 - **Client-side artifact parsing** — SQLite artifacts (Chromium `History`,
-  Firefox `places.sqlite`, …) are parsed **in the analyst's browser** via
-  WebAssembly (`sql.js`); shell histories and DFIR CSV/JSON exports are parsed
-  the same way. Raw forensic files are never uploaded anywhere: only the
+  Firefox `places.sqlite`, Safari `History.db`, …) are parsed **in the
+  analyst's browser** via WebAssembly (`sql.js`); Apple property lists (binary
+  or XML), shell histories and DFIR CSV/JSON exports are parsed the same way. Raw forensic files are never uploaded anywhere: only the
   normalized entries reach the server.
 - **Centralized storage** — incidents, users, settings and the audit log live
   in PostgreSQL behind a FastAPI REST API. Every analyst who signs in sees the
@@ -32,8 +32,9 @@ every action attributed to a named analyst and recorded in a global audit log.
   Linux) that drives the suggested artifact paths, the available shells and the
   incident icon.
 - **Browser forensics** — one sub-tab per browser (Chrome, Firefox, Edge,
-  Brave, Opera): browsing history, downloads, bookmarks and omnibox shortcuts,
-  with event classification (visit / search / redirect).
+  Brave, Opera, Safari): browsing history, downloads, bookmarks (Safari's
+  Reading List included) and omnibox shortcuts, with event classification
+  (visit / search / redirect).
 - **Command history** — one sub-tab per shell (Bash, Zsh, Fish, PowerShell):
   parses the native history files and detects shell/PowerShell tradecraft.
 - **Endpoint artifacts** — program execution, persistence, file & folder
@@ -656,8 +657,8 @@ curl -H "X-API-Key: $KEY" -F file=@crontab \
   "https://localhost:8443/api/incidents/$ID/upload?tab=endpoint&category=persistence&source=cron"
 ```
 
-Routing parameters: `tab=browser` needs `browser` (chrome/firefox/edge/brave/opera)
-and `source` (history/bookmarks/shortcuts/places); `tab=commands` needs `shell`
+Routing parameters: `tab=browser` needs `browser` (chrome/firefox/edge/brave/opera/safari)
+and `source` (history/bookmarks/shortcuts/places; Safari: history/downloads/bookmarks); `tab=commands` needs `shell`
 (bash/zsh/fish/powershell); `tab=endpoint` needs `category`
 (execution/persistence/fileaccess/usb) and `source` (the source key, e.g. cron).
 The server ports the client-side parsers (`backend/app/parsing/`), so uploads
@@ -717,7 +718,9 @@ exports never download it.
 Chrome's SQLite schema (`History` with `urls`/`visits`/`downloads`, a JSON
 `Bookmarks` file, a `Shortcuts` database). **Firefox** is different: a single
 `places.sqlite` database (`moz_*` schema) holds history, bookmarks and
-downloads. Timestamps differ too — see [§4.3](#43-browsers-parsers-and-formats).
+downloads. **Safari** (macOS only) keeps history in a `History.db` database
+(`history_items`/`history_visits`) and downloads and bookmarks in two property
+lists, `Downloads.plist` and `Bookmarks.plist`, usually binary. Timestamps differ too — see [§4.3](#43-browsers-parsers-and-formats).
 
 **Heavy formats** (EVTX, PCAP, disk images) are a natural fit for server-side
 parsing with mature Python libraries (`python-evtx`, `scapy`, DFIR tooling).
@@ -781,9 +784,12 @@ change.
     │   ├── api.js                  # The ONLY file that talks to the server (fetch wrapper)
     │   ├── storage.js              # Local preference: UI theme in localStorage
     │   ├── fileParsers.js          # parseBrowserSource(file, engine, source): dispatch
-    │   │                           #   SQLite/JSON/CSV + lenient field mapping
-    │   ├── sqliteParser.js         # Chromium (History/Shortcuts) and Firefox (places.sqlite)
-    │   │                           #   parsers via sql.js (lazy WASM)
+    │   │                           #   SQLite/plist/JSON/CSV + lenient field mapping
+    │   ├── sqliteParser.js         # Chromium (History/Shortcuts), Firefox (places.sqlite) and
+    │   │                           #   Safari (History.db) parsers via sql.js (lazy WASM)
+    │   ├── plistParser.js          # parsePlist(buffer): binary (bplist00) + XML property lists
+    │   ├── safariParser.js         # Safari Downloads.plist / Bookmarks.plist → shared shapes
+    │   ├── __fixtures__/           # binary plist test fixtures (+ the script that makes them)
     │   ├── shellParsers.js         # parseShellHistory(file, shell): bash/zsh/fish/PSReadLine
     │   ├── artifactParsers.js      # parseArtifactImport(file, category, source): xbel/plist/
     │   │                           #   configlines/setupapi/knowledgeC + CSV/JSON (script mode)
@@ -791,8 +797,9 @@ change.
     │
     ├── utils/
     │   ├── id.js                   # generateId() → crypto.randomUUID (with fallback)
+    │   ├── path.js                 # fileNameFromPath (Windows/POSIX paths, file:// URIs)
     │   ├── mergePatch.js           # createMergePatch(prev, next) — RFC 7396 diff (+ .test.js)
-    │   ├── time.js                 # webkitToMs, firefoxToMs, anyToMs, formatDateTime…
+    │   ├── time.js                 # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…
     │   ├── url.js                  # extractDomain, extractSearchQuery, topDomains…
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
     │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
@@ -975,6 +982,8 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
         firefox: { history: [], downloads: [], bookmarks: [], shortcuts: [],
                    meta: { places: null } },
         edge: { … }, brave: { … }, opera: { … },
+        safari:  { history: [], downloads: [], bookmarks: [], shortcuts: [],
+                   meta: { history: null, downloads: null, bookmarks: null } },
       },
     },
     network:  {},
@@ -1274,10 +1283,12 @@ section.
 **Add a browser.** Browsers are a registry in `src/config/browsers.js`: adding
 an entry to the `BROWSERS` array makes the sub-tab appear and wires up upload,
 path hints and sections automatically. Each browser declares `id`, `label`,
-`icon`, `engine` (`'chromium'` | `'firefox'`), `accent`, `profilePath`,
-`artifacts` and `sources` (the files to load, each with `key`, `produces`,
-`path` and `hint`). A Chromium browser can reuse `chromiumSources(base)`; a
-brand-new engine also needs a branch in the parsers.
+`icon`, `engine` (`'chromium'` | `'firefox'` | `'safari'`), `accent`, optional
+`platforms` (host OSes it exists on — Safari is `['macos']`; the path note warns
+when the incident's OS is not listed), `profilePaths`, `artifacts` and `sources`
+(the files to load, each with `key`, `produces`, `paths` and `hint`). A
+Chromium browser can reuse `chromiumSources(bases)`; a brand-new engine also
+needs a branch in the parsers, and in `backend/app/parsing/` for API uploads.
 
 **The parsing dispatcher.** All parsing goes through
 `parseBrowserSource(file, engine, source)` in `src/services/fileParsers.js`:
@@ -1286,15 +1297,17 @@ brand-new engine also needs a branch in the parsers.
 parseBrowserSource(file, engine, source)
   → Promise<{ produced, format }>
 // produced: { history?, downloads?, bookmarks?, shortcuts? }
-// format:   'sqlite' | 'json' | 'csv'
+// format:   'sqlite' | 'plist' | 'json' | 'csv'
 ```
 
 Pipeline: `isSqliteBuffer()` (magic string in the first 16 bytes) → if SQLite,
 delegate to `parseSqliteSource(buffer, engine, sourceKey)` in
 `sqliteParser.js` (Chromium parsers over `urls`/`visits`/`downloads`/
 `omni_box_shortcuts`, Firefox parsers over `moz_places`/`moz_historyvisits`/
-`moz_bookmarks`/`moz_annos`); otherwise decode as text → JSON or CSV
-(papaparse). Field mapping is **lenient** (multiple aliases per field, English
+`moz_bookmarks`/`moz_annos`, Safari over `history_items`/`history_visits`);
+else, a property list (`bplist00` header or an XML `<plist>`) is decoded by
+`plistParser.js` — dependency-free — and mapped by `safariParser.js`
+(Safari only); otherwise decode as text → JSON or CSV (papaparse). Field mapping is **lenient** (multiple aliases per field, English
 and Italian column names), timestamps are normalized, and every row gets a
 unique `id`.
 
@@ -1315,6 +1328,8 @@ also needs its color in the `Badge` in `FileUploadZone.jsx`.
   (`ms = µs / 1000 − 11644473600000`).
 - **Firefox** uses "PRTime" (µs since **1970**) → `firefoxToMs`
   (`ms = µs / 1000`).
+- **Safari** uses Mac absolute time (seconds since **2001**, fractional) →
+  `macToMs` (`ms = (s + 978307200) × 1000`); plist dates are decoded to `Date`.
 
 Getting the conversion wrong shifts dates by ~369 years: always use the right
 helper for the engine.

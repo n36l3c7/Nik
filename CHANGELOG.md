@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-04
+
+### Added
+
+- Safari in Browser Forensics (macOS only): `History.db` (browsing history
+  with redirect chains), `Downloads.plist` and `Bookmarks.plist` (Favorites,
+  folders and Reading List, with the date each item was added).
+- A dependency-free property list parser for the browser, reading both binary
+  (`bplist00`) and XML plists.
+- Browser registry `platforms` field: the "where to find files" note warns
+  when a browser does not exist on the incident's host OS.
+- Safari uploads through the REST API (`browser=safari`, `source` =
+  `history` / `downloads` / `bookmarks`).
+
 ## [1.1.0] - 2026-11-04
 
 ### Added
@@ -44,5 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/n36l3c7/Nik/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/n36l3c7/Nik/releases/tag/v1.1.0

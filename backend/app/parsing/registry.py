@@ -25,6 +25,10 @@ BROWSERS = {
     "brave": {"engine": "chromium", "sources": _CHROMIUM_SOURCES},
     "opera": {"engine": "chromium", "sources": _CHROMIUM_SOURCES},
     "firefox": {"engine": "firefox", "sources": {"places": ["history", "bookmarks", "downloads"]}},
+    "safari": {
+        "engine": "safari",
+        "sources": {"history": ["history"], "downloads": ["downloads"], "bookmarks": ["bookmarks"]},
+    },
 }
 
 # --- Shells: id -> history format ------------------------------------------ #

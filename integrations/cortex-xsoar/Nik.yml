@@ -250,7 +250,7 @@ script:
       - commands
       - endpoint
     - name: browser
-      description: 'Browser id (tab=browser): chrome/firefox/edge/brave/opera.'
+      description: 'Browser id (tab=browser): chrome/firefox/edge/brave/opera/safari.'
     - name: shell
       description: 'Shell id (tab=commands): bash/zsh/fish/powershell.'
     - name: category

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import {
   AlertTriangle,
   Database,
+  FileCode,
   FileJson,
   FileSpreadsheet,
   Sparkles,
@@ -14,7 +15,7 @@ import { formatDateTime } from '../../../utils/time.js'
 
 /*
  * Drag & drop upload zone for a single browser artifact
- * (History / Bookmarks / Shortcuts). Three visual states with a consistent
+ * (History / Bookmarks / Shortcuts / plists). Three visual states with a consistent
  * height: empty (drop invitation), loading (spinner) and "imported" (file
  * metadata). Any parsing error is shown below the zone.
  */
@@ -24,6 +25,7 @@ const FORMAT_ICONS = {
   sqlite: Database,
   json: FileJson,
   csv: FileSpreadsheet,
+  plist: FileCode,
   demo: Sparkles,
 }
 
@@ -32,6 +34,7 @@ const FORMAT_COLORS = {
   sqlite: 'cyan',
   json: 'emerald',
   csv: 'amber',
+  plist: 'violet',
   demo: 'slate',
 }
 

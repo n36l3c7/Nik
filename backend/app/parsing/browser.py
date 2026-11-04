@@ -8,6 +8,8 @@ Produces the same normalized shapes the frontend stores under
 from __future__ import annotations
 
 import json
+import plistlib
+from datetime import datetime, timezone
 
 from .common import (
     as_count,
@@ -22,7 +24,7 @@ from .common import (
     pick,
     query_rows,
 )
-from .timeutil import any_to_ms, firefox_to_ms, webkit_to_ms
+from .timeutil import any_to_ms, firefox_to_ms, mac_to_ms, webkit_to_ms
 
 CHROMIUM_REDIRECT_MASK = 0x40000000 | 0x80000000
 FIREFOX_REDIRECT_TYPES = {5, 6}
@@ -31,6 +33,11 @@ CHROME_ROOT_LABELS = {
     "bookmark_bar": "Bookmarks bar",
     "other": "Other bookmarks",
     "synced": "Synced bookmarks",
+}
+SAFARI_ROOT_LABELS = {
+    "BookmarksBar": "Favorites",
+    "BookmarksMenu": "Bookmarks Menu",
+    "com.apple.ReadingList": "Reading List",
 }
 FIREFOX_ROOT_LABELS = {
     "root________": "",
@@ -272,8 +279,39 @@ def parse_firefox_downloads(conn):
     return out
 
 
+def parse_safari_history(conn):
+    """History.db: visits (Mac absolute time) joined with their history items."""
+    rows = query_rows(
+        conn,
+        """SELECT i.url AS url, v.title AS title, i.visit_count AS visit_count,
+                  v.id AS visit_id, v.redirect_source AS redirect_source,
+                  v.visit_time AS visit_time
+           FROM history_items AS i INNER JOIN history_visits AS v ON v.history_item = i.id
+           ORDER BY v.visit_time DESC""",
+    )
+    return [
+        {
+            "id": gen_id(),
+            "url": r.get("url") or "",
+            "title": r.get("title") or "",
+            "visitCount": r.get("visit_count") or 0,
+            "visitTime": mac_to_ms(r.get("visit_time")),
+            "visitId": r.get("visit_id"),
+            "fromVisitId": r.get("redirect_source") or None,
+            "isRedirect": r.get("redirect_source") is not None,
+        }
+        for r in rows
+    ]
+
+
 def parse_sqlite_source(data: bytes, engine: str, source_key: str) -> dict:
     with open_sqlite(data) as conn:
+        if engine == "safari":
+            if source_key != "history":
+                raise ValueError("Safari downloads and bookmarks are .plist files, not SQLite.")
+            if not has_tables(conn, ["history_items", "history_visits"]):
+                raise ValueError("Not a Safari History.db (missing history_items/history_visits).")
+            return {"history": parse_safari_history(conn)}
         if engine == "firefox":
             if not has_tables(conn, ["moz_places"]):
                 raise ValueError("Not a Firefox places.sqlite (missing moz_places).")
@@ -287,6 +325,105 @@ def parse_sqlite_source(data: bytes, engine: str, source_key: str) -> dict:
         if not has_tables(conn, ["urls", "visits"]):
             raise ValueError("Not a Chrome History file (missing urls/visits).")
         return {"history": parse_chromium_history(conn), "downloads": parse_chromium_downloads(conn)}
+
+
+# --------------------------------------------------------------------------- #
+# Safari property lists (Downloads.plist / Bookmarks.plist)                   #
+# --------------------------------------------------------------------------- #
+def _plist_date_ms(value):
+    """Unix ms of a plist date (plistlib returns naive UTC datetimes)."""
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return round(value.timestamp() * 1000)
+
+
+def map_safari_downloads(plist):
+    entries = plist.get("DownloadHistory") if isinstance(plist, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError('Not a Safari Downloads.plist (missing "DownloadHistory").')
+    out = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        url = as_text(entry.get("DownloadEntryURL"))
+        target = as_text(entry.get("DownloadEntryPath"))
+        end_time = _plist_date_ms(entry.get("DownloadEntryDateFinishedKey"))
+        start_time = _plist_date_ms(entry.get("DownloadEntryDateAddedKey"))
+        out.append(
+            {
+                "id": gen_id(),
+                "fileName": file_name_from_path(target) or file_name_from_path(url) or "(unknown)",
+                "targetPath": target,
+                "url": url,
+                "referrer": url,
+                "startTime": start_time if start_time is not None else end_time,
+                "endTime": end_time,
+                "totalBytes": as_count(entry.get("DownloadEntryProgressTotalToLoad")),
+                "receivedBytes": as_count(entry.get("DownloadEntryProgressBytesSoFar")),
+                "mimeType": "",
+                "state": 1 if end_time is not None else 4,
+            }
+        )
+    return out
+
+
+def map_safari_bookmarks(plist):
+    if not isinstance(plist, dict) or not isinstance(plist.get("Children"), list):
+        raise ValueError("Not a Safari Bookmarks.plist (missing the root bookmark list).")
+    out = []
+
+    def walk(node, folder_path, depth):
+        if not isinstance(node, dict) or depth > 100:
+            return
+        kind = node.get("WebBookmarkType")
+        if kind == "WebBookmarkTypeLeaf":
+            url = as_text(node.get("URLString"))
+            if not url:
+                return
+            uri = node.get("URIDictionary") if isinstance(node.get("URIDictionary"), dict) else {}
+            reading = node.get("ReadingList") if isinstance(node.get("ReadingList"), dict) else {}
+            out.append(
+                {
+                    "id": gen_id(),
+                    "name": as_text(uri.get("title")) or as_text(node.get("Title")) or "(unnamed)",
+                    "url": url,
+                    "folder": folder_path or None,
+                    "dateAdded": _plist_date_ms(reading.get("DateAdded")),
+                }
+            )
+            return
+        if kind != "WebBookmarkTypeList" or not isinstance(node.get("Children"), list):
+            return
+        title = as_text(node.get("Title"))
+        label = SAFARI_ROOT_LABELS.get(title, title)
+        path = (f"{folder_path} > {label}" if folder_path else label) if label else folder_path
+        for child in node["Children"]:
+            walk(child, path, depth + 1)
+
+    for child in plist["Children"]:
+        walk(child, "", 0)
+    return out
+
+
+def _is_plist(data: bytes) -> bool:
+    head = data.removeprefix(b"\xef\xbb\xbf").lstrip()[:512]
+    return data.startswith(b"bplist00") or head.startswith(b"<plist") or (
+        head.startswith(b"<?xml") and b"<plist" in head
+    )
+
+
+def parse_safari_plist(data: bytes, source_key: str) -> dict:
+    try:
+        plist = plistlib.loads(data)
+    except Exception as exc:  # plistlib raises several unrelated types on bad input
+        raise ValueError("Malformed property list.") from exc
+    if source_key == "downloads":
+        return {"downloads": map_safari_downloads(plist)}
+    if source_key == "bookmarks":
+        return {"bookmarks": map_safari_bookmarks(plist)}
+    raise ValueError("Safari history is a SQLite database (History.db), not a property list.")
 
 
 # --------------------------------------------------------------------------- #
@@ -456,6 +593,14 @@ def parse_browser_source(data: bytes, engine: str, source_key: str, produces):
         if sum(len(v) for v in produced.values()) == 0:
             raise ValueError("The database has no entries for this source.")
         return produced, "sqlite"
+
+    if _is_plist(data):
+        if engine != "safari":
+            raise ValueError("This is a property list (.plist), not a file for this browser.")
+        produced = parse_safari_plist(data, source_key)
+        if sum(len(v) for v in produced.values()) == 0:
+            raise ValueError("The property list has no entries.")
+        return produced, "plist"
 
     text = data.decode("utf-8", errors="replace")
     try:
