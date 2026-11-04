@@ -190,9 +190,9 @@ function DetectionCell({ event }) {
 /* ---- Component ------------------------------------------------------------- */
 
 /**
- * @param {{ incident: object, browserId: string, history?: Array, downloads?: Array }} props
+ * @param {{ incident: object, browserId: string, profile?: object, history?: Array, downloads?: Array }} props
  */
-export default function EventsSection({ incident, browserId, history = [], downloads = [] }) {
+export default function EventsSection({ incident, browserId, profile = null, history = [], downloads = [] }) {
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
 
@@ -273,10 +273,11 @@ export default function EventsSection({ incident, browserId, history = [], downl
       buildColumns(activeTab, redirectIndex, {
         incidentId: incident?.id,
         browserId,
+        profile,
         flags,
         toggleFlag,
       }),
-    [activeTab, redirectIndex, incident?.id, browserId, flags, toggleFlag],
+    [activeTab, redirectIndex, incident?.id, browserId, profile, flags, toggleFlag],
   )
 
   const searchKeys =
@@ -432,7 +433,7 @@ export default function EventsSection({ incident, browserId, history = [], downl
 
 /* ---- Column builders per tab ---------------------------------------------- */
 
-function buildColumns(tab, redirectIndex, { incidentId, browserId, flags, toggleFlag }) {
+function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flags, toggleFlag }) {
   // Per-row flag toggle column (leftmost).
   const flagColumn = {
     key: 'flag',
@@ -445,6 +446,8 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, flags, toggle
           toggleFlag(incidentId, {
             key: row.id,
             browserId,
+            profileId: profile?.id ?? null,
+            profileName: profile?.name ?? null,
             section: 'events',
             eventType: row.eventType,
             title: row.title || row.fileName || '',

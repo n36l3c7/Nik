@@ -6,6 +6,7 @@ import NoteBlock from './NoteBlock.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { formatDateTime, formatRelative } from '../../../utils/time.js'
 import { truncate } from '../../../utils/url.js'
+import { flagProfile } from '../../../utils/browserProfiles.js'
 
 /*
  * ============================================================================
@@ -110,6 +111,7 @@ export default function IncidentTimeline({ incident }) {
                 <FlagTimelineItem
                   key={item.key}
                   flag={item.data}
+                  profile={flagProfile(incident.data?.browser?.browsers, item.data)}
                   onAddComment={(text) => addFlagComment(incident.id, item.data.key, text)}
                   onRemoveComment={(commentId) =>
                     removeFlagComment(incident.id, item.data.key, commentId)
@@ -162,7 +164,7 @@ function TimelineRow({ icon: Icon, tone, children }) {
 /* Flag item: event summary + per-flag comments (add / remove).               */
 /* -------------------------------------------------------------------------- */
 
-function FlagTimelineItem({ flag, onAddComment, onRemoveComment }) {
+function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
   const [comment, setComment] = useState('')
   const comments = flag.comments ?? []
 
@@ -197,6 +199,11 @@ function FlagTimelineItem({ flag, onAddComment, onRemoveComment }) {
             {formatDateTime(flag.time)}
           </span>
           {flag.browserId && <Badge color="cyan">{flag.browserId}</Badge>}
+          {profile && (
+            <Badge color={profile.deleted ? 'amber' : 'slate'}>
+              {profile.deleted ? `${profile.name} (deleted profile)` : profile.name}
+            </Badge>
+          )}
           {flag.section && <Badge color="slate">{flag.section}</Badge>}
         </div>
 

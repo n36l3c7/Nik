@@ -107,10 +107,10 @@ export default function SummaryTab({ incident }) {
     let events = 0
     let bookmarks = 0
     for (const b of BROWSERS) {
-      const bd = browsers[b.id]
-      if (!bd) continue
-      events += (bd.history?.length ?? 0) + (bd.downloads?.length ?? 0)
-      bookmarks += bd.bookmarks?.length ?? 0
+      for (const profile of Object.values(browsers[b.id]?.profiles ?? {})) {
+        events += (profile.history?.length ?? 0) + (profile.downloads?.length ?? 0)
+        bookmarks += profile.bookmarks?.length ?? 0
+      }
     }
     const shells = incident.data?.commands?.shells ?? {}
     let commands = 0

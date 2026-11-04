@@ -199,7 +199,7 @@ def upload_artifact_command(client: Client, args: dict) -> CommandResults:  # no
     entry_id = args["entry_id"]
     file_info = demisto.getFilePath(entry_id)
     params = assign_params(  # noqa: F405
-        tab=args["tab"], browser=args.get("browser"), shell=args.get("shell"),
+        tab=args["tab"], browser=args.get("browser"), profile=args.get("profile"), shell=args.get("shell"),
         category=args.get("category"), source=args.get("source"),
     )
     with open(file_info["path"], "rb") as fh:

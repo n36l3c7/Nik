@@ -22,6 +22,7 @@ import { buildEvents } from './events.js'
 import { buildCommandEvents } from './commands.js'
 import { buildArtifactEvents, combineCategoryRecords } from './artifacts.js'
 import { extractDomain, truncate } from './url.js'
+import { profileLabel } from './browserProfiles.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
 export const TIMELINE_SOURCE_META = {
@@ -34,6 +35,42 @@ function hasTime(event) {
   return Number.isFinite(event.time)
 }
 
+/** Timeline events of one browser profile (history + downloads). */
+function browserProfileEvents(browser, slot, profile, engine) {
+  const sourceLabel = profileLabel(browser.label, slot, profile)
+  const { allEvents } = buildEvents({
+    history: profile.history ?? [],
+    downloads: profile.downloads ?? [],
+    engine,
+  })
+  return allEvents.filter(hasTime).map((event) => {
+    const isDownload = event.kind === 'download'
+    return {
+      id: event.id,
+      time: event.time,
+      sourceType: 'browser',
+      sourceLabel,
+      eventType: event.eventType,
+      label: isDownload ? event.fileName : event.title || event.url || '(no title)',
+      detail: isDownload
+        ? `from ${extractDomain(event.referrer || event.url) || '—'}`
+        : extractDomain(event.url) || truncate(event.url, 60),
+      soc: event.soc,
+      flaggable: {
+        key: event.id,
+        browserId: browser.id,
+        profileId: profile.id,
+        profileName: profile.name,
+        section: 'events',
+        eventType: event.eventType,
+        title: event.title || event.fileName || '',
+        url: event.url || '',
+        time: event.time,
+      },
+    }
+  })
+}
+
 /**
  * Build the merged, time-sorted (desc) timeline for an incident.
  * @param {object} incident
@@ -44,40 +81,12 @@ export function buildTimelineEvents(incident, engine) {
   const out = []
   const data = incident?.data ?? {}
 
-  /* ---- Browser history + downloads (per browser) ---- */
+  /* ---- Browser history + downloads (per browser, per profile) ---- */
   const browsers = data.browser?.browsers ?? {}
   for (const browser of BROWSERS) {
-    const bd = browsers[browser.id]
-    if (!bd) continue
-    const { allEvents } = buildEvents({
-      history: bd.history ?? [],
-      downloads: bd.downloads ?? [],
-      engine,
-    })
-    for (const event of allEvents) {
-      if (!hasTime(event)) continue
-      const isDownload = event.kind === 'download'
-      out.push({
-        id: event.id,
-        time: event.time,
-        sourceType: 'browser',
-        sourceLabel: browser.label,
-        eventType: event.eventType,
-        label: isDownload ? event.fileName : event.title || event.url || '(no title)',
-        detail: isDownload
-          ? `from ${extractDomain(event.referrer || event.url) || '—'}`
-          : extractDomain(event.url) || truncate(event.url, 60),
-        soc: event.soc,
-        flaggable: {
-          key: event.id,
-          browserId: browser.id,
-          section: 'events',
-          eventType: event.eventType,
-          title: event.title || event.fileName || '',
-          url: event.url || '',
-          time: event.time,
-        },
-      })
+    const slot = browsers[browser.id]
+    for (const profile of Object.values(slot?.profiles ?? {})) {
+      out.push(...browserProfileEvents(browser, slot, profile, engine))
     }
   }
 

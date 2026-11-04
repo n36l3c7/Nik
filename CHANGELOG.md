@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-04
+
+### Added
+
+- Several profiles per browser (Chrome "Default", "Profile 1", "Work", …):
+  add, rename and delete them in Browser Forensics; each profile has its own
+  files and data, and the browser badge sums all profiles.
+- Timeline and flags name the profile ("Chrome · Work") when a browser has
+  more than one; flags on a deleted profile are kept and marked as such.
+- `profile` query parameter on `POST /api/incidents/{id}/upload` (profile
+  name, case-insensitive, created if missing; default `Default`) and a
+  `profile` argument on the Cortex XSOAR `nik-upload-artifact` command.
+- Alembic migration `0003_browser_profiles`, moving existing browser data
+  into a "Default" profile.
+
+### Changed
+
+- **BREAKING:** an incident's browser data is now
+  `data.browser.browsers[<id>] = { activeProfile, profiles: { <profileId>:
+  { id, name, createdAt, history, downloads, bookmarks, shortcuts, meta } } }`
+  instead of the artifact lists directly under `browsers[<id>]`. API clients
+  reading `data.browser` must follow the new shape.
+- **BREAKING:** the upload response `target` is now
+  `browser/<id>/<profile>/<source>` and includes `profileId`.
+- Path hints show `<profile>` in place of the Chromium/Firefox profile folder.
+- Incident exports are envelope version 4; versions 3 and older still import.
+- Creating, patching, fetching and restoring incidents convert any pre-2.0.0
+  browser data, so old exports, backups and clients keep working.
+
+### Upgrade notes
+
+Back up, then run `alembic upgrade head` (automatic in the Docker image): the
+migration rewrites every incident once, which can take a while on large
+databases.
+
 ## [1.2.0] - 2026-11-04
 
 ### Added
@@ -58,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/n36l3c7/Nik/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/n36l3c7/Nik/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/n36l3c7/Nik/releases/tag/v1.1.0

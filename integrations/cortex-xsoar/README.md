@@ -129,16 +129,24 @@ parses it server-side and merges the result.
 | `entry_id` *(required)* | War Room entry id of the file. |
 | `tab` *(required)* | `browser` / `commands` / `endpoint`. |
 | `browser` | tab=browser: `chrome`/`firefox`/`edge`/`brave`/`opera`/`safari`. |
+| `profile` | tab=browser: profile name (e.g. `Profile 1`), created if missing. Default: `Default`. |
 | `shell` | tab=commands: `bash`/`zsh`/`fish`/`powershell`. |
 | `category` | tab=endpoint: `execution`/`persistence`/`fileaccess`/`usb`. |
 | `source` | Source key (browser/endpoint), e.g. `history`, `places`, `cron`. |
 
-**Context:** `Nik.Upload` — `incidentId`, `rows`, `format`, `target`.
+**Context:** `Nik.Upload` — `incidentId`, `rows`, `format`, `target`
+(e.g. `browser/chrome/Default/history`), `profileId` (tab=browser).
 
 Example (upload a collected Chrome `History` DB stored in the War Room):
 
 ```
 !nik-upload-artifact incident_id=<id> entry_id=<entryId> tab=browser browser=chrome source=history
+```
+
+A second Chrome profile goes to its own profile:
+
+```
+!nik-upload-artifact incident_id=<id> entry_id=<entryId> tab=browser browser=chrome profile="Profile 1" source=history
 ```
 
 ### `nik-get-audit`

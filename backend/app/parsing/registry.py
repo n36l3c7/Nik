@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from ..browser_profiles import profile_for_upload
 from . import artifact as artifact_mod
 from . import browser as browser_mod
 from . import shell as shell_mod
@@ -139,14 +140,19 @@ def apply_upload(doc: dict, tab: str, params: dict, data: bytes, file_name: str)
             data, spec["engine"], source_key, spec["sources"][source_key]
         )
         browsers = data_root.setdefault("browser", {}).setdefault("browsers", {})
-        slot = browsers.setdefault(browser_id, {})
+        profile = profile_for_upload(browsers, browser_id, params.get("profile"))
         rows = 0
         for key in BROWSER_KEYS:
             if key in produced:
-                slot[key] = produced[key]
+                profile[key] = produced[key]
                 rows += len(produced[key])
-        slot.setdefault("meta", {})[source_key] = {**meta_base, "format": fmt, "rows": rows}
-        return {"rows": rows, "format": fmt, "target": f"browser/{browser_id}/{source_key}"}
+        profile.setdefault("meta", {})[source_key] = {**meta_base, "format": fmt, "rows": rows}
+        return {
+            "rows": rows,
+            "format": fmt,
+            "target": f"browser/{browser_id}/{profile['name']}/{source_key}",
+            "profileId": profile["id"],
+        }
 
     if tab == "commands":
         shell_id = params.get("shell")

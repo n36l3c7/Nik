@@ -44,8 +44,11 @@ def test_merge_patch_updates_only_the_sent_subtree(admin: TestClient):
         id="m1",
         data={
             "browser": {"browsers": {
-                "chrome": {"history": [{"id": "h1"}], "meta": {"history": {"fileName": "History"}}},
-                "firefox": {"history": [{"id": "f1"}]},
+                "chrome": {"profiles": {
+                    "p1": {"history": [{"id": "h1"}], "meta": {"history": {"fileName": "History"}}},
+                    "p2": {"history": [{"id": "h9"}]},
+                }},
+                "firefox": {"profiles": {"p3": {"history": [{"id": "f1"}]}}},
             }},
             "commands": {"shells": {"bash": {"commands": [{"id": "c1"}]}}},
         },
@@ -53,15 +56,18 @@ def test_merge_patch_updates_only_the_sent_subtree(admin: TestClient):
     )
     patch = {
         "updatedAt": "2026-11-04T10:00:00.000Z",
-        "data": {"browser": {"browsers": {"chrome": {"history": [{"id": "h2"}], "meta": {"history": None}}}}},
+        "data": {"browser": {"browsers": {"chrome": {"profiles": {
+            "p1": {"history": [{"id": "h2"}], "meta": {"history": None}},
+        }}}}},
         "flags": {"a": None, "c": {"key": "c"}},
     }
     res = admin.patch("/api/incidents/m1", headers=MERGE, content=json.dumps(patch))
     assert res.status_code == 200, res.text
     doc = admin.get("/api/incidents/m1").json()
     browsers = doc["data"]["browser"]["browsers"]
-    assert browsers["chrome"] == {"history": [{"id": "h2"}], "meta": {}}
-    assert browsers["firefox"] == {"history": [{"id": "f1"}]}
+    assert browsers["chrome"]["profiles"]["p1"] == {"history": [{"id": "h2"}], "meta": {}}
+    assert browsers["chrome"]["profiles"]["p2"] == {"history": [{"id": "h9"}]}
+    assert browsers["firefox"] == {"profiles": {"p3": {"history": [{"id": "f1"}]}}}
     assert doc["data"]["commands"]["shells"]["bash"]["commands"] == [{"id": "c1"}]
     assert set(doc["flags"]) == {"b", "c"}
     assert doc["updatedAt"] == "2026-11-04T10:00:00.000Z"

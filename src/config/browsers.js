@@ -28,6 +28,7 @@ import {
  *                        incident's host OS (only the OSes in `platforms`)
  *  - artifacts:          which analysis sections to show
  *                        ('history' | 'downloads' | 'bookmarks' | 'shortcuts')
+ *  - profileHint:        (optional) what replaces `<profile>` in the paths
  *  - sources:            the FILES the user uploads. Each source produces one
  *                        or more artifacts (e.g. Chrome's History contains both
  *                        the browsing history and the downloads; Firefox's
@@ -140,24 +141,24 @@ function safariSources(bases) {
 
 /* Per-OS profile directories for each browser. */
 const CHROME_PROFILES = {
-  windows: '%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\',
-  macos: '~/Library/Application Support/Google/Chrome/Default/',
-  linux: '~/.config/google-chrome/Default/',
+  windows: '%LOCALAPPDATA%\\Google\\Chrome\\User Data\\<profile>\\',
+  macos: '~/Library/Application Support/Google/Chrome/<profile>/',
+  linux: '~/.config/google-chrome/<profile>/',
 }
 const FIREFOX_PROFILES = {
-  windows: '%APPDATA%\\Mozilla\\Firefox\\Profiles\\<profile>.default-release\\',
-  macos: '~/Library/Application Support/Firefox/Profiles/<profile>.default-release/',
-  linux: '~/.mozilla/firefox/<profile>.default-release/',
+  windows: '%APPDATA%\\Mozilla\\Firefox\\Profiles\\<profile>\\',
+  macos: '~/Library/Application Support/Firefox/Profiles/<profile>/',
+  linux: '~/.mozilla/firefox/<profile>/',
 }
 const EDGE_PROFILES = {
-  windows: '%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default\\',
-  macos: '~/Library/Application Support/Microsoft Edge/Default/',
-  linux: '~/.config/microsoft-edge/Default/',
+  windows: '%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\<profile>\\',
+  macos: '~/Library/Application Support/Microsoft Edge/<profile>/',
+  linux: '~/.config/microsoft-edge/<profile>/',
 }
 const BRAVE_PROFILES = {
-  windows: '%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\Default\\',
-  macos: '~/Library/Application Support/BraveSoftware/Brave-Browser/Default/',
-  linux: '~/.config/BraveSoftware/Brave-Browser/Default/',
+  windows: '%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\<profile>\\',
+  macos: '~/Library/Application Support/BraveSoftware/Brave-Browser/<profile>/',
+  linux: '~/.config/BraveSoftware/Brave-Browser/<profile>/',
 }
 const SAFARI_PROFILES = {
   macos: '~/Library/Safari/',
@@ -171,6 +172,7 @@ const OPERA_PROFILES = {
 export const BROWSERS = [
   {
     id: 'chrome',
+    profileHint: 'Default, Profile 1, Profile 2… (one folder per profile)',
     label: 'Chrome',
     icon: Chrome,
     engine: 'chromium',
@@ -181,6 +183,7 @@ export const BROWSERS = [
   },
   {
     id: 'firefox',
+    profileHint: 'the profile folder listed in profiles.ini, e.g. a1b2c3d4.default-release',
     label: 'Firefox',
     icon: Flame,
     engine: 'firefox',
@@ -191,6 +194,7 @@ export const BROWSERS = [
   },
   {
     id: 'edge',
+    profileHint: 'Default, Profile 1, Profile 2… (one folder per profile)',
     label: 'Edge',
     icon: Globe,
     engine: 'chromium',
@@ -201,6 +205,7 @@ export const BROWSERS = [
   },
   {
     id: 'brave',
+    profileHint: 'Default, Profile 1, Profile 2… (one folder per profile)',
     label: 'Brave',
     icon: Shield,
     engine: 'chromium',
@@ -254,17 +259,38 @@ export function getBrowserById(browserId) {
   return BROWSERS.find((b) => b.id === browserId) ?? null
 }
 
-/** Initial data structure for a single browser (empty arrays + null meta). */
-export function buildDefaultBrowserData(browser) {
+/** Fixed id/name of the profile every browser starts with (and legacy data moves to). */
+export const DEFAULT_PROFILE_ID = 'default'
+export const DEFAULT_PROFILE_NAME = 'Default'
+// Epoch timestamp so the Default profile sorts first (profiles sort by createdAt).
+export const DEFAULT_PROFILE_CREATED_AT = '1970-01-01T00:00:00.000Z'
+
+/** Empty data of ONE browser profile (empty arrays + null meta per source). */
+export function buildDefaultProfileData(
+  browser,
+  { id = DEFAULT_PROFILE_ID, name = DEFAULT_PROFILE_NAME, createdAt = DEFAULT_PROFILE_CREATED_AT } = {},
+) {
   const meta = {}
   for (const source of browser.sources) meta[source.key] = null
   return {
+    id,
+    name,
+    createdAt,
     history: [],
     downloads: [],
     bookmarks: [],
     shortcuts: [],
     meta,
   }
+}
+
+/**
+ * Initial data of a browser: one empty "Default" profile.
+ * Shape: { activeProfile, profiles: { [profileId]: profileData } }.
+ */
+export function buildDefaultBrowserData(browser) {
+  const profile = buildDefaultProfileData(browser)
+  return { activeProfile: profile.id, profiles: { [profile.id]: profile } }
 }
 
 /** Map { [browserId]: browserData } with all browsers initialized empty. */
