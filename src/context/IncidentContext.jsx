@@ -7,7 +7,8 @@ import {
   useRef,
   useState,
 } from 'react'
-import { api } from '../services/api.js'
+import { api, NOT_MODIFIED } from '../services/api.js'
+import { createMergePatch, MERGE_PATCH_CONTENT_TYPE } from '../utils/mergePatch.js'
 import { buildDefaultIncidentData } from '../config/tabs.js'
 import {
   BROWSERS,
@@ -54,20 +55,26 @@ import { useAudit } from './AuditContext.jsx'
  *   notes: [ { id, text, createdAt, updatedAt, author } ],
  * }
  *
- * Incidents are loaded from the backend (GET /incidents) once authenticated and
- * kept in memory as an optimistic model. Every mutation updates local state
- * immediately AND persists the changed TOP-LEVEL keys to the server:
- *   - createIncident              → POST   /incidents        (full doc)
+ * Loading is lazy, so a platform with many large incidents stays responsive:
+ *   - after sign-in only the LIGHT list is fetched (GET /incidents?view=summary:
+ *     id, name, host, username, os, timestamps — no artifacts);
+ *   - an incident's full document is fetched when it is opened
+ *     (GET /incidents/{id}) and kept in an in-memory cache for the session;
+ *   - reopening a cached incident shows it at once and revalidates it with
+ *     `If-None-Match` (304 when unchanged, refreshed when someone else edited it).
+ *
+ * Every mutation goes through commit(): it updates local state immediately and
+ * persists ONLY what changed, as an RFC 7396 JSON Merge Patch computed by
+ * diffing the previous and next document (unchanged subtrees share references,
+ * so toggling a flag sends the flag, not the artifact arrays):
+ *   - createIncident / import     → POST   /incidents        (full doc)
  *   - deleteIncident              → DELETE /incidents/{id}
- *   - updateIncidentMeta          → PATCH  { host, username, name, suspicious*, updatedAt }
- *   - toggle/addComment/removeCmt → PATCH  { flags, updatedAt }
- *   - add/update/removeNote       → PATCH  { notes, updatedAt }
- *   - browser/tab data mutations  → PATCH  { data, updatedAt }
- *   - setActiveBrowser            → LOCAL ONLY (a view preference; never sent)
+ *   - every other mutation        → PATCH  /incidents/{id}   (merge patch)
+ *   - setActiveBrowser/Shell      → LOCAL ONLY (a view preference; never sent)
  *
  * IMPORTANT: audit() (which triggers a state update in AuditProvider) and
- * persist() are always called from event-handler scope, NEVER inside a
- * setIncidents updater — React state updaters must be pure, and StrictMode
+ * commit() are always called from event-handler scope, NEVER inside a
+ * state updater — React state updaters must be pure, and StrictMode
  * double-invokes them in dev.
  */
 
@@ -246,23 +253,88 @@ function syncUrl(incidentId, { replace = false } = {}) {
   else window.history.pushState(state, '', path)
 }
 
+/** The light listing row of an incident (what `GET /incidents?view=summary` returns). */
+function toSummary(incident) {
+  return {
+    id: incident.id,
+    name: incident.name,
+    host: incident.host,
+    username: incident.username,
+    os: incident.os,
+    createdAt: incident.createdAt,
+    updatedAt: incident.updatedAt,
+  }
+}
+
+/** Normalize a summary row from the server (missing fields become defaults). */
+function normalizeSummary(raw) {
+  const host = typeof raw.host === 'string' ? raw.host.trim() : ''
+  const username = typeof raw.username === 'string' ? raw.username.trim() : ''
+  const name =
+    typeof raw.name === 'string' && raw.name.trim()
+      ? raw.name.trim()
+      : deriveIncidentName(host, username)
+  return {
+    id: raw.id,
+    name,
+    host,
+    username,
+    os: normalizeOs(raw.os),
+    createdAt: raw.createdAt ?? '',
+    updatedAt: raw.updatedAt ?? '',
+  }
+}
+
+/** ETag the server derives from an incident version (see the backend `_etag`). */
+const etagOf = (incident) => `"${incident.updatedAt ?? ''}"`
+
 export function IncidentProvider({ children }) {
   const { currentUser, isAuthenticated } = useAuth()
   const { log } = useAudit()
 
+  // Light listing rows (no artifacts): what the sidebar renders.
   const [incidents, setIncidents] = useState([])
-  // The active incident is seeded from the URL so a permalink deep-links into
+  // Full documents fetched on demand, keyed by id. Never evicted during the
+  // session: an incident opened once reopens instantly (revalidated with ETag).
+  const [documents, setDocuments] = useState({})
+  // Initialize from the URL so a permalink (/incident/<id>) opens directly to
   // the right incident on first load (and survives the sign-in gate).
   const [activeIncidentId, setActiveIncidentId] = useState(incidentIdFromUrl)
   const [loading, setLoading] = useState(true)
+  const [activeLoadError, setActiveLoadError] = useState(null)
+  // Bumped by retryActiveIncident() to re-run the on-demand fetch after an error.
+  const [reloadToken, setReloadToken] = useState(0)
   const [storageError, setStorageError] = useState(null)
 
   // Always-current snapshots so event handlers read the latest state without
   // stale-closure issues and without side effects inside a setState updater.
+  // `documentsRef` is written eagerly by `commit`, so two mutations in the same
+  // tick both build on the latest document.
   const incidentsRef = useRef(incidents)
   incidentsRef.current = incidents
+  const documentsRef = useRef(documents)
   const activeIncidentIdRef = useRef(activeIncidentId)
   activeIncidentIdRef.current = activeIncidentId
+
+  /** Store a full document in the cache (and its summary row in the list). */
+  const storeDocument = useCallback((incident, { prepend = false } = {}) => {
+    documentsRef.current = { ...documentsRef.current, [incident.id]: incident }
+    setDocuments(documentsRef.current)
+    const summary = toSummary(incident)
+    setIncidents((list) =>
+      list.some((row) => row.id === incident.id)
+        ? list.map((row) => (row.id === incident.id ? summary : row))
+        : prepend
+          ? [summary, ...list]
+          : [...list, summary],
+    )
+  }, [])
+
+  const forgetDocument = useCallback((incidentId) => {
+    const { [incidentId]: _removed, ...rest } = documentsRef.current
+    documentsRef.current = rest
+    setDocuments(rest)
+  }, [])
 
   // Browser back/forward: follow the URL to the corresponding incident.
   useEffect(() => {
@@ -271,27 +343,30 @@ export function IncidentProvider({ children }) {
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  // Load the incident list from the server once authenticated; reset on logout.
+  // Load the LIGHT incident list once authenticated; reset on logout. Full
+  // documents are fetched one at a time, when an incident is opened.
   // Note: the active id is NOT cleared here, so a permalink opened before
   // sign-in still resolves once the list loads.
   useEffect(() => {
     if (!isAuthenticated) {
       setIncidents([])
+      documentsRef.current = {}
+      setDocuments({})
       setLoading(true)
       return
     }
     let cancelled = false
     setLoading(true)
     api
-      .get('/incidents')
+      .get('/incidents?view=summary')
       .then((res) => {
         if (cancelled) return
         const list = Array.isArray(res?.incidents) ? res.incidents : []
-        const normalized = list.map(normalizeIncident)
-        setIncidents(normalized)
+        const summaries = list.filter((row) => row && row.id).map(normalizeSummary)
+        setIncidents(summaries)
         // Drop an invalid permalink (unknown id) so the UI shows a clean state.
         const active = activeIncidentIdRef.current
-        if (active && !normalized.some((i) => i.id === active)) {
+        if (active && !summaries.some((i) => i.id === active)) {
           setActiveIncidentId(null)
           syncUrl(null, { replace: true })
         }
@@ -310,10 +385,45 @@ export function IncidentProvider({ children }) {
     }
   }, [isAuthenticated])
 
-  const activeIncident = useMemo(
+  // Fetch the active incident's full document on demand. A cached copy is shown
+  // immediately and revalidated in the background with `If-None-Match`, so an
+  // unchanged incident costs a tiny 304 and a changed one is refreshed. Switching
+  // to another incident aborts the pending request.
+  useEffect(() => {
+    if (loading || !activeIncidentId) return
+    const cached = documentsRef.current[activeIncidentId]
+    const controller = new AbortController()
+    setActiveLoadError(null)
+    api
+      .get(`/incidents/${encodeURIComponent(activeIncidentId)}`, {
+        signal: controller.signal,
+        headers: cached ? { 'If-None-Match': etagOf(cached) } : {},
+      })
+      .then((res) => {
+        if (res === NOT_MODIFIED || !res) return
+        // Never overwrite a copy that was edited locally while the request ran.
+        const current = documentsRef.current[activeIncidentId]
+        if (current && cached && current !== cached) return
+        storeDocument(normalizeIncident(res))
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        if (!cached) setActiveLoadError(err?.message || 'Unable to load the incident.')
+      })
+    return () => controller.abort()
+  }, [activeIncidentId, loading, reloadToken, storeDocument])
+
+  const retryActiveIncident = useCallback(() => {
+    setActiveLoadError(null)
+    setReloadToken((token) => token + 1)
+  }, [])
+
+  const activeIncident = activeIncidentId ? (documents[activeIncidentId] ?? null) : null
+  const activeSummary = useMemo(
     () => incidents.find((i) => i.id === activeIncidentId) ?? null,
     [incidents, activeIncidentId],
   )
+  const activeLoading = Boolean(activeSummary && !activeIncident && !activeLoadError)
 
   const actor = currentUser?.username ?? 'system'
 
@@ -331,20 +441,41 @@ export function IncidentProvider({ children }) {
     [actor, log],
   )
 
-  /** Find the current incident by id from the live snapshot. */
-  const find = (id) => incidentsRef.current.find((i) => i.id === id) ?? null
+  /** Find a loaded incident document by id from the live snapshot. */
+  const find = (id) => documentsRef.current[id] ?? null
 
   /**
-   * Persist the changed TOP-LEVEL keys of an incident to the server.
-   * `updatedAt` is always included by the callers. Fire-and-forget: local
-   * state is already updated; API errors are surfaced via `storageError`.
+   * Persist the difference between two versions of an incident as an RFC 7396
+   * JSON Merge Patch: only the changed subtrees reach the server, never the
+   * whole artifact blob. Fire-and-forget: local state is already updated; API
+   * errors are surfaced via `storageError`.
    */
-  const persist = useCallback((incidentId, partialDoc) => {
+  const persist = useCallback((incidentId, prev, next) => {
+    const patch = createMergePatch(prev, next)
+    if (Object.keys(patch).length === 0) return
     api
-      .patch(`/incidents/${incidentId}`, partialDoc)
+      .patch(`/incidents/${encodeURIComponent(incidentId)}`, patch, {
+        contentType: MERGE_PATCH_CONTENT_TYPE,
+      })
       .then(() => setStorageError(null))
       .catch((err) => setStorageError(err?.message || 'Unable to save changes to the server.'))
   }, [])
+
+  /**
+   * Apply `updater` to a loaded incident, update local state immediately and
+   * (unless `local`) persist the change. Call ONLY from event-handler scope.
+   */
+  const commit = useCallback(
+    (incidentId, updater, { local = false } = {}) => {
+      const prev = documentsRef.current[incidentId]
+      if (!prev) return null
+      const next = updater(prev)
+      storeDocument(next)
+      if (!local) persist(incidentId, prev, next)
+      return next
+    },
+    [persist, storeDocument],
+  )
 
   /* ---- incident CRUD ---- */
 
@@ -366,7 +497,7 @@ export function IncidentProvider({ children }) {
         flags: {},
         notes: [],
       }
-      setIncidents((prev) => [incident, ...prev])
+      storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
       syncUrl(incident.id)
       audit('incident.create', `Created incident "${incident.name}"`, incident)
@@ -377,7 +508,7 @@ export function IncidentProvider({ children }) {
         .catch((err) => setStorageError(err?.message || 'Unable to create the incident on the server.'))
       return incident
     },
-    [actor, audit],
+    [actor, audit, storeDocument],
   )
 
   /** Update incident identity/time attributes; recompute the display name. */
@@ -401,26 +532,18 @@ export function IncidentProvider({ children }) {
           patch.suspiciousEnd !== undefined ? patch.suspiciousEnd : prev.suspiciousEnd,
         updatedAt,
       }
-      setIncidents((list) => list.map((i) => (i.id === incidentId ? next : i)))
+      commit(incidentId, () => next)
       audit('incident.update', `Updated attributes of "${next.name}"`, next)
-      persist(incidentId, {
-        host: next.host,
-        username: next.username,
-        os: next.os,
-        name: next.name,
-        suspiciousStart: next.suspiciousStart,
-        suspiciousEnd: next.suspiciousEnd,
-        updatedAt,
-      })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   const deleteIncident = useCallback(
     (incidentId) => {
-      const target = find(incidentId)
+      const target = incidentsRef.current.find((i) => i.id === incidentId) ?? null
       const remaining = incidentsRef.current.filter((i) => i.id !== incidentId)
       setIncidents(remaining)
+      forgetDocument(incidentId)
       // If the deleted incident was open, fall back to the newest remaining one
       // (or none) and update the permalink to match.
       if (activeIncidentIdRef.current === incidentId) {
@@ -434,7 +557,7 @@ export function IncidentProvider({ children }) {
         .then(() => setStorageError(null))
         .catch((err) => setStorageError(err?.message || 'Unable to delete the incident on the server.'))
     },
-    [audit],
+    [audit, forgetDocument],
   )
 
   const selectIncident = useCallback((incidentId) => {
@@ -453,12 +576,9 @@ export function IncidentProvider({ children }) {
         ...prev.data,
         [dataKey]: { ...(prev.data?.[dataKey] ?? {}), ...patch },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
-      persist(incidentId, { data, updatedAt })
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
     },
-    [persist],
+    [commit],
   )
 
   const clearTabData = useCallback(
@@ -468,12 +588,9 @@ export function IncidentProvider({ children }) {
       const defaults = buildDefaultIncidentData()
       const updatedAt = nowIso()
       const data = { ...prev.data, [dataKey]: defaults[dataKey] ?? {} }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
-      persist(incidentId, { data, updatedAt })
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
     },
-    [persist],
+    [commit],
   )
 
   /* ---- per-browser data ---- */
@@ -494,26 +611,20 @@ export function IncidentProvider({ children }) {
           browsers: { ...browser.browsers, [browserId]: { ...current, ...patch } },
         },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   // View preference only: update the active browser locally and DO NOT call the
   // API (avoids re-sending the large `data` blob just to change a tab).
-  const setActiveBrowser = useCallback((incidentId, browserId) => {
-    setIncidents((prev) =>
-      prev.map((i) =>
-        i.id === incidentId
-          ? { ...i, data: { ...i.data, browser: { ...i.data.browser, activeBrowser: browserId } } }
-          : i,
-      ),
-    )
-  }, [])
+  const setActiveBrowser = useCallback(
+    (incidentId, browserId) => {
+      commit(incidentId, (i) => ({ ...i, data: { ...i.data, browser: { ...i.data.browser, activeBrowser: browserId } } }), { local: true })
+    },
+    [commit],
+  )
 
   const clearBrowserData = useCallback(
     (incidentId, browserId) => {
@@ -528,13 +639,10 @@ export function IncidentProvider({ children }) {
           browsers: { ...prev.data.browser.browsers, [browserId]: def },
         },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       audit('browser.clear', `Cleared ${browserId} data`, { ...prev, updatedAt, data })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   const removeBrowserSource = useCallback(
@@ -551,17 +659,14 @@ export function IncidentProvider({ children }) {
         ...prev.data,
         browser: { ...prev.data.browser, browsers: { ...browsers, [browserId]: cleared } },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       audit('browser.removeFile', `Removed ${browserId} file (${sourceKey})`, {
         ...prev,
         updatedAt,
         data,
       })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   /* ---- per-shell command data (Command History tab) ---- */
@@ -580,25 +685,19 @@ export function IncidentProvider({ children }) {
           shells: { ...commands.shells, [shellId]: { ...current, ...patch } },
         },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   // View preference only (like setActiveBrowser): never re-sends the data blob.
-  const setActiveShell = useCallback((incidentId, shellId) => {
-    setIncidents((prev) =>
-      prev.map((i) =>
-        i.id === incidentId
-          ? { ...i, data: { ...i.data, commands: { ...i.data.commands, activeShell: shellId } } }
-          : i,
-      ),
-    )
-  }, [])
+  const setActiveShell = useCallback(
+    (incidentId, shellId) => {
+      commit(incidentId, (i) => ({ ...i, data: { ...i.data, commands: { ...i.data.commands, activeShell: shellId } } }), { local: true })
+    },
+    [commit],
+  )
 
   const clearShellData = useCallback(
     (incidentId, shellId) => {
@@ -613,13 +712,10 @@ export function IncidentProvider({ children }) {
           shells: { ...prev.data.commands.shells, [shellId]: def },
         },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       audit('command.clear', `Cleared ${shellId} command history`, { ...prev, updatedAt, data })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   /* ---- per-source endpoint artifact data (Endpoint Artifacts tab) ---- */
@@ -646,13 +742,10 @@ export function IncidentProvider({ children }) {
           },
         },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   /** Clear ONE source within a category. */
@@ -676,13 +769,10 @@ export function IncidentProvider({ children }) {
           },
         },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       audit('endpoint.clearSource', `Cleared ${categoryId}/${sourceKey}`, { ...prev, updatedAt, data })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   /** Clear ALL sources of a category. */
@@ -702,13 +792,10 @@ export function IncidentProvider({ children }) {
           },
         },
       }
-      setIncidents((list) =>
-        list.map((i) => (i.id === incidentId ? { ...i, updatedAt, data } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       audit('endpoint.clear', `Cleared ${categoryId} artifacts`, { ...prev, updatedAt, data })
-      persist(incidentId, { data, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   /* ---- flagging (mark entries as part of malicious activity) ---- */
@@ -734,18 +821,15 @@ export function IncidentProvider({ children }) {
         }
       }
       const updatedAt = nowIso()
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === incidentId ? { ...i, updatedAt, flags } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
       const label = flaggable.title || flaggable.url || flaggable.key
       audit(
         wasFlagged ? 'flag.remove' : 'flag.add',
         `${wasFlagged ? 'Unflagged' : 'Flagged'}: ${label}`,
         incident,
       )
-      persist(incidentId, { flags, updatedAt })
     },
-    [actor, audit, persist],
+    [actor, audit, commit],
   )
 
   const addFlagComment = useCallback(
@@ -761,13 +845,10 @@ export function IncidentProvider({ children }) {
         [flagKey]: { ...flag, comments: [...(flag.comments ?? []), comment] },
       }
       const updatedAt = nowIso()
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === incidentId ? { ...i, updatedAt, flags } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
       audit('flag.comment', 'Commented a flagged entry', incident)
-      persist(incidentId, { flags, updatedAt })
     },
-    [actor, audit, persist],
+    [actor, audit, commit],
   )
 
   const removeFlagComment = useCallback(
@@ -780,13 +861,10 @@ export function IncidentProvider({ children }) {
         [flagKey]: { ...flag, comments: (flag.comments ?? []).filter((c) => c.id !== commentId) },
       }
       const updatedAt = nowIso()
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === incidentId ? { ...i, updatedAt, flags } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
       audit('flag.comment.remove', 'Removed a comment from a flagged entry', incident)
-      persist(incidentId, { flags, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   /* ---- free-form note blocks (shown on the Summary timeline) ---- */
@@ -800,13 +878,10 @@ export function IncidentProvider({ children }) {
       const note = { id: generateId(), text: body, createdAt: nowIso(), updatedAt: nowIso(), author: actor }
       const notes = [...incident.notes, note]
       const updatedAt = nowIso()
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === incidentId ? { ...i, updatedAt, notes } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, notes }))
       audit('note.add', 'Added a note', incident)
-      persist(incidentId, { notes, updatedAt })
     },
-    [actor, audit, persist],
+    [actor, audit, commit],
   )
 
   const updateNote = useCallback(
@@ -819,13 +894,10 @@ export function IncidentProvider({ children }) {
         n.id === noteId ? { ...n, text: body, updatedAt: nowIso() } : n,
       )
       const updatedAt = nowIso()
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === incidentId ? { ...i, updatedAt, notes } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, notes }))
       audit('note.update', 'Edited a note', incident)
-      persist(incidentId, { notes, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   const removeNote = useCallback(
@@ -834,21 +906,29 @@ export function IncidentProvider({ children }) {
       if (!incident) return
       const notes = incident.notes.filter((n) => n.id !== noteId)
       const updatedAt = nowIso()
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === incidentId ? { ...i, updatedAt, notes } : i)),
-      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, notes }))
       audit('note.remove', 'Removed a note', incident)
-      persist(incidentId, { notes, updatedAt })
     },
-    [audit, persist],
+    [audit, commit],
   )
 
   /* ---- export / import ---- */
 
   const exportIncident = useCallback(
-    (incidentId) => {
-      const incident = find(incidentId)
-      if (!incident) return
+    async (incidentId) => {
+      let incident = find(incidentId)
+      if (!incident) {
+        // Not opened yet in this session: fetch the full document first.
+        try {
+          incident = normalizeIncident(
+            await api.get(`/incidents/${encodeURIComponent(incidentId)}`),
+          )
+        } catch (err) {
+          setStorageError(err?.message || 'Unable to load the incident to export it.')
+          return
+        }
+        storeDocument(incident)
+      }
       const safeName = incident.name
         .toLowerCase()
         .replace(/[^a-z0-9]+/gi, '-')
@@ -861,7 +941,7 @@ export function IncidentProvider({ children }) {
       })
       audit('incident.export', `Exported incident "${incident.name}"`, incident)
     },
-    [audit],
+    [audit, storeDocument],
   )
 
   const importIncidentFromFile = useCallback(
@@ -878,7 +958,7 @@ export function IncidentProvider({ children }) {
         throw new Error('Unrecognized file: a Nik export with a "data" field is expected.')
       }
       const incident = normalizeIncident({ ...raw, id: generateId(), updatedAt: nowIso() })
-      setIncidents((prev) => [incident, ...prev])
+      storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
       syncUrl(incident.id)
       audit('incident.import', `Imported incident "${incident.name}"`, incident)
@@ -889,13 +969,17 @@ export function IncidentProvider({ children }) {
         .catch((err) => setStorageError(err?.message || 'Unable to save the imported incident.'))
       return incident
     },
-    [audit],
+    [audit, storeDocument],
   )
 
   const value = {
     incidents,
     activeIncident,
     activeIncidentId,
+    activeSummary,
+    activeLoading,
+    activeLoadError,
+    retryActiveIncident,
     loading,
     storageError,
     createIncident,

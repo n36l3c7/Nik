@@ -12,7 +12,9 @@ import { formatRelative } from '../../utils/time.js'
  * @param {{ onOpenSettings: () => void }} props
  */
 export default function Header({ onOpenSettings }) {
-  const { activeIncident } = useIncidents()
+  const { activeIncident: loadedIncident, activeSummary } = useIncidents()
+  // The light summary row is enough for the header while the document loads.
+  const activeIncident = loadedIncident ?? activeSummary
   const { currentUser, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
 

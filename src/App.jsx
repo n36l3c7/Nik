@@ -7,6 +7,7 @@ import { Button, EmptyState, Modal, Spinner } from './components/ui/index.js'
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
+import IncidentLoadingState from './components/layout/IncidentLoadingState.jsx'
 import OsPicker from './components/layout/OsPicker.jsx'
 import { DEFAULT_OS } from './config/os.js'
 import SettingsPanel from './components/settings/SettingsPanel.jsx'
@@ -120,7 +121,16 @@ function UnreachableScreen({ error, onRetry }) {
 
 export default function App() {
   const { hasUsers, isAuthenticated, authReady, serverError, retry } = useAuth()
-  const { activeIncident, storageError, createIncident, loading } = useIncidents()
+  const {
+    activeIncident,
+    activeSummary,
+    activeLoading,
+    activeLoadError,
+    retryActiveIncident,
+    storageError,
+    createIncident,
+    loading,
+  } = useIncidents()
 
   const [activeTabId, setActiveTabId] = useState(ANALYSIS_TABS[0].id)
 
@@ -230,6 +240,21 @@ export default function App() {
             >
               <ActiveTabComponent incident={activeIncident} />
             </Suspense>
+          ) : activeLoading ? (
+            <IncidentLoadingState name={activeSummary.name} />
+          ) : activeLoadError ? (
+            <div className="flex h-full items-center justify-center">
+              <EmptyState
+                icon={ServerCrash}
+                title="Unable to load the incident"
+                message={activeLoadError}
+                action={
+                  <Button icon={RefreshCw} onClick={retryActiveIncident}>
+                    Retry
+                  </Button>
+                }
+              />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center">
               <EmptyState
