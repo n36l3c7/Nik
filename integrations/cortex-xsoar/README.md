@@ -128,7 +128,7 @@ parses it server-side and merges the result.
 | `incident_id` *(required)* | The incident id. |
 | `entry_id` *(required)* | War Room entry id of the file. |
 | `tab` *(required)* | `browser` / `commands` / `endpoint`. |
-| `browser` | tab=browser: `chrome`/`firefox`/`edge`/`brave`/`opera`. |
+| `browser` | tab=browser: `chrome`/`firefox`/`edge`/`brave`/`opera`/`safari`. |
 | `shell` | tab=commands: `bash`/`zsh`/`fish`/`powershell`. |
 | `category` | tab=endpoint: `execution`/`persistence`/`fileaccess`/`usb`. |
 | `source` | Source key (browser/endpoint), e.g. `history`, `places`, `cron`. |

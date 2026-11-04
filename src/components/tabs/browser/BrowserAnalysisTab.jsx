@@ -22,14 +22,15 @@ import {
   getBrowserById,
   buildDefaultBrowserData,
   sourcePathFor,
+  isBrowserAvailableOn,
 } from '../../../config/browsers.js'
 import { getOsById, DEFAULT_OS } from '../../../config/os.js'
 
 /*
  * "Browser Forensics" tab: one SUB-TAB per known browser (Chrome, Firefox,
- * Edge, Brave, Opera). Every browser exposes its own file sources (which differ
- * by engine: Chromium uses History/Bookmarks/Shortcuts, Firefox a single
- * places.sqlite), its own artifacts (history, downloads, bookmarks, shortcuts)
+ * Edge, Brave, Opera, Safari). Every browser exposes its own file sources
+ * (which differ by engine: Chromium uses History/Bookmarks/Shortcuts, Firefox a
+ * single places.sqlite, Safari History.db plus two plists), its own artifacts (history, downloads, bookmarks, shortcuts)
  * and the ability to clear its data per file or as a whole.
  */
 
@@ -72,6 +73,12 @@ export default function BrowserAnalysisTab({ incident }) {
   // Host OS drives the artifact paths shown in the "where to find files" note.
   const os = getOsById(incident.os) ? incident.os : DEFAULT_OS
   const osLabel = getOsById(os)?.label ?? os
+  // A macOS-only browser (Safari) on a Windows/Linux incident: the paths shown
+  // are those of the platforms it exists on, with a warning.
+  const availableOnHost = isBrowserAvailableOn(browser, os)
+  const pathsOsLabel = availableOnHost
+    ? osLabel
+    : browser.platforms.map((id) => getOsById(id)?.label ?? id).join(' / ')
 
   // Data of the active browser (defensive fallback for partial incidents).
   const current = browserData.browsers[activeBrowserId] ?? buildDefaultBrowserData(browser)
@@ -232,8 +239,14 @@ export default function BrowserAnalysisTab({ incident }) {
           <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
           <div className="min-w-0 space-y-1.5">
             <p className="font-medium text-slate-700 dark:text-slate-200">
-              Where to find {browser.label} files ({osLabel})
+              Where to find {browser.label} files ({pathsOsLabel})
             </p>
+            {!availableOnHost && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                {browser.label} exists only on {pathsOsLabel}, but this incident&apos;s
+                host runs {osLabel}: these files must come from a {pathsOsLabel} host.
+              </p>
+            )}
             <ul className="space-y-1">
               {missingSources.map((source) => (
                 <li key={source.key} className="text-xs text-slate-600 dark:text-slate-400">

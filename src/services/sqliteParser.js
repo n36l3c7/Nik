@@ -8,6 +8,8 @@
  *    `Shortcuts` (omni_box_shortcuts). Timestamps in "WebKit time" (µs since 1601).
  *  - FIREFOX: single `places.sqlite` file (moz_places/moz_historyvisits/
  *    moz_bookmarks/moz_annos). Timestamps in "PRTime" (µs since 1970).
+ *  - SAFARI: `History.db` (history_items/history_visits). Timestamps in Mac
+ *    absolute time (seconds since 2001). Downloads and bookmarks are plists.
  *
  * sql.js (SQLite in WebAssembly) opens the databases ENTIRELY in the browser:
  * no byte leaves the analyst's machine. The module and the .wasm are loaded
@@ -15,8 +17,12 @@
  */
 
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url'
-import { webkitToMs, firefoxToMs } from '../utils/time.js'
+import { webkitToMs, firefoxToMs, macToMs } from '../utils/time.js'
 import { generateId } from '../utils/id.js'
+import { fileNameFromPath } from '../utils/path.js'
+
+// Re-exported for existing importers (fileParsers.js).
+export { fileNameFromPath }
 
 let sqlPromise = null
 
@@ -82,22 +88,6 @@ function tryQueryRows(db, sql) {
 
 // Redirect bits in Chromium's `transition` column.
 const CHROMIUM_REDIRECT_MASK = 0x40000000 | 0x80000000 // CLIENT | SERVER redirect
-
-/** Extracts the file name from a Windows/Unix path or from a file:// URI. */
-export function fileNameFromPath(path) {
-  if (!path) return ''
-  let value = String(path)
-  if (value.startsWith('file:')) {
-    try {
-      value = decodeURIComponent(value.replace(/^file:\/*/i, ''))
-    } catch {
-      /* leave the raw value */
-    }
-  }
-  value = value.split(/[?#]/)[0] // remove any query/fragment
-  const parts = value.split(/[\\/]/).filter(Boolean)
-  return parts.length ? parts[parts.length - 1] : value
-}
 
 /* ======================================================================== */
 /* CHROMIUM                                                                  */
@@ -357,19 +347,64 @@ export function parseFirefoxDownloads(db) {
 }
 
 /* ======================================================================== */
+/* SAFARI (History.db)                                                       */
+/* ======================================================================== */
+
+/**
+ * History from Safari's History.db: `history_visits` (one row per visit, time
+ * in Mac absolute seconds) joined with `history_items` (URL and visit count).
+ * `redirect_source` is the visit that redirected to this one, so a visit with
+ * a source is a redirect target — the same meaning as Chromium/Firefox.
+ */
+export function parseSafariHistory(db) {
+  const rows = queryRows(
+    db,
+    `SELECT i.url AS url, v.title AS title, i.visit_count AS visit_count,
+            v.id AS visit_id, v.redirect_source AS redirect_source,
+            v.visit_time AS visit_time
+     FROM history_items AS i INNER JOIN history_visits AS v ON v.history_item = i.id
+     ORDER BY v.visit_time DESC`,
+  )
+  return rows.map((row) => ({
+    id: generateId(),
+    url: row.url ?? '',
+    title: row.title ?? '',
+    visitCount: row.visit_count ?? 0,
+    visitTime: macToMs(row.visit_time),
+    visitId: row.visit_id ?? null,
+    fromVisitId: row.redirect_source || null,
+    isRedirect: row.redirect_source != null,
+  }))
+}
+
+/* ======================================================================== */
 /* Dispatch by engine                                                        */
 /* ======================================================================== */
 
 /**
  * Opens a SQLite file and extracts the artifacts required by the source.
  * @param {ArrayBuffer} arrayBuffer file content
- * @param {'chromium'|'firefox'} engine browser engine
+ * @param {'chromium'|'firefox'|'safari'} engine browser engine
  * @param {string} sourceKey source key (history/shortcuts/places)
  * @returns {Promise<object>} map { history?, downloads?, bookmarks?, shortcuts? }
  */
 export async function parseSqliteSource(arrayBuffer, engine, sourceKey) {
   const db = await openDatabase(arrayBuffer)
   try {
+    if (engine === 'safari') {
+      if (sourceKey !== 'history') {
+        throw new Error(
+          'This is a SQLite database, but Safari keeps downloads and bookmarks in .plist files: select Downloads.plist or Bookmarks.plist.',
+        )
+      }
+      if (!hasTables(db, ['history_items', 'history_visits'])) {
+        throw new Error(
+          'The database does not contain the expected tables (history_items/history_visits): it does not look like a Safari History.db file.',
+        )
+      }
+      return { history: parseSafariHistory(db) }
+    }
+
     if (engine === 'firefox') {
       if (!hasTables(db, ['moz_places'])) {
         throw new Error(

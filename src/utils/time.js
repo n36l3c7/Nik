@@ -33,6 +33,21 @@ export function firefoxToMs(prTimeMicroseconds) {
   return Math.round(us / 1000)
 }
 
+/** Seconds between the 2001 epoch (Mac absolute / Cocoa time) and the 1970 epoch. */
+export const MAC_EPOCH_OFFSET_S = 978307200
+
+/**
+ * Converts a Mac absolute time (seconds since 2001-01-01 UTC, possibly
+ * fractional, such as Safari's `history_visits.visit_time` or a plist date) to
+ * Unix epoch ms. Returns null for missing or non-numeric values.
+ */
+export function macToMs(seconds) {
+  if (seconds === null || seconds === undefined || seconds === '') return null
+  const s = Number(seconds)
+  if (!Number.isFinite(s)) return null
+  return Math.round((s + MAC_EPOCH_OFFSET_S) * 1000)
+}
+
 /**
  * Interprets an "arbitrary" time value coming from CSV/JSON exports of
  * forensic tools and normalizes it to Unix epoch ms:

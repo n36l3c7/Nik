@@ -11,6 +11,11 @@ places.sqlite
 History
 Bookmarks
 Shortcuts
+History.db
+History.db-wal
+History.db-shm
+Downloads.plist
+Bookmarks.plist
 
 # Environment files with real secrets (docker-compose reads ./.env)
 .env

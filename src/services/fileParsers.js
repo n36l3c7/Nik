@@ -4,7 +4,7 @@
  * ============================================================================
  *
  * `parseBrowserSource(file, engine, source)` automatically recognizes the
- * format (SQLite / JSON / CSV) and returns the ARTIFACTS PRODUCED by the source
+ * format (SQLite / property list / JSON / CSV) and returns the ARTIFACTS PRODUCED by the source
  * (a source can produce more than one: Chrome's History contains both the
  * browsing history and the downloads; Firefox's places.sqlite contains
  * history, bookmarks and downloads).
@@ -19,6 +19,8 @@ import Papa from 'papaparse'
 import { generateId } from '../utils/id.js'
 import { anyToMs, webkitToMs } from '../utils/time.js'
 import { parseSqliteSource, fileNameFromPath } from './sqliteParser.js'
+import { isBinaryPlist, looksLikeXmlPlist, parsePlist } from './plistParser.js'
+import { mapSafariBookmarks, mapSafariDownloads } from './safariParser.js'
 
 /* ------------------------------------------------------------------------ */
 /* Format recognition                                                         */
@@ -286,6 +288,13 @@ function mapTextDocument(source, parsedJson, csvRows) {
   return { history: mapHistoryRows(rows) }
 }
 
+/** Maps a decoded Safari plist onto the artifact its source produces. */
+function mapSafariPlist(plist, source) {
+  if (source.key === 'downloads') return { downloads: mapSafariDownloads(plist) }
+  if (source.key === 'bookmarks') return { bookmarks: mapSafariBookmarks(plist) }
+  throw new Error('Safari history is a SQLite database (History.db), not a property list.')
+}
+
 /* ------------------------------------------------------------------------ */
 /* Main API                                                                   */
 /* ------------------------------------------------------------------------ */
@@ -293,9 +302,9 @@ function mapTextDocument(source, parsedJson, csvRows) {
 /**
  * Parses a file uploaded for a browser source.
  * @param {File} file selected/dragged file
- * @param {'chromium'|'firefox'} engine browser engine
+ * @param {'chromium'|'firefox'|'safari'} engine browser engine
  * @param {object} source source definition (from config/browsers.js): { key, produces, label }
- * @returns {Promise<{ produced: object, format: 'sqlite'|'json'|'csv' }>}
+ * @returns {Promise<{ produced: object, format: 'sqlite'|'plist'|'json'|'csv' }>}
  * @throws {Error} a clear message understandable by the analyst
  */
 export async function parseBrowserSource(file, engine, source) {
@@ -321,8 +330,19 @@ export async function parseBrowserSource(file, engine, source) {
     return { produced, format: 'sqlite' }
   }
 
-  /* --- 2. Text file: JSON or CSV --- */
+  /* --- 2. Property list (Safari Downloads.plist / Bookmarks.plist) --- */
   const text = new TextDecoder('utf-8').decode(buffer)
+  if (isBinaryPlist(buffer) || looksLikeXmlPlist(text)) {
+    if (engine !== 'safari') {
+      throw new Error(`This is a property list (.plist), not a ${source.label} file for this browser.`)
+    }
+    const produced = mapSafariPlist(parsePlist(buffer), source)
+    const totalRows = Object.values(produced).reduce((sum, arr) => sum + arr.length, 0)
+    if (totalRows === 0) throw new Error('The property list was read but contains no entries.')
+    return { produced, format: 'plist' }
+  }
+
+  /* --- 3. Text file: JSON or CSV --- */
 
   let parsedJson = null
   let isJson = false
