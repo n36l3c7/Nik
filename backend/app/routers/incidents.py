@@ -24,6 +24,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from ..browser_profiles import normalize_browser_data
 from ..db import SessionLocal, get_db
 from ..events import emit, emit_now
 from ..models import AuditEntry, Incident, IdempotencyRecord, Job
@@ -187,6 +188,14 @@ def get_incident(
         if etag in {tag.strip() for tag in if_none_match.split(",")}:
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
     row = _get_or_404(db, incident_id)
+    # A document still in the pre-2.0.0 browser shape (e.g. a database that was
+    # not migrated) is converted and saved once, so clients always diff their
+    # merge patches against the current shape. The version (ETag) is unchanged.
+    doc = dict(row.doc or {})
+    if normalize_browser_data(doc):
+        row.doc = doc
+        flag_modified(row, "doc")
+        db.commit()
     response.headers["ETag"] = _etag(row.doc)
     return row.doc
 
@@ -203,6 +212,8 @@ def create_incident(
     The server stamps ``createdBy`` from the caller (username, or ``api:<label>``).
     """
     doc = dict(doc)
+    # Accept pre-2.0.0 documents (e.g. old exports): one profile per browser.
+    normalize_browser_data(doc)
     # Guarantee a v4 UUID id: use the client's if present, else generate one.
     incident_id = doc.get("id") or str(uuid.uuid4())
     doc["id"] = incident_id
@@ -281,6 +292,7 @@ def patch_incident(
         merged = dict(row.doc or {})
         for key, value in partial.items():
             merged[key] = value
+    normalize_browser_data(merged)
     row.doc = merged
     flag_modified(row, "doc")
     _sync_columns(row)
@@ -371,6 +383,9 @@ async def upload_artifact(
     file: UploadFile = File(..., description="The raw artifact file."),
     tab: str = Query(..., description="browser | commands | endpoint"),
     browser: str | None = Query(None, description="Browser id (tab=browser), e.g. chrome/firefox"),
+    profile: str | None = Query(
+        None, description="Browser profile NAME (tab=browser); created if missing. Default: \"Default\"."
+    ),
     source: str | None = Query(None, description="Source key (browser/endpoint), e.g. history"),
     shell: str | None = Query(None, description="Shell id (tab=commands), e.g. bash"),
     category: str | None = Query(None, description="Category id (tab=endpoint), e.g. persistence"),
@@ -384,6 +399,7 @@ async def upload_artifact(
 
     Routing (query params) mirrors the app's tabs:
     - `tab=browser&browser=chrome&source=history` → a Chromium `History` DB
+      (add `&profile=Work` for a non-default browser profile)
     - `tab=commands&shell=bash` → a `.bash_history`
     - `tab=endpoint&category=persistence&source=cron` → a cron file / tool CSV
 
@@ -396,7 +412,7 @@ async def upload_artifact(
         return replay
     row = _get_or_404(db, incident_id)
     data = await file.read()
-    params = {"browser": browser, "shell": shell, "category": category, "source": source}
+    params = {"browser": browser, "profile": profile, "shell": shell, "category": category, "source": source}
 
     if async_:
         now = now_iso()

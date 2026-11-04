@@ -36,6 +36,7 @@ from ..db import get_db
 from ..models import AuditEntry, Incident, Setting, User
 from ..models import Session as SessionModel
 from ..security import Principal, admin_principal, now_iso
+from ..browser_profiles import normalize_browser_data
 from .incidents import _sync_columns
 from .settings import SETTINGS_ID
 
@@ -249,6 +250,7 @@ def import_backup(
 
         # 5. Incidents (mirror the scalar columns used for listing/sorting).
         for doc in incidents:
+            normalize_browser_data(doc)  # backups taken before 2.0.0
             row = Incident(id=str(doc["id"]), doc=doc)
             _sync_columns(row)
             db.add(row)

@@ -67,9 +67,9 @@ function CopyButton({ text }) {
 }
 
 /**
- * @param {{ incident: object, browserId: string, shortcuts?: Array, meta?: object|null }} props
+ * @param {{ incident: object, browserId: string, profile?: object, shortcuts?: Array, meta?: object|null }} props
  */
-export default function ShortcutsSection({ incident, browserId, shortcuts = [], meta = null }) {
+export default function ShortcutsSection({ incident, browserId, profile = null, shortcuts = [], meta = null }) {
   const { toggleFlag } = useIncidents()
   const flags = incident.flags
 
@@ -86,6 +86,8 @@ export default function ShortcutsSection({ incident, browserId, shortcuts = [], 
               toggleFlag(incident.id, {
                 key: row.id,
                 browserId,
+                profileId: profile?.id ?? null,
+                profileName: profile?.name ?? null,
                 section: 'shortcuts',
                 eventType: 'shortcut',
                 title: row.text || row.title || '',
@@ -173,7 +175,7 @@ export default function ShortcutsSection({ incident, browserId, shortcuts = [], 
         render: (row) => formatDateTime(row.lastAccessTime),
       },
     ],
-    [flags, incident.id, browserId, toggleFlag],
+    [flags, incident.id, browserId, profile?.id, profile?.name, toggleFlag],
   )
 
   // Cyan highlight for flagged rows (distinct from severity colors).

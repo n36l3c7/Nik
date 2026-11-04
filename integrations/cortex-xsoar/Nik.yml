@@ -251,6 +251,8 @@ script:
       - endpoint
     - name: browser
       description: 'Browser id (tab=browser): chrome/firefox/edge/brave/opera/safari.'
+    - name: profile
+      description: 'Browser profile name (tab=browser), created if missing. Default: "Default".'
     - name: shell
       description: 'Shell id (tab=commands): bash/zsh/fish/powershell.'
     - name: category
@@ -268,7 +270,10 @@ script:
       description: Detected format (sqlite/json/csv/text/xbel/…).
       type: String
     - contextPath: Nik.Upload.target
-      description: The data slot it was merged into (e.g. browser/chrome/history).
+      description: The data slot it was merged into (e.g. browser/chrome/Default/history).
+      type: String
+    - contextPath: Nik.Upload.profileId
+      description: Id of the browser profile the file was merged into (tab=browser).
       type: String
   - name: nik-get-audit
     description: Read the global audit log, newest-first (filterable).

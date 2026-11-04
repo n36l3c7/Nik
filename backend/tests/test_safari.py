@@ -79,7 +79,7 @@ def test_safari_history_db_upload(admin: TestClient, tmp_path):
     res = _upload(admin, "history", "History.db", _history_db(tmp_path / "History.db"))
     assert res.status_code == 200, res.text
     assert res.json()["rows"] == 2 and res.json()["format"] == "sqlite"
-    slot = admin.get("/api/incidents/sf").json()["data"]["browser"]["browsers"]["safari"]
+    slot = admin.get("/api/incidents/sf").json()["data"]["browser"]["browsers"]["safari"]["profiles"]["default"]
     target, source = slot["history"]
     assert target["url"] == "https://evil.example/" and target["title"] == "Evil"
     assert target["isRedirect"] is True and target["fromVisitId"] == 10
@@ -94,7 +94,7 @@ def test_safari_binary_downloads_and_xml_bookmarks(admin: TestClient):
     assert res.status_code == 200 and res.json()["format"] == "plist", res.text
     res = _upload(admin, "bookmarks", "Bookmarks.plist", plistlib.dumps(BOOKMARKS, fmt=plistlib.FMT_XML))
     assert res.status_code == 200 and res.json()["rows"] == 1, res.text
-    slot = admin.get("/api/incidents/sf").json()["data"]["browser"]["browsers"]["safari"]
+    slot = admin.get("/api/incidents/sf").json()["data"]["browser"]["browsers"]["safari"]["profiles"]["default"]
     (download,) = slot["downloads"]
     assert download["fileName"] == "payload.dmg" and download["state"] == 1
     assert download["startTime"] == _ms(datetime(2026, 11, 2, 2, 14))

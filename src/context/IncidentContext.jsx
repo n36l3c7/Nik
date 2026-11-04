@@ -15,7 +15,9 @@ import {
   getBrowserById,
   buildDefaultBrowserData,
   buildDefaultBrowsersMap,
+  buildDefaultProfileData,
 } from '../config/browsers.js'
+import { normalizeBrowserSlot, profileNameError, sortedProfiles } from '../utils/browserProfiles.js'
 import {
   SHELLS,
   getShellById,
@@ -50,8 +52,9 @@ import { useAudit } from './AuditContext.jsx'
  *   suspiciousEnd,        // Unix ms | null — end of suspicious activity
  *   createdAt, updatedAt, createdBy,
  *   data: { summary, browser, commands, endpoint, network },
- *   flags: { [key]: { key, browserId, section, eventType, title, url, time,
- *                     flaggedAt, flaggedBy, comments: [...] } },
+ *   flags: { [key]: { key, browserId, profileId?, profileName?, section,
+ *                     eventType, title, url, time, flaggedAt, flaggedBy,
+ *                     comments: [...] } },
  *   notes: [ { id, text, createdAt, updatedAt, author } ],
  * }
  *
@@ -90,25 +93,15 @@ export function deriveIncidentName(host, username) {
   return h || u || 'Untitled incident'
 }
 
-/* ---- browser data normalization (per-browser + legacy migration) ---- */
+/* ---- browser data normalization (per-browser, per-profile + legacy migration) ---- */
 function normalizeBrowserData(raw) {
   const fallback = { activeBrowser: BROWSERS[0].id, browsers: buildDefaultBrowsersMap() }
   if (!raw || typeof raw !== 'object') return fallback
 
   if (raw.browsers && typeof raw.browsers === 'object') {
-    const browsers = buildDefaultBrowsersMap()
+    const browsers = {}
     for (const browser of BROWSERS) {
-      const rb = raw.browsers[browser.id]
-      if (rb && typeof rb === 'object') {
-        const def = buildDefaultBrowserData(browser)
-        browsers[browser.id] = {
-          history: Array.isArray(rb.history) ? rb.history : [],
-          downloads: Array.isArray(rb.downloads) ? rb.downloads : [],
-          bookmarks: Array.isArray(rb.bookmarks) ? rb.bookmarks : [],
-          shortcuts: Array.isArray(rb.shortcuts) ? rb.shortcuts : [],
-          meta: { ...def.meta, ...(rb.meta ?? {}) },
-        }
-      }
+      browsers[browser.id] = normalizeBrowserSlot(raw.browsers[browser.id], browser)
     }
     return {
       activeBrowser: getBrowserById(raw.activeBrowser) ? raw.activeBrowser : BROWSERS[0].id,
@@ -116,24 +109,36 @@ function normalizeBrowserData(raw) {
     }
   }
 
-  // Legacy single-browser shape → Chrome.
+  // Oldest single-browser shape → Chrome's Default profile.
   if (Array.isArray(raw.history) || Array.isArray(raw.bookmarks) || Array.isArray(raw.shortcuts)) {
     const browsers = buildDefaultBrowsersMap()
-    browsers.chrome = {
-      history: Array.isArray(raw.history) ? raw.history : [],
-      downloads: [],
-      bookmarks: Array.isArray(raw.bookmarks) ? raw.bookmarks : [],
-      shortcuts: Array.isArray(raw.shortcuts) ? raw.shortcuts : [],
-      meta: {
-        history: raw.meta?.history ?? null,
-        bookmarks: raw.meta?.bookmarks ?? null,
-        shortcuts: raw.meta?.shortcuts ?? null,
-      },
-    }
+    browsers.chrome = normalizeBrowserSlot(
+      { history: raw.history, bookmarks: raw.bookmarks, shortcuts: raw.shortcuts, meta: raw.meta },
+      getBrowserById('chrome'),
+    )
     return { activeBrowser: 'chrome', browsers }
   }
 
   return fallback
+}
+
+/** New `data` with one browser slot replaced by `fn(slot, browser)`. */
+function withBrowserSlot(data, browserId, fn) {
+  const browser = getBrowserById(browserId) ?? BROWSERS[0]
+  const slot = data.browser.browsers[browserId] ?? buildDefaultBrowserData(browser)
+  return {
+    ...data,
+    browser: { ...data.browser, browsers: { ...data.browser.browsers, [browserId]: fn(slot, browser) } },
+  }
+}
+
+/** New `data` with one profile of a browser replaced by `fn(profile, browser)`. */
+function withBrowserProfile(data, browserId, profileId, fn) {
+  return withBrowserSlot(data, browserId, (slot, browser) => {
+    const profile = slot.profiles[profileId]
+    if (!profile) return slot
+    return { ...slot, profiles: { ...slot.profiles, [profileId]: fn(profile, browser) } }
+  })
 }
 
 /* ---- command data normalization (per-shell) ---- */
@@ -593,24 +598,18 @@ export function IncidentProvider({ children }) {
     [commit],
   )
 
-  /* ---- per-browser data ---- */
+  /* ---- per-browser, per-profile data ---- */
 
+  /** Shallow-merge `patch` into ONE profile of a browser (e.g. after an upload). */
   const updateBrowserData = useCallback(
-    (incidentId, browserId, patch, auditInfo) => {
+    (incidentId, browserId, profileId, patch, auditInfo) => {
       const prev = find(incidentId)
       if (!prev) return
-      const browser = prev.data.browser
-      const current =
-        browser.browsers[browserId] ??
-        buildDefaultBrowserData(getBrowserById(browserId) ?? BROWSERS[0])
       const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        browser: {
-          ...browser,
-          browsers: { ...browser.browsers, [browserId]: { ...current, ...patch } },
-        },
-      }
+      const data = withBrowserProfile(prev.data, browserId, profileId, (profile) => ({
+        ...profile,
+        ...patch,
+      }))
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
     },
@@ -626,41 +625,121 @@ export function IncidentProvider({ children }) {
     [commit],
   )
 
-  const clearBrowserData = useCallback(
-    (incidentId, browserId) => {
+  // View preference only, like setActiveBrowser: never sent on its own.
+  const setActiveProfile = useCallback(
+    (incidentId, browserId, profileId) => {
+      commit(
+        incidentId,
+        (i) => ({ ...i, data: withBrowserSlot(i.data, browserId, (slot) => ({ ...slot, activeProfile: profileId })) }),
+        { local: true },
+      )
+    },
+    [commit],
+  )
+
+  /** Create a profile in a browser and make it active. Returns its id, or null. */
+  const addBrowserProfile = useCallback(
+    (incidentId, browserId, name) => {
       const prev = find(incidentId)
-      if (!prev) return
-      const def = buildDefaultBrowserData(getBrowserById(browserId) ?? BROWSERS[0])
+      if (!prev) return null
+      const slot = prev.data.browser.browsers[browserId]
+      if (profileNameError(slot, name)) return null
+      const browser = getBrowserById(browserId) ?? BROWSERS[0]
+      const profile = buildDefaultProfileData(browser, { id: generateId(), name: name.trim(), createdAt: nowIso() })
       const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        browser: {
-          ...prev.data.browser,
-          browsers: { ...prev.data.browser.browsers, [browserId]: def },
-        },
-      }
+      const data = withBrowserSlot(prev.data, browserId, (current) => ({
+        ...current,
+        activeProfile: profile.id,
+        profiles: { ...current.profiles, [profile.id]: profile },
+      }))
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('browser.clear', `Cleared ${browserId} data`, { ...prev, updatedAt, data })
+      audit('browser.profile.add', `Added ${browserId} profile "${profile.name}"`, { ...prev, updatedAt, data })
+      return profile.id
+    },
+    [audit, commit],
+  )
+
+  const renameBrowserProfile = useCallback(
+    (incidentId, browserId, profileId, name) => {
+      const prev = find(incidentId)
+      const profile = prev?.data.browser.browsers[browserId]?.profiles[profileId]
+      if (!profile || profileNameError(prev.data.browser.browsers[browserId], name, profileId)) return
+      const updatedAt = nowIso()
+      const newName = name.trim()
+      const data = withBrowserProfile(prev.data, browserId, profileId, (p) => ({ ...p, name: newName }))
+      // Flags remember the profile name, so they stay readable if it is deleted.
+      const flags = { ...prev.flags }
+      for (const [key, flag] of Object.entries(flags)) {
+        if (flag.browserId === browserId && flag.profileId === profileId) {
+          flags[key] = { ...flag, profileName: newName }
+        }
+      }
+      commit(incidentId, (i) => ({ ...i, updatedAt, data, flags }))
+      audit('browser.profile.rename', `Renamed ${browserId} profile "${profile.name}" to "${newName}"`, {
+        ...prev,
+        updatedAt,
+        data,
+      })
+    },
+    [audit, commit],
+  )
+
+  /**
+   * Delete a profile and its data (a browser always keeps at least one).
+   * Flags on its rows are kept: they are investigative decisions, and the
+   * timeline marks them as coming from a deleted profile.
+   */
+  const deleteBrowserProfile = useCallback(
+    (incidentId, browserId, profileId) => {
+      const prev = find(incidentId)
+      const slot = prev?.data.browser.browsers[browserId]
+      const profile = slot?.profiles[profileId]
+      if (!profile || Object.keys(slot.profiles).length < 2) return
+      const updatedAt = nowIso()
+      const data = withBrowserSlot(prev.data, browserId, (current) => {
+        const { [profileId]: _deleted, ...profiles } = current.profiles
+        const rest = { ...current, profiles }
+        return { ...rest, activeProfile: profiles[current.activeProfile] ? current.activeProfile : sortedProfiles(rest)[0].id }
+      })
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
+      audit('browser.profile.delete', `Deleted ${browserId} profile "${profile.name}" and its data`, {
+        ...prev,
+        updatedAt,
+        data,
+      })
+    },
+    [audit, commit],
+  )
+
+  /** Clear ALL data of one profile (the profile itself stays). */
+  const clearBrowserData = useCallback(
+    (incidentId, browserId, profileId) => {
+      const prev = find(incidentId)
+      const profile = prev?.data.browser.browsers[browserId]?.profiles[profileId]
+      if (!profile) return
+      const updatedAt = nowIso()
+      const data = withBrowserProfile(prev.data, browserId, profileId, (p, browser) =>
+        buildDefaultProfileData(browser, { id: p.id, name: p.name, createdAt: p.createdAt }),
+      )
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
+      audit('browser.clear', `Cleared ${browserId} profile "${profile.name}" data`, { ...prev, updatedAt, data })
     },
     [audit, commit],
   )
 
   const removeBrowserSource = useCallback(
-    (incidentId, browserId, sourceKey, producedKeys = []) => {
+    (incidentId, browserId, profileId, sourceKey, producedKeys = []) => {
       const prev = find(incidentId)
-      if (!prev) return
-      const browsers = prev.data.browser.browsers
-      const current = browsers[browserId]
-      if (!current) return
-      const cleared = { ...current, meta: { ...current.meta, [sourceKey]: null } }
-      for (const key of producedKeys) cleared[key] = []
+      const profile = prev?.data.browser.browsers[browserId]?.profiles[profileId]
+      if (!profile) return
       const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        browser: { ...prev.data.browser, browsers: { ...browsers, [browserId]: cleared } },
-      }
+      const data = withBrowserProfile(prev.data, browserId, profileId, (p) => {
+        const cleared = { ...p, meta: { ...p.meta, [sourceKey]: null } }
+        for (const key of producedKeys) cleared[key] = []
+        return cleared
+      })
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('browser.removeFile', `Removed ${browserId} file (${sourceKey})`, {
+      audit('browser.removeFile', `Removed ${browserId} profile "${profile.name}" file (${sourceKey})`, {
         ...prev,
         updatedAt,
         data,
@@ -935,7 +1014,7 @@ export function IncidentProvider({ children }) {
         .replace(/^-+|-+$/g, '')
       downloadJson(`nik-${safeName || 'incident'}.json`, {
         app: 'Nik',
-        version: 3,
+        version: 4, // 4 = browser profiles (2.0.0); older versions are still imported
         exportedAt: nowIso(),
         incident,
       })
@@ -952,7 +1031,8 @@ export function IncidentProvider({ children }) {
       } catch {
         throw new Error('Invalid file: the content is not JSON.')
       }
-      // Accept the v3 envelope, the older "project" envelope, or a bare object.
+      // Accept the v3/v4 envelope, the older "project" envelope, or a bare
+      // object; normalizeIncident() converts pre-profile browser data.
       const raw = parsed?.incident ?? parsed?.project ?? parsed
       if (typeof raw?.data !== 'object' || raw?.data === null) {
         throw new Error('Unrecognized file: a Nik export with a "data" field is expected.')
@@ -990,6 +1070,10 @@ export function IncidentProvider({ children }) {
     clearTabData,
     updateBrowserData,
     setActiveBrowser,
+    setActiveProfile,
+    addBrowserProfile,
+    renameBrowserProfile,
+    deleteBrowserProfile,
     clearBrowserData,
     removeBrowserSource,
     updateShellData,

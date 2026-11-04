@@ -32,8 +32,9 @@ every action attributed to a named analyst and recorded in a global audit log.
   Linux) that drives the suggested artifact paths, the available shells and the
   incident icon.
 - **Browser forensics** — one sub-tab per browser (Chrome, Firefox, Edge,
-  Brave, Opera, Safari): browsing history, downloads, bookmarks (Safari's
-  Reading List included) and omnibox shortcuts, with event classification
+  Brave, Opera, Safari), each with **several profiles** (Default, Profile 1,
+  Work…): browsing history, downloads, bookmarks (Safari's Reading List
+  included) and omnibox shortcuts, with event classification
   (visit / search / redirect).
 - **Command history** — one sub-tab per shell (Bash, Zsh, Fish, PowerShell):
   parses the native history files and detects shell/PowerShell tradecraft.
@@ -181,7 +182,10 @@ Backend tests run with `pytest` from `backend/` after
 **Upgrading an existing database:** run `alembic upgrade head` from `backend/`
 after pulling a release that adds a migration (the Docker image does this on
 start). A database created by the dev-mode `create_all` is adopted by the
-baseline migration.
+baseline migration. Upgrading to **2.0.0** rewrites every incident once
+(migration `0003_browser_profiles`: browser data moves into a "Default"
+profile); on large databases the first start takes longer — take a backup
+first.
 
 Tailwind v4 is wired in through the Vite plugin (`@tailwindcss/vite`), so there
 is no `tailwind.config.js` and no extra setup step.
@@ -658,7 +662,10 @@ curl -H "X-API-Key: $KEY" -F file=@crontab \
 ```
 
 Routing parameters: `tab=browser` needs `browser` (chrome/firefox/edge/brave/opera/safari)
-and `source` (history/bookmarks/shortcuts/places; Safari: history/downloads/bookmarks); `tab=commands` needs `shell`
+and `source` (history/bookmarks/shortcuts/places; Safari: history/downloads/bookmarks),
+plus an optional `profile` — the profile **name**, matched case-insensitively and
+created if missing (default `Default`); the response's `target` reads
+`browser/<id>/<profile>/<source>` and `profileId` names the profile; `tab=commands` needs `shell`
 (bash/zsh/fish/powershell); `tab=endpoint` needs `category`
 (execution/persistence/fileaccess/usb) and `source` (the source key, e.g. cron).
 The server ports the client-side parsers (`backend/app/parsing/`), so uploads
@@ -750,6 +757,7 @@ change.
 │       ├── config.py               # Env-based settings (DATABASE_URL, SECRET_KEY, …)
 │       ├── db.py                   # SQLAlchemy engine / session factory
 │       ├── models.py               # users, sessions, incidents, audit_log, settings
+│       ├── browser_profiles.py     # browser profiles: legacy conversion, upload routing
 │       ├── schemas.py              # Pydantic request/response models
 │       ├── security.py             # bcrypt hashing, session-auth dependencies
 │       ├── defaults.py             # Factory defaults for detection settings
@@ -799,6 +807,7 @@ change.
     │   ├── id.js                   # generateId() → crypto.randomUUID (with fallback)
     │   ├── path.js                 # fileNameFromPath (Windows/POSIX paths, file:// URIs)
     │   ├── mergePatch.js           # createMergePatch(prev, next) — RFC 7396 diff (+ .test.js)
+    │   ├── browserProfiles.js      # browser profiles: normalize, order, names, labels (+ .test.js)
     │   ├── time.js                 # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…
     │   ├── url.js                  # extractDomain, extractSearchQuery, topDomains…
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
@@ -819,7 +828,7 @@ change.
         └── tabs/
             ├── NetworkLogsTab.jsx      # Placeholder, ready for expansion
             ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
-            ├── browser/                # BrowserAnalysisTab, FileUploadZone, EventsSection,
+            ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
             │                           #   filters, widgets, bookmarks/shortcuts tables
             ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
@@ -915,10 +924,14 @@ const {
   updateTabData,          // (id, dataKey, patch) => void — shallow-merge into data[dataKey]
   clearTabData,           // (id, dataKey) => void — reset to the registry defaultData
 
-  updateBrowserData,      // (id, browserId, patch, auditInfo?) => void — per-browser merge
+  updateBrowserData,      // (id, browserId, profileId, patch, auditInfo?) => void — per-profile merge
   setActiveBrowser,       // (id, browserId) => void — switch browser sub-tab (local only)
-  clearBrowserData,       // (id, browserId) => void — clear ONE browser
-  removeBrowserSource,    // (id, browserId, sourceKey, producedKeys) => void — remove ONE file
+  setActiveProfile,       // (id, browserId, profileId) => void — switch profile (local only)
+  addBrowserProfile,      // (id, browserId, name) => profileId | null — create AND activate
+  renameBrowserProfile,   // (id, browserId, profileId, name) => void — also renames its flags
+  deleteBrowserProfile,   // (id, browserId, profileId) => void — never the last one; keeps flags
+  clearBrowserData,       // (id, browserId, profileId) => void — clear ONE profile
+  removeBrowserSource,    // (id, browserId, profileId, sourceKey, producedKeys) => void — ONE file
 
   updateShellData,        // (id, shellId, patch, auditInfo?) => void — per-shell merge
   setActiveShell,         // (id, shellId) => void — switch shell sub-tab (local only)
@@ -954,7 +967,7 @@ immediately and persists only what changed, as an RFC 7396 JSON Merge Patch
 generated by `src/utils/mergePatch.js` from the previous and next document
 (`POST` / `PATCH` / `DELETE /api/incidents/{id}`). Toggling a flag therefore
 sends the flag, not the incident's artifacts. A failed write surfaces in
-`storageError`, shown by `App.jsx` as a red banner. `setActiveBrowser` and
+`storageError`, shown by `App.jsx` as a red banner. `setActiveBrowser`, `setActiveProfile` and
 `setActiveShell` are view preferences, never sent on their own.
 
 #### Shape of an incident
@@ -976,14 +989,19 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
     summary: {},                           // the Summary tab reads incident.* directly
     browser: {
       activeBrowser: 'chrome',
-      browsers: {                          // data PER BROWSER
-        chrome:  { history: [], downloads: [], bookmarks: [], shortcuts: [],
-                   meta: { history: null, bookmarks: null, shortcuts: null } },
-        firefox: { history: [], downloads: [], bookmarks: [], shortcuts: [],
-                   meta: { places: null } },
+      browsers: {                          // data PER BROWSER, then PER PROFILE
+        chrome: {
+          activeProfile: 'default',
+          profiles: {                      // keyed by a stable id; shown in createdAt order
+            default: { id: 'default', name: 'Default', createdAt: '1970-01-01T00:00:00.000Z',
+                       history: [], downloads: [], bookmarks: [], shortcuts: [],
+                       meta: { history: null, bookmarks: null, shortcuts: null } },
+            '<uuid>': { id: '<uuid>', name: 'Work', createdAt: '2026-07-07T09:10:00.000Z', … },
+          },
+        },
+        firefox: { activeProfile, profiles: { … meta: { places: null } } },
         edge: { … }, brave: { … }, opera: { … },
-        safari:  { history: [], downloads: [], bookmarks: [], shortcuts: [],
-                   meta: { history: null, downloads: null, bookmarks: null } },
+        safari:  { activeProfile, profiles: { … meta: { history, downloads, bookmarks } } },
       },
     },
     network:  {},
@@ -994,6 +1012,7 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
   flags: {
     '<eventId>': {
       key, browserId, section, eventType, title, url, time,   // the flagged snapshot
+      profileId, profileName,                                  // browser flags only (2.0.0+)
       flaggedAt, flaggedBy,                                    // provenance
       comments: [ { id, text, at, author } ],                  // per-flag comments
     },
@@ -1289,6 +1308,13 @@ when the incident's OS is not listed), `profilePaths`, `artifacts` and `sources`
 (the files to load, each with `key`, `produces`, `paths` and `hint`). A
 Chromium browser can reuse `chromiumSources(bases)`; a brand-new engine also
 needs a branch in the parsers, and in `backend/app/parsing/` for API uploads.
+Paths may contain `<profile>`, explained by the optional `profileHint`.
+
+**Profiles.** Every browser holds one or more profiles; the profile helpers
+(normalization of pre-2.0.0 data, ordering, name validation, labels) live in
+`src/utils/browserProfiles.js` and mirror `backend/app/browser_profiles.py`. A
+browser always keeps at least one profile; deleting one keeps the flags placed
+on its rows, shown as coming from a deleted profile.
 
 **The parsing dispatcher.** All parsing goes through
 `parseBrowserSource(file, engine, source)` in `src/services/fileParsers.js`:
@@ -1440,7 +1466,7 @@ Spinner({ className = '' })
 ```json
 {
   "app": "Nik",
-  "version": 3,
+  "version": 4,
   "exportedAt": "2026-07-07T11:30:00.000Z",
   "incident": {
     "id": "b3f1c9e2-…",
@@ -1457,7 +1483,8 @@ Spinner({ className = '' })
       "browser": {
         "activeBrowser": "chrome",
         "browsers": {
-          "chrome": {
+          "chrome": { "activeProfile": "default", "profiles": { "default": {
+            "id": "default", "name": "Default", "createdAt": "1970-01-01T00:00:00.000Z",
             "history":   [ { "id": "…", "url": "https://…", "title": "…",
                              "visitCount": 3, "visitTime": 1751871120000,
                              "visitId": 100, "fromVisitId": 99, "isRedirect": false } ],
@@ -1474,9 +1501,11 @@ Spinner({ className = '' })
                            "rows": 1240, "importedAt": "2026-07-07T10:00:00.000Z" },
               "bookmarks": null, "shortcuts": null
             }
-          },
-          "firefox": { "history": [], "downloads": [], "bookmarks": [],
-                       "shortcuts": [], "meta": { "places": null } }
+          } } },
+          "firefox": { "activeProfile": "default", "profiles": { "default": {
+                       "id": "default", "name": "Default", "createdAt": "…",
+                       "history": [], "downloads": [], "bookmarks": [],
+                       "shortcuts": [], "meta": { "places": null } } } }
         }
       },
       "network":  {},
@@ -1493,8 +1522,9 @@ formats are converted at import time (`webkitToMs` / `firefoxToMs`).
 
 ### Import
 
-`importIncidentFromFile(file)` (async) accepts the envelope above or a **bare
-incident object**. Minimal validation: `data` must be an object, otherwise an
+`importIncidentFromFile(file)` (async) accepts the envelope above (version 4,
+or 3 and older — their single-profile browser data lands in a "Default"
+profile) or a **bare incident object**. Minimal validation: `data` must be an object, otherwise an
 `Error` is thrown (surfaced by the sidebar). On import the incident:
 
 - always receives a **new `id`** — importing the same file twice creates two

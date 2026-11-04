@@ -66,9 +66,9 @@ function CopyButton({ text }) {
 }
 
 /**
- * @param {{ incident: object, browserId: string, bookmarks?: Array, meta?: object|null }} props
+ * @param {{ incident: object, browserId: string, profile?: object, bookmarks?: Array, meta?: object|null }} props
  */
-export default function BookmarksSection({ incident, browserId, bookmarks = [], meta = null }) {
+export default function BookmarksSection({ incident, browserId, profile = null, bookmarks = [], meta = null }) {
   const { toggleFlag } = useIncidents()
   const flags = incident.flags
 
@@ -87,6 +87,8 @@ export default function BookmarksSection({ incident, browserId, bookmarks = [], 
               toggleFlag(incident.id, {
                 key: row.id,
                 browserId,
+                profileId: profile?.id ?? null,
+                profileName: profile?.name ?? null,
                 section: 'bookmarks',
                 eventType: 'bookmark',
                 title: row.name || '',
@@ -173,7 +175,7 @@ export default function BookmarksSection({ incident, browserId, bookmarks = [], 
         render: (row) => formatDateTime(row.dateAdded),
       },
     ],
-    [flags, incident.id, browserId, toggleFlag],
+    [flags, incident.id, browserId, profile?.id, profile?.name, toggleFlag],
   )
 
   // Cyan highlight for flagged rows (distinct from severity colors).

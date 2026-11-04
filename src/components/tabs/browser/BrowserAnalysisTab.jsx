@@ -14,6 +14,7 @@ import FileUploadZone from './FileUploadZone.jsx'
 import EventsSection from './EventsSection.jsx'
 import BookmarksSection from './BookmarksSection.jsx'
 import ShortcutsSection from './ShortcutsSection.jsx'
+import ProfileBar from './ProfileBar.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { parseBrowserSource } from '../../../services/fileParsers.js'
 import { getDemoBrowserData } from '../../../services/demoData.js'
@@ -25,12 +26,14 @@ import {
   isBrowserAvailableOn,
 } from '../../../config/browsers.js'
 import { getOsById, DEFAULT_OS } from '../../../config/os.js'
+import { activeProfileOf, browserRowCount, profileRowCount } from '../../../utils/browserProfiles.js'
 
 /*
  * "Browser Forensics" tab: one SUB-TAB per known browser (Chrome, Firefox,
  * Edge, Brave, Opera, Safari). Every browser exposes its own file sources
  * (which differ by engine: Chromium uses History/Bookmarks/Shortcuts, Firefox a
- * single places.sqlite, Safari History.db plus two plists), its own artifacts (history, downloads, bookmarks, shortcuts)
+ * single places.sqlite, Safari History.db plus two plists), its own PROFILES
+ * (Default, Profile 1, … — each with its own files and data), its own artifacts (history, downloads, bookmarks, shortcuts)
  * and the ability to clear its data per file or as a whole.
  */
 
@@ -50,14 +53,22 @@ function sectionsFor(browser) {
 }
 
 /** Metadata of the file (source) that produces a given artifact. */
-function sourceMetaFor(browser, browserData, artifact) {
+function sourceMetaFor(browser, profileData, artifact) {
   const source = browser.sources.find((s) => s.produces.includes(artifact))
-  return source ? (browserData.meta?.[source.key] ?? null) : null
+  return source ? (profileData.meta?.[source.key] ?? null) : null
 }
 
 export default function BrowserAnalysisTab({ incident }) {
-  const { updateBrowserData, setActiveBrowser, clearBrowserData, removeBrowserSource } =
-    useIncidents()
+  const {
+    updateBrowserData,
+    setActiveBrowser,
+    setActiveProfile,
+    addBrowserProfile,
+    renameBrowserProfile,
+    deleteBrowserProfile,
+    clearBrowserData,
+    removeBrowserSource,
+  } = useIncidents()
 
   const [loading, setLoading] = useState({})
   const [errors, setErrors] = useState({})
@@ -80,8 +91,12 @@ export default function BrowserAnalysisTab({ incident }) {
     ? osLabel
     : browser.platforms.map((id) => getOsById(id)?.label ?? id).join(' / ')
 
-  // Data of the active browser (defensive fallback for partial incidents).
-  const current = browserData.browsers[activeBrowserId] ?? buildDefaultBrowserData(browser)
+  // Active browser (defensive fallback for partial incidents) and its active
+  // profile: every upload, section and count below refers to that profile.
+  const slot = browserData.browsers[activeBrowserId] ?? buildDefaultBrowserData(browser)
+  const current = activeProfileOf(slot)
+  const profileId = current.id
+  const profileLabel = `${activeBrowserId}/${current.name}`
 
   const sections = useMemo(() => sectionsFor(browser), [browser])
 
@@ -93,14 +108,9 @@ export default function BrowserAnalysisTab({ incident }) {
     setActiveSection((prev) =>
       sections.some((s) => s.id === prev) ? prev : (sections[0]?.id ?? 'events'),
     )
-  }, [activeBrowserId, incident.id, sections])
+  }, [activeBrowserId, profileId, incident.id, sections])
 
-  // Counts per browser (sub-tab badge) and per section.
-  const countForBrowser = (bd) =>
-    (bd?.history?.length ?? 0) +
-    (bd?.downloads?.length ?? 0) +
-    (bd?.bookmarks?.length ?? 0) +
-    (bd?.shortcuts?.length ?? 0)
+  // Counts per browser (sub-tab badge, all profiles) and per section (active profile).
 
   const sectionCount = {
     events: (current.history?.length ?? 0) + (current.downloads?.length ?? 0),
@@ -108,7 +118,7 @@ export default function BrowserAnalysisTab({ incident }) {
     shortcuts: current.shortcuts?.length ?? 0,
   }
 
-  const hasData = countForBrowser(current) > 0
+  const hasData = profileRowCount(current) > 0
 
   // Sources not yet loaded (for the "where to find files" note).
   const missingSources = browser.sources.filter((s) => !current.meta?.[s.key])
@@ -133,9 +143,9 @@ export default function BrowserAnalysisTab({ incident }) {
       }
       // A source owns all of its artifacts: it replaces (or clears) them.
       for (const key of source.produces) patch[key] = produced[key] ?? []
-      updateBrowserData(incident.id, activeBrowserId, patch, {
+      updateBrowserData(incident.id, activeBrowserId, profileId, patch, {
         action: 'browser.upload',
-        details: `Imported ${source.label} into ${activeBrowserId} (${rows} rows)`,
+        details: `Imported ${source.label} into ${profileLabel} (${rows} rows)`,
       })
     } catch (err) {
       setErrors((prev) => ({
@@ -150,7 +160,7 @@ export default function BrowserAnalysisTab({ incident }) {
   /* ---- Remove a single file ---- */
   const handleRemoveSource = (source) => {
     setErrors((prev) => ({ ...prev, [source.key]: null }))
-    removeBrowserSource(incident.id, activeBrowserId, source.key, source.produces)
+    removeBrowserSource(incident.id, activeBrowserId, profileId, source.key, source.produces)
   }
 
   /* ---- Load demo data into the active browser ---- */
@@ -175,14 +185,14 @@ export default function BrowserAnalysisTab({ incident }) {
       }
     }
     setErrors({})
-    updateBrowserData(incident.id, activeBrowserId, patch, {
+    updateBrowserData(incident.id, activeBrowserId, profileId, patch, {
       action: 'browser.demo',
-      details: `Loaded demo data into ${activeBrowserId}`,
+      details: `Loaded demo data into ${profileLabel}`,
     })
   }
 
   const handleConfirmClear = () => {
-    clearBrowserData(incident.id, activeBrowserId)
+    clearBrowserData(incident.id, activeBrowserId, profileId)
     setErrors({})
     setConfirmClear(false)
   }
@@ -198,7 +208,7 @@ export default function BrowserAnalysisTab({ incident }) {
         {BROWSERS.map((b) => {
           const isActive = b.id === activeBrowserId
           const BrowserIcon = b.icon
-          const count = countForBrowser(browserData.browsers[b.id])
+          const count = browserRowCount(browserData.browsers[b.id])
           return (
             <button
               key={b.id}
@@ -233,6 +243,17 @@ export default function BrowserAnalysisTab({ incident }) {
         })}
       </div>
 
+      {/* -------- Profiles of the active browser -------- */}
+      <ProfileBar
+        browser={browser}
+        slot={slot}
+        activeProfileId={profileId}
+        onSelect={(id) => setActiveProfile(incident.id, activeBrowserId, id)}
+        onAdd={(name) => addBrowserProfile(incident.id, activeBrowserId, name)}
+        onRename={(id, name) => renameBrowserProfile(incident.id, activeBrowserId, id, name)}
+        onDelete={(id) => deleteBrowserProfile(incident.id, activeBrowserId, id)}
+      />
+
       {/* -------- "Where to find files" note (disappears once loaded) -------- */}
       {missingSources.length > 0 && (
         <div className="flex gap-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 text-sm dark:border-cyan-500/30 dark:bg-cyan-500/5">
@@ -257,6 +278,12 @@ export default function BrowserAnalysisTab({ incident }) {
                 </li>
               ))}
             </ul>
+            {browser.profileHint && (
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                <span className="font-mono">&lt;profile&gt;</span> is the profile folder:{' '}
+                {browser.profileHint}.
+              </p>
+            )}
             <p className="text-[11px] text-slate-400 dark:text-slate-500">
               Close the browser before copying the files (the databases may be
               locked). Each row disappears once the matching file is loaded.
@@ -267,7 +294,7 @@ export default function BrowserAnalysisTab({ incident }) {
 
       {/* -------- Data sources card for the active browser -------- */}
       <Card
-        title={`Data sources — ${browser.label}`}
+        title={`Data sources — ${browser.label} · ${current.name}`}
         icon={Upload}
         actions={
           <div className="flex items-center gap-2">
@@ -281,7 +308,7 @@ export default function BrowserAnalysisTab({ incident }) {
                 icon={Trash2}
                 onClick={() => setConfirmClear(true)}
               >
-                Clear {browser.label}
+                Clear profile
               </Button>
             )}
           </div>
@@ -356,6 +383,7 @@ export default function BrowserAnalysisTab({ incident }) {
         <EventsSection
           incident={incident}
           browserId={activeBrowserId}
+          profile={current}
           history={current.history}
           downloads={current.downloads}
         />
@@ -364,6 +392,7 @@ export default function BrowserAnalysisTab({ incident }) {
         <BookmarksSection
           incident={incident}
           browserId={activeBrowserId}
+          profile={current}
           bookmarks={current.bookmarks}
           meta={sourceMetaFor(browser, current, 'bookmarks')}
         />
@@ -372,6 +401,7 @@ export default function BrowserAnalysisTab({ incident }) {
         <ShortcutsSection
           incident={incident}
           browserId={activeBrowserId}
+          profile={current}
           shortcuts={current.shortcuts}
           meta={sourceMetaFor(browser, current, 'shortcuts')}
         />
@@ -386,27 +416,27 @@ export default function BrowserAnalysisTab({ incident }) {
         </p>
       )}
 
-      {/* -------- Confirm "clear browser" modal -------- */}
+      {/* -------- Confirm "clear profile" modal -------- */}
       <Modal
         open={confirmClear}
         onClose={() => setConfirmClear(false)}
-        title={`Clear ${browser.label} data`}
+        title={`Clear ${browser.label} · ${current.name} data`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirmClear(false)}>
               Cancel
             </Button>
             <Button variant="danger" icon={Trash2} onClick={handleConfirmClear}>
-              Clear {browser.label}
+              Clear profile
             </Button>
           </>
         }
       >
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          You are about to delete all imported data for <strong>{browser.label}</strong>{' '}
-          in the incident <strong>{incident.name}</strong> (history, downloads,
-          bookmarks and shortcuts). Other browsers are left untouched. This action
-          is irreversible.
+          You are about to delete all imported data of the <strong>{browser.label}</strong> profile{' '}
+          <strong>{current.name}</strong> in the incident <strong>{incident.name}</strong> (history,
+          downloads, bookmarks and shortcuts). The profile itself, other profiles and other browsers
+          are left untouched. This action is irreversible.
         </p>
       </Modal>
     </div>
