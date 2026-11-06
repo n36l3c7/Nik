@@ -61,7 +61,7 @@ const EXECUTION = {
   id: 'execution',
   label: 'Program Execution',
   icon: CirclePlay,
-  accent: 'text-emerald-500',
+  accent: 'text-accent',
   primaryField: 'name',
   columns: [
     { key: 'name', label: 'Executable', mono: true, grow: true },
@@ -96,7 +96,7 @@ const PERSISTENCE = {
   id: 'persistence',
   label: 'Persistence',
   icon: KeyRound,
-  accent: 'text-amber-500',
+  accent: 'text-med',
   primaryField: 'name',
   columns: [
     { key: 'name', label: 'Name', grow: true },
@@ -138,7 +138,7 @@ const FILE_ACCESS = {
   id: 'fileaccess',
   label: 'File & Folder Access',
   icon: HardDrive,
-  accent: 'text-sky-500',
+  accent: 'text-info',
   primaryField: 'name',
   columns: [
     { key: 'name', label: 'Item', grow: true },
@@ -168,7 +168,7 @@ const USB = {
   id: 'usb',
   label: 'USB & Devices',
   icon: Usb,
-  accent: 'text-violet-500',
+  accent: 'text-violet',
   primaryField: 'device',
   columns: [
     { key: 'device', label: 'Device', grow: true },

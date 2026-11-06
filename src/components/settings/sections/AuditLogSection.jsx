@@ -30,7 +30,7 @@ const COLUMNS = [
     sortAccessor: (row) => Date.parse(row.at) || 0,
     className: 'whitespace-nowrap',
     render: (row) => (
-      <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+      <span className="font-mono text-xs text-fg-muted">
         {formatDateTime(Date.parse(row.at))}
       </span>
     ),
@@ -41,7 +41,7 @@ const COLUMNS = [
     sortable: true,
     className: 'whitespace-nowrap',
     render: (row) => (
-      <span className="font-medium text-slate-700 dark:text-slate-200">{row.actor || 'system'}</span>
+      <span className="font-medium text-fg">{row.actor || 'system'}</span>
     ),
   },
   {
@@ -59,7 +59,7 @@ const COLUMNS = [
     key: 'details',
     label: 'Details',
     render: (row) => (
-      <span className="text-slate-600 dark:text-slate-300">{row.details || '—'}</span>
+      <span className="text-fg-muted">{row.details || '—'}</span>
     ),
   },
   {
@@ -68,9 +68,9 @@ const COLUMNS = [
     className: 'whitespace-nowrap',
     render: (row) =>
       row.incidentName ? (
-        <span className="text-slate-600 dark:text-slate-300">{row.incidentName}</span>
+        <span className="text-fg-muted">{row.incidentName}</span>
       ) : (
-        <span className="text-slate-400 dark:text-slate-500">—</span>
+        <span className="text-fg-muted">—</span>
       ),
   },
 ]
@@ -95,10 +95,10 @@ export default function AuditLogSection() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <ScrollText className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Audit log</h2>
+            <ScrollText className="h-5 w-5 text-accent" />
+            <h2 className="text-base font-semibold text-fg">Audit log</h2>
           </div>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-fg-muted">
             {hasEntries
               ? `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} recorded across all incidents.`
               : 'No entries recorded yet.'}
@@ -110,7 +110,7 @@ export default function AuditLogSection() {
             size="sm"
             icon={Trash2}
             onClick={() => setConfirming(true)}
-            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+            className="text-high hover:bg-high-soft hover:text-high"
           >
             Clear log
           </Button>
@@ -118,10 +118,10 @@ export default function AuditLogSection() {
       </div>
 
       {confirming && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-high-line bg-high-soft px-4 py-3">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
-            <p className="text-sm text-red-700 dark:text-red-300">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-high" aria-hidden="true" />
+            <p className="text-sm text-high">
               Permanently delete all {entries.length} audit{' '}
               {entries.length === 1 ? 'entry' : 'entries'}? This cannot be undone.
             </p>

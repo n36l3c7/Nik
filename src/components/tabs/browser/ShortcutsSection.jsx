@@ -22,13 +22,13 @@ function FlagButton({ flagged, onToggle }) {
       aria-label={flagged ? 'Remove flag' : 'Flag as malicious'}
       title={flagged ? 'Remove flag' : 'Flag as malicious'}
       className={[
-        'rounded p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+        'p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         flagged
-          ? 'text-cyan-600 dark:text-cyan-400'
-          : 'text-slate-300 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400',
+          ? 'text-accent'
+          : 'text-fg-subtle hover:text-accent',
       ].join(' ')}
     >
-      <Flag size={15} className={flagged ? 'fill-cyan-500 dark:fill-cyan-400' : ''} />
+      <Flag size={15} className={flagged ? 'fill-accent' : ''} />
     </button>
   )
 }
@@ -55,10 +55,10 @@ function CopyButton({ text }) {
       onClick={handleCopy}
       aria-label="Copy"
       title="Copy to clipboard"
-      className="shrink-0 rounded p-0.5 text-slate-400 opacity-0 transition-opacity hover:text-cyan-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 group-hover:opacity-100 dark:text-slate-500 dark:hover:text-cyan-400"
+      className="shrink-0 p-0.5 text-fg-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
     >
       {copied ? (
-        <Check size={13} className="text-emerald-500 dark:text-emerald-400" />
+        <Check size={13} className="text-accent" />
       ) : (
         <Copy size={13} />
       )}
@@ -106,7 +106,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
         sortAccessor: (row) => (row.text ?? '').toLowerCase(),
         render: (row) => (
           <span
-            className="font-mono text-[13px] font-medium text-cyan-700 dark:text-cyan-300"
+            className="font-mono text-[13px] font-medium text-accent"
             title="Text typed by the user in Chrome's omnibox"
           >
             “{row.text}”
@@ -119,13 +119,13 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
         render: (row) =>
           row.title ? (
             <span
-              className="block max-w-[28ch] truncate text-slate-700 dark:text-slate-200"
+              className="block max-w-[28ch] truncate text-fg"
               title={row.title}
             >
               {row.title}
             </span>
           ) : (
-            <span className="italic text-slate-400 dark:text-slate-500">(no title)</span>
+            <span className="italic text-fg-muted">(no title)</span>
           ),
       },
       {
@@ -134,7 +134,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
         render: (row) => (
           <span className="group flex items-center gap-1.5">
             <span
-              className="font-mono text-xs text-slate-600 dark:text-slate-300"
+              className="font-mono text-xs text-fg-muted"
               title={row.url}
             >
               {truncate(row.url, 60)}
@@ -147,7 +147,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
                   rel="noopener noreferrer"
                   title="Open the URL in a new tab"
                   aria-label="Open the URL in a new tab"
-                  className="shrink-0 rounded text-slate-400 hover:text-cyan-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:text-cyan-400"
+                  className="shrink-0 text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <ExternalLink size={13} />
                 </a>
@@ -181,7 +181,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
   // Cyan highlight for flagged rows (distinct from severity colors).
   const rowClassName = (row) =>
     flags[row.id]
-      ? 'bg-cyan-500/5 dark:bg-cyan-500/10 border-l-2 border-l-cyan-500'
+      ? 'bg-accent-soft border-l-2 border-l-accent-strong'
       : ''
 
   // No data: explain what Shortcuts are and how to import them.
@@ -201,7 +201,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
       icon={Zap}
       actions={
         meta && (
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-xs text-fg-muted">
             {meta.fileName} · {meta.rows} rows
           </span>
         )

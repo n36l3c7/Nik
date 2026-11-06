@@ -33,11 +33,11 @@ export function localInputToMs(str) {
 
 // Shared field styling (kept in sync with the Select component look & feel).
 const FIELD_CLASSES = [
-  'rounded-lg border py-1.5 px-2 text-xs',
-  'border-slate-200 bg-white text-slate-700',
-  'dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
-  '[color-scheme:light] dark:[color-scheme:dark]',
+  'border py-1.5 px-2 text-xs',
+  'border-line bg-panel text-fg',
+  '',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+  '[color-scheme:light]',
 ].join(' ')
 
 /**
@@ -53,11 +53,11 @@ export default function DateTimeRangeFilter({ start, end, onChange }) {
 
   return (
     <div className="inline-flex flex-wrap items-center gap-2">
-      <span className="whitespace-nowrap text-xs font-medium text-slate-500 dark:text-slate-400">
+      <span className="whitespace-nowrap text-xs font-medium text-fg-muted">
         Time range
       </span>
       <label className="inline-flex items-center gap-1">
-        <span className="text-xs text-slate-400 dark:text-slate-500">From</span>
+        <span className="text-xs text-fg-muted">From</span>
         <input
           type="datetime-local"
           value={msToLocalInput(start)}
@@ -67,7 +67,7 @@ export default function DateTimeRangeFilter({ start, end, onChange }) {
         />
       </label>
       <label className="inline-flex items-center gap-1">
-        <span className="text-xs text-slate-400 dark:text-slate-500">To</span>
+        <span className="text-xs text-fg-muted">To</span>
         <input
           type="datetime-local"
           value={msToLocalInput(end)}

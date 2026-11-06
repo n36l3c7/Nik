@@ -7,6 +7,7 @@ import { AsciiSkull, Button, EmptyState, MicroSkull, Modal } from './components/
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
+import TailPanel from './components/layout/TailPanel.jsx'
 import IncidentLoadingState from './components/layout/IncidentLoadingState.jsx'
 import OsPicker from './components/layout/OsPicker.jsx'
 import { DEFAULT_OS } from './config/os.js'
@@ -133,6 +134,10 @@ export default function App() {
   } = useIncidents()
 
   const [activeTabId, setActiveTabId] = useState(ANALYSIS_TABS[0].id)
+  // `tail -f` side panel, open or closed per tab (open on Summary by default).
+  const [tailOpenByTab, setTailOpenByTab] = useState({ summary: true })
+  const tailOpen = Boolean(tailOpenByTab[activeTabId])
+  const setTailOpen = (open) => setTailOpenByTab((prev) => ({ ...prev, [activeTabId]: open }))
 
   // "New incident" modal (asks for host and/or username, not a name).
   const [createOpen, setCreateOpen] = useState(false)
@@ -217,7 +222,12 @@ export default function App() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header onOpenSettings={() => openSettings('detection')} />
-        <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />
+        <TabBar
+          activeTabId={activeTabId}
+          onChange={setActiveTabId}
+          tailOpen={tailOpen}
+          onToggleTail={() => setTailOpen(!tailOpen)}
+        />
 
         {storageError && (
           <div
@@ -229,50 +239,59 @@ export default function App() {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-6">
-          {activeIncident ? (
-            <Suspense
-              fallback={
-                <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
-                  <AsciiSkull preset="medium" />
-                  <p role="status" className="font-mono text-sm text-fg-muted">
-                    Loading…
-                  </p>
-                </div>
-              }
-            >
-              <ActiveTabComponent incident={activeIncident} />
-            </Suspense>
-          ) : activeLoading ? (
-            <IncidentLoadingState name={activeSummary.name} />
-          ) : activeLoadError ? (
-            <div className="flex h-full items-center justify-center">
-              <EmptyState
-                illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
-                title="Unable to load the incident"
-                message={activeLoadError}
-                action={
-                  <Button icon={RefreshCw} onClick={retryActiveIncident}>
-                    Retry
-                  </Button>
+        <div className="flex min-h-0 flex-1">
+          <main className="min-w-0 flex-1 overflow-y-auto p-6">
+            {activeIncident ? (
+              <Suspense
+                fallback={
+                  <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
+                    <AsciiSkull preset="medium" />
+                    <p role="status" className="font-mono text-sm text-fg-muted">
+                      Loading…
+                    </p>
+                  </div>
                 }
-              />
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <EmptyState
-                illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
-                title="No active incident"
-                message="Create a new incident to get started, or import an existing one from the sidebar."
-                action={
-                  <Button icon={Plus} onClick={openCreateModal}>
-                    New incident
-                  </Button>
-                }
-              />
-            </div>
+              >
+                <ActiveTabComponent incident={activeIncident} />
+              </Suspense>
+            ) : activeLoading ? (
+              <IncidentLoadingState name={activeSummary.name} />
+            ) : activeLoadError ? (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+                  title="Unable to load the incident"
+                  message={activeLoadError}
+                  action={
+                    <Button icon={RefreshCw} onClick={retryActiveIncident}>
+                      Retry
+                    </Button>
+                  }
+                />
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                  title="No active incident"
+                  message="Create a new incident to get started, or import an existing one from the sidebar."
+                  action={
+                    <Button icon={Plus} onClick={openCreateModal}>
+                      New incident
+                    </Button>
+                  }
+                />
+              </div>
+            )}
+          </main>
+          {tailOpen && activeIncident && (
+            <TailPanel
+              incident={activeIncident}
+              onClose={() => setTailOpen(false)}
+              className="hidden w-80 shrink-0 lg:flex"
+            />
           )}
-        </main>
+        </div>
       </div>
 
       {/* New incident modal — identified by host and/or username */}

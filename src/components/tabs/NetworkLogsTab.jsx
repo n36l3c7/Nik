@@ -38,7 +38,7 @@ export default function NetworkLogsTab({ incident }) {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Main empty state with the message required by the SPEC */}
-      <div className="rounded-xl border border-slate-200 bg-white py-10 dark:border-slate-800 dark:bg-slate-900">
+      <div className="border border-line bg-panel py-10">
         <EmptyState
           icon={Network}
           title="Network Logs Analysis"
@@ -52,20 +52,20 @@ export default function NetworkLogsTab({ incident }) {
           <div
             key={id}
             aria-disabled="true"
-            className="select-none rounded-xl border border-dashed border-slate-300 bg-white/60 p-4 opacity-70 dark:border-slate-700 dark:bg-slate-900/60"
+            className="select-none border border-dashed border-line bg-panel/60 p-4 opacity-70"
           >
             <div className="flex items-center gap-2">
-              <span className="rounded-lg bg-slate-100 p-2 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+              <span className="bg-canvas p-2 text-fg-muted">
                 <Icon size={18} />
               </span>
-              <span className="min-w-0 truncate text-sm font-medium text-slate-600 dark:text-slate-300">
+              <span className="min-w-0 truncate text-sm font-medium text-fg-muted">
                 {title}
               </span>
               <Badge color="slate" className="ml-auto shrink-0">
                 Coming soon
               </Badge>
             </div>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-2 text-xs text-fg-muted">
               {description}
             </p>
           </div>
@@ -80,7 +80,7 @@ export default function NetworkLogsTab({ incident }) {
       </div>
 
       {/* Pointer to the developer guide */}
-      <p className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+      <p className="flex items-center justify-center gap-1.5 text-xs text-fg-muted">
         <Info size={14} className="shrink-0" />
         To implement this tab see README.md § &#39;Adding a new analysis
         tab&#39;.

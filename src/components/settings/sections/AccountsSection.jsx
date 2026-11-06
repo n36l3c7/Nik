@@ -12,11 +12,11 @@ import { Badge, Button, Select } from '../../ui/index.js'
  */
 
 const INPUT_CLASS =
-  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 ' +
-  'placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ' +
-  'dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500'
+  'w-full border border-line bg-panel px-3 py-2 text-sm text-fg ' +
+  'placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+  ''
 
-const LABEL_CLASS = 'mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300'
+const LABEL_CLASS = 'mb-1.5 block text-sm font-medium text-fg'
 
 const ROLE_OPTIONS = [
   { value: 'analyst', label: 'Analyst' },
@@ -57,16 +57,16 @@ export default function AccountsSection() {
     <section className="space-y-6">
       <div>
         <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-          <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Accounts</h2>
+          <Users className="h-5 w-5 text-accent" />
+          <h2 className="text-base font-semibold text-fg">Accounts</h2>
           <Badge color="slate">{users.length}</Badge>
         </div>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-sm text-fg-muted">
           Local analyst and admin accounts. You cannot delete the last account or your own.
         </p>
       </div>
 
-      <ul className="divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+      <ul className="divide-y divide-line-soft overflow-hidden border border-line">
         {users.map((user) => {
           const isSelf = user.id === currentUser?.id
           const deleteDisabled = isLastUser || isSelf
@@ -79,12 +79,12 @@ export default function AccountsSection() {
             <li key={user.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                  <span className="truncate text-sm font-medium text-fg">
                     {user.username}
                   </span>
                   {isSelf && <Badge color="cyan">You</Badge>}
                 </div>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-0.5 text-xs text-fg-muted">
                   Created {formatRelative(user.createdAt)}
                 </p>
               </div>
@@ -105,7 +105,7 @@ export default function AccountsSection() {
                   title={deleteTitle}
                   aria-label={`Delete user ${user.username}`}
                   onClick={() => deleteUser(user.id, currentUser?.username)}
-                  className="text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+                  className="text-fg-muted hover:text-high"
                 />
               </div>
             </li>
@@ -114,7 +114,7 @@ export default function AccountsSection() {
       </ul>
 
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
           Add user
         </h3>
         <form onSubmit={handleAdd} className="space-y-3">
@@ -152,7 +152,7 @@ export default function AccountsSection() {
           {error && (
             <div
               role="alert"
-              className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-400"
+              className="flex items-start gap-2 border border-high-line bg-high-soft px-3 py-2 text-sm text-high"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{error}</span>

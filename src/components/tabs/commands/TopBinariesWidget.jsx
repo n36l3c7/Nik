@@ -18,22 +18,22 @@ export default function TopBinariesWidget({ commands = [] }) {
   return (
     <Card title="Top 5 executables" icon={TrendingUp}>
       {binaries.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">No commands to show</p>
+        <p className="text-sm text-fg-muted">No commands to show</p>
       ) : (
         <ul className="space-y-3">
           {binaries.map(({ binary, count }) => (
             <li key={binary}>
               <div className="mb-1 flex items-baseline justify-between gap-3">
-                <span className="truncate font-mono text-xs text-slate-700 dark:text-slate-300">
+                <span className="truncate font-mono text-xs text-fg">
                   {binary}
                 </span>
-                <span className="shrink-0 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <span className="shrink-0 text-xs font-medium text-fg-muted">
                   {count}×
                 </span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+              <div className="h-2 w-full overflow-hidden bg-canvas">
                 <div
-                  className="h-full rounded bg-violet-500/70 transition-all duration-500"
+                  className="h-full bg-violet-line transition-all duration-500"
                   style={{ width: `${Math.max((count / maxCount) * 100, 4)}%` }}
                 />
               </div>

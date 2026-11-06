@@ -44,7 +44,7 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-fg-muted">
         <UserRound className="h-3.5 w-3.5" />
         Profiles
       </span>
@@ -61,10 +61,10 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
               onClick={() => onSelect(profile.id)}
               className={[
                 'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 isActive
-                  ? 'border-cyan-500/60 bg-cyan-50 text-cyan-700 dark:border-cyan-500/50 dark:bg-cyan-500/10 dark:text-cyan-300'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60',
+                  ? 'border-accent-strong bg-accent-soft text-accent'
+                  : 'border-line text-fg-muted hover:bg-canvas',
               ].join(' ')}
             >
               {profile.name}
@@ -113,7 +113,7 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
         }
       >
         <form id="form-browser-profile" onSubmit={submitName} className="space-y-2">
-          <label htmlFor="browser-profile-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+          <label htmlFor="browser-profile-name" className="block text-sm font-medium text-fg">
             Profile name
           </label>
           <input
@@ -125,11 +125,11 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
             maxLength={60}
             autoFocus
             aria-invalid={Boolean(nameError) && Boolean(dialog?.name)}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+            className="w-full border border-line bg-panel px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
-          {nameError && dialog?.name && <p className="text-xs text-red-600 dark:text-red-400">{nameError}</p>}
+          {nameError && dialog?.name && <p className="text-xs text-high">{nameError}</p>}
           {browser.profileHint && (
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-fg-muted">
               Tip: use the name of the profile folder ({browser.profileHint}).
             </p>
           )}
@@ -159,7 +159,7 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
           </>
         }
       >
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-fg-muted">
           The <strong>{browser.label}</strong> profile <strong>{active.name}</strong> and all its
           imported data ({profileRowCount(active).toLocaleString('en-US')} rows) will be deleted.
           Flags placed on its entries are kept and marked as coming from a deleted profile.

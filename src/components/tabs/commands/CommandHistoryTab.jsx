@@ -135,7 +135,7 @@ export default function CommandHistoryTab({ incident }) {
       <div
         role="tablist"
         aria-label="Shell"
-        className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900"
+        className="flex flex-wrap gap-2 border border-line bg-panel p-2"
       >
         {visibleShells.map((s) => {
           const isActive = s.id === activeShellId
@@ -149,11 +149,11 @@ export default function CommandHistoryTab({ incident }) {
               aria-selected={isActive}
               onClick={() => setActiveShell(incident.id, s.id)}
               className={[
-                'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                'inline-flex items-center gap-2 border px-3 py-2 text-sm font-medium transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 isActive
-                  ? 'border-cyan-500/60 bg-cyan-50 text-cyan-700 dark:border-cyan-500/50 dark:bg-cyan-500/10 dark:text-cyan-300'
-                  : 'border-transparent text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800/60',
+                  ? 'border-accent-strong bg-accent-soft text-accent'
+                  : 'border-transparent text-fg-muted hover:bg-canvas',
               ].join(' ')}
             >
               <ShellIcon className={`h-4 w-4 ${isActive ? '' : s.accent}`} />
@@ -163,8 +163,8 @@ export default function CommandHistoryTab({ incident }) {
                   className={[
                     'rounded-full px-1.5 text-xs tabular-nums',
                     isActive
-                      ? 'bg-cyan-600/20 text-cyan-700 dark:text-cyan-300'
-                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >
                   {count.toLocaleString('en-US')}
@@ -177,19 +177,19 @@ export default function CommandHistoryTab({ incident }) {
 
       {/* -------- "Where to find the file" note (disappears once loaded) -------- */}
       {!sourceMeta && (
-        <div className="flex gap-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 text-sm dark:border-cyan-500/30 dark:bg-cyan-500/5">
-          <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
+        <div className="flex gap-3 border border-accent-strong bg-accent-soft p-4 text-sm">
+          <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
           <div className="min-w-0 space-y-1.5">
-            <p className="font-medium text-slate-700 dark:text-slate-200">
+            <p className="font-medium text-fg">
               Where to find the {shell.label} history ({getOsById(os)?.label ?? os})
             </p>
-            <p className="text-xs text-slate-600 dark:text-slate-400">
+            <p className="text-xs text-fg-muted">
               <span className="font-medium">{source.label}:</span>{' '}
-              <span className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
+              <span className="break-all font-mono text-[11px] text-fg-muted">
                 {sourcePath}
               </span>
             </p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">{shell.timestamps}</p>
+            <p className="text-[11px] text-fg-muted">{shell.timestamps}</p>
           </div>
         </div>
       )}
@@ -231,7 +231,7 @@ export default function CommandHistoryTab({ incident }) {
       <CommandsSection incident={incident} shellId={activeShellId} commands={current.commands} />
 
       {/* Informational note about timestamps */}
-      <p className="flex items-center justify-center gap-1.5 text-center text-xs text-slate-500 dark:text-slate-400">
+      <p className="flex items-center justify-center gap-1.5 text-center text-xs text-fg-muted">
         <Info className="h-3.5 w-3.5 shrink-0" />
         {shell.timestamps}
       </p>
@@ -252,7 +252,7 @@ export default function CommandHistoryTab({ incident }) {
           </>
         }
       >
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-fg-muted">
           You are about to delete all imported <strong>{shell.label}</strong> commands in the
           incident <strong>{incident.name}</strong>. Other shells are left untouched. This action is
           irreversible.

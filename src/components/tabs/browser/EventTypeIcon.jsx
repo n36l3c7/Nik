@@ -16,11 +16,11 @@ const ICONS = {
 
 // Per-type icon colors, each with its dark counterpart.
 const ICON_COLORS = {
-  visit: 'text-slate-400 dark:text-slate-500',
-  search: 'text-cyan-600 dark:text-cyan-400',
-  redirect: 'text-amber-600 dark:text-amber-400',
-  download: 'text-emerald-600 dark:text-emerald-400',
-  command: 'text-violet-600 dark:text-violet-400',
+  visit: 'text-fg-muted',
+  search: 'text-accent',
+  redirect: 'text-med',
+  download: 'text-accent',
+  command: 'text-violet',
 }
 
 /**
@@ -37,7 +37,7 @@ export default function EventTypeIcon({ type, withLabel = false }) {
     >
       <Icon className={`h-4 w-4 shrink-0 ${ICON_COLORS[type] ?? ICON_COLORS.visit}`} />
       {withLabel && (
-        <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+        <span className="text-xs font-medium text-fg-muted">
           {meta.label}
         </span>
       )}

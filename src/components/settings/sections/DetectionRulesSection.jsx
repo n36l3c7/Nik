@@ -15,20 +15,20 @@ import {
  */
 
 const inputBase =
-  'rounded-lg border bg-white px-2.5 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 ' +
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ' +
-  'dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500'
+  'border bg-panel px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-muted ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+  ''
 
 function KeywordRow({ rule, onUpdate, onRemove }) {
   const validPattern = isValidRegex(rule.pattern)
   return (
-    <tr className="border-b border-slate-100 last:border-0 dark:border-slate-800/70">
+    <tr className="border-b border-line last:border-0">
       <td className="py-2 pr-2">
         <input
           type="text"
           value={rule.label}
           onChange={(e) => onUpdate(rule.id, { label: e.target.value })}
-          className={`${inputBase} w-full border-slate-200 dark:border-slate-700`}
+          className={`${inputBase} w-full border-line`}
           aria-label="Rule label"
         />
       </td>
@@ -41,8 +41,8 @@ function KeywordRow({ rule, onUpdate, onRemove }) {
             inputBase,
             'w-full font-mono text-xs',
             validPattern
-              ? 'border-slate-200 dark:border-slate-700'
-              : 'border-red-400 dark:border-red-500',
+              ? 'border-line'
+              : 'border-high-line',
           ].join(' ')}
           aria-label="Pattern (regular expression)"
           title={validPattern ? undefined : 'Invalid regular expression'}
@@ -52,7 +52,7 @@ function KeywordRow({ rule, onUpdate, onRemove }) {
         <select
           value={rule.severity}
           onChange={(e) => onUpdate(rule.id, { severity: e.target.value })}
-          className={`${inputBase} border-slate-200 dark:border-slate-700`}
+          className={`${inputBase} border-line`}
           aria-label="Severity"
         >
           <option value="medium">Suspicious</option>
@@ -65,7 +65,7 @@ function KeywordRow({ rule, onUpdate, onRemove }) {
           onClick={() => onRemove(rule.id)}
           aria-label={`Remove rule ${rule.label}`}
           title="Remove rule"
-          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-slate-500 dark:hover:text-red-400"
+          className="p-1.5 text-fg-muted transition-colors hover:bg-high-soft hover:text-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -77,21 +77,21 @@ function KeywordRow({ rule, onUpdate, onRemove }) {
 /** Read-only reference table for a built-in ruleset. */
 function BuiltinRuleset({ title, description, rules }) {
   return (
-    <details className="rounded-lg border border-slate-200 dark:border-slate-800">
-      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+    <details className="border border-line">
+      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-fg">
         {title}
         <Badge color="slate">{rules.length}</Badge>
-        <span className="ml-auto text-xs font-normal text-slate-400 dark:text-slate-500">
+        <span className="ml-auto text-xs font-normal text-fg-muted">
           built-in · read-only
         </span>
       </summary>
-      <div className="border-t border-slate-200 px-3 py-2 dark:border-slate-800">
-        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">{description}</p>
+      <div className="border-t border-line px-3 py-2">
+        <p className="mb-2 text-xs text-fg-muted">{description}</p>
         <ul className="space-y-1.5">
           {rules.map((rule) => (
             <li key={rule.id} className="flex items-start gap-2 text-xs">
               <Badge color={rule.severity === 'high' ? 'red' : 'amber'}>{rule.label}</Badge>
-              <span className="text-slate-500 dark:text-slate-400">{rule.description}</span>
+              <span className="text-fg-muted">{rule.description}</span>
             </li>
           ))}
         </ul>
@@ -123,8 +123,8 @@ export default function DetectionRulesSection() {
       <div>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+            <ShieldAlert className="h-5 w-5 text-accent" />
+            <h2 className="text-base font-semibold text-fg">
               Detection rules
             </h2>
             <Badge color="slate">{keywords.length}</Badge>
@@ -133,7 +133,7 @@ export default function DetectionRulesSection() {
             Restore defaults
           </Button>
         </div>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-sm text-fg-muted">
           Your keyword rules are matched (case-insensitive) against browser URLs/titles, downloaded
           file names, shell commands and endpoint artifact paths. The{' '}
           <span className="font-mono">pattern</span> is a regular expression — use{' '}
@@ -142,10 +142,10 @@ export default function DetectionRulesSection() {
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+      <div className="overflow-x-auto border border-line">
         <table className="w-full min-w-[640px] text-left">
           <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <tr className="border-b border-line text-xs uppercase tracking-wider text-fg-muted">
               <th className="px-3 py-2 font-semibold">Label</th>
               <th className="px-3 py-2 font-semibold">Pattern (regex)</th>
               <th className="px-3 py-2 font-semibold">Severity</th>
@@ -158,7 +158,7 @@ export default function DetectionRulesSection() {
             ))}
             {keywords.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                <td colSpan={4} className="px-3 py-6 text-center text-sm text-fg-muted">
                   No rules. Add one below or restore the defaults.
                 </td>
               </tr>
@@ -168,15 +168,15 @@ export default function DetectionRulesSection() {
       </div>
 
       {/* New rule */}
-      <div className="rounded-lg border border-dashed border-slate-300 p-3 dark:border-slate-700">
-        <p className="mb-2 text-xs font-medium text-slate-600 dark:text-slate-300">Add a rule</p>
+      <div className="border border-dashed border-line p-3">
+        <p className="mb-2 text-xs font-medium text-fg-muted">Add a rule</p>
         <div className="flex flex-wrap items-start gap-2">
           <input
             type="text"
             value={draft.label}
             onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
             placeholder="Label (e.g. RAT/C2)"
-            className={`${inputBase} flex-1 border-slate-200 dark:border-slate-700`}
+            className={`${inputBase} flex-1 border-line`}
           />
           <input
             type="text"
@@ -187,14 +187,14 @@ export default function DetectionRulesSection() {
               inputBase,
               'flex-1 font-mono text-xs',
               draftPatternValid
-                ? 'border-slate-200 dark:border-slate-700'
-                : 'border-red-400 dark:border-red-500',
+                ? 'border-line'
+                : 'border-high-line',
             ].join(' ')}
           />
           <select
             value={draft.severity}
             onChange={(e) => setDraft((d) => ({ ...d, severity: e.target.value }))}
-            className={`${inputBase} border-slate-200 dark:border-slate-700`}
+            className={`${inputBase} border-line`}
           >
             <option value="medium">Suspicious</option>
             <option value="high">High</option>
@@ -204,7 +204,7 @@ export default function DetectionRulesSection() {
           </Button>
         </div>
         {!draftPatternValid && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-high">
             <AlertTriangle className="h-3.5 w-3.5" />
             Invalid regular expression.
           </p>
@@ -213,7 +213,7 @@ export default function DetectionRulesSection() {
 
       {/* Built-in rulesets (reference) */}
       <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
           Built-in rulesets
         </h3>
         <BuiltinRuleset

@@ -113,7 +113,7 @@ export default function EndpointArtifactsTab({ incident }) {
       <div
         role="tablist"
         aria-label="Artifact category"
-        className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900"
+        className="flex flex-wrap gap-2 border border-line bg-panel p-2"
       >
         {ARTIFACT_CATEGORIES.map((c) => {
           const isActive = c.id === activeCategoryId
@@ -127,11 +127,11 @@ export default function EndpointArtifactsTab({ incident }) {
               aria-selected={isActive}
               onClick={() => setActiveCategoryId(c.id)}
               className={[
-                'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                'inline-flex items-center gap-2 border px-3 py-2 text-sm font-medium transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 isActive
-                  ? 'border-cyan-500/60 bg-cyan-50 text-cyan-700 dark:border-cyan-500/50 dark:bg-cyan-500/10 dark:text-cyan-300'
-                  : 'border-transparent text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800/60',
+                  ? 'border-accent-strong bg-accent-soft text-accent'
+                  : 'border-transparent text-fg-muted hover:bg-canvas',
               ].join(' ')}
             >
               <CatIcon className={`h-4 w-4 ${isActive ? '' : c.accent}`} />
@@ -141,8 +141,8 @@ export default function EndpointArtifactsTab({ incident }) {
                   className={[
                     'rounded-full px-1.5 text-xs tabular-nums',
                     isActive
-                      ? 'bg-cyan-600/20 text-cyan-700 dark:text-cyan-300'
-                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >
                   {count.toLocaleString('en-US')}
@@ -173,7 +173,7 @@ export default function EndpointArtifactsTab({ incident }) {
         }
       >
         {sources.length === 0 ? (
-          <div className="flex items-start gap-2 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          <div className="flex items-start gap-2 border border-dashed border-line p-4 text-sm text-fg-muted">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               No fully-custom collection method for <strong>{category.label.toLowerCase()}</strong>{' '}
@@ -189,24 +189,24 @@ export default function EndpointArtifactsTab({ incident }) {
               return (
                 <div
                   key={source.key}
-                  className="flex flex-col gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800"
+                  className="flex flex-col gap-2 border border-line p-3"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    <p className="text-sm font-semibold text-fg">
                       {source.name}
                     </p>
-                    <p className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                    <p className="break-all font-mono text-[11px] text-fg-muted">
                       {source.path}
                     </p>
                     {source.tool && (
-                      <p className="text-[11px] text-slate-400 dark:text-slate-500">{source.tool}</p>
+                      <p className="text-[11px] text-fg-muted">{source.tool}</p>
                     )}
                   </div>
 
                   {/* Script sources: show the native script to run, then import its CSV. */}
                   {!isFile && source.script && (
                     <details className="group">
-                      <summary className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-medium text-cyan-700 hover:underline dark:text-cyan-400">
+                      <summary className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-medium text-accent hover:underline">
                         <Terminal className="h-3 w-3" />
                         Collection script ({source.script.lang === 'powershell' ? 'PowerShell' : 'Bash'})
                       </summary>
@@ -258,7 +258,7 @@ export default function EndpointArtifactsTab({ incident }) {
           </>
         }
       >
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-fg-muted">
           You are about to delete all imported <strong>{category.label}</strong> records (every
           source) in the incident <strong>{incident.name}</strong>. Other categories are left
           untouched. This action is irreversible.

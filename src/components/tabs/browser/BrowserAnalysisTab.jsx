@@ -203,7 +203,7 @@ export default function BrowserAnalysisTab({ incident }) {
       <div
         role="tablist"
         aria-label="Browser"
-        className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900"
+        className="flex flex-wrap gap-2 border border-line bg-panel p-2"
       >
         {BROWSERS.map((b) => {
           const isActive = b.id === activeBrowserId
@@ -217,11 +217,11 @@ export default function BrowserAnalysisTab({ incident }) {
               aria-selected={isActive}
               onClick={() => setActiveBrowser(incident.id, b.id)}
               className={[
-                'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                'inline-flex items-center gap-2 border px-3 py-2 text-sm font-medium transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 isActive
-                  ? 'border-cyan-500/60 bg-cyan-50 text-cyan-700 dark:border-cyan-500/50 dark:bg-cyan-500/10 dark:text-cyan-300'
-                  : 'border-transparent text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800/60',
+                  ? 'border-accent-strong bg-accent-soft text-accent'
+                  : 'border-transparent text-fg-muted hover:bg-canvas',
               ].join(' ')}
             >
               <BrowserIcon className={`h-4 w-4 ${isActive ? '' : b.accent}`} />
@@ -231,8 +231,8 @@ export default function BrowserAnalysisTab({ incident }) {
                   className={[
                     'rounded-full px-1.5 text-xs tabular-nums',
                     isActive
-                      ? 'bg-cyan-600/20 text-cyan-700 dark:text-cyan-300'
-                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >
                   {count.toLocaleString('en-US')}
@@ -256,35 +256,35 @@ export default function BrowserAnalysisTab({ incident }) {
 
       {/* -------- "Where to find files" note (disappears once loaded) -------- */}
       {missingSources.length > 0 && (
-        <div className="flex gap-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 text-sm dark:border-cyan-500/30 dark:bg-cyan-500/5">
-          <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
+        <div className="flex gap-3 border border-accent-strong bg-accent-soft p-4 text-sm">
+          <FolderInput className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
           <div className="min-w-0 space-y-1.5">
-            <p className="font-medium text-slate-700 dark:text-slate-200">
+            <p className="font-medium text-fg">
               Where to find {browser.label} files ({pathsOsLabel})
             </p>
             {!availableOnHost && (
-              <p className="text-xs text-amber-700 dark:text-amber-400">
+              <p className="text-xs text-med">
                 {browser.label} exists only on {pathsOsLabel}, but this incident&apos;s
                 host runs {osLabel}: these files must come from a {pathsOsLabel} host.
               </p>
             )}
             <ul className="space-y-1">
               {missingSources.map((source) => (
-                <li key={source.key} className="text-xs text-slate-600 dark:text-slate-400">
+                <li key={source.key} className="text-xs text-fg-muted">
                   <span className="font-medium">{source.label}:</span>{' '}
-                  <span className="break-all font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                  <span className="break-all font-mono text-[11px] text-fg-muted">
                     {sourcePathFor(source, os)}
                   </span>
                 </li>
               ))}
             </ul>
             {browser.profileHint && (
-              <p className="text-xs text-slate-600 dark:text-slate-400">
+              <p className="text-xs text-fg-muted">
                 <span className="font-mono">&lt;profile&gt;</span> is the profile folder:{' '}
                 {browser.profileHint}.
               </p>
             )}
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="text-[11px] text-fg-muted">
               Close the browser before copying the files (the databases may be
               locked). Each row disappears once the matching file is loaded.
             </p>
@@ -355,10 +355,10 @@ export default function BrowserAnalysisTab({ incident }) {
               onClick={() => setActiveSection(section.id)}
               className={[
                 'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 isActive
-                  ? 'border-cyan-600 bg-cyan-600 text-white dark:border-cyan-500 dark:bg-cyan-600'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60',
+                  ? 'border-accent-strong bg-accent text-white'
+                  : 'border-line bg-panel text-fg-muted hover:bg-canvas',
               ].join(' ')}
             >
               <SectionIcon className="h-4 w-4" />
@@ -367,8 +367,8 @@ export default function BrowserAnalysisTab({ incident }) {
                 className={[
                   'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
                   isActive
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                    ? 'bg-panel/20 text-white'
+                    : 'bg-canvas text-fg-muted',
                 ].join(' ')}
               >
                 {(sectionCount[section.id] ?? 0).toLocaleString('en-US')}
@@ -409,7 +409,7 @@ export default function BrowserAnalysisTab({ incident }) {
 
       {/* Informational note for Firefox (a single file for all artifacts) */}
       {browser.engine === 'firefox' && (
-        <p className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+        <p className="flex items-center justify-center gap-1.5 text-xs text-fg-muted">
           <Info className="h-3.5 w-3.5 shrink-0" />
           Firefox stores history, bookmarks and downloads in a single
           <span className="font-mono">places.sqlite</span> file.
@@ -432,7 +432,7 @@ export default function BrowserAnalysisTab({ incident }) {
           </>
         }
       >
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-fg-muted">
           You are about to delete all imported data of the <strong>{browser.label}</strong> profile{' '}
           <strong>{current.name}</strong> in the incident <strong>{incident.name}</strong> (history,
           downloads, bookmarks and shortcuts). The profile itself, other profiles and other browsers

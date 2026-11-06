@@ -41,20 +41,20 @@ export default function ScriptBlock({ script, filename }) {
   }
 
   return (
-    <div className="mt-1.5 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800/60">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <div className="mt-1.5 overflow-hidden border border-line">
+      <div className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-2.5 py-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
           {meta.label}
         </span>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={handleCopy}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             {copied ? (
               <>
-                <Check className="h-3 w-3 text-emerald-500" /> Copied
+                <Check className="h-3 w-3 text-accent" /> Copied
               </>
             ) : (
               <>
@@ -65,13 +65,13 @@ export default function ScriptBlock({ script, filename }) {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <Download className="h-3 w-3" /> Download
           </button>
         </div>
       </div>
-      <pre className="max-h-64 overflow-auto bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100 dark:bg-slate-950">
+      <pre className="max-h-64 overflow-auto bg-panel p-3 text-[11px] leading-relaxed text-fg-subtle">
         <code>{script.code}</code>
       </pre>
     </div>

@@ -28,7 +28,7 @@ export const SHELLS = [
     label: 'Bash',
     icon: Terminal,
     format: 'bash',
-    accent: 'text-emerald-500',
+    accent: 'text-accent',
     os: ['linux', 'macos'],
     timestamps:
       'Timestamps only exist if HISTTIMEFORMAT was set on the host (lines starting with #<epoch>).',
@@ -50,7 +50,7 @@ export const SHELLS = [
     label: 'Zsh',
     icon: SquareTerminal,
     format: 'zsh',
-    accent: 'text-violet-500',
+    accent: 'text-violet',
     os: ['linux', 'macos'],
     timestamps:
       'The extended format (": <epoch>:<duration>;command", default on macOS) carries a timestamp per command.',
@@ -71,7 +71,7 @@ export const SHELLS = [
     label: 'Fish',
     icon: Fish,
     format: 'fish',
-    accent: 'text-sky-500',
+    accent: 'text-info',
     os: ['linux', 'macos'],
     timestamps: 'Every command carries a "when:" epoch timestamp.',
     source: {
@@ -91,7 +91,7 @@ export const SHELLS = [
     label: 'PowerShell',
     icon: SquareChevronRight,
     format: 'psreadline',
-    accent: 'text-blue-500',
+    accent: 'text-info',
     os: ['windows', 'linux', 'macos'],
     timestamps:
       'PSReadLine history has NO timestamps: correlate with EDR/Event Logs (4104) for the execution time.',

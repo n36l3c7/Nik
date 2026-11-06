@@ -65,13 +65,13 @@ const TYPE_FILTER_OPTIONS = [
 
 // Row highlight for SOC severity (red = high, amber = medium).
 const ROW_SEVERITY_CLASSES = {
-  high: 'bg-red-500/5 dark:bg-red-500/10 border-l-2 border-l-red-500',
-  medium: 'bg-amber-500/5 dark:bg-amber-500/10 border-l-2 border-l-amber-500',
+  high: 'bg-high-soft border-l-2 border-l-high-line',
+  medium: 'bg-med-soft border-l-2 border-l-med-line',
 }
 
 // Row highlight for entries manually flagged by the analyst (cyan, distinct
 // from the red/amber SOC severity highlight).
-const FLAG_HIGHLIGHT = 'bg-cyan-500/5 dark:bg-cyan-500/10 border-l-2 border-l-cyan-500'
+const FLAG_HIGHLIGHT = 'bg-accent-soft border-l-2 border-l-accent-strong'
 
 const INTERNAL_TABS = [
   { id: 'all', label: 'All events', icon: Activity },
@@ -83,11 +83,11 @@ const INTERNAL_TABS = [
 
 function TimeCell({ event }) {
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-slate-700 dark:text-slate-300">
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-fg">
       {formatDateTime(event.time)}
       {event.soc.isAnomalousTime && (
         <span title={NIGHT_TOOLTIP} className="inline-flex shrink-0">
-          <Clock className="h-3.5 w-3.5 text-amber-500" aria-label={NIGHT_TOOLTIP} />
+          <Clock className="h-3.5 w-3.5 text-med" aria-label={NIGHT_TOOLTIP} />
         </span>
       )}
     </span>
@@ -103,7 +103,7 @@ function ExternalLinkIcon({ href }) {
       rel="noopener noreferrer"
       title="Open in a new tab"
       aria-label="Open in a new tab"
-      className="shrink-0 rounded text-slate-400 hover:text-cyan-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-slate-500 dark:hover:text-cyan-400"
+      className="shrink-0 text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <ExternalLink className="h-3.5 w-3.5" />
     </a>
@@ -134,10 +134,10 @@ function CopyButton({ text }) {
       onClick={handleCopy}
       aria-label="Copy"
       title="Copy"
-      className="shrink-0 rounded p-0.5 text-slate-400 opacity-0 transition hover:text-cyan-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 group-hover:opacity-100 dark:text-slate-500 dark:hover:text-cyan-400"
+      className="shrink-0 p-0.5 text-fg-muted opacity-0 transition hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
     >
       {copied ? (
-        <Check className="h-3.5 w-3.5 text-emerald-500" />
+        <Check className="h-3.5 w-3.5 text-accent" />
       ) : (
         <Copy className="h-3.5 w-3.5" />
       )}
@@ -154,11 +154,11 @@ function FlagButton({ flagged, onToggle }) {
       aria-label={flagged ? 'Remove flag' : 'Flag as malicious'}
       title={flagged ? 'Remove flag' : 'Flag as malicious'}
       className={[
-        'inline-flex items-center justify-center rounded p-1 transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+        'inline-flex items-center justify-center p-1 transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         flagged
-          ? 'text-cyan-600 hover:text-cyan-500 dark:text-cyan-400'
-          : 'text-slate-400 hover:text-cyan-600 dark:text-slate-500 dark:hover:text-cyan-400',
+          ? 'text-accent hover:text-accent-fg'
+          : 'text-fg-muted hover:text-accent',
       ].join(' ')}
     >
       <Flag className="h-4 w-4" fill={flagged ? 'currentColor' : 'none'} />
@@ -169,7 +169,7 @@ function FlagButton({ flagged, onToggle }) {
 function DetectionCell({ event }) {
   const { keywordMatches, isAnomalousTime } = event.soc
   if (keywordMatches.length === 0 && !isAnomalousTime) {
-    return <span className="text-slate-400 dark:text-slate-500">—</span>
+    return <span className="text-fg-muted">—</span>
   }
   return (
     <div className="flex flex-wrap items-center gap-1">
@@ -369,7 +369,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
         <div
           role="tablist"
           aria-label="Event views"
-          className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-800"
+          className="mb-4 flex flex-wrap gap-1 border-b border-line"
         >
           {INTERNAL_TABS.map((tab) => {
             const isActive = activeTab === tab.id
@@ -389,15 +389,15 @@ export default function EventsSection({ incident, browserId, profile = null, his
                 onClick={() => setActiveTab(tab.id)}
                 className={[
                   '-mb-px flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                   isActive
-                    ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
+                    ? 'border-accent-strong text-accent'
+                    : 'border-transparent text-fg-muted hover:text-fg',
                 ].join(' ')}
               >
                 <TabIcon className="h-4 w-4" />
                 {tab.label}
-                <span className="rounded-full bg-slate-100 px-1.5 text-xs tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                <span className="rounded-full bg-canvas px-1.5 text-xs tabular-nums text-fg-muted">
                   {count.toLocaleString('en-US')}
                 </span>
               </button>
@@ -406,7 +406,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
         </div>
 
         {/* Event-type legend */}
-        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
           <EventTypeIcon type="visit" withLabel />
           <EventTypeIcon type="search" withLabel />
           <EventTypeIcon type="redirect" withLabel />
@@ -491,7 +491,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
         sortAccessor: (row) => (row.fileName ?? '').toLowerCase(),
         render: (row) => (
           <span
-            className="font-mono text-xs font-medium text-slate-800 dark:text-slate-100"
+            className="font-mono text-xs font-medium text-fg"
             title={row.targetPath || row.fileName}
           >
             {truncate(row.fileName, 48)}
@@ -506,7 +506,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
           const domain = extractDomain(site)
           return (
             <span className="group inline-flex items-center gap-1.5">
-              <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+              <span className="font-mono text-xs text-fg-muted">
                 {domain || truncate(site, 40) || '—'}
               </span>
               <ExternalLinkIcon href={site} />
@@ -522,7 +522,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
         sortable: true,
         sortAccessor: (row) => row.totalBytes ?? 0,
         render: (row) => (
-          <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+          <span className="font-mono text-xs text-fg-muted">
             {formatBytes(row.totalBytes)}
           </span>
         ),
@@ -539,7 +539,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
       if (row.kind === 'download') {
         return (
           <span
-            className="font-mono text-xs font-medium text-slate-800 dark:text-slate-100"
+            className="font-mono text-xs font-medium text-fg"
             title={row.targetPath}
           >
             {truncate(row.fileName, 44)}
@@ -549,12 +549,12 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
       const domain = extractDomain(row.url)
       return (
         <div className="min-w-0 max-w-[260px]">
-          <p className="truncate text-sm text-slate-800 dark:text-slate-200">
+          <p className="truncate text-sm text-fg">
             {row.title || (
-              <span className="italic text-slate-400 dark:text-slate-500">(no title)</span>
+              <span className="italic text-fg-muted">(no title)</span>
             )}
           </p>
-          {domain && <p className="truncate text-xs text-slate-500 dark:text-slate-400">{domain}</p>}
+          {domain && <p className="truncate text-xs text-fg-muted">{domain}</p>}
         </div>
       )
     },
@@ -570,7 +570,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
         const site = row.referrer || row.url
         return (
           <span className="group inline-flex items-center gap-1.5">
-            <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+            <span className="font-mono text-xs text-fg-muted">
               from {extractDomain(site) || truncate(site, 36) || '—'}
             </span>
             <ExternalLinkIcon href={site} />
@@ -582,7 +582,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
       return (
         <div className="group min-w-0">
           <span className="inline-flex items-center gap-1.5">
-            <span className="break-all font-mono text-xs text-slate-600 dark:text-slate-400">
+            <span className="break-all font-mono text-xs text-fg-muted">
               {truncate(row.url, 64)}
             </span>
             <ExternalLinkIcon href={row.url} />
@@ -590,7 +590,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
           </span>
           {target && (
             // Link to the redirect destination page
-            <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+            <span className="mt-0.5 flex items-center gap-1 text-xs text-med">
               <span aria-hidden="true">→</span>
               <a
                 href={target.url}
