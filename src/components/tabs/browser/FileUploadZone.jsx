@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import Badge from '../../ui/Badge.jsx'
-import Spinner from '../../ui/Spinner.jsx'
+import AsciiSkull from '../../ui/AsciiSkull.jsx'
 import { formatDateTime } from '../../../utils/time.js'
 
 /*
@@ -139,9 +139,9 @@ export default function FileUploadZone({
 
         {loading ? (
           /* ---- State: loading/parsing in progress ---- */
-          <div className="flex flex-col items-center gap-2">
-            <Spinner className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
-            <p className="text-sm text-slate-500 dark:text-slate-400">Analyzing…</p>
+          <div aria-busy="true" className="flex flex-col items-center gap-2">
+            <AsciiSkull preset="small" />
+            <p role="status" className="font-mono text-sm text-slate-500 dark:text-slate-400">Parsing…</p>
           </div>
         ) : meta ? (
           /* ---- State: file imported, show metadata ---- */

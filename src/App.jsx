@@ -1,9 +1,9 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, FolderOpen, Plus, RefreshCw, ServerCrash } from 'lucide-react'
+import { AlertTriangle, Plus, RefreshCw } from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
 import { ANALYSIS_TABS, getTabById } from './config/tabs.js'
-import { Button, EmptyState, Modal, Spinner } from './components/ui/index.js'
+import { AsciiSkull, Button, EmptyState, MicroSkull, Modal } from './components/ui/index.js'
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
@@ -84,8 +84,8 @@ function ConnectingScreen() {
   return (
     <div className="flex h-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
       <div className="flex flex-col items-center gap-3">
-        <Spinner className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
-        <p className="text-sm text-slate-500 dark:text-slate-400">Connecting…</p>
+        <MicroSkull className="text-2xl text-emerald-600 dark:text-emerald-400" />
+        <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Connecting…</p>
       </div>
     </div>
   )
@@ -96,8 +96,8 @@ function UnreachableScreen({ error, onRetry }) {
   return (
     <div className="flex h-screen items-center justify-center bg-slate-100 p-4 dark:bg-slate-950">
       <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-red-100 text-red-600 dark:bg-red-500/10 dark:text-red-400">
-          <ServerCrash className="h-6 w-6" aria-hidden="true" />
+        <div className="mb-4 flex justify-center">
+          <MicroSkull mood="x" className="text-2xl text-red-600 dark:text-red-400" />
         </div>
         <h1 className="text-base font-semibold text-slate-900 dark:text-white">
           Cannot reach the server
@@ -198,8 +198,8 @@ export default function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
         <div className="flex flex-col items-center gap-3">
-          <Spinner className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">Loading incidents…</p>
+          <MicroSkull className="text-2xl text-emerald-600 dark:text-emerald-400" />
+          <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Loading incidents…</p>
         </div>
       </div>
     )
@@ -233,8 +233,11 @@ export default function App() {
           {activeIncident ? (
             <Suspense
               fallback={
-                <div className="flex items-center justify-center py-24">
-                  <Spinner className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
+                <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
+                  <AsciiSkull preset="medium" />
+                  <p role="status" className="font-mono text-sm text-slate-500 dark:text-slate-400">
+                    Loading…
+                  </p>
                 </div>
               }
             >
@@ -245,7 +248,7 @@ export default function App() {
           ) : activeLoadError ? (
             <div className="flex h-full items-center justify-center">
               <EmptyState
-                icon={ServerCrash}
+                illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
                 title="Unable to load the incident"
                 message={activeLoadError}
                 action={
@@ -258,7 +261,7 @@ export default function App() {
           ) : (
             <div className="flex h-full items-center justify-center">
               <EmptyState
-                icon={FolderOpen}
+                illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
                 title="No active incident"
                 message="Create a new incident to get started, or import an existing one from the sidebar."
                 action={

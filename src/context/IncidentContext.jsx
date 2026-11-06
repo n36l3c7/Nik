@@ -307,6 +307,9 @@ export function IncidentProvider({ children }) {
   const [activeIncidentId, setActiveIncidentId] = useState(incidentIdFromUrl)
   const [loading, setLoading] = useState(true)
   const [activeLoadError, setActiveLoadError] = useState(null)
+  // Download progress of the active incident's first fetch: { received, total }
+  // in bytes (total null when unknown), or null when nothing is downloading.
+  const [activeLoadProgress, setActiveLoadProgress] = useState(null)
   // Bumped by retryActiveIncident() to re-run the on-demand fetch after an error.
   const [reloadToken, setReloadToken] = useState(0)
   const [storageError, setStorageError] = useState(null)
@@ -399,10 +402,23 @@ export function IncidentProvider({ children }) {
     const cached = documentsRef.current[activeIncidentId]
     const controller = new AbortController()
     setActiveLoadError(null)
+    setActiveLoadProgress(null)
+    // Progress only matters for a first download (a revalidation is invisible);
+    // updates are throttled to every 64 KB to avoid a render per chunk.
+    let lastReported = -Infinity
+    const onProgress = cached
+      ? undefined
+      : ({ received, total }) => {
+          if (controller.signal.aborted) return
+          if (received - lastReported < 65536 && received !== total) return
+          lastReported = received
+          setActiveLoadProgress({ received, total })
+        }
     api
       .get(`/incidents/${encodeURIComponent(activeIncidentId)}`, {
         signal: controller.signal,
         headers: cached ? { 'If-None-Match': etagOf(cached) } : {},
+        onProgress,
       })
       .then((res) => {
         if (res === NOT_MODIFIED || !res) return
@@ -414,6 +430,9 @@ export function IncidentProvider({ children }) {
       .catch((err) => {
         if (controller.signal.aborted) return
         if (!cached) setActiveLoadError(err?.message || 'Unable to load the incident.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setActiveLoadProgress(null)
       })
     return () => controller.abort()
   }, [activeIncidentId, loading, reloadToken, storeDocument])
@@ -1059,6 +1078,7 @@ export function IncidentProvider({ children }) {
     activeSummary,
     activeLoading,
     activeLoadError,
+    activeLoadProgress,
     retryActiveIncident,
     loading,
     storageError,

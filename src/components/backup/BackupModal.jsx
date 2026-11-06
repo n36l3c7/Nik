@@ -6,7 +6,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { api } from '../../services/api.js'
-import { Badge, Button, Modal } from '../ui/index.js'
+import { Badge, Button, MicroSkull, Modal } from '../ui/index.js'
 
 /*
  * ============================================================================
@@ -137,11 +137,12 @@ export default function BackupModal({ open, onClose }) {
                 settings.
               </p>
               <Button
-                icon={Download}
+                icon={busy ? null : Download}
                 disabled={busy}
                 onClick={handleExport}
                 className="w-full justify-center"
               >
+                {busy && <MicroSkull className="mr-2" />}
                 {busy ? 'Preparing backup…' : 'Export full backup'}
               </Button>
               <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -212,10 +213,11 @@ export default function BackupModal({ open, onClose }) {
               </Button>
               <Button
                 variant="danger"
-                icon={DatabaseBackup}
+                icon={busy ? null : DatabaseBackup}
                 disabled={busy}
                 onClick={handleRestore}
               >
+                {busy && <MicroSkull className="mr-2" />}
                 {busy ? 'Restoring…' : 'Replace everything'}
               </Button>
             </div>

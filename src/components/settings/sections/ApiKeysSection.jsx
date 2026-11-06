@@ -4,7 +4,7 @@ import { api } from '../../../services/api.js'
 import { useAudit } from '../../../context/AuditContext.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { formatRelative } from '../../../utils/time.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, MicroSkull } from '../../ui/index.js'
 
 /*
  * API keys settings section (admin only): create and revoke keys that let
@@ -244,7 +244,8 @@ export default function ApiKeysSection() {
             />
             Read-only (no writes)
           </label>
-          <Button type="submit" icon={Plus} disabled={busy || !label.trim()}>
+          <Button type="submit" icon={busy ? null : Plus} disabled={busy || !label.trim()}>
+            {busy && <MicroSkull className="mr-2" />}
             {busy ? 'Creating…' : 'Create key'}
           </Button>
         </div>

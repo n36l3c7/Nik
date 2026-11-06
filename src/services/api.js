@@ -32,12 +32,15 @@ export const NOT_MODIFIED = Symbol('NOT_MODIFIED')
  * @param {object} [opts.headers]      Extra request headers (e.g. If-None-Match).
  * @param {AbortSignal} [opts.signal]  Cancels the request when aborted.
  * @param {string} [opts.contentType]  Body media type (default application/json).
+ * @param {(p: {received: number, total: number|null}) => void} [opts.onProgress]
+ *        Download progress while the response body streams in; `total` is
+ *        null when the size is unknown (no Content-Length, or compressed).
  * @returns {Promise<*>}   Parsed JSON payload, null for empty responses, or
  *                         NOT_MODIFIED for a 304.
  * @throws {Error} With the server's `detail` message on non-2xx; an aborted
  *                 request rejects with the fetch AbortError.
  */
-async function request(method, path, body, { headers = {}, signal, contentType } = {}) {
+async function request(method, path, body, { headers = {}, signal, contentType, onProgress } = {}) {
   const options = {
     method,
     credentials: 'include', // send/receive the httpOnly session cookie
@@ -65,7 +68,7 @@ async function request(method, path, body, { headers = {}, signal, contentType }
 
   // Parse the body defensively: some error responses may be empty.
   let payload = null
-  const text = await response.text()
+  const text = await readBody(response, onProgress)
   if (text) {
     try {
       payload = JSON.parse(text)
@@ -82,6 +85,36 @@ async function request(method, path, body, { headers = {}, signal, contentType }
   }
 
   return payload
+}
+
+/**
+ * Read a response body as text, reporting progress chunk by chunk when asked.
+ * A compressed body's Content-Length counts encoded bytes while the stream
+ * yields decoded ones, so the total is only trusted for an unencoded body.
+ */
+export async function readBody(response, onProgress) {
+  if (!onProgress || !response.body) return response.text()
+  const encoding = (response.headers.get('Content-Encoding') || 'identity').toLowerCase()
+  const length = Number(response.headers.get('Content-Length'))
+  const total = encoding === 'identity' && length > 0 ? length : null
+  const reader = response.body.getReader()
+  const chunks = []
+  let received = 0
+  onProgress({ received, total })
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.byteLength
+    onProgress({ received, total })
+  }
+  const bytes = new Uint8Array(received)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder('utf-8').decode(bytes)
 }
 
 export const api = {
