@@ -110,9 +110,9 @@ export default function DataTable({
       return <ArrowUpDown className="h-3.5 w-3.5 opacity-50" aria-hidden="true" />
     }
     return sort.dir === 'asc' ? (
-      <ArrowUp className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" aria-hidden="true" />
+      <ArrowUp className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
     ) : (
-      <ArrowDown className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" aria-hidden="true" />
+      <ArrowDown className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
     )
   }
 
@@ -136,17 +136,17 @@ export default function DataTable({
       )}
 
       {/* Container with horizontal scroll for wide tables */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-        <table className="w-full min-w-max text-left text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-900/60">
-            <tr className="border-b border-slate-200 dark:border-slate-800">
+      <div className="overflow-x-auto border border-line bg-panel">
+        <table className="w-full min-w-max text-left text-[13px]">
+          <thead className="bg-canvas">
+            <tr className="border-b border-line">
               {columns.map((column) => (
                 <th
                   key={column.key}
                   scope="col"
                   className={[
-                    'whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wider',
-                    'text-slate-500 dark:text-slate-400',
+                    'whitespace-nowrap px-4 py-2.5 font-mono text-xs font-normal lowercase',
+                    'text-fg-muted',
                     column.align === 'right' ? 'text-right' : 'text-left',
                     column.headerClassName ?? '',
                   ].join(' ')}
@@ -156,7 +156,7 @@ export default function DataTable({
                       type="button"
                       onClick={() => handleSort(column)}
                       aria-label={`Sort by ${column.label}`}
-                      className="inline-flex items-center gap-1 rounded uppercase tracking-wider transition-colors hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:text-slate-200"
+                      className="inline-flex items-center gap-1 lowercase transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                       <span>{column.label}</span>
                       {renderSortIcon(column)}
@@ -168,13 +168,13 @@ export default function DataTable({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+          <tbody className="divide-y divide-line-soft">
             {paged.length === 0 ? (
               // No rows: message centered across the full width
               <tr>
                 <td
                   colSpan={columns.length || 1}
-                  className="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400"
+                  className="px-4 py-12 text-center font-mono text-sm text-fg-muted"
                 >
                   {emptyMessage}
                 </td>
@@ -183,7 +183,7 @@ export default function DataTable({
               paged.map((row, index) => (
                 <tr
                   key={rowKey(row, index)}
-                  className={`transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 ${rowClassName(row)}`}
+                  className={`transition-colors hover:bg-raised ${rowClassName(row)}`}
                 >
                   {columns.map((column) => (
                     <td
@@ -205,7 +205,7 @@ export default function DataTable({
       </div>
 
       {/* Footer: page-size selector, results range, navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
+      <div className="flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-fg-muted">
         <div className="flex flex-wrap items-center gap-3">
           <Select
             label="Rows per page"

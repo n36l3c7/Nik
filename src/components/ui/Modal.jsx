@@ -34,7 +34,7 @@ export default function Modal({
       role="dialog"
       aria-modal="true"
       aria-label={typeof title === 'string' ? title : undefined}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-sunken/70 p-4 backdrop-blur-sm"
       // Close only if the mousedown happens directly on the backdrop
       // (avoids accidental closes when dragging from the content outward)
       onMouseDown={(event) => {
@@ -45,33 +45,32 @@ export default function Modal({
         className={[
           'w-full',
           maxWidth,
-          'flex max-h-[85vh] flex-col overflow-hidden rounded-xl border shadow-2xl',
-          'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900',
+          'flex max-h-[85vh] flex-col overflow-hidden border border-line bg-panel shadow-2xl',
         ].join(' ')}
       >
         {/* Header: title + close button */}
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
-          <h2 className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+        <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+          <h2 className="truncate font-mono text-sm font-semibold text-fg">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+            className="p-1 text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </header>
 
         {/* Scrollable body for long content */}
-        <div className="overflow-y-auto p-5 text-sm text-slate-700 dark:text-slate-300">
+        <div className="overflow-y-auto p-5 text-sm text-fg">
           {children}
         </div>
 
         {/* Optional footer with the actions */}
         {footer && (
-          <footer className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3.5 dark:border-slate-800">
+          <footer className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
             {footer}
           </footer>
         )}

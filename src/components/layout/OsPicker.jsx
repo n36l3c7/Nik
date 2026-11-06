@@ -23,11 +23,11 @@ export default function OsPicker({ value, onChange, idPrefix = 'os' }) {
             aria-checked={isActive}
             onClick={() => onChange(os.id)}
             className={[
-              'inline-flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+              'inline-flex flex-1 items-center justify-center gap-2 border px-3 py-2 font-mono text-[13px] transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
               isActive
-                ? 'border-cyan-500/60 bg-cyan-50 text-cyan-700 dark:border-cyan-500/50 dark:bg-cyan-500/10 dark:text-cyan-300'
-                : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60',
+                ? 'border-accent-strong bg-accent-soft text-accent-fg'
+                : 'border-line text-fg-muted hover:bg-raised hover:text-fg',
             ].join(' ')}
           >
             <OsIcon className={`h-4 w-4 ${isActive ? '' : os.accent}`} />

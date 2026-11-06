@@ -24,8 +24,8 @@ export default function IncidentLoadingState({ name }) {
     <div aria-busy="true" className="flex min-h-full flex-wrap items-center justify-center gap-10 py-8">
       <AsciiSkull preset="block" className="max-w-full overflow-hidden" />
       <div className="flex w-full max-w-sm flex-col gap-3 font-mono">
-        <p role="status" className="text-lg font-bold text-slate-800 dark:text-slate-100">
-          Loading <span className="text-emerald-600 dark:text-emerald-400">{name}</span>…
+        <p role="status" className="text-lg font-extrabold text-fg">
+          Loading <span className="text-accent">{name}</span>…
         </p>
         <div
           role="progressbar"
@@ -33,15 +33,15 @@ export default function IncidentLoadingState({ name }) {
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={pct ?? undefined}
-          className="relative h-2.5 overflow-hidden rounded-sm border border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+          className="relative h-2.5 overflow-hidden border border-line bg-panel"
         >
           {pct !== null ? (
-            <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${pct}%` }} />
+            <div className="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
           ) : (
-            <div className="absolute inset-y-0 w-1/3 animate-pulse bg-emerald-500/70" />
+            <div className="absolute inset-y-0 w-1/3 animate-pulse bg-accent/70" />
           )}
         </div>
-        <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex justify-between text-xs text-fg-muted">
           <span>{pct !== null ? `${pct}%` : 'downloading'}</span>
           <span>{total ? `${mb(received)} / ${mb(total)} MB` : `${mb(received)} MB received`}</span>
         </div>

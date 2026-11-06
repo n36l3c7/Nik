@@ -19,19 +19,19 @@ import { SKULL_PRESETS, gazeFrame, microSkull, renderSkull } from '../../utils/a
 const TICK_MS = 400
 
 const TONES = {
-  accent: 'text-emerald-600 dark:text-emerald-400',
-  muted: 'text-slate-400 dark:text-slate-500',
+  accent: 'text-accent',
+  muted: 'text-fg-subtle',
 }
 
 const EYE_TONES = {
-  accent: 'text-red-500 dark:text-red-400',
-  muted: 'text-red-500 dark:text-red-400',
+  accent: 'text-high',
+  muted: 'text-high',
 }
 
-// Block shading glyphs (░▒▓█) come from a fallback font in most monospace
-// stacks; a tighter line height closes the gaps between their rows.
+// The bundled JetBrains Mono draws the block glyphs (░▒▓█) edge to edge, so
+// every preset uses a plain 1:1 line height.
 const FONT_SIZES = {
-  block: 'text-[9px] leading-[0.82]',
+  block: 'text-[9px] leading-none',
   large: 'text-[10px] leading-none',
   medium: 'text-[11px] leading-none',
   small: 'text-[10px] leading-none',
