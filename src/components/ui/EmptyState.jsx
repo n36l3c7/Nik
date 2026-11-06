@@ -1,9 +1,11 @@
 /**
- * EmptyState — standard empty state: prominent icon, title,
- * explanatory message and an optional action (e.g. a button).
+ * EmptyState — standard empty state: prominent icon (or a larger
+ * `illustration` node, e.g. an <AsciiSkull />), title, explanatory message
+ * and an optional action (e.g. a button).
  */
 export default function EmptyState({
   icon: Icon = null,
+  illustration = null,
   title,
   message,
   action = null,
@@ -18,7 +20,8 @@ export default function EmptyState({
         className,
       ].join(' ')}
     >
-      {Icon && (
+      {illustration}
+      {!illustration && Icon && (
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
           <Icon className="h-7 w-7 text-slate-400 dark:text-slate-500" aria-hidden="true" />
         </div>

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-06
+
+### Added
+
+- ASCII skull loaders: a symmetric skull drawn in text characters, generated
+  at any size by `src/utils/asciiSkull.js` and rendered by the new
+  `AsciiSkull` / `MicroSkull` UI components (presets block, large, medium,
+  small; eyes that look around and blink, closed, or crossed out).
+- Opening an incident shows the block skull with the real download progress
+  (percentage and megabytes, from the response's Content-Length) and a Cancel
+  button that returns to no incident.
+- `EmptyState` accepts an `illustration` in place of its icon.
+
+### Changed
+
+- Loading a tab, a failed incident load (eyes crossed out), the "no active
+  incident" state (asleep) and file parsing in the upload zones now use the
+  skull; connecting, loading the incident list, an unreachable server and
+  busy buttons (backup export/restore, API key creation, incident export) use
+  the inline micro skull.
+- Skulls stay still when the operating system asks to reduce motion.
+
+### Removed
+
+- The `Spinner` UI component, replaced everywhere by the skulls.
+
 ## [2.0.0] - 2026-11-04
 
 ### Added
@@ -93,7 +119,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/n36l3c7/Nik/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/n36l3c7/Nik/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/n36l3c7/Nik/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/n36l3c7/Nik/releases/tag/v1.1.0

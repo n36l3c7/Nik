@@ -16,7 +16,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { formatRelative } from '../../utils/time.js'
 import { getOsById } from '../../config/os.js'
-import { Button, Modal } from '../ui/index.js'
+import { Button, MicroSkull, Modal } from '../ui/index.js'
 import BackupModal from '../backup/BackupModal.jsx'
 
 /*
@@ -34,12 +34,14 @@ import BackupModal from '../backup/BackupModal.jsx'
  */
 
 /** Compact icon-button used for the per-row actions of the incident list. */
-function RowAction({ icon: Icon, label, danger = false, onClick }) {
+function RowAction({ icon: Icon, label, danger = false, busy = false, onClick }) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
+      aria-busy={busy || undefined}
+      disabled={busy}
       onClick={onClick}
       className={[
         'rounded-md p-1.5 transition-colors',
@@ -49,7 +51,7 @@ function RowAction({ icon: Icon, label, danger = false, onClick }) {
           : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200',
       ].join(' ')}
     >
-      <Icon className="h-3.5 w-3.5" />
+      {busy ? <MicroSkull className="text-[10px] leading-none" /> : <Icon className="h-3.5 w-3.5" />}
     </button>
   )
 }
@@ -77,6 +79,8 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
 
   // Incident pending deletion confirmation (null = modal closed).
   const [deleteTarget, setDeleteTarget] = useState(null)
+  // Incident being exported (its document may need fetching first).
+  const [exportingId, setExportingId] = useState(null)
 
   // Full-backup modal (admin only).
   const [backupOpen, setBackupOpen] = useState(false)
@@ -212,7 +216,15 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
                     <RowAction
                       icon={Download}
                       label={`Export incident "${incident.name}"`}
-                      onClick={() => exportIncident(incident.id)}
+                      busy={exportingId === incident.id}
+                      onClick={async () => {
+                        setExportingId(incident.id)
+                        try {
+                          await exportIncident(incident.id)
+                        } finally {
+                          setExportingId(null)
+                        }
+                      }}
                     />
                     <RowAction
                       icon={Trash2}
