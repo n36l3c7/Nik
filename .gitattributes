@@ -4,3 +4,4 @@
 
 # Binary test fixtures (property lists)
 *.bplist binary
+*.woff2 binary

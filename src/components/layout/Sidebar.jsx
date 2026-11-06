@@ -6,7 +6,6 @@ import {
   Info,
   Plus,
   ScrollText,
-  Shield,
   Trash2,
   Upload,
   Users,
@@ -44,11 +43,11 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
       disabled={busy}
       onClick={onClick}
       className={[
-        'rounded-md p-1.5 transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+        'p-1.5 transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         danger
-          ? 'text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-400'
-          : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200',
+          ? 'text-fg-muted hover:bg-high-soft hover:text-high'
+          : 'text-fg-muted hover:bg-raised hover:text-fg',
       ].join(' ')}
     >
       {busy ? <MicroSkull className="text-[10px] leading-none" /> : <Icon className="h-3.5 w-3.5" />}
@@ -125,20 +124,19 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
   return (
     <aside
       style={{ width }}
-      className="flex h-full shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+      className="flex h-full shrink-0 flex-col border-r border-line bg-sunken"
     >
       {/* ----- Brand ----- */}
-      <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-600 text-white">
-          <Shield className="h-5 w-5" />
-        </div>
+      <div className="flex items-center gap-3 border-b border-line px-4 py-4">
+        <span
+          aria-hidden="true"
+          className="shrink-0 bg-accent px-2 py-1 font-mono text-sm font-extrabold text-canvas"
+        >
+          &gt;_
+        </span>
         <div className="min-w-0">
-          <p className="text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-            Nik
-          </p>
-          <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-            Forensic analysis platform
-          </p>
+          <p className="font-mono text-lg font-extrabold leading-tight tracking-widest text-fg">nik</p>
+          <p className="truncate text-[11px] text-fg-muted">forensic analysis platform</p>
         </div>
       </div>
 
@@ -158,12 +156,12 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
         aria-label="Incidents"
         className="mt-4 flex-1 overflow-y-auto px-3 pb-2"
       >
-        <p className="px-1 pb-2 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Incidents ({incidents.length})
+        <p className="px-1 pb-2 font-mono text-[11px] tracking-wider text-fg-muted">
+          INCIDENTS · {incidents.length}
         </p>
 
         {sortedIncidents.length === 0 ? (
-          <p className="px-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="px-1 text-sm text-fg-muted">
             No incidents yet: create a new one or import an existing file.
           </p>
         ) : (
@@ -180,19 +178,17 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
                     onClick={() => selectIncident(incident.id)}
                     aria-current={isActive ? 'true' : undefined}
                     className={[
-                      'w-full rounded-lg border px-3 py-2 text-left transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                      'w-full px-3 py-2 text-left transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                       isActive
-                        ? 'border-cyan-500/60 bg-cyan-50 dark:border-cyan-500/50 dark:bg-cyan-500/10'
-                        : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60',
+                        ? 'bg-panel shadow-[inset_2px_0_0_var(--color-accent)]'
+                        : 'hover:bg-panel/60',
                     ].join(' ')}
                   >
                     <span
                       className={[
-                        'flex items-center gap-1.5 truncate pr-14 text-sm font-semibold',
-                        isActive
-                          ? 'text-cyan-700 dark:text-cyan-300'
-                          : 'text-slate-700 dark:text-slate-200',
+                        'flex items-center gap-1.5 truncate pr-14 font-mono text-[13px] font-semibold',
+                        isActive ? 'text-fg' : 'text-fg/90',
                       ].join(' ')}
                     >
                       {OsIcon && (
@@ -203,7 +199,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
                       )}
                       <span className="truncate">{incident.name}</span>
                     </span>
-                    <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="block text-[11px] text-fg-muted">
                       updated {formatRelative(incident.updatedAt)}
                     </span>
                   </button>
@@ -241,12 +237,12 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
       </nav>
 
       {/* ----- Import + tools + informational footer ----- */}
-      <div className="space-y-2.5 border-t border-slate-200 px-4 py-3 dark:border-slate-800">
+      <div className="space-y-2.5 border-t border-line px-4 py-3">
         {/* Import error: dismissible red banner */}
         {importError && (
           <div
             role="alert"
-            className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-400"
+            className="flex items-start gap-2 border border-high-line bg-high-soft px-2.5 py-2 text-xs text-high-fg"
           >
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span className="flex-1">{importError}</span>
@@ -254,7 +250,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
               type="button"
               aria-label="Dismiss error message"
               onClick={() => setImportError(null)}
-              className="rounded p-0.5 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:bg-red-500/20"
+              className="p-0.5 hover:bg-high-line/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -313,7 +309,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
           </Button>
         )}
 
-        <p className="flex items-start gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+        <p className="flex items-start gap-1.5 text-[11px] text-fg-muted">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           Artifacts are parsed locally; cases are stored on the Nik server
         </p>
@@ -341,14 +337,14 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
         }
       >
         <div className="space-y-3">
-          <p className="text-sm text-slate-700 dark:text-slate-300">
+          <p className="text-sm text-fg">
             You are about to delete the incident{' '}
-            <strong className="text-slate-900 dark:text-white">
+            <strong className="font-mono">
               «{deleteTarget?.name}»
             </strong>
             .
           </p>
-          <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-400">
+          <p className="flex items-start gap-2 border border-high-line bg-high-soft px-3 py-2 text-sm text-high-fg">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             This action is irreversible: every imported artifact and analysis in
             this incident will be lost. Export the incident first if you want to

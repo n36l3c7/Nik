@@ -16,32 +16,17 @@ export default function Card({
   const hasHeader = Boolean(title || Icon || actions)
 
   return (
-    <section
-      className={[
-        'rounded-xl border border-slate-200 bg-white',
-        'dark:border-slate-800 dark:bg-slate-900',
-        className,
-      ].join(' ')}
-    >
+    <section className={`border border-line bg-panel ${className}`}>
       {hasHeader && (
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
-            {Icon && (
-              <Icon
-                className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400"
-                aria-hidden="true"
-              />
-            )}
-            {title && (
-              <h3 className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                {title}
-              </h3>
-            )}
+            {Icon && <Icon className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />}
+            {title && <h3 className="truncate text-sm font-semibold text-fg">{title}</h3>}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={`p-5 ${bodyClassName}`}>{children}</div>
+      <div className={`p-4 ${bodyClassName}`}>{children}</div>
     </section>
   )
 }

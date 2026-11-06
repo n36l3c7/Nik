@@ -1,28 +1,17 @@
 /**
- * Badge — compact pill label, used for file formats,
+ * Badge — compact square label (terminal look), used for file formats,
  * detection severities, counts, etc.
+ *
+ * Colour names are kept for compatibility: slate (neutral), cyan (info),
+ * red (HIGH), amber (MED), emerald (accent / ok), violet (commands).
  */
-
-// Color → classes map (always with a dark counterpart)
 const COLORS = {
-  slate:
-    'bg-slate-100 text-slate-600 border-slate-200 ' +
-    'dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-  cyan:
-    'bg-cyan-50 text-cyan-700 border-cyan-200 ' +
-    'dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30',
-  red:
-    'bg-red-50 text-red-700 border-red-200 ' +
-    'dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30',
-  amber:
-    'bg-amber-50 text-amber-700 border-amber-200 ' +
-    'dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
-  emerald:
-    'bg-emerald-50 text-emerald-700 border-emerald-200 ' +
-    'dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30',
-  violet:
-    'bg-violet-50 text-violet-700 border-violet-200 ' +
-    'dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/30',
+  slate: 'border-line text-fg-muted',
+  cyan: 'border-info-line bg-info-soft/40 text-info',
+  red: 'border-high-line bg-high-soft text-high-fg',
+  amber: 'border-med-line bg-med-soft text-med-fg',
+  emerald: 'border-accent-strong bg-accent-soft text-accent-fg',
+  violet: 'border-violet-line bg-violet-soft text-violet',
 }
 
 export default function Badge({ color = 'slate', children, title, className = '' }) {
@@ -30,8 +19,8 @@ export default function Badge({ color = 'slate', children, title, className = ''
     <span
       title={title}
       className={[
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border',
-        'px-2 py-0.5 text-[11px] font-medium leading-4',
+        'inline-flex items-center gap-1 whitespace-nowrap border',
+        'px-1.5 py-px font-mono text-[11px] leading-4',
         COLORS[color] ?? COLORS.slate,
         className,
       ].join(' ')}

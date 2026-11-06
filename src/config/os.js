@@ -23,7 +23,7 @@ export const OS_LIST = [
     id: 'macos',
     label: 'macOS',
     icon: Apple,
-    accent: 'text-slate-500 dark:text-slate-300',
+    accent: 'text-fg',
   },
   {
     id: 'linux',

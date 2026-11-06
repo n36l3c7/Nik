@@ -693,8 +693,8 @@ The split is deliberate:
   CSV) are read and normalized client-side; only the resulting entries are sent
   to the API as part of the incident document.
 - **State lives on the server.** Incidents, users, settings and the audit log
-  are stored in the database and shared by all analysts. The only per-device
-  value is the UI theme (light/dark), kept in `localStorage`.
+  are stored in the database and shared by all analysts; nothing is kept in
+  the browser's storage.
 - **Single origin.** nginx serves the SPA and proxies `/api/` to the backend,
   so no CORS configuration is needed and the httpOnly session cookie flows
   transparently. In development, the Vite proxy plays nginx's role.
@@ -763,9 +763,11 @@ change.
 │       ├── defaults.py             # Factory defaults for detection settings
 │       └── routers/                # auth, users, incidents, audit, settings, backup
 └── src/
-    ├── main.jsx                    # Entry: StrictMode > ThemeProvider > AuditProvider
-    │                               #   > AuthProvider > SettingsProvider > IncidentProvider > App
-    ├── index.css                   # Tailwind v4, @custom-variant dark, base + scrollbar
+    ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
+    │                               #   > SettingsProvider > IncidentProvider > App
+    ├── index.css                   # Tailwind v4, design tokens (@theme), bundled fonts,
+    │                               #   base + scrollbar
+    ├── assets/fonts/               # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
     ├── App.jsx                     # Shell + auth gate: Sidebar | Header + TabBar + tab content
     │
     ├── config/                     # ★ DECLARATIVE EXTENSION POINTS ★
@@ -780,7 +782,6 @@ change.
     │                               #   hours (keywords managed at runtime from Settings).
     │
     ├── context/
-    │   ├── ThemeContext.jsx        # useTheme() → { theme, setTheme, toggleTheme }
     │   ├── AuditContext.jsx        # useAudit(): global audit log via the API
     │   ├── AuthContext.jsx         # useAuth(): session auth (login/logout/me), users
     │   ├── SettingsContext.jsx     # useSettings(): keywords + business hours (server-side);
@@ -790,7 +791,6 @@ change.
     │
     ├── services/
     │   ├── api.js                  # The ONLY file that talks to the server (fetch wrapper)
-    │   ├── storage.js              # Local preference: UI theme in localStorage
     │   ├── fileParsers.js          # parseBrowserSource(file, engine, source): dispatch
     │   │                           #   SQLite/plist/JSON/CSV + lenient field mapping
     │   ├── sqliteParser.js         # Chromium (History/Shortcuts), Firefox (places.sqlite) and
@@ -821,7 +821,7 @@ change.
     └── components/
         ├── ui/                     # Reusable UI kit (Button, Card, Badge, Modal, DataTable,
         │                           #   EmptyState, SearchInput, Select, StatCard, AsciiSkull)
-        ├── auth/                   # FirstRunSetup, LoginScreen
+        ├── auth/                   # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
         │                           #   hours, accounts, API keys, audit log)
@@ -1045,7 +1045,6 @@ existing incidents receive the new tab's `defaultData` automatically (see
 | Database `users` / `sessions` | accounts (bcrypt hash) and server-side sessions |
 | Database `audit_log` | the global audit trail |
 | Database `settings` | detection keywords + business hours (shared by all analysts) |
-| Browser `localStorage nik:theme` | `'dark'` \| `'light'` — the only per-device value |
 
 ### 3.5 Authentication, sessions and the audit log
 
@@ -1465,18 +1464,33 @@ MicroSkull({ mood = 'animated' | 'closed' | 'x', className = '' })
 The `large` preset is kept for future use. With *reduce motion* enabled in
 the operating system the skulls stay still.
 
-**Style conventions:**
+**Look and tokens.** Nik has a single dark, terminal-style theme. Colours
+are **named tokens** declared once in `src/index.css` (`@theme`), and
+components use the names, never raw palette classes:
 
-- Surfaces: `bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800`;
-  a card is `rounded-xl border` + surfaces.
-- Primary accent is **cyan** (`text-cyan-600 dark:text-cyan-400`); danger
-  red-500/600, warning amber-500, ok emerald-500.
-- Technical data (URLs, timestamps, queries) uses `font-mono text-xs`.
-- SOC-flagged rows: high → `bg-red-500/5 dark:bg-red-500/10 border-l-2
-  border-l-red-500`; medium → same in amber. Entries **manually flagged** by
-  the analyst use a distinct cyan highlight (`border-l-cyan-500`).
-- **Every color class must have its `dark:` counterpart** (class-based theme,
-  see `@custom-variant dark` in `index.css`).
+| Token | Use |
+|---|---|
+| `sunken` · `canvas` · `panel` · `raised` | surfaces, darkest to lightest (sidebar/terminal panes, page, cards and inputs, hover) |
+| `line` · `line-soft` | borders · table row dividers |
+| `fg` · `fg-muted` · `fg-subtle` | text · secondary text · decoration and disabled only |
+| `accent` (+ `-strong`, `-fg`, `-soft`) | the green prompt: primary actions, focus rings, active tab |
+| `link` (+ `-fg`) · `info` (+ `-line`, `-soft`) | links · informational badges |
+| `high` (+ `-fg`, `-line`, `-soft`) · `med` (…) | SOC severities HIGH (red) and MED (amber) |
+| `violet` (+ `-line`, `-soft`) | commands / anti-forensics |
+
+Tailwind turns each token into utilities (`bg-panel`, `text-fg-muted`,
+`border-line`, `ring-accent`…). Other conventions:
+
+- Corners are square; borders are 1 px `border-line`.
+- Monospace (`font-mono`, JetBrains Mono) for data, labels, tabs and
+  headings; Inter (`font-sans`) for prose and buttons. Both fonts are bundled
+  (`src/assets/fonts/`), no CDN.
+- Severities differ in lightness as well as hue, so they stay readable for
+  colour-blind analysts.
+
+The analysis tabs still use the previous `slate`/`cyan` classes with `dark:`
+variants (the `<html>` element always carries `.dark`); they move to the
+tokens in the next release.
 
 ---
 

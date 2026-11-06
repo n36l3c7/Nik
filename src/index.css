@@ -1,16 +1,115 @@
 @import 'tailwindcss';
 
 /*
- * Class-based dark mode: the `dark:` variant activates when the
- * <html> element has the .dark class (managed by ThemeContext).
+ * ============================================================================
+ * NIK DESIGN TOKENS — terminal look, dark only
+ * ============================================================================
+ * Every colour has a name here and components use the names (bg-panel,
+ * text-fg-muted, border-line, text-accent…), so the palette changes in one
+ * place. Tailwind turns each --color-* into utilities (bg-*, text-*,
+ * border-*, ring-*…) and each --font-* into font-* utilities.
+ */
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Surfaces, darkest to lightest */
+  --color-sunken: #010409; /* sidebar, terminal panes */
+  --color-canvas: #0d1117; /* page background */
+  --color-panel: #161b22; /* cards, inputs */
+  --color-raised: #1c2128; /* hover */
+  --color-line: #30363d; /* borders */
+  --color-line-soft: #21262d; /* table row dividers */
+
+  /* Text */
+  --color-fg: #e6edf3;
+  --color-fg-muted: #9da7b3; /* secondary text, 7:1 on canvas */
+  --color-fg-subtle: #6e7681; /* decoration and disabled only */
+
+  /* Accent (the green prompt) */
+  --color-accent: #3fb950;
+  --color-accent-strong: #2ea043;
+  --color-accent-fg: #7ee787;
+  --color-accent-soft: #1f3a26;
+
+  /* Links and informational */
+  --color-link: #58a6ff;
+  --color-link-fg: #a5d6ff;
+  --color-info: #79c0ff;
+  --color-info-line: #1f6feb;
+  --color-info-soft: #0c2d6b;
+
+  /* Severity: HIGH (red) and MED (amber) — they also differ in lightness */
+  --color-high: #ff7b72;
+  --color-high-fg: #ffa198;
+  --color-high-line: #f85149;
+  --color-high-soft: #3d1418;
+  --color-med: #e3b341;
+  --color-med-fg: #f2cc60;
+  --color-med-line: #bb8009;
+  --color-med-soft: #3b2c0b;
+
+  /* Commands / anti-forensics */
+  --color-violet: #d2a8ff;
+  --color-violet-line: #8957e5;
+  --color-violet-soft: #271c3d;
+}
+
+/*
+ * The `dark:` variant still exists for the analysis tabs, which move to the
+ * tokens in the next release; the <html> element always carries `.dark`.
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
-  /* Monospace font used for URLs, timestamps and "technical" data */
-  --font-mono:
-    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
-    'Liberation Mono', monospace;
+/* ---- Fonts (bundled; OFL-1.1, licence files next to them) ---- */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/inter/inter-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono/JetBrainsMono-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono/JetBrainsMono-SemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono/JetBrainsMono-ExtraBold.woff2') format('woff2');
 }
 
 /* ---- Base ---- */
@@ -20,15 +119,19 @@ body,
   height: 100%;
 }
 
+html {
+  color-scheme: dark;
+}
+
 body {
-  @apply bg-slate-100 text-slate-800 antialiased;
+  @apply bg-canvas font-sans text-fg antialiased;
 }
 
-.dark body {
-  @apply bg-slate-950 text-slate-200;
+/* ---- Thin terminal-style scrollbar ---- */
+* {
+  scrollbar-color: var(--color-line) transparent;
+  scrollbar-width: thin;
 }
-
-/* ---- Thin dashboard-style scrollbar ---- */
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -37,19 +140,12 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-slate-300;
-}
-.dark *::-webkit-scrollbar-thumb {
-  @apply bg-slate-700;
+  @apply bg-line;
 }
 *::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-400;
-}
-.dark *::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-600;
+  @apply bg-fg-subtle;
 }
 
-/* ---- Text selection with a cyber accent ---- */
 ::selection {
-  @apply bg-cyan-500/30;
+  @apply bg-accent/30;
 }

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-06
+
+### Added
+
+- Terminal look, step 1: named colour tokens in `src/index.css` (surfaces,
+  text, green accent, HIGH/MED severities…) used by the UI kit and the
+  application shell.
+- Bundled fonts: Inter and JetBrains Mono (woff2, OFL-1.1), no CDN.
+  JetBrains Mono covers the block and box-drawing characters, so the ASCII
+  skull and banners render without fallback fonts.
+- Sign-in and first-run screens with the NIK banner and a `$ nik status` box
+  showing the real API and database status (public health endpoints).
+
+### Changed
+
+- The UI kit (buttons, cards, badges, modals, tables, inputs, stat cards,
+  empty states), the sidebar, header, tab bar and OS picker use the terminal
+  look: square corners, monospace labels, green accent.
+- The header shows the incident as `host / user` with its OS.
+- `index.html` is in English (`lang="en"`) and has a terminal favicon.
+
+### Removed
+
+- The light theme and its toggle: Nik is dark only. `ThemeContext` and the
+  `nik:theme` local-storage preference are gone.
+
 ## [2.1.0] - 2026-11-06
 
 ### Added
@@ -119,7 +145,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/n36l3c7/Nik/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/n36l3c7/Nik/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/n36l3c7/Nik/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/n36l3c7/Nik/compare/v1.1.0...v1.2.0

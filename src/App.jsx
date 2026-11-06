@@ -70,7 +70,7 @@ function SidebarResizer({ onResize }) {
       aria-orientation="vertical"
       aria-label="Resize sidebar"
       onPointerDown={onPointerDown}
-      className="group relative z-10 w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-cyan-500/30"
+      className="group relative z-10 w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-accent/30"
       title="Drag to resize the sidebar"
     >
       {/* Wider invisible hit area for easier grabbing. */}
@@ -82,10 +82,10 @@ function SidebarResizer({ onResize }) {
 /** Full-screen boot splash shown while the session probe is in flight. */
 function ConnectingScreen() {
   return (
-    <div className="flex h-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
+    <div className="flex h-screen items-center justify-center bg-canvas">
       <div className="flex flex-col items-center gap-3">
-        <MicroSkull className="text-2xl text-emerald-600 dark:text-emerald-400" />
-        <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Connecting…</p>
+        <MicroSkull className="text-2xl text-accent" />
+        <p role="status" className="text-sm text-fg-muted">Connecting…</p>
       </div>
     </div>
   )
@@ -94,20 +94,20 @@ function ConnectingScreen() {
 /** Full-screen error card shown when the backend cannot be reached. */
 function UnreachableScreen({ error, onRetry }) {
   return (
-    <div className="flex h-screen items-center justify-center bg-slate-100 p-4 dark:bg-slate-950">
-      <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex h-screen items-center justify-center bg-canvas p-4">
+      <div className="w-full max-w-sm border border-line bg-panel p-6 text-center">
         <div className="mb-4 flex justify-center">
-          <MicroSkull mood="x" className="text-2xl text-red-600 dark:text-red-400" />
+          <MicroSkull mood="x" className="text-2xl text-high-fg" />
         </div>
-        <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+        <h1 className="text-base font-semibold text-fg">
           Cannot reach the server
         </h1>
-        <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1.5 text-sm text-fg-muted">
           The application could not contact the backend API. Check that the
           service is running, then try again.
         </p>
         {error && (
-          <p className="mt-3 break-words rounded-lg bg-slate-100 px-3 py-2 font-mono text-xs text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+          <p className="mt-3 break-words bg-canvas px-3 py-2 font-mono text-xs text-fg-muted">
             {error}
           </p>
         )}
@@ -196,10 +196,10 @@ export default function App() {
   // ---- Initial async load of incidents from the API ----
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
+      <div className="flex h-screen items-center justify-center bg-canvas">
         <div className="flex flex-col items-center gap-3">
-          <MicroSkull className="text-2xl text-emerald-600 dark:text-emerald-400" />
-          <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Loading incidents…</p>
+          <MicroSkull className="text-2xl text-accent" />
+          <p role="status" className="text-sm text-fg-muted">Loading incidents…</p>
         </div>
       </div>
     )
@@ -222,7 +222,7 @@ export default function App() {
         {storageError && (
           <div
             role="alert"
-            className="flex shrink-0 items-center gap-2 border-b border-red-200 bg-red-50 px-6 py-2.5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-400"
+            className="flex shrink-0 items-center gap-2 border-b border-high-line bg-high-soft px-6 py-2.5 text-sm text-high-fg"
           >
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>{storageError}</span>
@@ -235,7 +235,7 @@ export default function App() {
               fallback={
                 <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
                   <AsciiSkull preset="medium" />
-                  <p role="status" className="font-mono text-sm text-slate-500 dark:text-slate-400">
+                  <p role="status" className="font-mono text-sm text-fg-muted">
                     Loading…
                   </p>
                 </div>
@@ -292,12 +292,12 @@ export default function App() {
         }
       >
         <form id="form-new-incident" onSubmit={handleCreateSubmit} className="space-y-4">
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-fg-muted">
             Identify the incident by host, user, or both. This is a label (not a
             unique id), so duplicates are allowed.
           </p>
           <div>
-            <label htmlFor="new-host" className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+            <label htmlFor="new-host" className="mb-1.5 block font-mono text-xs text-fg-muted">
               Host
             </label>
             <input
@@ -307,11 +307,11 @@ export default function App() {
               onChange={(e) => setHost(e.target.value)}
               placeholder="e.g. WKS-FINANCE-01"
               autoFocus
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+              className="w-full border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
           <div>
-            <label htmlFor="new-username" className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+            <label htmlFor="new-username" className="mb-1.5 block font-mono text-xs text-fg-muted">
               User
             </label>
             <input
@@ -320,15 +320,15 @@ export default function App() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="e.g. m.rossi"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+              className="w-full border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
           <div>
-            <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+            <span className="mb-1.5 block font-mono text-xs text-fg-muted">
               Host operating system
             </span>
             <OsPicker value={os} onChange={setOs} idPrefix="new-os" />
-            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-1.5 text-xs text-fg-muted">
               Drives the suggested artifact paths and the available shells.
             </p>
           </div>
