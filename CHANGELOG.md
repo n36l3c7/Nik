@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-06
+
+### Added
+
+- `tail -f` side panel: the latest 60 timestamped events of the open incident
+  (browser, commands, endpoint), newest at the bottom, with source, severity
+  and flags. Toggled from the tab bar on wide screens, remembered per tab and
+  open on Summary by default.
+
+### Changed
+
+- Terminal look, step 2: Summary, Browser Forensics (profiles, upload zones,
+  events, bookmarks, shortcuts, widgets), Command History, Endpoint
+  Artifacts, Timeline, Network Logs, Settings (rules, business hours,
+  accounts, API keys, audit log) and Full backup use the design tokens.
+- Analyst flags use the green accent and SOC rows their severity colour, so a
+  flag never looks like a detection.
+- The Summary counters wrap to two rows of three below very wide screens.
+
+### Removed
+
+- The `dark:` Tailwind variant and the `dark` class on `<html>`: no
+  component uses them any more.
+
 ## [2.2.0] - 2026-11-06
 
 ### Added
@@ -145,7 +169,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/n36l3c7/Nik/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/n36l3c7/Nik/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/n36l3c7/Nik/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/n36l3c7/Nik/compare/v1.2.0...v2.0.0

@@ -44,18 +44,18 @@ const SOURCE_FILTER_OPTIONS = [
 ]
 
 const ROW_SEVERITY_CLASSES = {
-  high: 'bg-red-500/5 dark:bg-red-500/10 border-l-2 border-l-red-500',
-  medium: 'bg-amber-500/5 dark:bg-amber-500/10 border-l-2 border-l-amber-500',
+  high: 'bg-high-soft border-l-2 border-l-high-line',
+  medium: 'bg-med-soft border-l-2 border-l-med-line',
 }
-const FLAG_HIGHLIGHT = 'bg-cyan-500/5 dark:bg-cyan-500/10 border-l-2 border-l-cyan-500'
+const FLAG_HIGHLIGHT = 'bg-accent-soft border-l-2 border-l-accent-strong'
 
 function TimeCell({ event }) {
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-slate-700 dark:text-slate-300">
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-fg">
       {formatDateTime(event.time)}
       {event.soc.isAnomalousTime && (
         <span title={NIGHT_TOOLTIP} className="inline-flex shrink-0">
-          <Clock className="h-3.5 w-3.5 text-amber-500" aria-label={NIGHT_TOOLTIP} />
+          <Clock className="h-3.5 w-3.5 text-med" aria-label={NIGHT_TOOLTIP} />
         </span>
       )}
     </span>
@@ -70,11 +70,11 @@ function FlagButton({ flagged, onToggle }) {
       aria-label={flagged ? 'Remove flag' : 'Flag as malicious'}
       title={flagged ? 'Remove flag' : 'Flag as malicious'}
       className={[
-        'inline-flex items-center justify-center rounded p-1 transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+        'inline-flex items-center justify-center p-1 transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         flagged
-          ? 'text-cyan-600 hover:text-cyan-500 dark:text-cyan-400'
-          : 'text-slate-400 hover:text-cyan-600 dark:text-slate-500 dark:hover:text-cyan-400',
+          ? 'text-accent hover:text-accent-fg'
+          : 'text-fg-muted hover:text-accent',
       ].join(' ')}
     >
       <Flag className="h-4 w-4" fill={flagged ? 'currentColor' : 'none'} />
@@ -100,7 +100,7 @@ function SourceCell({ event }) {
 function DetectionCell({ event }) {
   const { keywordMatches, isAnomalousTime } = event.soc
   if (keywordMatches.length === 0 && !isAnomalousTime) {
-    return <span className="text-slate-400 dark:text-slate-500">—</span>
+    return <span className="text-fg-muted">—</span>
   }
   return (
     <div className="flex flex-wrap items-center gap-1">
@@ -183,7 +183,7 @@ export default function TimelineTab({ incident }) {
   if (events.length === 0) {
     return (
       <div className="mx-auto max-w-3xl">
-        <div className="rounded-xl border border-slate-200 bg-white py-10 dark:border-slate-800 dark:bg-slate-900">
+        <div className="border border-line bg-panel py-10">
           <EmptyState
             icon={ListTree}
             title="Nothing on the timeline yet"
@@ -236,7 +236,7 @@ export default function TimelineTab({ incident }) {
       </div>
 
       <Card title="Unified timeline" icon={ListTree}>
-        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mb-3 text-xs text-fg-muted">
           Every timestamped event across the incident, most recent first. Entries without a
           reliable timestamp (e.g. PSReadLine commands) are intentionally excluded.
         </p>
@@ -290,11 +290,11 @@ function buildColumns({ incidentId, flags, toggleFlag }) {
       label: 'Event',
       render: (row) => (
         <div className="min-w-0">
-          <p className="break-all text-sm text-slate-800 dark:text-slate-100">
-            {truncate(row.label, 90) || <span className="italic text-slate-400">(no label)</span>}
+          <p className="break-all text-sm text-fg">
+            {truncate(row.label, 90) || <span className="italic text-fg-muted">(no label)</span>}
           </p>
           {row.detail && (
-            <p className="truncate font-mono text-xs text-slate-500 dark:text-slate-400">
+            <p className="truncate font-mono text-xs text-fg-muted">
               {truncate(row.detail, 80)}
             </p>
           )}

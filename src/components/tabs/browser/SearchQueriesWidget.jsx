@@ -36,7 +36,7 @@ export default function SearchQueriesWidget({ history = [], engine }) {
   return (
     <Card title="Most frequent web searches" icon={Search}>
       {queries.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-fg-muted">
           No search queries found in URLs
         </p>
       ) : (
@@ -44,10 +44,10 @@ export default function SearchQueriesWidget({ history = [], engine }) {
           {queries.map(({ query, count, matches, severity }, index) => (
             <li key={query} className="flex items-center gap-2.5">
               {/* Ranking position */}
-              <span className="w-5 shrink-0 text-right text-xs font-semibold text-slate-400 dark:text-slate-500">
+              <span className="w-5 shrink-0 text-right text-xs font-semibold text-fg-muted">
                 {index + 1}.
               </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-700 dark:text-slate-300">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">
                 &ldquo;{query}&rdquo;
               </span>
               {severity && (

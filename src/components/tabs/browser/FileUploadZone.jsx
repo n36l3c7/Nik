@@ -121,11 +121,11 @@ export default function FileUploadZone({
         onDrop={handleDrop}
         className={[
           'relative flex min-h-[172px] cursor-pointer flex-col items-center justify-center gap-2',
-          'rounded-xl border-2 border-dashed p-4 text-center transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+          'border-2 border-dashed p-4 text-center transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
           isDragging
-            ? 'border-cyan-500 bg-cyan-500/5 dark:border-cyan-400 dark:bg-cyan-400/10'
-            : 'border-slate-300 bg-slate-50 hover:border-cyan-500/60 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:hover:border-cyan-400/60 dark:hover:bg-slate-800/60',
+            ? 'border-accent-strong bg-accent-soft'
+            : 'border-line bg-canvas hover:border-accent-strong hover:bg-canvas',
         ].join(' ')}
       >
         {/* Hidden file input */}
@@ -141,7 +141,7 @@ export default function FileUploadZone({
           /* ---- State: loading/parsing in progress ---- */
           <div aria-busy="true" className="flex flex-col items-center gap-2">
             <AsciiSkull preset="small" />
-            <p role="status" className="font-mono text-sm text-slate-500 dark:text-slate-400">Parsing…</p>
+            <p role="status" className="font-mono text-sm text-fg-muted">Parsing…</p>
           </div>
         ) : meta ? (
           /* ---- State: file imported, show metadata ---- */
@@ -155,14 +155,14 @@ export default function FileUploadZone({
                 event.stopPropagation()
                 onClear?.()
               }}
-              className="absolute right-2 top-2 rounded-md p-1 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-slate-500 dark:hover:text-red-400"
+              className="absolute right-2 top-2 p-1 text-fg-muted transition-colors hover:bg-high-soft hover:text-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <X className="h-4 w-4" />
             </button>
 
-            <FormatIcon className="h-7 w-7 text-cyan-600 dark:text-cyan-400" />
+            <FormatIcon className="h-7 w-7 text-accent" />
             <p
-              className="max-w-full truncate text-sm font-medium text-slate-800 dark:text-slate-200"
+              className="max-w-full truncate text-sm font-medium text-fg"
               title={meta.fileName}
             >
               {meta.fileName}
@@ -171,29 +171,29 @@ export default function FileUploadZone({
               <Badge color={FORMAT_COLORS[meta.format] ?? 'slate'}>
                 {String(meta.format).toUpperCase()}
               </Badge>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
+              <span className="text-xs text-fg-muted">
                 {Number(meta.rows ?? 0).toLocaleString('en-US')} rows
               </span>
             </div>
-            <p className="font-mono text-xs text-slate-500 dark:text-slate-400">
+            <p className="font-mono text-xs text-fg-muted">
               {formatDateTime(Date.parse(meta.importedAt))}
             </p>
           </div>
         ) : (
           /* ---- State: empty, drop invitation ---- */
           <div className="flex flex-col items-center gap-2">
-            <span className="rounded-lg bg-cyan-600/10 p-2 text-cyan-600 dark:bg-cyan-400/10 dark:text-cyan-400">
+            <span className="bg-accent-soft p-2 text-accent">
               {Icon ? <Icon className="h-6 w-6" /> : <Upload className="h-6 w-6" />}
             </span>
-            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{label}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
-            <p className="text-xs text-slate-400 dark:text-slate-500">
+            <p className="text-sm font-semibold text-fg">{label}</p>
+            <p className="text-xs text-fg-muted">{description}</p>
+            <p className="text-xs text-fg-muted">
               Drag a file here or click to select
             </p>
             {pathHint && (
               // Typical path of the file on disk (disappears once loaded)
               <p
-                className="mt-1 break-all rounded bg-slate-100 px-2 py-1 font-mono text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                className="mt-1 break-all bg-canvas px-2 py-1 font-mono text-[10px] text-fg-muted"
                 title={pathHint}
               >
                 {pathHint}
@@ -207,7 +207,7 @@ export default function FileUploadZone({
       {error && (
         <p
           role="alert"
-          className="flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400"
+          className="flex items-start gap-1.5 text-xs text-high"
         >
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{error}</span>

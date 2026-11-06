@@ -46,7 +46,7 @@ export default function NoteBlock({ note, onSave, onRemove }) {
   const wasEdited = note.updatedAt && note.updatedAt !== note.createdAt
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-500/20 dark:bg-amber-500/5">
+    <div className="border border-med-line bg-med-soft p-3">
       {editing ? (
         /* ---- Edit mode ---- */
         <div className="space-y-2">
@@ -55,7 +55,7 @@ export default function NoteBlock({ note, onSave, onRemove }) {
             onChange={(e) => setDraft(e.target.value)}
             rows={3}
             autoFocus
-            className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+            className="w-full resize-y border border-line bg-panel px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             placeholder="Note text…"
           />
           <div className="flex items-center justify-end gap-2">
@@ -70,11 +70,11 @@ export default function NoteBlock({ note, onSave, onRemove }) {
       ) : (
         /* ---- View mode ---- */
         <div className="group/note">
-          <p className="whitespace-pre-wrap break-words text-sm text-slate-700 dark:text-slate-200">
+          <p className="whitespace-pre-wrap break-words text-sm text-fg">
             {note.text}
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <span className="min-w-0 truncate text-xs text-slate-500 dark:text-slate-400">
+            <span className="min-w-0 truncate text-xs text-fg-muted">
               {note.author || 'unknown'} · {formatDateTime(Date.parse(note.createdAt))}
               {wasEdited && ' · edited'}
             </span>
@@ -84,7 +84,7 @@ export default function NoteBlock({ note, onSave, onRemove }) {
                 type="button"
                 onClick={startEdit}
                 aria-label="Edit note"
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                className="p-1 text-fg-muted hover:bg-canvas hover:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
@@ -92,7 +92,7 @@ export default function NoteBlock({ note, onSave, onRemove }) {
                 type="button"
                 onClick={onRemove}
                 aria-label="Remove note"
-                className="rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                className="p-1 text-fg-muted hover:bg-high-soft hover:text-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

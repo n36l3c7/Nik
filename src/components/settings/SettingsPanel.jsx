@@ -60,20 +60,20 @@ export default function SettingsPanel({ open, onClose, section = 'detection', on
       role="dialog"
       aria-modal="true"
       aria-label="Settings"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-panel p-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.()
       }}
     >
-      <div className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden border border-line bg-panel shadow-2xl">
         {/* Header */}
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5 dark:border-slate-800">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Settings</h2>
+        <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+          <h2 className="text-sm font-semibold text-fg">Settings</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+            className="p-1 text-fg-muted transition-colors hover:bg-canvas hover:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -83,7 +83,7 @@ export default function SettingsPanel({ open, onClose, section = 'detection', on
         <div className="flex min-h-0 flex-1">
           <nav
             aria-label="Settings sections"
-            className="w-48 shrink-0 space-y-1 overflow-y-auto border-r border-slate-200 p-3 dark:border-slate-800"
+            className="w-48 shrink-0 space-y-1 overflow-y-auto border-r border-line p-3"
           >
             {visibleSections.map((s) => {
               const Icon = s.icon
@@ -95,11 +95,11 @@ export default function SettingsPanel({ open, onClose, section = 'detection', on
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => onSectionChange?.(s.id)}
                   className={[
-                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
+                    'flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                     isActive
-                      ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300'
-                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/60',
+                      ? 'bg-accent-soft text-accent'
+                      : 'text-fg-muted hover:bg-canvas',
                   ].join(' ')}
                 >
                   <Icon className="h-4 w-4 shrink-0" />

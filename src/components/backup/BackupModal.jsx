@@ -119,7 +119,7 @@ export default function BackupModal({ open, onClose }) {
         {error && (
           <p
             role="alert"
-            className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-400"
+            className="flex items-start gap-2 border border-high-line bg-high-soft px-3 py-2 text-sm text-high"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             {error}
@@ -130,7 +130,7 @@ export default function BackupModal({ open, onClose }) {
           <>
             {/* ----- Export ----- */}
             <div className="space-y-2">
-              <p className="text-sm text-slate-700 dark:text-slate-300">
+              <p className="text-sm text-fg">
                 Download a single JSON file with <strong>everything</strong>{' '}
                 stored on the server: incidents (imported artifacts, flags and
                 notes included), user accounts, the audit log and the detection
@@ -145,17 +145,17 @@ export default function BackupModal({ open, onClose }) {
                 {busy && <MicroSkull className="mr-2" />}
                 {busy ? 'Preparing backup…' : 'Export full backup'}
               </Button>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-fg-muted">
                 The file contains password hashes: store it like any database
                 dump.
               </p>
             </div>
 
-            <div className="border-t border-slate-200 dark:border-slate-800" />
+            <div className="border-t border-line" />
 
             {/* ----- Restore ----- */}
             <div className="space-y-2">
-              <p className="text-sm text-slate-700 dark:text-slate-300">
+              <p className="text-sm text-fg">
                 Restore a backup file. You will be asked to confirm before
                 anything is touched.
               </p>
@@ -180,9 +180,9 @@ export default function BackupModal({ open, onClose }) {
         ) : (
           /* ----- Confirmation step ----- */
           <div className="space-y-3">
-            <p className="text-sm text-slate-700 dark:text-slate-300">
+            <p className="text-sm text-fg">
               Restore{' '}
-              <strong className="text-slate-900 dark:text-white">
+              <strong className="text-fg">
                 «{pending.fileName}»
               </strong>
               ? The file contains:
@@ -197,7 +197,7 @@ export default function BackupModal({ open, onClose }) {
                 </Badge>
               )}
             </div>
-            <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-400">
+            <p className="flex items-start gap-2 border border-high-line bg-high-soft px-3 py-2 text-sm text-high">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               This replaces <strong>all</strong> current data on the server —
               every incident, user account, audit entry and setting. Export a

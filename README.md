@@ -42,7 +42,8 @@ every action attributed to a named analyst and recorded in a global audit log.
   access and removable devices, imported from DFIR tool CSV/JSON exports with
   OS-specific guidance on where to find each source.
 - **Super-timeline** — every timestamped event across all tabs merged into one
-  chronological, filterable view.
+  chronological, filterable view, plus a collapsible `tail -f` side panel with
+  the latest events on every tab.
 - **SOC detection engine** — editable suspicious-keyword rules plus built-in
   command and endpoint rulesets, and a configurable business-hours window,
   highlight suspicious events automatically.
@@ -769,6 +770,7 @@ change.
     │                               #   base + scrollbar
     ├── assets/fonts/               # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
     ├── App.jsx                     # Shell + auth gate: Sidebar | Header + TabBar + tab content
+    │                               #   + TailPanel
     │
     ├── config/                     # ★ DECLARATIVE EXTENSION POINTS ★
     │   ├── tabs.js                 # ANALYSIS_TABS registry: the ONLY file to touch
@@ -825,7 +827,8 @@ change.
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
         │                           #   hours, accounts, API keys, audit log)
-        ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState
+        ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
+        │                           #   TailPanel (tail -f of the timeline)
         └── tabs/
             ├── NetworkLogsTab.jsx      # Placeholder, ready for expansion
             ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
@@ -1423,8 +1426,9 @@ Button({ variant = 'primary' | 'secondary' | 'ghost' | 'danger',
 Card({ title?, icon: LucideIcon?, actions? /* node right of the title */,
        children, className = '', bodyClassName = '' })
 
-Badge({ color = 'slate' | 'cyan' | 'red' | 'amber' | 'emerald',
+Badge({ color = 'slate' | 'cyan' | 'red' | 'amber' | 'emerald' | 'violet',
         children, title?, className = '' })
+  // slate = neutral, cyan = info, red = HIGH, amber = MED, emerald = ok/accent
 
 Modal({ open, onClose, title, children, footer?, maxWidth = 'max-w-lg' })
   // blurred backdrop; closes on Escape and on backdrop click
@@ -1488,9 +1492,17 @@ Tailwind turns each token into utilities (`bg-panel`, `text-fg-muted`,
 - Severities differ in lightness as well as hue, so they stay readable for
   colour-blind analysts.
 
-The analysis tabs still use the previous `slate`/`cyan` classes with `dark:`
-variants (the `<html>` element always carries `.dark`); they move to the
-tokens in the next release.
+- Flagged rows use the accent (`bg-accent-soft border-l-accent-strong`),
+  SOC rows their severity (`bg-high-soft border-l-high-line`, `med` alike), so
+  an analyst's flag never looks like a detection.
+
+**`tail -f` panel.** `TailPanel` (in `components/layout/`) lists the latest
+60 timestamped events of the open incident — oldest first, newest at the
+bottom, kept scrolled to the end — with the source, severity (`!!` HIGH, `!`
+MED) and flags. It is toggled from the tab bar and remembered per tab (open on
+Summary by default); it needs a wide screen (`lg`) and is unmounted when
+closed, so it costs nothing then. Its lines come from `tailLines()` in
+`utils/timeline.js`, over the same `buildTimelineEvents()` as the Timeline tab.
 
 ---
 

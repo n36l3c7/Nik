@@ -21,7 +21,7 @@ export default function TopDomainsWidget({ history = [] }) {
   return (
     <Card title="Top 5 visited domains" icon={TrendingUp}>
       {domains.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-fg-muted">
           No domains to show
         </p>
       ) : (
@@ -29,17 +29,17 @@ export default function TopDomainsWidget({ history = [] }) {
           {domains.map(({ domain, count }) => (
             <li key={domain}>
               <div className="mb-1 flex items-baseline justify-between gap-3">
-                <span className="truncate font-mono text-xs text-slate-700 dark:text-slate-300">
+                <span className="truncate font-mono text-xs text-fg">
                   {domain}
                 </span>
-                <span className="shrink-0 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <span className="shrink-0 text-xs font-medium text-fg-muted">
                   {count} {count === 1 ? 'visit' : 'visits'}
                 </span>
               </div>
               {/* Proportional bar (min 4% so it stays visible) */}
-              <div className="h-2 w-full overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+              <div className="h-2 w-full overflow-hidden bg-canvas">
                 <div
-                  className="h-full rounded bg-cyan-500/70 transition-all duration-500"
+                  className="h-full bg-accent transition-all duration-500"
                   style={{ width: `${Math.max((count / maxCount) * 100, 4)}%` }}
                 />
               </div>

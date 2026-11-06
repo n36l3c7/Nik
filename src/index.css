@@ -55,12 +55,6 @@
   --color-violet-soft: #271c3d;
 }
 
-/*
- * The `dark:` variant still exists for the analysis tabs, which move to the
- * tokens in the next release; the <html> element always carries `.dark`.
- */
-@custom-variant dark (&:where(.dark, .dark *));
-
 /* ---- Fonts (bundled; OFL-1.1, licence files next to them) ---- */
 @font-face {
   font-family: 'Inter';

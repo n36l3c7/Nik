@@ -17,7 +17,7 @@ export const OS_LIST = [
     id: 'windows',
     label: 'Windows',
     icon: LayoutGrid,
-    accent: 'text-sky-500',
+    accent: 'text-info',
   },
   {
     id: 'macos',
@@ -29,7 +29,7 @@ export const OS_LIST = [
     id: 'linux',
     label: 'Linux',
     icon: Terminal,
-    accent: 'text-amber-500',
+    accent: 'text-med',
   },
 ]
 

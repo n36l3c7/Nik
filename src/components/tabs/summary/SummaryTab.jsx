@@ -58,12 +58,12 @@ function localInputToMs(value) {
 
 // Shared class strings for the editable form fields.
 const INPUT_CLASS =
-  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 ' +
-  'placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ' +
-  'dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500'
+  'w-full border border-line bg-panel px-3 py-2 text-sm text-fg ' +
+  'placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+  ''
 
 // datetime-local additionally needs its native picker to follow the theme.
-const DATETIME_CLASS = `${INPUT_CLASS} [color-scheme:light] dark:[color-scheme:dark]`
+const DATETIME_CLASS = `${INPUT_CLASS} [color-scheme:light]`
 
 export default function SummaryTab({ incident }) {
   const { updateIncidentMeta } = useIncidents()
@@ -157,7 +157,7 @@ export default function SummaryTab({ incident }) {
           </Field>
 
           <div className="sm:col-span-2">
-            <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+            <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
               <MonitorCog className="h-3.5 w-3.5" aria-hidden="true" />
               Host operating system
             </span>
@@ -186,24 +186,24 @@ export default function SummaryTab({ incident }) {
         </div>
 
         {/* Derived display name preview */}
-        <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mt-4 text-xs text-fg-muted">
           Display name:{' '}
-          <span className="font-medium text-slate-700 dark:text-slate-200">{namePreview}</span>
+          <span className="font-medium text-fg">{namePreview}</span>
         </p>
 
         {/* Inverted-window warning */}
         {invertedRange && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-med">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             The end of the suspicious window is earlier than its start.
           </p>
         )}
 
         {/* Footer: provenance + save */}
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <span className="text-xs text-fg-muted">
             Created by{' '}
-            <span className="font-medium text-slate-600 dark:text-slate-300">
+            <span className="font-medium text-fg-muted">
               {incident.createdBy || 'unknown'}
             </span>{' '}
             on {formatDateTime(Date.parse(incident.createdAt))}
@@ -215,7 +215,7 @@ export default function SummaryTab({ incident }) {
       </Card>
 
       {/* ---- 2. Recap StatCards ---- */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 2xl:grid-cols-6">
         <StatCard icon={Activity} label="Browser events" value={recap.events} />
         <StatCard icon={Terminal} label="Commands" value={recap.commands} />
         <StatCard icon={HardDrive} label="Endpoint artifacts" value={recap.artifacts} />
@@ -246,7 +246,7 @@ function Field({ id, label, icon: Icon, children }) {
     <div>
       <label
         htmlFor={id}
-        className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400"
+        className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted"
       >
         {Icon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
         {label}

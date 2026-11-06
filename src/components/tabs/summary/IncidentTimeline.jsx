@@ -64,10 +64,10 @@ export default function IncidentTimeline({ incident }) {
   return (
     <div className="space-y-5">
       {/* ---- Composer: add a free note block ---- */}
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className="border border-line bg-canvas p-3">
         <label
           htmlFor="timeline-note"
-          className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400"
+          className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted"
         >
           <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
           Add a note
@@ -78,7 +78,7 @@ export default function IncidentTimeline({ incident }) {
           onChange={(e) => setNoteDraft(e.target.value)}
           rows={2}
           placeholder="Add a note to the incident timeline…"
-          className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+          className="w-full resize-y border border-line bg-panel px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         <div className="mt-2 flex justify-end">
           <Button size="sm" icon={Plus} onClick={handleAddNote} disabled={!noteDraft.trim()}>
@@ -89,11 +89,11 @@ export default function IncidentTimeline({ incident }) {
 
       {/* ---- Timeline / empty state ---- */}
       {isEmpty ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 px-6 py-10 text-center dark:border-slate-700">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
-            <ListTree className="h-6 w-6 text-slate-400 dark:text-slate-500" aria-hidden="true" />
+        <div className="flex flex-col items-center gap-2 border border-dashed border-line px-6 py-10 text-center">
+          <div className="flex h-12 w-12 items-center justify-center bg-canvas">
+            <ListTree className="h-6 w-6 text-fg-muted" aria-hidden="true" />
           </div>
-          <p className="max-w-md text-sm text-slate-500 dark:text-slate-400">
+          <p className="max-w-md text-sm text-fg-muted">
             No flagged entries or notes yet. Flag entries in the Browser Forensics tab to build
             the incident timeline.
           </p>
@@ -103,7 +103,7 @@ export default function IncidentTimeline({ incident }) {
           {/* Vertical rail passing through the centre of every dot. */}
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute bottom-2 left-[11px] top-2 w-px bg-slate-200 dark:bg-slate-800"
+            className="pointer-events-none absolute bottom-2 left-[11px] top-2 w-px bg-raised"
           />
           <ol className="space-y-5">
             {items.map((item) =>
@@ -140,8 +140,8 @@ export default function IncidentTimeline({ incident }) {
 
 // Dot colour per item kind (icon box on the rail). Every colour has a dark pair.
 const DOT_TONES = {
-  flag: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400',
-  note: 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
+  flag: 'bg-accent-soft text-accent',
+  note: 'bg-med-soft text-med',
 }
 
 function TimelineRow({ icon: Icon, tone, children }) {
@@ -149,7 +149,7 @@ function TimelineRow({ icon: Icon, tone, children }) {
     <li className="relative pl-9">
       {/* The ring matches the Card body background so the rail visually breaks. */}
       <span
-        className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white dark:ring-slate-900 ${
+        className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white ${
           DOT_TONES[tone] ?? DOT_TONES.note
         }`}
       >
@@ -177,25 +177,25 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
 
   return (
     <TimelineRow icon={Flag} tone="flag">
-      <div className="rounded-lg border border-slate-200 border-l-2 border-l-cyan-500 bg-cyan-500/5 p-3 dark:border-slate-800 dark:border-l-cyan-500 dark:bg-cyan-500/10">
+      <div className="border border-line border-l-2 border-l-accent-strong bg-accent-soft p-3">
         {/* Header: event type icon + title */}
         <div className="flex items-start gap-2">
           <EventTypeIcon type={flag.eventType} />
-          <span className="min-w-0 flex-1 break-words text-sm font-medium text-slate-800 dark:text-slate-100">
+          <span className="min-w-0 flex-1 break-words text-sm font-medium text-fg">
             {flag.title || flag.url || flag.key}
           </span>
         </div>
 
         {/* URL (mono, truncated) */}
         {flag.url && (
-          <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400" title={flag.url}>
+          <p className="mt-1 truncate font-mono text-xs text-fg-muted" title={flag.url}>
             {truncate(flag.url, 90)}
           </p>
         )}
 
         {/* Meta: time + browser + section badges */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+          <span className="font-mono text-xs text-fg-muted">
             {formatDateTime(flag.time)}
           </span>
           {flag.browserId && <Badge color="cyan">{flag.browserId}</Badge>}
@@ -209,17 +209,17 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
 
         {/* Existing comments */}
         {comments.length > 0 && (
-          <ul className="mt-3 space-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+          <ul className="mt-3 space-y-2 border-t border-line pt-3">
             {comments.map((c) => (
               <li key={c.id} className="group/comment flex items-start gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    <span className="font-medium text-slate-600 dark:text-slate-300">
+                  <div className="text-xs text-fg-muted">
+                    <span className="font-medium text-fg-muted">
                       {c.author || 'unknown'}
                     </span>{' '}
                     · {formatRelative(c.at)}
                   </div>
-                  <p className="whitespace-pre-wrap break-words text-sm text-slate-700 dark:text-slate-200">
+                  <p className="whitespace-pre-wrap break-words text-sm text-fg">
                     {c.text}
                   </p>
                 </div>
@@ -227,7 +227,7 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
                   type="button"
                   onClick={() => onRemoveComment(c.id)}
                   aria-label="Remove comment"
-                  className="shrink-0 rounded-md p-1 text-slate-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 group-hover/comment:opacity-100 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                  className="shrink-0 p-1 text-fg-muted opacity-0 transition-opacity hover:bg-high-soft hover:text-high focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover/comment:opacity-100"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -249,7 +249,7 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
               }
             }}
             placeholder="Add a comment…"
-            className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+            className="min-w-0 flex-1 border border-line bg-panel px-3 py-1.5 text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
           <Button variant="secondary" size="sm" icon={Plus} onClick={submit} disabled={!comment.trim()}>
             Comment
