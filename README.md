@@ -911,7 +911,8 @@ file itself to the server, because the sample *is* the evidence under study
     │
     └── components/
         ├── ui/                     # Reusable UI kit (Button, Card, Badge, Modal, DataTable,
-        │                           #   EmptyState, SearchInput, Select, StatCard, AsciiSkull)
+        │                           #   EmptyState, SearchInput, Select, StatCard, AsciiSkull,
+        │                           #   ErrorBoundary)
         ├── auth/                   # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
@@ -1583,9 +1584,15 @@ All components live in `src/components/ui/` with a default export, re-exported
 from the barrel `src/components/ui/index.js`:
 
 ```js
-import { Button, Card, Badge, Modal, DataTable, EmptyState,
+import { Button, Card, Badge, Modal, DataTable, EmptyState, ErrorBoundary,
          SearchInput, Select, StatCard, AsciiSkull, MicroSkull } from '../ui/index.js'
 ```
+
+**ErrorBoundary** — keeps a rendering error inside the view that threw it.
+`App` wraps the active analysis tab in one, and the Code view wraps its graph
+and pseudo-C panels: the broken view shows the error and a *Reload this view*
+button while the rest of Nik keeps working. Pass a `resetKey` (e.g. tab and
+incident) so that moving elsewhere clears the error. New tabs get it for free.
 
 **DataTable** — the workhorse for every tabular view (events, bookmarks,
 shortcuts, the audit log and any future tab). Memoized internal pipeline:

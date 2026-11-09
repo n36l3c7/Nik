@@ -174,6 +174,14 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
     await expect(page.locator('pre', { hasText: 'fcn.0040100f(void)' })).toContainText('return 0;', {
       timeout: 60_000,
     })
+    // Switching functions with a graph open: the new graph (no calls) must not be
+    // drawn with the previous function's layout (one edge) while ELK recomputes.
+    await page.getByRole('tab', { name: 'Call graph' }).click()
+    const rows = page.locator('tbody tr')
+    for (const name of ['entry0', 'fcn.0040100f', 'entry0', 'fcn.0040100f']) {
+      await rows.filter({ hasText: name }).first().click()
+      await expect(page.locator(`svg[aria-label^="Calls from ${name}"]`)).toBeVisible({ timeout: 30_000 })
+    }
   } else {
     await expect(page.getByText('The analyzer worker is not configured.')).toBeVisible()
   }

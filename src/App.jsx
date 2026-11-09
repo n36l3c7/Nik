@@ -3,7 +3,7 @@ import { AlertTriangle, Plus, RefreshCw } from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
 import { ANALYSIS_TABS, getTabById } from './config/tabs.js'
-import { AsciiSkull, Button, EmptyState, MicroSkull, Modal } from './components/ui/index.js'
+import { AsciiSkull, Button, EmptyState, ErrorBoundary, MicroSkull, Modal } from './components/ui/index.js'
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
@@ -249,7 +249,9 @@ export default function App() {
                   </div>
                 }
               >
-                <ActiveTabComponent incident={activeIncident} />
+                <ErrorBoundary resetKey={`${activeTabId}:${activeIncident.id}`}>
+                  <ActiveTabComponent incident={activeIncident} />
+                </ErrorBoundary>
               </Suspense>
             ) : activeLoading ? (
               <IncidentLoadingState name={activeSummary.name} />

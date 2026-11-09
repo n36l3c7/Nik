@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-11-09
+
+### Fixed
+
+- Switching functions in the Code view with the call graph or the
+  control-flow graph open could blank the whole application ("can't access
+  property 'hot'"): the new graph was drawn for a moment with the previous
+  function's layout. A layout is now used only for the graph it was computed
+  for, and edges are matched by id.
+
+### Added
+
+- A rendering error in one view no longer takes the whole application down:
+  each analysis tab, and each panel of the Code view, shows what went wrong
+  with a button to reload it, while the rest of Nik keeps working.
+
 ## [2.8.0] - 2026-11-09
 
 ### Added
@@ -337,7 +353,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.8.1...HEAD
+[2.8.1]: https://github.com/n36l3c7/Nik/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/n36l3c7/Nik/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/n36l3c7/Nik/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/n36l3c7/Nik/compare/v2.5.0...v2.6.0
