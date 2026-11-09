@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { analyzeFunctions, callGraph, cfgGraph, displayName, hex, nodeSize } from './code.js'
+import { analyzeFunctions, callGraph, cfgGraph, decompiledLines, displayName, hex, nodeSize } from './code.js'
 import { createSocEngine } from './soc.js'
 import { DEFAULT_MALWARE_KEYWORDS } from '../config/detectionRules.js'
 
@@ -105,6 +105,47 @@ test('the CFG has typed edges, loops and hot blocks', () => {
   assert.deepEqual(
     graph.nodes.map((n) => n.hot),
     [false, true, false],
+  )
+})
+
+test('pseudo-C becomes lines of styled segments with call targets', () => {
+  const code = 'void entry0(void)\n{\n    fcn.0040100f();\n    return;\n}'
+  const spans = [
+    [0, 4, 't'],
+    [5, 11, 'f', 0x401000],
+    [12, 16, 'k'],
+    [24, 36, 'f', 0x40100f],
+    [44, 50, 'k'],
+  ]
+  const lines = decompiledLines(code, spans)
+  assert.equal(lines.length, 5)
+  assert.deepEqual(lines[0], [
+    { text: 'void', kind: 't', target: null },
+    { text: ' ', kind: null, target: null },
+    { text: 'entry0', kind: 'f', target: 0x401000 },
+    { text: '(', kind: null, target: null },
+    { text: 'void', kind: 'k', target: null },
+    { text: ')', kind: null, target: null },
+  ])
+  assert.deepEqual(lines[2][1], { text: 'fcn.0040100f', kind: 'f', target: 0x40100f })
+  assert.equal(lines.map((segments) => segments.map((s) => s.text).join('')).join('\n'), code)
+  // A span over a line break is split; broken or overlapping spans are ignored.
+  assert.deepEqual(decompiledLines('a\nb', [[0, 3, 'c']]), [
+    [{ text: 'a', kind: 'c', target: null }],
+    [{ text: 'b', kind: 'c', target: null }],
+  ])
+  assert.deepEqual(
+    decompiledLines('abc', [
+      [0, 2, 'k'],
+      [1, 3, 't'],
+      [2, 9, 'n'],
+    ]),
+    [
+      [
+        { text: 'ab', kind: 'k', target: null },
+        { text: 'c', kind: null, target: null },
+      ],
+    ],
   )
 })
 

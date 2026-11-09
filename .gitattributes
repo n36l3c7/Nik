@@ -1,3 +1,8 @@
+# Text files are stored and checked out with LF on every platform, whatever
+# core.autocrlf says: Prettier and Ruff expect LF, and CRLF checkouts on
+# Windows would make every file look unformatted.
+* text=auto eol=lf
+
 # Shell scripts run inside Linux containers: keep LF even on Windows checkouts,
 # or /bin/sh chokes on the CR characters.
 *.sh text eol=lf

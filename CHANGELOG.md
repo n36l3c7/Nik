@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-09
+
+### Added
+
+- **Decompiled** panel in the Code view: the pseudo-C of the selected
+  function from rz-ghidra (Ghidra's decompiler, shipped as a rizin plugin in
+  the official image the analyzer worker already uses), with the decompiler's
+  highlighting, line numbers, a copy button, links from each call to the
+  called function, and calls to suspicious APIs in red.
+- The analysis decompiles functions up front within
+  `ANALYZER_DECOMPILE_SECONDS` (default 300; entry point and `main` first,
+  then the smallest); the others are decompiled the first time they are
+  opened and kept. A function that takes over 30 s is skipped.
+- REST API: `GET /api/samples/{sha256}/code/functions/{addr}/decompiled`.
+  Worker: `POST /decompile`. Alembic migration `0007_sample_code_decompiled`.
+
+### Changed
+
+- The CFGs and the pseudo-C of a sample are loaded only when one function is
+  asked for, not with the function list.
+- Line endings are LF in every checkout (`.gitattributes`), so formatting
+  checks pass on Windows too.
+
+### Fixed
+
+- The analyzer worker survives rizin crashes: rizin 0.9 can segfault after
+  thousands of commands in one session (seen on a 5 MB binary), which used to
+  lose the whole analysis. The worker now reopens the sample, retries the
+  function once and skips it if it crashes again, up to three restarts.
+- A function without basic blocks no longer leaves the Control flow panel
+  waiting forever.
+
 ## [2.7.0] - 2026-11-09
 
 ### Added
@@ -305,7 +337,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/n36l3c7/Nik/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/n36l3c7/Nik/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/n36l3c7/Nik/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/n36l3c7/Nik/compare/v2.4.0...v2.5.0

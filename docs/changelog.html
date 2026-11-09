@@ -32,6 +32,22 @@
       </p>
 
       <section class="release">
+        <h3>2.8.0 <span class="date">2026-11-09</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Decompiled</strong> panel in the Code view: the pseudo-C of
+            each function from Ghidra's decompiler (rz-ghidra, already in the analyzer image), with highlighting, links
+            from calls to the called functions and suspicious APIs in red. Functions are decompiled up front within a
+            time budget and the rest on first open.
+          </li>
+          <li>
+            <span class="tag fixed">fixed</span> The analyzer worker survives rizin crashes on large binaries instead of
+            losing the whole analysis.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.7.0 <span class="date">2026-11-09</span></h3>
         <ul>
           <li>

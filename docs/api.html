@@ -156,6 +156,13 @@
               <td>Control-flow graph of one function: basic blocks, instructions, jump / fail successors.</td>
             </tr>
             <tr>
+              <td><code>GET /api/samples/{sha256}/code/functions/{addr}/decompiled</code></td>
+              <td>
+                Pseudo-C of one function (rz-ghidra) with highlight spans and call targets: stored by the analysis, or
+                decompiled on first request and kept.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET/POST/PUT/DELETE /api/yara-rules</code> · <code>POST …/validate</code></td>
               <td>
                 Admin-managed YARA rule sets, compiled with the built-in ones (<strong>admin</strong> to change; any

@@ -288,6 +288,46 @@ def get_function_cfg(
     return {"addr": addr, **cfg}
 
 
+@router.get("/samples/{sha256}/code/functions/{addr}/decompiled")
+def get_function_decompiled(
+    sha256: str,
+    addr: int,
+    _caller: Principal = Depends(principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Pseudo-C of one function (rz-ghidra): stored by the analysis, or decompiled now and kept.
+
+    The analysis decompiles functions up front within a time budget; the
+    others are decompiled on first request, which reopens the sample in the
+    worker and can take a while on large binaries.
+    """
+    row = db.get(SampleCode, sha256)
+    if row is None or row.status != "done":
+        raise HTTPException(status_code=404, detail="No disassembly for this sample")
+    known = {fn.get("addr"): fn for fn in (row.summary or {}).get("functions", [])}
+    if addr not in known or known[addr].get("kind") == "import":
+        raise HTTPException(status_code=404, detail="No function of this sample starts at this address")
+    engine = (row.summary or {}).get("decompile", {}).get("engine", "rz-ghidra")
+    stored = (row.decompiled or {}).get(str(addr))
+    if stored is not None:
+        return {"addr": addr, "engine": engine, "source": "analysis", **stored}
+    if not analyzer.configured():
+        raise HTTPException(status_code=503, detail="The analyzer worker is not configured (ANALYZER_URL).")
+    try:
+        result = analyzer.request_decompile(sha256, addr)
+    except analyzer.AnalyzerError as exc:
+        raise HTTPException(status_code=502, detail=f"The decompiler failed: {exc}") from exc
+    code = {
+        "code": result.get("code", ""),
+        "spans": result.get("spans", []),
+        "truncated": bool(result.get("truncated")),
+    }
+    row.decompiled = {**(row.decompiled or {}), str(addr): code}
+    flag_modified(row, "decompiled")
+    db.commit()
+    return {"addr": addr, "engine": result.get("engine", engine), "source": "on-demand", **code}
+
+
 @router.get("/samples/{sha256}")
 def get_sample(
     sha256: str,

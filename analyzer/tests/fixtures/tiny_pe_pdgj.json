@@ -1,0 +1,285 @@
+{
+  "4198400": {
+    "code": "\nvoid entry0(void)\n{\n    int32_t in_EAX;\n    \n    // [00] -r-x section size 4096 named .text\n    if (in_EAX != 0) {\n        fcn.0040100f();\n    }\n    return;\n}\n",
+    "annotations": [
+      {
+        "start": 1,
+        "end": 5,
+        "type": "syntax_highlight",
+        "syntax_highlight": "datatype"
+      },
+      {
+        "start": 6,
+        "end": 12,
+        "type": "function_name",
+        "name": "entry0",
+        "offset": 4198400
+      },
+      {
+        "start": 6,
+        "end": 12,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 6,
+        "end": 12,
+        "type": "syntax_highlight",
+        "syntax_highlight": "function_name"
+      },
+      {
+        "start": 13,
+        "end": 17,
+        "type": "syntax_highlight",
+        "syntax_highlight": "keyword"
+      },
+      {
+        "start": 25,
+        "end": 32,
+        "type": "syntax_highlight",
+        "syntax_highlight": "datatype"
+      },
+      {
+        "start": 33,
+        "end": 39,
+        "type": "local_variable",
+        "name": "in_EAX"
+      },
+      {
+        "start": 33,
+        "end": 39,
+        "type": "syntax_highlight",
+        "syntax_highlight": "local_variable"
+      },
+      {
+        "start": 50,
+        "end": 53,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 50,
+        "end": 53,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 53,
+        "end": 57,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 53,
+        "end": 57,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 58,
+        "end": 62,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 58,
+        "end": 62,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 63,
+        "end": 70,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 63,
+        "end": 70,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 71,
+        "end": 75,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 71,
+        "end": 75,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 76,
+        "end": 80,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 76,
+        "end": 80,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 81,
+        "end": 86,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 81,
+        "end": 86,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 87,
+        "end": 92,
+        "type": "offset",
+        "offset": 4198400
+      },
+      {
+        "start": 87,
+        "end": 92,
+        "type": "syntax_highlight",
+        "syntax_highlight": "comment"
+      },
+      {
+        "start": 97,
+        "end": 99,
+        "type": "offset",
+        "offset": 4198405
+      },
+      {
+        "start": 97,
+        "end": 99,
+        "type": "syntax_highlight",
+        "syntax_highlight": "keyword"
+      },
+      {
+        "start": 101,
+        "end": 107,
+        "type": "local_variable",
+        "name": "in_EAX"
+      },
+      {
+        "start": 101,
+        "end": 107,
+        "type": "syntax_highlight",
+        "syntax_highlight": "local_variable"
+      },
+      {
+        "start": 108,
+        "end": 110,
+        "type": "offset",
+        "offset": 4198403
+      },
+      {
+        "start": 111,
+        "end": 112,
+        "type": "syntax_highlight",
+        "syntax_highlight": "constant_variable"
+      },
+      {
+        "start": 124,
+        "end": 136,
+        "type": "function_name",
+        "name": "fcn.0040100f",
+        "offset": 4198415
+      },
+      {
+        "start": 124,
+        "end": 136,
+        "type": "syntax_highlight",
+        "syntax_highlight": "function_name"
+      },
+      {
+        "start": 124,
+        "end": 138,
+        "type": "offset",
+        "offset": 4198407
+      },
+      {
+        "start": 150,
+        "end": 156,
+        "type": "offset",
+        "offset": 4198413
+      },
+      {
+        "start": 150,
+        "end": 156,
+        "type": "syntax_highlight",
+        "syntax_highlight": "keyword"
+      },
+      {
+        "start": 150,
+        "end": 156,
+        "type": "offset",
+        "offset": 4198413
+      }
+    ]
+  },
+  "4198415": {
+    "code": "\nundefined4 fcn.0040100f(void)\n{\n    return 0;\n}\n",
+    "annotations": [
+      {
+        "start": 1,
+        "end": 11,
+        "type": "syntax_highlight",
+        "syntax_highlight": "datatype"
+      },
+      {
+        "start": 12,
+        "end": 24,
+        "type": "function_name",
+        "name": "fcn.0040100f",
+        "offset": 4198415
+      },
+      {
+        "start": 12,
+        "end": 24,
+        "type": "offset",
+        "offset": 4198415
+      },
+      {
+        "start": 12,
+        "end": 24,
+        "type": "syntax_highlight",
+        "syntax_highlight": "function_name"
+      },
+      {
+        "start": 25,
+        "end": 29,
+        "type": "syntax_highlight",
+        "syntax_highlight": "keyword"
+      },
+      {
+        "start": 37,
+        "end": 43,
+        "type": "offset",
+        "offset": 4198417
+      },
+      {
+        "start": 37,
+        "end": 43,
+        "type": "syntax_highlight",
+        "syntax_highlight": "keyword"
+      },
+      {
+        "start": 44,
+        "end": 45,
+        "type": "syntax_highlight",
+        "syntax_highlight": "constant_variable"
+      },
+      {
+        "start": 37,
+        "end": 45,
+        "type": "offset",
+        "offset": 4198417
+      }
+    ]
+  }
+}

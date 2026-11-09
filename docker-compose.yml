@@ -62,6 +62,7 @@ services:
     environment:
       ANALYZER_TOKEN: ${ANALYZER_TOKEN:-please-change-this-analyzer-token}
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
+      ANALYZER_DECOMPILE_SECONDS: ${ANALYZER_DECOMPILE_SECONDS:-300}
       ANALYZER_MAX_JOBS: ${ANALYZER_MAX_JOBS:-2}
     volumes:
       - sample-store:/samples:ro

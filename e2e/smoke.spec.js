@@ -164,6 +164,16 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
     await expect(cfg).toBeVisible({ timeout: 30_000 })
     await expect(cfg).toContainText('push')
     await expect(cfg.locator('g.cursor-pointer')).toHaveCount(3) // three basic blocks
+    // Pseudo-C from rz-ghidra, decompiled by the analysis; the call to the helper is a
+    // link that opens the helper's own pseudo-C.
+    await page.getByRole('tab', { name: 'Decompiled' }).click()
+    const code = page.locator('pre', { hasText: 'entry0' })
+    await expect(code).toContainText('void entry0(void)', { timeout: 30_000 })
+    await expect(page.getByText('from the analysis')).toBeVisible()
+    await code.getByRole('button', { name: 'fcn.0040100f' }).click()
+    await expect(page.locator('pre', { hasText: 'fcn.0040100f(void)' })).toContainText('return 0;', {
+      timeout: 60_000,
+    })
   } else {
     await expect(page.getByText('The analyzer worker is not configured.')).toBeVisible()
   }

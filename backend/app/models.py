@@ -103,9 +103,11 @@ class SampleCode(Base):
     """Disassembly of a sample by the analyzer worker (rizin): one row per sample.
 
     ``status`` is queued → running → done | error. ``summary`` holds the
-    engine, binary info and the function list with their calls; ``cfgs`` maps
-    each function address (as a string) to its control-flow graph, fetched
-    one function at a time by the UI.
+    engine, binary info, the function list with their calls and the
+    decompilation stats; ``cfgs`` and ``decompiled`` map each function address
+    (as a string) to its control-flow graph and its pseudo-C, fetched one
+    function at a time by the UI. Both are deferred: reading the summary never
+    loads them.
     """
 
     __tablename__ = "sample_code"
@@ -117,7 +119,8 @@ class SampleCode(Base):
     requested_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    cfgs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    cfgs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, deferred=True)
+    decompiled: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, deferred=True)
 
 
 class YaraRule(Base):

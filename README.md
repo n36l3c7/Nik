@@ -45,8 +45,9 @@ every action attributed to a named analyst and recorded in a global audit log.
   by SHA-256, never executed) and analysed statically: hashes, file type,
   entropy per block, strings and indicators of compromise, PE/ELF/Mach-O
   structure with imphash, YARA matches (built-in and admin rules), and a
-  **Code view** from an isolated rizin worker: functions, call graph and
-  control-flow graphs laid out like a disassembler's graph view. All of it is
+  **Code view** from an isolated rizin worker: functions, call graph,
+  control-flow graphs laid out like a disassembler's graph view, and the
+  **pseudo-C** of each function from Ghidra's decompiler. All of it is
   flaggable like any other event, with links to VirusTotal and MalwareBazaar
   and a download only inside a password-protected zip.
 - **Super-timeline** — every timestamped event across all tabs merged into one
@@ -193,6 +194,10 @@ npm run format:check  # Prettier in check mode (what CI runs)
 npm run test:e2e   # Playwright smoke test of the whole stack (build first)
 ```
 
+Line endings are LF everywhere, including Windows checkouts:
+`.gitattributes` sets `* text=auto eol=lf`, which overrides `core.autocrlf`,
+so Prettier and Ruff see the same files as CI.
+
 The end-to-end test (`e2e/smoke.spec.js`, `playwright.config.js`) starts the
 backend on a throw-away SQLite database and the production build behind
 `vite preview` (which proxies `/api`, like the dev server), then drives the app
@@ -271,6 +276,7 @@ is no `tailwind.config.js` and no extra setup step.
 | `SAMPLE_MAX_MB` | `100` | Per-file size limit for malware samples; the files live on the `sample-store` volume. |
 | `ANALYZER_TOKEN` | — | Shared secret between the `api` and `analyzer` services; set a long random value. |
 | `ANALYZER_TIMEOUT` | `600` | Per-sample time limit of the rizin worker, in seconds. |
+| `ANALYZER_DECOMPILE_SECONDS` | `300` | Share of that time the analysis spends decompiling functions up front; the rest are decompiled when first opened. |
 | `ANALYZER_MEMORY` / `ANALYZER_CPUS` | `2g` / `2` | Memory and CPU limits of the `analyzer` container. |
 
 > **Two things that will bite you over plain HTTP:**
@@ -669,6 +675,7 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
 | `GET/POST /api/samples/{sha256}/code` | Disassembly by the rizin worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error`) and, when done, the engine, binary info and functions with their calls; `POST` (re)starts it (`202`, `503` when no worker is configured). |
 | `GET /api/samples/{sha256}/code/functions/{addr}` | Control-flow graph of one function: basic blocks with their instructions and `jump` / `fail` successors. |
+| `GET /api/samples/{sha256}/code/functions/{addr}/decompiled` | Pseudo-C of one function (rz-ghidra): `code` plus highlight `spans` (`[start, end, kind]`, or `[start, end, "f", address]` for a call target). Stored by the analysis (`source: "analysis"`) or decompiled on first request and kept (`source: "on-demand"`); `502` when the worker fails, `503` when none is configured. |
 | `GET /api/settings` | Read the shared detection rules / business hours. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
@@ -1248,9 +1255,10 @@ YARA severity counts towards the sample's severity. The analysis records its
 runs the current engine on the stored file, so older samples catch up after
 an upgrade or a rule change.
 
-**Code view (disassembly).** Disassembly runs in a separate worker,
-`analyzer/`, built on the official `rizin/rizin` image. The backend never runs
-rizin itself:
+**Code view (disassembly and decompilation).** Both run in a separate
+worker, `analyzer/`, built on the official `rizin/rizin` image, which ships
+**rz-ghidra** (Ghidra's decompiler, Apache-2.0, as a rizin plugin, LGPL-3.0):
+no Java and no extra build step. The backend never runs rizin itself:
 
 1. After an upload (and on Re-analyse, or the **Disassemble** button) the
    backend queues a job (`sample_code` table) and calls the worker's
@@ -1261,10 +1269,23 @@ rizin itself:
    library only), runs `aaa` and returns functions (`aflj`), their calls (from
    the `call` instructions), and for each function its basic blocks (`afbj`)
    with their instructions (`pdfj`). A timer kills rizin after
-   `ANALYZER_TIMEOUT`; at most `ANALYZER_MAX_JOBS` analyses run at once.
-3. The backend stores the function list and, separately, the CFGs, which the
-   UI fetches one function at a time
-   (`GET /api/samples/{sha256}/code/functions/{addr}`).
+   `ANALYZER_TIMEOUT`; at most `ANALYZER_MAX_JOBS` requests run at once.
+3. In the same session the worker decompiles functions with `pdgj` for up to
+   `ANALYZER_DECOMPILE_SECONDS` (entry point and `main` first, then the
+   smallest, for the most coverage per second). rz-ghidra's annotations are
+   reduced to highlight spans and call targets, about a tenth of their size.
+   A function that takes over 30 s is skipped. Functions left out are
+   decompiled when first opened (`POST /decompile` on the worker, which
+   reopens and reanalyses the sample: slower on large binaries) and kept.
+4. The backend stores the function list and, separately, the CFGs and the
+   pseudo-C, which the UI fetches one function at a time
+   (`GET /api/samples/{sha256}/code/functions/{addr}` and `…/decompiled`).
+
+rizin 0.9 can crash (segfault) after thousands of commands in one session,
+on a function it handles fine in a fresh one. The worker survives it: it
+reopens the sample and retries that function once; a second crash skips the
+function (it is listed, marked, without CFG). After three restarts in one
+request it gives up with an error.
 
 In Compose the worker runs as the image's non-root user, with a read-only
 filesystem, no capabilities, memory and CPU limits, no published port and no
@@ -1281,7 +1302,10 @@ column, branches on the sides), routes edges orthogonally in their own lanes
 and sends loops back along the side, as a disassembler's graph view does.
 Nik draws the result as SVG with its own tokens, with pan, zoom, a minimap and
 click to select. `elkjs` (~1.4 MB) is imported only when the Code view opens;
-it is licensed EPL-2.0 / GPL-3.0 and used unmodified.
+it is licensed EPL-2.0 / GPL-3.0 and used unmodified. The **Decompiled** panel
+shows the pseudo-C with the decompiler's own highlighting (font ligatures off,
+so `!=` reads as written); a call to another function of the sample is a link
+that opens it, and calls to suspicious APIs are red.
 
 ---
 
