@@ -34,6 +34,8 @@ function compareValues(a, b) {
  *    className?, headerClassName?, align?='left'|'right' }`
  *
  * Data pipeline (all memoized): filter (search) → sort → paginate.
+ * `onRowClick(row)` makes rows selectable (click or Enter); clicks on buttons
+ * and links inside a row keep their own behaviour.
  */
 export default function DataTable({
   columns = [],
@@ -47,6 +49,7 @@ export default function DataTable({
   toolbar = null,
   emptyMessage = 'No data available',
   rowKey = (row, i) => row.id ?? i,
+  onRowClick = null,
 }) {
   const [query, setQuery] = useState('')
   // The input updates at once; filtering and sorting follow when React is
@@ -182,7 +185,21 @@ export default function DataTable({
               </tr>
             ) : (
               paged.map((row, index) => (
-                <tr key={rowKey(row, index)} className={`transition-colors hover:bg-raised ${rowClassName(row)}`}>
+                <tr
+                  key={rowKey(row, index)}
+                  className={`transition-colors hover:bg-raised ${onRowClick ? 'cursor-pointer' : ''} ${rowClassName(row)}`}
+                  onClick={
+                    onRowClick ? (event) => !event.target.closest('button, a, input') && onRowClick(row) : undefined
+                  }
+                  onKeyDown={
+                    onRowClick
+                      ? (event) => {
+                          if (event.key === 'Enter' && event.target === event.currentTarget) onRowClick(row)
+                        }
+                      : undefined
+                  }
+                  tabIndex={onRowClick ? 0 : undefined}
+                >
                   {columns.map((column) => (
                     <td
                       key={column.key}

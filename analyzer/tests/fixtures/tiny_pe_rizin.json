@@ -1,0 +1,353 @@
+{
+  "ij": {
+    "core": {
+      "file": "/samples/tiny.exe",
+      "fd": 3,
+      "size": 1024,
+      "humansz": "1K",
+      "iorw": false,
+      "mode": "r-x",
+      "block": 256,
+      "format": "pe"
+    },
+    "bin": {
+      "arch": "x86",
+      "baddr": 4194304,
+      "binsz": 1024,
+      "bintype": "pe",
+      "bits": 32,
+      "class": "PE32",
+      "cmp.csum": "0x00000e9d",
+      "compiled": "Sun Sep 13 12:26:40 2020 UTC",
+      "compiler": "Linker 14.00",
+      "endian": "LE",
+      "hdr.csum": "0x00000000",
+      "laddr": 0,
+      "lang": "c",
+      "machine": "i386",
+      "maxopsz": 16,
+      "minopsz": 1,
+      "os": "windows",
+      "overlay": false,
+      "cc": "cdecl",
+      "pcalign": 1,
+      "subsys": "Windows GUI",
+      "stripped": false,
+      "havecode": true,
+      "va": true,
+      "static": true,
+      "linenum": false,
+      "lsyms": false,
+      "canary": true,
+      "pie": true,
+      "relrocs": false,
+      "nx": true
+    }
+  },
+  "aflj": [
+    {
+      "offset": 4198400,
+      "name": "entry0",
+      "size": 14,
+      "is-pure": true,
+      "realsz": 14,
+      "noreturn": false,
+      "stackframe": 4,
+      "calltype": "cdecl",
+      "cost": 12,
+      "cc": 2,
+      "loops": 0,
+      "bits": 32,
+      "type": "fcn",
+      "nbbs": 3,
+      "edges": 3,
+      "ebbs": 1,
+      "signature": "entry0();",
+      "minbound": 4198400,
+      "maxbound": 4198414,
+      "callrefs": [
+        {
+          "from": 4198407,
+          "to": 4198415,
+          "type": "CALL"
+        }
+      ],
+      "datarefs": [],
+      "indegree": 0,
+      "outdegree": 1,
+      "nlocals": 0,
+      "nargs": 0,
+      "stackvars": [],
+      "regvars": []
+    },
+    {
+      "offset": 4198415,
+      "name": "fcn.0040100f",
+      "size": 3,
+      "is-pure": true,
+      "realsz": 3,
+      "noreturn": false,
+      "stackframe": 0,
+      "calltype": "cdecl",
+      "cost": 4,
+      "cc": 1,
+      "loops": 0,
+      "bits": 32,
+      "type": "fcn",
+      "nbbs": 1,
+      "edges": 0,
+      "ebbs": 1,
+      "signature": "fcn.0040100f();",
+      "minbound": 4198415,
+      "maxbound": 4198418,
+      "codexrefs": [
+        {
+          "from": 4198407,
+          "to": 4198415,
+          "type": "CALL"
+        }
+      ],
+      "dataxrefs": [],
+      "indegree": 1,
+      "outdegree": 0,
+      "nlocals": 0,
+      "nargs": 0,
+      "stackvars": [],
+      "regvars": []
+    }
+  ],
+  "iej": [
+    {
+      "vaddr": 4198400,
+      "paddr": 512,
+      "baddr": 4194304,
+      "laddr": 0,
+      "haddr": 168,
+      "type": "program"
+    }
+  ],
+  "afbj": {
+    "4198400": [
+      {
+        "jump": 4198412,
+        "fail": 4198407,
+        "opaddr": 4198400,
+        "addr": 4198400,
+        "size": 7,
+        "inputs": 0,
+        "outputs": 2,
+        "ninstr": 4,
+        "traced": true
+      },
+      {
+        "jump": 4198412,
+        "opaddr": 4198407,
+        "addr": 4198407,
+        "size": 5,
+        "inputs": 1,
+        "outputs": 1,
+        "ninstr": 1,
+        "traced": false
+      },
+      {
+        "opaddr": 4198412,
+        "addr": 4198412,
+        "size": 2,
+        "inputs": 2,
+        "outputs": 0,
+        "ninstr": 2,
+        "traced": false
+      }
+    ],
+    "4198415": [
+      {
+        "opaddr": 4198415,
+        "addr": 4198415,
+        "size": 3,
+        "inputs": 0,
+        "outputs": 0,
+        "ninstr": 2,
+        "traced": true
+      }
+    ]
+  },
+  "pdfj": {
+    "4198400": {
+      "name": "entry0",
+      "size": 14,
+      "addr": 4198400,
+      "ops": [
+        {
+          "offset": 4198400,
+          "esil": "ebp,4,esp,-,=[4],4,esp,-=",
+          "refptr": false,
+          "fcn_addr": 4198400,
+          "fcn_last": 4198413,
+          "size": 1,
+          "opcode": "push ebp",
+          "disasm": "push ebp",
+          "bytes": "55",
+          "family": "cpu",
+          "type": "rpush",
+          "reloc": false,
+          "type_num": 268435468,
+          "type2_num": 0,
+          "flags": ["entry0", "section..text"],
+          "comment": "WzAwXSAtci14IHNlY3Rpb24gc2l6ZSA0MDk2IG5hbWVkIC50ZXh0"
+        },
+        {
+          "offset": 4198401,
+          "esil": "esp,ebp,=",
+          "refptr": false,
+          "fcn_addr": 4198400,
+          "fcn_last": 4198412,
+          "size": 2,
+          "opcode": "mov ebp, esp",
+          "disasm": "mov ebp, esp",
+          "bytes": "89e5",
+          "family": "cpu",
+          "type": "mov",
+          "reloc": false,
+          "type_num": 9,
+          "type2_num": 0
+        },
+        {
+          "offset": 4198403,
+          "esil": "0,eax,eax,&,==,$z,zf,:=,$p,pf,:=,31,$s,sf,:=,0,cf,:=,0,of,:=",
+          "refptr": false,
+          "fcn_addr": 4198400,
+          "fcn_last": 4198412,
+          "size": 2,
+          "opcode": "test eax, eax",
+          "disasm": "test eax, eax",
+          "bytes": "85c0",
+          "family": "cpu",
+          "type": "acmp",
+          "reloc": false,
+          "type_num": 16,
+          "type2_num": 0
+        },
+        {
+          "offset": 4198405,
+          "esil": "zf,?{,4198412,eip,=,}",
+          "refptr": false,
+          "fcn_addr": 4198400,
+          "fcn_last": 4198412,
+          "size": 2,
+          "opcode": "jz 0x40100c",
+          "disasm": "jz 0x40100c",
+          "bytes": "7405",
+          "family": "cpu",
+          "type": "cjmp",
+          "reloc": false,
+          "type_num": 2147483649,
+          "type2_num": 0,
+          "jump": 4198412,
+          "fail": 4198407
+        },
+        {
+          "offset": 4198407,
+          "esil": "4198415,eip,4,esp,-=,esp,=[],eip,=",
+          "refptr": false,
+          "fcn_addr": 4198400,
+          "fcn_last": 4198409,
+          "size": 5,
+          "opcode": "call 0x40100f",
+          "disasm": "call fcn.0040100f",
+          "bytes": "e803000000",
+          "family": "cpu",
+          "type": "call",
+          "reloc": false,
+          "type_num": 3,
+          "type2_num": 0,
+          "jump": 4198415,
+          "fail": 4198412,
+          "xrefs_from": [
+            {
+              "addr": 4198415,
+              "type": "CALL"
+            }
+          ]
+        },
+        {
+          "offset": 4198412,
+          "esil": "esp,[4],4,esp,+=,ebp,=",
+          "refptr": false,
+          "fcn_addr": 4198400,
+          "fcn_last": 4198413,
+          "size": 1,
+          "opcode": "pop ebp",
+          "disasm": "pop ebp",
+          "bytes": "5d",
+          "family": "cpu",
+          "type": "pop",
+          "reloc": false,
+          "type_num": 14,
+          "type2_num": 0
+        },
+        {
+          "offset": 4198413,
+          "esil": "esp,[4],eip,=,4,esp,+=",
+          "refptr": false,
+          "fcn_addr": 4198400,
+          "fcn_last": 4198413,
+          "size": 1,
+          "opcode": "ret",
+          "disasm": "ret",
+          "bytes": "c3",
+          "family": "cpu",
+          "type": "ret",
+          "reloc": false,
+          "type_num": 5,
+          "type2_num": 0
+        }
+      ]
+    },
+    "4198415": {
+      "name": "fcn.0040100f",
+      "size": 3,
+      "addr": 4198415,
+      "ops": [
+        {
+          "offset": 4198415,
+          "esil": "eax,eax,^=,$z,zf,:=,$p,pf,:=,31,$s,sf,:=,0,cf,:=,0,of,:=",
+          "refptr": false,
+          "fcn_addr": 4198415,
+          "fcn_last": 4198416,
+          "size": 2,
+          "opcode": "xor eax, eax",
+          "disasm": "xor eax, eax",
+          "bytes": "31c0",
+          "family": "cpu",
+          "type": "xor",
+          "reloc": false,
+          "type_num": 28,
+          "type2_num": 0,
+          "flags": ["fcn.0040100f"],
+          "xrefs_to": [
+            {
+              "addr": 4198407,
+              "type": "CALL"
+            }
+          ]
+        },
+        {
+          "offset": 4198417,
+          "esil": "esp,[4],eip,=,4,esp,+=",
+          "refptr": false,
+          "fcn_addr": 4198415,
+          "fcn_last": 4198417,
+          "size": 1,
+          "opcode": "ret",
+          "disasm": "ret",
+          "bytes": "c3",
+          "family": "cpu",
+          "type": "ret",
+          "reloc": false,
+          "type_num": 5,
+          "type2_num": 0
+        }
+      ]
+    }
+  }
+}

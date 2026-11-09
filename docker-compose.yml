@@ -41,11 +41,37 @@ services:
       # their analysis). Exclude it from any antivirus on the host.
       SAMPLE_STORE: /app/samples
       SAMPLE_MAX_MB: ${SAMPLE_MAX_MB:-100}
+      # Disassembly worker (rizin), reachable only on the internal network.
+      ANALYZER_URL: http://analyzer:8700
+      ANALYZER_TOKEN: ${ANALYZER_TOKEN:-please-change-this-analyzer-token}
+      ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
     volumes:
       - sample-store:/app/samples
+    networks: [default, analysis]
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Disassembles samples with rizin for the Code view. It reads the sample store
+  # read-only, has no internet access (internal network), no published port, a
+  # read-only filesystem and memory / CPU / time limits. Samples are read and
+  # disassembled, never executed.
+  analyzer:
+    build: ./analyzer
+    environment:
+      ANALYZER_TOKEN: ${ANALYZER_TOKEN:-please-change-this-analyzer-token}
+      ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
+      ANALYZER_MAX_JOBS: ${ANALYZER_MAX_JOBS:-2}
+    volumes:
+      - sample-store:/samples:ro
+    networks: [analysis]
+    read_only: true
+    tmpfs: [/tmp, /home/rizin]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${ANALYZER_MEMORY:-2g}
+    cpus: ${ANALYZER_CPUS:-2}
     restart: unless-stopped
 
   web:
@@ -70,3 +96,9 @@ volumes:
   db-data:
   sample-store:
   web-certs:
+
+networks:
+  default:
+  # Backend ↔ analyzer only; `internal` gives the analyzer no route outside.
+  analysis:
+    internal: true

@@ -32,6 +32,23 @@
       </p>
 
       <section class="release">
+        <h3>2.7.0 <span class="date">2026-11-09</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Code view</strong>: functions, call graph and control-flow
+            graphs of a sample, disassembled by an isolated rizin worker and laid out with ELK (orthogonal edges, loops
+            on the side, full disassembly per block, pan, zoom and minimap). Functions that reach suspicious APIs are
+            highlighted and can be flagged.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Analyzer worker</strong> service in the Compose stack:
+            read-only sample store, non-root, read-only filesystem, no capabilities, memory / CPU / time limits, no
+            internet access.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.6.0 <span class="date">2026-11-09</span></h3>
         <ul>
           <li>

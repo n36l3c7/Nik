@@ -44,7 +44,9 @@ every action attributed to a named analyst and recorded in a global audit log.
 - **Malware analysis** — suspicious files are stored on the Nik server (named
   by SHA-256, never executed) and analysed statically: hashes, file type,
   entropy per block, strings and indicators of compromise, PE/ELF/Mach-O
-  structure with imphash, YARA matches (built-in and admin rules), all
+  structure with imphash, YARA matches (built-in and admin rules), and a
+  **Code view** from an isolated rizin worker: functions, call graph and
+  control-flow graphs laid out like a disassembler's graph view. All of it is
   flaggable like any other event, with links to VirusTotal and MalwareBazaar
   and a download only inside a password-protected zip.
 - **Super-timeline** — every timestamped event across all tabs merged into one
@@ -197,7 +199,24 @@ backend on a throw-away SQLite database and the production build behind
 as an analyst would: first-run setup, sign-in, a new incident, demo data in
 every tab, the timeline and the `tail -f` panel. It needs `npm run build`, the
 backend dependencies on `PATH` (activate the venv) and a Chromium from
-`npx playwright install chromium`.
+`npx playwright install chromium`. With the analyzer worker running and
+`E2E_ANALYZER_URL` / `E2E_ANALYZER_TOKEN` set (CI does both), it also checks
+the Code view against real rizin output; without them it checks the
+"not configured" message.
+
+**Analyzer worker in development.** The Code view needs the rizin worker
+(`analyzer/`). With Docker:
+
+```bash
+docker build -t nik-analyzer analyzer
+docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
+  -v "$PWD/backend/samples:/samples:ro" -e ANALYZER_TOKEN=dev-token nik-analyzer
+# backend/.env: ANALYZER_URL=http://127.0.0.1:8700  ANALYZER_TOKEN=dev-token
+```
+
+Its own checks: `cd analyzer && ruff check . && python -m pytest tests` (the
+tests use recorded rizin output; the live test runs only where `rizin` is
+installed).
 
 Backend tests run with `pytest`, the linter with `ruff check .` and the
 formatter with `ruff format .` (`--check` in CI), all from `backend/` after
@@ -234,6 +253,9 @@ is no `tailwind.config.js` and no extra setup step.
 | `SAMPLE_STORE` | `./samples` | Directory of the raw malware samples (one file per SHA-256, never executed). Exclude it from the server's antivirus and include it in backups. |
 | `SAMPLE_MAX_MB` | `100` | Per-file size limit for sample uploads. |
 | `YARA_RULES` | `app/yara` | Directory of the built-in YARA rule files (`*.yar`); admin rules live in the database. |
+| `ANALYZER_URL` | — | Base URL of the rizin worker (e.g. `http://analyzer:8700`). Empty: the Code view reports "not configured". |
+| `ANALYZER_TOKEN` | — | Shared secret sent to the worker in `X-Analyzer-Token`; the worker refuses to start without one. |
+| `ANALYZER_TIMEOUT` | `600` | Seconds rizin may spend on one sample before the worker stops it. |
 
 **Compose** (root `.env` — see `.env.example`):
 
@@ -247,6 +269,9 @@ is no `tailwind.config.js` and no extra setup step.
 | `TLS_HOSTNAME` | `localhost` | Name embedded in the auto-generated certificate (CN + SAN) — set it to what users type in the browser. |
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
 | `SAMPLE_MAX_MB` | `100` | Per-file size limit for malware samples; the files live on the `sample-store` volume. |
+| `ANALYZER_TOKEN` | — | Shared secret between the `api` and `analyzer` services; set a long random value. |
+| `ANALYZER_TIMEOUT` | `600` | Per-sample time limit of the rizin worker, in seconds. |
+| `ANALYZER_MEMORY` / `ANALYZER_CPUS` | `2g` / `2` | Memory and CPU limits of the `analyzer` container. |
 
 > **Two things that will bite you over plain HTTP:**
 >
@@ -642,6 +667,8 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `DELETE /api/incidents/{id}/samples/{sha256}` | Detach the sample; the file is deleted once no incident references it. |
 | `POST /api/samples/{sha256}/reanalyse` | Run the current analysis engine and YARA rules again on the stored file. |
 | `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
+| `GET/POST /api/samples/{sha256}/code` | Disassembly by the rizin worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error`) and, when done, the engine, binary info and functions with their calls; `POST` (re)starts it (`202`, `503` when no worker is configured). |
+| `GET /api/samples/{sha256}/code/functions/{addr}` | Control-flow graph of one function: basic blocks with their instructions and `jump` / `fail` successors. |
 | `GET /api/settings` | Read the shared detection rules / business hours. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
@@ -791,7 +818,9 @@ file itself to the server, because the sample *is* the evidence under study
 ├── playwright.config.js            # E2E: starts backend (SQLite) + vite preview
 ├── e2e/smoke.spec.js               # End-to-end smoke test of the whole stack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
-├── docker-compose.yml              # db + api + web stack
+├── docker-compose.yml              # db + api + analyzer + web stack
+├── analyzer/                       # rizin worker: Dockerfile, nik_analyzer.py (pipe + transforms),
+│                                   #   server.py (HTTP, token, job slots), tests/ (recorded output)
 ├── .env.example                    # Compose configuration template
 ├── deploy/
 │   ├── web.Dockerfile              # Multi-stage: build SPA with Node, serve with nginx
@@ -891,7 +920,7 @@ file itself to the server, because the sample *is* the evidence under study
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
             ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
             │                           #   StructureSection, YaraSection, IocSection, StringsSection,
-            │                           #   DownloadDialog
+            │                           #   DownloadDialog; code/ CodeSection + GraphCanvas (ELK)
             └── timeline/               # TimelineTab (the super-timeline)
 ```
 
@@ -1218,6 +1247,41 @@ YARA severity counts towards the sample's severity. The analysis records its
 `analysisVersion`; **Re-analyse** (`POST /api/samples/{sha256}/reanalyse`)
 runs the current engine on the stored file, so older samples catch up after
 an upgrade or a rule change.
+
+**Code view (disassembly).** Disassembly runs in a separate worker,
+`analyzer/`, built on the official `rizin/rizin` image. The backend never runs
+rizin itself:
+
+1. After an upload (and on Re-analyse, or the **Disassemble** button) the
+   backend queues a job (`sample_code` table) and calls the worker's
+   `POST /analyze` with the sample's SHA-256 and the shared
+   `X-Analyzer-Token`.
+2. The worker opens `<store>/<sha256>.bin` from its **read-only** mount in
+   rizin's pipe mode (`rizin -q0`, driven by `nik_analyzer.py`, standard
+   library only), runs `aaa` and returns functions (`aflj`), their calls (from
+   the `call` instructions), and for each function its basic blocks (`afbj`)
+   with their instructions (`pdfj`). A timer kills rizin after
+   `ANALYZER_TIMEOUT`; at most `ANALYZER_MAX_JOBS` analyses run at once.
+3. The backend stores the function list and, separately, the CFGs, which the
+   UI fetches one function at a time
+   (`GET /api/samples/{sha256}/code/functions/{addr}`).
+
+In Compose the worker runs as the image's non-root user, with a read-only
+filesystem, no capabilities, memory and CPU limits, no published port and no
+route outside the internal `analysis` network: the sample is read and
+disassembled, never executed. Without a worker (`ANALYZER_URL` unset) the
+Code view says so and everything else keeps working.
+
+The UI (`components/tabs/malware/code/`) lists the functions with the
+severity of the APIs they reach (the SOC malware ruleset applied to callee
+names, propagated through the call graph by `utils/code.js`) and draws the
+**call graph** around the selected function and its **control-flow graph**
+with `elkjs`: ELK's layered algorithm places the blocks (main path in a
+column, branches on the sides), routes edges orthogonally in their own lanes
+and sends loops back along the side, as a disassembler's graph view does.
+Nik draws the result as SVG with its own tokens, with pan, zoom, a minimap and
+click to select. `elkjs` (~1.4 MB) is imported only when the Code view opens;
+it is licensed EPL-2.0 / GPL-3.0 and used unmodified.
 
 ---
 
