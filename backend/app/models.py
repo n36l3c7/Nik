@@ -99,6 +99,27 @@ class Sample(Base):
     analysis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class SampleCode(Base):
+    """Disassembly of a sample by the analyzer worker (rizin): one row per sample.
+
+    ``status`` is queued → running → done | error. ``summary`` holds the
+    engine, binary info and the function list with their calls; ``cfgs`` maps
+    each function address (as a string) to its control-flow graph, fetched
+    one function at a time by the UI.
+    """
+
+    __tablename__ = "sample_code"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    requested_at: Mapped[str] = mapped_column(String, nullable=False)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    cfgs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 class YaraRule(Base):
     """A YARA rule added by an admin; compiled with the built-in rules when enabled."""
 

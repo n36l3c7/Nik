@@ -119,6 +119,11 @@ class Settings:
         # Directory of the built-in YARA rule files (*.yar); admin rules live in
         # the database and are compiled together with these.
         self.YARA_RULES: str = os.getenv("YARA_RULES", os.path.join(os.path.dirname(__file__), "yara"))
+        # Analyzer worker (rizin) for disassembly, functions and graphs; see
+        # analyzer/. Empty URL = the Code view reports "not configured".
+        self.ANALYZER_URL: str = os.getenv("ANALYZER_URL", "").rstrip("/")
+        self.ANALYZER_TOKEN: str = os.getenv("ANALYZER_TOKEN", "")
+        self.ANALYZER_TIMEOUT: int = _get_int("ANALYZER_TIMEOUT", 600)
 
     @property
     def is_sqlite(self) -> bool:

@@ -104,6 +104,19 @@
               </td>
             </tr>
             <tr>
+              <td><code>ANALYZER_URL</code> · <code>ANALYZER_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Base URL of the rizin worker and the shared secret it requires. Without them the Code view reports "not
+                configured" and everything else works.
+              </td>
+            </tr>
+            <tr>
+              <td><code>ANALYZER_TIMEOUT</code></td>
+              <td><code>600</code></td>
+              <td>Seconds rizin may spend on one sample before the worker stops it.</td>
+            </tr>
+            <tr>
               <td><code>RUN_CREATE_ALL</code></td>
               <td><code>true</code></td>
               <td>
@@ -176,6 +189,18 @@
               <td><code>SESSION_TTL_HOURS</code></td>
               <td><code>12</code></td>
               <td>Session lifetime.</td>
+            </tr>
+            <tr>
+              <td><code>ANALYZER_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Shared secret between the <code>api</code> and <code>analyzer</code> services. Use a long random value.
+              </td>
+            </tr>
+            <tr>
+              <td><code>ANALYZER_MEMORY</code> · <code>ANALYZER_CPUS</code></td>
+              <td><code>2g</code> · <code>2</code></td>
+              <td>Memory and CPU limits of the rizin worker container.</td>
             </tr>
           </tbody>
         </table>

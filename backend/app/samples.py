@@ -40,12 +40,16 @@ def sample_path(sha256: str) -> Path:
 
 
 def write_sample(sha256: str, data: bytes) -> Path:
-    """Store the bytes if not already present; the file is read-only (0o440)."""
+    """Store the bytes if not already present; the file is read-only for everyone (0o444).
+
+    World-readable so the analyzer worker, which runs as another user and sees
+    the store through a read-only mount, can open it. Never executable.
+    """
     path = sample_path(sha256)
     if not path.exists():
         tmp = path.with_suffix(".part")
         tmp.write_bytes(data)
-        os.chmod(tmp, 0o440)
+        os.chmod(tmp, 0o444)
         tmp.replace(path)
     return path
 

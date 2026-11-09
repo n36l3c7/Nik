@@ -85,13 +85,16 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
   await expect(page.getByText('No samples yet')).toBeVisible()
   // A harmless but valid PE32 (one .text section) with a few indicators inside.
+  // .text starts with real x86 code at the entry point (test, branch, call a
+  // helper, return) so the analyzer has functions and a CFG to show.
+  const code = Buffer.from('5589e585c07405e8030000005dc39031c0c3', 'hex')
   const payload = Buffer.from(
     '\0\0kernel32.dll\0VirtualAllocEx\0WriteProcessMemory\0CreateRemoteThread\0http://185.220.101.47/gate.php\0' +
       'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\WinUpd\0',
     'latin1',
   )
   const fileAlign = 0x200
-  const rawSize = Math.ceil(payload.length / fileAlign) * fileAlign
+  const rawSize = Math.ceil((code.length + payload.length) / fileAlign) * fileAlign
   const headers = Buffer.alloc(0x200)
   headers.write('MZ', 0, 'ascii')
   headers.writeUInt32LE(0x80, 0x3c)
@@ -124,13 +127,14 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   // IMAGE_SECTION_HEADER for .text
   const sec = opt + 0xe0
   headers.write('.text', sec, 'ascii')
-  headers.writeUInt32LE(payload.length, sec + 8) // VirtualSize
+  headers.writeUInt32LE(code.length + payload.length, sec + 8) // VirtualSize
   headers.writeUInt32LE(0x1000, sec + 12) // VirtualAddress
   headers.writeUInt32LE(rawSize, sec + 16) // SizeOfRawData
   headers.writeUInt32LE(0x200, sec + 20) // PointerToRawData
   headers.writeUInt32LE(0x60000020, sec + 36) // CODE | EXECUTE | READ
   const body = Buffer.alloc(rawSize)
-  payload.copy(body)
+  code.copy(body)
+  payload.copy(body, code.length)
   await page
     .getByRole('button', { name: 'Upload malware samples' })
     .locator('input[type=file]')
@@ -151,6 +155,18 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   await expect(page.locator('tbody tr', { hasText: '.text' })).toBeVisible()
   await page.getByRole('tab', { name: /^YARA/ }).click()
   await expect(page.getByText('pe_process_injection_apis')).toBeVisible()
+  // Code view: rizin in CI (analyzer container), "not configured" elsewhere.
+  await page.getByRole('tab', { name: 'Code' }).click()
+  if (process.env.E2E_ANALYZER_URL) {
+    await expect(page.locator('tbody tr', { hasText: 'entry0' })).toBeVisible({ timeout: 60_000 })
+    await page.getByRole('tab', { name: 'Control flow' }).click()
+    const cfg = page.locator('svg[aria-label^="Control flow of entry0"]')
+    await expect(cfg).toBeVisible({ timeout: 30_000 })
+    await expect(cfg).toContainText('push')
+    await expect(cfg.locator('g.cursor-pointer')).toHaveCount(3) // three basic blocks
+  } else {
+    await expect(page.getByText('The analyzer worker is not configured.')).toBeVisible()
+  }
 })
 
 test('the API is reachable through the same origin', async ({ request }) => {

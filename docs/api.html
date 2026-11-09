@@ -144,6 +144,18 @@
               <td>Run the current analysis engine and YARA rules again on the stored file.</td>
             </tr>
             <tr>
+              <td><code>GET/POST /api/samples/{sha256}/code</code></td>
+              <td>
+                Disassembly by the rizin worker: state (<code>none</code> / <code>queued</code> / <code>running</code> /
+                <code>done</code> / <code>error</code>) and, when done, binary info and functions with their calls.
+                <code>POST</code> (re)starts it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/samples/{sha256}/code/functions/{addr}</code></td>
+              <td>Control-flow graph of one function: basic blocks, instructions, jump / fail successors.</td>
+            </tr>
+            <tr>
               <td><code>GET/POST/PUT/DELETE /api/yara-rules</code> · <code>POST …/validate</code></td>
               <td>
                 Admin-managed YARA rule sets, compiled with the built-in ones (<strong>admin</strong> to change; any

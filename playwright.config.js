@@ -33,7 +33,7 @@ export default defineConfig({
   webServer: [
     {
       timeout: 120_000,
-      command: `node -e "const fs = require('fs'); fs.rmSync('${E2E_DB}', { force: true }); fs.rmSync('${E2E_SAMPLES}', { recursive: true, force: true })" && uvicorn app.main:app --port ${API_PORT}`,
+      command: `node -e "const fs = require('fs'); fs.rmSync('${E2E_DB}', { force: true }); fs.mkdirSync('${E2E_SAMPLES}', { recursive: true }); for (const f of fs.readdirSync('${E2E_SAMPLES}')) fs.rmSync('${E2E_SAMPLES}/' + f, { force: true })" && uvicorn app.main:app --port ${API_PORT}`,
       cwd: 'backend',
       url: `http://127.0.0.1:${API_PORT}/api/health`,
       reuseExistingServer: false,
@@ -42,6 +42,9 @@ export default defineConfig({
         COOKIE_SECURE: 'false',
         RATE_LIMIT_DEFAULT: '100000/minute',
         SAMPLE_STORE: E2E_SAMPLES,
+        // Set by CI when the analyzer container runs (see .github/workflows/ci.yml).
+        ANALYZER_URL: process.env.E2E_ANALYZER_URL ?? '',
+        ANALYZER_TOKEN: process.env.E2E_ANALYZER_TOKEN ?? '',
       },
     },
     {

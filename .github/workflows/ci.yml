@@ -21,6 +21,9 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: pytest
+      - name: Analyzer worker (lint, format, tests on recorded rizin output)
+        working-directory: analyzer
+        run: ruff check . && ruff format --check . && python -m pytest -q tests
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -52,8 +55,20 @@ jobs:
         run: pip install -r backend/requirements-dev.txt
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Start the analyzer worker (real rizin) on the E2E sample store
+        run: |
+          docker build -t nik-analyzer analyzer
+          mkdir -p backend/.e2e-samples
+          docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
+            -v "$PWD/backend/.e2e-samples:/samples:ro" -e ANALYZER_TOKEN=e2e-token nik-analyzer
       - run: npm run build
       - run: npm run test:e2e
+        env:
+          E2E_ANALYZER_URL: http://127.0.0.1:8700
+          E2E_ANALYZER_TOKEN: e2e-token
+      - name: Analyzer logs
+        if: failure()
+        run: docker logs nik-analyzer || true
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

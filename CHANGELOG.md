@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-09
+
+### Added
+
+- **Code view** in the Malware Analysis tab: disassembly by a new rizin
+  worker. Functions with address, basic blocks and the suspicious APIs they
+  reach (malware ruleset, propagated through the call graph), flaggable; the
+  **call graph** around the selected function and its **control-flow graph**
+  with full disassembly per block, true / false / jump edges and loops,
+  laid out with `elkjs` (layered, orthogonal routing) and drawn in SVG with
+  pan, zoom, minimap and selection.
+- **Analyzer worker** (`analyzer/`): a container on the official
+  `rizin/rizin:v0.9.1` image with a small standard-library HTTP front
+  (`POST /analyze`, `GET /health`), a shared token, a per-sample time limit
+  and a cap on concurrent jobs. In Compose it reads the sample store
+  read-only, runs as a non-root user on a read-only filesystem without
+  capabilities, with memory / CPU limits and no route outside the internal
+  network.
+- Disassembly runs in the background after each upload and Re-analyse, or on
+  demand. REST API: `GET/POST /api/samples/{sha256}/code` and
+  `GET /api/samples/{sha256}/code/functions/{addr}`; audit action
+  `sample.disassemble`.
+- Configuration: `ANALYZER_URL`, `ANALYZER_TOKEN`, `ANALYZER_TIMEOUT`
+  (backend); `ANALYZER_TOKEN`, `ANALYZER_TIMEOUT`, `ANALYZER_MEMORY`,
+  `ANALYZER_CPUS` (Compose). Alembic migration `0006_sample_code`. New
+  frontend dependency `elkjs` (EPL-2.0 / GPL-3.0, loaded on demand).
+- CI builds the worker image and runs the end-to-end test against real
+  rizin output; the worker has its own lint and tests.
+
+### Changed
+
+- Stored samples are world-readable (`0444`, still never executable) so the
+  worker, running as another user, can read them through its read-only mount.
+- `DataTable` rows can be selectable (`onRowClick`).
+
+### Fixed
+
+- The sample figures use the red / amber tones they were meant to (entropy
+  above 7.0, high / medium indicators); "nothing above 7.0" replaces a dash.
+
 ## [2.6.0] - 2026-11-09
 
 ### Added
@@ -265,7 +305,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/n36l3c7/Nik/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/n36l3c7/Nik/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/n36l3c7/Nik/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/n36l3c7/Nik/compare/v2.3.1...v2.4.0

@@ -18,11 +18,11 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import yara_rules
+from .. import analyzer, yara_rules
 from ..config import settings
 from ..db import get_db
 from ..events import emit
-from ..models import AuditEntry, Incident, Sample
+from ..models import AuditEntry, Incident, Sample, SampleCode
 from ..parsing.executables import parse_structure
 from ..parsing.malware import STRINGS_STORED, analyze, iter_strings
 from ..samples import DEFAULT_ZIP_PASSWORD, delete_sample, is_sha256, read_sample, write_sample, zip_sample
@@ -108,6 +108,42 @@ def full_analysis(db: OrmSession, data: bytes) -> dict[str, Any]:
     return result
 
 
+def _queue_code(db: OrmSession, background_tasks: BackgroundTasks, sha256: str, actor: str) -> SampleCode | None:
+    """(Re)start the disassembly job when the analyzer is configured; None otherwise."""
+    if not analyzer.configured():
+        return None
+    row = db.get(SampleCode, sha256)
+    if row is not None and row.status in ("queued", "running") and not analyzer.is_stale(row):
+        return row
+    if row is None:
+        row = SampleCode(sha256=sha256, summary={}, cfgs={})
+        db.add(row)
+    row.status, row.error, row.finished_at = "queued", None, None
+    row.requested_at, row.requested_by = now_iso(), actor
+    db.commit()
+    background_tasks.add_task(analyzer.run_code_job, sha256)
+    return row
+
+
+def _code_state(row: SampleCode | None) -> dict[str, Any]:
+    if not analyzer.configured() and (row is None or row.status != "done"):
+        return {"configured": False, "status": "none"}
+    if row is None:
+        return {"configured": True, "status": "none"}
+    stale = analyzer.is_stale(row)
+    state = {
+        "configured": analyzer.configured(),
+        "status": "error" if stale else row.status,
+        "error": "The analysis was interrupted; run it again." if stale else row.error,
+        "requestedAt": row.requested_at,
+        "requestedBy": row.requested_by,
+        "finishedAt": row.finished_at,
+    }
+    if row.status == "done":
+        state.update(row.summary)
+    return state
+
+
 def _save_doc(db: OrmSession, row: Incident, doc: dict) -> None:
     doc["updatedAt"] = now_iso()
     row.doc = doc
@@ -180,6 +216,8 @@ async def upload_sample(
     emit(
         db, background_tasks, "upload.completed", {"incidentId": incident_id, "target": f"malware/{sha256}", "rows": 1}
     )
+    if db.get(SampleCode, sha256) is None:
+        _queue_code(db, background_tasks, sha256, caller.actor)
     return {"sample": ref, "iocs": len(row.analysis.get("iocs", [])), "strings": row.analysis.get("stringsTotal", 0)}
 
 
@@ -188,6 +226,7 @@ def reanalyse_sample(
     sha256: str,
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Run the current analysis engine again on the stored file (after a Nik upgrade or a YARA rule change)."""
     row = _sample_or_404(db, sha256)
@@ -199,8 +238,54 @@ def reanalyse_sample(
     flag_modified(row, "analysis")
     _audit(db, caller, "sample.reanalyse", f"Re-analysed sample {sha256[:12]}… ({row.type_label})", None)
     db.commit()
+    _queue_code(db, background_tasks, sha256, caller.actor)
     incidents = [{"id": inc.id, "name": (inc.doc or {}).get("name", "")} for inc in _incidents_referencing(db, sha256)]
     return {**_summary(row), "analysis": row.analysis, "incidents": incidents}
+
+
+@router.get("/samples/{sha256}/code")
+def get_sample_code(
+    sha256: str,
+    _caller: Principal = Depends(principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Disassembly state and, when done, the function list with calls (no CFGs)."""
+    _sample_or_404(db, sha256)
+    return _code_state(db.get(SampleCode, sha256))
+
+
+@router.post("/samples/{sha256}/code", status_code=status.HTTP_202_ACCEPTED)
+def start_sample_code(
+    sha256: str,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+) -> dict:
+    """Start (or restart) the disassembly on the analyzer worker; poll GET …/code for the result."""
+    _sample_or_404(db, sha256)
+    if not analyzer.configured():
+        raise HTTPException(status_code=503, detail="The analyzer worker is not configured (ANALYZER_URL).")
+    row = _queue_code(db, background_tasks, sha256, caller.actor)
+    _audit(db, caller, "sample.disassemble", f"Requested the disassembly of sample {sha256[:12]}…", None)
+    db.commit()
+    return _code_state(row)
+
+
+@router.get("/samples/{sha256}/code/functions/{addr}")
+def get_function_cfg(
+    sha256: str,
+    addr: int,
+    _caller: Principal = Depends(principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Control-flow graph of one function: blocks with their instructions and successors."""
+    row = db.get(SampleCode, sha256)
+    if row is None or row.status != "done":
+        raise HTTPException(status_code=404, detail="No disassembly for this sample")
+    cfg = (row.cfgs or {}).get(str(addr))
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="No control-flow graph for this function")
+    return {"addr": addr, **cfg}
 
 
 @router.get("/samples/{sha256}")
@@ -285,6 +370,9 @@ def remove_sample(
     if not still_referenced:
         delete_sample(sha256)
         db.delete(row)
+        code = db.get(SampleCode, sha256)
+        if code is not None:
+            db.delete(code)
     _audit(db, caller, "sample.delete", f"Removed sample {sha256[:12]}… from the incident", incident)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
