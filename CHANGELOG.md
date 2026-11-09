@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-09
+
 ### Added
 
 - End-to-end smoke test on Playwright (`npm run test:e2e`), run in CI after the
@@ -28,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   300k-row sort drops from seconds to a fraction of a second); the table
   search no longer blocks typing; toggling a flag no longer rebuilds the
   Timeline tab or the tail panel.
+
+### Security
+
+- Updated the frontend build dependencies flagged by `npm audit` (Vite 6.4.6,
+  PostCSS, nanoid, browserslist, source-map-js): no vulnerabilities reported.
+  These are development-time tools; the shipped bundle was not affected.
 
 ## [2.3.1] - 2026-11-09
 
@@ -206,7 +214,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.3.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/n36l3c7/Nik/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/n36l3c7/Nik/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/n36l3c7/Nik/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/n36l3c7/Nik/compare/v2.1.0...v2.2.0
