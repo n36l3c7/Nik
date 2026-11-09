@@ -29,9 +29,7 @@ let sqlPromise = null
 /** Lazily initializes sql.js and always returns the same instance. */
 export async function getSql() {
   if (!sqlPromise) {
-    sqlPromise = import('sql.js').then((m) =>
-      (m.default ?? m)({ locateFile: () => wasmUrl }),
-    )
+    sqlPromise = import('sql.js').then((m) => (m.default ?? m)({ locateFile: () => wasmUrl }))
   }
   return sqlPromise
 }
@@ -42,18 +40,14 @@ async function openDatabase(arrayBuffer) {
   try {
     return new SQL.Database(new Uint8Array(arrayBuffer))
   } catch {
-    throw new Error(
-      'Unable to open the file as a SQLite database: it may be corrupted or truncated.',
-    )
+    throw new Error('Unable to open the file as a SQLite database: it may be corrupted or truncated.')
   }
 }
 
 /** True if the database contains ALL the given tables. */
 function hasTables(db, tableNames) {
   const placeholders = tableNames.map(() => '?').join(', ')
-  const stmt = db.prepare(
-    `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN (${placeholders})`,
-  )
+  const stmt = db.prepare(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN (${placeholders})`)
   try {
     stmt.bind(tableNames)
     stmt.step()
@@ -68,9 +62,7 @@ function queryRows(db, sql) {
   const result = db.exec(sql)
   if (!result.length) return []
   const { columns, values } = result[0]
-  return values.map((row) =>
-    Object.fromEntries(columns.map((col, i) => [col, row[i]])),
-  )
+  return values.map((row) => Object.fromEntries(columns.map((col, i) => [col, row[i]])))
 }
 
 /** Like queryRows but does not throw if the query fails (missing table/column). */
@@ -133,10 +125,7 @@ export function parseChromiumDownloads(db) {
 
   // URLs of the download redirect chain: the last one is the file URL.
   const chainByDownload = new Map()
-  for (const row of tryQueryRows(
-    db,
-    'SELECT id, url, chain_index FROM downloads_url_chain ORDER BY id, chain_index',
-  )) {
+  for (const row of tryQueryRows(db, 'SELECT id, url, chain_index FROM downloads_url_chain ORDER BY id, chain_index')) {
     chainByDownload.set(row.id, row.url) // the last one overwrites → highest index
   }
 
@@ -232,10 +221,7 @@ export function parseFirefoxBookmarks(db) {
 
   // Map of all nodes to reconstruct the folder path.
   const nodes = new Map()
-  for (const row of tryQueryRows(
-    db,
-    'SELECT id, parent, title, type, guid FROM moz_bookmarks',
-  )) {
+  for (const row of tryQueryRows(db, 'SELECT id, parent, title, type, guid FROM moz_bookmarks')) {
     nodes.set(row.id, row)
   }
 

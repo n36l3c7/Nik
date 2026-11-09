@@ -32,17 +32,13 @@ def bootstrap(db: OrmSession = Depends(get_db)) -> dict:
 
 @router.post("/login", response_model=UserEnvelope)
 @limiter.limit("10/minute")
-def login(
-    request: Request, body: LoginIn, response: Response, db: OrmSession = Depends(get_db)
-) -> dict:
+def login(request: Request, body: LoginIn, response: Response, db: OrmSession = Depends(get_db)) -> dict:
     """Verify credentials, create a server-side session, and set the cookie.
 
     Rate-limited per IP to blunt brute-force attempts.
     """
     # Case-insensitive username match.
-    user = db.scalar(
-        select(User).where(func.lower(User.username) == body.username.strip().lower())
-    )
+    user = db.scalar(select(User).where(func.lower(User.username) == body.username.strip().lower()))
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

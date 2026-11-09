@@ -118,12 +118,7 @@ export default function FirstRunSetup() {
           </div>
         )}
 
-        <Button
-          type="submit"
-          icon={UserPlus}
-          disabled={submitting}
-          className="w-full justify-center"
-        >
+        <Button type="submit" icon={UserPlus} disabled={submitting} className="w-full justify-center">
           {submitting ? 'Creating…' : 'Create admin account'}
         </Button>
       </form>

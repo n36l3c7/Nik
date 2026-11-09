@@ -3,7 +3,10 @@ import { test } from 'node:test'
 import { SKULL_PRESETS, gazeFrame, microSkull, renderSkull, skullToText } from './asciiSkull.js'
 
 const mirror = (line) =>
-  [...line].reverse().map((ch) => ({ '/': '\\', '\\': '/' })[ch] ?? ch).join('')
+  [...line]
+    .reverse()
+    .map((ch) => ({ '/': '\\', '\\': '/' })[ch] ?? ch)
+    .join('')
 
 test('renders exactly width × height cells for every preset', () => {
   for (const preset of Object.values(SKULL_PRESETS)) {
@@ -17,12 +20,19 @@ test('renders exactly width × height cells for every preset', () => {
 
 test('is left-right symmetric in shape and eyes (shading is lit from the left)', () => {
   for (const eyes of ['open', 'closed', 'x']) {
-    for (const size of [{ width: 40, height: 20 }, { width: 24, height: 12 }, { width: 60, height: 30 }]) {
+    for (const size of [
+      { width: 40, height: 20 },
+      { width: 24, height: 12 },
+      { width: 60, height: 30 },
+    ]) {
       const rows = renderSkull({ ...size, eyes, crack: '+' })
-      const shape = rows.map((row) => row.map((s) => s.text).join('').replace(/[^ ]/g, '#'))
-      const eyeMask = rows.map((row) =>
-        row.map((s) => (s.eye ? s.text : s.text.replace(/./g, ' '))).join(''),
+      const shape = rows.map((row) =>
+        row
+          .map((s) => s.text)
+          .join('')
+          .replace(/[^ ]/g, '#'),
       )
+      const eyeMask = rows.map((row) => row.map((s) => (s.eye ? s.text : s.text.replace(/./g, ' '))).join(''))
       for (const line of shape) assert.equal(line, mirror(line))
       for (const line of eyeMask) assert.equal(line, mirror(line), `${eyes} ${size.width}`)
     }
@@ -30,7 +40,9 @@ test('is left-right symmetric in shape and eyes (shading is lit from the left)',
 })
 
 test('marks eye cells so the UI can colour them', () => {
-  const eyes = renderSkull({ width: 40, height: 20 }).flat().filter((s) => s.eye)
+  const eyes = renderSkull({ width: 40, height: 20 })
+    .flat()
+    .filter((s) => s.eye)
   assert.ok(eyes.length > 0)
   assert.ok(eyes.every((s) => /^@+$/.test(s.text)))
 })

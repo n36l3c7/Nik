@@ -44,9 +44,7 @@ function msToLocalInput(ms) {
   if (!Number.isFinite(ms)) return ''
   const d = new Date(ms)
   const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-    d.getMinutes(),
-  )}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 /** <input type="datetime-local"> value → Unix ms (local time), or null. */
@@ -187,8 +185,7 @@ export default function SummaryTab({ incident }) {
 
         {/* Derived display name preview */}
         <p className="mt-4 text-xs text-fg-muted">
-          Display name:{' '}
-          <span className="font-medium text-fg">{namePreview}</span>
+          Display name: <span className="font-medium text-fg">{namePreview}</span>
         </p>
 
         {/* Inverted-window warning */}
@@ -202,11 +199,8 @@ export default function SummaryTab({ incident }) {
         {/* Footer: provenance + save */}
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
           <span className="text-xs text-fg-muted">
-            Created by{' '}
-            <span className="font-medium text-fg-muted">
-              {incident.createdBy || 'unknown'}
-            </span>{' '}
-            on {formatDateTime(Date.parse(incident.createdAt))}
+            Created by <span className="font-medium text-fg-muted">{incident.createdBy || 'unknown'}</span> on{' '}
+            {formatDateTime(Date.parse(incident.createdAt))}
           </span>
           <Button icon={Save} onClick={handleSave}>
             Save
@@ -219,12 +213,7 @@ export default function SummaryTab({ incident }) {
         <StatCard icon={Activity} label="Browser events" value={recap.events} />
         <StatCard icon={Terminal} label="Commands" value={recap.commands} />
         <StatCard icon={HardDrive} label="Endpoint artifacts" value={recap.artifacts} />
-        <StatCard
-          icon={Flag}
-          label="Flagged"
-          value={flaggedCount}
-          tone={flaggedCount > 0 ? 'accent' : 'default'}
-        />
+        <StatCard icon={Flag} label="Flagged" value={flaggedCount} tone={flaggedCount > 0 ? 'accent' : 'default'} />
         <StatCard icon={Bookmark} label="Bookmarks" value={recap.bookmarks} />
         <StatCard icon={StickyNote} label="Notes" value={notesCount} />
       </div>
@@ -244,10 +233,7 @@ export default function SummaryTab({ incident }) {
 function Field({ id, label, icon: Icon, children }) {
   return (
     <div>
-      <label
-        htmlFor={id}
-        className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted"
-      >
+      <label htmlFor={id} className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
         {Icon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
         {label}
       </label>

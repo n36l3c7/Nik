@@ -8,6 +8,7 @@ Revision ID: 0002_incident_os_column
 Revises: 0001_baseline
 Create Date: 2026-11-04
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

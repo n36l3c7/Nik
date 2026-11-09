@@ -176,12 +176,17 @@ npm run build      # production build (static site in dist/)
 npm run preview    # serve the production build locally
 npm test           # frontend unit tests (Node's built-in test runner, no deps)
 npm run lint       # ESLint (React + hooks rules), must report no problems
+npm run format     # Prettier: rewrite JS/JSX, CSS, JSON, HTML and YAML in place
+npm run format:check  # Prettier in check mode (what CI runs)
 ```
 
-Backend tests run with `pytest` and the linter with `ruff check .`, both from
-`backend/` after `pip install -r requirements-dev.txt` (Ruff settings live in
-`backend/ruff.toml`). CI runs both linters, both test suites and the build;
-a change is done only when all of them pass.
+Backend tests run with `pytest`, the linter with `ruff check .` and the
+formatter with `ruff format .` (`--check` in CI), all from `backend/` after
+`pip install -r requirements-dev.txt`; Ruff settings live in `backend/ruff.toml`.
+Formatting is enforced, not reviewed: run the formatters before committing.
+Markdown is excluded from Prettier (see `.prettierignore`). CI runs the linters,
+the format checks, both test suites and the build; a change is done only when
+all of them pass.
 
 **Upgrading an existing database:** run `alembic upgrade head` from `backend/`
 after pulling a release that adds a migration (the Docker image does this on

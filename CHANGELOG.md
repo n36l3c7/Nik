@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Prettier (`npm run format`, `npm run format:check`) for JS/JSX, CSS, JSON,
+  HTML and YAML, and `ruff format` for the backend; CI checks both. The whole
+  code base was reformatted once in this release, with no behaviour change.
+
 ## [2.3.1] - 2026-11-09
 
 ### Added

@@ -9,17 +9,7 @@
  * clipboard.
  */
 import { useEffect, useMemo, useState } from 'react'
-import {
-  CalendarClock,
-  Check,
-  Clock,
-  Copy,
-  Flag,
-  Hash,
-  RotateCcw,
-  Terminal,
-  TriangleAlert,
-} from 'lucide-react'
+import { CalendarClock, Check, Clock, Copy, Flag, Hash, RotateCcw, Terminal, TriangleAlert } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
@@ -97,9 +87,7 @@ function FlagButton({ flagged, onToggle }) {
       className={[
         'inline-flex items-center justify-center p-1 transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        flagged
-          ? 'text-accent hover:text-accent-fg'
-          : 'text-fg-muted hover:text-accent',
+        flagged ? 'text-accent hover:text-accent-fg' : 'text-fg-muted hover:text-accent',
       ].join(' ')}
     >
       <Flag className="h-4 w-4" fill={flagged ? 'currentColor' : 'none'} />
@@ -153,17 +141,11 @@ export default function CommandsSection({ incident, shellId, commands = [] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incident?.id])
 
-  const events = useMemo(
-    () => buildCommandEvents({ commands, engine }),
-    [commands, engine],
-  )
+  const events = useMemo(() => buildCommandEvents({ commands, engine }), [commands, engine])
 
   const stats = useMemo(() => computeSocStats(events), [events])
   const withTime = useMemo(() => events.filter((e) => Number.isFinite(e.time)).length, [events])
-  const flaggedCount = useMemo(
-    () => events.reduce((acc, event) => acc + (flags[event.id] ? 1 : 0), 0),
-    [events, flags],
-  )
+  const flaggedCount = useMemo(() => events.reduce((acc, event) => acc + (flags[event.id] ? 1 : 0), 0), [events, flags])
 
   const filtered = useMemo(
     () =>
@@ -258,9 +240,7 @@ export default function CommandsSection({ incident, shellId, commands = [] }) {
           searchKeys={['command']}
           searchPlaceholder="Search commands…"
           defaultSort={{ key: 'time', dir: 'desc' }}
-          rowClassName={(row) =>
-            flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? '')
-          }
+          rowClassName={(row) => (flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? ''))}
           toolbar={toolbar}
           emptyMessage="No commands match the current filters"
         />
@@ -277,8 +257,7 @@ function NoTimestampNote({ withTime, total }) {
   return (
     <Card title="Timestamps" icon={Clock}>
       <p className="text-sm text-fg-muted">
-        {withTime.toLocaleString('en-US')} of {total.toLocaleString('en-US')} commands carry a
-        timestamp.
+        {withTime.toLocaleString('en-US')} of {total.toLocaleString('en-US')} commands carry a timestamp.
       </p>
       <p className="mt-2 text-xs text-fg-muted">
         {allMissing
@@ -327,9 +306,7 @@ function buildColumns({ incidentId, shellId, flags, toggleFlag }) {
       render: (row) => (
         <div className="group flex items-start gap-1.5">
           <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet" />
-          <code className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-fg">
-            {row.command}
-          </code>
+          <code className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-fg">{row.command}</code>
           <CopyButton text={row.command} />
         </div>
       ),

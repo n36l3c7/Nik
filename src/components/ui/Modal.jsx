@@ -9,14 +9,7 @@ import { X } from 'lucide-react'
  * - `maxWidth` is a Tailwind class (default 'max-w-lg').
  * - No portal: the fixed layer + z-50 is enough for this SPA.
  */
-export default function Modal({
-  open,
-  onClose,
-  title,
-  children,
-  footer = null,
-  maxWidth = 'max-w-lg',
-}) {
+export default function Modal({ open, onClose, title, children, footer = null, maxWidth = 'max-w-lg' }) {
   // Close with the Escape key (listener active only when the modal is open)
   useEffect(() => {
     if (!open) return undefined
@@ -50,9 +43,7 @@ export default function Modal({
       >
         {/* Header: title + close button */}
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
-          <h2 className="truncate font-mono text-sm font-semibold text-fg">
-            {title}
-          </h2>
+          <h2 className="truncate font-mono text-sm font-semibold text-fg">{title}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -64,15 +55,11 @@ export default function Modal({
         </header>
 
         {/* Scrollable body for long content */}
-        <div className="overflow-y-auto p-5 text-sm text-fg">
-          {children}
-        </div>
+        <div className="overflow-y-auto p-5 text-sm text-fg">{children}</div>
 
         {/* Optional footer with the actions */}
         {footer && (
-          <footer className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
-            {footer}
-          </footer>
+          <footer className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">{footer}</footer>
         )}
       </div>
     </div>

@@ -1,15 +1,4 @@
-import {
-  Bookmark,
-  Chrome,
-  Compass,
-  Database,
-  Download,
-  Flame,
-  Globe,
-  Navigation,
-  Shield,
-  Zap,
-} from 'lucide-react'
+import { Bookmark, Chrome, Compass, Database, Download, Flame, Globe, Navigation, Shield, Zap } from 'lucide-react'
 
 /*
  * ============================================================================

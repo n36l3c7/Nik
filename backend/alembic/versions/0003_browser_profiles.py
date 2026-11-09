@@ -13,6 +13,7 @@ Revision ID: 0003_browser_profiles
 Revises: 0002_incident_os_column
 Create Date: 2026-11-04
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa

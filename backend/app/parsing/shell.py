@@ -167,8 +167,10 @@ def parse_shell_history(data: bytes, fmt: str, file_name: str = ""):
         rows = (
             parsed
             if isinstance(parsed, list)
-            else parsed.get("commands") if isinstance(parsed, dict) and isinstance(parsed.get("commands"), list)
-            else parsed.get("history") if isinstance(parsed, dict) and isinstance(parsed.get("history"), list)
+            else parsed.get("commands")
+            if isinstance(parsed, dict) and isinstance(parsed.get("commands"), list)
+            else parsed.get("history")
+            if isinstance(parsed, dict) and isinstance(parsed.get("history"), list)
             else None
         )
         if rows:

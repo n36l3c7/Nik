@@ -102,9 +102,7 @@ export function AuditProvider({ children }) {
   }, [])
 
   return (
-    <AuditContext.Provider value={{ entries, loading, log, clearAudit, refresh }}>
-      {children}
-    </AuditContext.Provider>
+    <AuditContext.Provider value={{ entries, loading, log, clearAudit, refresh }}>{children}</AuditContext.Provider>
   )
 }
 

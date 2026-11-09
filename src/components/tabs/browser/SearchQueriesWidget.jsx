@@ -20,9 +20,7 @@ export default function SearchQueriesWidget({ history = [], engine }) {
     () =>
       topSearchQueries(history, 5).map((item) => {
         // Analyze the query alone (as a title) to reuse the SOC engine.
-        const matches = engine
-          ? engine.matchKeywords({ url: '', title: item.query })
-          : []
+        const matches = engine ? engine.matchKeywords({ url: '', title: item.query }) : []
         const severity = matches.some((rule) => rule.severity === 'high')
           ? 'high'
           : matches.length > 0
@@ -36,26 +34,18 @@ export default function SearchQueriesWidget({ history = [], engine }) {
   return (
     <Card title="Most frequent web searches" icon={Search}>
       {queries.length === 0 ? (
-        <p className="text-sm text-fg-muted">
-          No search queries found in URLs
-        </p>
+        <p className="text-sm text-fg-muted">No search queries found in URLs</p>
       ) : (
         <ol className="space-y-2.5">
           {queries.map(({ query, count, matches, severity }, index) => (
             <li key={query} className="flex items-center gap-2.5">
               {/* Ranking position */}
-              <span className="w-5 shrink-0 text-right text-xs font-semibold text-fg-muted">
-                {index + 1}.
-              </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">
-                &ldquo;{query}&rdquo;
-              </span>
+              <span className="w-5 shrink-0 text-right text-xs font-semibold text-fg-muted">{index + 1}.</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">&ldquo;{query}&rdquo;</span>
               {severity && (
                 <Badge
                   color={severity === 'high' ? 'red' : 'amber'}
-                  title={`Matches detection rules: ${matches
-                    .map((rule) => rule.label)
-                    .join(', ')}`}
+                  title={`Matches detection rules: ${matches.map((rule) => rule.label).join(', ')}`}
                 >
                   suspicious
                 </Badge>

@@ -35,9 +35,7 @@ function CreatedKey({ value, onDismiss }) {
         Copy this key now — it is shown only once and cannot be retrieved again.
       </p>
       <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate bg-panel px-2 py-1.5 font-mono text-xs text-fg">
-          {value}
-        </code>
+        <code className="min-w-0 flex-1 truncate bg-panel px-2 py-1.5 font-mono text-xs text-fg">{value}</code>
         <Button size="sm" variant="secondary" icon={copied ? Check : Copy} onClick={copy}>
           {copied ? 'Copied' : 'Copy'}
         </Button>
@@ -123,8 +121,8 @@ export default function ApiKeysSection() {
         </div>
         <p className="mt-1 text-sm text-fg-muted">
           Keys let external clients drive the platform via the REST API. Send the key in the{' '}
-          <code className="font-mono">X-API-Key</code> header. A key grants analyst-level access
-          (incidents, notes, uploads); it cannot manage users or keys. See the{' '}
+          <code className="font-mono">X-API-Key</code> header. A key grants analyst-level access (incidents, notes,
+          uploads); it cannot manage users or keys. See the{' '}
           <a href="/api/docs" className="font-medium text-accent hover:underline">
             interactive API docs
           </a>
@@ -150,12 +148,8 @@ export default function ApiKeysSection() {
             <li key={key.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-medium text-fg">
-                    {key.label}
-                  </span>
-                  <code className="bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-fg-muted">
-                    {key.prefix}…
-                  </code>
+                  <span className="truncate text-sm font-medium text-fg">{key.label}</span>
+                  <code className="bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-fg-muted">{key.prefix}…</code>
                   <Badge color={key.role === 'admin' ? 'cyan' : 'slate'}>{key.role}</Badge>
                   {!(key.scopes || []).includes('write') && <Badge color="amber">read-only</Badge>}
                 </div>
@@ -203,12 +197,7 @@ export default function ApiKeysSection() {
             <label htmlFor="new-key-role" className="mb-1 block text-xs font-medium text-fg-muted">
               Permissions
             </label>
-            <select
-              id="new-key-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className={INPUT_CLASS}
-            >
+            <select id="new-key-role" value={role} onChange={(e) => setRole(e.target.value)} className={INPUT_CLASS}>
               <option value="analyst">Analyst (incidents, notes, uploads)</option>
               <option value="admin">Admin (also users &amp; backup)</option>
             </select>
@@ -230,10 +219,9 @@ export default function ApiKeysSection() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <label
-            className={[
-              'flex items-center gap-2 text-sm',
-              role === 'admin' ? 'text-fg-muted' : 'text-fg-muted',
-            ].join(' ')}
+            className={['flex items-center gap-2 text-sm', role === 'admin' ? 'text-fg-muted' : 'text-fg-muted'].join(
+              ' ',
+            )}
           >
             <input
               type="checkbox"

@@ -37,9 +37,7 @@ class Session(Base):
     __tablename__ = "sessions"
 
     token: Mapped[str] = mapped_column(String, primary_key=True)
-    user_id: Mapped[str] = mapped_column(
-        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     expires_at: Mapped[str] = mapped_column(String, nullable=False)
 

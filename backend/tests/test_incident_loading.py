@@ -25,8 +25,13 @@ def test_summary_view_includes_os_without_document_body(admin: TestClient):
     rows = admin.get("/api/incidents?view=summary").json()["incidents"]
     assert rows == [
         {
-            "id": "s1", "name": "wks01", "host": "wks01", "username": "", "os": "macos",
-            "createdAt": "", "updatedAt": "",
+            "id": "s1",
+            "name": "wks01",
+            "host": "wks01",
+            "username": "",
+            "os": "macos",
+            "createdAt": "",
+            "updatedAt": "",
         }
     ]
 
@@ -43,22 +48,34 @@ def test_merge_patch_updates_only_the_sent_subtree(admin: TestClient):
         admin,
         id="m1",
         data={
-            "browser": {"browsers": {
-                "chrome": {"profiles": {
-                    "p1": {"history": [{"id": "h1"}], "meta": {"history": {"fileName": "History"}}},
-                    "p2": {"history": [{"id": "h9"}]},
-                }},
-                "firefox": {"profiles": {"p3": {"history": [{"id": "f1"}]}}},
-            }},
+            "browser": {
+                "browsers": {
+                    "chrome": {
+                        "profiles": {
+                            "p1": {"history": [{"id": "h1"}], "meta": {"history": {"fileName": "History"}}},
+                            "p2": {"history": [{"id": "h9"}]},
+                        }
+                    },
+                    "firefox": {"profiles": {"p3": {"history": [{"id": "f1"}]}}},
+                }
+            },
             "commands": {"shells": {"bash": {"commands": [{"id": "c1"}]}}},
         },
         flags={"a": {"key": "a"}, "b": {"key": "b"}},
     )
     patch = {
         "updatedAt": "2026-11-04T10:00:00.000Z",
-        "data": {"browser": {"browsers": {"chrome": {"profiles": {
-            "p1": {"history": [{"id": "h2"}], "meta": {"history": None}},
-        }}}}},
+        "data": {
+            "browser": {
+                "browsers": {
+                    "chrome": {
+                        "profiles": {
+                            "p1": {"history": [{"id": "h2"}], "meta": {"history": None}},
+                        }
+                    }
+                }
+            }
+        },
         "flags": {"a": None, "c": {"key": "c"}},
     }
     res = admin.patch("/api/incidents/m1", headers=MERGE, content=json.dumps(patch))
@@ -102,11 +119,13 @@ def test_migration_adds_and_backfills_the_os_column(tmp_path, monkeypatch):
     url = "sqlite:///" + str(tmp_path / "legacy.db").replace("\\", "/")
     engine = sa.create_engine(url)
     with engine.begin() as conn:
-        conn.execute(sa.text(
-            "CREATE TABLE incidents (id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, host VARCHAR NOT NULL,"
-            " username VARCHAR NOT NULL, updated_at VARCHAR NOT NULL, created_at VARCHAR NOT NULL,"
-            " doc JSON NOT NULL)"
-        ))
+        conn.execute(
+            sa.text(
+                "CREATE TABLE incidents (id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, host VARCHAR NOT NULL,"
+                " username VARCHAR NOT NULL, updated_at VARCHAR NOT NULL, created_at VARCHAR NOT NULL,"
+                " doc JSON NOT NULL)"
+            )
+        )
         conn.execute(
             sa.text("INSERT INTO incidents VALUES ('i1', '', '', '', '', '', :doc)"),
             {"doc": json.dumps({"id": "i1", "os": "linux"})},

@@ -104,9 +104,7 @@ export function buildEvents({ history = [], downloads = [], engine }) {
   })
 
   // "All events": union sorted by time (most recent on top).
-  const allEvents = [...historyEvents, ...downloadEvents].sort(
-    (a, b) => (b.time ?? 0) - (a.time ?? 0),
-  )
+  const allEvents = [...historyEvents, ...downloadEvents].sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
 
   return { historyEvents, downloadEvents, allEvents }
 }

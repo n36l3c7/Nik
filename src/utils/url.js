@@ -32,9 +32,7 @@ const SEARCH_ENGINES = [
 export function extractSearchQuery(url) {
   try {
     const parsed = new URL(url)
-    const engine = SEARCH_ENGINES.find((e) =>
-      parsed.hostname.includes(e.hostIncludes),
-    )
+    const engine = SEARCH_ENGINES.find((e) => parsed.hostname.includes(e.hostIncludes))
     if (!engine) return null
     const query = parsed.searchParams.get(engine.param)
     return query?.trim() ? query.trim() : null
@@ -74,9 +72,7 @@ export function topSearchQueries(historyEntries, n = 5) {
     if (existing) existing.count += 1
     else counts.set(key, { query, count: 1 })
   }
-  return [...counts.values()]
-    .sort((a, b) => b.count - a.count)
-    .slice(0, n)
+  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, n)
 }
 
 /** Truncates a string (long URLs in tables) adding "…". */

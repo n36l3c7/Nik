@@ -274,12 +274,20 @@ function mapTextDocument(source, parsedJson, csvRows) {
   // Extract the rows array (from a container JSON or an already-parsed CSV).
   const rows =
     csvRows ??
-    extractRowsArray(parsedJson, ['history', 'bookmarks', 'shortcuts', 'downloads', 'entries', 'rows', 'data', 'items', 'records'])
+    extractRowsArray(parsedJson, [
+      'history',
+      'bookmarks',
+      'shortcuts',
+      'downloads',
+      'entries',
+      'rows',
+      'data',
+      'items',
+      'records',
+    ])
 
   if (!Array.isArray(rows)) {
-    throw new Error(
-      'Unrecognized JSON format: expected an array of objects (export from forensic tools).',
-    )
+    throw new Error('Unrecognized JSON format: expected an array of objects (export from forensic tools).')
   }
 
   if (kind === 'bookmarks') return { bookmarks: mapBookmarkRows(rows) }
@@ -320,10 +328,7 @@ export async function parseBrowserSource(file, engine, source) {
       )
     }
     const produced = await parseSqliteSource(buffer, engine, source.key)
-    const totalRows = Object.values(produced).reduce(
-      (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
-      0,
-    )
+    const totalRows = Object.values(produced).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0)
     if (totalRows === 0) {
       throw new Error('The database was read but contains no entries for this source.')
     }
@@ -361,22 +366,15 @@ export async function parseBrowserSource(file, engine, source) {
   } else {
     const result = Papa.parse(text, { header: true, skipEmptyLines: true })
     if (!Array.isArray(result.data) || result.data.length === 0) {
-      throw new Error(
-        'Unrecognized format: the file is neither SQLite, JSON, nor a CSV with a column header.',
-      )
+      throw new Error('Unrecognized format: the file is neither SQLite, JSON, nor a CSV with a column header.')
     }
     produced = mapTextDocument(source, null, result.data)
     format = 'csv'
   }
 
-  const totalRows = Object.values(produced).reduce(
-    (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
-    0,
-  )
+  const totalRows = Object.values(produced).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0)
   if (totalRows === 0) {
-    throw new Error(
-      `No valid entries found in the file for "${source.label}": check the fields (at least "url").`,
-    )
+    throw new Error(`No valid entries found in the file for "${source.label}": check the fields (at least "url").`)
   }
   return { produced, format }
 }

@@ -143,8 +143,11 @@ def parse_setupapi(text, category):
             ts = re.search(r"Section start\s+([\d/]+\s+[\d:.]+)", line)
             serial = pending.split("\\")[-1] if "\\" in pending else ""
             records.append(
-                {"id": gen_id(), "time": any_to_ms(ts.group(1).replace("/", "-")) if ts else None,
-                 "fields": {"device": pending, "serial": serial, "vendor": "", "connection": "setupapi"}}
+                {
+                    "id": gen_id(),
+                    "time": any_to_ms(ts.group(1).replace("/", "-")) if ts else None,
+                    "fields": {"device": pending, "serial": serial, "vendor": "", "connection": "setupapi"},
+                }
             )
             pending = None
     if not records:

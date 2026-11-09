@@ -38,9 +38,7 @@ def sign(secret: str, body: bytes) -> str:
 
 
 def _deliver(url: str, secret: str, event: str, data: dict) -> None:
-    body = json.dumps(
-        {"event": event, "at": datetime.now(timezone.utc).isoformat(), "data": data}
-    ).encode("utf-8")
+    body = json.dumps({"event": event, "at": datetime.now(timezone.utc).isoformat(), "data": data}).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,

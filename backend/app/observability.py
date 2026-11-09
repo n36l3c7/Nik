@@ -45,9 +45,7 @@ def setup_logging(level: str = "INFO") -> None:
     """Configure a single structured stream handler for the app loggers."""
     handler = logging.StreamHandler()
     handler.addFilter(_RequestIdFilter())
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s"))
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level.upper())

@@ -6,15 +6,7 @@
  * so all four categories share this one component.
  */
 import { useEffect, useMemo, useState } from 'react'
-import {
-  CalendarClock,
-  Check,
-  Clock,
-  Copy,
-  Flag,
-  RotateCcw,
-  TriangleAlert,
-} from 'lucide-react'
+import { CalendarClock, Check, Clock, Copy, Flag, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
@@ -89,9 +81,7 @@ function FlagButton({ flagged, onToggle }) {
       className={[
         'inline-flex items-center justify-center p-1 transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        flagged
-          ? 'text-accent hover:text-accent-fg'
-          : 'text-fg-muted hover:text-accent',
+        flagged ? 'text-accent hover:text-accent-fg' : 'text-fg-muted hover:text-accent',
       ].join(' ')}
     >
       <Flag className="h-4 w-4" fill={flagged ? 'currentColor' : 'none'} />
@@ -124,9 +114,7 @@ function DetectionCell({ event }) {
 function FieldCell({ event, column }) {
   const value = event.fields?.[column.key] ?? ''
   if (!value) return <span className="text-fg-muted">—</span>
-  const base = column.mono
-    ? 'font-mono text-xs text-fg'
-    : 'text-sm text-fg'
+  const base = column.mono ? 'font-mono text-xs text-fg' : 'text-sm text-fg'
   const cell = (
     <span className={`${column.grow ? 'break-all' : 'whitespace-nowrap'} ${base}`} title={value}>
       {value}
@@ -167,17 +155,11 @@ export default function ArtifactSection({ incident, category, records = [] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incident?.id, category.id])
 
-  const events = useMemo(
-    () => buildArtifactEvents({ records, category, engine }),
-    [records, category, engine],
-  )
+  const events = useMemo(() => buildArtifactEvents({ records, category, engine }), [records, category, engine])
 
   const stats = useMemo(() => computeSocStats(events), [events])
   const withTime = useMemo(() => events.filter((e) => Number.isFinite(e.time)).length, [events])
-  const flaggedCount = useMemo(
-    () => events.reduce((acc, e) => acc + (flags[e.id] ? 1 : 0), 0),
-    [events, flags],
-  )
+  const flaggedCount = useMemo(() => events.reduce((acc, e) => acc + (flags[e.id] ? 1 : 0), 0), [events, flags])
 
   const filtered = useMemo(
     () =>
@@ -254,12 +236,7 @@ export default function ArtifactSection({ incident, category, records = [] }) {
           tone={stats.flagged > 0 ? 'accent' : 'default'}
           hint={stats.high > 0 ? `${stats.high} high-severity` : undefined}
         />
-        <StatCard
-          icon={Flag}
-          label="Flagged"
-          value={flaggedCount}
-          tone={flaggedCount > 0 ? 'accent' : 'default'}
-        />
+        <StatCard icon={Flag} label="Flagged" value={flaggedCount} tone={flaggedCount > 0 ? 'accent' : 'default'} />
       </div>
 
       <Card title={category.label} icon={CategoryIcon}>
@@ -270,9 +247,7 @@ export default function ArtifactSection({ incident, category, records = [] }) {
           searchKeys={searchKeys}
           searchPlaceholder={`Search ${category.label.toLowerCase()}…`}
           defaultSort={{ key: 'time', dir: 'desc' }}
-          rowClassName={(row) =>
-            flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? '')
-          }
+          rowClassName={(row) => (flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? ''))}
           toolbar={toolbar}
           emptyMessage="No records match the current filters"
         />
@@ -318,11 +293,7 @@ function buildColumns({ category, incidentId, flags, toggleFlag }) {
     sortable: true,
     sortAccessor: (row) => row.sourceName ?? '',
     render: (row) =>
-      row.sourceName ? (
-        <Badge color="slate">{row.sourceName}</Badge>
-      ) : (
-        <span className="text-fg-muted">—</span>
-      ),
+      row.sourceName ? <Badge color="slate">{row.sourceName}</Badge> : <span className="text-fg-muted">—</span>,
   }
 
   const fieldColumns = category.columns.map((column) => ({

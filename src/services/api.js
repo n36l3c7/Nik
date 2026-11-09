@@ -79,8 +79,7 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
 
   if (!response.ok) {
     const detail =
-      (payload && typeof payload.detail === 'string' && payload.detail) ||
-      `Request failed (${response.status})`
+      (payload && typeof payload.detail === 'string' && payload.detail) || `Request failed (${response.status})`
     throw new Error(detail)
   }
 

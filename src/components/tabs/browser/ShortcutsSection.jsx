@@ -23,9 +23,7 @@ function FlagButton({ flagged, onToggle }) {
       title={flagged ? 'Remove flag' : 'Flag as malicious'}
       className={[
         'p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        flagged
-          ? 'text-accent'
-          : 'text-fg-subtle hover:text-accent',
+        flagged ? 'text-accent' : 'text-fg-subtle hover:text-accent',
       ].join(' ')}
     >
       <Flag size={15} className={flagged ? 'fill-accent' : ''} />
@@ -57,11 +55,7 @@ function CopyButton({ text }) {
       title="Copy to clipboard"
       className="shrink-0 p-0.5 text-fg-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
     >
-      {copied ? (
-        <Check size={13} className="text-accent" />
-      ) : (
-        <Copy size={13} />
-      )}
+      {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
     </button>
   )
 }
@@ -118,10 +112,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
         label: 'Title',
         render: (row) =>
           row.title ? (
-            <span
-              className="block max-w-[28ch] truncate text-fg"
-              title={row.title}
-            >
+            <span className="block max-w-[28ch] truncate text-fg" title={row.title}>
               {row.title}
             </span>
           ) : (
@@ -133,10 +124,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
         label: 'URL',
         render: (row) => (
           <span className="group flex items-center gap-1.5">
-            <span
-              className="font-mono text-xs text-fg-muted"
-              title={row.url}
-            >
+            <span className="font-mono text-xs text-fg-muted" title={row.url}>
               {truncate(row.url, 60)}
             </span>
             {row.url && (
@@ -179,10 +167,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
   )
 
   // Cyan highlight for flagged rows (distinct from severity colors).
-  const rowClassName = (row) =>
-    flags[row.id]
-      ? 'bg-accent-soft border-l-2 border-l-accent-strong'
-      : ''
+  const rowClassName = (row) => (flags[row.id] ? 'bg-accent-soft border-l-2 border-l-accent-strong' : '')
 
   // No data: explain what Shortcuts are and how to import them.
   if (!shortcuts.length) {

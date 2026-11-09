@@ -247,17 +247,13 @@ export async function parseShellHistory(file, shell) {
   if (/\.csv$/i.test(file.name)) {
     const commands = parseCsvExport(text)
     if (commands && commands.length > 0) return { commands, format: 'csv' }
-    throw new Error(
-      'CSV not recognized: a "command" (or cmd/command_line) column is required.',
-    )
+    throw new Error('CSV not recognized: a "command" (or cmd/command_line) column is required.')
   }
 
   const parser = TEXT_PARSERS[shell.format] ?? parseBash
   const commands = parser(text)
   if (commands.length === 0) {
-    throw new Error(
-      `No commands found: the file does not look like a ${shell.label} history.`,
-    )
+    throw new Error(`No commands found: the file does not look like a ${shell.label} history.`)
   }
   return { commands, format: 'text' }
 }

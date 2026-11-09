@@ -30,8 +30,7 @@ export const SHELLS = [
     format: 'bash',
     accent: 'text-accent',
     os: ['linux', 'macos'],
-    timestamps:
-      'Timestamps only exist if HISTTIMEFORMAT was set on the host (lines starting with #<epoch>).',
+    timestamps: 'Timestamps only exist if HISTTIMEFORMAT was set on the host (lines starting with #<epoch>).',
     source: {
       key: 'history',
       label: '.bash_history',
@@ -93,16 +92,14 @@ export const SHELLS = [
     format: 'psreadline',
     accent: 'text-info',
     os: ['windows', 'linux', 'macos'],
-    timestamps:
-      'PSReadLine history has NO timestamps: correlate with EDR/Event Logs (4104) for the execution time.',
+    timestamps: 'PSReadLine history has NO timestamps: correlate with EDR/Event Logs (4104) for the execution time.',
     source: {
       key: 'history',
       label: 'ConsoleHost_history.txt',
       icon: SquareChevronRight,
       accept: '.txt',
       paths: {
-        windows:
-          '%APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt',
+        windows: '%APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt',
         linux: '~/.local/share/powershell/PSReadLine/ConsoleHost_history.txt',
         macos: '~/.local/share/powershell/PSReadLine/ConsoleHost_history.txt',
       },

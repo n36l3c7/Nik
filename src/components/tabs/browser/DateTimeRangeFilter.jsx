@@ -45,17 +45,13 @@ const FIELD_CLASSES = [
  *           onChange: (range: {start: number|null, end: number|null}) => void }} props
  */
 export default function DateTimeRangeFilter({ start, end, onChange }) {
-  const handleFrom = (event) =>
-    onChange({ start: localInputToMs(event.target.value), end })
+  const handleFrom = (event) => onChange({ start: localInputToMs(event.target.value), end })
 
-  const handleTo = (event) =>
-    onChange({ start, end: localInputToMs(event.target.value) })
+  const handleTo = (event) => onChange({ start, end: localInputToMs(event.target.value) })
 
   return (
     <div className="inline-flex flex-wrap items-center gap-2">
-      <span className="whitespace-nowrap text-xs font-medium text-fg-muted">
-        Time range
-      </span>
+      <span className="whitespace-nowrap text-xs font-medium text-fg-muted">Time range</span>
       <label className="inline-flex items-center gap-1">
         <span className="text-xs text-fg-muted">From</span>
         <input

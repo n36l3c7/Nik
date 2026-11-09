@@ -30,17 +30,9 @@ export default function EventTypeIcon({ type, withLabel = false }) {
   const Icon = ICONS[type] ?? Link2
   const meta = EVENT_TYPE_META[type] ?? EVENT_TYPE_META.visit
   return (
-    <span
-      className="inline-flex items-center gap-1.5"
-      title={meta.label}
-      aria-label={meta.label}
-    >
+    <span className="inline-flex items-center gap-1.5" title={meta.label} aria-label={meta.label}>
       <Icon className={`h-4 w-4 shrink-0 ${ICON_COLORS[type] ?? ICON_COLORS.visit}`} />
-      {withLabel && (
-        <span className="text-xs font-medium text-fg-muted">
-          {meta.label}
-        </span>
-      )}
+      {withLabel && <span className="text-xs font-medium text-fg-muted">{meta.label}</span>}
     </span>
   )
 }

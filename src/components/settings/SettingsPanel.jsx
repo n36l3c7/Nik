@@ -97,9 +97,7 @@ export default function SettingsPanel({ open, onClose, section = 'detection', on
                   className={[
                     'flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                    isActive
-                      ? 'bg-accent-soft text-accent'
-                      : 'text-fg-muted hover:bg-canvas',
+                    isActive ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-canvas',
                   ].join(' ')}
                 >
                   <Icon className="h-4 w-4 shrink-0" />

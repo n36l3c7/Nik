@@ -14,11 +14,9 @@ import { formatDateTime } from '../../../utils/time.js'
 function actionBadgeColor(action) {
   const a = String(action ?? '').toLowerCase()
   if (a.includes('delete') || a.includes('remove') || a.includes('clear')) return 'red'
-  if (a.includes('create') || a.includes('add') || a.includes('import') || a.includes('upload'))
-    return 'emerald'
+  if (a.includes('create') || a.includes('add') || a.includes('import') || a.includes('upload')) return 'emerald'
   if (a.includes('login')) return 'cyan'
-  if (a.includes('update') || a.includes('edit') || a.includes('flag') || a.includes('demo'))
-    return 'amber'
+  if (a.includes('update') || a.includes('edit') || a.includes('flag') || a.includes('demo')) return 'amber'
   return 'slate'
 }
 
@@ -29,20 +27,14 @@ const COLUMNS = [
     sortable: true,
     sortAccessor: (row) => Date.parse(row.at) || 0,
     className: 'whitespace-nowrap',
-    render: (row) => (
-      <span className="font-mono text-xs text-fg-muted">
-        {formatDateTime(Date.parse(row.at))}
-      </span>
-    ),
+    render: (row) => <span className="font-mono text-xs text-fg-muted">{formatDateTime(Date.parse(row.at))}</span>,
   },
   {
     key: 'actor',
     label: 'Actor',
     sortable: true,
     className: 'whitespace-nowrap',
-    render: (row) => (
-      <span className="font-medium text-fg">{row.actor || 'system'}</span>
-    ),
+    render: (row) => <span className="font-medium text-fg">{row.actor || 'system'}</span>,
   },
   {
     key: 'action',
@@ -58,9 +50,7 @@ const COLUMNS = [
   {
     key: 'details',
     label: 'Details',
-    render: (row) => (
-      <span className="text-fg-muted">{row.details || '—'}</span>
-    ),
+    render: (row) => <span className="text-fg-muted">{row.details || '—'}</span>,
   },
   {
     key: 'incidentName',
@@ -122,8 +112,8 @@ export default function AuditLogSection() {
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-high" aria-hidden="true" />
             <p className="text-sm text-high">
-              Permanently delete all {entries.length} audit{' '}
-              {entries.length === 1 ? 'entry' : 'entries'}? This cannot be undone.
+              Permanently delete all {entries.length} audit {entries.length === 1 ? 'entry' : 'entries'}? This cannot be
+              undone.
             </p>
           </div>
           <div className="flex items-center gap-2">

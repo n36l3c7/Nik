@@ -27,16 +27,14 @@ export const DEFAULT_SUSPICIOUS_KEYWORDS = [
     label: 'pastebin',
     pattern: 'pastebin',
     severity: 'medium',
-    description:
-      'Text sharing service, often used for data exfiltration or payload delivery.',
+    description: 'Text sharing service, often used for data exfiltration or payload delivery.',
   },
   {
     id: 'mega-nz',
     label: 'mega.nz',
     pattern: 'mega\\.nz',
     severity: 'medium',
-    description:
-      'Encrypted cloud storage, a frequent channel for exfiltration or downloading unauthorized tools.',
+    description: 'Encrypted cloud storage, a frequent channel for exfiltration or downloading unauthorized tools.',
   },
   {
     id: 'onion',
@@ -137,7 +135,8 @@ export const DEFAULT_COMMAND_KEYWORDS = [
   {
     id: 'cmd-defense-evasion',
     label: 'defense evasion',
-    pattern: 'set-mppreference|amsi(utils|\\.dll)|setenforce\\s+0|systemctl\\s+(stop|disable)\\s+(falcon|sentinel|cb|auditd)|auditctl\\s+-e\\s*0',
+    pattern:
+      'set-mppreference|amsi(utils|\\.dll)|setenforce\\s+0|systemctl\\s+(stop|disable)\\s+(falcon|sentinel|cb|auditd)|auditctl\\s+-e\\s*0',
     severity: 'high',
     description: 'Disabling AV/EDR/auditing (Defender, SELinux, auditd, EDR services).',
   },
@@ -151,7 +150,8 @@ export const DEFAULT_COMMAND_KEYWORDS = [
   {
     id: 'cmd-persistence',
     label: 'persistence',
-    pattern: 'crontab\\s+-|authorized_keys|systemctl\\s+enable|schtasks\\b|reg\\s+add\\b[^|;&]*\\\\run|launchctl\\s+(load|bootstrap)',
+    pattern:
+      'crontab\\s+-|authorized_keys|systemctl\\s+enable|schtasks\\b|reg\\s+add\\b[^|;&]*\\\\run|launchctl\\s+(load|bootstrap)',
     severity: 'medium',
     description: 'Persistence mechanisms: cron, SSH keys, services, Run keys, LaunchAgents.',
   },

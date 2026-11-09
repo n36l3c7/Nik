@@ -87,11 +87,13 @@ def test_migration_0003_moves_legacy_slots_into_profiles(tmp_path, monkeypatch):
     url = "sqlite:///" + str(tmp_path / "legacy.db").replace("\\", "/")
     engine = sa.create_engine(url)
     with engine.begin() as conn:
-        conn.execute(sa.text(
-            "CREATE TABLE incidents (id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, host VARCHAR NOT NULL,"
-            " username VARCHAR NOT NULL, os VARCHAR NOT NULL DEFAULT '', updated_at VARCHAR NOT NULL,"
-            " created_at VARCHAR NOT NULL, doc JSON NOT NULL)"
-        ))
+        conn.execute(
+            sa.text(
+                "CREATE TABLE incidents (id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, host VARCHAR NOT NULL,"
+                " username VARCHAR NOT NULL, os VARCHAR NOT NULL DEFAULT '', updated_at VARCHAR NOT NULL,"
+                " created_at VARCHAR NOT NULL, doc JSON NOT NULL)"
+            )
+        )
         docs = {
             "a": {"id": "a", "data": {"browser": {"browsers": {"chrome": LEGACY_SLOT}}}},
             "b": {"id": "b", "data": {}},

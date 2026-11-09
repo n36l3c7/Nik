@@ -32,9 +32,7 @@ MIN_PASSWORD_LENGTH = 8
 
 
 @router.post("", response_model=UserEnvelope, status_code=status.HTTP_201_CREATED)
-def create_user(
-    body: UserCreate, request: Request, db: OrmSession = Depends(get_db)
-) -> dict:
+def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get_db)) -> dict:
     """Create a user.
 
     - Zero users exist  → allowed without auth; role forced to 'admin'.
@@ -66,9 +64,7 @@ def create_user(
         created_by = caller.actor
 
     # Case-insensitive duplicate check.
-    existing = db.scalar(
-        select(User).where(func.lower(User.username) == username.lower())
-    )
+    existing = db.scalar(select(User).where(func.lower(User.username) == username.lower()))
     if existing is not None:
         raise HTTPException(status_code=400, detail="Username already exists")
 
@@ -86,9 +82,7 @@ def create_user(
 
 
 @router.get("", response_model=UsersEnvelope)
-def list_users(
-    _admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
-) -> dict:
+def list_users(_admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
     """List all users (admin session or admin key)."""
     users = db.scalars(select(User).order_by(User.created_at.asc())).all()
     return {"users": [user_to_dict(u) for u in users]}

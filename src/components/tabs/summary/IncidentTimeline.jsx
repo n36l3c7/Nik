@@ -65,10 +65,7 @@ export default function IncidentTimeline({ incident }) {
     <div className="space-y-5">
       {/* ---- Composer: add a free note block ---- */}
       <div className="border border-line bg-canvas p-3">
-        <label
-          htmlFor="timeline-note"
-          className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted"
-        >
+        <label htmlFor="timeline-note" className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
           <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
           Add a note
         </label>
@@ -94,17 +91,13 @@ export default function IncidentTimeline({ incident }) {
             <ListTree className="h-6 w-6 text-fg-muted" aria-hidden="true" />
           </div>
           <p className="max-w-md text-sm text-fg-muted">
-            No flagged entries or notes yet. Flag entries in the Browser Forensics tab to build
-            the incident timeline.
+            No flagged entries or notes yet. Flag entries in the Browser Forensics tab to build the incident timeline.
           </p>
         </div>
       ) : (
         <div className="relative">
           {/* Vertical rail passing through the centre of every dot. */}
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-2 left-[11px] top-2 w-px bg-raised"
-          />
+          <span aria-hidden="true" className="pointer-events-none absolute bottom-2 left-[11px] top-2 w-px bg-raised" />
           <ol className="space-y-5">
             {items.map((item) =>
               item.kind === 'flag' ? (
@@ -113,9 +106,7 @@ export default function IncidentTimeline({ incident }) {
                   flag={item.data}
                   profile={flagProfile(incident.data?.browser?.browsers, item.data)}
                   onAddComment={(text) => addFlagComment(incident.id, item.data.key, text)}
-                  onRemoveComment={(commentId) =>
-                    removeFlagComment(incident.id, item.data.key, commentId)
-                  }
+                  onRemoveComment={(commentId) => removeFlagComment(incident.id, item.data.key, commentId)}
                 />
               ) : (
                 <TimelineRow key={item.key} icon={StickyNote} tone="note">
@@ -195,9 +186,7 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
 
         {/* Meta: time + browser + section badges */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-fg-muted">
-            {formatDateTime(flag.time)}
-          </span>
+          <span className="font-mono text-xs text-fg-muted">{formatDateTime(flag.time)}</span>
           {flag.browserId && <Badge color="cyan">{flag.browserId}</Badge>}
           {profile && (
             <Badge color={profile.deleted ? 'amber' : 'slate'}>
@@ -214,14 +203,9 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
               <li key={c.id} className="group/comment flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-fg-muted">
-                    <span className="font-medium text-fg-muted">
-                      {c.author || 'unknown'}
-                    </span>{' '}
-                    · {formatRelative(c.at)}
+                    <span className="font-medium text-fg-muted">{c.author || 'unknown'}</span> · {formatRelative(c.at)}
                   </div>
-                  <p className="whitespace-pre-wrap break-words text-sm text-fg">
-                    {c.text}
-                  </p>
+                  <p className="whitespace-pre-wrap break-words text-sm text-fg">{c.text}</p>
                 </div>
                 <button
                   type="button"

@@ -29,9 +29,7 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
 
   const profiles = sortedProfiles(slot)
   const active = slot.profiles[activeProfileId] ?? profiles[0]
-  const nameError = dialog
-    ? profileNameError(slot, dialog.name, dialog.mode === 'rename' ? active.id : null)
-    : null
+  const nameError = dialog ? profileNameError(slot, dialog.name, dialog.mode === 'rename' ? active.id : null) : null
   const canDelete = profiles.length > 1
 
   const submitName = (event) => {
@@ -129,9 +127,7 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
           />
           {nameError && dialog?.name && <p className="text-xs text-high">{nameError}</p>}
           {browser.profileHint && (
-            <p className="text-xs text-fg-muted">
-              Tip: use the name of the profile folder ({browser.profileHint}).
-            </p>
+            <p className="text-xs text-fg-muted">Tip: use the name of the profile folder ({browser.profileHint}).</p>
           )}
         </form>
       </Modal>
@@ -160,10 +156,9 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
         }
       >
         <p className="text-sm text-fg-muted">
-          The <strong>{browser.label}</strong> profile <strong>{active.name}</strong> and all its
-          imported data ({profileRowCount(active).toLocaleString('en-US')} rows) will be deleted.
-          Flags placed on its entries are kept and marked as coming from a deleted profile.
-          This action is irreversible.
+          The <strong>{browser.label}</strong> profile <strong>{active.name}</strong> and all its imported data (
+          {profileRowCount(active).toLocaleString('en-US')} rows) will be deleted. Flags placed on its entries are kept
+          and marked as coming from a deleted profile. This action is irreversible.
         </p>
       </Modal>
     </div>
