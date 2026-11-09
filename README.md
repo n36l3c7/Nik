@@ -1102,6 +1102,28 @@ The read-only **Audit log** modal (`AuditLogView.jsx`, opened from the sidebar)
 surfaces the trail in a searchable table; an **admin** can clear the whole log
 behind an inline confirmation step.
 
+### 3.6 Large data sets
+
+A browser history of a few hundred thousand visits has to stay usable, so the
+Browser tab keeps its per-row work to a minimum:
+
+- `buildEvents()` parses each URL **once** (`analyzeUrl` in `utils/url.js`) and
+  stores `domain` and `searchQuery` on the event; the stat cards, the ranking
+  widgets and the table cells read those fields instead of parsing again
+  (`entryDomain()` / `entrySearchQuery()` fall back to parsing for raw entries).
+- `DataTable` sorts text with one shared `Intl.Collator`: `localeCompare` with
+  options builds a collator per comparison, which made a 300k-row sort take
+  seconds. The search box uses `useDeferredValue`, so typing never waits for
+  the filter.
+- `buildTimelineEvents()` takes `incident.data`, not the incident: flags and
+  notes do not change the timeline, so toggling a flag does not rebuild the
+  Timeline tab or the tail panel.
+
+Tables stay paginated (25 rows by default), so the DOM never holds more than
+one page; the cost of a large incident is in these data passes, not in
+rendering. When you add a per-row computation, do it once in the `build*`
+helper, not in a cell renderer.
+
 ---
 
 ## 4. Extending the platform

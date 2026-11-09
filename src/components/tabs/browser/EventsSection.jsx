@@ -34,7 +34,7 @@ import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { computeSocStats } from '../../../utils/soc.js'
 import { buildEvents, buildRedirectIndex, redirectTarget, formatBytes } from '../../../utils/events.js'
-import { extractDomain, truncate } from '../../../utils/url.js'
+import { entryDomain, extractDomain, truncate } from '../../../utils/url.js'
 import { formatDateTime } from '../../../utils/time.js'
 import EventTypeIcon from './EventTypeIcon.jsx'
 import TopDomainsWidget from './TopDomainsWidget.jsx'
@@ -223,12 +223,11 @@ export default function EventsSection({ incident, browserId, profile = null, his
 
   const uniqueDomains = useMemo(() => {
     const domains = new Set()
-    for (const entry of history) {
-      const domain = extractDomain(entry.url)
-      if (domain) domains.add(domain)
+    for (const event of historyEvents) {
+      if (event.domain) domains.add(event.domain)
     }
     return domains.size
-  }, [history])
+  }, [historyEvents])
 
   // Number of events (history + downloads) whose id is currently flagged.
   const flaggedCount = useMemo(
@@ -344,8 +343,8 @@ export default function EventsSection({ incident, browserId, profile = null, his
 
       {/* Summary widgets */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <TopDomainsWidget history={history} />
-        <SearchQueriesWidget history={history} engine={engine} />
+        <TopDomainsWidget history={historyEvents} />
+        <SearchQueriesWidget history={historyEvents} engine={engine} />
       </div>
 
       {/* Events panel with internal tabs */}
@@ -511,7 +510,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
           </span>
         )
       }
-      const domain = extractDomain(row.url)
+      const domain = entryDomain(row)
       return (
         <div className="min-w-0 max-w-[260px]">
           <p className="truncate text-sm text-fg">
@@ -560,7 +559,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
                 className="truncate font-mono hover:underline"
                 title={`Redirect to ${target.url}`}
               >
-                {extractDomain(target.url) || truncate(target.url, 40)}
+                {entryDomain(target) || truncate(target.url, 40)}
               </a>
             </span>
           )}

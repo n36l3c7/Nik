@@ -54,7 +54,7 @@ function browserProfileEvents(browser, slot, profile, engine) {
       label: isDownload ? event.fileName : event.title || event.url || '(no title)',
       detail: isDownload
         ? `from ${extractDomain(event.referrer || event.url) || '—'}`
-        : extractDomain(event.url) || truncate(event.url, 60),
+        : event.domain || truncate(event.url, 60),
       soc: event.soc,
       flaggable: {
         key: event.id,
@@ -73,13 +73,15 @@ function browserProfileEvents(browser, slot, profile, engine) {
 
 /**
  * Build the merged, time-sorted (desc) timeline for an incident.
- * @param {object} incident
+ * It takes `incident.data` rather than the incident: flags, notes and
+ * metadata do not affect the timeline, so callers can memoize on `data`
+ * alone and a flag toggle does not rebuild it.
+ * @param {object} data `incident.data`
  * @param {object} engine SOC engine from useSocEngine()
  * @returns Array of timeline events (only those with a timestamp)
  */
-export function buildTimelineEvents(incident, engine) {
+export function buildTimelineEvents(data = {}, engine) {
   const out = []
-  const data = incident?.data ?? {}
 
   /* ---- Browser history + downloads (per browser, per profile) ---- */
   const browsers = data.browser?.browsers ?? {}

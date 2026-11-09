@@ -1,0 +1,3 @@
+# Commits to skip in git blame (one-off reformats). GitHub reads this file;
+# locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
+02c1a8ec15409b43d12695660ebb4a2533ea7b87

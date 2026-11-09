@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   HTML and YAML, and `ruff format` for the backend; CI checks both. The whole
   code base was reformatted once in this release, with no behaviour change.
 
+### Changed
+
+- Large browser histories (hundreds of thousands of visits) stay responsive:
+  each URL is parsed once per event and reused by the stat cards, the ranking
+  widgets and the table cells; text columns sort with a shared collator (a
+  300k-row sort drops from seconds to a fraction of a second); the table
+  search no longer blocks typing; toggling a flag no longer rebuilds the
+  Timeline tab or the tail panel.
+
 ## [2.3.1] - 2026-11-09
 
 ### Added

@@ -9,7 +9,7 @@ import { Card } from '../../ui/index.js'
 import { topDomains } from '../../../utils/url.js'
 
 /**
- * @param {{ history?: Array }} props — raw history entries (one per visit)
+ * @param {{ history?: Array }} props — history entries or events (one per visit)
  */
 export default function TopDomainsWidget({ history = [] }) {
   // topDomains returns [{ domain, count }] already sorted descending.
