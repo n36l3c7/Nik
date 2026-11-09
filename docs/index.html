@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Nik — forensic analysis platform: overview, installation and usage." />
+    <title>Nik — Forensic analysis platform</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./" aria-current="page">Overview</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="api.html">API</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <pre class="banner" aria-hidden="true">
+███╗   ██╗██╗██╗  ██╗
+████╗  ██║██║██║ ██╔╝
+██╔██╗ ██║██║█████╔╝
+██║╚██╗██║██║██╔═██╗
+██║ ╚████║██║██║  ██╗
+╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝</pre>
+        <div>
+          <h1 class="tagline">Forensic analysis platform</h1>
+          <p class="lead">
+            A full-stack web platform for analysing digital-forensics artifacts, laid out like a SOC dashboard. Analysts
+            organise their work into <strong>incidents</strong>, import artifacts from a machine, flag suspicious events
+            and build a timeline of the malicious activity — every action attributed to a named analyst and recorded in
+            an audit log.
+          </p>
+        </div>
+      </section>
+
+      <h2 id="overview">Overview</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Client-side parsing</h3>
+          <p>
+            SQLite artifacts (Chromium <code>History</code>, Firefox <code>places.sqlite</code>, Safari
+            <code>History.db</code>), property lists, shell histories and DFIR CSV/JSON exports are parsed in the
+            analyst's browser. Raw files never leave the machine; only normalized entries reach the server.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Browser forensics</h3>
+          <p>
+            One sub-tab per browser (Chrome, Firefox, Edge, Brave, Opera, Safari), each with several profiles: history,
+            downloads, bookmarks and shortcuts, with visit / search / redirect classification.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Command history</h3>
+          <p>
+            Bash, Zsh, Fish and PowerShell history files, with built-in detection of shell and PowerShell tradecraft.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Endpoint artifacts</h3>
+          <p>
+            Program execution, persistence, file and folder access, removable devices — imported from DFIR tool exports,
+            with OS-specific guidance on where each source lives.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Super-timeline</h3>
+          <p>
+            Every timestamped event across all tabs merged into one chronological, filterable view, plus a
+            <code>tail -f</code> side panel with the latest events on every tab.
+          </p>
+        </div>
+        <div class="card">
+          <h3>SOC detection engine</h3>
+          <p>
+            Editable suspicious-keyword rules, built-in command and endpoint rulesets and a configurable business-hours
+            window highlight suspicious events automatically.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Team storage</h3>
+          <p>
+            Incidents, users, settings and the audit log live in PostgreSQL behind a FastAPI REST API. Incidents load
+            lazily: sign-in fetches the light list, an incident's artifacts when it is opened.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Automation</h3>
+          <p>
+            The same REST API the app uses, with API keys, ETags, JSON Merge Patch, async uploads, webhooks and
+            Prometheus metrics. See the <a href="api.html">API reference</a>.
+          </p>
+        </div>
+      </div>
+
+      <h2 id="installation">Installation</h2>
+
+      <h3 id="docker">Quick start with Docker / Podman</h3>
+      <p>
+        The fastest way to run the whole stack — nginx (static SPA + <code>/api</code> reverse proxy), the FastAPI
+        backend and PostgreSQL — is the bundled Compose file:
+      </p>
+      <pre><code><span class="prompt"></span>cp .env.example .env          # then edit DB_PASSWORD and SECRET_KEY
+<span class="prompt"></span>docker compose up -d --build  # build the images and start db + api + web</code></pre>
+      <p>
+        Open <strong>https://localhost:8443</strong> and create the first user: that account becomes the
+        <strong>admin</strong>. Database tables are created on the API's first start, so there is nothing to migrate.
+        Plain HTTP stays available on <strong>http://localhost:8080</strong>.
+      </p>
+      <div class="note">
+        On first start the <code>web</code> container self-signs a TLS certificate, so the browser shows a one-time
+        "connection not private" warning. Accept it, or mount a real certificate (see the README, § Deployment).
+      </div>
+      <pre><code><span class="prompt"></span>docker compose logs -f api    # follow backend logs
+<span class="prompt"></span>docker compose ps             # container status
+<span class="prompt"></span>docker compose down           # stop (keeps the database volume)
+<span class="prompt"></span>docker compose down -v        # stop AND delete the database volume</code></pre>
+      <p>Podman is a drop-in replacement: <code>podman-compose up -d --build</code> (rootless is fine).</p>
+
+      <h3 id="local">Local development</h3>
+      <p>
+        <strong>Prerequisites:</strong> Node.js 20+ and Python 3.11–3.13. No database server is needed: the backend
+        defaults to a local SQLite file.
+      </p>
+      <pre><code># terminal 1 — backend
+<span class="prompt"></span>cd backend
+<span class="prompt"></span>python -m venv .venv &amp;&amp; source .venv/bin/activate
+<span class="prompt"></span>pip install -r requirements.txt
+<span class="prompt"></span>cp .env.example .env          # set COOKIE_SECURE=false for plain-HTTP dev
+<span class="prompt"></span>uvicorn app.main:app --reload --port 8000
+
+# terminal 2 — frontend (repository root)
+<span class="prompt"></span>npm install
+<span class="prompt"></span>npm run dev                   # http://localhost:5173</code></pre>
+      <p>
+        The Vite dev server proxies every <code>/api</code> request to the backend, so both work together with no CORS
+        configuration. On first load, create the first user and sign in.
+      </p>
+
+      <h3 id="production">Production without containers</h3>
+      <p>
+        The README walks through a manual deployment on RHEL: a static bundle (<code>npm run build</code>) served by
+        nginx, the backend under systemd with gunicorn + uvicorn workers, PostgreSQL, SELinux and TLS. See
+        <a href="https://github.com/n36l3c7/Nik#22-manual-deployment-on-rhel">README § 2.2</a>.
+      </p>
+
+      <h2 id="usage">Usage</h2>
+      <ol>
+        <li>
+          <strong>Sign in.</strong> The first account created on a fresh install is the admin; admins create the other
+          analysts under Settings → Accounts.
+        </li>
+        <li>
+          <strong>Create an incident</strong> from the sidebar: host name and/or username, plus the host OS (Windows,
+          macOS, Linux), which drives the suggested artifact paths and the available shells.
+        </li>
+        <li>
+          <strong>Import artifacts.</strong> Each analysis tab has a <em>Data sources</em> card: drop the native file (a
+          Chromium <code>History</code>, a <code>.bash_history</code>, a tool's CSV export…) and it is parsed in the
+          browser. <em>Load demo data</em> fills a tab with sample entries to explore the platform.
+        </li>
+        <li>
+          <strong>Review and flag.</strong> Tables are searchable and sortable; SOC detections highlight rows in red
+          (high) or amber (medium). Flag any row as part of the malicious activity and add a comment.
+        </li>
+        <li>
+          <strong>Build the story.</strong> The Timeline tab merges every timestamped event; the Summary tab holds the
+          incident details, the suspicious window, flagged events and notes. The <code>tail -f</code> panel shows the
+          latest events on every tab.
+        </li>
+        <li>
+          <strong>Export or automate.</strong> Incidents export as JSON; admins take a full platform backup; scripts use
+          the <a href="api.html">REST API</a> with an API key.
+        </li>
+      </ol>
+
+      <h3 id="development">Development checks</h3>
+      <pre><code><span class="prompt"></span>npm test               # frontend unit tests
+<span class="prompt"></span>npm run lint           # ESLint
+<span class="prompt"></span>npm run format:check   # Prettier
+<span class="prompt"></span>npm run build &amp;&amp; npm run test:e2e   # Playwright smoke test of the whole stack
+<span class="prompt"></span>cd backend &amp;&amp; pytest &amp;&amp; ruff check . &amp;&amp; ruff format --check .</code></pre>
+      <p>
+        CI runs all of them on every pull request. The end-to-end test starts the backend on a throw-away SQLite
+        database and the production build behind <code>vite preview</code>, then drives the app as an analyst would:
+        first-run setup, sign-in, a new incident, demo data, timeline and tail panel.
+      </p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <a href="https://github.com/n36l3c7/Nik/blob/main/README.md">Full README</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

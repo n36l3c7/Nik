@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Nik release notes: what each version added, changed and fixed." />
+    <title>Changelog — Nik</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="api.html">API</a>
+          <a href="changelog.html" aria-current="page">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Changelog</h1>
+      <p class="lead">
+        Nik follows <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>. This page summarises each
+        release; the complete, line-by-line history is
+        <a href="https://github.com/n36l3c7/Nik/blob/main/CHANGELOG.md">CHANGELOG.md</a> in the repository, and every
+        version is published under <a href="https://github.com/n36l3c7/Nik/releases">Releases</a>.
+      </p>
+
+      <section class="release">
+        <h3>Unreleased</h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> End-to-end smoke test (Playwright) of the whole stack, run in CI:
+            first-run setup, sign-in, new incident, demo data, timeline and tail panel.
+          </li>
+          <li>
+            <span class="tag added">added</span> This documentation site, served from <code>/docs</code> on GitHub
+            Pages.
+          </li>
+          <li>
+            <span class="tag added">added</span> Prettier for the frontend and <code>ruff format</code> for the backend,
+            checked in CI; the code base was reformatted once, with no behaviour change.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Large browser histories (hundreds of thousands of visits) stay
+            responsive: each URL is parsed once per event, text columns sort with a shared collator, the table search
+            never blocks typing, and a flag no longer rebuilds the Timeline or the tail panel.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>2.3.1 <span class="date">2026-11-09</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> ESLint (React and hooks rules) for the frontend and Ruff for the
+            backend; CI runs both.
+          </li>
+          <li>
+            <span class="tag fixed">fixed</span> The Events, Commands, Artifacts and Timeline tabs no longer recompute
+            their memoized rows on every render when an incident has no flags; backend errors keep their original cause;
+            unused code removed.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>2.3.0 <span class="date">2026-11-06</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <code>tail -f</code> side panel: the latest 60 timestamped events of
+            the open incident, newest at the bottom, toggled from the tab bar and remembered per tab.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Terminal look, step 2: every page (Summary, Browser Forensics,
+            Command History, Endpoint Artifacts, Timeline, Network Logs, Settings, Backup) uses the design tokens.
+            Analyst flags use the green accent, SOC rows their severity colour.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The <code>dark:</code> Tailwind variant is gone: Nik is dark only.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>2.2.0 <span class="date">2026-11-06</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> Terminal look, step 1: named colour tokens, bundled Inter and JetBrains
+            Mono fonts (no CDN), sign-in and first-run screens with the NIK banner and a live
+            <code>$ nik status</code> box.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> UI kit, sidebar, header, tab bar and OS picker with square corners,
+            monospace labels and the green accent; the header shows <code>host / user</code> with the OS.
+          </li>
+          <li><span class="tag changed">changed</span> The light theme and its toggle were removed.</li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>2.1.0 <span class="date">2026-11-06</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> ASCII skull loaders, generated at any size, with eyes that look around
+            and blink; opening an incident shows the real download progress and a Cancel button.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Loading, error and empty states use the skull; busy buttons use the
+            inline micro skull. Skulls stay still when the OS asks to reduce motion. The spinner is gone.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>2.0.0 <span class="date">2026-11-04</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> Several profiles per browser ("Default", "Profile 1", "Work"…), each
+            with its own files and data; the timeline and flags name the profile; <code>profile</code> parameter on the
+            upload endpoint and the Cortex XSOAR command; Alembic migration <code>0003_browser_profiles</code>.
+          </li>
+          <li>
+            <span class="tag breaking">breaking</span> Browser data moved to
+            <code>data.browser.browsers[id].profiles[profileId]</code>; the upload response <code>target</code> is now
+            <code>browser/&lt;id&gt;/&lt;profile&gt;/&lt;source&gt;</code>. The server converts pre-2.0.0 data on
+            create, patch, fetch and restore, so old exports and backups still import.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>1.2.0 <span class="date">2026-11-04</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> Safari in Browser Forensics (macOS): <code>History.db</code>,
+            <code>Downloads.plist</code> and <code>Bookmarks.plist</code> (Reading List included), with a
+            dependency-free property list parser for binary and XML plists; Safari uploads through the REST API.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>1.1.0 <span class="date">2026-11-04</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <code>304 Not Modified</code> on <code>If-None-Match</code>, JSON Merge
+            Patch (RFC 7396) on <code>PATCH</code>, <code>os</code> in the summary listing, frontend unit tests in CI.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Lazy loading: sign-in downloads only the light incident list; an
+            incident's artifacts are fetched when it is opened, behind a non-blocking loading state; edits send only
+            what changed.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
+        <h3>1.0.0 <span class="date">2026-07-11</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> First release: browser, command history and endpoint artifact analysis,
+            super-timeline, SOC detection rules, case management, full backup, authentication, audit log and the
+            external REST API.
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <a href="https://github.com/n36l3c7/Nik/blob/main/README.md">Full README</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

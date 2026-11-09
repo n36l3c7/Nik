@@ -58,6 +58,10 @@ every action attributed to a named analyst and recorded in a global audit log.
   meaningful action. Detection rules, business hours, accounts and the audit
   log all live in one sectioned **Settings** panel.
 
+**Documentation site:** <https://n36l3c7.github.io/Nik/> — overview, installation,
+configuration, API reference and release notes, served from [`/docs`](docs/) on
+GitHub Pages (plain HTML, no build step).
+
 ### Stack
 
 | Layer | Technology |
@@ -178,15 +182,25 @@ npm test           # frontend unit tests (Node's built-in test runner, no deps)
 npm run lint       # ESLint (React + hooks rules), must report no problems
 npm run format     # Prettier: rewrite JS/JSX, CSS, JSON, HTML and YAML in place
 npm run format:check  # Prettier in check mode (what CI runs)
+npm run test:e2e   # Playwright smoke test of the whole stack (build first)
 ```
+
+The end-to-end test (`e2e/smoke.spec.js`, `playwright.config.js`) starts the
+backend on a throw-away SQLite database and the production build behind
+`vite preview` (which proxies `/api`, like the dev server), then drives the app
+as an analyst would: first-run setup, sign-in, a new incident, demo data in
+every tab, the timeline and the `tail -f` panel. It needs `npm run build`, the
+backend dependencies on `PATH` (activate the venv) and a Chromium from
+`npx playwright install chromium`.
 
 Backend tests run with `pytest`, the linter with `ruff check .` and the
 formatter with `ruff format .` (`--check` in CI), all from `backend/` after
 `pip install -r requirements-dev.txt`; Ruff settings live in `backend/ruff.toml`.
 Formatting is enforced, not reviewed: run the formatters before committing.
 Markdown is excluded from Prettier (see `.prettierignore`). CI runs the linters,
-the format checks, both test suites and the build; a change is done only when
-all of them pass.
+the format checks, both unit suites, the build and then the end-to-end test; a
+change is done only when all of them pass. The documentation site in `docs/`
+is updated in the same change as the behaviour it describes.
 
 **Upgrading an existing database:** run `alembic upgrade head` from `backend/`
 after pulling a release that adds a migration (the Docker image does this on
@@ -751,7 +765,10 @@ change.
 ```
 ├── index.html                      # HTML shell (mount point #root)
 ├── package.json                    # Frontend dependencies and npm scripts
-├── vite.config.js                  # React + Tailwind plugins, /api dev proxy
+├── vite.config.js                  # React + Tailwind plugins, /api proxy (dev and preview)
+├── playwright.config.js            # E2E: starts backend (SQLite) + vite preview
+├── e2e/smoke.spec.js               # End-to-end smoke test of the whole stack
+├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
 ├── docker-compose.yml              # db + api + web stack
 ├── .env.example                    # Compose configuration template
 ├── deploy/

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- End-to-end smoke test on Playwright (`npm run test:e2e`), run in CI after the
+  unit suites: first-run setup, sign-in, a new incident, demo data in every
+  tab, the timeline and the `tail -f` panel against the real backend and the
+  production build.
+- Documentation site in `docs/` for GitHub Pages (plain HTML, one stylesheet,
+  no build step): overview, installation, usage, configuration, API reference
+  and release notes.
 - Prettier (`npm run format`, `npm run format:check`) for JS/JSX, CSS, JSON,
   HTML and YAML, and `ruff format` for the backend; CI checks both. The whole
   code base was reformatted once in this release, with no behaviour change.

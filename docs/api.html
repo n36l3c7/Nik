@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nik REST API reference: authentication, endpoints, uploads and automation features."
+    />
+    <title>API — Nik</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="api.html" aria-current="page">API</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>REST API</h1>
+      <p class="lead">
+        Nik can be driven without the browser. The API is the same one the web app uses, so anything the UI does —
+        create, edit and delete incidents, add notes, upload raw artifact files (parsed server-side) — is available
+        programmatically under <code>/api</code>.
+      </p>
+
+      <h2 id="docs">Interactive documentation</h2>
+      <p>
+        Open <code>/api/docs</code> on a running server (for example <code>https://localhost:8443/api/docs</code>) for
+        the Swagger UI. It is public to view and always in sync with the server. Click <em>Authorize</em>, paste an API
+        key, and every endpoint gains a <em>Try it out</em> button. The OpenAPI document is at
+        <code>/api/openapi.json</code>; generate a typed client from it, e.g.
+        <code>openapi-generator generate -i https://HOST/api/openapi.json -g python</code>.
+      </p>
+
+      <h2 id="auth">Authentication</h2>
+      <p>Write endpoints accept either a browser session or an API key, sent in the <code>X-API-Key</code> header:</p>
+      <pre><code><span class="prompt"></span>curl -H "X-API-Key: nik_XXXXXXXX…" https://localhost:8443/api/incidents</code></pre>
+      <p>
+        Keys are created and revoked in the app under <strong>Settings → API keys</strong> (admin only). The plaintext
+        key is shown once, at creation, and carries permissions bound to it:
+      </p>
+      <ul>
+        <li>
+          <strong>role</strong> — <code>analyst</code> (incidents, notes, uploads, read settings) or
+          <code>admin</code> (also users, backup, keys, webhooks).
+        </li>
+        <li>
+          <strong>scopes</strong> — <code>read</code> / <code>write</code>; a read-only key can fetch but not mutate.
+        </li>
+        <li><strong>expiry</strong> — optional; an expired key is rejected.</li>
+      </ul>
+      <p>Actions performed with a key are recorded in the audit log as <code>api:&lt;label&gt;</code>.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Method &amp; path</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>GET /api/incidents</code></td>
+              <td>
+                List incidents. Query: <code>limit</code> / <code>offset</code>, <code>q</code> / <code>host</code> /
+                <code>username</code>, <code>view=summary</code> (light rows without the document body). Total in the
+                <code>X-Total-Count</code> header.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/{id}</code></td>
+              <td>
+                One incident, with an <code>ETag</code>. Send <code>If-None-Match</code> to get <code>304</code> while
+                your copy is current.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/incidents</code></td>
+              <td>Create / upsert (id generated if omitted).</td>
+            </tr>
+            <tr>
+              <td><code>PATCH /api/incidents/{id}</code></td>
+              <td>
+                <code>application/json</code>: replace the given top-level fields.
+                <code>application/merge-patch+json</code>: apply an RFC 7396 merge patch (nested merge,
+                <code>null</code> deletes). Honors <code>If-Match</code> (<code>412</code> on a stale version).
+              </td>
+            </tr>
+            <tr>
+              <td><code>DELETE /api/incidents/{id}</code></td>
+              <td>Delete an incident.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/incidents/{id}/notes</code> · <code>PATCH</code> / <code>DELETE …/{noteId}</code></td>
+              <td>Add / edit / remove notes.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/incidents/{id}/upload</code></td>
+              <td>Upload a raw artifact file (multipart). <code>?async=true</code> → <code>202 { jobId }</code>.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/jobs/{id}</code></td>
+              <td>Poll an async upload job.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/settings</code></td>
+              <td>Read the shared detection rules and business hours.</td>
+            </tr>
+            <tr>
+              <td><code>GET/POST/DELETE /api/webhooks</code></td>
+              <td>Manage event subscriptions (<strong>admin</strong>).</td>
+            </tr>
+            <tr>
+              <td><code>GET/POST/DELETE /api/users</code></td>
+              <td>User management (<strong>admin</strong>).</td>
+            </tr>
+            <tr>
+              <td><code>GET/POST/DELETE /api/keys</code></td>
+              <td>API-key management (<strong>admin</strong>).</td>
+            </tr>
+            <tr>
+              <td><code>GET/POST /api/backup/{export,import}</code></td>
+              <td>Full platform backup (<strong>admin</strong>).</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/audit</code></td>
+              <td>Audit log, paginated and filterable.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/health</code> · <code>/api/ready</code> · <code>/api/metrics</code></td>
+              <td>Liveness · readiness (database) · Prometheus metrics.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Endpoints marked <strong>admin</strong> accept an admin session or an admin-role API key; any other key gets
+        <code>403</code>.
+      </p>
+
+      <h2 id="uploads">Uploading files</h2>
+      <p>
+        <code>POST /api/incidents/{id}/upload</code> takes a multipart <code>file</code> plus query parameters that
+        route it to the right parser, mirroring the app's tabs. The server parses the raw file and merges the normalized
+        result into the incident.
+      </p>
+      <pre><code># Browser history (Chromium History SQLite → data.browser.browsers.chrome)
+<span class="prompt"></span>curl -H "X-API-Key: $KEY" -F file=@History \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=browser&amp;browser=chrome&amp;source=history"
+
+# Shell history (.bash_history → data.commands.shells.bash)
+<span class="prompt"></span>curl -H "X-API-Key: $KEY" -F file=@.bash_history \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=commands&amp;shell=bash"
+
+# Endpoint artifact (cron file or tool CSV → data.endpoint.categories.persistence)
+<span class="prompt"></span>curl -H "X-API-Key: $KEY" -F file=@crontab \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=endpoint&amp;category=persistence&amp;source=cron"</code></pre>
+      <ul>
+        <li>
+          <code>tab=browser</code> needs <code>browser</code> (chrome / firefox / edge / brave / opera / safari) and
+          <code>source</code> (history / bookmarks / shortcuts / places; Safari: history / downloads / bookmarks), plus
+          an optional <code>profile</code>: the profile <em>name</em>, matched case-insensitively and created if missing
+          (default <code>Default</code>).
+        </li>
+        <li><code>tab=commands</code> needs <code>shell</code> (bash / zsh / fish / powershell).</li>
+        <li>
+          <code>tab=endpoint</code> needs <code>category</code> (execution / persistence / fileaccess / usb) and
+          <code>source</code> (the source key, e.g. <code>cron</code>).
+        </li>
+      </ul>
+
+      <h2 id="automation">Automation features</h2>
+      <ul>
+        <li>
+          <strong>Pagination and filtering</strong> on <code>GET /incidents</code> and <code>/audit</code>;
+          <code>view=summary</code> lists at scale, then fetch one incident's full document.
+        </li>
+        <li>
+          <strong>Optimistic concurrency</strong>: send the <code>ETag</code> back as <code>If-Match</code> on
+          <code>PATCH</code>; a stale write gets <code>412</code>.
+        </li>
+        <li>
+          <strong>Conditional GET</strong>: <code>If-None-Match</code> returns <code>304 Not Modified</code> while
+          nothing changed; the check reads only the version column.
+        </li>
+        <li>
+          <strong>Partial updates</strong>: <code>application/merge-patch+json</code> updates only the nested members
+          you send, e.g. <code>{"flags": {"&lt;key&gt;": null}}</code> removes one flag.
+        </li>
+        <li>
+          <strong>Idempotency</strong>: an <code>Idempotency-Key</code> header on <code>POST</code> notes / upload makes
+          retries safe.
+        </li>
+        <li>
+          <strong>Async uploads</strong>: <code>?async=true</code> → <code>202 { jobId }</code>, then poll
+          <code>GET /api/jobs/{jobId}</code>.
+        </li>
+        <li>
+          <strong>Webhooks</strong>: <code>incident.created/updated/deleted</code>, <code>note.added</code>,
+          <code>upload.completed</code>; each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>).
+        </li>
+        <li>
+          <strong>Operations</strong>: per-IP rate limiting, Prometheus metrics at <code>/api/metrics</code>, an
+          <code>X-Request-ID</code> on every response.
+        </li>
+        <li>
+          <strong>Versioning</strong>: the current API is v1 under <code>/api</code>; breaking changes would ship under
+          a new prefix.
+        </li>
+      </ul>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <a href="https://github.com/n36l3c7/Nik/blob/main/README.md">Full README</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

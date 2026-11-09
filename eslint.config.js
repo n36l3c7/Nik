@@ -31,7 +31,7 @@ export default [
   },
   {
     // Node-side files: tests, build config, fixture scripts.
-    files: ['**/*.test.js', 'vite.config.js', 'eslint.config.js'],
+    files: ['**/*.test.js', 'e2e/**/*.js', 'vite.config.js', 'eslint.config.js', 'playwright.config.js'],
     languageOptions: { globals: { ...globals.node } },
   },
 ]
