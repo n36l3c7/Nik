@@ -32,7 +32,7 @@
       </p>
 
       <section class="release">
-        <h3>Unreleased</h3>
+        <h3>2.4.0 <span class="date">2026-11-09</span></h3>
         <ul>
           <li>
             <span class="tag added">added</span> End-to-end smoke test (Playwright) of the whole stack, run in CI:
@@ -50,6 +50,10 @@
             <span class="tag changed">changed</span> Large browser histories (hundreds of thousands of visits) stay
             responsive: each URL is parsed once per event, text columns sort with a shared collator, the table search
             never blocks typing, and a flag no longer rebuilds the Timeline or the tail panel.
+          </li>
+          <li>
+            <span class="tag fixed">security</span> Frontend build dependencies flagged by <code>npm audit</code>
+            updated (Vite 6.4.6, PostCSS, nanoid, browserslist, source-map-js); development-time tools only.
           </li>
         </ul>
       </section>
