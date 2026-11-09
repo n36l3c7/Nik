@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nik configuration reference: backend environment variables, Compose variables and in-app settings."
+    />
+    <title>Configuration — Nik</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="configuration.html" aria-current="page">Configuration</a>
+          <a href="api.html">API</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Configuration</h1>
+      <p class="lead">
+        Nik is configured with environment variables: the backend reads its own, the Compose file reads a root
+        <code>.env</code>. Detection rules and business hours are edited in the app and shared by every analyst.
+      </p>
+
+      <h2 id="backend">Backend</h2>
+      <p>Environment variables, optionally from <code>backend/.env</code> (see <code>backend/.env.example</code>).</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>Default</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>DATABASE_URL</code></td>
+              <td><code>sqlite:///./nik.db</code></td>
+              <td>
+                SQLAlchemy URL. Production: <code>postgresql+psycopg://nik:PASS@host/nik</code> (the password must be
+                URL-encoded).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>DB_PASSWORD</code> + <code>DB_USER</code> / <code>DB_HOST</code> / <code>DB_PORT</code> /
+                <code>DB_NAME</code>
+              </td>
+              <td>—</td>
+              <td>
+                Alternative to <code>DATABASE_URL</code>: the app assembles the PostgreSQL URL itself with escaping, so
+                the password may contain any character.
+              </td>
+            </tr>
+            <tr>
+              <td><code>SECRET_KEY</code></td>
+              <td><code>dev-insecure-change-me</code></td>
+              <td>Signing / entropy secret. Set a long random value in production.</td>
+            </tr>
+            <tr>
+              <td><code>COOKIE_SECURE</code></td>
+              <td><code>true</code></td>
+              <td>
+                <code>Secure</code> flag on the session cookie (HTTPS only). Set <code>false</code> only for plain-HTTP
+                local development, otherwise the browser drops the cookie and sign-in does not stick.
+              </td>
+            </tr>
+            <tr>
+              <td><code>SESSION_TTL_HOURS</code></td>
+              <td><code>12</code></td>
+              <td>Session lifetime.</td>
+            </tr>
+            <tr>
+              <td><code>RUN_CREATE_ALL</code></td>
+              <td><code>true</code></td>
+              <td>
+                Create missing tables on startup. Set <code>false</code> when Alembic owns the schema (<code
+                  >alembic upgrade head</code
+                >
+                from <code>backend/</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>RATE_LIMIT_DEFAULT</code></td>
+              <td>per-IP limit</td>
+              <td>
+                Request rate limit applied to the API, in <code>slowapi</code> notation (e.g. <code>60/minute</code>).
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="compose">Compose</h2>
+      <p>
+        Variables of the root <code>.env</code> (see <code>.env.example</code>), read by
+        <code>docker-compose.yml</code>.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>Default</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>DB_PASSWORD</code></td>
+              <td><code>nik</code></td>
+              <td>PostgreSQL password, shared by the <code>db</code> and <code>api</code> services.</td>
+            </tr>
+            <tr>
+              <td><code>SECRET_KEY</code></td>
+              <td>—</td>
+              <td>Backend secret. Use a long random value, e.g. <code>openssl rand -hex 32</code>.</td>
+            </tr>
+            <tr>
+              <td><code>COOKIE_SECURE</code></td>
+              <td><code>false</code></td>
+              <td>
+                Keep <code>false</code> while anyone still uses plain HTTP on <code>:8080</code>; set
+                <code>true</code> once everyone is on HTTPS.
+              </td>
+            </tr>
+            <tr>
+              <td><code>WEB_PORT</code></td>
+              <td><code>8080</code></td>
+              <td>Host port the UI is published on (plain HTTP).</td>
+            </tr>
+            <tr>
+              <td><code>WEB_TLS_PORT</code></td>
+              <td><code>8443</code></td>
+              <td>Host port the UI is published on (HTTPS).</td>
+            </tr>
+            <tr>
+              <td><code>TLS_HOSTNAME</code></td>
+              <td><code>localhost</code></td>
+              <td>Name embedded in the auto-generated certificate (CN + SAN): what users type in the browser.</td>
+            </tr>
+            <tr>
+              <td><code>SESSION_TTL_HOURS</code></td>
+              <td><code>12</code></td>
+              <td>Session lifetime.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <strong>Two things that bite over plain HTTP:</strong> a session cookie with <code>COOKIE_SECURE=true</code>
+        is never stored by the browser, and the in-browser parsers need a secure context for some APIs (the clipboard,
+        for one). Use HTTPS as soon as you can.
+      </div>
+
+      <h2 id="settings">In-app settings</h2>
+      <p>Opened from the header (gear icon); shared by every analyst and stored on the server.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Detection rules</h3>
+          <p>
+            Suspicious-keyword rules (regular expressions with a label, a description and a severity) matched against
+            URLs, titles and file names; built-in command and endpoint rulesets run in addition, each only on its own
+            kind of entry.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Business hours</h3>
+          <p>
+            Start and end hour, with an option to treat weekends as outside hours. Events outside the window are marked
+            and counted as medium severity.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Accounts, API keys, webhooks</h3>
+          <p>
+            Admins create analyst accounts, issue API keys with a role, scopes and an optional expiry, and subscribe
+            webhook URLs to platform events.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Backup</h3>
+          <p>
+            Full platform export and import (users, incidents, audit log, settings) for admins. Take one before every
+            upgrade.
+          </p>
+        </div>
+      </div>
+
+      <h2 id="upgrades">Upgrades</h2>
+      <p>
+        Pull the new release and rebuild (<code>docker compose up -d --build</code>). Data persists in PostgreSQL; new
+        tables are created on startup, and releases that add a migration run <code>alembic upgrade head</code> in the
+        Docker image. Upgrading to <strong>2.0.0</strong> rewrites every incident once (browser data moves into a
+        "Default" profile): on large databases the first start takes longer, so take a backup first.
+      </p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <a href="https://github.com/n36l3c7/Nik/blob/main/README.md">Full README</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

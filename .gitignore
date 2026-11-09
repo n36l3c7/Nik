@@ -1,5 +1,8 @@
 node_modules
 dist
+# Playwright output
+test-results/
+playwright-report/
 *.local
 .DS_Store
 
