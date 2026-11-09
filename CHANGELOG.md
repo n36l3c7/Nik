@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-09
+
+### Added
+
+- Executable structure in the Malware Analysis tab (**Structure** view): PE
+  (machine, subsystem, compile time, entry point, sections with entropy and
+  flags, imports by library, exports, resources, **imphash**, Authenticode
+  presence, rich header, PDB path, checksum) via `pefile`; ELF (type, machine,
+  interpreter, segments, sections, needed libraries) and Mach-O (CPU, load
+  commands, dylibs, rpaths, code signature, encryption, universal slices)
+  with Nik's own parsers. Malformed headers become warnings, never errors.
+- **YARA** scanning on upload and on re-analysis (`yara-python`): a built-in
+  rule set (`backend/app/yara/`) plus admin-managed rule sets in
+  Settings → YARA rules (validated before saving, enable / disable, edit,
+  delete). Matches show rule, severity and description in the sample's
+  **YARA** view and raise the sample's severity.
+- **Re-analyse** on a sample: runs the current engine and rules again on the
+  stored file; samples analysed by an older engine show a notice.
+- REST API: `POST /api/samples/{sha256}/reanalyse`; `GET/POST/PUT/DELETE
+  /api/yara-rules` and `POST /api/yara-rules/validate` (admin). Audit actions
+  `sample.reanalyse`, `yara.add`, `yara.update`, `yara.delete`.
+- Configuration: `YARA_RULES` (directory of the built-in rule files). Alembic
+  migration `0005_yara_rules`. New backend dependencies `pefile` and
+  `yara-python` (the wheel bundles libyara).
+
 ## [2.5.0] - 2026-11-09
 
 ### Added
@@ -240,7 +265,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/n36l3c7/Nik/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/n36l3c7/Nik/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/n36l3c7/Nik/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/n36l3c7/Nik/compare/v2.3.0...v2.3.1

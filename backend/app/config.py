@@ -116,6 +116,9 @@ class Settings:
         # quarantine the evidence.
         self.SAMPLE_STORE: str = os.getenv("SAMPLE_STORE", "./samples")
         self.SAMPLE_MAX_MB: int = _get_int("SAMPLE_MAX_MB", 100)
+        # Directory of the built-in YARA rule files (*.yar); admin rules live in
+        # the database and are compiled together with these.
+        self.YARA_RULES: str = os.getenv("YARA_RULES", os.path.join(os.path.dirname(__file__), "yara"))
 
     @property
     def is_sqlite(self) -> bool:

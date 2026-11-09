@@ -140,6 +140,17 @@
               <td>Detach the sample; the file is deleted once no incident references it.</td>
             </tr>
             <tr>
+              <td><code>POST /api/samples/{sha256}/reanalyse</code></td>
+              <td>Run the current analysis engine and YARA rules again on the stored file.</td>
+            </tr>
+            <tr>
+              <td><code>GET/POST/PUT/DELETE /api/yara-rules</code> · <code>POST …/validate</code></td>
+              <td>
+                Admin-managed YARA rule sets, compiled with the built-in ones (<strong>admin</strong> to change; any
+                caller may list). A source must compile before it is saved.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/settings</code></td>
               <td>Read the shared detection rules and business hours.</td>
             </tr>

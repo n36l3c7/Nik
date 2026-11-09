@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
-import { Clock, KeyRound, ScrollText, ShieldAlert, Users, X } from 'lucide-react'
+import { Clock, FileSearch, KeyRound, ScrollText, ShieldAlert, Users, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import DetectionRulesSection from './sections/DetectionRulesSection.jsx'
 import BusinessHoursSection from './sections/BusinessHoursSection.jsx'
 import AccountsSection from './sections/AccountsSection.jsx'
 import ApiKeysSection from './sections/ApiKeysSection.jsx'
 import AuditLogSection from './sections/AuditLogSection.jsx'
+import YaraRulesSection from './sections/YaraRulesSection.jsx'
 
 /*
  * ============================================================================
@@ -23,6 +24,7 @@ const SECTIONS = [
   { id: 'hours', label: 'Business hours', icon: Clock, Component: BusinessHoursSection },
   { id: 'accounts', label: 'Accounts', icon: Users, Component: AccountsSection, adminOnly: true },
   { id: 'apikeys', label: 'API keys', icon: KeyRound, Component: ApiKeysSection, adminOnly: true },
+  { id: 'yara', label: 'YARA rules', icon: FileSearch, Component: YaraRulesSection, adminOnly: true },
   { id: 'audit', label: 'Audit log', icon: ScrollText, Component: AuditLogSection },
 ]
 

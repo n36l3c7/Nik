@@ -154,6 +154,33 @@ class ApiKeyCreated(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# YARA rules (admin)
+# ---------------------------------------------------------------------------
+class YaraRuleIn(BaseModel):
+    """Create or replace an admin YARA rule: a display name and the rule source."""
+
+    name: str
+    source: str
+    enabled: Optional[bool] = True
+
+
+class YaraRuleOut(BaseModel):
+    id: str
+    name: str
+    source: str
+    enabled: bool
+    createdAt: str
+    createdBy: str
+    updatedAt: str
+    ruleNames: list[str]
+
+
+class YaraRulesEnvelope(BaseModel):
+    rules: list[YaraRuleOut]
+    builtin: list[dict]
+
+
+# ---------------------------------------------------------------------------
 # Incident notes (dedicated API endpoints)
 # ---------------------------------------------------------------------------
 class NoteIn(BaseModel):

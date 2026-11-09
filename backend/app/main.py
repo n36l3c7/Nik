@@ -27,7 +27,7 @@ from .config import settings as app_settings
 from .db import Base, engine, get_db
 from .observability import metrics_response, observability_middleware, setup_logging
 from .ratelimit import limiter
-from .routers import audit, auth, backup, incidents, jobs, keys, samples, settings, users, webhooks
+from .routers import audit, auth, backup, incidents, jobs, keys, samples, settings, users, webhooks, yara_rules
 
 setup_logging(app_settings.LOG_LEVEL)
 
@@ -52,6 +52,7 @@ TAGS_METADATA = [
     {"name": "incidents/notes", "description": "Add, edit and remove incident notes."},
     {"name": "incidents/upload", "description": "Upload raw artifact files; parsed server-side (optionally async)."},
     {"name": "jobs", "description": "Status of async jobs (e.g. background uploads)."},
+    {"name": "yara-rules", "description": "Admin-managed YARA rules, compiled with the built-in set (admin only)."},
     {
         "name": "samples",
         "description": "Malware samples: stored on the server, analysed statically, downloaded as a protected zip.",
@@ -71,7 +72,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.5.0",
+    version="2.6.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -125,6 +126,7 @@ app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
+app.include_router(yara_rules.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
