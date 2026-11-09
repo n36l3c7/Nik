@@ -31,6 +31,7 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
+      timeout: 120_000,
       command: `node -e "require('fs').rmSync('${E2E_DB}', { force: true })" && uvicorn app.main:app --port ${API_PORT}`,
       cwd: 'backend',
       url: `http://127.0.0.1:${API_PORT}/api/health`,
@@ -42,8 +43,11 @@ export default defineConfig({
       },
     },
     {
-      command: `npx vite preview --port ${WEB_PORT} --strictPort`,
+      // Bind to IPv4 explicitly: on some runners `localhost` resolves to ::1
+      // and the health URL below would never answer.
+      command: `npx vite preview --host 127.0.0.1 --port ${WEB_PORT} --strictPort`,
       url: `http://127.0.0.1:${WEB_PORT}/`,
+      timeout: 120_000,
       reuseExistingServer: false,
       env: { API_PORT: String(API_PORT) },
     },
