@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..db import get_db
 from ..models import ApiKey
-from ..schemas import ApiKeyCreate, ApiKeyCreated, ApiKeyOut, ApiKeysEnvelope
+from ..schemas import ApiKeyCreate, ApiKeyCreated, ApiKeysEnvelope
 from ..security import (
     SCOPE_READ,
     SCOPE_WRITE,

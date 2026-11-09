@@ -39,7 +39,8 @@ def _chromium_history_bytes():
 
 def test_browser_history_upload_merge():
     doc = {"id": "i", "data": {}}
-    summary = apply_upload(doc, "browser", {"browser": "chrome", "source": "history"}, _chromium_history_bytes(), "History")
+    params = {"browser": "chrome", "source": "history"}
+    summary = apply_upload(doc, "browser", params, _chromium_history_bytes(), "History")
     hist = doc["data"]["browser"]["browsers"]["chrome"]["profiles"]["default"]["history"]
     assert summary["format"] == "sqlite"
     assert len(hist) == 1 and hist[0]["visitTime"] == 1700000000000

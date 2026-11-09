@@ -189,6 +189,9 @@ function DetectionCell({ event }) {
 
 /* ---- Component ------------------------------------------------------------- */
 
+// Stable fallback, so memoized computations do not rerun on every render.
+const NO_FLAGS = {}
+
 /**
  * @param {{ incident: object, browserId: string, profile?: object, history?: Array, downloads?: Array }} props
  */
@@ -196,7 +199,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
 
-  const flags = incident?.flags ?? {}
+  const flags = incident?.flags ?? NO_FLAGS
 
   const [activeTab, setActiveTab] = useState('all')
   const [detectionFilter, setDetectionFilter] = useState('all')

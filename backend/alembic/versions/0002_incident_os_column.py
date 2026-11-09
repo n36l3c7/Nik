@@ -11,6 +11,7 @@ Create Date: 2026-11-04
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0002_incident_os_column"

@@ -82,6 +82,9 @@ function FlagButton({ flagged, onToggle }) {
   )
 }
 
+// Stable fallback, so memoized computations do not rerun on every render.
+const NO_FLAGS = {}
+
 /** Source badge + a per-type icon (browser/command types reuse EventTypeIcon). */
 function SourceCell({ event }) {
   const meta = TIMELINE_SOURCE_META[event.sourceType] ?? TIMELINE_SOURCE_META.browser
@@ -121,7 +124,7 @@ function DetectionCell({ event }) {
 export default function TimelineTab({ incident }) {
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
-  const flags = incident?.flags ?? {}
+  const flags = incident?.flags ?? NO_FLAGS
 
   const [detectionFilter, setDetectionFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')

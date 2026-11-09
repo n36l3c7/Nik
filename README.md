@@ -175,10 +175,13 @@ Other npm scripts:
 npm run build      # production build (static site in dist/)
 npm run preview    # serve the production build locally
 npm test           # frontend unit tests (Node's built-in test runner, no deps)
+npm run lint       # ESLint (React + hooks rules), must report no problems
 ```
 
-Backend tests run with `pytest` from `backend/` after
-`pip install -r requirements-dev.txt`. CI runs both suites plus the build.
+Backend tests run with `pytest` and the linter with `ruff check .`, both from
+`backend/` after `pip install -r requirements-dev.txt` (Ruff settings live in
+`backend/ruff.toml`). CI runs both linters, both test suites and the build;
+a change is done only when all of them pass.
 
 **Upgrading an existing database:** run `alembic upgrade head` from `backend/`
 after pulling a release that adds a migration (the Docker image does this on

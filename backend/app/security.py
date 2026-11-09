@@ -24,9 +24,8 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .config import settings
 from .db import get_db
-from .models import ApiKey
+from .models import ApiKey, User
 from .models import Session as SessionModel
-from .models import User
 
 # bcrypt password hashing context.
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

@@ -1,0 +1,17 @@
+# Ruff: lint for the backend (`ruff check .` from backend/; CI runs it too).
+target-version = "py311"
+line-length = 120
+
+[lint]
+# pycodestyle errors/warnings, pyflakes, bugbear (likely bugs), isort.
+select = ["E", "F", "W", "B", "I"]
+
+[lint.flake8-bugbear]
+# FastAPI dependency markers are meant to be called in default arguments.
+extend-immutable-calls = [
+  "fastapi.Body", "fastapi.Cookie", "fastapi.Depends", "fastapi.File",
+  "fastapi.Header", "fastapi.Query",
+]
+
+[lint.isort]
+known-first-party = ["app"]

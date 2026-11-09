@@ -31,10 +31,10 @@ const UPCOMING_MODULES = [
 ]
 
 /**
- * @param {{ incident: object }} props — the active incident (reserved for
- * future implementation: data will live in incident.data.network)
+ * Placeholder tab. Like every tab it receives `{ incident }`; its data will
+ * live in incident.data.network once implemented.
  */
-export default function NetworkLogsTab({ incident }) {
+export default function NetworkLogsTab() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Main empty state with the message required by the SPEC */}

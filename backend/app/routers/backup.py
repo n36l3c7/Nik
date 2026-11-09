@@ -31,12 +31,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 
+from ..browser_profiles import normalize_browser_data
 from ..config import settings as app_settings
 from ..db import get_db
 from ..models import AuditEntry, Incident, Setting, User
 from ..models import Session as SessionModel
 from ..security import Principal, admin_principal, now_iso
-from ..browser_profiles import normalize_browser_data
 from .incidents import _sync_columns
 from .settings import SETTINGS_ID
 
@@ -294,12 +294,12 @@ def import_backup(
     except HTTPException:
         db.rollback()
         raise
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Backup restore failed")
         raise HTTPException(
             status_code=400, detail="Restore failed: the backup file is inconsistent."
-        )
+        ) from exc
 
     return {
         "users": len(users),

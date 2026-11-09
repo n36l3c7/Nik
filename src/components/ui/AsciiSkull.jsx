@@ -65,9 +65,11 @@ export default function AsciiSkull({ preset = 'medium', eyes = 'animated', tone 
   const animated = eyes === 'animated'
   const tick = useSkullTick(animated)
   const frame = animated ? gazeFrame(tick) : { eyes, gaze: 0 }
+  const frameEyes = frame.eyes
+  const frameGaze = frame.gaze
   const rows = useMemo(
-    () => renderSkull({ ...(SKULL_PRESETS[preset] ?? SKULL_PRESETS.medium), ...frame }),
-    [preset, frame.eyes, frame.gaze],
+    () => renderSkull({ ...(SKULL_PRESETS[preset] ?? SKULL_PRESETS.medium), eyes: frameEyes, gaze: frameGaze }),
+    [preset, frameEyes, frameGaze],
   )
 
   return (
