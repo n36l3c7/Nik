@@ -173,6 +173,34 @@ export function cfgGraph(cfg, engine) {
   return { nodes, edges }
 }
 
+/**
+ * Pseudo-C split into lines of styled segments for rendering:
+ * `[[{ text, kind, target }]]`. `spans` come from the worker
+ * (`[start, end, kind]` or `[start, end, 'f', address]`, sorted, not
+ * overlapping); text between spans has `kind: null`. Line breaks inside a
+ * span split it, so every segment sits on one line.
+ * @param {string} code
+ * @param {Array<Array>} spans
+ */
+export function decompiledLines(code = '', spans = []) {
+  const lines = [[]]
+  const push = (text, kind, target) => {
+    text.split('\n').forEach((part, i) => {
+      if (i > 0) lines.push([])
+      if (part) lines[lines.length - 1].push({ text: part, kind, target })
+    })
+  }
+  let at = 0
+  for (const [start, end, kind, target = null] of spans) {
+    if (start < at || end > code.length) continue
+    if (start > at) push(code.slice(at, start), null, null)
+    push(code.slice(start, end), kind, target)
+    at = end
+  }
+  if (at < code.length) push(code.slice(at), null, null)
+  return lines
+}
+
 /** Pixel size of a node from its text lines (monospace 11px). */
 export const NODE_METRICS = { charWidth: 6.7, lineHeight: 15, padX: 10, padY: 8, header: 20 }
 

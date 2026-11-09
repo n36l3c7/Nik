@@ -64,22 +64,56 @@ WORKER_RESULT = {
             "indegree": 1,
             "calls": [],
         },
+        {
+            "addr": 0x40100F,
+            "name": "fcn.0040100f",
+            "kind": "function",
+            "size": 3,
+            "blocks": 1,
+            "edges": 0,
+            "cc": 1,
+            "indegree": 1,
+            "calls": [],
+            "cfg": {"truncated": False, "blocks": []},
+        },
     ],
+    # The up-front pass decompiled entry0 only (the helper is left for on demand).
+    "decompiled": {
+        str(0x401000): {
+            "code": "void entry0(void)\n{\n    fcn.0040100f();\n    return;\n}",
+            "spans": [[0, 4, "t"], [5, 11, "f", 0x401000], [24, 36, "f", 0x40100F], [44, 50, "k"]],
+            "truncated": False,
+        }
+    },
+    "decompile": {"engine": "rz-ghidra", "done": 1, "failed": 0, "total": 2, "stopped": "time"},
+}
+
+ON_DEMAND = {
+    "addr": 0x40100F,
+    "engine": "rz-ghidra",
+    "code": "undefined4 fcn.0040100f(void)\n{\n    return 0;\n}",
+    "spans": [[0, 10, "t"], [11, 23, "f", 0x40100F], [42, 48, "k"], [49, 50, "n"]],
+    "truncated": False,
 }
 
 
 @pytest.fixture()
 def worker(monkeypatch):
-    """Configure the analyzer and replace the HTTP call with a recorder."""
+    """Configure the analyzer and replace the HTTP calls with recorders."""
     calls = []
 
     def fake(sha256):
         calls.append(sha256)
         return WORKER_RESULT
 
+    def fake_decompile(sha256, addr):
+        calls.append(("decompile", addr))
+        return ON_DEMAND
+
     monkeypatch.setattr(settings, "ANALYZER_URL", "http://analyzer.test")
     monkeypatch.setattr(settings, "ANALYZER_TOKEN", "secret")
     monkeypatch.setattr(analyzer, "request_code_analysis", fake)
+    monkeypatch.setattr(analyzer, "request_decompile", fake_decompile)
     return calls
 
 
@@ -104,8 +138,13 @@ def test_upload_queues_the_disassembly_and_stores_the_result(admin: TestClient, 
 
     state = admin.get(f"/api/samples/{sha}/code", headers=key).json()
     assert state["status"] == "done" and state["engine"]["version"] == "0.9.1"
-    assert [f["name"] for f in state["functions"]] == ["entry0", "sym.imp.KERNEL32.dll_VirtualAllocEx"]
+    assert [f["name"] for f in state["functions"]] == [
+        "entry0",
+        "sym.imp.KERNEL32.dll_VirtualAllocEx",
+        "fcn.0040100f",
+    ]
     assert "cfg" not in state["functions"][0]  # CFGs are fetched per function
+    assert "decompiled" not in state and state["decompile"]["done"] == 1  # stats only, no pseudo-C
 
     cfg = admin.get(f"/api/samples/{sha}/code/functions/{0x401000}", headers=key).json()
     assert [b["addr"] for b in cfg["blocks"]] == [0x401000, 0x401007, 0x40100C]
@@ -132,8 +171,48 @@ def test_worker_errors_are_stored(admin: TestClient, monkeypatch, worker):
     assert admin.get(f"/api/samples/{sha}/code/functions/{0x401000}", headers=key).status_code == 404
 
 
-def test_split_result_keeps_cfgs_apart():
-    summary, cfgs = analyzer.split_result(WORKER_RESULT)
-    assert list(cfgs) == [str(0x401000)]
-    assert all("cfg" not in f for f in summary["functions"])
+def test_decompiled_code_is_stored_or_fetched_once_on_demand(admin: TestClient, worker):
+    key = make_key(admin, role="analyst")
+    sha = _upload(admin, key, "c3", minimal_pe(b"\x55\x89\xe5\xc3"))
+    url = f"/api/samples/{sha}/code/functions/{{}}/decompiled"
+
+    stored = admin.get(url.format(0x401000), headers=key).json()
+    assert stored["source"] == "analysis" and stored["engine"] == "rz-ghidra"
+    assert stored["code"].startswith("void entry0") and stored["spans"][1] == [5, 11, "f", 0x401000]
+    assert ("decompile", 0x401000) not in worker  # no worker call for stored code
+
+    first = admin.get(url.format(0x40100F), headers=key).json()
+    assert first["source"] == "on-demand" and "return 0;" in first["code"]
+    again = admin.get(url.format(0x40100F), headers=key).json()
+    assert again["source"] == "analysis" and again["code"] == first["code"]  # kept after the first time
+    assert worker.count(("decompile", 0x40100F)) == 1
+
+    assert admin.get(url.format(0x403000), headers=key).status_code == 404  # imports have no code
+    assert admin.get(url.format(0x401001), headers=key).status_code == 404  # not a function start
+
+
+def test_decompile_errors(admin: TestClient, monkeypatch, worker):
+    key = make_key(admin, role="analyst")
+    sha = _upload(admin, key, "c4", minimal_pe(b"\x31\xc0\xc3"))
+    url = f"/api/samples/{sha}/code/functions/{0x40100F}/decompiled"
+
+    def failing(sha256, addr):
+        raise analyzer.AnalyzerError("The analyzer is busy; try again later")
+
+    monkeypatch.setattr(analyzer, "request_decompile", failing)
+    r = admin.get(url, headers=key)
+    assert r.status_code == 502 and "busy" in r.json()["detail"]
+
+    monkeypatch.setattr(settings, "ANALYZER_URL", "")
+    assert admin.get(url, headers=key).status_code == 503  # nothing stored, no worker
+    stored = f"/api/samples/{sha}/code/functions/{0x401000}/decompiled"
+    assert admin.get(stored, headers=key).status_code == 200  # stored code needs no worker
+
+
+def test_split_result_keeps_cfgs_and_pseudo_c_apart():
+    summary, cfgs, decompiled = analyzer.split_result(WORKER_RESULT)
+    assert list(cfgs) == [str(0x401000), str(0x40100F)]
+    assert list(decompiled) == [str(0x401000)]
+    assert all("cfg" not in f for f in summary["functions"]) and "decompiled" not in summary
     assert summary["engine"]["name"] == "rizin" and summary["entry"] == 0x401000
+    assert summary["decompile"]["engine"] == "rz-ghidra"

@@ -1,11 +1,12 @@
 """HTTP front of the Nik analyzer worker (standard library only).
 
-    GET  /health              → {"status": "ok", "engine": "rizin x.y.z"}
-    POST /analyze {"sha256"}  → the analysis of SAMPLE_DIR/<sha256>.bin
+    GET  /health                       → {"status": "ok", "engine": "rizin x.y.z"}
+    POST /analyze {"sha256"}           → the analysis of SAMPLE_DIR/<sha256>.bin
+    POST /decompile {"sha256", "addr"} → the pseudo-C of one function
 
 Only the Nik backend talks to this server: it is not published outside the
 container network, and every request must carry the shared ``X-Analyzer-Token``.
-At most ``MAX_JOBS`` analyses run at once; extra requests get 503.
+At most ``MAX_JOBS`` requests run at once; extra requests get 503.
 """
 
 from __future__ import annotations
@@ -17,11 +18,12 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from nik_analyzer import AnalysisError, AnalysisTimeout, analyze, rizin_version
+from nik_analyzer import AnalysisError, AnalysisTimeout, analyze, decompile_one, rizin_version
 
 SAMPLE_DIR = os.environ.get("SAMPLE_DIR", "/samples")
 TOKEN = os.environ.get("ANALYZER_TOKEN", "")
 TIMEOUT = float(os.environ.get("ANALYZER_TIMEOUT", "600"))
+DECOMPILE_SECONDS = float(os.environ.get("ANALYZER_DECOMPILE_SECONDS", "300"))
 MAX_JOBS = int(os.environ.get("ANALYZER_MAX_JOBS", "2"))
 PORT = int(os.environ.get("ANALYZER_PORT", "8700"))
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -49,21 +51,29 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"detail": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/analyze":
+        if self.path not in ("/analyze", "/decompile"):
             return self._send(404, {"detail": "Not found"})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong analyzer token"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            sha256 = json.loads(self.rfile.read(min(length, 4096)) or b"{}").get("sha256", "")
-        except (ValueError, json.JSONDecodeError):
+            body = json.loads(self.rfile.read(min(length, 4096)) or b"{}")
+            sha256 = body.get("sha256", "")
+            addr = body.get("addr")
+        except (ValueError, AttributeError, json.JSONDecodeError):
             return self._send(400, {"detail": "Invalid request body"})
         if not SHA256.match(sha256 or ""):
             return self._send(400, {"detail": "sha256 must be 64 lowercase hex characters"})
+        if self.path == "/decompile" and (not isinstance(addr, int) or isinstance(addr, bool) or addr < 0):
+            return self._send(400, {"detail": "addr must be a non-negative integer"})
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "The analyzer is busy; try again later"})
+        path = os.path.join(SAMPLE_DIR, f"{sha256}.bin")
         try:
-            result = analyze(os.path.join(SAMPLE_DIR, f"{sha256}.bin"), timeout=TIMEOUT)
+            if self.path == "/analyze":
+                result = analyze(path, timeout=TIMEOUT, decompile_seconds=DECOMPILE_SECONDS)
+            else:
+                result = decompile_one(path, addr, timeout=TIMEOUT)
             self._send(200, result)
         except AnalysisTimeout as exc:
             self._send(504, {"detail": str(exc)})

@@ -12,9 +12,21 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nik_analyzer import analyze, build_function, callee_name, is_import, summarize_info  # noqa: E402
+from nik_analyzer import (  # noqa: E402
+    AnalysisError,
+    analyze,
+    build_decompiled,
+    build_function,
+    callee_name,
+    decompile_functions,
+    decompile_one,
+    disassemble_functions,
+    is_import,
+    summarize_info,
+)
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "tiny_pe_rizin.json").read_text())
+PDGJ = json.loads((Path(__file__).parent / "fixtures" / "tiny_pe_pdgj.json").read_text())
 
 # x86: entry0 tests eax, conditionally calls a helper, returns; the helper zeroes eax.
 TINY_CODE = bytes.fromhex("5589e585c07405e8030000005dc39031c0c3")
@@ -76,6 +88,125 @@ def test_imports_have_no_cfg():
     assert imp["kind"] == "import" and "cfg" not in imp and imp["calls"] == []
 
 
+def test_decompiled_code_spans_and_call_targets():
+    entry = build_decompiled(PDGJ[str(0x401000)])
+    code = entry["code"]
+    assert code.startswith("void entry0(void)") and code.endswith("}")
+    assert "fcn.0040100f();" in code and entry["truncated"] is False
+    spans = [(code[s[0] : s[1]], *s[2:]) for s in entry["spans"]]
+    assert spans[:3] == [("void", "t"), ("entry0", "f", 0x401000), ("void", "k")]  # return type, name, params
+    assert ("fcn.0040100f", "f", 0x40100F) in spans  # a call becomes a link to its function
+    assert ("if", "k") in spans and ("return", "k") in spans and ("in_EAX", "v") in spans
+    assert ("// [00] -r-x section size 4096 named .text", "c") in spans  # one span, not one per word
+    starts = [s[0] for s in entry["spans"]]
+    assert starts == sorted(starts)
+    assert all(a[1] <= b[0] for a, b in zip(entry["spans"], entry["spans"][1:]))  # no overlap
+    assert build_decompiled({"code": "\n  \n", "annotations": []}) is None
+    assert build_decompiled(None) is None
+
+
+class FakeSession:
+    """Stands in for Session: canned answers per address, crashes on demand, records the order.
+
+    ``crash`` maps an address to how many times it crashes before answering.
+    """
+
+    def __init__(self, answers, crash=None, clock=None, cost=0.0, max_restarts=3):
+        self.answers, self.crash, self.clock, self.cost = answers, dict(crash or {}), clock, cost
+        self.asked, self.restarts, self.max_restarts = [], 0, max_restarts
+
+    def cmdj(self, command):
+        addr = int(command.split("@")[1])
+        self.asked.append(addr)
+        if self.clock is not None:
+            self.clock.now += self.cost
+        if self.crash.get(addr, 0) > 0:
+            self.crash[addr] -= 1
+            raise AnalysisError("rizin stopped unexpectedly")
+        return self.answers.get(addr)
+
+    def restart(self):
+        if self.restarts >= self.max_restarts:
+            raise AnalysisError("rizin crashed too many times")
+        self.restarts += 1
+
+    def kill(self):
+        pass
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+FUNCTIONS = [
+    {"addr": 0x10, "kind": "function", "size": 900},
+    {"addr": 0x20, "kind": "import", "size": 6},
+    {"addr": 0x30, "kind": "function", "size": 50},
+    {"addr": 0x40, "kind": "function", "size": 400},
+    {"addr": 0x50, "kind": "function", "size": 10},
+]
+CODE = {"code": "int f(void)\n{\n    return 0;\n}", "annotations": []}
+
+
+ALL_CODE = {a: CODE for a in (0x10, 0x30, 0x40, 0x50)}
+
+
+def test_decompile_pass_order_budget_and_crashes():
+    clock = Clock()
+    session = FakeSession(ALL_CODE, clock=clock, cost=1.0)
+    decompiled, stats = decompile_functions(session, FUNCTIONS, deadline=100, first=(0x40, None), clock=clock)
+    assert session.asked == [0x40, 0x50, 0x30, 0x10]  # entry first, then smallest; imports never
+    assert set(decompiled) == {"16", "48", "64", "80"}
+    assert stats == {"engine": "rz-ghidra", "done": 4, "failed": 0, "total": 4, "stopped": None}
+
+    clock = Clock()
+    session = FakeSession(ALL_CODE, clock=clock, cost=1.0)
+    decompiled, stats = decompile_functions(session, FUNCTIONS, deadline=2, clock=clock)
+    assert session.asked == [0x50, 0x30] and stats["stopped"] == "time" and stats["done"] == 2
+
+    # A crash skips that function, restarts the session and goes on.
+    session = FakeSession(ALL_CODE, crash={0x30: 1})
+    decompiled, stats = decompile_functions(session, FUNCTIONS, deadline=float("inf"))
+    assert set(decompiled) == {"16", "64", "80"} and session.restarts == 1
+    assert (stats["done"], stats["failed"], stats["stopped"]) == (3, 1, None)
+
+    # Out of restarts: the pass stops and keeps what it has.
+    session = FakeSession(ALL_CODE, crash={0x50: 1, 0x30: 1}, max_restarts=1)
+    decompiled, stats = decompile_functions(session, FUNCTIONS, deadline=float("inf"))
+    assert decompiled == {} and stats["stopped"] == "error"
+
+
+def test_disassembly_survives_rizin_crashes():
+    names = {f["offset"]: f["name"] for f in FIXTURE["aflj"]}
+
+    class Recorded(FakeSession):
+        """Answers afbj / pdfj from the recorded rizin output."""
+
+        def cmdj(self, command):
+            result = super().cmdj(command)
+            kind, at = command.split(" @ ")
+            return FIXTURE[kind][at] if result is None else result
+
+    # entry0 crashes once (cumulative crash): retried in a fresh session, fully built.
+    session = Recorded({}, crash={0x401000: 1})
+    results = disassemble_functions(session, FIXTURE["aflj"], names)
+    assert session.restarts == 1 and "skipped" not in results[0]
+    assert len(results[0]["cfg"]["blocks"]) == 3
+
+    # entry0 crashes twice: kept without CFG and marked skipped; the helper is unaffected.
+    session = Recorded({}, crash={0x401000: 2})
+    results = disassemble_functions(session, FIXTURE["aflj"], names)
+    assert results[0]["skipped"].startswith("rizin crashed") and results[0]["cfg"]["blocks"] == []
+    assert results[1]["name"] == "fcn.0040100f" and "skipped" not in results[1]
+
+    with pytest.raises(AnalysisError):  # no restarts left
+        disassemble_functions(Recorded({}, crash={0x401000: 2}, max_restarts=1), FIXTURE["aflj"], names)
+
+
 @pytest.mark.skipif(shutil.which("rizin") is None, reason="rizin is not installed")
 def test_live_analysis(tmp_path):
     sample = tmp_path / "tiny.bin"
@@ -84,3 +215,9 @@ def test_live_analysis(tmp_path):
     names = [f["name"] for f in result["functions"]]
     assert "entry0" in names and result["entry"] == 0x401000
     assert result["engine"]["name"] == "rizin" and result["engine"]["version"][0].isdigit()
+    assert result["decompile"]["stopped"] is None and result["decompile"]["done"] == result["decompile"]["total"]
+    assert result["decompiled"][str(0x401000)]["code"].startswith("void entry0")
+    one = decompile_one(str(sample), 0x40100F, timeout=60)
+    assert one["engine"] == "rz-ghidra" and "return 0;" in one["code"]
+    with pytest.raises(AnalysisError):
+        decompile_one(str(sample), 0x401001, timeout=60)  # not a function start
