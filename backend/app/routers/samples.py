@@ -18,10 +18,12 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import yara_rules
 from ..config import settings
 from ..db import get_db
 from ..events import emit
 from ..models import AuditEntry, Incident, Sample
+from ..parsing.executables import parse_structure
 from ..parsing.malware import STRINGS_STORED, analyze, iter_strings
 from ..samples import DEFAULT_ZIP_PASSWORD, delete_sample, is_sha256, read_sample, write_sample, zip_sample
 from ..security import Principal, now_iso, principal, writer_principal
@@ -94,6 +96,18 @@ def _incidents_referencing(db: OrmSession, sha256: str) -> list[Incident]:
     return [row for row in candidates if any(ref.get("sha256") == sha256 for ref in _refs(dict(row.doc or {})))]
 
 
+ANALYSIS_VERSION = 2  # 1 = hashes/type/entropy/strings/IOC; 2 = + structure and YARA
+
+
+def full_analysis(db: OrmSession, data: bytes) -> dict[str, Any]:
+    """Static analysis plus the executable structure and the YARA scan."""
+    result = analyze(data)
+    result["structure"] = parse_structure(result["type"]["id"], data)
+    result["yara"] = yara_rules.scan(db, data)
+    result["analysisVersion"] = ANALYSIS_VERSION
+    return result
+
+
 def _save_doc(db: OrmSession, row: Incident, doc: dict) -> None:
     doc["updatedAt"] = now_iso()
     row.doc = doc
@@ -127,7 +141,7 @@ async def upload_sample(
     if len(data) > limit:
         raise HTTPException(status_code=413, detail=f"The file exceeds the {settings.SAMPLE_MAX_MB} MB sample limit.")
 
-    result = analyze(data)
+    result = full_analysis(db, data)
     sha256 = result["hashes"]["sha256"]
     row = db.get(Sample, sha256)
     if row is None:
@@ -167,6 +181,26 @@ async def upload_sample(
         db, background_tasks, "upload.completed", {"incidentId": incident_id, "target": f"malware/{sha256}", "rows": 1}
     )
     return {"sample": ref, "iocs": len(row.analysis.get("iocs", [])), "strings": row.analysis.get("stringsTotal", 0)}
+
+
+@router.post("/samples/{sha256}/reanalyse")
+def reanalyse_sample(
+    sha256: str,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Run the current analysis engine again on the stored file (after a Nik upgrade or a YARA rule change)."""
+    row = _sample_or_404(db, sha256)
+    result = full_analysis(db, read_sample(sha256))
+    row.analysis = result
+    row.type_id = result["type"]["id"]
+    row.type_label = result["type"]["label"]
+    row.entropy = result["entropy"]
+    flag_modified(row, "analysis")
+    _audit(db, caller, "sample.reanalyse", f"Re-analysed sample {sha256[:12]}… ({row.type_label})", None)
+    db.commit()
+    incidents = [{"id": inc.id, "name": (inc.doc or {}).get("name", "")} for inc in _incidents_referencing(db, sha256)]
+    return {**_summary(row), "analysis": row.analysis, "incidents": incidents}
 
 
 @router.get("/samples/{sha256}")

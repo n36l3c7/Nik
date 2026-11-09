@@ -43,9 +43,10 @@ every action attributed to a named analyst and recorded in a global audit log.
   OS-specific guidance on where to find each source.
 - **Malware analysis** — suspicious files are stored on the Nik server (named
   by SHA-256, never executed) and analysed statically: hashes, file type,
-  entropy per block, strings and indicators of compromise, flaggable like any
-  other event, with links to VirusTotal and MalwareBazaar and a download only
-  inside a password-protected zip.
+  entropy per block, strings and indicators of compromise, PE/ELF/Mach-O
+  structure with imphash, YARA matches (built-in and admin rules), all
+  flaggable like any other event, with links to VirusTotal and MalwareBazaar
+  and a download only inside a password-protected zip.
 - **Super-timeline** — every timestamped event across all tabs merged into one
   chronological, filterable view, plus a collapsible `tail -f` side panel with
   the latest events on every tab.
@@ -232,6 +233,7 @@ is no `tailwind.config.js` and no extra setup step.
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
 | `SAMPLE_STORE` | `./samples` | Directory of the raw malware samples (one file per SHA-256, never executed). Exclude it from the server's antivirus and include it in backups. |
 | `SAMPLE_MAX_MB` | `100` | Per-file size limit for sample uploads. |
+| `YARA_RULES` | `app/yara` | Directory of the built-in YARA rule files (`*.yar`); admin rules live in the database. |
 
 **Compose** (root `.env` — see `.env.example`):
 
@@ -638,6 +640,8 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/samples/{sha256}` · `…/strings` | Metadata and full analysis (hashes, type, entropy blocks, indicators, first 5,000 strings); `/strings?q=&minLength=&encoding=` scans the stored file on demand. |
 | `GET /api/samples/{sha256}/download` | The sample inside an AES-256 zip: `?password=` (default `infected`), `?name=` for the inner file name. Audited. |
 | `DELETE /api/incidents/{id}/samples/{sha256}` | Detach the sample; the file is deleted once no incident references it. |
+| `POST /api/samples/{sha256}/reanalyse` | Run the current analysis engine and YARA rules again on the stored file. |
+| `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
 | `GET /api/settings` | Read the shared detection rules / business hours. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
@@ -807,7 +811,10 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── defaults.py             # Factory defaults for detection settings
 │       ├── samples.py              # Malware sample store (files by SHA-256) + protected zip
 │       ├── parsing/malware.py      # Static analysis: hashes, type, entropy, strings, IOC
-│       └── routers/                # auth, users, incidents, audit, settings, backup, samples
+│       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
+│       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
+│       ├── yara/                   # Built-in YARA rule files (*.yar)
+│       └── routers/                # auth, users, incidents, audit, settings, backup, samples, yara_rules
 └── src/
     ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
     │                               #   > SettingsProvider > IncidentProvider > App
@@ -883,7 +890,8 @@ file itself to the server, because the sample *is* the evidence under study
             ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
             ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
-            │                           #   IocSection, StringsSection, DownloadDialog
+            │                           #   StructureSection, YaraSection, IocSection, StringsSection,
+            │                           #   DownloadDialog
             └── timeline/               # TimelineTab (the super-timeline)
 ```
 
@@ -1194,6 +1202,22 @@ with the analysis and the rest is recomputed from the file on demand
 (`/strings`); nothing ever opens the sample with a library that interprets its
 format. On the host, **exclude the sample store from the antivirus** (it would
 quarantine the evidence) and include it in backups (§6).
+
+**Structure and YARA.** For executables the analysis also parses the format
+(`parsing/executables.py`): PE through `pefile` (machine, subsystem, compile
+time, sections with entropy and flags, imports by library, exports,
+resources, imphash, Authenticode presence, rich header, PDB path), ELF and
+Mach-O with Nik's own header parsers (segments, sections, needed libraries or
+dylibs, interpreter, code signature). Malformed headers, the norm in malware,
+become `warnings` instead of failures. Every sample is then scanned with YARA
+(`yara_rules.py`): the built-in rule files under `app/yara/` (`YARA_RULES`)
+plus the rule sets admins add in **Settings → YARA rules**, which are compiled
+on their own before being saved and recompiled together on change. A match's
+`meta.severity` (`high` / `medium`) and `meta.description` drive the badges;
+YARA severity counts towards the sample's severity. The analysis records its
+`analysisVersion`; **Re-analyse** (`POST /api/samples/{sha256}/reanalyse`)
+runs the current engine on the stored file, so older samples catch up after
+an upgrade or a rule change.
 
 ---
 

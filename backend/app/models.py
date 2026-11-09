@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -97,6 +97,20 @@ class Sample(Base):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     analysis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class YaraRule(Base):
+    """A YARA rule added by an admin; compiled with the built-in rules when enabled."""
+
+    __tablename__ = "yara_rules"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
 class Setting(Base):
