@@ -102,11 +102,11 @@ def worker(monkeypatch):
     """Configure the analyzer and replace the HTTP calls with recorders."""
     calls = []
 
-    def fake(sha256):
+    def fake(sha256, signatures):
         calls.append(sha256)
         return WORKER_RESULT
 
-    def fake_decompile(sha256, addr):
+    def fake_decompile(sha256, addr, signatures):
         calls.append(("decompile", addr))
         return ON_DEMAND
 
@@ -160,7 +160,7 @@ def test_upload_queues_the_disassembly_and_stores_the_result(admin: TestClient, 
 
 
 def test_worker_errors_are_stored(admin: TestClient, monkeypatch, worker):
-    def failing(sha256):
+    def failing(sha256, signatures):
         raise analyzer.AnalyzerError("rizin did not finish within 600 seconds")
 
     monkeypatch.setattr(analyzer, "request_code_analysis", failing)
@@ -196,7 +196,7 @@ def test_decompile_errors(admin: TestClient, monkeypatch, worker):
     sha = _upload(admin, key, "c4", minimal_pe(b"\x31\xc0\xc3"))
     url = f"/api/samples/{sha}/code/functions/{0x40100F}/decompiled"
 
-    def failing(sha256, addr):
+    def failing(sha256, addr, signatures):
         raise analyzer.AnalyzerError("The analyzer is busy; try again later")
 
     monkeypatch.setattr(analyzer, "request_decompile", failing)

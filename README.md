@@ -47,7 +47,11 @@ every action attributed to a named analyst and recorded in a global audit log.
   structure with imphash, YARA matches (built-in and admin rules), and a
   **Code view** from an isolated rizin worker: functions, call graph,
   control-flow graphs laid out like a disassembler's graph view, and the
-  **pseudo-C** of each function from Ghidra's decompiler. All of it is
+  **pseudo-C** of each function from Ghidra's decompiler. Library code it
+  recognises (FLIRT signatures, Rust crates) is hidden by default, a
+  **Start here** list ranks the functions worth reading first, indicators
+  link to the functions that use them, and analysts rename and comment
+  functions for everyone working on the same sample. All of it is
   flaggable like any other event, with links to VirusTotal and MalwareBazaar
   and a download only inside a password-protected zip.
 - **Super-timeline** — every timestamped event across all tabs merged into one
@@ -674,6 +678,8 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `POST /api/samples/{sha256}/reanalyse` | Run the current analysis engine and YARA rules again on the stored file. |
 | `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
 | `GET/POST /api/samples/{sha256}/code` | Disassembly by the rizin worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error`) and, when done, the engine, binary info and functions with their calls; `POST` (re)starts it (`202`, `503` when no worker is configured). |
+| `GET /api/samples/{sha256}/annotations` · `PUT …/annotations/{addr}` | Analysts' names and comments for the sample's functions (shared by every incident holding the file, removed with it). `PUT` takes `{ name, comment }` and returns the annotation, or `null` when both are empty (it is removed); `409` before the sample is disassembled, `404` for an address that is not a function. Audited as `sample.annotate`. |
+| `GET/POST /api/flirt-signatures` · `PUT/DELETE …/{id}` | FLIRT signatures (`.sig` or `.pat`, multipart `name` + `file`, up to 32 MB) the analyzer worker applies on top of rizin's bundled ones (**admin** to change; any caller may list). `PUT` takes `{ name, enabled }`. They apply from the next disassembly. |
 | `GET /api/samples/{sha256}/code/functions/{addr}` | Control-flow graph of one function: basic blocks with their instructions and `jump` / `fail` successors. |
 | `GET /api/samples/{sha256}/code/functions/{addr}/decompiled` | Pseudo-C of one function (rz-ghidra): `code` plus highlight `spans` (`[start, end, kind]`, or `[start, end, "f", address]` for a call target). Stored by the analysis (`source: "analysis"`) or decompiled on first request and kept (`source: "on-demand"`); `502` when the worker fails, `503` when none is configured. |
 | `GET /api/settings` | Read the shared detection rules / business hours. |
@@ -849,8 +855,10 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── parsing/malware.py      # Static analysis: hashes, type, entropy, strings, IOC
 │       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
 │       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
+│       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
 │       ├── yara/                   # Built-in YARA rule files (*.yar)
-│       └── routers/                # auth, users, incidents, audit, settings, backup, samples, yara_rules
+│       └── routers/                # auth, users, incidents, audit, settings, backup, samples,
+│                                   #   annotations, yara_rules, flirt
 └── src/
     ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
     │                               #   > SettingsProvider > IncidentProvider > App
@@ -902,6 +910,8 @@ file itself to the server, because the sample *is* the evidence under study
     │   ├── time.js                 # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…
     │   ├── url.js                  # extractDomain, extractSearchQuery, topDomains…
     │   ├── malware.js              # IOC detection, sample severity, timeline events (+ .test.js)
+    │   ├── code.js                 # Code view: API reach, call graph, CFG, pseudo-C lines (+ .test.js)
+    │   ├── triage.js               # Function origin, strings/IOC links, Start here (+ .test.js)
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
     │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
     │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
@@ -916,7 +926,8 @@ file itself to the server, because the sample *is* the evidence under study
         ├── auth/                   # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
-        │                           #   hours, accounts, API keys, audit log)
+        │                           #   hours, accounts, API keys, YARA rules, FLIRT
+        │                           #   signatures, audit log)
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
         │                           #   TailPanel (tail -f of the timeline)
         └── tabs/
@@ -928,7 +939,8 @@ file itself to the server, because the sample *is* the evidence under study
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
             ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
             │                           #   StructureSection, YaraSection, IocSection, StringsSection,
-            │                           #   DownloadDialog; code/ CodeSection + GraphCanvas (ELK)
+            │                           #   DownloadDialog; code/ CodeSection, GraphCanvas (ELK),
+            │                           #   DecompiledView, StartHere, FunctionNotes, hooks
             └── timeline/               # TimelineTab (the super-timeline)
 ```
 
@@ -1307,6 +1319,37 @@ it is licensed EPL-2.0 / GPL-3.0 and used unmodified. The **Decompiled** panel
 shows the pseudo-C with the decompiler's own highlighting (font ligatures off,
 so `!=` reads as written); a call to another function of the sample is a link
 that opens it, and calls to suspicious APIs are red.
+
+**Function triage.** A real binary has thousands of functions, most of them
+library code. The worker reports, per function, what it can tell about its
+origin, and the UI (`utils/triage.js`) sorts the list with it:
+
+- *Library*: functions matched by a FLIRT signature (rizin's bundled set
+  plus the `.sig` / `.pat` files admins upload in **Settings → FLIRT
+  signatures**, stored under `SAMPLE_STORE/_flirt/` and passed to the
+  worker, which applies them with `Fs` after `aaa`), and, in Rust binaries,
+  functions whose panic locations point at a crate's sources
+  (`…\.cargo\registry\src\…\<crate>-x.y.z\src\…rs`, or
+  `/rustc/<hash>/library/std/…` for the standard library). The worker finds
+  those paths among the strings, follows the `Location` structs that point
+  at them, and credits each function with the crates its instructions
+  reference. The crates found are listed above the table.
+- *Runtime* (compiler start-up and C runtime support, by name), *thunk*
+  (jumps to imports, switch fragments) and *import*.
+- *Not recognised*: everything else. Release builds leave much library code
+  without a signature or a path, so this is "not recognised", not "the
+  author's code".
+
+**Hide recognised library code** (on by default) keeps only the
+unrecognised functions in the list. **Start here** ranks those that call
+suspicious APIs directly, use an indicator of compromise, reach a suspicious
+API through their callees or are complex. The worker also reports the file
+offsets of the strings each function references; matched against the
+analysis strings, they give each function's **strings used** and, in the IOC
+table, a **Used by** column that opens the function in the Code view.
+Analysts **rename** and **comment** functions (`function_annotations`
+table): names replace rizin's in the list, the graphs and the pseudo-C for
+everyone opening the same sample.
 
 ---
 

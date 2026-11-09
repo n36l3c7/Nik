@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -121,6 +121,45 @@ class SampleCode(Base):
     summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     cfgs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, deferred=True)
     decompiled: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, deferred=True)
+
+
+class FunctionAnnotation(Base):
+    """An analyst's name and comment for one function of a sample.
+
+    Annotations belong to the sample (by SHA-256), not to an incident, so every
+    incident holding the same file sees them. They are removed with the sample.
+    """
+
+    __tablename__ = "function_annotations"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    addr: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class FlirtSignature(Base):
+    """A FLIRT signature file (.sig or .pat) uploaded by an admin.
+
+    The file lives in the sample store under ``_flirt/<id>.<kind>``; enabled
+    signatures are applied by the analyzer worker on top of rizin's bundled
+    ones, so library functions they match are recognised and named.
+    """
+
+    __tablename__ = "flirt_signatures"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    file_name: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
 class YaraRule(Base):

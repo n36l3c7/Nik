@@ -14,6 +14,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
+from . import flirt
 from .config import settings
 from .db import SessionLocal
 from .models import SampleCode
@@ -28,14 +29,17 @@ def configured() -> bool:
     return bool(settings.ANALYZER_URL and settings.ANALYZER_TOKEN)
 
 
-def request_code_analysis(sha256: str) -> dict[str, Any]:
-    """POST /analyze to the worker: functions, CFGs and the up-front pseudo-C."""
-    return _post("/analyze", {"sha256": sha256})
+def request_code_analysis(sha256: str, signatures: list[str]) -> dict[str, Any]:
+    """POST /analyze to the worker: functions, CFGs and the up-front pseudo-C.
+
+    ``signatures`` are the enabled admin FLIRT files, relative to the store.
+    """
+    return _post("/analyze", {"sha256": sha256, "signatures": signatures})
 
 
-def request_decompile(sha256: str, addr: int) -> dict[str, Any]:
+def request_decompile(sha256: str, addr: int, signatures: list[str]) -> dict[str, Any]:
     """POST /decompile to the worker: the pseudo-C of one function, on demand."""
-    return _post("/decompile", {"sha256": sha256, "addr": addr})
+    return _post("/decompile", {"sha256": sha256, "addr": addr, "signatures": signatures})
 
 
 def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -83,7 +87,7 @@ def run_code_job(sha256: str) -> None:
         row.status = "running"
         db.commit()
         try:
-            summary, cfgs, decompiled = split_result(request_code_analysis(sha256))
+            summary, cfgs, decompiled = split_result(request_code_analysis(sha256, flirt.enabled_paths(db)))
             row.summary, row.cfgs, row.decompiled = summary, cfgs, decompiled
             row.status, row.error = "done", None
         except AnalyzerError as exc:

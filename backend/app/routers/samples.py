@@ -18,7 +18,7 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import analyzer, yara_rules
+from .. import analyzer, flirt, yara_rules
 from ..config import settings
 from ..db import get_db
 from ..events import emit
@@ -27,6 +27,7 @@ from ..parsing.executables import parse_structure
 from ..parsing.malware import STRINGS_STORED, analyze, iter_strings
 from ..samples import DEFAULT_ZIP_PASSWORD, delete_sample, is_sha256, read_sample, write_sample, zip_sample
 from ..security import Principal, now_iso, principal, writer_principal
+from .annotations import delete_for_sample as delete_annotations
 
 router = APIRouter(tags=["samples"])
 
@@ -314,7 +315,7 @@ def get_function_decompiled(
     if not analyzer.configured():
         raise HTTPException(status_code=503, detail="The analyzer worker is not configured (ANALYZER_URL).")
     try:
-        result = analyzer.request_decompile(sha256, addr)
+        result = analyzer.request_decompile(sha256, addr, flirt.enabled_paths(db))
     except analyzer.AnalyzerError as exc:
         raise HTTPException(status_code=502, detail=f"The decompiler failed: {exc}") from exc
     code = {
@@ -413,6 +414,7 @@ def remove_sample(
         code = db.get(SampleCode, sha256)
         if code is not None:
             db.delete(code)
+        delete_annotations(db, sha256)
     _audit(db, caller, "sample.delete", f"Removed sample {sha256[:12]}… from the incident", incident)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -86,13 +86,17 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   await expect(page.getByText('No samples yet')).toBeVisible()
   // A harmless but valid PE32 (one .text section) with a few indicators inside.
   // .text starts with real x86 code at the entry point (test, branch, call a
-  // helper, return) so the analyzer has functions and a CFG to show.
-  const code = Buffer.from('5589e585c07405e8030000005dc39031c0c3', 'hex')
+  // helper, return) so the analyzer has functions and a CFG to show. The helper
+  // loads the URL's address (mov eax, imm32), so the URL is linked to it.
   const payload = Buffer.from(
     '\0\0kernel32.dll\0VirtualAllocEx\0WriteProcessMemory\0CreateRemoteThread\0http://185.220.101.47/gate.php\0' +
       'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\WinUpd\0',
     'latin1',
   )
+  const entry = Buffer.from('5589e585c07405e8030000005dc390', 'hex')
+  const helper = Buffer.from('b80000000031c0c3', 'hex')
+  helper.writeUInt32LE(0x401000 + entry.length + helper.length + payload.indexOf('http'), 1)
+  const code = Buffer.concat([entry, helper])
   const fileAlign = 0x200
   const rawSize = Math.ceil((code.length + payload.length) / fileAlign) * fileAlign
   const headers = Buffer.alloc(0x200)
@@ -158,7 +162,13 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   // Code view: rizin in CI (analyzer container), "not configured" elsewhere.
   await page.getByRole('tab', { name: 'Code' }).click()
   if (process.env.E2E_ANALYZER_URL) {
-    await expect(page.locator('tbody tr', { hasText: 'entry0' })).toBeVisible({ timeout: 60_000 })
+    // Recognised code (here the entry stub, runtime) is hidden by default; the
+    // helper uses the URL, so it is where to start.
+    await expect(page.locator('tbody tr', { hasText: 'fcn.0040100f' })).toBeVisible({ timeout: 60_000 })
+    await expect(page.locator('tbody tr', { hasText: 'entry0' })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: 'Start here' })).toContainText('gate.php')
+    await page.getByLabel(/Hide recognised library code/).uncheck()
+    await expect(page.locator('tbody tr', { hasText: 'entry0' })).toBeVisible()
     await page.getByRole('tab', { name: 'Control flow' }).click()
     const cfg = page.locator('svg[aria-label^="Control flow of entry0"]')
     await expect(cfg).toBeVisible({ timeout: 30_000 })
@@ -182,6 +192,20 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
       await rows.filter({ hasText: name }).first().click()
       await expect(page.locator(`svg[aria-label^="Calls from ${name}"]`)).toBeVisible({ timeout: 30_000 })
     }
+    // Rename the helper: the new name replaces rizin's in the list and in the caller's pseudo-C.
+    await page.getByRole('button', { name: 'Rename / comment' }).click()
+    await page.getByLabel(/^Name/).fill('send_beacon')
+    await page.getByLabel('Comment', { exact: true }).fill('Loads the C2 URL')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByText('Loads the C2 URL')).toBeVisible()
+    await expect(rows.filter({ hasText: 'send_beacon' })).toBeVisible()
+    await rows.filter({ hasText: 'entry0' }).first().click()
+    await page.getByRole('tab', { name: 'Decompiled' }).click()
+    await expect(page.locator('pre').getByRole('button', { name: 'send_beacon' })).toBeVisible({ timeout: 30_000 })
+    // The IOC table links the URL to the function that uses it.
+    await page.getByRole('tab', { name: /^IOC/ }).click()
+    await page.locator('tbody tr', { hasText: 'gate.php' }).getByRole('button', { name: 'send_beacon' }).click()
+    await expect(page.locator('svg[aria-label^="Calls from send_beacon"]')).toBeVisible({ timeout: 30_000 })
   } else {
     await expect(page.getByText('The analyzer worker is not configured.')).toBeVisible()
   }

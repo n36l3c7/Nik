@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-10
+
+### Added
+
+- **Function triage** in the Code view. Each function gets an origin:
+  *library* (matched by a FLIRT signature, or, in Rust binaries, credited to
+  the crate whose sources its panic locations name), *runtime*, *thunk* or
+  *not recognised*. **Hide recognised library code** is on by default; the
+  Rust crates found in the binary are listed above the table.
+- **Start here**: the unrecognised functions most worth reading first, with
+  the reasons (suspicious APIs called directly, indicators used, suspicious
+  APIs reached through callees, complexity).
+- The analyzer worker reports the strings each function references. The
+  Code view lists a function's **strings used** with their indicators, and
+  the IOC table gains a **Used by** column that opens the function.
+- Analysts **rename and comment functions**. Annotations belong to the
+  sample (every incident holding the same file sees them), replace rizin's
+  names in the list, the graphs and the pseudo-C, and are audited
+  (`sample.annotate`).
+- **Settings → FLIRT signatures** (admin): upload `.sig` or `.pat` files
+  that the worker applies on top of rizin's bundled signatures from the next
+  disassembly.
+- REST API: `GET /api/samples/{sha256}/annotations`,
+  `PUT /api/samples/{sha256}/annotations/{addr}`,
+  `GET/POST /api/flirt-signatures`, `PUT/DELETE /api/flirt-signatures/{id}`.
+  Worker: `/analyze` and `/decompile` accept `signatures`. Alembic migration
+  `0008_annotations_flirt`.
+
 ## [2.8.1] - 2026-11-09
 
 ### Fixed
@@ -353,7 +381,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.8.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/n36l3c7/Nik/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/n36l3c7/Nik/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/n36l3c7/Nik/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/n36l3c7/Nik/compare/v2.6.0...v2.7.0
