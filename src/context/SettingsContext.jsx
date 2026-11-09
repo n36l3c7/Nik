@@ -3,6 +3,7 @@ import {
   DEFAULT_SUSPICIOUS_KEYWORDS,
   DEFAULT_COMMAND_KEYWORDS,
   DEFAULT_ARTIFACT_KEYWORDS,
+  DEFAULT_MALWARE_KEYWORDS,
   DEFAULT_BUSINESS_HOURS,
 } from '../config/detectionRules.js'
 import { api } from '../services/api.js'
@@ -195,6 +196,7 @@ export function useSocEngine() {
         keywords,
         commandKeywords: DEFAULT_COMMAND_KEYWORDS,
         artifactKeywords: DEFAULT_ARTIFACT_KEYWORDS,
+        malwareKeywords: DEFAULT_MALWARE_KEYWORDS,
         businessHours,
       }),
     [keywords, businessHours],

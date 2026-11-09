@@ -32,6 +32,22 @@
       </p>
 
       <section class="release">
+        <h3>2.5.0 <span class="date">2026-11-09</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Malware Analysis</strong> tab: samples stored on the server (by
+            SHA-256, never executed) and analysed statically: hashes, file type, entropy chart, strings and indicators
+            of compromise, flaggable and visible in the timeline. Downloads as an AES zip with the
+            <code>infected</code> password or a custom one. New REST endpoints under <code>/api/samples</code>.
+          </li>
+          <li>
+            <span class="tag added">added</span> Built-in malware ruleset for the SOC engine (injection, anti-analysis,
+            persistence, C2 patterns, encoded PowerShell, throwaway TLDs, ransomware, credentials).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.4.0 <span class="date">2026-11-09</span></h3>
         <ul>
           <li>

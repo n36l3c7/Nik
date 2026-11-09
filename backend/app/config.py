@@ -110,6 +110,13 @@ class Settings:
         self.DB_POOL_RECYCLE: int = _get_int("DB_POOL_RECYCLE", 1800)
         self.DB_STATEMENT_TIMEOUT_MS: int = _get_int("DB_STATEMENT_TIMEOUT_MS", 30000)
 
+        # Malware samples: raw files live on disk (named by SHA-256, never
+        # executed), only metadata and analysis results go to the database.
+        # Exclude this directory from the server's antivirus, or it will
+        # quarantine the evidence.
+        self.SAMPLE_STORE: str = os.getenv("SAMPLE_STORE", "./samples")
+        self.SAMPLE_MAX_MB: int = _get_int("SAMPLE_MAX_MB", 100)
+
     @property
     def is_sqlite(self) -> bool:
         """True when the configured database is SQLite."""

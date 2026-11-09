@@ -2,7 +2,11 @@ import { useState } from 'react'
 import { AlertTriangle, Plus, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react'
 import { Badge, Button } from '../../ui/index.js'
 import { useSettings, isValidRegex } from '../../../context/SettingsContext.jsx'
-import { DEFAULT_COMMAND_KEYWORDS, DEFAULT_ARTIFACT_KEYWORDS } from '../../../config/detectionRules.js'
+import {
+  DEFAULT_COMMAND_KEYWORDS,
+  DEFAULT_ARTIFACT_KEYWORDS,
+  DEFAULT_MALWARE_KEYWORDS,
+} from '../../../config/detectionRules.js'
 
 /*
  * Detection-rules settings section: the user-editable keyword rules, plus a
@@ -208,6 +212,11 @@ export default function DetectionRulesSection() {
           title="Endpoint artifact tradecraft"
           description="Applied to program-execution, persistence, file-access and USB records."
           rules={DEFAULT_ARTIFACT_KEYWORDS}
+        />
+        <BuiltinRuleset
+          title="Malware sample tradecraft"
+          description="Applied to the strings and indicators extracted from uploaded samples."
+          rules={DEFAULT_MALWARE_KEYWORDS}
         />
       </div>
     </section>

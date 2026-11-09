@@ -27,4 +27,7 @@ Bookmarks.plist
 backend/.venv/
 backend/**/__pycache__/
 backend/*.db
+# Malware sample store (dev default; production sets SAMPLE_STORE)
+backend/samples/
+backend/.e2e-samples/
 backend/.env

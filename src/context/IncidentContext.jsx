@@ -895,6 +895,38 @@ export function IncidentProvider({ children }) {
    * Toggle a flag on an entry. `flaggable`:
    *   { key, browserId, section, eventType, title, url, time }
    */
+  /* ---- malware samples (the server owns the store; see routers/samples.py) ---- */
+
+  /**
+   * Record a sample reference the server already attached to the incident
+   * (POST /incidents/{id}/samples wrote it), so the local copy matches
+   * without a second PATCH.
+   */
+  const attachSample = useCallback(
+    (incidentId, ref) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const samples = prev.data.malware?.samples ?? []
+      if (samples.some((s) => s.sha256 === ref.sha256)) return
+      const data = { ...prev.data, malware: { ...(prev.data.malware ?? {}), samples: [...samples, ref] } }
+      commit(incidentId, (i) => ({ ...i, updatedAt: ref.importedAt ?? nowIso(), data }), { local: true })
+    },
+    [commit],
+  )
+
+  /** Detach a sample: the server removes the reference (and the file, when unused). */
+  const detachSample = useCallback(
+    async (incidentId, sha256) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      await api.del(`/incidents/${encodeURIComponent(incidentId)}/samples/${sha256}`)
+      const samples = (prev.data.malware?.samples ?? []).filter((s) => s.sha256 !== sha256)
+      const data = { ...prev.data, malware: { ...(prev.data.malware ?? {}), samples } }
+      commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), data }), { local: true })
+    },
+    [commit],
+  )
+
   const toggleFlag = useCallback(
     (incidentId, flaggable) => {
       const incident = find(incidentId)
@@ -1087,6 +1119,8 @@ export function IncidentProvider({ children }) {
     updateArtifactSource,
     clearArtifactSource,
     clearArtifactCategory,
+    attachSample,
+    detachSample,
     toggleFlag,
     addFlagComment,
     removeFlagComment,

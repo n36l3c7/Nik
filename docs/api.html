@@ -115,6 +115,31 @@
               <td>Poll an async upload job.</td>
             </tr>
             <tr>
+              <td><code>POST /api/incidents/{id}/samples</code></td>
+              <td>
+                Upload a malware sample (multipart <code>file</code>): stored by SHA-256, analysed statically, attached
+                to the incident. Re-uploading a known file reuses its analysis.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/samples/{sha256}</code> · <code>…/strings</code></td>
+              <td>
+                Metadata and full analysis (hashes, type, entropy blocks, indicators, first 5,000 strings);
+                <code>/strings?q=&amp;minLength=&amp;encoding=</code> scans the stored file on demand.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/samples/{sha256}/download</code></td>
+              <td>
+                The sample inside an AES-256 zip. <code>?password=</code> (default <code>infected</code>),
+                <code>?name=</code> for the file name inside the archive. Recorded in the audit log.
+              </td>
+            </tr>
+            <tr>
+              <td><code>DELETE /api/incidents/{id}/samples/{sha256}</code></td>
+              <td>Detach the sample; the file is deleted once no incident references it.</td>
+            </tr>
+            <tr>
               <td><code>GET /api/settings</code></td>
               <td>Read the shared detection rules and business hours.</td>
             </tr>

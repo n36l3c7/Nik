@@ -41,6 +41,11 @@ every action attributed to a named analyst and recorded in a global audit log.
 - **Endpoint artifacts** — program execution, persistence, file & folder
   access and removable devices, imported from DFIR tool CSV/JSON exports with
   OS-specific guidance on where to find each source.
+- **Malware analysis** — suspicious files are stored on the Nik server (named
+  by SHA-256, never executed) and analysed statically: hashes, file type,
+  entropy per block, strings and indicators of compromise, flaggable like any
+  other event, with links to VirusTotal and MalwareBazaar and a download only
+  inside a password-protected zip.
 - **Super-timeline** — every timestamped event across all tabs merged into one
   chronological, filterable view, plus a collapsible `tail -f` side panel with
   the latest events on every tab.
@@ -225,6 +230,8 @@ is no `tailwind.config.js` and no extra setup step.
 | `SECRET_KEY` | `dev-insecure-change-me` | Signing/entropy secret. Set a long random value in production. |
 | `COOKIE_SECURE` | `true` | `Secure` flag on the session cookie (HTTPS only). Set `false` only for plain-HTTP local dev. |
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
+| `SAMPLE_STORE` | `./samples` | Directory of the raw malware samples (one file per SHA-256, never executed). Exclude it from the server's antivirus and include it in backups. |
+| `SAMPLE_MAX_MB` | `100` | Per-file size limit for sample uploads. |
 
 **Compose** (root `.env` — see `.env.example`):
 
@@ -237,6 +244,7 @@ is no `tailwind.config.js` and no extra setup step.
 | `WEB_TLS_PORT` | `8443` | Host port the UI is published on (HTTPS). |
 | `TLS_HOSTNAME` | `localhost` | Name embedded in the auto-generated certificate (CN + SAN) — set it to what users type in the browser. |
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
+| `SAMPLE_MAX_MB` | `100` | Per-file size limit for malware samples; the files live on the `sample-store` volume. |
 
 > **Two things that will bite you over plain HTTP:**
 >
@@ -626,6 +634,10 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `POST /api/incidents/{id}/notes` · `PATCH`/`DELETE …/{noteId}` | Add / edit / remove notes. |
 | `POST /api/incidents/{id}/upload` | Upload a raw artifact file (multipart). `?async=true` → `202 { jobId }`. |
 | `GET /api/jobs/{id}` | Poll an async upload job. |
+| `POST /api/incidents/{id}/samples` | Upload a malware sample (multipart `file`): stored by SHA-256, analysed statically, attached to the incident. A known file reuses its analysis. |
+| `GET /api/samples/{sha256}` · `…/strings` | Metadata and full analysis (hashes, type, entropy blocks, indicators, first 5,000 strings); `/strings?q=&minLength=&encoding=` scans the stored file on demand. |
+| `GET /api/samples/{sha256}/download` | The sample inside an AES-256 zip: `?password=` (default `infected`), `?name=` for the inner file name. Audited. |
+| `DELETE /api/incidents/{id}/samples/{sha256}` | Detach the sample; the file is deleted once no incident references it. |
 | `GET /api/settings` | Read the shared detection rules / business hours. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
@@ -760,6 +772,12 @@ which returns normalized entries — a server-side parser only needs to return
 the same shape, and the rest of the app (contexts, tables, detection) does not
 change.
 
+**The one exception: malware samples.** The Malware Analysis tab sends the
+file itself to the server, because the sample *is* the evidence under study
+(not a container of entries to normalize) and the later analysis stages
+(disassembly, decompilation) can only run server-side. See
+[§3.7](#37-malware-samples).
+
 ### 3.3 Folder structure
 
 ```
@@ -787,7 +805,9 @@ change.
 │       ├── schemas.py              # Pydantic request/response models
 │       ├── security.py             # bcrypt hashing, session-auth dependencies
 │       ├── defaults.py             # Factory defaults for detection settings
-│       └── routers/                # auth, users, incidents, audit, settings, backup
+│       ├── samples.py              # Malware sample store (files by SHA-256) + protected zip
+│       ├── parsing/malware.py      # Static analysis: hashes, type, entropy, strings, IOC
+│       └── routers/                # auth, users, incidents, audit, settings, backup, samples
 └── src/
     ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
     │                               #   > SettingsProvider > IncidentProvider > App
@@ -838,6 +858,7 @@ change.
     │   ├── browserProfiles.js      # browser profiles: normalize, order, names, labels (+ .test.js)
     │   ├── time.js                 # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…
     │   ├── url.js                  # extractDomain, extractSearchQuery, topDomains…
+    │   ├── malware.js              # IOC detection, sample severity, timeline events (+ .test.js)
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
     │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
     │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
@@ -861,6 +882,8 @@ change.
             │                           #   filters, widgets, bookmarks/shortcuts tables
             ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
+            ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
+            │                           #   IocSection, StringsSection, DownloadDialog
             └── timeline/               # TimelineTab (the super-timeline)
 ```
 
@@ -1140,6 +1163,37 @@ Tables stay paginated (25 rows by default), so the DOM never holds more than
 one page; the cost of a large incident is in these data passes, not in
 rendering. When you add a per-row computation, do it once in the `build*`
 helper, not in a cell renderer.
+
+### 3.7 Malware samples
+
+The **Malware Analysis** tab is the one place where a raw file reaches the
+server. The flow:
+
+1. The analyst drops a file; the frontend posts it as is to
+   `POST /api/incidents/{id}/samples` (`services/api.js` → `upload()`, with
+   progress).
+2. The server (`routers/samples.py`) computes the SHA-256 and writes the bytes
+   **once** to the sample store (`app/samples.py`: `SAMPLE_STORE/<sha256>.bin`,
+   read-only, no execute bit), runs the static analysis
+   (`parsing/malware.py`: hashes, magic-byte type, entropy overall and per
+   64 KB block, ASCII/UTF-16 strings, indicators) and stores the result in the
+   `samples` table. The incident document gets only a light reference under
+   `data.malware.samples` (`sha256`, `fileName`, type, size, who and when).
+3. The tab fetches `GET /api/samples/{sha256}` when a sample is selected and
+   runs the SOC engine on the indicators client-side (`utils/malware.js`),
+   with the built-in malware ruleset (`DEFAULT_MALWARE_KEYWORDS`) on top of
+   the shared keywords, exactly like the other tabs.
+4. Downloads go through `GET /api/samples/{sha256}/download`, which wraps the
+   file in an AES-256 zip (`pyzipper`) protected by `infected` or a password
+   the analyst types; the plain bytes never leave the server. Uploads,
+   downloads and removals are written to the audit log by the server.
+
+Design points: the same file in two incidents is stored and analysed once and
+deleted only when the last reference goes; the first 5,000 strings are stored
+with the analysis and the rest is recomputed from the file on demand
+(`/strings`); nothing ever opens the sample with a library that interprets its
+format. On the host, **exclude the sample store from the antivirus** (it would
+quarantine the evidence) and include it in backups (§6).
 
 ---
 
@@ -1650,6 +1704,11 @@ backup is database-agnostic).
 > Routine upgrades do **not** require this: data persists in PostgreSQL across
 > frontend/backend updates and container rebuilds. The full backup is
 > insurance and a migration vehicle, complementary to `pg_dump`.
+
+> The backup envelope holds the **analysis** of every malware sample, not the
+> raw files: those live in the sample store (`SAMPLE_STORE`, the
+> `sample-store` volume in Compose). Copy that directory alongside the backup
+> if the samples themselves must survive.
 
 ### Export
 

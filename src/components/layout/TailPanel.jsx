@@ -22,6 +22,7 @@ const SOURCE_TONES = {
   browser: 'text-info',
   command: 'text-violet',
   endpoint: 'text-med',
+  sample: 'text-high',
 }
 
 const SEVERITY = {

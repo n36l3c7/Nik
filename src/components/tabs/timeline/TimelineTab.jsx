@@ -33,6 +33,7 @@ const SOURCE_FILTER_OPTIONS = [
   { value: 'browser', label: 'Browser' },
   { value: 'command', label: 'Commands' },
   { value: 'endpoint', label: 'Endpoint' },
+  { value: 'sample', label: 'Samples' },
 ]
 
 const ROW_SEVERITY_CLASSES = {

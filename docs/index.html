@@ -73,6 +73,14 @@
           </p>
         </div>
         <div class="card">
+          <h3>Malware analysis</h3>
+          <p>
+            Suspicious files are stored on the Nik server, never executed, and analysed statically: hashes, file type,
+            entropy, strings and indicators of compromise, with links to VirusTotal and MalwareBazaar and a
+            password-protected download.
+          </p>
+        </div>
+        <div class="card">
           <h3>Super-timeline</h3>
           <p>
             Every timestamped event across all tabs merged into one chronological, filterable view, plus a
@@ -167,6 +175,11 @@
           <strong>Import artifacts.</strong> Each analysis tab has a <em>Data sources</em> card: drop the native file (a
           Chromium <code>History</code>, a <code>.bash_history</code>, a tool's CSV export…) and it is parsed in the
           browser. <em>Load demo data</em> fills a tab with sample entries to explore the platform.
+        </li>
+        <li>
+          <strong>Analyse malware.</strong> Drop a suspicious file in the Malware Analysis tab: it goes to the server as
+          is (up to <code>SAMPLE_MAX_MB</code>), is hashed, typed and scanned for strings and indicators, and can be
+          downloaded again only inside a zip protected by the <code>infected</code> password or one you choose.
         </li>
         <li>
           <strong>Review and flag.</strong> Tables are searchable and sortable; SOC detections highlight rows in red

@@ -13,6 +13,7 @@ import tempfile
 os.environ.setdefault("DATABASE_URL", "sqlite:///" + os.path.join(tempfile.mkdtemp(), "test.db").replace("\\", "/"))
 os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "100000/minute")
+os.environ.setdefault("SAMPLE_STORE", os.path.join(tempfile.mkdtemp(), "samples"))
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

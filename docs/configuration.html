@@ -82,6 +82,20 @@
               <td>Session lifetime.</td>
             </tr>
             <tr>
+              <td><code>SAMPLE_STORE</code></td>
+              <td><code>./samples</code></td>
+              <td>
+                Directory of the raw malware samples, one file per SHA-256, never executed. Exclude it from the server's
+                antivirus and include it in backups: the database holds only the analysis results. The Compose stack
+                mounts a named volume here.
+              </td>
+            </tr>
+            <tr>
+              <td><code>SAMPLE_MAX_MB</code></td>
+              <td><code>100</code></td>
+              <td>Per-file size limit for sample uploads.</td>
+            </tr>
+            <tr>
               <td><code>RUN_CREATE_ALL</code></td>
               <td><code>true</code></td>
               <td>

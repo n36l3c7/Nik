@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-09
+
+### Added
+
+- **Malware Analysis** tab: drop suspicious files to store them on the Nik
+  server (named by SHA-256, never executed) and analyse them statically:
+  MD5 / SHA-1 / SHA-256 / SHA-512, file type from magic bytes (PE, ELF,
+  Mach-O, PDF, archives, scripts…), entropy overall and per 64 KB block with a
+  chart, printable strings (ASCII and UTF-16, the first 5,000 stored, the
+  whole file searchable on demand) and indicators of compromise (URLs,
+  domains, IPs, e-mails, registry keys, paths, Windows APIs) that can be
+  flagged like any other event. Hashes link to VirusTotal and MalwareBazaar.
+- Built-in **malware ruleset** for the SOC engine (process injection,
+  anti-analysis, persistence, C2 patterns, encoded PowerShell, throwaway TLDs,
+  ransomware hints, credential access), listed in Settings → Detection rules.
+- Samples enter the Timeline and the `tail -f` panel at their import time.
+- REST API: `POST /api/incidents/{id}/samples`, `GET /api/samples/{sha256}`,
+  `GET /api/samples/{sha256}/strings`, `GET /api/samples/{sha256}/download`
+  (AES zip, password `infected` or a custom one) and
+  `DELETE /api/incidents/{id}/samples/{sha256}`; uploads, downloads and
+  removals are recorded in the audit log.
+- Configuration: `SAMPLE_STORE` (directory of the raw files) and
+  `SAMPLE_MAX_MB` (default 100); the Compose stack keeps the store on a named
+  volume. Alembic migration `0004_samples`. New backend dependency
+  `pyzipper` for writing encrypted archives.
+
 ## [2.4.0] - 2026-11-09
 
 ### Added
@@ -214,7 +240,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/n36l3c7/Nik/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/n36l3c7/Nik/compare/v2.3.1...v2.4.0
 [2.3.1]: https://github.com/n36l3c7/Nik/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/n36l3c7/Nik/compare/v2.2.0...v2.3.0

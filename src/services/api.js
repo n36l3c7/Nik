@@ -116,6 +116,44 @@ export async function readBody(response, onProgress) {
   return new TextDecoder('utf-8').decode(bytes)
 }
 
+/**
+ * Upload one file as multipart form data (the raw bytes, no JSON wrapping).
+ * Uses XMLHttpRequest because fetch cannot report upload progress.
+ *
+ * @param {string} path            API path, e.g. `/incidents/<id>/samples`
+ * @param {File} file
+ * @param {object} [opts]
+ * @param {(p: {sent: number, total: number}) => void} [opts.onProgress]
+ * @param {AbortSignal} [opts.signal]
+ * @returns {Promise<any>} The parsed JSON response.
+ */
+export function upload(path, file, { onProgress, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${BASE}${path}`)
+    xhr.withCredentials = true
+    xhr.responseType = 'json'
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => onProgress({ sent: event.loaded, total: event.total })
+    }
+    xhr.onerror = () => reject(new Error('Cannot reach the server.'))
+    xhr.onabort = () => reject(Object.assign(new Error('Upload cancelled.'), { name: 'AbortError' }))
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
+      else reject(new Error(xhr.response?.detail || `Request failed (${xhr.status})`))
+    }
+    signal?.addEventListener('abort', () => xhr.abort())
+    const form = new FormData()
+    form.append('file', file, file.name)
+    xhr.send(form)
+  })
+}
+
+/** Absolute URL of an API path, for links the browser follows itself (downloads). */
+export function apiUrl(path) {
+  return `${BASE}${path}`
+}
+
 export const api = {
   get: (path, opts) => request('GET', path, undefined, opts),
   post: (path, body, opts) => request('POST', path, body, opts),
