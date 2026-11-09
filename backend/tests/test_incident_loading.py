@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 
 import sqlalchemy as sa
-from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 
+from alembic import command
 from app.routers.incidents import merge_patch
 
 MERGE = {"Content-Type": "application/merge-patch+json"}

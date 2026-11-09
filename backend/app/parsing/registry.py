@@ -69,7 +69,10 @@ ARTIFACT_CATEGORIES = {
     "execution": {
         "primaryField": "name",
         "fields": _EXEC_FIELDS,
-        "timeAliases": ["lastrun", "last_run", "lastexecuted", "last_executed", "runtime", "executiontime", "timestamp", "time", "lastmodified", "date", "lastruntime"],
+        "timeAliases": [
+            "lastrun", "last_run", "lastexecuted", "last_executed", "runtime", "executiontime",
+            "timestamp", "time", "lastmodified", "date", "lastruntime",
+        ],
         "sources": {
             "bam": _src("bam", "BAM/DAM last execution"),
             "knowledgec": _src("knowledgec", "KnowledgeC app usage", parser="knowledgec"),
@@ -87,7 +90,10 @@ ARTIFACT_CATEGORIES = {
             "wmi": _src("wmi", "WMI subscriptions"),
             "systemd": _src("systemd", "enabled systemd units"),
             "cron": _src("cron", "cron", parser="configlines", record_kind="cron", record_name="cron entry"),
-            "sshkeys": _src("sshkeys", "SSH authorized_keys", parser="configlines", record_kind="authorized_keys", record_name="authorized_key"),
+            "sshkeys": _src(
+                "sshkeys", "SSH authorized_keys", parser="configlines",
+                record_kind="authorized_keys", record_name="authorized_key",
+            ),
             "rc": _src("rc", "shell rc / profile", parser="configlines", record_kind="shell rc", record_name="rc line"),
             "launch": _src("launch", "LaunchAgent / LaunchDaemon", parser="plist"),
         },
@@ -101,7 +107,10 @@ ARTIFACT_CATEGORIES = {
     "usb": {
         "primaryField": "device",
         "fields": _USB_FIELDS,
-        "timeAliases": ["firstconnected", "first_connected", "lastconnected", "last_connected", "firstinstall", "timestamp", "time", "date", "installdate", "connected"],
+        "timeAliases": [
+            "firstconnected", "first_connected", "lastconnected", "last_connected", "firstinstall",
+            "timestamp", "time", "date", "installdate", "connected",
+        ],
         "sources": {
             "usbstor": _src("usbstor", "USBSTOR"),
             "setupapi": _src("setupapi", "setupapi log", parser="setupapi"),

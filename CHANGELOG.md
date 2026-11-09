@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-11-09
+
+### Added
+
+- ESLint (`npm run lint`, React and hooks rules) for the frontend and Ruff
+  (`ruff check .`, `backend/ruff.toml`) for the backend; CI runs both.
+
+### Fixed
+
+- The Events, Commands, Artifacts and Timeline tabs no longer recompute their
+  memoized rows on every render when an incident has no flags.
+- Backend errors re-raised as HTTP or validation errors keep their original
+  cause (exception chaining).
+- Removed unused parameters, variables, imports and lint suppressions.
+
 ## [2.3.0] - 2026-11-06
 
 ### Added
@@ -169,7 +184,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/n36l3c7/Nik/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/n36l3c7/Nik/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/n36l3c7/Nik/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/n36l3c7/Nik/compare/v2.0.0...v2.1.0

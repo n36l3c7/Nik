@@ -7,8 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..db import get_db
-from ..ratelimit import limiter
 from ..models import User
+from ..ratelimit import limiter
 from ..schemas import BootstrapOut, LoginIn, UserEnvelope
 from ..security import (
     clear_session_cookie,

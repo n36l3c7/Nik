@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 
 import sqlalchemy as sa
-from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 
+from alembic import command
 from app.browser_profiles import normalize_browser_data, profile_for_upload
 
 HISTORY_CSV = b"url,title,visit_time\nhttps://example.com/,Example,2026-11-04 10:00:00\n"
@@ -111,7 +111,8 @@ def test_migration_0003_moves_legacy_slots_into_profiles(tmp_path, monkeypatch):
 
     def load(incident_id):
         with engine.connect() as conn:
-            return json.loads(conn.execute(sa.text("SELECT doc FROM incidents WHERE id = :i"), {"i": incident_id}).scalar())
+            row = conn.execute(sa.text("SELECT doc FROM incidents WHERE id = :i"), {"i": incident_id})
+            return json.loads(row.scalar())
 
     chrome = load("a")["data"]["browser"]["browsers"]["chrome"]
     assert chrome["activeProfile"] == "default"

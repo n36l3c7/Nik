@@ -110,7 +110,6 @@ export function AuthProvider({ children }) {
    * @returns {Promise<{ ok: boolean, error: string|null }>}
    */
   const createUser = useCallback(
-    // eslint-disable-next-line no-unused-vars
     async ({ username, password, role = 'analyst' }, _actor) => {
       try {
         await api.post('/users', {
@@ -167,7 +166,6 @@ export function AuthProvider({ children }) {
 
   /** Remove a user (admin action), then reload the list. */
   const deleteUser = useCallback(
-    // eslint-disable-next-line no-unused-vars
     async (userId, _actor) => {
       try {
         await api.del(`/users/${userId}`)

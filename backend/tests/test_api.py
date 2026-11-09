@@ -56,7 +56,8 @@ def test_api_key_permissions(admin: TestClient):
 def test_incident_crud_notes_via_key(admin: TestClient):
     k = TestClient(fastapi_app)
     H = make_key(admin)
-    assert k.post("/api/incidents", headers=H, json={"id": "i1", "name": "H1", "data": {}}).json()["createdBy"] == "api:test"
+    created = k.post("/api/incidents", headers=H, json={"id": "i1", "name": "H1", "data": {}})
+    assert created.json()["createdBy"] == "api:test"
     assert k.patch("/api/incidents/i1", headers=H, json={"host": "wks"}).json()["host"] == "wks"
     n = k.post("/api/incidents/i1/notes", headers=H, json={"text": "hi"})
     assert n.status_code == 201 and n.json()["author"] == "api:test"
@@ -121,7 +122,8 @@ def test_webhook_delivery(admin: TestClient):
     srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        wr = admin.post("/api/webhooks", json={"url": f"http://127.0.0.1:{srv.server_address[1]}/h", "events": ["note.added"]})
+        hook_url = f"http://127.0.0.1:{srv.server_address[1]}/h"
+        wr = admin.post("/api/webhooks", json={"url": hook_url, "events": ["note.added"]})
         assert wr.status_code == 201 and wr.json()["secret"].startswith("whsec_")
         assert k.post("/api/webhooks", headers=H, json={"url": "http://x", "events": ["note.added"]}).status_code == 403
         k.post("/api/incidents/w1/notes", headers=H, json={"text": "hook"})

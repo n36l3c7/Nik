@@ -9,9 +9,8 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-
-from app.db import Base, engine
 from app import models  # noqa: F401 — register all tables on Base.metadata
+from app.db import Base, engine
 
 config = context.config
 if config.config_file_name is not None:

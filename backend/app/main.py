@@ -19,16 +19,15 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
 
+# Import models so their tables are registered on the shared metadata before
+# create_all runs. (The routers already import the models, but importing here
+# makes the dependency explicit and order-independent.)
+from . import models  # noqa: F401
 from .config import settings as app_settings
 from .db import Base, engine, get_db
 from .observability import metrics_response, observability_middleware, setup_logging
 from .ratelimit import limiter
 from .routers import audit, auth, backup, incidents, jobs, keys, settings, users, webhooks
-
-# Import models so their tables are registered on the shared metadata before
-# create_all runs. (The routers already import the models, but importing here
-# makes the dependency explicit and order-independent.)
-from . import models  # noqa: F401
 
 setup_logging(app_settings.LOG_LEVEL)
 
@@ -55,7 +54,10 @@ TAGS_METADATA = [
     {"name": "jobs", "description": "Status of async jobs (e.g. background uploads)."},
     {"name": "webhooks", "description": "Outbound event subscriptions (admin session or admin key)."},
     {"name": "settings", "description": "Shared detection rules and business hours (read via key)."},
-    {"name": "api-keys", "description": "Manage API keys (admin session or admin key). Set each key's role/scopes/expiry."},
+    {
+        "name": "api-keys",
+        "description": "Manage API keys (admin session or admin key). Set each key's role/scopes/expiry.",
+    },
     {"name": "auth", "description": "Session login/logout (browser)."},
     {"name": "users", "description": "User management (admin session or admin key)."},
     {"name": "audit", "description": "Global audit log."},
@@ -65,7 +67,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.3.0",
+    version="2.3.1",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",

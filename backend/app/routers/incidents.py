@@ -17,7 +17,17 @@ import uuid
 from typing import Any
 
 from fastapi import (
-    APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, Query, Response, UploadFile, status,
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
 )
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select
@@ -27,7 +37,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..browser_profiles import normalize_browser_data
 from ..db import SessionLocal, get_db
 from ..events import emit, emit_now
-from ..models import AuditEntry, Incident, IdempotencyRecord, Job
+from ..models import AuditEntry, IdempotencyRecord, Incident, Job
 from ..parsing.registry import apply_upload
 from ..schemas import NoteIn
 from ..security import Principal, now_iso, principal, writer_principal
@@ -121,7 +131,9 @@ def list_incidents(
     q: str | None = Query(None, description="Match name/host/username."),
     host: str | None = Query(None),
     username: str | None = Query(None),
-    view: str = Query("full", pattern="^(full|summary)$", description="full = whole documents; summary = light rows (no data)."),
+    view: str = Query(
+        "full", pattern="^(full|summary)$", description="full = whole documents; summary = light rows (no data)."
+    ),
 ) -> dict:
     """List incidents newest-updated first, filterable and paginated.
 
@@ -431,7 +443,7 @@ async def upload_artifact(
     try:
         summary = apply_upload(doc, tab, params, data, file.filename or "upload")
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     doc["updatedAt"] = now_iso()
     row.doc = doc

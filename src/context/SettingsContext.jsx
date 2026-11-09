@@ -46,7 +46,6 @@ function newId() {
 /** True if `pattern` is a valid RegExp (used by the UI to validate input). */
 export function isValidRegex(pattern) {
   try {
-    // eslint-disable-next-line no-new
     new RegExp(pattern, 'i')
     return true
   } catch {

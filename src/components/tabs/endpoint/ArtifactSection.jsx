@@ -144,13 +144,16 @@ function FieldCell({ event, column }) {
   return cell
 }
 
+// Stable fallback, so memoized computations do not rerun on every render.
+const NO_FLAGS = {}
+
 /**
  * @param {{ incident: object, category: object, records?: Array }} props
  */
 export default function ArtifactSection({ incident, category, records = [] }) {
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
-  const flags = incident?.flags ?? {}
+  const flags = incident?.flags ?? NO_FLAGS
 
   const [detectionFilter, setDetectionFilter] = useState('all')
   const [range, setRange] = useState(() => ({

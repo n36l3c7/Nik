@@ -74,8 +74,8 @@ def parse_csvjson(text, category):
 def parse_xbel(text, category):
     try:
         root = ET.fromstring(text)
-    except ET.ParseError:
-        raise ValueError("Not a valid XBEL/XML file.")
+    except ET.ParseError as exc:
+        raise ValueError("Not a valid XBEL/XML file.") from exc
     records = []
     for b in root.iter("bookmark"):
         href = b.get("href") or ""
@@ -87,7 +87,11 @@ def parse_xbel(text, category):
             target = href
         when = b.get("modified") or b.get("visited") or b.get("added")
         records.append(
-            {"id": gen_id(), "time": any_to_ms(when), "fields": {"name": base_name(target), "target": target, "kind": "recently-used"}}
+            {
+                "id": gen_id(),
+                "time": any_to_ms(when),
+                "fields": {"name": base_name(target), "target": target, "kind": "recently-used"},
+            }
         )
     if not records:
         raise ValueError("No bookmarks found in the XBEL file.")
@@ -102,7 +106,8 @@ def parse_configlines(text, category, source):
         line = raw.rstrip("\r").strip()
         if not line or line.startswith("#"):
             continue
-        records.append({"id": gen_id(), "time": None, "fields": {"name": label, "kind": kind, "command": line, "location": source["name"]}})
+        fields = {"name": label, "kind": kind, "command": line, "location": source["name"]}
+        records.append({"id": gen_id(), "time": None, "fields": fields})
     if not records:
         raise ValueError("No entries found (only comments or blank lines).")
     return {"records": records}, "text"
@@ -111,8 +116,8 @@ def parse_configlines(text, category, source):
 def parse_plist(data, category, source):
     try:
         obj = plistlib.loads(data)
-    except Exception:
-        raise ValueError("Not a valid plist.")
+    except Exception as exc:  # plistlib raises several unrelated types on bad input
+        raise ValueError("Not a valid plist.") from exc
     if not isinstance(obj, dict):
         raise ValueError("Unexpected plist structure.")
     label = str(obj.get("Label") or base_name(source["name"]))
@@ -121,7 +126,8 @@ def parse_plist(data, category, source):
         command = " ".join(str(a) for a in args)
     else:
         command = str(obj.get("Program") or "")
-    return {"records": [{"id": gen_id(), "time": None, "fields": {"name": label, "kind": "LaunchAgent", "command": command, "location": source["name"]}}]}, "plist"
+    fields = {"name": label, "kind": "LaunchAgent", "command": command, "location": source["name"]}
+    return {"records": [{"id": gen_id(), "time": None, "fields": fields}]}, "plist"
 
 
 def parse_setupapi(text, category):
@@ -156,7 +162,11 @@ def parse_knowledgec(data, category):
         if not rows:
             raise ValueError("No /app/usage rows found (is this a knowledgeC.db?).")
         records = [
-            {"id": gen_id(), "time": mac_to_ms(r.get("start")), "fields": {"name": r.get("app"), "path": r.get("app"), "runCount": "", "source": "KnowledgeC"}}
+            {
+                "id": gen_id(),
+                "time": mac_to_ms(r.get("start")),
+                "fields": {"name": r.get("app"), "path": r.get("app"), "runCount": "", "source": "KnowledgeC"},
+            }
             for r in rows
         ]
     return {"records": records}, "sqlite"

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..db import get_db
 from ..events import KNOWN_EVENTS
 from ..models import Webhook
-from ..schemas import WebhookCreate, WebhookCreated, WebhookOut, WebhooksEnvelope
+from ..schemas import WebhookCreate, WebhookCreated, WebhooksEnvelope
 from ..security import Principal, admin_principal, now_iso
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])

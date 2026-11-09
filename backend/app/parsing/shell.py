@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 
-from .common import gen_id, normalize_row, parse_csv, pick
+from .common import gen_id, normalize_row, parse_csv
 from .timeutil import any_to_ms
 
 COMMAND_ALIASES = ["command", "cmd", "commandline", "command_line", "line", "input"]

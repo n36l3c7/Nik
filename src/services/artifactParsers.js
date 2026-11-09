@@ -103,7 +103,7 @@ function parseCsvJson(text, category) {
 /* ------------------------------------------------------------------------ */
 
 /** GTK `recently-used.xbel` (File Access) — an XML list of file:// bookmarks. */
-function parseXbel(text, category) {
+function parseXbel(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml')
   if (doc.querySelector('parsererror')) throw new Error('Not a valid XBEL/XML file.')
   const records = []
@@ -135,9 +135,7 @@ function parseConfigLines(text, category, source) {
   const kind = source.recordKind || 'config'
   const label = source.recordName || kind
   const records = []
-  let lineNo = 0
   for (const raw of text.split('\n')) {
-    lineNo += 1
     const line = raw.replace(/\r$/, '').trim()
     if (!line || line.startsWith('#')) continue
     records.push({
@@ -187,7 +185,7 @@ function parsePlist(text, category, source) {
 }
 
 /** Windows `setupapi.dev.log` (USB) — device-install sections with timestamps. */
-function parseSetupapi(text, category) {
+function parseSetupapi(text) {
   const records = []
   let pendingDevice = null
   for (const raw of text.split('\n')) {
@@ -213,7 +211,7 @@ function parseSetupapi(text, category) {
 }
 
 /** macOS `knowledgeC.db` (Program Execution) — app-usage rows via sql.js. */
-async function parseKnowledgeC(arrayBuffer, category) {
+async function parseKnowledgeC(arrayBuffer) {
   // Lazy: pulls in sql.js (WASM) only when a KnowledgeC file is actually parsed.
   const { getSql } = await import('./sqliteParser.js')
   const SQL = await getSql()
@@ -259,7 +257,7 @@ async function parseKnowledgeC(arrayBuffer, category) {
 export async function parseArtifactImport(file, category, source) {
   // SQLite parser needs the raw bytes; everything else is text.
   if (source.parser === 'knowledgec') {
-    return parseKnowledgeC(await file.arrayBuffer(), category)
+    return parseKnowledgeC(await file.arrayBuffer())
   }
 
   const text = await file.text()
@@ -267,13 +265,13 @@ export async function parseArtifactImport(file, category, source) {
 
   switch (source.parser) {
     case 'xbel':
-      return parseXbel(text, category)
+      return parseXbel(text)
     case 'configlines':
       return parseConfigLines(text, category, source)
     case 'plist':
       return parsePlist(text, category, source)
     case 'setupapi':
-      return parseSetupapi(text, category)
+      return parseSetupapi(text)
     default:
       // Script-mode sources (and any tool export) go through CSV/JSON.
       return parseCsvJson(text, category)

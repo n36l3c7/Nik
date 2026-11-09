@@ -609,5 +609,5 @@ def parse_browser_source(data: bytes, engine: str, source_key: str, produces):
     except json.JSONDecodeError:
         rows = parse_csv(text)
         if not rows:
-            raise ValueError("Unrecognized file: not SQLite, JSON, or CSV.")
+            raise ValueError("Unrecognized file: not SQLite, JSON, or CSV.") from None
         return _map_text(produces, None, rows), "csv"
