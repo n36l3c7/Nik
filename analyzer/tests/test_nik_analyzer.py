@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nik_analyzer import (  # noqa: E402
     AnalysisError,
+    DataIndex,
     analyze,
     build_decompiled,
     build_function,
@@ -22,6 +23,8 @@ from nik_analyzer import (  # noqa: E402
     decompile_one,
     disassemble_functions,
     is_import,
+    pointer_holders,
+    rust_paths,
     summarize_info,
 )
 
@@ -81,6 +84,73 @@ def test_names_and_info_helpers():
     assert is_import("sym.imp.puts") and not is_import("fcn.00401000") and not is_import("main")
     info = summarize_info(FIXTURE["ij"])
     assert info["arch"] == "x86" and info["bits"] == 32 and info["os"] == "windows"
+
+
+def test_rust_paths_are_anchored_where_the_str_points():
+    merged = (
+        r"FieldSet corrupted (this is a bug)C:\Users\Dev\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f"
+        r"\hyper-0.14.32\src\proto\h1\role.rs"
+    )
+    assert [(merged[o : o + 3], c) for o, c in rust_paths(merged)] == [("C:\\", "hyper")]
+    rustc = "see http://x/y then /rustc/" + "a" * 40 + "/library/core/src/str/mod.rs"
+    assert [(rustc[o : o + 7], c) for o, c in rust_paths(rustc)] == [("/rustc/", "std")]
+    unix = "oops/home/dev/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tokio-1.40.0/src/runtime/mod.rs"
+    assert [(unix[o : o + 5], c) for o, c in rust_paths(unix)] == [("/home", "tokio")]
+    spaced = r"C:\Users\John Doe\.cargo\registry\src\index.crates.io-x\zip-0.6.6\src\read.rs"
+    assert rust_paths(spaced) == [(0, "zip")]
+    assert rust_paths("library/alloc/src/raw_vec.rs") == [(0, "std")]
+    assert rust_paths("no paths here, just C:\\Windows\\System32") == []
+
+
+def test_data_index_links_code_to_strings_and_crates():
+    # A tiny image: .rdata at 0x1000 (file offset 0x400) holds a merged string with a
+    # crate path at +4, a Location struct at 0x1100 pointing at the path, and a URL.
+    path = r"C:\x\.cargo\registry\src\i-1\reqwest-0.12.4\src\lib.rs"
+    blob = b"bug)" + path.encode() + b"http://185.220.101.47/gate.php"
+    rdata = bytearray(0x200)
+    rdata[0 : len(blob)] = blob
+    rdata[0x100:0x108] = struct.pack("<Q", 0x1004)  # Location.file.ptr
+    data = b"\0" * 0x400 + bytes(rdata)
+    strings = [
+        {"vaddr": 0x1000, "paddr": 0x400, "size": len(blob), "string": blob.decode()},
+    ]
+    sections = [{"name": ".rdata", "vaddr": 0x1000, "paddr": 0x400, "size": 0x200}]
+    index = DataIndex(strings, sections, data)
+    assert index.paths == {0x1004: "reqwest"} and index.crates == {"reqwest": 1}
+    assert index.holders == {0x1100: 0x1004}
+    url_at = 0x1000 + 4 + len(path)
+    assert index.resolve(url_at) == (0x400 + 4 + len(path), None)  # a string, no crate
+    assert index.resolve(0x1100) == (0x404, "reqwest")  # the Location struct
+    assert index.resolve(0x5000) == (None, None) and index.resolve(None) == (None, None)
+
+    ops = [
+        {"offset": 0x10, "type": "lea", "disasm": "lea rcx, [0x1100]", "ptr": 0x1100},
+        {"offset": 0x17, "type": "lea", "disasm": "lea rdx, [url]", "ptr": url_at},
+        {"offset": 0x1E, "type": "lea", "disasm": "lea rdx, [url]", "ptr": url_at},  # counted once
+        {"offset": 0x25, "type": "ret", "disasm": "ret"},
+    ]
+    fn = build_function(
+        {"offset": 0x10, "name": "fcn.00000010", "realsz": 0x16, "nbbs": 1},
+        [{"addr": 0x10, "size": 0x16}],
+        {"ops": ops},
+        {},
+        index,
+    )
+    assert fn["crates"] == {"reqwest": 1}
+    assert fn["strings"] == [0x404, 0x400 + 4 + len(path)]
+    plain = build_function({"offset": 0x10, "name": "f", "realsz": 1}, [], {"ops": []}, {}, index)
+    assert "strings" not in plain and "crates" not in plain
+
+
+def test_pointer_holders_reads_32_and_64_bit_pointers_in_data_sections_only():
+    raw = struct.pack("<QI", 0xAAAA, 0xBBBB) + b"\0" * 4
+    data = raw + raw
+    sections = [
+        {"name": ".rdata", "vaddr": 0x100, "paddr": 0, "size": 16},
+        {"name": ".text", "vaddr": 0x200, "paddr": 16, "size": 16},
+    ]
+    assert pointer_holders(data, sections, {0xAAAA: "x", 0xBBBB: "y"}) == {0x100: 0xAAAA, 0x108: 0xBBBB}
+    assert pointer_holders(data, sections, {}) == {}
 
 
 def test_imports_have_no_cfg():

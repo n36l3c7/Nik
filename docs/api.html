@@ -163,6 +163,24 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET /api/samples/{sha256}/annotations</code> · <code>PUT …/annotations/{addr}</code></td>
+              <td>
+                Analysts' names and comments for the sample's functions, shared by every incident holding the file.
+                <code>PUT</code> takes <code>{ name, comment }</code>; both empty removes the annotation (returns
+                <code>null</code>). <code>409</code> before the sample is disassembled.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET/POST /api/flirt-signatures</code> · <code>PUT/DELETE …/{id}</code></td>
+              <td>
+                FLIRT signatures (<code>.sig</code> or <code>.pat</code>, multipart <code>name</code> +
+                <code>file</code>, up to 32 MB) applied by the analyzer worker from the next disassembly (<strong
+                  >admin</strong
+                >
+                to change; any caller may list).
+              </td>
+            </tr>
+            <tr>
               <td><code>GET/POST/PUT/DELETE /api/yara-rules</code> · <code>POST …/validate</code></td>
               <td>
                 Admin-managed YARA rule sets, compiled with the built-in ones (<strong>admin</strong> to change; any

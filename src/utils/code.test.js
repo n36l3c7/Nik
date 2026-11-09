@@ -154,3 +154,24 @@ test('node size grows with the longest line and the line count', () => {
   const big = nodeSize(['call sym.imp.KERNEL32.dll_VirtualAllocEx', 'ret'])
   assert.ok(big.width > small.width && big.height > small.height)
 })
+
+test('cfgGraph shows the analyst names of called functions', () => {
+  const cfg = {
+    blocks: [
+      {
+        addr: 0x10,
+        jump: null,
+        fail: null,
+        ops: [
+          { text: 'call fcn.00401020', type: 'call' },
+          { text: 'mov eax, dword [fcn.00401020x]', type: 'mov' },
+        ],
+      },
+    ],
+  }
+  const graph = cfgGraph(cfg, engine, new Map([['fcn.00401020', 'send_beacon']]))
+  assert.deepEqual(
+    graph.nodes[0].lines.map((line) => line.text),
+    ['call send_beacon', 'mov eax, dword [fcn.00401020x]'],
+  )
+})

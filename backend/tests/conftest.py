@@ -36,8 +36,11 @@ def client():
 @pytest.fixture()
 def admin(client):
     """A client signed in as the first-run admin (session cookie set)."""
-    client.post("/api/users", json=ADMIN)
-    client.post("/api/auth/login", json=ADMIN)
+    created = client.post("/api/users", json=ADMIN)
+    assert created.status_code == 201, f"first-run admin not created: {created.status_code} {created.text}"
+    login = client.post("/api/auth/login", json=ADMIN)
+    assert login.status_code == 200, f"admin login failed: {login.status_code} {login.text}"
+    assert client.cookies.get("nik_session"), f"no session cookie after login: {login.headers}"
     return client
 
 

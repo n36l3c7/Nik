@@ -140,14 +140,16 @@ export function callGraph(functions, rootAddr, engine, { depth = 2, limit = 80 }
  * lower or equal address, i.e. loops.
  * @param {{ blocks: Array<object> }} cfg   GET /samples/{sha}/code/functions/{addr}
  * @param {object} engine
+ * @param {Map<string, string>} [renames]  rizin name → analyst's name, applied to the operands
  */
-export function cfgGraph(cfg, engine) {
+export function cfgGraph(cfg, engine, renames = new Map()) {
   const blocks = cfg?.blocks ?? []
   const known = new Set(blocks.map((b) => b.addr))
+  const rename = (text) => (renames.size ? text.replace(/[A-Za-z_][\w.$@:]*/g, (t) => renames.get(t) ?? t) : text)
   const nodes = blocks.map((block) => ({
     id: String(block.addr),
     addr: block.addr,
-    lines: block.ops.map((op) => ({ text: op.text, type: op.type })),
+    lines: block.ops.map((op) => ({ text: rename(op.text), type: op.type })),
     hot: block.ops.some(
       (op) =>
         op.type.endsWith('call') &&

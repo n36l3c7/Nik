@@ -125,9 +125,10 @@ export async function readBody(response, onProgress) {
  * @param {object} [opts]
  * @param {(p: {sent: number, total: number}) => void} [opts.onProgress]
  * @param {AbortSignal} [opts.signal]
+ * @param {Record<string, string>} [opts.fields] other form fields sent with the file
  * @returns {Promise<any>} The parsed JSON response.
  */
-export function upload(path, file, { onProgress, signal } = {}) {
+export function upload(path, file, { onProgress, signal, fields = {} } = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}${path}`)
@@ -144,6 +145,7 @@ export function upload(path, file, { onProgress, signal } = {}) {
     }
     signal?.addEventListener('abort', () => xhr.abort())
     const form = new FormData()
+    for (const [key, value] of Object.entries(fields)) form.append(key, value)
     form.append('file', file, file.name)
     xhr.send(form)
   })

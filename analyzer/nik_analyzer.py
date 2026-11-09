@@ -3,9 +3,10 @@
 The worker runs in its own container (see Dockerfile), next to the Nik
 backend, with the sample store mounted read-only. For each request it opens
 the stored file in rizin, runs the automatic analysis and returns functions,
-calls, per-function control-flow graphs and, within a time budget, the
-pseudo-C of each function from rz-ghidra (Ghidra's decompiler, shipped as a
-rizin plugin in the official image). The sample is only read, disassembled
+calls, per-function control-flow graphs, the strings each function uses and
+the Rust crate it comes from (from panic locations), and within a time budget
+the pseudo-C of each function from rz-ghidra (Ghidra's decompiler, shipped as
+a rizin plugin in the official image). The sample is only read, disassembled
 and decompiled: nothing is loaded into memory as a program or executed.
 
 Python 3.9 (the rizin image ships Debian bullseye), standard library only:
@@ -15,13 +16,16 @@ output ends with a NUL byte.
 
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import re
+import struct
 import subprocess
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections import Counter
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 MAX_FUNCTIONS = 3000
 MAX_BLOCKS_PER_FUNCTION = 400
@@ -36,6 +40,28 @@ DECOMPILE_FUNCTION_SECONDS = 30
 MAX_DECOMPILED_CHARS = 64_000
 MAX_DECOMPILED_TOTAL = 12_000_000
 DECOMPILER = "rz-ghidra"
+
+# Strings a function references, kept per function (file offsets, for linking
+# indicators of compromise to code).
+MAX_STRING_REFS_PER_FUNCTION = 64
+
+# Rust embeds the source path of every panic site in a `Location` struct
+# (`&str` file, line, column). A path under `.cargo/registry/src` names the
+# crate (`hyper-0.14.32` → hyper); one under `library/<std|core|alloc>` is the
+# standard library. Rust strings are not NUL-terminated, so rizin merges them
+# and a path often sits in the middle of a longer string: the tell-tale part
+# is found first, then the path's real start (where the `&str` points) is
+# searched backwards: a drive (`C:\`), `/rustc/<hash>/`, or the start of an
+# absolute Unix path.
+_PATH_CHAR = "[^\x00-\x1f\"'<>|]"
+RUST_CRATE_PATH = re.compile(
+    r"registry[\\/]src[\\/][^\\/]+[\\/]([A-Za-z0-9_\-]+?)-\d+\.\d+[^\\/]*[\\/]src[\\/]" + _PATH_CHAR + r"*?\.rs"
+)
+RUST_STD_PATH = re.compile(r"library[\\/](std|core|alloc|proc_macro|panic_\w+)[\\/]src[\\/]" + _PATH_CHAR + r"*?\.rs")
+_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
+_RUSTC = re.compile(r"/rustc/[0-9a-f]{40}/$")
+_BAD_IN_PATH = re.compile("[\x00-\x1f\"'<>|]")
+DATA_SECTIONS = (".rdata", ".data", ".rodata", ".data.rel.ro", "__const", "__data")
 
 # rz-ghidra syntax-highlight classes → the one-letter span kinds Nik stores.
 _SPAN_KINDS = {
@@ -141,10 +167,117 @@ def summarize_info(info: Dict[str, Any]) -> Dict[str, Any]:
     return {key: bin_info.get(key) for key in keys if key in bin_info}
 
 
+class DataIndex:
+    """What a data address means: a string (by file offset) and/or a Rust crate.
+
+    Built once per sample from rizin's strings (``izj``), sections (``iSj``)
+    and the file's bytes. ``resolve`` answers for any address an instruction
+    points at: the string it lands in, and the crate when the address is a
+    Rust panic path or a pointer to one (the `Location` struct).
+    """
+
+    def __init__(self, strings: Iterable[dict], sections: Iterable[dict], data: bytes) -> None:
+        self.starts: List[int] = []
+        self.ranges: List[Tuple[int, int, int]] = []  # (vaddr, end, paddr)
+        self.paths: Dict[int, str] = {}
+        self.crates: Counter = Counter()
+        for s in sorted(strings, key=lambda s: s.get("vaddr", 0)):
+            vaddr, paddr, text = s.get("vaddr"), s.get("paddr"), s.get("string", "")
+            if vaddr is None or paddr is None:
+                continue
+            size = s.get("size") or len(text.encode("utf-8"))
+            self.starts.append(vaddr)
+            self.ranges.append((vaddr, vaddr + size, paddr))
+            for match, label in rust_paths(text):
+                self.paths[vaddr + len(text[:match].encode("utf-8"))] = label
+                self.crates[label] += 1
+        self.holders = pointer_holders(data, sections, self.paths)
+
+    def string_at(self, addr: int) -> Optional[int]:
+        """File offset of ``addr`` when it lands inside a known string."""
+        i = bisect.bisect_right(self.starts, addr) - 1
+        if i >= 0:
+            vaddr, end, paddr = self.ranges[i]
+            if vaddr <= addr < end:
+                return paddr + (addr - vaddr)
+        return None
+
+    def resolve(self, addr: Any) -> Tuple[Optional[int], Optional[str]]:
+        """``(string file offset, crate)`` for an address an instruction refers to."""
+        if not isinstance(addr, int) or addr <= 0:
+            return None, None
+        target = self.holders.get(addr, addr)
+        return self.string_at(target), self.paths.get(target)
+
+
+def rust_paths(text: str) -> List[Tuple[int, str]]:
+    """``(character offset, crate)`` of each Rust source path in ``text`` (``std`` for the standard library)."""
+    found = [(_path_start(text, m.start()), m.group(1)) for m in RUST_CRATE_PATH.finditer(text)]
+    found += [(_path_start(text, m.start()), "std") for m in RUST_STD_PATH.finditer(text)]
+    return found
+
+
+def _path_start(text: str, pivot: int) -> int:
+    """Where the path containing ``text[pivot]`` begins."""
+    head = text[:pivot]
+    rustc = _RUSTC.search(head)
+    if rustc:
+        return rustc.start()
+    drives = [m.start() for m in _DRIVE.finditer(head)]
+    if drives and not _BAD_IN_PATH.search(head[drives[-1] :]):
+        return drives[-1]
+    # Unix: the run of non-blank path characters ending at the pivot, from its first "/".
+    run = pivot
+    while run > 0 and not head[run - 1].isspace() and not _BAD_IN_PATH.match(head[run - 1]):
+        run -= 1
+    slash = head.find("/", run)
+    return slash if slash != -1 else pivot
+
+
+def pointer_holders(data: bytes, sections: Iterable[dict], targets: Dict[int, Any]) -> Dict[int, int]:
+    """Addresses in data sections that hold a 64- or 32-bit pointer to one of ``targets``.
+
+    That is how code reaches a Rust panic path: it loads the address of a
+    `Location` struct whose first field points at the path.
+    """
+    holders: Dict[int, int] = {}
+    if not targets:
+        return holders
+    for section in sections:
+        name, size, paddr, vaddr = (
+            section.get("name", ""),
+            section.get("size") or 0,
+            section.get("paddr"),
+            section.get("vaddr"),
+        )
+        if name not in DATA_SECTIONS or not size or paddr is None or vaddr is None:
+            continue
+        raw = data[paddr : paddr + size]
+        for width, fmt in ((8, "<Q"), (4, "<I")):
+            for offset in range(0, len(raw) - width + 1, width):
+                (value,) = struct.unpack_from(fmt, raw, offset)
+                if value in targets:
+                    holders.setdefault(vaddr + offset, value)
+    return holders
+
+
+def _op_addresses(op: Dict[str, Any]) -> List[Any]:
+    """Data addresses an instruction may refer to: rip-relative and absolute operands
+    (``ptr``), immediates (``val``, e.g. ``push offset str`` in 32-bit code) and data refs.
+    Values that land in no string are ignored by the caller."""
+    found = [op.get("ptr"), op.get("val")]
+    found += [ref.get("addr") for ref in op.get("refs") or [] if ref.get("type", "DATA") != "CALL"]
+    return found
+
+
 def build_function(
-    fn: Dict[str, Any], blocks: Optional[List[dict]], pdf: Optional[dict], names: Dict[int, str]
+    fn: Dict[str, Any],
+    blocks: Optional[List[dict]],
+    pdf: Optional[dict],
+    names: Dict[int, str],
+    index: Optional[DataIndex] = None,
 ) -> Dict[str, Any]:
-    """One function: summary fields, its calls and its CFG (blocks with instructions)."""
+    """One function: summary fields, its calls, its CFG and, given an index, strings and crates."""
     name = fn.get("name", "")
     entry = {
         "addr": fn["offset"],
@@ -191,6 +324,21 @@ def build_function(
             {"addr": start, "size": size, "jump": block.get("jump"), "fail": block.get("fail"), "ops": block_ops}
         )
     entry["cfg"] = {"blocks": cfg_blocks, "truncated": truncated}
+
+    if index is not None:
+        strings: List[int] = []
+        crates: Counter = Counter()
+        for op in ops:
+            for addr in _op_addresses(op):
+                string, crate = index.resolve(addr)
+                if crate:
+                    crates[crate] += 1
+                if string is not None and string not in strings and len(strings) < MAX_STRING_REFS_PER_FUNCTION:
+                    strings.append(string)
+        if strings:
+            entry["strings"] = strings
+        if crates:
+            entry["crates"] = dict(crates)
     return entry
 
 
@@ -316,8 +464,9 @@ class Session:
 
     MAX_RESTARTS = 3
 
-    def __init__(self, path: str, binary: str = "rizin") -> None:
+    def __init__(self, path: str, binary: str = "rizin", signatures: Iterable[str] = ()) -> None:
         self.path, self.binary = path, binary
+        self.signatures = list(signatures)
         self.restarts = 0
         self.stopped = False
         self.pipe: Optional[RizinPipe] = None
@@ -328,7 +477,9 @@ class Session:
             raise AnalysisError("The analysis was stopped.")
         self.pipe = RizinPipe(self.path, self.binary)
         _configure(self.pipe)
-        self.pipe.cmd("aaa")
+        self.pipe.cmd("aaa")  # also applies rizin's bundled FLIRT signatures (sigdb)
+        for signature in self.signatures:  # admin-provided .sig / .pat files
+            self.pipe.cmd(f"Fs {signature}")
 
     def cmd(self, command: str) -> str:
         return self.pipe.cmd(command)
@@ -356,7 +507,9 @@ class Session:
             self.pipe.close()
 
 
-def disassemble_functions(session: Any, functions: List[Dict[str, Any]], names: Dict[int, str]) -> List[Dict[str, Any]]:
+def disassemble_functions(
+    session: Any, functions: List[Dict[str, Any]], names: Dict[int, str], index: Optional[DataIndex] = None
+) -> List[Dict[str, Any]]:
     """``build_function`` for every function, surviving rizin crashes.
 
     A function whose commands crash rizin is retried once in a restarted
@@ -372,7 +525,8 @@ def disassemble_functions(session: Any, functions: List[Dict[str, Any]], names: 
         at = fn["offset"]
         for attempt in (1, 2):
             try:
-                results.append(build_function(fn, session.cmdj(f"afbj @ {at}"), session.cmdj(f"pdfj @ {at}"), names))
+                blocks, pdf = session.cmdj(f"afbj @ {at}"), session.cmdj(f"pdfj @ {at}")
+                results.append(build_function(fn, blocks, pdf, names, index))
                 break
             except AnalysisError:
                 session.restart()
@@ -392,7 +546,9 @@ def _timeout_error(timeout: float) -> AnalysisTimeout:
     return AnalysisTimeout(f"rizin did not finish within {int(timeout)} seconds")
 
 
-def _guarded(timeout: float, path: str, binary: str) -> Tuple[Session, threading.Timer, threading.Event]:
+def _guarded(
+    timeout: float, path: str, binary: str, signatures: Iterable[str] = ()
+) -> Tuple[Session, threading.Timer, threading.Event]:
     """Open an analysed session under a timer that stops it after ``timeout`` seconds."""
     timed_out = threading.Event()
     holder: Dict[str, Session] = {}
@@ -405,7 +561,7 @@ def _guarded(timeout: float, path: str, binary: str) -> Tuple[Session, threading
     timer = threading.Timer(timeout, stop)
     timer.start()
     try:
-        holder["session"] = Session(path, binary)
+        holder["session"] = Session(path, binary, signatures)
     except AnalysisError:
         timer.cancel()
         if timed_out.is_set():
@@ -421,8 +577,16 @@ def _guarded(timeout: float, path: str, binary: str) -> Tuple[Session, threading
 # ---------------------------------------------------------------------------
 # Full analysis
 # ---------------------------------------------------------------------------
-def analyze(path: str, timeout: float = 600, binary: str = "rizin", decompile_seconds: float = 300) -> Dict[str, Any]:
+def analyze(
+    path: str,
+    timeout: float = 600,
+    binary: str = "rizin",
+    decompile_seconds: float = 300,
+    signatures: Iterable[str] = (),
+) -> Dict[str, Any]:
     """Disassemble the file at ``path``, then decompile within ``decompile_seconds``.
+
+    ``signatures`` are extra FLIRT files applied after rizin's own.
 
     Raises AnalysisTimeout when the disassembly itself runs over ``timeout``
     seconds; the decompilation pass only ever shortens to fit what is left.
@@ -430,7 +594,7 @@ def analyze(path: str, timeout: float = 600, binary: str = "rizin", decompile_se
     if not os.path.isfile(path):
         raise AnalysisError("Sample not found in the store.")
     started = time.monotonic()
-    session, timer, timed_out = _guarded(timeout, path, binary)
+    session, timer, timed_out = _guarded(timeout, path, binary, signatures)
     try:
         info = session.cmdj("ij") or {}
         functions = session.cmdj("aflj") or []
@@ -438,7 +602,9 @@ def analyze(path: str, timeout: float = 600, binary: str = "rizin", decompile_se
         truncated = len(functions) > MAX_FUNCTIONS
         functions = functions[:MAX_FUNCTIONS]
         names = {f["offset"]: f.get("name", "") for f in functions}
-        results = disassemble_functions(session, functions, names)
+        with open(path, "rb") as sample:
+            index = DataIndex(session.cmdj("izj") or [], session.cmdj("iSj") or [], sample.read())
+        results = disassemble_functions(session, functions, names, index)
         entries = session.cmdj("iej") or []
         entry = entries[0].get("vaddr") if entries else None
     except AnalysisError:
@@ -462,16 +628,20 @@ def analyze(path: str, timeout: float = 600, binary: str = "rizin", decompile_se
         "functions": results,
         "truncated": truncated,
         "restarts": session.restarts,
+        "crates": dict(index.crates.most_common()),
+        "signatures": len(session.signatures),
         "decompiled": decompiled,
         "decompile": stats,
     }
 
 
-def decompile_one(path: str, addr: int, timeout: float = 600, binary: str = "rizin") -> Dict[str, Any]:
+def decompile_one(
+    path: str, addr: int, timeout: float = 600, binary: str = "rizin", signatures: Iterable[str] = ()
+) -> Dict[str, Any]:
     """Pseudo-C of the function at ``addr`` (on demand, for functions the up-front pass skipped)."""
     if not os.path.isfile(path):
         raise AnalysisError("Sample not found in the store.")
-    session, timer, timed_out = _guarded(timeout, path, binary)
+    session, timer, timed_out = _guarded(timeout, path, binary, signatures)
     try:
         function = session.cmdj(f"afij @ {addr}") or []
         if not function or function[0].get("offset") != addr:
