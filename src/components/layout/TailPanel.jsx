@@ -31,7 +31,9 @@ const SEVERITY = {
 
 // Events span days, so each line carries its date: "04/11 02:14".
 const stamp = (ms) =>
-  new Date(ms).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
+  new Date(ms)
+    .toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .replace(',', '')
 
 export default function TailPanel({ incident, onClose, className = '' }) {
   const engine = useSocEngine()

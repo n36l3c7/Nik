@@ -24,7 +24,9 @@ import { anyToMs } from '../utils/time.js'
 const asText = (value) => (value === null || value === undefined ? '' : String(value).trim())
 
 function baseName(path) {
-  const parts = String(path ?? '').split(/[\\/]/).filter(Boolean)
+  const parts = String(path ?? '')
+    .split(/[\\/]/)
+    .filter(Boolean)
   return parts.length ? parts[parts.length - 1] : String(path ?? '')
 }
 
@@ -35,7 +37,12 @@ function baseName(path) {
 function normalizeRow(row) {
   const out = {}
   for (const [key, value] of Object.entries(row ?? {})) {
-    out[String(key).trim().toLowerCase().replace(/[\s_-]+/g, '')] = value
+    out[
+      String(key)
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '')
+    ] = value
   }
   return out
 }
@@ -223,7 +230,7 @@ async function parseKnowledgeC(arrayBuffer) {
   }
   try {
     const res = db.exec(
-      "SELECT ZVALUESTRING AS app, ZSTARTDATE AS start FROM ZOBJECT " +
+      'SELECT ZVALUESTRING AS app, ZSTARTDATE AS start FROM ZOBJECT ' +
         "WHERE ZSTREAMNAME = '/app/usage' AND ZVALUESTRING IS NOT NULL ORDER BY ZSTARTDATE DESC",
     )
     if (!res.length) throw new Error('No /app/usage rows found (is this a knowledgeC.db?).')

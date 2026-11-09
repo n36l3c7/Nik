@@ -23,9 +23,7 @@ SETTINGS_ID = 1
 
 
 @router.get("", response_model=SettingsOut)
-def get_settings(
-    _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
-) -> dict:
+def get_settings(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
     """Return the shared settings, falling back to factory defaults."""
     row = db.get(Setting, SETTINGS_ID)
     if row is None:

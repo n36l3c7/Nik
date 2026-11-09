@@ -5,8 +5,7 @@ import { createMergePatch } from './mergePatch.js'
 /** Reference RFC 7396 apply, used to check that a generated patch round-trips. */
 function applyMergePatch(target, patch) {
   if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return patch
-  const result =
-    target !== null && typeof target === 'object' && !Array.isArray(target) ? { ...target } : {}
+  const result = target !== null && typeof target === 'object' && !Array.isArray(target) ? { ...target } : {}
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete result[key]
     else result[key] = applyMergePatch(result[key], value)

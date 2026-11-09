@@ -2,10 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, Plus, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react'
 import { Badge, Button } from '../../ui/index.js'
 import { useSettings, isValidRegex } from '../../../context/SettingsContext.jsx'
-import {
-  DEFAULT_COMMAND_KEYWORDS,
-  DEFAULT_ARTIFACT_KEYWORDS,
-} from '../../../config/detectionRules.js'
+import { DEFAULT_COMMAND_KEYWORDS, DEFAULT_ARTIFACT_KEYWORDS } from '../../../config/detectionRules.js'
 
 /*
  * Detection-rules settings section: the user-editable keyword rules, plus a
@@ -37,13 +34,9 @@ function KeywordRow({ rule, onUpdate, onRemove }) {
           type="text"
           value={rule.pattern}
           onChange={(e) => onUpdate(rule.id, { pattern: e.target.value })}
-          className={[
-            inputBase,
-            'w-full font-mono text-xs',
-            validPattern
-              ? 'border-line'
-              : 'border-high-line',
-          ].join(' ')}
+          className={[inputBase, 'w-full font-mono text-xs', validPattern ? 'border-line' : 'border-high-line'].join(
+            ' ',
+          )}
           aria-label="Pattern (regular expression)"
           title={validPattern ? undefined : 'Invalid regular expression'}
         />
@@ -81,9 +74,7 @@ function BuiltinRuleset({ title, description, rules }) {
       <summary className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-fg">
         {title}
         <Badge color="slate">{rules.length}</Badge>
-        <span className="ml-auto text-xs font-normal text-fg-muted">
-          built-in · read-only
-        </span>
+        <span className="ml-auto text-xs font-normal text-fg-muted">built-in · read-only</span>
       </summary>
       <div className="border-t border-line px-3 py-2">
         <p className="mb-2 text-xs text-fg-muted">{description}</p>
@@ -124,9 +115,7 @@ export default function DetectionRulesSection() {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <ShieldAlert className="h-5 w-5 text-accent" />
-            <h2 className="text-base font-semibold text-fg">
-              Detection rules
-            </h2>
+            <h2 className="text-base font-semibold text-fg">Detection rules</h2>
             <Badge color="slate">{keywords.length}</Badge>
           </div>
           <Button variant="ghost" size="sm" icon={RotateCcw} onClick={resetKeywords}>
@@ -134,11 +123,9 @@ export default function DetectionRulesSection() {
           </Button>
         </div>
         <p className="mt-1 text-sm text-fg-muted">
-          Your keyword rules are matched (case-insensitive) against browser URLs/titles, downloaded
-          file names, shell commands and endpoint artifact paths. The{' '}
-          <span className="font-mono">pattern</span> is a regular expression — use{' '}
-          <span className="font-mono">\b</span> for short words (e.g.{' '}
-          <span className="font-mono">\btor\b</span>).
+          Your keyword rules are matched (case-insensitive) against browser URLs/titles, downloaded file names, shell
+          commands and endpoint artifact paths. The <span className="font-mono">pattern</span> is a regular expression —
+          use <span className="font-mono">\b</span> for short words (e.g. <span className="font-mono">\btor\b</span>).
         </p>
       </div>
 
@@ -186,9 +173,7 @@ export default function DetectionRulesSection() {
             className={[
               inputBase,
               'flex-1 font-mono text-xs',
-              draftPatternValid
-                ? 'border-line'
-                : 'border-high-line',
+              draftPatternValid ? 'border-line' : 'border-high-line',
             ].join(' ')}
           />
           <select
@@ -213,9 +198,7 @@ export default function DetectionRulesSection() {
 
       {/* Built-in rulesets (reference) */}
       <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
-          Built-in rulesets
-        </h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Built-in rulesets</h3>
         <BuiltinRuleset
           title="Command-line tradecraft"
           description="Applied to shell/PowerShell commands in addition to your keywords."

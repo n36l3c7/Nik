@@ -39,28 +39,92 @@ function daysAgoAt(daysAgo, hour, minute = 0) {
 const HISTORY_ROWS = [
   /* --- Normal daytime traffic --- */
   [0, 9, 12, 'https://github.com/company/incident-response', 'company/incident-response · GitHub', 42],
-  [0, 9, 31, 'https://stackoverflow.com/questions/1234567/parse-sqlite-in-browser', 'javascript - Parse SQLite in browser - Stack Overflow', 27],
+  [
+    0,
+    9,
+    31,
+    'https://stackoverflow.com/questions/1234567/parse-sqlite-in-browser',
+    'javascript - Parse SQLite in browser - Stack Overflow',
+    27,
+  ],
   [0, 10, 3, 'https://developer.mozilla.org/it/docs/Web/API/File', 'File - Web API | MDN', 18],
   [0, 11, 45, 'https://mail.google.com/mail/u/0/', 'Inbox - Gmail', 88],
   [1, 8, 52, 'https://github.com/company/soc-playbooks', 'company/soc-playbooks · GitHub', 35],
-  [1, 14, 20, 'https://www.google.com/search?q=chrome+history+forensics+sqlite', 'chrome history forensics sqlite - Google Search', 6],
-  [1, 14, 22, 'https://www.forensicfocus.com/articles/chrome-history-analysis/', 'Chrome History Analysis - Forensic Focus', 4],
-  [2, 10, 15, 'https://stackoverflow.com/questions/7654321/react-table-pagination', 'reactjs - React table pagination - Stack Overflow', 22],
+  [
+    1,
+    14,
+    20,
+    'https://www.google.com/search?q=chrome+history+forensics+sqlite',
+    'chrome history forensics sqlite - Google Search',
+    6,
+  ],
+  [
+    1,
+    14,
+    22,
+    'https://www.forensicfocus.com/articles/chrome-history-analysis/',
+    'Chrome History Analysis - Forensic Focus',
+    4,
+  ],
+  [
+    2,
+    10,
+    15,
+    'https://stackoverflow.com/questions/7654321/react-table-pagination',
+    'reactjs - React table pagination - Stack Overflow',
+    22,
+  ],
   [2, 16, 40, 'https://news.ycombinator.com/', 'Hacker News', 51],
   [3, 9, 5, 'https://intranet.company.local/dashboard', 'Corporate dashboard', 64],
   [3, 15, 33, 'https://www.linkedin.com/feed/', 'LinkedIn', 40],
-  [6, 10, 48, 'https://attack.mitre.org/techniques/T1059/', 'Command and Scripting Interpreter, T1059 - MITRE ATT&CK', 9],
+  [
+    6,
+    10,
+    48,
+    'https://attack.mitre.org/techniques/T1059/',
+    'Command and Scripting Interpreter, T1059 - MITRE ATT&CK',
+    9,
+  ],
 
   /* --- Repeated suspicious searches (feeds the "frequent searches" widget) --- */
-  [2, 2, 14, 'https://www.google.com/search?q=how+to+bypass+windows+defender', 'how to bypass windows defender - Google Search', 5],
-  [2, 2, 19, 'https://www.google.com/search?q=how+to+bypass+windows+defender', 'how to bypass windows defender - Google Search', 5],
-  [4, 3, 2, 'https://www.google.com/search?q=how+to+bypass+windows+defender', 'how to bypass windows defender - Google Search', 5],
+  [
+    2,
+    2,
+    14,
+    'https://www.google.com/search?q=how+to+bypass+windows+defender',
+    'how to bypass windows defender - Google Search',
+    5,
+  ],
+  [
+    2,
+    2,
+    19,
+    'https://www.google.com/search?q=how+to+bypass+windows+defender',
+    'how to bypass windows defender - Google Search',
+    5,
+  ],
+  [
+    4,
+    3,
+    2,
+    'https://www.google.com/search?q=how+to+bypass+windows+defender',
+    'how to bypass windows defender - Google Search',
+    5,
+  ],
   [2, 2, 27, 'https://www.google.com/search?q=malware+builder+download', 'malware builder download - Google Search', 4],
   [4, 3, 8, 'https://www.google.com/search?q=malware+builder+download', 'malware builder download - Google Search', 4],
 
   /* --- REDIRECT chain: shortened link → .onion hidden service --- */
   [3, 1, 40, 'https://bit.ly/xY9zK', 'bit.ly', 1, { visitId: 9001, fromVisitId: null, isRedirect: false }],
-  [3, 1, 41, 'http://exfil7g2x4qh6vpn.onion/upload', 'Dropzone (Tor hidden service)', 4, { visitId: 9002, fromVisitId: 9001, isRedirect: true }],
+  [
+    3,
+    1,
+    41,
+    'http://exfil7g2x4qh6vpn.onion/upload',
+    'Dropzone (Tor hidden service)',
+    4,
+    { visitId: 9002, fromVisitId: 9001, isRedirect: true },
+  ],
 
   /* --- Other suspicious nighttime visits (keywords) --- */
   [2, 2, 33, 'https://www.exploit-db.com/exploits/50123', 'Windows Defender Bypass - Exploit Database', 3],
@@ -73,7 +137,14 @@ const HISTORY_ROWS = [
   [9, 14, 12, 'https://react.dev/reference/react/useMemo', 'useMemo – React', 19],
   [11, 16, 5, 'https://www.reddit.com/r/netsec/', 'r/netsec', 28],
   [13, 10, 20, 'https://www.virustotal.com/gui/home/upload', 'VirusTotal', 17],
-  [14, 15, 15, 'https://www.google.com/search?q=incident+response+checklist', 'incident response checklist - Google Search', 7],
+  [
+    14,
+    15,
+    15,
+    'https://www.google.com/search?q=incident+response+checklist',
+    'incident response checklist - Google Search',
+    7,
+  ],
   [18, 13, 8, 'https://news.ycombinator.com/', 'Hacker News', 51],
   [21, 10, 25, 'https://mail.google.com/mail/u/0/', 'Inbox - Gmail', 88],
   [27, 11, 3, 'https://developer.mozilla.org/it/docs/Web/API/IndexedDB_API', 'IndexedDB API - Web API | MDN', 9],
@@ -99,9 +170,33 @@ function buildDemoHistory() {
 
 // [daysAgo, hour, minute, fileName, referrerSite, fileUrl, totalBytes]
 const DOWNLOAD_ROWS = [
-  [0, 10, 5, 'incident-report-template.docx', 'https://intranet.company.local', 'https://intranet.company.local/files/incident-report-template.docx', 84_000],
-  [1, 9, 40, 'Sysmon.zip', 'https://learn.microsoft.com', 'https://download.sysinternals.com/files/Sysmon.zip', 3_600_000],
-  [5, 14, 12, 'wireshark-4.2.0-x64.exe', 'https://www.wireshark.org', 'https://2.na.dl.wireshark.org/win64/wireshark-4.2.0-x64.exe', 78_500_000],
+  [
+    0,
+    10,
+    5,
+    'incident-report-template.docx',
+    'https://intranet.company.local',
+    'https://intranet.company.local/files/incident-report-template.docx',
+    84_000,
+  ],
+  [
+    1,
+    9,
+    40,
+    'Sysmon.zip',
+    'https://learn.microsoft.com',
+    'https://download.sysinternals.com/files/Sysmon.zip',
+    3_600_000,
+  ],
+  [
+    5,
+    14,
+    12,
+    'wireshark-4.2.0-x64.exe',
+    'https://www.wireshark.org',
+    'https://2.na.dl.wireshark.org/win64/wireshark-4.2.0-x64.exe',
+    78_500_000,
+  ],
   /* --- Suspicious nighttime downloads --- */
   [2, 2, 55, 'payload.bin', 'https://pastebin.com', 'https://pastebin.com/raw/aB3xK9mZ', 512_000],
   [3, 1, 15, 'toolkit.zip', 'https://mega.nz', 'https://mega.nz/file/Abc123', 24_000_000],
@@ -161,7 +256,14 @@ const SHORTCUT_ROWS = [
   [1, 14, 'dashboard', 'https://intranet.company.local/dashboard', 'Corporate dashboard', 60],
   [2, 16, 'stack', 'https://stackoverflow.com/', 'Stack Overflow', 22],
   [3, 10, 'mitre', 'https://attack.mitre.org/', 'MITRE ATT&CK', 8],
-  [2, 2, 'bypass defender', 'https://www.google.com/search?q=how+to+bypass+windows+defender', 'how to bypass windows defender - Google Search', 5],
+  [
+    2,
+    2,
+    'bypass defender',
+    'https://www.google.com/search?q=how+to+bypass+windows+defender',
+    'how to bypass windows defender - Google Search',
+    5,
+  ],
   [3, 1, 'pastebin', 'https://pastebin.com/raw/aB3xK9mZ', 'Pastebin.com - raw payload', 6],
   [4, 3, 'tor download', 'https://www.torproject.org/download/', 'Download Tor Browser', 3],
 ]
@@ -279,9 +381,25 @@ function demoExecution(os) {
 
 function demoPersistence(os) {
   const win = [
-    [10, 8, 0, 'OneDrive', 'Run key', 'C:\\Users\\analyst\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe /background', 'HKCU\\...\\Run'],
+    [
+      10,
+      8,
+      0,
+      'OneDrive',
+      'Run key',
+      'C:\\Users\\analyst\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe /background',
+      'HKCU\\...\\Run',
+    ],
     [2, 2, 58, 'Updater', 'Run key', 'C:\\Users\\analyst\\AppData\\Roaming\\a.exe', 'HKCU\\...\\Run'],
-    [2, 3, 12, 'SystemHealth', 'Scheduled Task', 'C:\\Windows\\Temp\\le.exe', 'C:\\Windows\\System32\\Tasks\\SystemHealth'],
+    [
+      2,
+      3,
+      12,
+      'SystemHealth',
+      'Scheduled Task',
+      'C:\\Windows\\Temp\\le.exe',
+      'C:\\Windows\\System32\\Tasks\\SystemHealth',
+    ],
     [2, 3, 15, 'WinDefendSvc', 'Service', 'C:\\Users\\analyst\\AppData\\Roaming\\svc.exe', 'SYSTEM\\...\\Services'],
   ]
   const nix = [

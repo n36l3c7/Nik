@@ -119,9 +119,7 @@ def clear_session_cookie(response: Response) -> None:
 # Auth dependencies
 # ---------------------------------------------------------------------------
 def _unauthorized() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-    )
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
 def current_user(
@@ -156,9 +154,7 @@ def current_user(
 def require_admin(user: User = Depends(current_user)) -> User:
     """Dependency that requires the current user to have the admin role."""
     if user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
     return user
 
 
@@ -255,17 +251,11 @@ def principal(
     # 2. Session cookie (browser): reuse the same validation as current_user.
     if nik_session:
         session = db.get(SessionModel, nik_session)
-        if session is not None and _parse_iso(session.expires_at) > datetime.now(
-            timezone.utc
-        ):
+        if session is not None and _parse_iso(session.expires_at) > datetime.now(timezone.utc):
             user = db.get(User, session.user_id)
             if user is not None:
-                scopes = [SCOPE_READ, SCOPE_WRITE] + (
-                    [SCOPE_ADMIN] if user.role == "admin" else []
-                )
-                return Principal(
-                    kind="user", actor=user.username, role=user.role, scopes=scopes, user=user
-                )
+                scopes = [SCOPE_READ, SCOPE_WRITE] + ([SCOPE_ADMIN] if user.role == "admin" else [])
+                return Principal(kind="user", actor=user.username, role=user.role, scopes=scopes, user=user)
 
     raise _unauthorized()
 
@@ -278,11 +268,7 @@ def optional_principal(request: Request, db: OrmSession) -> Principal | None:
     """
     api_key = request.headers.get("X-API-Key")
     if api_key:
-        row = db.scalar(
-            select(ApiKey).where(
-                ApiKey.key_hash == hash_api_key(api_key), ApiKey.revoked_at.is_(None)
-            )
-        )
+        row = db.scalar(select(ApiKey).where(ApiKey.key_hash == hash_api_key(api_key), ApiKey.revoked_at.is_(None)))
         if row is None or _key_expired(row):
             return None
         role = row.role if row.role in {"admin", "analyst"} else "analyst"
@@ -315,9 +301,7 @@ def writer_principal(caller: Principal = Depends(principal)) -> Principal:
 def admin_principal(caller: Principal = Depends(principal)) -> Principal:
     """Require admin permissions (an admin session OR an admin-role API key)."""
     if caller.role != "admin" or not caller.has_scope(SCOPE_ADMIN):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
     return caller
 
 

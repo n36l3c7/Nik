@@ -24,12 +24,8 @@ export default function TopBinariesWidget({ commands = [] }) {
           {binaries.map(({ binary, count }) => (
             <li key={binary}>
               <div className="mb-1 flex items-baseline justify-between gap-3">
-                <span className="truncate font-mono text-xs text-fg">
-                  {binary}
-                </span>
-                <span className="shrink-0 text-xs font-medium text-fg-muted">
-                  {count}×
-                </span>
+                <span className="truncate font-mono text-xs text-fg">{binary}</span>
+                <span className="shrink-0 text-xs font-medium text-fg-muted">{count}×</span>
               </div>
               <div className="h-2 w-full overflow-hidden bg-canvas">
                 <div

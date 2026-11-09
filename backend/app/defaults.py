@@ -19,10 +19,7 @@ DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
         "label": "pastebin",
         "pattern": "pastebin",
         "severity": "medium",
-        "description": (
-            "Text sharing service, often used for data exfiltration or "
-            "payload delivery."
-        ),
+        "description": ("Text sharing service, often used for data exfiltration or payload delivery."),
     },
     {
         "id": "mega-nz",
@@ -30,8 +27,7 @@ DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
         "pattern": "mega\\.nz",
         "severity": "medium",
         "description": (
-            "Encrypted cloud storage, a frequent channel for exfiltration or "
-            "downloading unauthorized tools."
+            "Encrypted cloud storage, a frequent channel for exfiltration or downloading unauthorized tools."
         ),
     },
     {
@@ -46,10 +42,7 @@ DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
         "label": "exploit",
         "pattern": "exploit",
         "severity": "high",
-        "description": (
-            "Searching for or downloading exploits / offensive code "
-            "(e.g. exploit-db)."
-        ),
+        "description": ("Searching for or downloading exploits / offensive code (e.g. exploit-db)."),
     },
     {
         "id": "bypass",
@@ -63,9 +56,7 @@ DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
         "label": "tor",
         "pattern": "\\btor\\b|torproject",
         "severity": "medium",
-        "description": (
-            "Reference to the Tor network / Tor Browser (traffic anonymization)."
-        ),
+        "description": ("Reference to the Tor network / Tor Browser (traffic anonymization)."),
     },
     {
         "id": "malware",
@@ -79,19 +70,14 @@ DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
         "label": "crack/keygen",
         "pattern": "\\bcrack(ed|ing)?\\b|keygen|warez",
         "severity": "medium",
-        "description": (
-            "Pirated software: a common infection vector on corporate endpoints."
-        ),
+        "description": ("Pirated software: a common infection vector on corporate endpoints."),
     },
     {
         "id": "anon-sharing",
         "label": "anonymous file sharing",
         "pattern": "anonfiles|temp[-_ ]?mail|transfer\\.sh|gofile\\.io",
         "severity": "medium",
-        "description": (
-            "Anonymous file sharing / disposable email services, possible "
-            "exfiltration."
-        ),
+        "description": ("Anonymous file sharing / disposable email services, possible exfiltration."),
     },
 ]
 

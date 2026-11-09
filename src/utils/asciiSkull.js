@@ -24,14 +24,31 @@ export const SKULL_RAMPS = {
 
 /** Ready-made sizes and looks used across the app (and kept for future use). */
 export const SKULL_PRESETS = {
-  block: { width: 64, height: 32, ramp: SKULL_RAMPS.block, tooth: '█', jaw: '▀', pupil: '█', crack: ' ', toothGap: ' ' },
+  block: {
+    width: 64,
+    height: 32,
+    ramp: SKULL_RAMPS.block,
+    tooth: '█',
+    jaw: '▀',
+    pupil: '█',
+    crack: ' ',
+    toothGap: ' ',
+  },
   large: { width: 60, height: 30, ramp: SKULL_RAMPS.ascii },
   medium: { width: 40, height: 20, ramp: SKULL_RAMPS.ascii },
   small: { width: 24, height: 12, ramp: SKULL_RAMPS.short },
 }
 
 // Crack on the cranium, as (row, column) on the 60 × 30 reference grid.
-const CRACK = [[3, 33], [4, 32], [5, 32], [6, 33], [7, 34], [8, 34], [9, 35]]
+const CRACK = [
+  [3, 33],
+  [4, 32],
+  [5, 32],
+  [6, 33],
+  [7, 34],
+  [8, 34],
+  [9, 35],
+]
 
 /**
  * @param {object} [options]
@@ -89,7 +106,14 @@ export function renderSkull({
       }
       const inSocket = [-0.37, 0.37].some((ex) => ((x - ex) / 0.25) ** 2 + ((y - 0.47) / 0.12) ** 2 <= 1)
       if (inSocket) {
-        push(...eyeCell(eyes, r - eyeRow, eyeCols.map((ec) => c - (ec + shift)), pupil))
+        push(
+          ...eyeCell(
+            eyes,
+            r - eyeRow,
+            eyeCols.map((ec) => c - (ec + shift)),
+            pupil,
+          ),
+        )
       } else if (y >= 0.58 && y <= 0.72 && Math.abs(x) <= (0.72 - y) * 0.6) {
         push(' ', false) // nose
       } else if (crackCells.has(`${r}:${c}`)) {

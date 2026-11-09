@@ -23,15 +23,9 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
  */
 
 const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'))
-const BrowserAnalysisTab = lazy(
-  () => import('../components/tabs/browser/BrowserAnalysisTab.jsx'),
-)
-const CommandHistoryTab = lazy(
-  () => import('../components/tabs/commands/CommandHistoryTab.jsx'),
-)
-const EndpointArtifactsTab = lazy(
-  () => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'),
-)
+const BrowserAnalysisTab = lazy(() => import('../components/tabs/browser/BrowserAnalysisTab.jsx'))
+const CommandHistoryTab = lazy(() => import('../components/tabs/commands/CommandHistoryTab.jsx'))
+const EndpointArtifactsTab = lazy(() => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
 
@@ -111,9 +105,7 @@ export const ANALYSIS_TABS = [
  * tab does NOT require changes to IncidentContext.
  */
 export function buildDefaultIncidentData() {
-  return Object.fromEntries(
-    ANALYSIS_TABS.map((tab) => [tab.dataKey, structuredClone(tab.defaultData)]),
-  )
+  return Object.fromEntries(ANALYSIS_TABS.map((tab) => [tab.dataKey, structuredClone(tab.defaultData)]))
 }
 
 /** Return a tab definition from its id. */

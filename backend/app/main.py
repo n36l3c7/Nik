@@ -67,7 +67,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.3.1",
+    version="2.3.2",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",

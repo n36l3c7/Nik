@@ -70,8 +70,17 @@ ARTIFACT_CATEGORIES = {
         "primaryField": "name",
         "fields": _EXEC_FIELDS,
         "timeAliases": [
-            "lastrun", "last_run", "lastexecuted", "last_executed", "runtime", "executiontime",
-            "timestamp", "time", "lastmodified", "date", "lastruntime",
+            "lastrun",
+            "last_run",
+            "lastexecuted",
+            "last_executed",
+            "runtime",
+            "executiontime",
+            "timestamp",
+            "time",
+            "lastmodified",
+            "date",
+            "lastruntime",
         ],
         "sources": {
             "bam": _src("bam", "BAM/DAM last execution"),
@@ -91,8 +100,11 @@ ARTIFACT_CATEGORIES = {
             "systemd": _src("systemd", "enabled systemd units"),
             "cron": _src("cron", "cron", parser="configlines", record_kind="cron", record_name="cron entry"),
             "sshkeys": _src(
-                "sshkeys", "SSH authorized_keys", parser="configlines",
-                record_kind="authorized_keys", record_name="authorized_key",
+                "sshkeys",
+                "SSH authorized_keys",
+                parser="configlines",
+                record_kind="authorized_keys",
+                record_name="authorized_key",
             ),
             "rc": _src("rc", "shell rc / profile", parser="configlines", record_kind="shell rc", record_name="rc line"),
             "launch": _src("launch", "LaunchAgent / LaunchDaemon", parser="plist"),
@@ -108,8 +120,16 @@ ARTIFACT_CATEGORIES = {
         "primaryField": "device",
         "fields": _USB_FIELDS,
         "timeAliases": [
-            "firstconnected", "first_connected", "lastconnected", "last_connected", "firstinstall",
-            "timestamp", "time", "date", "installdate", "connected",
+            "firstconnected",
+            "first_connected",
+            "lastconnected",
+            "last_connected",
+            "firstinstall",
+            "timestamp",
+            "time",
+            "date",
+            "installdate",
+            "connected",
         ],
         "sources": {
             "usbstor": _src("usbstor", "USBSTOR"),
@@ -145,9 +165,7 @@ def apply_upload(doc: dict, tab: str, params: dict, data: bytes, file_name: str)
         spec = BROWSERS.get(browser_id)
         if spec is None or source_key not in spec["sources"]:
             raise _bad(f"Unknown browser/source '{browser_id}/{source_key}'.")
-        produced, fmt = browser_mod.parse_browser_source(
-            data, spec["engine"], source_key, spec["sources"][source_key]
-        )
+        produced, fmt = browser_mod.parse_browser_source(data, spec["engine"], source_key, spec["sources"][source_key])
         browsers = data_root.setdefault("browser", {}).setdefault("browsers", {})
         profile = profile_for_upload(browsers, browser_id, params.get("profile"))
         rows = 0

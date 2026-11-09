@@ -63,9 +63,7 @@ def _log(db: OrmSession, actor: str, action: str, details: str) -> None:
 
 
 @router.get("/export")
-def export_backup(
-    caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
-) -> dict:
+def export_backup(caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Return a full backup envelope of the platform (admin session or admin key).
 
     The envelope contains password hashes: treat the downloaded file as a
@@ -286,8 +284,7 @@ def import_backup(
             db,
             caller.actor,
             "backup.import",
-            f"Restored a full backup: {len(users)} users, "
-            f"{len(incidents)} incidents, {len(seen_audit)} audit entries",
+            f"Restored a full backup: {len(users)} users, {len(incidents)} incidents, {len(seen_audit)} audit entries",
         )
 
         db.commit()
@@ -297,9 +294,7 @@ def import_backup(
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Backup restore failed")
-        raise HTTPException(
-            status_code=400, detail="Restore failed: the backup file is inconsistent."
-        ) from exc
+        raise HTTPException(status_code=400, detail="Restore failed: the backup file is inconsistent.") from exc
 
     return {
         "users": len(users),

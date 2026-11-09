@@ -35,9 +35,7 @@ def _to_dict(w: Webhook) -> dict:
 
 
 @router.get("", response_model=WebhooksEnvelope)
-def list_webhooks(
-    _admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
-) -> dict:
+def list_webhooks(_admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
     """List webhook subscriptions (admin only). Secrets are never returned."""
     rows = db.scalars(select(Webhook).order_by(Webhook.created_at.desc())).all()
     return {"webhooks": [_to_dict(w) for w in rows]}

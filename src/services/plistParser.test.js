@@ -36,7 +36,10 @@ test('decodes every binary plist object type', () => {
   assert.deepEqual([...value.blob], [0x00, 0x01, 0xfe, 0xff])
   assert.deepEqual(value.uid, { UID: 7 })
   assert.deepEqual(value.nested, { list: [1, 'two', { three: 3 }] })
-  assert.deepEqual(value.many, Array.from({ length: 300 }, (_, i) => i))
+  assert.deepEqual(
+    value.many,
+    Array.from({ length: 300 }, (_, i) => i),
+  )
 })
 
 test('rejects truncated or non-plist input with a clear error', () => {

@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Activity,
-  Bookmark,
-  FolderInput,
-  Info,
-  Sparkles,
-  Trash2,
-  Upload,
-  Zap,
-} from 'lucide-react'
+import { Activity, Bookmark, FolderInput, Info, Sparkles, Trash2, Upload, Zap } from 'lucide-react'
 import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from './FileUploadZone.jsx'
 import EventsSection from './EventsSection.jsx'
@@ -76,9 +67,7 @@ export default function BrowserAnalysisTab({ incident }) {
   const [confirmClear, setConfirmClear] = useState(false)
 
   const browserData = incident.data.browser
-  const activeBrowserId = getBrowserById(browserData.activeBrowser)
-    ? browserData.activeBrowser
-    : BROWSERS[0].id
+  const activeBrowserId = getBrowserById(browserData.activeBrowser) ? browserData.activeBrowser : BROWSERS[0].id
   const browser = getBrowserById(activeBrowserId)
 
   // Host OS drives the artifact paths shown in the "where to find files" note.
@@ -87,9 +76,7 @@ export default function BrowserAnalysisTab({ incident }) {
   // A macOS-only browser (Safari) on a Windows/Linux incident: the paths shown
   // are those of the platforms it exists on, with a warning.
   const availableOnHost = isBrowserAvailableOn(browser, os)
-  const pathsOsLabel = availableOnHost
-    ? osLabel
-    : browser.platforms.map((id) => getOsById(id)?.label ?? id).join(' / ')
+  const pathsOsLabel = availableOnHost ? osLabel : browser.platforms.map((id) => getOsById(id)?.label ?? id).join(' / ')
 
   // Active browser (defensive fallback for partial incidents) and its active
   // profile: every upload, section and count below refers to that profile.
@@ -105,9 +92,7 @@ export default function BrowserAnalysisTab({ incident }) {
   useEffect(() => {
     setErrors({})
     setLoading({})
-    setActiveSection((prev) =>
-      sections.some((s) => s.id === prev) ? prev : (sections[0]?.id ?? 'events'),
-    )
+    setActiveSection((prev) => (sections.some((s) => s.id === prev) ? prev : (sections[0]?.id ?? 'events')))
   }, [activeBrowserId, profileId, incident.id, sections])
 
   // Counts per browser (sub-tab badge, all profiles) and per section (active profile).
@@ -200,11 +185,7 @@ export default function BrowserAnalysisTab({ incident }) {
   return (
     <div className="space-y-6">
       {/* -------- Browser sub-tabs -------- */}
-      <div
-        role="tablist"
-        aria-label="Browser"
-        className="flex flex-wrap gap-2 border border-line bg-panel p-2"
-      >
+      <div role="tablist" aria-label="Browser" className="flex flex-wrap gap-2 border border-line bg-panel p-2">
         {BROWSERS.map((b) => {
           const isActive = b.id === activeBrowserId
           const BrowserIcon = b.icon
@@ -230,9 +211,7 @@ export default function BrowserAnalysisTab({ incident }) {
                 <span
                   className={[
                     'rounded-full px-1.5 text-xs tabular-nums',
-                    isActive
-                      ? 'bg-accent-soft text-accent'
-                      : 'bg-canvas text-fg-muted',
+                    isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >
                   {count.toLocaleString('en-US')}
@@ -264,29 +243,26 @@ export default function BrowserAnalysisTab({ incident }) {
             </p>
             {!availableOnHost && (
               <p className="text-xs text-med">
-                {browser.label} exists only on {pathsOsLabel}, but this incident&apos;s
-                host runs {osLabel}: these files must come from a {pathsOsLabel} host.
+                {browser.label} exists only on {pathsOsLabel}, but this incident&apos;s host runs {osLabel}: these files
+                must come from a {pathsOsLabel} host.
               </p>
             )}
             <ul className="space-y-1">
               {missingSources.map((source) => (
                 <li key={source.key} className="text-xs text-fg-muted">
                   <span className="font-medium">{source.label}:</span>{' '}
-                  <span className="break-all font-mono text-[11px] text-fg-muted">
-                    {sourcePathFor(source, os)}
-                  </span>
+                  <span className="break-all font-mono text-[11px] text-fg-muted">{sourcePathFor(source, os)}</span>
                 </li>
               ))}
             </ul>
             {browser.profileHint && (
               <p className="text-xs text-fg-muted">
-                <span className="font-mono">&lt;profile&gt;</span> is the profile folder:{' '}
-                {browser.profileHint}.
+                <span className="font-mono">&lt;profile&gt;</span> is the profile folder: {browser.profileHint}.
               </p>
             )}
             <p className="text-[11px] text-fg-muted">
-              Close the browser before copying the files (the databases may be
-              locked). Each row disappears once the matching file is loaded.
+              Close the browser before copying the files (the databases may be locked). Each row disappears once the
+              matching file is loaded.
             </p>
           </div>
         </div>
@@ -302,12 +278,7 @@ export default function BrowserAnalysisTab({ incident }) {
               Load demo data
             </Button>
             {hasData && (
-              <Button
-                variant="danger"
-                size="sm"
-                icon={Trash2}
-                onClick={() => setConfirmClear(true)}
-              >
+              <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
                 Clear profile
               </Button>
             )}
@@ -366,9 +337,7 @@ export default function BrowserAnalysisTab({ incident }) {
               <span
                 className={[
                   'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                  isActive
-                    ? 'bg-panel/20 text-white'
-                    : 'bg-canvas text-fg-muted',
+                  isActive ? 'bg-panel/20 text-white' : 'bg-canvas text-fg-muted',
                 ].join(' ')}
               >
                 {(sectionCount[section.id] ?? 0).toLocaleString('en-US')}
@@ -434,9 +403,9 @@ export default function BrowserAnalysisTab({ incident }) {
       >
         <p className="text-sm text-fg-muted">
           You are about to delete all imported data of the <strong>{browser.label}</strong> profile{' '}
-          <strong>{current.name}</strong> in the incident <strong>{incident.name}</strong> (history,
-          downloads, bookmarks and shortcuts). The profile itself, other profiles and other browsers
-          are left untouched. This action is irreversible.
+          <strong>{current.name}</strong> in the incident <strong>{incident.name}</strong> (history, downloads,
+          bookmarks and shortcuts). The profile itself, other profiles and other browsers are left untouched. This
+          action is irreversible.
         </p>
       </Modal>
     </div>

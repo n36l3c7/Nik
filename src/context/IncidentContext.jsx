@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, NOT_MODIFIED } from '../services/api.js'
 import { createMergePatch, MERGE_PATCH_CONTENT_TYPE } from '../utils/mergePatch.js'
 import { buildDefaultIncidentData } from '../config/tabs.js'
@@ -18,12 +10,7 @@ import {
   buildDefaultProfileData,
 } from '../config/browsers.js'
 import { normalizeBrowserSlot, profileNameError, sortedProfiles } from '../utils/browserProfiles.js'
-import {
-  SHELLS,
-  getShellById,
-  buildDefaultShellData,
-  buildDefaultShellsMap,
-} from '../config/shells.js'
+import { SHELLS, getShellById, buildDefaultShellData, buildDefaultShellsMap } from '../config/shells.js'
 import {
   ARTIFACT_CATEGORIES,
   getArtifactCategoryById,
@@ -275,10 +262,7 @@ function toSummary(incident) {
 function normalizeSummary(raw) {
   const host = typeof raw.host === 'string' ? raw.host.trim() : ''
   const username = typeof raw.username === 'string' ? raw.username.trim() : ''
-  const name =
-    typeof raw.name === 'string' && raw.name.trim()
-      ? raw.name.trim()
-      : deriveIncidentName(host, username)
+  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : deriveIncidentName(host, username)
   return {
     id: raw.id,
     name,
@@ -550,10 +534,8 @@ export function IncidentProvider({ children }) {
         username,
         os,
         name: host || username ? deriveIncidentName(host, username) : prev.name,
-        suspiciousStart:
-          patch.suspiciousStart !== undefined ? patch.suspiciousStart : prev.suspiciousStart,
-        suspiciousEnd:
-          patch.suspiciousEnd !== undefined ? patch.suspiciousEnd : prev.suspiciousEnd,
+        suspiciousStart: patch.suspiciousStart !== undefined ? patch.suspiciousStart : prev.suspiciousStart,
+        suspiciousEnd: patch.suspiciousEnd !== undefined ? patch.suspiciousEnd : prev.suspiciousEnd,
         updatedAt,
       }
       commit(incidentId, () => next)
@@ -639,7 +621,11 @@ export function IncidentProvider({ children }) {
   // API (avoids re-sending the large `data` blob just to change a tab).
   const setActiveBrowser = useCallback(
     (incidentId, browserId) => {
-      commit(incidentId, (i) => ({ ...i, data: { ...i.data, browser: { ...i.data.browser, activeBrowser: browserId } } }), { local: true })
+      commit(
+        incidentId,
+        (i) => ({ ...i, data: { ...i.data, browser: { ...i.data.browser, activeBrowser: browserId } } }),
+        { local: true },
+      )
     },
     [commit],
   )
@@ -718,7 +704,10 @@ export function IncidentProvider({ children }) {
       const data = withBrowserSlot(prev.data, browserId, (current) => {
         const { [profileId]: _deleted, ...profiles } = current.profiles
         const rest = { ...current, profiles }
-        return { ...rest, activeProfile: profiles[current.activeProfile] ? current.activeProfile : sortedProfiles(rest)[0].id }
+        return {
+          ...rest,
+          activeProfile: profiles[current.activeProfile] ? current.activeProfile : sortedProfiles(rest)[0].id,
+        }
       })
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       audit('browser.profile.delete', `Deleted ${browserId} profile "${profile.name}" and its data`, {
@@ -792,7 +781,11 @@ export function IncidentProvider({ children }) {
   // View preference only (like setActiveBrowser): never re-sends the data blob.
   const setActiveShell = useCallback(
     (incidentId, shellId) => {
-      commit(incidentId, (i) => ({ ...i, data: { ...i.data, commands: { ...i.data.commands, activeShell: shellId } } }), { local: true })
+      commit(
+        incidentId,
+        (i) => ({ ...i, data: { ...i.data, commands: { ...i.data.commands, activeShell: shellId } } }),
+        { local: true },
+      )
     },
     [commit],
   )
@@ -921,11 +914,7 @@ export function IncidentProvider({ children }) {
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
       const label = flaggable.title || flaggable.url || flaggable.key
-      audit(
-        wasFlagged ? 'flag.remove' : 'flag.add',
-        `${wasFlagged ? 'Unflagged' : 'Flagged'}: ${label}`,
-        incident,
-      )
+      audit(wasFlagged ? 'flag.remove' : 'flag.add', `${wasFlagged ? 'Unflagged' : 'Flagged'}: ${label}`, incident)
     },
     [actor, audit, commit],
   )
@@ -988,9 +977,7 @@ export function IncidentProvider({ children }) {
       if (!body) return
       const incident = find(incidentId)
       if (!incident) return
-      const notes = incident.notes.map((n) =>
-        n.id === noteId ? { ...n, text: body, updatedAt: nowIso() } : n,
-      )
+      const notes = incident.notes.map((n) => (n.id === noteId ? { ...n, text: body, updatedAt: nowIso() } : n))
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, notes }))
       audit('note.update', 'Edited a note', incident)
@@ -1018,9 +1005,7 @@ export function IncidentProvider({ children }) {
       if (!incident) {
         // Not opened yet in this session: fetch the full document first.
         try {
-          incident = normalizeIncident(
-            await api.get(`/incidents/${encodeURIComponent(incidentId)}`),
-          )
+          incident = normalizeIncident(await api.get(`/incidents/${encodeURIComponent(incidentId)}`))
         } catch (err) {
           setStorageError(err?.message || 'Unable to load the incident to export it.')
           return

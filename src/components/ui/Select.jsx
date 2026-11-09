@@ -4,20 +4,10 @@
  * `onChange` receives the selected string directly (not the event).
  * `options` is an array of `{ value, label }`.
  */
-export default function Select({
-  value,
-  onChange,
-  options = [],
-  label = null,
-  className = '',
-}) {
+export default function Select({ value, onChange, options = [], label = null, className = '' }) {
   return (
     <label className={`inline-flex items-center gap-2 ${className}`}>
-      {label && (
-        <span className="whitespace-nowrap font-mono text-xs text-fg-muted">
-          {label}
-        </span>
-      )}
+      {label && <span className="whitespace-nowrap font-mono text-xs text-fg-muted">{label}</span>}
       <select
         value={value}
         onChange={(event) => onChange?.(event.target.value)}

@@ -1,16 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import {
-  AlertTriangle,
-  DatabaseBackup,
-  Download,
-  Info,
-  Plus,
-  ScrollText,
-  Trash2,
-  Upload,
-  Users,
-  X,
-} from 'lucide-react'
+import { AlertTriangle, DatabaseBackup, Download, Info, Plus, ScrollText, Trash2, Upload, Users, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { formatRelative } from '../../utils/time.js'
@@ -45,9 +34,7 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
       className={[
         'p-1.5 transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        danger
-          ? 'text-fg-muted hover:bg-high-soft hover:text-high'
-          : 'text-fg-muted hover:bg-raised hover:text-fg',
+        danger ? 'text-fg-muted hover:bg-high-soft hover:text-high' : 'text-fg-muted hover:bg-raised hover:text-fg',
       ].join(' ')}
     >
       {busy ? <MicroSkull className="text-[10px] leading-none" /> : <Icon className="h-3.5 w-3.5" />}
@@ -65,14 +52,8 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
  * }} props
  */
 export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, width = 288 }) {
-  const {
-    incidents,
-    activeIncidentId,
-    selectIncident,
-    deleteIncident,
-    exportIncident,
-    importIncidentFromFile,
-  } = useIncidents()
+  const { incidents, activeIncidentId, selectIncident, deleteIncident, exportIncident, importIncidentFromFile } =
+    useIncidents()
   const { currentUser } = useAuth()
   const isAdmin = currentUser?.role === 'admin'
 
@@ -91,10 +72,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
 
   // List ordered by last update (most recent first).
   const sortedIncidents = useMemo(
-    () =>
-      [...incidents].sort(
-        (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-      ),
+    () => [...incidents].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
     [incidents],
   )
 
@@ -122,16 +100,10 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
   }
 
   return (
-    <aside
-      style={{ width }}
-      className="flex h-full shrink-0 flex-col border-r border-line bg-sunken"
-    >
+    <aside style={{ width }} className="flex h-full shrink-0 flex-col border-r border-line bg-sunken">
       {/* ----- Brand ----- */}
       <div className="flex items-center gap-3 border-b border-line px-4 py-4">
-        <span
-          aria-hidden="true"
-          className="shrink-0 bg-accent px-2 py-1 font-mono text-sm font-extrabold text-canvas"
-        >
+        <span aria-hidden="true" className="shrink-0 bg-accent px-2 py-1 font-mono text-sm font-extrabold text-canvas">
           &gt;_
         </span>
         <div className="min-w-0">
@@ -142,28 +114,17 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
 
       {/* ----- New incident ----- */}
       <div className="px-4 pt-4">
-        <Button
-          icon={Plus}
-          className="w-full justify-center"
-          onClick={onCreateIncident}
-        >
+        <Button icon={Plus} className="w-full justify-center" onClick={onCreateIncident}>
           New incident
         </Button>
       </div>
 
       {/* ----- Incident list (independent scroll) ----- */}
-      <nav
-        aria-label="Incidents"
-        className="mt-4 flex-1 overflow-y-auto px-3 pb-2"
-      >
-        <p className="px-1 pb-2 font-mono text-[11px] tracking-wider text-fg-muted">
-          INCIDENTS · {incidents.length}
-        </p>
+      <nav aria-label="Incidents" className="mt-4 flex-1 overflow-y-auto px-3 pb-2">
+        <p className="px-1 pb-2 font-mono text-[11px] tracking-wider text-fg-muted">INCIDENTS · {incidents.length}</p>
 
         {sortedIncidents.length === 0 ? (
-          <p className="px-1 text-sm text-fg-muted">
-            No incidents yet: create a new one or import an existing file.
-          </p>
+          <p className="px-1 text-sm text-fg-muted">No incidents yet: create a new one or import an existing file.</p>
         ) : (
           <ul className="space-y-1">
             {sortedIncidents.map((incident) => {
@@ -180,9 +141,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
                     className={[
                       'w-full px-3 py-2 text-left transition-colors',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                      isActive
-                        ? 'bg-panel shadow-[inset_2px_0_0_var(--color-accent)]'
-                        : 'hover:bg-panel/60',
+                      isActive ? 'bg-panel shadow-[inset_2px_0_0_var(--color-accent)]' : 'hover:bg-panel/60',
                     ].join(' ')}
                   >
                     <span
@@ -191,12 +150,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
                         isActive ? 'text-fg' : 'text-fg/90',
                       ].join(' ')}
                     >
-                      {OsIcon && (
-                        <OsIcon
-                          className={`h-3.5 w-3.5 shrink-0 ${os.accent}`}
-                          aria-label={os.label}
-                        />
-                      )}
+                      {OsIcon && <OsIcon className={`h-3.5 w-3.5 shrink-0 ${os.accent}`} aria-label={os.label} />}
                       <span className="truncate">{incident.name}</span>
                     </span>
                     <span className="block text-[11px] text-fg-muted">
@@ -266,32 +220,14 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
         >
           {importing ? 'Importing…' : 'Import incident'}
         </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json"
-          hidden
-          onChange={handleImportFile}
-        />
+        <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
 
         {/* Quick access to the Audit log and User management modals */}
         <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={ScrollText}
-            className="flex-1 justify-center"
-            onClick={onOpenAudit}
-          >
+          <Button variant="ghost" size="sm" icon={ScrollText} className="flex-1 justify-center" onClick={onOpenAudit}>
             Audit log
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={Users}
-            className="flex-1 justify-center"
-            onClick={onOpenUsers}
-          >
+          <Button variant="ghost" size="sm" icon={Users} className="flex-1 justify-center" onClick={onOpenUsers}>
             Users
           </Button>
         </div>
@@ -316,9 +252,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
       </div>
 
       {/* ----- Full-backup modal (admin only) ----- */}
-      {isAdmin && (
-        <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />
-      )}
+      {isAdmin && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />}
 
       {/* ----- Delete confirmation modal ----- */}
       <Modal
@@ -338,17 +272,12 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
       >
         <div className="space-y-3">
           <p className="text-sm text-fg">
-            You are about to delete the incident{' '}
-            <strong className="font-mono">
-              «{deleteTarget?.name}»
-            </strong>
-            .
+            You are about to delete the incident <strong className="font-mono">«{deleteTarget?.name}»</strong>.
           </p>
           <p className="flex items-start gap-2 border border-high-line bg-high-soft px-3 py-2 text-sm text-high-fg">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            This action is irreversible: every imported artifact and analysis in
-            this incident will be lost. Export the incident first if you want to
-            keep a copy.
+            This action is irreversible: every imported artifact and analysis in this incident will be lost. Export the
+            incident first if you want to keep a copy.
           </p>
         </div>
       </Modal>

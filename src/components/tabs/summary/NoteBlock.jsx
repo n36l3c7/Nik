@@ -70,9 +70,7 @@ export default function NoteBlock({ note, onSave, onRemove }) {
       ) : (
         /* ---- View mode ---- */
         <div className="group/note">
-          <p className="whitespace-pre-wrap break-words text-sm text-fg">
-            {note.text}
-          </p>
+          <p className="whitespace-pre-wrap break-words text-sm text-fg">{note.text}</p>
           <div className="mt-2 flex items-center gap-2">
             <span className="min-w-0 truncate text-xs text-fg-muted">
               {note.author || 'unknown'} · {formatDateTime(Date.parse(note.createdAt))}

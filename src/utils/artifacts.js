@@ -48,9 +48,7 @@ export function buildArtifactEvents({ records = [], category, engine }) {
       time: Number.isFinite(record.time) ? record.time : null,
       title: fields[category.primaryField] ?? '',
       // Flat haystack for the DataTable search (it only reads top-level keys).
-      _search: [...Object.values(fields).filter(Boolean), record._sourceName]
-        .filter(Boolean)
-        .join(' '),
+      _search: [...Object.values(fields).filter(Boolean), record._sourceName].filter(Boolean).join(' '),
     }
     event.soc = engine.analyze({ kind: 'endpoint', title: haystack, time: event.time })
     return event

@@ -48,13 +48,9 @@ def _to_dict(key: ApiKey) -> dict:
 
 
 @router.get("", response_model=ApiKeysEnvelope)
-def list_keys(
-    _admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
-) -> dict:
+def list_keys(_admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
     """List every non-revoked API key (admin only). Secrets are never returned."""
-    rows = db.scalars(
-        select(ApiKey).where(ApiKey.revoked_at.is_(None)).order_by(ApiKey.created_at.desc())
-    ).all()
+    rows = db.scalars(select(ApiKey).where(ApiKey.revoked_at.is_(None)).order_by(ApiKey.created_at.desc())).all()
     return {"keys": [_to_dict(k) for k in rows]}
 
 
@@ -83,9 +79,7 @@ def create_key(
     if body.expiresInDays is not None:
         if body.expiresInDays <= 0:
             raise HTTPException(status_code=400, detail="expiresInDays must be positive")
-        expires_at = (
-            datetime.now(timezone.utc) + timedelta(days=body.expiresInDays)
-        ).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=body.expiresInDays)).isoformat()
 
     token, prefix = generate_api_key()
     row = ApiKey(

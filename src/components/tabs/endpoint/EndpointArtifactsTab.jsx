@@ -27,15 +27,15 @@ import { getOsById, DEFAULT_OS } from '../../../config/os.js'
 
 /** Filesystem-safe slug for the downloaded script filename. */
 function slugify(text) {
-  return String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 /** Total records across a category's sources. */
 function totalRecords(catData) {
-  return Object.values(catData?.sources ?? {}).reduce(
-    (n, s) => n + (s?.records?.length ?? 0),
-    0,
-  )
+  return Object.values(catData?.sources ?? {}).reduce((n, s) => n + (s?.records?.length ?? 0), 0)
 }
 
 export default function EndpointArtifactsTab({ incident }) {
@@ -54,10 +54,7 @@ export default function EndpointArtifactsTab({ incident }) {
   const catData = endpointData.categories[activeCategoryId] ?? buildDefaultArtifactData(category)
   const sources = useMemo(() => artifactSourcesFor(category, os), [category, os])
 
-  const combined = useMemo(
-    () => combineCategoryRecords(category, catData),
-    [category, catData],
-  )
+  const combined = useMemo(() => combineCategoryRecords(category, catData), [category, catData])
   const hasData = combined.length > 0
 
   /* ---- Import a file for a specific source ---- */
@@ -95,7 +92,12 @@ export default function EndpointArtifactsTab({ incident }) {
       target.key,
       {
         records: demo.records,
-        meta: { fileName: 'Demo data', format: 'demo', rows: demo.records.length, importedAt: new Date().toISOString() },
+        meta: {
+          fileName: 'Demo data',
+          format: 'demo',
+          rows: demo.records.length,
+          importedAt: new Date().toISOString(),
+        },
       },
       { action: 'endpoint.demo', details: `Loaded demo ${category.label}` },
     )
@@ -140,9 +142,7 @@ export default function EndpointArtifactsTab({ incident }) {
                 <span
                   className={[
                     'rounded-full px-1.5 text-xs tabular-nums',
-                    isActive
-                      ? 'bg-accent-soft text-accent'
-                      : 'bg-canvas text-fg-muted',
+                    isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >
                   {count.toLocaleString('en-US')}
@@ -176,9 +176,9 @@ export default function EndpointArtifactsTab({ incident }) {
           <div className="flex items-start gap-2 border border-dashed border-line p-4 text-sm text-fg-muted">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              No fully-custom collection method for <strong>{category.label.toLowerCase()}</strong>{' '}
-              on {osLabel}: the standard artifacts here require third-party DFIR parsers, so this
-              category is empty for this host OS. Switch the incident OS, or use another tab.
+              No fully-custom collection method for <strong>{category.label.toLowerCase()}</strong> on {osLabel}: the
+              standard artifacts here require third-party DFIR parsers, so this category is empty for this host OS.
+              Switch the incident OS, or use another tab.
             </span>
           </div>
         ) : (
@@ -187,20 +187,11 @@ export default function EndpointArtifactsTab({ incident }) {
               const meta = catData.sources?.[source.key]?.meta ?? null
               const isFile = source.mode === 'file'
               return (
-                <div
-                  key={source.key}
-                  className="flex flex-col gap-2 border border-line p-3"
-                >
+                <div key={source.key} className="flex flex-col gap-2 border border-line p-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-fg">
-                      {source.name}
-                    </p>
-                    <p className="break-all font-mono text-[11px] text-fg-muted">
-                      {source.path}
-                    </p>
-                    {source.tool && (
-                      <p className="text-[11px] text-fg-muted">{source.tool}</p>
-                    )}
+                    <p className="text-sm font-semibold text-fg">{source.name}</p>
+                    <p className="break-all font-mono text-[11px] text-fg-muted">{source.path}</p>
+                    {source.tool && <p className="text-[11px] text-fg-muted">{source.tool}</p>}
                   </div>
 
                   {/* Script sources: show the native script to run, then import its CSV. */}
@@ -210,10 +201,7 @@ export default function EndpointArtifactsTab({ incident }) {
                         <Terminal className="h-3 w-3" />
                         Collection script ({source.script.lang === 'powershell' ? 'PowerShell' : 'Bash'})
                       </summary>
-                      <ScriptBlock
-                        script={source.script}
-                        filename={`collect-${category.id}-${slugify(source.name)}`}
-                      />
+                      <ScriptBlock script={source.script} filename={`collect-${category.id}-${slugify(source.name)}`} />
                     </details>
                   )}
 
@@ -259,9 +247,8 @@ export default function EndpointArtifactsTab({ incident }) {
         }
       >
         <p className="text-sm text-fg-muted">
-          You are about to delete all imported <strong>{category.label}</strong> records (every
-          source) in the incident <strong>{incident.name}</strong>. Other categories are left
-          untouched. This action is irreversible.
+          You are about to delete all imported <strong>{category.label}</strong> records (every source) in the incident{' '}
+          <strong>{incident.name}</strong>. Other categories are left untouched. This action is irreversible.
         </p>
       </Modal>
     </div>

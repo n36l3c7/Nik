@@ -21,17 +21,13 @@ export default function TopDomainsWidget({ history = [] }) {
   return (
     <Card title="Top 5 visited domains" icon={TrendingUp}>
       {domains.length === 0 ? (
-        <p className="text-sm text-fg-muted">
-          No domains to show
-        </p>
+        <p className="text-sm text-fg-muted">No domains to show</p>
       ) : (
         <ul className="space-y-3">
           {domains.map(({ domain, count }) => (
             <li key={domain}>
               <div className="mb-1 flex items-baseline justify-between gap-3">
-                <span className="truncate font-mono text-xs text-fg">
-                  {domain}
-                </span>
+                <span className="truncate font-mono text-xs text-fg">{domain}</span>
                 <span className="shrink-0 text-xs font-medium text-fg-muted">
                   {count} {count === 1 ? 'visit' : 'visits'}
                 </span>

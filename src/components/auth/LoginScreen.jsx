@@ -84,16 +84,10 @@ export default function LoginScreen() {
           </div>
         )}
 
-        <Button
-          type="submit"
-          icon={LogIn}
-          disabled={submitting}
-          className="w-full justify-center"
-        >
+        <Button type="submit" icon={LogIn} disabled={submitting} className="w-full justify-center">
           {submitting ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
-
     </AuthLayout>
   )
 }

@@ -50,7 +50,10 @@ function StatusLine({ label, probe, okText }) {
   const text = probe.ok === null ? 'checking…' : probe.ok ? okText(probe) : 'unreachable'
   return (
     <span className="whitespace-pre">
-      <span className={color} aria-hidden="true">●</span> {label.padEnd(10)} {text}
+      <span className={color} aria-hidden="true">
+        ●
+      </span>{' '}
+      {label.padEnd(10)} {text}
     </span>
   )
 }
@@ -74,14 +77,17 @@ export default function AuthLayout({ title, subtitle, children }) {
         <p className="text-base text-fg">
           forensic analysis platform <span className="text-fg-muted">v{pkg.version}</span>
         </p>
-        <div role="status" className="flex max-w-lg flex-col gap-1 border border-line bg-canvas px-4 py-3 text-[13px] text-fg-muted">
+        <div
+          role="status"
+          className="flex max-w-lg flex-col gap-1 border border-line bg-canvas px-4 py-3 text-[13px] text-fg-muted"
+        >
           <span>$ nik status</span>
           <StatusLine label="api" probe={apiProbe} okText={(p) => `online   · ${p.ms} ms`} />
           <StatusLine label="database" probe={db} okText={() => 'ready'} />
         </div>
         <p className="max-w-lg text-xs text-fg-muted">
-          Raw forensic files are parsed in your browser; only normalized entries reach the server.
-          Every action is recorded in the audit log under your name.
+          Raw forensic files are parsed in your browser; only normalized entries reach the server. Every action is
+          recorded in the audit log under your name.
         </p>
       </section>
 

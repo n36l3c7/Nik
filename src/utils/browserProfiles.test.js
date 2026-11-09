@@ -39,7 +39,10 @@ test('keeps profiles, fixes an invalid active profile and fills defaults', () =>
   assert.deepEqual(Object.keys(slot.profiles).sort(), ['default', 'w'])
   assert.equal(slot.activeProfile, 'default')
   assert.equal(slot.profiles.w.name, 'Work')
-  assert.deepEqual(sortedProfiles(slot).map((p) => p.id), ['default', 'w'])
+  assert.deepEqual(
+    sortedProfiles(slot).map((p) => p.id),
+    ['default', 'w'],
+  )
   assert.equal(browserRowCount(slot), 1)
   assert.equal(activeProfileOf(slot).id, 'default')
 })

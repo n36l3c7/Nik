@@ -9,6 +9,7 @@ Revision ID: 0001_baseline
 Revises:
 Create Date: 2026-07-11
 """
+
 from __future__ import annotations
 
 from alembic import op

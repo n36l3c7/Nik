@@ -102,9 +102,7 @@ def create_audit(
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
-def clear_audit(
-    _admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
-):
+def clear_audit(_admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)):
     """Clear the entire audit log (admin session or admin key)."""
     db.execute(sa_delete(AuditEntry))
     db.commit()

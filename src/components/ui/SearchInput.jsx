@@ -6,12 +6,7 @@ import { Search, X } from 'lucide-react'
  *
  * `onChange` receives the string directly (not the event).
  */
-export default function SearchInput({
-  value,
-  onChange,
-  placeholder = 'Search…',
-  className = '',
-}) {
+export default function SearchInput({ value, onChange, placeholder = 'Search…', className = '' }) {
   return (
     <div className={`relative ${className}`}>
       <Search

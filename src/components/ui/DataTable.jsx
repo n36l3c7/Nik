@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-} from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import SearchInput from './SearchInput.jsx'
 import Select from './Select.jsx'
 import Button from './Button.jsx'
@@ -66,7 +58,11 @@ export default function DataTable({
     const q = query.trim().toLowerCase()
     if (!q || searchKeys.length === 0) return data
     return data.filter((row) =>
-      searchKeys.some((key) => String(row[key] ?? '').toLowerCase().includes(q)),
+      searchKeys.some((key) =>
+        String(row[key] ?? '')
+          .toLowerCase()
+          .includes(q),
+      ),
     )
   }, [data, query, searchKeys])
 
@@ -172,19 +168,13 @@ export default function DataTable({
             {paged.length === 0 ? (
               // No rows: message centered across the full width
               <tr>
-                <td
-                  colSpan={columns.length || 1}
-                  className="px-4 py-12 text-center font-mono text-sm text-fg-muted"
-                >
+                <td colSpan={columns.length || 1} className="px-4 py-12 text-center font-mono text-sm text-fg-muted">
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
               paged.map((row, index) => (
-                <tr
-                  key={rowKey(row, index)}
-                  className={`transition-colors hover:bg-raised ${rowClassName(row)}`}
-                >
+                <tr key={rowKey(row, index)} className={`transition-colors hover:bg-raised ${rowClassName(row)}`}>
                   {columns.map((column) => (
                     <td
                       key={column.key}
@@ -194,7 +184,7 @@ export default function DataTable({
                         column.className ?? '',
                       ].join(' ')}
                     >
-                      {column.render ? column.render(row) : row[column.key] ?? '—'}
+                      {column.render ? column.render(row) : (row[column.key] ?? '—')}
                     </td>
                   ))}
                 </tr>
@@ -216,9 +206,7 @@ export default function DataTable({
             }}
             options={pageSizeOptions.map((n) => ({ value: String(n), label: String(n) }))}
           />
-          <span className="tabular-nums">
-            {total === 0 ? 'No results' : `${from}–${to} of ${total} results`}
-          </span>
+          <span className="tabular-nums">{total === 0 ? 'No results' : `${from}–${to} of ${total} results`}</span>
         </div>
 
         <div className="flex items-center gap-1">

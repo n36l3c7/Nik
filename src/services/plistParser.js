@@ -36,7 +36,10 @@ export function isBinaryPlist(arrayBuffer) {
 
 /** True if the text looks like an XML property list. */
 export function looksLikeXmlPlist(text) {
-  const head = String(text ?? '').replace(/^\uFEFF/, '').trimStart().slice(0, 512)
+  const head = String(text ?? '')
+    .replace(/^\uFEFF/, '')
+    .trimStart()
+    .slice(0, 512)
   return head.startsWith('<?xml') ? head.includes('<plist') || head.includes('PropertyList') : head.startsWith('<plist')
 }
 

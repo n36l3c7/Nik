@@ -1,14 +1,5 @@
 import { useRef, useState } from 'react'
-import {
-  AlertTriangle,
-  Database,
-  FileCode,
-  FileJson,
-  FileSpreadsheet,
-  Sparkles,
-  Upload,
-  X,
-} from 'lucide-react'
+import { AlertTriangle, Database, FileCode, FileJson, FileSpreadsheet, Sparkles, Upload, X } from 'lucide-react'
 import Badge from '../../ui/Badge.jsx'
 import AsciiSkull from '../../ui/AsciiSkull.jsx'
 import { formatDateTime } from '../../../utils/time.js'
@@ -129,19 +120,15 @@ export default function FileUploadZone({
         ].join(' ')}
       >
         {/* Hidden file input */}
-        <input
-          ref={inputRef}
-          type="file"
-          accept={accept || undefined}
-          hidden
-          onChange={handleInputChange}
-        />
+        <input ref={inputRef} type="file" accept={accept || undefined} hidden onChange={handleInputChange} />
 
         {loading ? (
           /* ---- State: loading/parsing in progress ---- */
           <div aria-busy="true" className="flex flex-col items-center gap-2">
             <AsciiSkull preset="small" />
-            <p role="status" className="font-mono text-sm text-fg-muted">Parsing…</p>
+            <p role="status" className="font-mono text-sm text-fg-muted">
+              Parsing…
+            </p>
           </div>
         ) : meta ? (
           /* ---- State: file imported, show metadata ---- */
@@ -161,23 +148,14 @@ export default function FileUploadZone({
             </button>
 
             <FormatIcon className="h-7 w-7 text-accent" />
-            <p
-              className="max-w-full truncate text-sm font-medium text-fg"
-              title={meta.fileName}
-            >
+            <p className="max-w-full truncate text-sm font-medium text-fg" title={meta.fileName}>
               {meta.fileName}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Badge color={FORMAT_COLORS[meta.format] ?? 'slate'}>
-                {String(meta.format).toUpperCase()}
-              </Badge>
-              <span className="text-xs text-fg-muted">
-                {Number(meta.rows ?? 0).toLocaleString('en-US')} rows
-              </span>
+              <Badge color={FORMAT_COLORS[meta.format] ?? 'slate'}>{String(meta.format).toUpperCase()}</Badge>
+              <span className="text-xs text-fg-muted">{Number(meta.rows ?? 0).toLocaleString('en-US')} rows</span>
             </div>
-            <p className="font-mono text-xs text-fg-muted">
-              {formatDateTime(Date.parse(meta.importedAt))}
-            </p>
+            <p className="font-mono text-xs text-fg-muted">{formatDateTime(Date.parse(meta.importedAt))}</p>
           </div>
         ) : (
           /* ---- State: empty, drop invitation ---- */
@@ -187,15 +165,10 @@ export default function FileUploadZone({
             </span>
             <p className="text-sm font-semibold text-fg">{label}</p>
             <p className="text-xs text-fg-muted">{description}</p>
-            <p className="text-xs text-fg-muted">
-              Drag a file here or click to select
-            </p>
+            <p className="text-xs text-fg-muted">Drag a file here or click to select</p>
             {pathHint && (
               // Typical path of the file on disk (disappears once loaded)
-              <p
-                className="mt-1 break-all bg-canvas px-2 py-1 font-mono text-[10px] text-fg-muted"
-                title={pathHint}
-              >
+              <p className="mt-1 break-all bg-canvas px-2 py-1 font-mono text-[10px] text-fg-muted" title={pathHint}>
                 {pathHint}
               </p>
             )}
@@ -205,10 +178,7 @@ export default function FileUploadZone({
 
       {/* Parsing error shown below the zone */}
       {error && (
-        <p
-          role="alert"
-          className="flex items-start gap-1.5 text-xs text-high"
-        >
+        <p role="alert" className="flex items-start gap-1.5 text-xs text-high">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{error}</span>
         </p>

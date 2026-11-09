@@ -33,12 +33,7 @@ import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '..
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { computeSocStats } from '../../../utils/soc.js'
-import {
-  buildEvents,
-  buildRedirectIndex,
-  redirectTarget,
-  formatBytes,
-} from '../../../utils/events.js'
+import { buildEvents, buildRedirectIndex, redirectTarget, formatBytes } from '../../../utils/events.js'
 import { extractDomain, truncate } from '../../../utils/url.js'
 import { formatDateTime } from '../../../utils/time.js'
 import EventTypeIcon from './EventTypeIcon.jsx'
@@ -136,11 +131,7 @@ function CopyButton({ text }) {
       title="Copy"
       className="shrink-0 p-0.5 text-fg-muted opacity-0 transition hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
     >
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-accent" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
+      {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
   )
 }
@@ -156,9 +147,7 @@ function FlagButton({ flagged, onToggle }) {
       className={[
         'inline-flex items-center justify-center p-1 transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        flagged
-          ? 'text-accent hover:text-accent-fg'
-          : 'text-fg-muted hover:text-accent',
+        flagged ? 'text-accent hover:text-accent-fg' : 'text-fg-muted hover:text-accent',
       ].join(' ')}
     >
       <Flag className="h-4 w-4" fill={flagged ? 'currentColor' : 'none'} />
@@ -248,8 +237,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
   )
 
   // Dataset for the active internal tab.
-  const baseData =
-    activeTab === 'history' ? historyEvents : activeTab === 'downloads' ? downloadEvents : allEvents
+  const baseData = activeTab === 'history' ? historyEvents : activeTab === 'downloads' ? downloadEvents : allEvents
 
   // Filtering pipeline: detection filter + type filter + time-range filter.
   const filtered = useMemo(
@@ -283,11 +271,9 @@ export default function EventsSection({ incident, browserId, profile = null, his
     [activeTab, redirectIndex, incident?.id, browserId, profile, flags, toggleFlag],
   )
 
-  const searchKeys =
-    activeTab === 'downloads' ? ['fileName', 'url', 'referrer'] : ['url', 'title']
+  const searchKeys = activeTab === 'downloads' ? ['fileName', 'url', 'referrer'] : ['url', 'title']
 
-  const hasIncidentRange =
-    incident?.suspiciousStart != null || incident?.suspiciousEnd != null
+  const hasIncidentRange = incident?.suspiciousStart != null || incident?.suspiciousEnd != null
 
   /** Seed the range filter from the incident's suspicious window. */
   const useIncidentRange = () =>
@@ -316,11 +302,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2">
-      <Select
-        value={detectionFilter}
-        onChange={setDetectionFilter}
-        options={DETECTION_FILTER_OPTIONS}
-      />
+      <Select value={detectionFilter} onChange={setDetectionFilter} options={DETECTION_FILTER_OPTIONS} />
       <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} />
       <DateTimeRangeFilter start={range.start} end={range.end} onChange={setRange} />
       <Button
@@ -369,11 +351,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
       {/* Events panel with internal tabs */}
       <Card title="Browser events" icon={Activity}>
         {/* Internal tabs */}
-        <div
-          role="tablist"
-          aria-label="Event views"
-          className="mb-4 flex flex-wrap gap-1 border-b border-line"
-        >
+        <div role="tablist" aria-label="Event views" className="mb-4 flex flex-wrap gap-1 border-b border-line">
           {INTERNAL_TABS.map((tab) => {
             const isActive = activeTab === tab.id
             const TabIcon = tab.icon
@@ -393,9 +371,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
                 className={[
                   '-mb-px flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                  isActive
-                    ? 'border-accent-strong text-accent'
-                    : 'border-transparent text-fg-muted hover:text-fg',
+                  isActive ? 'border-accent-strong text-accent' : 'border-transparent text-fg-muted hover:text-fg',
                 ].join(' ')}
               >
                 <TabIcon className="h-4 w-4" />
@@ -423,9 +399,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
           searchKeys={searchKeys}
           searchPlaceholder="Search by URL, title or file…"
           defaultSort={{ key: 'time', dir: 'desc' }}
-          rowClassName={(row) =>
-            flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? '')
-          }
+          rowClassName={(row) => (flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? ''))}
           toolbar={toolbar}
           emptyMessage="No events match the current filters"
         />
@@ -493,10 +467,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
         sortable: true,
         sortAccessor: (row) => (row.fileName ?? '').toLowerCase(),
         render: (row) => (
-          <span
-            className="font-mono text-xs font-medium text-fg"
-            title={row.targetPath || row.fileName}
-          >
+          <span className="font-mono text-xs font-medium text-fg" title={row.targetPath || row.fileName}>
             {truncate(row.fileName, 48)}
           </span>
         ),
@@ -509,9 +480,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
           const domain = extractDomain(site)
           return (
             <span className="group inline-flex items-center gap-1.5">
-              <span className="font-mono text-xs text-fg-muted">
-                {domain || truncate(site, 40) || '—'}
-              </span>
+              <span className="font-mono text-xs text-fg-muted">{domain || truncate(site, 40) || '—'}</span>
               <ExternalLinkIcon href={site} />
               <CopyButton text={site} />
             </span>
@@ -524,11 +493,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
         align: 'right',
         sortable: true,
         sortAccessor: (row) => row.totalBytes ?? 0,
-        render: (row) => (
-          <span className="font-mono text-xs text-fg-muted">
-            {formatBytes(row.totalBytes)}
-          </span>
-        ),
+        render: (row) => <span className="font-mono text-xs text-fg-muted">{formatBytes(row.totalBytes)}</span>,
       },
       detectionColumn,
     ]
@@ -541,10 +506,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
     render: (row) => {
       if (row.kind === 'download') {
         return (
-          <span
-            className="font-mono text-xs font-medium text-fg"
-            title={row.targetPath}
-          >
+          <span className="font-mono text-xs font-medium text-fg" title={row.targetPath}>
             {truncate(row.fileName, 44)}
           </span>
         )
@@ -553,9 +515,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
       return (
         <div className="min-w-0 max-w-[260px]">
           <p className="truncate text-sm text-fg">
-            {row.title || (
-              <span className="italic text-fg-muted">(no title)</span>
-            )}
+            {row.title || <span className="italic text-fg-muted">(no title)</span>}
           </p>
           {domain && <p className="truncate text-xs text-fg-muted">{domain}</p>}
         </div>
@@ -585,9 +545,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
       return (
         <div className="group min-w-0">
           <span className="inline-flex items-center gap-1.5">
-            <span className="break-all font-mono text-xs text-fg-muted">
-              {truncate(row.url, 64)}
-            </span>
+            <span className="break-all font-mono text-xs text-fg-muted">{truncate(row.url, 64)}</span>
             <ExternalLinkIcon href={row.url} />
             <CopyButton text={row.url} />
           </span>

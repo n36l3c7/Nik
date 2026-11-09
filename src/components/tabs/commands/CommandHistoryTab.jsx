@@ -35,9 +35,7 @@ export default function CommandHistoryTab({ incident }) {
   // already hold imported data.
   const visibleShells = useMemo(() => {
     const onOs = new Set(shellsForOs(os).map((s) => s.id))
-    return SHELLS.filter(
-      (s) => onOs.has(s.id) || (commandsData.shells[s.id]?.commands?.length ?? 0) > 0,
-    )
+    return SHELLS.filter((s) => onOs.has(s.id) || (commandsData.shells[s.id]?.commands?.length ?? 0) > 0)
   }, [os, commandsData.shells])
 
   // Active shell: keep the stored one if still visible, else the first visible.
@@ -132,11 +130,7 @@ export default function CommandHistoryTab({ incident }) {
   return (
     <div className="space-y-6">
       {/* -------- Shell sub-tabs -------- */}
-      <div
-        role="tablist"
-        aria-label="Shell"
-        className="flex flex-wrap gap-2 border border-line bg-panel p-2"
-      >
+      <div role="tablist" aria-label="Shell" className="flex flex-wrap gap-2 border border-line bg-panel p-2">
         {visibleShells.map((s) => {
           const isActive = s.id === activeShellId
           const ShellIcon = s.icon
@@ -162,9 +156,7 @@ export default function CommandHistoryTab({ incident }) {
                 <span
                   className={[
                     'rounded-full px-1.5 text-xs tabular-nums',
-                    isActive
-                      ? 'bg-accent-soft text-accent'
-                      : 'bg-canvas text-fg-muted',
+                    isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >
                   {count.toLocaleString('en-US')}
@@ -185,9 +177,7 @@ export default function CommandHistoryTab({ incident }) {
             </p>
             <p className="text-xs text-fg-muted">
               <span className="font-medium">{source.label}:</span>{' '}
-              <span className="break-all font-mono text-[11px] text-fg-muted">
-                {sourcePath}
-              </span>
+              <span className="break-all font-mono text-[11px] text-fg-muted">{sourcePath}</span>
             </p>
             <p className="text-[11px] text-fg-muted">{shell.timestamps}</p>
           </div>
@@ -253,9 +243,8 @@ export default function CommandHistoryTab({ incident }) {
         }
       >
         <p className="text-sm text-fg-muted">
-          You are about to delete all imported <strong>{shell.label}</strong> commands in the
-          incident <strong>{incident.name}</strong>. Other shells are left untouched. This action is
-          irreversible.
+          You are about to delete all imported <strong>{shell.label}</strong> commands in the incident{' '}
+          <strong>{incident.name}</strong>. Other shells are left untouched. This action is irreversible.
         </p>
       </Modal>
     </div>

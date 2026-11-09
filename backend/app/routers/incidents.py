@@ -113,11 +113,7 @@ def _idempotent_replay(db: OrmSession, key: str | None):
 def _idempotent_save(db: OrmSession, key: str | None, status_code: int, body: Any) -> None:
     if not key or db.get(IdempotencyRecord, key) is not None:
         return
-    db.add(
-        IdempotencyRecord(
-            key=key, created_at=now_iso(), status_code=status_code, response_json=json.dumps(body)
-        )
-    )
+    db.add(IdempotencyRecord(key=key, created_at=now_iso(), status_code=status_code, response_json=json.dumps(body)))
     db.commit()
 
 
@@ -146,9 +142,7 @@ def list_incidents(
     conditions = []
     if q:
         like = f"%{q}%"
-        conditions.append(
-            or_(Incident.name.ilike(like), Incident.host.ilike(like), Incident.username.ilike(like))
-        )
+        conditions.append(or_(Incident.name.ilike(like), Incident.host.ilike(like), Incident.username.ilike(like)))
     if host:
         conditions.append(Incident.host.ilike(f"%{host}%"))
     if username:
@@ -159,14 +153,30 @@ def list_incidents(
     order = Incident.updated_at.desc()
 
     if view == "summary":
-        stmt = select(
-            Incident.id, Incident.name, Incident.host, Incident.username, Incident.os,
-            Incident.created_at, Incident.updated_at,
-        ).where(*conditions).order_by(order)
+        stmt = (
+            select(
+                Incident.id,
+                Incident.name,
+                Incident.host,
+                Incident.username,
+                Incident.os,
+                Incident.created_at,
+                Incident.updated_at,
+            )
+            .where(*conditions)
+            .order_by(order)
+        )
         stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
         incidents = [
-            {"id": r.id, "name": r.name, "host": r.host, "username": r.username, "os": r.os,
-             "createdAt": r.created_at, "updatedAt": r.updated_at}
+            {
+                "id": r.id,
+                "name": r.name,
+                "host": r.host,
+                "username": r.username,
+                "os": r.os,
+                "createdAt": r.created_at,
+                "updatedAt": r.updated_at,
+            }
             for r in db.execute(stmt).all()
         ]
     else:
@@ -363,11 +373,14 @@ def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor)
         _sync_columns(row)
         db.add(
             AuditEntry(
-                id=str(uuid.uuid4()), at=now_iso(), actor=actor,
+                id=str(uuid.uuid4()),
+                at=now_iso(),
+                actor=actor,
                 action=_UPLOAD_ACTIONS.get(tab, "upload"),
                 target=(doc.get("name")),
                 details=f"Uploaded {filename} → {summary['target']} ({summary['rows']} rows)",
-                incident_id=incident_id, incident_name=doc.get("name"),
+                incident_id=incident_id,
+                incident_name=doc.get("name"),
             )
         )
         job = db.get(Job, job_id)
@@ -396,7 +409,7 @@ async def upload_artifact(
     tab: str = Query(..., description="browser | commands | endpoint"),
     browser: str | None = Query(None, description="Browser id (tab=browser), e.g. chrome/firefox"),
     profile: str | None = Query(
-        None, description="Browser profile NAME (tab=browser); created if missing. Default: \"Default\"."
+        None, description='Browser profile NAME (tab=browser); created if missing. Default: "Default".'
     ),
     source: str | None = Query(None, description="Source key (browser/endpoint), e.g. history"),
     shell: str | None = Query(None, description="Shell id (tab=commands), e.g. bash"),
@@ -429,8 +442,12 @@ async def upload_artifact(
     if async_:
         now = now_iso()
         job = Job(
-            id=str(uuid.uuid4()), kind="upload", status="queued",
-            incident_id=incident_id, created_at=now, updated_at=now,
+            id=str(uuid.uuid4()),
+            kind="upload",
+            status="queued",
+            incident_id=incident_id,
+            created_at=now,
+            updated_at=now,
         )
         db.add(job)
         db.commit()
@@ -529,10 +546,7 @@ def edit_note(
     target = next((n for n in notes if n.get("id") == note_id), None)
     if target is None:
         raise HTTPException(status_code=404, detail="Note not found")
-    doc["notes"] = [
-        {**n, "text": text, "updatedAt": now_iso()} if n.get("id") == note_id else n
-        for n in notes
-    ]
+    doc["notes"] = [{**n, "text": text, "updatedAt": now_iso()} if n.get("id") == note_id else n for n in notes]
     _save_doc(db, row, doc)
     _audit(db, caller, "note.update", "Edited a note", row, always=True)
     db.commit()

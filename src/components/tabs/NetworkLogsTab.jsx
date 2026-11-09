@@ -58,16 +58,12 @@ export default function NetworkLogsTab() {
               <span className="bg-canvas p-2 text-fg-muted">
                 <Icon size={18} />
               </span>
-              <span className="min-w-0 truncate text-sm font-medium text-fg-muted">
-                {title}
-              </span>
+              <span className="min-w-0 truncate text-sm font-medium text-fg-muted">{title}</span>
               <Badge color="slate" className="ml-auto shrink-0">
                 Coming soon
               </Badge>
             </div>
-            <p className="mt-2 text-xs text-fg-muted">
-              {description}
-            </p>
+            <p className="mt-2 text-xs text-fg-muted">{description}</p>
           </div>
         ))}
       </div>
@@ -82,8 +78,7 @@ export default function NetworkLogsTab() {
       {/* Pointer to the developer guide */}
       <p className="flex items-center justify-center gap-1.5 text-xs text-fg-muted">
         <Info size={14} className="shrink-0" />
-        To implement this tab see README.md § &#39;Adding a new analysis
-        tab&#39;.
+        To implement this tab see README.md § &#39;Adding a new analysis tab&#39;.
       </p>
     </div>
   )

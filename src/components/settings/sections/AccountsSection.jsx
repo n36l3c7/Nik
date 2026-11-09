@@ -79,14 +79,10 @@ export default function AccountsSection() {
             <li key={user.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-fg">
-                    {user.username}
-                  </span>
+                  <span className="truncate text-sm font-medium text-fg">{user.username}</span>
                   {isSelf && <Badge color="cyan">You</Badge>}
                 </div>
-                <p className="mt-0.5 text-xs text-fg-muted">
-                  Created {formatRelative(user.createdAt)}
-                </p>
+                <p className="mt-0.5 text-xs text-fg-muted">Created {formatRelative(user.createdAt)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <Badge color={user.role === 'admin' ? 'cyan' : 'slate'}>
@@ -114,9 +110,7 @@ export default function AccountsSection() {
       </ul>
 
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-          Add user
-        </h3>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">Add user</h3>
         <form onSubmit={handleAdd} className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>

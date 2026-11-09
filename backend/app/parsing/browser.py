@@ -110,9 +110,7 @@ def parse_chromium_downloads(conn):
     if not has_tables(conn, ["downloads"]):
         return []
     chain = {}
-    for r in query_rows(
-        conn, "SELECT id, url, chain_index FROM downloads_url_chain ORDER BY id, chain_index"
-    ):
+    for r in query_rows(conn, "SELECT id, url, chain_index FROM downloads_url_chain ORDER BY id, chain_index"):
         chain[r["id"]] = r["url"]
     out = []
     for r in query_rows(conn, "SELECT * FROM downloads ORDER BY start_time DESC"):
@@ -409,8 +407,8 @@ def map_safari_bookmarks(plist):
 
 def _is_plist(data: bytes) -> bool:
     head = data.removeprefix(b"\xef\xbb\xbf").lstrip()[:512]
-    return data.startswith(b"bplist00") or head.startswith(b"<plist") or (
-        head.startswith(b"<?xml") and b"<plist" in head
+    return (
+        data.startswith(b"bplist00") or head.startswith(b"<plist") or (head.startswith(b"<?xml") and b"<plist" in head)
     )
 
 
@@ -562,14 +560,15 @@ def _extract_rows(parsed, container_keys):
 
 def _map_text(produces, parsed_json, csv_rows):
     kind = (produces or ["history"])[0]
-    if (
-        "bookmarks" in (produces or [])
-        and isinstance(parsed_json, dict)
-        and isinstance(parsed_json.get("roots"), dict)
-    ):
+    if "bookmarks" in (produces or []) and isinstance(parsed_json, dict) and isinstance(parsed_json.get("roots"), dict):
         return {"bookmarks": map_chrome_bookmarks(parsed_json)}
-    rows = csv_rows if csv_rows is not None else _extract_rows(
-        parsed_json, ["history", "bookmarks", "shortcuts", "downloads", "entries", "rows", "data", "items", "records"]
+    rows = (
+        csv_rows
+        if csv_rows is not None
+        else _extract_rows(
+            parsed_json,
+            ["history", "bookmarks", "shortcuts", "downloads", "entries", "rows", "data", "items", "records"],
+        )
     )
     if not isinstance(rows, list):
         raise ValueError("Unrecognized JSON: expected an array of objects.")

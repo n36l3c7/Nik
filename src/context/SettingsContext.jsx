@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DEFAULT_SUSPICIOUS_KEYWORDS,
   DEFAULT_COMMAND_KEYWORDS,
@@ -38,9 +30,7 @@ const SettingsContext = createContext(null)
 
 /** Generates a unique id for keyword rules created by the user. */
 function newId() {
-  return (
-    crypto.randomUUID?.() ?? `kw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  )
+  return crypto.randomUUID?.() ?? `kw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 /** True if `pattern` is a valid RegExp (used by the UI to validate input). */
@@ -64,9 +54,7 @@ function factorySettings() {
 /** Normalize a settings document coming from the server. */
 function normalizeSettings(doc) {
   return {
-    keywords: Array.isArray(doc?.keywords)
-      ? doc.keywords
-      : structuredClone(DEFAULT_SUSPICIOUS_KEYWORDS),
+    keywords: Array.isArray(doc?.keywords) ? doc.keywords : structuredClone(DEFAULT_SUSPICIOUS_KEYWORDS),
     businessHours: {
       ...DEFAULT_BUSINESS_HOURS,
       ...(doc?.businessHours ?? {}),
@@ -137,12 +125,7 @@ export function SettingsProvider({ children }) {
           ? {
               ...k,
               ...patch,
-              severity:
-                patch.severity === 'high'
-                  ? 'high'
-                  : patch.severity === 'medium'
-                    ? 'medium'
-                    : k.severity,
+              severity: patch.severity === 'high' ? 'high' : patch.severity === 'medium' ? 'medium' : k.severity,
             }
           : k,
       ),

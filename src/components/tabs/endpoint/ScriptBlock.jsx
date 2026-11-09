@@ -43,9 +43,7 @@ export default function ScriptBlock({ script, filename }) {
   return (
     <div className="mt-1.5 overflow-hidden border border-line">
       <div className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-2.5 py-1.5">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
-          {meta.label}
-        </span>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">{meta.label}</span>
         <div className="flex items-center gap-1">
           <button
             type="button"

@@ -86,7 +86,9 @@ function ConnectingScreen() {
     <div className="flex h-screen items-center justify-center bg-canvas">
       <div className="flex flex-col items-center gap-3">
         <MicroSkull className="text-2xl text-accent" />
-        <p role="status" className="text-sm text-fg-muted">Connecting…</p>
+        <p role="status" className="text-sm text-fg-muted">
+          Connecting…
+        </p>
       </div>
     </div>
   )
@@ -100,18 +102,11 @@ function UnreachableScreen({ error, onRetry }) {
         <div className="mb-4 flex justify-center">
           <MicroSkull mood="x" className="text-2xl text-high-fg" />
         </div>
-        <h1 className="text-base font-semibold text-fg">
-          Cannot reach the server
-        </h1>
+        <h1 className="text-base font-semibold text-fg">Cannot reach the server</h1>
         <p className="mt-1.5 text-sm text-fg-muted">
-          The application could not contact the backend API. Check that the
-          service is running, then try again.
+          The application could not contact the backend API. Check that the service is running, then try again.
         </p>
-        {error && (
-          <p className="mt-3 break-words bg-canvas px-3 py-2 font-mono text-xs text-fg-muted">
-            {error}
-          </p>
-        )}
+        {error && <p className="mt-3 break-words bg-canvas px-3 py-2 font-mono text-xs text-fg-muted">{error}</p>}
         <Button icon={RefreshCw} onClick={onRetry} className="mt-5 w-full justify-center">
           Retry
         </Button>
@@ -204,7 +199,9 @@ export default function App() {
       <div className="flex h-screen items-center justify-center bg-canvas">
         <div className="flex flex-col items-center gap-3">
           <MicroSkull className="text-2xl text-accent" />
-          <p role="status" className="text-sm text-fg-muted">Loading incidents…</p>
+          <p role="status" className="text-sm text-fg-muted">
+            Loading incidents…
+          </p>
         </div>
       </div>
     )
@@ -312,8 +309,7 @@ export default function App() {
       >
         <form id="form-new-incident" onSubmit={handleCreateSubmit} className="space-y-4">
           <p className="text-sm text-fg-muted">
-            Identify the incident by host, user, or both. This is a label (not a
-            unique id), so duplicates are allowed.
+            Identify the incident by host, user, or both. This is a label (not a unique id), so duplicates are allowed.
           </p>
           <div>
             <label htmlFor="new-host" className="mb-1.5 block font-mono text-xs text-fg-muted">
@@ -343,9 +339,7 @@ export default function App() {
             />
           </div>
           <div>
-            <span className="mb-1.5 block font-mono text-xs text-fg-muted">
-              Host operating system
-            </span>
+            <span className="mb-1.5 block font-mono text-xs text-fg-muted">Host operating system</span>
             <OsPicker value={os} onChange={setOs} idPrefix="new-os" />
             <p className="mt-1.5 text-xs text-fg-muted">
               Drives the suggested artifact paths and the available shells.

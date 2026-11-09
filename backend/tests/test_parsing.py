@@ -55,13 +55,23 @@ def test_shell_upload_merge():
 
 def test_endpoint_configlines_and_csv():
     doc = {"id": "i", "data": {}}
-    apply_upload(doc, "endpoint", {"category": "persistence", "source": "sshkeys"},
-                 b"# comment\nssh-ed25519 AAAA attacker\n", "authorized_keys")
+    apply_upload(
+        doc,
+        "endpoint",
+        {"category": "persistence", "source": "sshkeys"},
+        b"# comment\nssh-ed25519 AAAA attacker\n",
+        "authorized_keys",
+    )
     recs = doc["data"]["endpoint"]["categories"]["persistence"]["sources"]["sshkeys"]["records"]
     assert len(recs) == 1 and recs[0]["fields"]["kind"] == "authorized_keys"
 
-    apply_upload(doc, "endpoint", {"category": "persistence", "source": "runkeys"},
-                 b"name,kind,command,location\nUpd,Run key,C:\\a.exe,HKCU\\Run\n", "runkeys.csv")
+    apply_upload(
+        doc,
+        "endpoint",
+        {"category": "persistence", "source": "runkeys"},
+        b"name,kind,command,location\nUpd,Run key,C:\\a.exe,HKCU\\Run\n",
+        "runkeys.csv",
+    )
     rk = doc["data"]["endpoint"]["categories"]["persistence"]["sources"]["runkeys"]["records"]
     assert rk[0]["fields"]["command"] == "C:\\a.exe"
 
