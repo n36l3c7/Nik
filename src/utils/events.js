@@ -14,9 +14,12 @@
  *
  * Each event has a `time` field (Unix ms) for common sorting and a `soc`
  * field with the detection analysis (computed by the provided engine).
+ * History events also carry `domain` and `searchQuery`: the URL is parsed
+ * once here, and the widgets and table cells reuse the result (parsing a URL
+ * is the most expensive step per row on large histories).
  */
 
-import { extractSearchQuery } from './url.js'
+import { analyzeUrl, extractSearchQuery } from './url.js'
 
 /** Formats a size in bytes into a readable string (KB/MB/GB). */
 export function formatBytes(bytes) {
@@ -38,9 +41,13 @@ export const EVENT_TYPE_META = {
   command: { label: 'Command', color: 'violet' },
 }
 
-/** Classifies a history entry into an event type. */
-export function historyEventType(entry) {
-  if (extractSearchQuery(entry.url)) return 'search'
+/**
+ * Classifies a history entry into an event type.
+ * @param {object} entry
+ * @param {string|null} [searchQuery] Already extracted query, to skip parsing.
+ */
+export function historyEventType(entry, searchQuery = extractSearchQuery(entry.url)) {
+  if (searchQuery) return 'search'
   if (entry.isRedirect) return 'redirect'
   return 'visit'
 }
@@ -75,11 +82,14 @@ export function redirectTarget(entry, redirectIndex) {
  */
 export function buildEvents({ history = [], downloads = [], engine }) {
   const historyEvents = history.map((entry) => {
+    const { domain, searchQuery } = analyzeUrl(entry.url)
     const event = {
       ...entry,
       kind: 'history',
-      eventType: historyEventType(entry),
+      eventType: historyEventType(entry, searchQuery),
       time: entry.visitTime,
+      domain,
+      searchQuery,
     }
     event.soc = engine.analyze(event)
     return event

@@ -37,7 +37,8 @@ const stamp = (ms) =>
 
 export default function TailPanel({ incident, onClose, className = '' }) {
   const engine = useSocEngine()
-  const events = useMemo(() => buildTimelineEvents(incident, engine), [incident, engine])
+  const data = incident.data
+  const events = useMemo(() => buildTimelineEvents(data, engine), [data, engine])
   const lines = useMemo(() => tailLines(events, incident.flags, LIMIT), [events, incident.flags])
   const scrollRef = useRef(null)
 

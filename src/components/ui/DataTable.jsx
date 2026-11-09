@@ -1,14 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import SearchInput from './SearchInput.jsx'
 import Select from './Select.jsx'
 import Button from './Button.jsx'
 
+// One collator for every comparison: localeCompare with options rebuilds it
+// on each call, which is ten times slower on tables with hundreds of
+// thousands of rows.
+const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true })
+
 /**
  * Generic comparison used by sorting:
  * - null/empty values always last (in ascending order);
  * - numbers compared numerically;
- * - strings with English localeCompare (case-insensitive, numeric-aware).
+ * - strings with an English collator (case-insensitive, numeric-aware).
  */
 function compareValues(a, b) {
   const aEmpty = a === null || a === undefined || a === ''
@@ -17,7 +22,7 @@ function compareValues(a, b) {
   if (aEmpty) return 1
   if (bEmpty) return -1
   if (typeof a === 'number' && typeof b === 'number') return a - b
-  return String(a).localeCompare(String(b), 'en', { sensitivity: 'base', numeric: true })
+  return collator.compare(String(a), String(b))
 }
 
 /**
@@ -44,6 +49,9 @@ export default function DataTable({
   rowKey = (row, i) => row.id ?? i,
 }) {
   const [query, setQuery] = useState('')
+  // The input updates at once; filtering and sorting follow when React is
+  // idle, so typing stays responsive on large tables.
+  const deferredQuery = useDeferredValue(query)
   const [sort, setSort] = useState(defaultSort) // { key, dir:'asc'|'desc' } | null
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(defaultPageSize)
@@ -51,11 +59,11 @@ export default function DataTable({
   // Reset to the first page when the search or the incoming data change
   useEffect(() => {
     setPage(1)
-  }, [query, data])
+  }, [deferredQuery, data])
 
   // 1) Filter: case-insensitive search on the given keys
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = deferredQuery.trim().toLowerCase()
     if (!q || searchKeys.length === 0) return data
     return data.filter((row) =>
       searchKeys.some((key) =>
@@ -64,7 +72,7 @@ export default function DataTable({
           .includes(q),
       ),
     )
-  }, [data, query, searchKeys])
+  }, [data, deferredQuery, searchKeys])
 
   // 2) Sort: use the column's sortAccessor if defined, otherwise row[key]
   const sorted = useMemo(() => {

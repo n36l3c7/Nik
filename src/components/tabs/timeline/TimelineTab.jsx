@@ -131,7 +131,8 @@ export default function TimelineTab({ incident }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incident?.id])
 
-  const events = useMemo(() => buildTimelineEvents(incident, engine), [incident, engine])
+  const data = incident?.data
+  const events = useMemo(() => buildTimelineEvents(data, engine), [data, engine])
 
   const stats = useMemo(() => computeSocStats(events), [events])
   const flaggedCount = useMemo(() => events.reduce((acc, e) => acc + (flags[e.id] ? 1 : 0), 0), [events, flags])

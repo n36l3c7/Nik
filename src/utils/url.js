@@ -3,13 +3,23 @@
  * rankings for the Browser Forensics tab widgets.
  */
 
-/** Extracts the hostname (without "www.") from a URL. Returns null if invalid. */
-export function extractDomain(url) {
+/** Parsed URL, or null when the string is not a valid absolute URL. */
+function parseUrl(url) {
   try {
-    return new URL(url).hostname.replace(/^www\./, '') || null
+    return new URL(url)
   } catch {
     return null
   }
+}
+
+function domainOf(parsed) {
+  return parsed.hostname.replace(/^www\./, '') || null
+}
+
+/** Extracts the hostname (without "www.") from a URL. Returns null if invalid. */
+export function extractDomain(url) {
+  const parsed = parseUrl(url)
+  return parsed ? domainOf(parsed) : null
 }
 
 /*
@@ -30,25 +40,51 @@ const SEARCH_ENGINES = [
  * E.g. https://www.google.com/search?q=how+to+bypass+av → "how to bypass av"
  */
 export function extractSearchQuery(url) {
-  try {
-    const parsed = new URL(url)
-    const engine = SEARCH_ENGINES.find((e) => parsed.hostname.includes(e.hostIncludes))
-    if (!engine) return null
-    const query = parsed.searchParams.get(engine.param)
-    return query?.trim() ? query.trim() : null
-  } catch {
-    return null
-  }
+  const parsed = parseUrl(url)
+  return parsed ? searchQueryOf(parsed) : null
+}
+
+function searchQueryOf(parsed) {
+  const engine = SEARCH_ENGINES.find((e) => parsed.hostname.includes(e.hostIncludes))
+  if (!engine) return null
+  const query = parsed.searchParams.get(engine.param)
+  return query?.trim() ? query.trim() : null
 }
 
 /**
- * Top N most visited domains in an array of history entries
+ * Domain and search query of a URL from a single parse: what buildEvents()
+ * stores on every history event. Parsing is the expensive part, so the two
+ * are not extracted separately there.
+ * @returns {{ domain: string|null, searchQuery: string|null }}
+ */
+export function analyzeUrl(url) {
+  const parsed = parseUrl(url)
+  if (!parsed) return { domain: null, searchQuery: null }
+  return { domain: domainOf(parsed), searchQuery: searchQueryOf(parsed) }
+}
+
+/**
+ * Domain of a history entry or event. Events from buildEvents() carry the
+ * domain already parsed (`domain`), so the URL is not parsed a second time;
+ * raw history entries fall back to parsing.
+ */
+export function entryDomain(entry) {
+  return entry.domain !== undefined ? entry.domain : extractDomain(entry.url)
+}
+
+/** Search query of an entry or event, see entryDomain(). */
+export function entrySearchQuery(entry) {
+  return entry.searchQuery !== undefined ? entry.searchQuery : extractSearchQuery(entry.url)
+}
+
+/**
+ * Top N most visited domains in an array of history entries or events
  * (each entry = one visit). Returns [{ domain, count }] sorted desc.
  */
 export function topDomains(historyEntries, n = 5) {
   const counts = new Map()
   for (const entry of historyEntries) {
-    const domain = extractDomain(entry.url)
+    const domain = entryDomain(entry)
     if (!domain) continue
     counts.set(domain, (counts.get(domain) ?? 0) + 1)
   }
@@ -59,13 +95,13 @@ export function topDomains(historyEntries, n = 5) {
 }
 
 /**
- * Top N most frequent search queries extracted from the history URLs.
- * Returns [{ query, count }] sorted desc.
+ * Top N most frequent search queries extracted from the history URLs (entries
+ * or events). Returns [{ query, count }] sorted desc.
  */
 export function topSearchQueries(historyEntries, n = 5) {
   const counts = new Map()
   for (const entry of historyEntries) {
-    const query = extractSearchQuery(entry.url)
+    const query = entrySearchQuery(entry)
     if (!query) continue
     const key = query.toLowerCase()
     const existing = counts.get(key)
