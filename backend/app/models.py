@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -74,6 +74,29 @@ class AuditEntry(Base):
     details: Mapped[str] = mapped_column(String, nullable=False, default="")
     incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     incident_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class Sample(Base):
+    """A malware sample: the file sits in the sample store, named by SHA-256.
+
+    One row per distinct file, whatever the number of incidents that reference
+    it (the references live in each incident document under
+    ``data.malware.samples``). ``analysis`` holds the static analysis result
+    from ``parsing.malware.analyze``.
+    """
+
+    __tablename__ = "samples"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sha1: Mapped[str] = mapped_column(String(40), nullable=False)
+    md5: Mapped[str] = mapped_column(String(32), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    type_id: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    type_label: Mapped[str] = mapped_column(String, nullable=False, default="")
+    entropy: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    analysis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
 class Setting(Base):

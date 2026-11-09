@@ -37,6 +37,12 @@ services:
       # put the app behind HTTPS (see the README).
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      # Malware samples: raw files on a named volume (the database holds only
+      # their analysis). Exclude it from any antivirus on the host.
+      SAMPLE_STORE: /app/samples
+      SAMPLE_MAX_MB: ${SAMPLE_MAX_MB:-100}
+    volumes:
+      - sample-store:/app/samples
     depends_on:
       db:
         condition: service_healthy
@@ -62,4 +68,5 @@ services:
 
 volumes:
   db-data:
+  sample-store:
   web-certs:

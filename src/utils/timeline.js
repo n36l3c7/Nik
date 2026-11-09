@@ -23,12 +23,14 @@ import { buildCommandEvents } from './commands.js'
 import { buildArtifactEvents, combineCategoryRecords } from './artifacts.js'
 import { extractDomain, truncate } from './url.js'
 import { profileLabel } from './browserProfiles.js'
+import { sampleEvents } from './malware.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
 export const TIMELINE_SOURCE_META = {
   browser: { label: 'Browser', color: 'cyan' },
   command: { label: 'Command', color: 'violet' },
   endpoint: { label: 'Endpoint', color: 'emerald' },
+  sample: { label: 'Sample', color: 'red' },
 }
 
 function hasTime(event) {
@@ -151,6 +153,11 @@ export function buildTimelineEvents(data = {}, engine) {
         },
       })
     }
+  }
+
+  /* ---- Malware samples (import time) ---- */
+  for (const event of sampleEvents(data.malware?.samples ?? [], engine)) {
+    if (hasTime(event)) out.push(event)
   }
 
   out.sort((a, b) => b.time - a.time)

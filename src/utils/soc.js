@@ -49,6 +49,7 @@ export function createSocEngine({
   keywords = [],
   commandKeywords = [],
   artifactKeywords = [],
+  malwareKeywords = [],
   businessHours = DEFAULT_BUSINESS_HOURS,
 } = {}) {
   const compile = (rules) =>
@@ -68,6 +69,7 @@ export function createSocEngine({
   // URLs (and vice versa).
   const compiledCommands = compile(commandKeywords)
   const compiledArtifacts = compile(artifactKeywords)
+  const compiledMalware = compile(malwareKeywords)
 
   /** Keyword rules matching URL + title (+ file name for downloads). */
   function matchKeywords(entry) {
@@ -75,6 +77,7 @@ export function createSocEngine({
     let rules = compiled
     if (entry.kind === 'command') rules = [...compiled, ...compiledCommands]
     else if (entry.kind === 'endpoint') rules = [...compiled, ...compiledArtifacts]
+    else if (entry.kind === 'malware') rules = [...compiled, ...compiledMalware]
     return rules.filter((rule) => rule.regex.test(haystack))
   }
 

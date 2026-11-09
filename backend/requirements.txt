@@ -20,3 +20,6 @@ prometheus-client>=0.20
 slowapi>=0.1.9
 # Database migrations (production schema evolution).
 alembic>=1.13,<2.0
+# Password-protected (AES) zip for malware sample downloads; the standard
+# library can read but not write encrypted archives.
+pyzipper>=0.3.6,<0.4

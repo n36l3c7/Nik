@@ -1,4 +1,4 @@
-import { CornerDownRight, Download, Link2, Search, Terminal } from 'lucide-react'
+import { Bug, CornerDownRight, Download, Link2, Search, Terminal } from 'lucide-react'
 import { EVENT_TYPE_META } from '../../../utils/events.js'
 
 /*
@@ -12,6 +12,7 @@ const ICONS = {
   redirect: CornerDownRight,
   download: Download,
   command: Terminal,
+  sample: Bug,
 }
 
 // Per-type icon colors, each with its dark counterpart.
@@ -21,6 +22,7 @@ const ICON_COLORS = {
   redirect: 'text-med',
   download: 'text-accent',
   command: 'text-violet',
+  sample: 'text-high',
 }
 
 /**

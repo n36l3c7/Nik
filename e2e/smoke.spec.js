@@ -81,6 +81,35 @@ test('the timeline and the tail -f panel merge the events', async () => {
   await expect(tail.locator('li')).not.toHaveCount(1) // more than the cursor line
 })
 
+test('a sample is stored, analysed and shown with its indicators', async () => {
+  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
+  await expect(page.getByText('No samples yet')).toBeVisible()
+  // A harmless file with the shape of a PE and a few indicators inside.
+  const header = Buffer.alloc(0x80)
+  header.write('MZ', 0, 'ascii')
+  header.writeUInt32LE(0x40, 0x3c)
+  header.write('PE\0\0', 0x40, 'ascii')
+  header.writeUInt16LE(0x014c, 0x44)
+  const payload = Buffer.from(
+    '\0\0kernel32.dll\0CreateRemoteThread\0http://185.220.101.47/gate.php\0HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\WinUpd\0',
+    'latin1',
+  )
+  await page
+    .getByRole('button', { name: 'Upload malware samples' })
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'invoice_0423.pdf.exe',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.concat([header, payload]),
+    })
+  await expect(page.getByRole('list', { name: 'Samples' })).toContainText('invoice_0423.pdf.exe')
+  await expect(page.getByText('PE32 executable, Intel 80386').first()).toBeVisible()
+  await expect(page.locator('dd', { hasText: /^[0-9a-f]{64}/ }).first()).toBeVisible()
+  await page.getByRole('tab', { name: /^IOC/ }).click()
+  await expect(page.locator('tbody tr', { hasText: 'gate.php' })).toBeVisible()
+  await expect(page.getByText('process injection').first()).toBeVisible()
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

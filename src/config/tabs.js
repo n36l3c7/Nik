@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { LayoutDashboard, Globe, HardDrive, ListTree, Network, TerminalSquare } from 'lucide-react'
+import { Bug, LayoutDashboard, Globe, HardDrive, ListTree, Network, TerminalSquare } from 'lucide-react'
 import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
 import { buildDefaultShellsMap, SHELLS } from './shells.js'
 import { buildDefaultArtifactsMap } from './artifacts.js'
@@ -26,6 +26,7 @@ const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'
 const BrowserAnalysisTab = lazy(() => import('../components/tabs/browser/BrowserAnalysisTab.jsx'))
 const CommandHistoryTab = lazy(() => import('../components/tabs/commands/CommandHistoryTab.jsx'))
 const EndpointArtifactsTab = lazy(() => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'))
+const MalwareAnalysisTab = lazy(() => import('../components/tabs/malware/MalwareAnalysisTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
 
@@ -77,6 +78,20 @@ export const ANALYSIS_TABS = [
     // metadata. See config/artifacts.js.
     defaultData: {
       categories: buildDefaultArtifactsMap(),
+    },
+  },
+  {
+    id: 'malware',
+    label: 'Malware Analysis',
+    icon: Bug,
+    component: MalwareAnalysisTab,
+    dataKey: 'malware',
+    // Samples live on the server (sample store + `samples` table); the
+    // incident keeps light references: [{ sha256, fileName, size, type,
+    // entropy, importedAt, importedBy, … }]. The analysis is fetched per
+    // sample from GET /api/samples/{sha256}.
+    defaultData: {
+      samples: [],
     },
   },
   {

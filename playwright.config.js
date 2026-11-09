@@ -14,6 +14,7 @@ import { defineConfig, devices } from '@playwright/test'
 const API_PORT = 8765
 const WEB_PORT = 4173
 const E2E_DB = '.e2e.db'
+const E2E_SAMPLES = '.e2e-samples'
 
 export default defineConfig({
   testDir: 'e2e',
@@ -32,7 +33,7 @@ export default defineConfig({
   webServer: [
     {
       timeout: 120_000,
-      command: `node -e "require('fs').rmSync('${E2E_DB}', { force: true })" && uvicorn app.main:app --port ${API_PORT}`,
+      command: `node -e "const fs = require('fs'); fs.rmSync('${E2E_DB}', { force: true }); fs.rmSync('${E2E_SAMPLES}', { recursive: true, force: true })" && uvicorn app.main:app --port ${API_PORT}`,
       cwd: 'backend',
       url: `http://127.0.0.1:${API_PORT}/api/health`,
       reuseExistingServer: false,
@@ -40,6 +41,7 @@ export default defineConfig({
         DATABASE_URL: `sqlite:///./${E2E_DB}`,
         COOKIE_SECURE: 'false',
         RATE_LIMIT_DEFAULT: '100000/minute',
+        SAMPLE_STORE: E2E_SAMPLES,
       },
     },
     {
