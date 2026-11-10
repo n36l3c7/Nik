@@ -1,33 +1,33 @@
 # Nik backend dependencies.
 # Pinned to compatible major versions; works on Python 3.11-3.13.
 
-fastapi>=0.110,<1.0
-uvicorn[standard]>=0.27,<1.0
-gunicorn>=21.2
-SQLAlchemy>=2.0,<2.1
+fastapi>=0.162.0,<1.0
+uvicorn[standard]>=0.54.0,<1.0
+gunicorn>=26.2.0
+SQLAlchemy>=2.1.8,<2.2
 # PostgreSQL driver (production). Not used by the SQLite dev default, but kept
 # here so a single install works for both environments.
-psycopg[binary]>=3.1
+psycopg[binary]>=3.3.8
 # Password hashing (used directly; hashes are standard $2b$ bcrypt).
-bcrypt>=4.0,<6.0
-pydantic>=2.5,<3.0
-python-multipart>=0.0.9
-python-dotenv>=1.0
+bcrypt>=5.0.0,<6.0
+pydantic>=2.14.3,<3.0
+python-multipart>=0.0.33
+python-dotenv>=1.2.4
 # Observability + abuse protection.
-prometheus-client>=0.20
-slowapi>=0.1.9
+prometheus-client>=0.26.0
+slowapi>=0.1.10
 # Database migrations (production schema evolution).
-alembic>=1.13,<2.0
+alembic>=1.20.1,<2.0
 # Password-protected (AES) zip for malware sample downloads; the standard
 # library can read but not write encrypted archives.
 pyzipper>=0.4.0,<0.5
 # Malware sample structure (PE headers, imports, imphash) and YARA scanning
 # (the wheel bundles libyara, no system package needed).
 pefile>=2024.8.26
-yara-python>=4.5,<5.0
+yara-python>=4.5.4,<5.0
 # Windows event logs (.evtx): a Rust parser with Python bindings (abi3 wheels,
 # no system package needed); it also recovers records left after a log clear.
 evtx>=0.15,<0.16
 # Incident report PDF (HTML + CSS → PDF). Needs the Pango libraries, which
 # the Dockerfile installs (libpango-1.0-0, libpangoft2-1.0-0, a font).
-weasyprint>=66,<71
+weasyprint>=70.0,<71
