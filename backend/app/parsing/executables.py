@@ -10,6 +10,7 @@ The result is JSON-serialisable: ``{"format", ..., "sections": [...],
 
 from __future__ import annotations
 
+import logging
 import struct
 from datetime import datetime, timezone
 from typing import Any
@@ -17,6 +18,8 @@ from typing import Any
 import pefile
 
 from .malware import entropy
+
+logger = logging.getLogger("nik.executables")
 
 SECTION_LIMIT = 96
 IMPORT_LIMIT = 4000
@@ -440,5 +443,10 @@ def parse_structure(type_id: str, data: bytes) -> dict[str, Any] | None:
         return None
     try:
         return parser(data)
-    except Exception as exc:  # malformed headers are expected in malware
-        return {"format": parser.__name__.replace("parse_", ""), "warnings": [f"Could not parse the structure: {exc}"]}
+    except Exception:  # malformed headers are expected in malware
+        # The parser's own message stays in the server log: it can carry internals.
+        logger.info("Could not parse the %s structure", type_id, exc_info=True)
+        return {
+            "format": parser.__name__.replace("parse_", ""),
+            "warnings": ["Could not parse the structure: the headers are malformed or truncated."],
+        }
