@@ -151,6 +151,37 @@ export function upload(path, file, { onProgress, signal, fields = {} } = {}) {
   })
 }
 
+/**
+ * POST a JSON body and return the response as a Blob (a generated file: the
+ * incident report as HTML or PDF). Errors carry the server's `detail`.
+ */
+export async function postForBlob(path, body, { signal } = {}) {
+  let response
+  try {
+    response = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal,
+    })
+  } catch (networkError) {
+    if (networkError?.name === 'AbortError') throw networkError
+    throw new Error(networkError?.message || 'Cannot reach the server.')
+  }
+  if (!response.ok) {
+    let detail = `Request failed (${response.status})`
+    try {
+      const payload = await response.json()
+      if (typeof payload?.detail === 'string') detail = payload.detail
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(detail)
+  }
+  return response.blob()
+}
+
 /** Absolute URL of an API path, for links the browser follows itself (downloads). */
 export function apiUrl(path) {
   return `${BASE}${path}`

@@ -23,6 +23,8 @@ import { useAuth } from './AuthContext.jsx'
  *                   of exports (domains, IPs/CIDRs, exact values). null until
  *                   the server answers, so a PUT never overwrites the stored
  *                   list with an empty one (the server keeps it on null).
+ *  - report:        { orgName, logo } printed on incident reports (logo: a
+ *                   data: URI); null until loaded, for the same reason.
  *
  * The factory defaults live in config/detectionRules.js. On mount the provider
  * starts from those defaults; once authenticated it loads the shared settings
@@ -55,6 +57,7 @@ function factorySettings() {
     businessHours: { ...DEFAULT_BUSINESS_HOURS },
     iocAllowlist: null,
     iocAllowlistDefault: [],
+    report: null,
   }
 }
 
@@ -68,6 +71,7 @@ function normalizeSettings(doc) {
     },
     iocAllowlist: Array.isArray(doc?.iocAllowlist) ? doc.iocAllowlist : null,
     iocAllowlistDefault: Array.isArray(doc?.iocAllowlistDefault) ? doc.iocAllowlistDefault : [],
+    report: doc?.report && typeof doc.report === 'object' ? { orgName: '', logo: '', ...doc.report } : null,
   }
 }
 
@@ -170,20 +174,36 @@ export function SettingsProvider({ children }) {
     setSettings((prev) => ({ ...prev, iocAllowlist: entries.map((e) => e.trim()).filter(Boolean) }))
   }, [])
 
+  /** Updates the report header (organisation name and/or logo). */
+  const setReportBranding = useCallback((patch) => {
+    setSettings((prev) => ({ ...prev, report: { orgName: '', logo: '', ...(prev.report ?? {}), ...patch } }))
+  }, [])
+
   const value = useMemo(
     () => ({
       keywords: settings.keywords,
       businessHours: settings.businessHours,
       iocAllowlist: settings.iocAllowlist,
       iocAllowlistDefault: settings.iocAllowlistDefault,
+      reportBranding: settings.report,
       addKeyword,
       updateKeyword,
       removeKeyword,
       resetKeywords,
       setBusinessHours,
       setIocAllowlist,
+      setReportBranding,
     }),
-    [settings, addKeyword, updateKeyword, removeKeyword, resetKeywords, setBusinessHours, setIocAllowlist],
+    [
+      settings,
+      addKeyword,
+      updateKeyword,
+      removeKeyword,
+      resetKeywords,
+      setBusinessHours,
+      setIocAllowlist,
+      setReportBranding,
+    ],
   )
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>

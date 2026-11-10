@@ -77,6 +77,12 @@ every action attributed to a named analyst and recorded in a global audit log.
   opens a `nik>` prompt over incidents, indicators from every incident and
   samples, plus the open incident's events and notes; `>` lists actions (go to
   a tab, new incident, export, settings…).
+- **Incident report** — built by the server as a printable HTML page or a
+  **PDF** (also through the API): executive summary and key facts, flagged
+  events, MITRE ATT&CK techniques from capa, YARA and the SOC rules,
+  indicators, samples, event-log coverage, notes and an evidence appendix
+  with the SHA-256 of every imported file; TLP classification, English or
+  Italian, the organisation's name and logo from Settings.
 - **Super-timeline** — every timestamped event across all tabs merged into one
   chronological, filterable view, plus a collapsible `tail -f` side panel with
   the latest events on every tab.
@@ -179,7 +185,11 @@ image: `deploy/images.test.js` fails on a short name.
 ### 1.2 Local development setup
 
 **Prerequisites:** Node.js 20+ (with npm) and Python 3.11–3.13. No database
-server is needed: the backend defaults to a local SQLite file.
+server is needed: the backend defaults to a local SQLite file. The incident
+report's **PDF** needs the Pango libraries WeasyPrint uses (Debian/Ubuntu:
+`apt install libpango-1.0-0 libpangoft2-1.0-0`; Fedora/RHEL:
+`dnf install pango`; macOS: `brew install pango`); everything else, the HTML
+report included, works without them. The container image installs them.
 
 **Backend** (terminal 1):
 
@@ -791,8 +801,9 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/iocs/lookup?type=&value=` | Every incident an indicator appears in ("where seen"). `type`: ip, domain, url, email, md5, sha1, sha256. |
 | `GET /api/iocs/shared` | Indicators seen in two or more incidents, most widespread first (allowlisted values left out). |
 | `GET /api/incidents/{id}/iocs/export?format=csv\|stix\|misp` | Download the indicators as CSV, a STIX 2.1 bundle (identity, one indicator each, a report) or a MISP event (unpublished, organisation only). `types=ip,domain,…` narrows them; allowlisted values are left out unless `allowlisted=true`. Audited as `ioc.export`. |
+| `POST /api/incidents/{id}/report` | The incident report, as a PDF (default) or HTML. Body (all optional): `format` (`pdf`/`html`), `lang` (`en`/`it`), `tlp` (`clear`, `green`, `amber`, `amber+strict`, `red`), `sections` (summary, timeline, attack, iocs, samples, eventlogs, notes, evidence), `executiveSummary`, `detections` (`[{ id, label, severity, count, attack: [technique ids] }]`, the SOC rule hits the app computes). Missing options come from the incident's saved `report` settings, then the defaults (English, TLP:AMBER, every section). Audited as `report.generate`. |
 | `GET /api/search?q=` | Global search (at least 2 characters): incidents by name, host or user; indicators from every incident (3 characters or more) with the number of incidents; samples by hash prefix (6 hex characters or more) or file type. `limit` per group (default 8). |
-| `GET /api/settings` | Read the shared detection rules, business hours and IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`). `PUT` replaces them; a body without `iocAllowlist` keeps the stored list. |
+| `GET /api/settings` | Read the shared detection rules, business hours, IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`) and report header (`report: { orgName, logo }`, the logo a PNG/JPEG/SVG `data:` URI up to 256 KB). `PUT` replaces them; a body without `iocAllowlist` or `report` keeps the stored value. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
 | `GET/POST/DELETE /api/keys` | API-key management (**admin**). |
@@ -974,6 +985,7 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── parsing/eventlog.py     # Windows .evtx → curated events + coverage (evtx package)
 │       ├── iocs.py                 # IOC extraction from incidents, index, allowlist, STIX/MISP
 │       ├── routers/search.py       # GET /api/search (incidents, indicators, samples)
+│       ├── report.py               # Incident report: HTML (EN/IT, TLP, ATT&CK) and PDF (WeasyPrint)
 │       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
 │       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
 │       ├── capa_rules.py           # Admin capa rules (worker validation, store, dependencies)
@@ -1043,6 +1055,8 @@ file itself to the server, because the sample *is* the evidence under study
     │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
     │   ├── iocs.js                 # IOC types, source labels, guessIocType
     │   ├── search.js               # searchIncident (open incident), matchActions
+    │   ├── report.js               # report options, reportDetections (SOC hits + ATT&CK)
+    │   ├── hash.js                 # sha256Hex: digest of an imported file, in the browser
     │   ├── eventLogs.js            # parseEventLogJson, buildEventLogEvents (event-log
     │   │                           #   ruleset), logonSessions, coverage
     │   ├── timeline.js             # buildTimelineEvents (merge all timestamped events)
@@ -1056,9 +1070,10 @@ file itself to the server, because the sample *is* the evidence under study
         ├── auth/                   # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
-        │                           #   hours, IOC allowlist, accounts, API keys, YARA rules,
+        │                           #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
         │                           #   FLIRT signatures, capa rules, audit log)
         ├── search/                 # CommandPalette (Ctrl/Cmd+K: nik> search and > actions)
+        ├── report/                 # ReportDialog (options, preview, PDF/HTML download)
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
         │                           #   TailPanel (tail -f of the timeline)
         └── tabs/
@@ -1194,6 +1209,35 @@ are hidden by default and never exported. The index keeps them, so editing the
 list applies at once. Exports: CSV, a **STIX 2.1** bundle and a **MISP** event,
 for a TIP or a firewall blocklist. Incidents saved before 2.12.0 are indexed on
 the api's first start.
+
+**Incident report.** The report button in the header (or `> report` in the
+search palette) opens the report dialog: language (English or Italian), TLP
+classification, the sections to include and an executive summary — all saved
+with the incident (`report` key of the document) — a preview, and the
+download as PDF or HTML. The server builds the report (`backend/app/report.py`)
+as one self-contained HTML page styled for print, and renders the PDF with
+WeasyPrint: A4 pages with the organisation and the TLP label at the top and
+page numbers at the bottom. Its sections:
+
+- **executive summary** and key facts (flagged events, SOC detections,
+  indicators, samples, techniques);
+- **flagged events** in time order, with the analysts' comments;
+- **MITRE ATT&CK** techniques from capa's capabilities, the YARA rules'
+  `mitre_attack` metadata (the built-in rules carry it) and the SOC rules that
+  matched (each built-in rule names its techniques in
+  `src/config/detectionRules.js`), each with where it was seen;
+- **indicators of compromise** outside the allowlist, those seen in other
+  incidents first (up to 500; the rest are in the CSV/STIX/MISP export);
+- **malware samples** with their hashes, YARA matches and capa capabilities;
+- **Windows event logs**: each channel's coverage and when it was cleared;
+- **analyst notes**;
+- an **evidence appendix**: every imported file with its format, rows, import
+  time and SHA-256. Browser, shell-history, endpoint and event-log JSON files
+  are hashed in the browser when they are imported (the file still never
+  leaves the machine); `.evtx` files and samples are hashed by the server.
+
+The organisation name and logo come from Settings → **Report header**. API
+clients get the same report from `POST /api/incidents/{id}/report`.
 
 **Global search.** <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> anywhere, or
 <kbd>/</kbd> outside a text field, or the *search…* button in the header,

@@ -6,6 +6,7 @@ import ArtifactSection from './ArtifactSection.jsx'
 import ScriptBlock from './ScriptBlock.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { parseArtifactImport } from '../../../services/artifactParsers.js'
+import { sha256Hex } from '../../../utils/hash.js'
 import { getDemoArtifactData } from '../../../services/demoData.js'
 import {
   ARTIFACT_CATEGORIES,
@@ -62,14 +63,17 @@ export default function EndpointArtifactsTab({ incident }) {
     setErrors((p) => ({ ...p, [source.key]: null }))
     setLoading((p) => ({ ...p, [source.key]: true }))
     try {
-      const { records, format } = await parseArtifactImport(file, category, source)
+      const [{ records, format }, sha256] = await Promise.all([
+        parseArtifactImport(file, category, source),
+        sha256Hex(file),
+      ])
       updateArtifactSource(
         incident.id,
         category.id,
         source.key,
         {
           records,
-          meta: { fileName: file.name, format, rows: records.length, importedAt: new Date().toISOString() },
+          meta: { fileName: file.name, format, rows: records.length, importedAt: new Date().toISOString(), sha256 },
         },
         { action: 'endpoint.upload', details: `Imported ${category.label} / ${source.name} (${records.length})` },
       )

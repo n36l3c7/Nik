@@ -97,4 +97,6 @@ def default_settings_doc() -> dict[str, Any]:
         "keywords": [dict(k) for k in DEFAULT_SUSPICIOUS_KEYWORDS],
         "businessHours": dict(DEFAULT_BUSINESS_HOURS),
         "iocAllowlist": list(DEFAULT_ALLOWLIST),
+        # Incident report header: organisation name and logo (a data: URI).
+        "report": {"orgName": "", "logo": ""},
     }

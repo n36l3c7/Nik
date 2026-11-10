@@ -25,6 +25,7 @@ import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { EVENTLOG_COLLECTION_SCRIPT, EVENT_CHANNELS, LOGON_TYPES, getChannel } from '../../../config/eventLogs.js'
 import { getDemoEventLogData } from '../../../services/demoData.js'
+import { sha256Hex } from '../../../utils/hash.js'
 import { buildEventLogEvents, coverage, logonSessions, parseEventLogJson } from '../../../utils/eventLogs.js'
 import { guessIocType } from '../../../utils/iocs.js'
 import { computeSocStats } from '../../../utils/soc.js'
@@ -143,7 +144,9 @@ export default function EventLogsTab({ incident }) {
     setJsonError(null)
     setJsonLoading(true)
     try {
-      const parsed = parseEventLogJson(await file.text(), file.name)
+      const [text, sha256] = await Promise.all([file.text(), sha256Hex(file)])
+      const parsed = parseEventLogJson(text, file.name)
+      for (const slot of Object.values(parsed)) slot.meta.sha256 = sha256
       const kept = Object.values(parsed).reduce((n, slot) => n + slot.events.length, 0)
       setEventLogChannels(incident.id, parsed, {
         action: 'eventlog.upload',

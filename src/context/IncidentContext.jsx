@@ -43,6 +43,7 @@ import { useAudit } from './AuditContext.jsx'
  *                     eventType, title, url, time, flaggedAt, flaggedBy,
  *                     comments: [...] } },
  *   notes: [ { id, text, createdAt, updatedAt, author } ],
+ *   report: { lang, tlp, sections, executiveSummary } | null,  // report options
  * }
  *
  * Loading is lazy, so a platform with many large incidents stays responsive:
@@ -209,6 +210,8 @@ function normalizeIncident(raw) {
     data,
     flags: raw.flags && typeof raw.flags === 'object' ? raw.flags : {},
     notes: Array.isArray(raw.notes) ? raw.notes : [],
+    // Saved report options (language, TLP, sections, executive summary).
+    report: raw.report && typeof raw.report === 'object' ? raw.report : null,
   }
 }
 
@@ -889,6 +892,16 @@ export function IncidentProvider({ children }) {
     [audit, commit],
   )
 
+  /** Save the incident's report options (a top-level `report` key). */
+  const updateReportSettings = useCallback(
+    (incidentId, report) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), report: { ...(i.report ?? {}), ...report } }))
+    },
+    [commit],
+  )
+
   /* ---- Windows event logs (data.eventlogs.channels) ---- */
 
   /**
@@ -1137,6 +1150,7 @@ export function IncidentProvider({ children }) {
     retryActiveIncident,
     setEventLogChannels,
     clearEventLogs,
+    updateReportSettings,
     loading,
     storageError,
     createIncident,

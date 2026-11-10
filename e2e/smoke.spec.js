@@ -104,6 +104,17 @@ test('the search palette finds indicators and runs actions', async () => {
   await expect(page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')).toContainText('Timeline')
 })
 
+test('the incident report is built by the server and previewed', async () => {
+  await page.getByRole('button', { name: 'Incident report' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Incident report' })
+  await dialog.getByRole('textbox').fill('Phishing e-mail, then a remote shell.')
+  await dialog.getByRole('button', { name: 'Preview' }).click()
+  const frame = page.frameLocator('iframe[title="Report preview"]')
+  await expect(frame.getByRole('heading', { name: 'Incident report' })).toBeVisible({ timeout: 20_000 })
+  await expect(frame.getByText('Phishing e-mail, then a remote shell.')).toBeVisible()
+  await page.keyboard.press('Escape')
+})
+
 test('a sample is stored, analysed and shown with its indicators', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
   await expect(page.getByText('No samples yet')).toBeVisible()

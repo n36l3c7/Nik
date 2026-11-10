@@ -1,4 +1,4 @@
-import { LogOut, Search, Settings, UserCircle } from 'lucide-react'
+import { FileText, LogOut, Search, Settings, UserCircle } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
@@ -8,9 +8,9 @@ import { formatRelative } from '../../utils/time.js'
  * ============================================================================
  * HEADER — active incident, current user chip, sign out, settings
  * ============================================================================
- * @param {{ onOpenSettings: () => void, onOpenSearch: () => void }} props
+ * @param {{ onOpenSettings: () => void, onOpenSearch: () => void, onOpenReport: (() => void) | null }} props
  */
-export default function Header({ onOpenSettings, onOpenSearch }) {
+export default function Header({ onOpenSettings, onOpenSearch, onOpenReport }) {
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
@@ -64,6 +64,18 @@ export default function Header({ onOpenSettings, onOpenSearch }) {
           <span>search…</span>
           <kbd className="border border-line px-1 text-[10px] text-fg-subtle">ctrl k</kbd>
         </button>
+        {onOpenReport && (
+          <button
+            type="button"
+            onClick={onOpenReport}
+            aria-label="Incident report"
+            title="Incident report (preview, PDF, HTML)"
+            className={iconButton}
+          >
+            <FileText className="h-4 w-4" />
+          </button>
+        )}
+
         {currentUser && (
           <div className="hidden items-center gap-2 border border-line px-2.5 py-1.5 sm:flex">
             <UserCircle className="h-5 w-5 shrink-0 text-fg-muted" aria-hidden="true" />
