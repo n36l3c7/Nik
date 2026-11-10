@@ -32,6 +32,17 @@
       </p>
 
       <section class="release">
+        <h3>2.12.3 <span class="date">2026-11-10</span></h3>
+        <ul>
+          <li>
+            <span class="tag fixed">fixed</span> <code>deploy/upgrade-postgres.sh</code> could stop with "the new db
+            container is not PostgreSQL 18" while PostgreSQL 18 created its database; a run that stopped there is
+            resumed by running the script again.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.12.2 <span class="date">2026-11-10</span></h3>
         <ul>
           <li>

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.3] - 2026-11-10
+
+### Fixed
+
+- `deploy/upgrade-postgres.sh` could stop with "the new db container is not
+  PostgreSQL 18": on a new volume the image creates the database with a
+  temporary server that listens on the Unix socket only, and the script took
+  it for the final one. Readiness is now checked over TCP. A run that stopped
+  there (PostgreSQL 18 running with an empty database) is resumed: run the
+  script again.
+
 ## [2.12.2] - 2026-11-10
 
 ### Changed
@@ -586,7 +597,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.12.2...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.12.3...HEAD
+[2.12.3]: https://github.com/n36l3c7/Nik/compare/v2.12.2...v2.12.3
 [2.12.2]: https://github.com/n36l3c7/Nik/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/n36l3c7/Nik/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/n36l3c7/Nik/compare/v2.11.2...v2.12.0
