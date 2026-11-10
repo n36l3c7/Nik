@@ -22,6 +22,7 @@ from .. import analyzer, capa, capa_rules, flirt, yara_rules
 from ..config import settings
 from ..db import get_db
 from ..events import emit
+from ..iocs import reindex_incident
 from ..models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
 from ..parsing.executables import parse_structure
 from ..parsing.malware import STRINGS_STORED, analyze, iter_strings
@@ -197,6 +198,8 @@ def _save_doc(db: OrmSession, row: Incident, doc: dict) -> None:
     row.doc = doc
     row.updated_at = doc["updatedAt"]
     flag_modified(row, "doc")
+    db.flush()  # a new sample row must exist before the index reads its indicators
+    reindex_incident(db, row)
 
 
 # ---------------------------------------------------------------------------

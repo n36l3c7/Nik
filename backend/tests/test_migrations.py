@@ -57,3 +57,24 @@ def test_migration_0010_moves_cfgs_and_pseudo_c_into_one_row_per_function(tmp_pa
         tables = set(sa.inspect(conn).get_table_names())
     assert json.loads(cfgs) == {"4096": CFG_A} and json.loads(code) == {"4096": CODE_A, "8192": CODE_B}
     assert "sample_functions" not in tables and "capa_rules" not in tables
+
+
+def test_migration_0011_creates_the_ioc_index(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
+
+    import app.db
+
+    monkeypatch.setattr(app.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0010_function_rows_capa_rules")
+    command.upgrade(cfg, "0011_ioc_index")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "ioc_index" in inspector.get_table_names()
+        assert [ix["name"] for ix in inspector.get_indexes("ioc_index")] == ["ix_ioc_index_type_value"]
+    command.downgrade(cfg, "0010_function_rows_capa_rules")
+    with engine.connect() as conn:
+        assert "ioc_index" not in sa.inspect(conn).get_table_names()

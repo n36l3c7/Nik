@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session as OrmSession
 # makes the dependency explicit and order-independent.)
 from . import models  # noqa: F401
 from .config import settings as app_settings
-from .db import Base, engine, get_db
+from .db import Base, SessionLocal, engine, get_db
+from .iocs import backfill as backfill_iocs
 from .observability import metrics_response, observability_middleware, setup_logging
 from .ratelimit import limiter
 from .routers import (
@@ -35,6 +36,7 @@ from .routers import (
     capa_rules,
     flirt,
     incidents,
+    iocs,
     jobs,
     keys,
     samples,
@@ -112,7 +114,7 @@ app.add_middleware(SlowAPIMiddleware)
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Create all tables when not using migrations, and repair the sample store.
+    """Create all tables when not using migrations, repair the sample store, index IOCs.
 
     In production run Alembic (``alembic upgrade head``, see backend/alembic).
     ``RUN_CREATE_ALL=false`` disables this so migrations own the schema. The
@@ -122,6 +124,8 @@ def on_startup() -> None:
         Base.metadata.create_all(bind=engine)
     # Samples stored by releases before 2.7.0 are 0o440: the workers could not read them.
     repair_store_permissions()
+    # Incidents saved before 2.12.0 have no indicator index yet.
+    backfill_iocs(SessionLocal)
 
 
 @app.get("/api/health", tags=["health"])
@@ -148,6 +152,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
+app.include_router(iocs.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")

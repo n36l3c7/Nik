@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .iocs import DEFAULT_ALLOWLIST
+
 # Mirror of DEFAULT_SUSPICIOUS_KEYWORDS in src/config/detectionRules.js.
 DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
     {
@@ -94,4 +96,5 @@ def default_settings_doc() -> dict[str, Any]:
     return {
         "keywords": [dict(k) for k in DEFAULT_SUSPICIOUS_KEYWORDS],
         "businessHours": dict(DEFAULT_BUSINESS_HOURS),
+        "iocAllowlist": list(DEFAULT_ALLOWLIST),
     }

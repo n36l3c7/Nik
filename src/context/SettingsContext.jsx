@@ -19,6 +19,10 @@ import { useAuth } from './AuthContext.jsx'
  *                   (add / edit / remove; severity 'high' or 'medium')
  *  - businessHours: business hours; events OUTSIDE this window are marked as a
  *                   time anomaly.
+ *  - iocAllowlist:  indicators hidden by default in the IOCs tab and left out
+ *                   of exports (domains, IPs/CIDRs, exact values). null until
+ *                   the server answers, so a PUT never overwrites the stored
+ *                   list with an empty one (the server keeps it on null).
  *
  * The factory defaults live in config/detectionRules.js. On mount the provider
  * starts from those defaults; once authenticated it loads the shared settings
@@ -49,6 +53,8 @@ function factorySettings() {
   return {
     keywords: structuredClone(DEFAULT_SUSPICIOUS_KEYWORDS),
     businessHours: { ...DEFAULT_BUSINESS_HOURS },
+    iocAllowlist: null,
+    iocAllowlistDefault: [],
   }
 }
 
@@ -60,6 +66,8 @@ function normalizeSettings(doc) {
       ...DEFAULT_BUSINESS_HOURS,
       ...(doc?.businessHours ?? {}),
     },
+    iocAllowlist: Array.isArray(doc?.iocAllowlist) ? doc.iocAllowlist : null,
+    iocAllowlistDefault: Array.isArray(doc?.iocAllowlistDefault) ? doc.iocAllowlistDefault : [],
   }
 }
 
@@ -157,17 +165,25 @@ export function SettingsProvider({ children }) {
     }))
   }, [])
 
+  /** Replaces the IOC allowlist (one entry per item; blanks dropped). */
+  const setIocAllowlist = useCallback((entries) => {
+    setSettings((prev) => ({ ...prev, iocAllowlist: entries.map((e) => e.trim()).filter(Boolean) }))
+  }, [])
+
   const value = useMemo(
     () => ({
       keywords: settings.keywords,
       businessHours: settings.businessHours,
+      iocAllowlist: settings.iocAllowlist,
+      iocAllowlistDefault: settings.iocAllowlistDefault,
       addKeyword,
       updateKeyword,
       removeKeyword,
       resetKeywords,
       setBusinessHours,
+      setIocAllowlist,
     }),
-    [settings, addKeyword, updateKeyword, removeKeyword, resetKeywords, setBusinessHours],
+    [settings, addKeyword, updateKeyword, removeKeyword, resetKeywords, setBusinessHours, setIocAllowlist],
   )
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>

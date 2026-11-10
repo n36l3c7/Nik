@@ -98,6 +98,8 @@ class SettingsIn(BaseModel):
 
     keywords: list[dict[str, Any]] = Field(default_factory=list)
     businessHours: dict[str, Any] = Field(default_factory=dict)
+    # Omitted (older clients): the stored allowlist is kept.
+    iocAllowlist: Optional[list[str]] = Field(default=None, max_length=5000)
 
 
 class SettingsOut(BaseModel):
@@ -105,6 +107,9 @@ class SettingsOut(BaseModel):
 
     keywords: list[dict[str, Any]]
     businessHours: dict[str, Any]
+    iocAllowlist: list[str]
+    # The factory allowlist, for the Settings "restore defaults" button.
+    iocAllowlistDefault: list[str]
 
 
 # ---------------------------------------------------------------------------

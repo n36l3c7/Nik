@@ -1,8 +1,20 @@
 import { useEffect } from 'react'
-import { Clock, FileSearch, Fingerprint, KeyRound, Radar, ScrollText, ShieldAlert, Users, X } from 'lucide-react'
+import {
+  Clock,
+  FileSearch,
+  Fingerprint,
+  KeyRound,
+  Radar,
+  ScrollText,
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+  X,
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import DetectionRulesSection from './sections/DetectionRulesSection.jsx'
 import BusinessHoursSection from './sections/BusinessHoursSection.jsx'
+import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
 import AccountsSection from './sections/AccountsSection.jsx'
 import ApiKeysSection from './sections/ApiKeysSection.jsx'
 import AuditLogSection from './sections/AuditLogSection.jsx'
@@ -16,7 +28,7 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
  * ============================================================================
  *
  * A large, sectioned dialog replacing the old cramped settings/users/audit
- * modals. Sections (left nav): Detection rules, Business hours, Accounts
+ * modals. Sections (left nav): Detection rules, Business hours, IOC allowlist, Accounts
  * (admin only), Audit log. The active section is owned by App so the header
  * and sidebar buttons can deep-link into a specific section.
  */
@@ -24,6 +36,7 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
 const SECTIONS = [
   { id: 'detection', label: 'Detection rules', icon: ShieldAlert, Component: DetectionRulesSection },
   { id: 'hours', label: 'Business hours', icon: Clock, Component: BusinessHoursSection },
+  { id: 'allowlist', label: 'IOC allowlist', icon: ShieldCheck, Component: IocAllowlistSection },
   { id: 'accounts', label: 'Accounts', icon: Users, Component: AccountsSection, adminOnly: true },
   { id: 'apikeys', label: 'API keys', icon: KeyRound, Component: ApiKeysSection, adminOnly: true },
   { id: 'yara', label: 'YARA rules', icon: FileSearch, Component: YaraRulesSection, adminOnly: true },

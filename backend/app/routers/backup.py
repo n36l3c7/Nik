@@ -34,7 +34,8 @@ from sqlalchemy.orm import Session as OrmSession
 from ..browser_profiles import normalize_browser_data
 from ..config import settings as app_settings
 from ..db import get_db
-from ..models import AuditEntry, Incident, Setting, User
+from ..iocs import reindex_all
+from ..models import AuditEntry, Incident, IocEntry, Setting, User
 from ..models import Session as SessionModel
 from ..security import Principal, admin_principal, now_iso
 from .incidents import _sync_columns
@@ -190,6 +191,7 @@ def import_backup(
         #    primary keys would conflict at flush time.
         db.execute(sa_delete(SessionModel))
         db.execute(sa_delete(AuditEntry))
+        db.execute(sa_delete(IocEntry))
         db.execute(sa_delete(Incident))
         db.execute(sa_delete(Setting))
         db.execute(sa_delete(User))
@@ -274,6 +276,10 @@ def import_backup(
                     incident_name=e.get("incidentName"),
                 )
             )
+
+        # The indicator index is derived from the incidents: rebuild it.
+        db.flush()
+        reindex_all(db)
 
         # 7. Shared settings.
         if settings_doc is not None:

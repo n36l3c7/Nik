@@ -1,6 +1,6 @@
 """Shared (global) settings routes.
 
-A single row (id=1) holds ``{ keywords, businessHours }``. When it has never
+A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist }``. When it has never
 been written, the factory defaults from ``defaults.py`` are returned.
 """
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..db import get_db
 from ..defaults import default_settings_doc
+from ..iocs import DEFAULT_ALLOWLIST
 from ..models import Setting, User
 from ..schemas import SettingsIn, SettingsOut
 from ..security import Principal, current_user, principal
@@ -22,19 +23,22 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 SETTINGS_ID = 1
 
 
+def read_settings(db: OrmSession) -> dict:
+    """The shared settings, with any missing key filled from the defaults."""
+    row = db.get(Setting, SETTINGS_ID)
+    doc = (row.doc if row is not None else None) or {}
+    defaults = default_settings_doc()
+    return {key: doc.get(key, value) for key, value in defaults.items()}
+
+
+def _out(doc: dict) -> dict:
+    return {**doc, "iocAllowlistDefault": list(DEFAULT_ALLOWLIST)}
+
+
 @router.get("", response_model=SettingsOut)
 def get_settings(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
     """Return the shared settings, falling back to factory defaults."""
-    row = db.get(Setting, SETTINGS_ID)
-    if row is None:
-        return default_settings_doc()
-    doc = row.doc or {}
-    # Be defensive: fill any missing top-level key from defaults.
-    defaults = default_settings_doc()
-    return {
-        "keywords": doc.get("keywords", defaults["keywords"]),
-        "businessHours": doc.get("businessHours", defaults["businessHours"]),
-    }
+    return _out(read_settings(db))
 
 
 @router.put("", response_model=SettingsOut)
@@ -44,7 +48,16 @@ def put_settings(
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Store the shared settings and return them."""
-    doc = {"keywords": body.keywords, "businessHours": body.businessHours}
+    current = read_settings(db)
+    doc = {
+        "keywords": body.keywords,
+        "businessHours": body.businessHours,
+        "iocAllowlist": (
+            [str(entry).strip() for entry in body.iocAllowlist if str(entry).strip()]
+            if body.iocAllowlist is not None
+            else current["iocAllowlist"]
+        ),
+    }
     row = db.get(Setting, SETTINGS_ID)
     if row is None:
         row = Setting(id=SETTINGS_ID, doc=doc)
@@ -53,4 +66,4 @@ def put_settings(
         row.doc = doc
         flag_modified(row, "doc")
     db.commit()
-    return doc
+    return _out(doc)

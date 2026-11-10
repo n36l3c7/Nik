@@ -1,5 +1,15 @@
 import { lazy } from 'react'
-import { Bug, LayoutDashboard, Globe, HardDrive, ListTree, Network, ScrollText, TerminalSquare } from 'lucide-react'
+import {
+  Bug,
+  Crosshair,
+  LayoutDashboard,
+  Globe,
+  HardDrive,
+  ListTree,
+  Network,
+  ScrollText,
+  TerminalSquare,
+} from 'lucide-react'
 import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
 import { buildDefaultShellsMap, SHELLS } from './shells.js'
 import { buildDefaultArtifactsMap } from './artifacts.js'
@@ -28,6 +38,7 @@ const CommandHistoryTab = lazy(() => import('../components/tabs/commands/Command
 const EndpointArtifactsTab = lazy(() => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'))
 const EventLogsTab = lazy(() => import('../components/tabs/eventlogs/EventLogsTab.jsx'))
 const MalwareAnalysisTab = lazy(() => import('../components/tabs/malware/MalwareAnalysisTab.jsx'))
+const IocsTab = lazy(() => import('../components/tabs/iocs/IocsTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
 
@@ -107,6 +118,16 @@ export const ANALYSIS_TABS = [
     defaultData: {
       samples: [],
     },
+  },
+  {
+    id: 'iocs',
+    label: 'IOCs',
+    icon: Crosshair,
+    component: IocsTab,
+    dataKey: 'iocsView',
+    // The server indexes the indicators of every tab when the incident is
+    // saved (GET /api/incidents/{id}/iocs); this tab stores no data of its own.
+    defaultData: {},
   },
   {
     id: 'timeline',
