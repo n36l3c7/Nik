@@ -40,6 +40,7 @@ from .routers import (
     jobs,
     keys,
     samples,
+    search,
     settings,
     users,
     webhooks,
@@ -153,6 +154,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
 app.include_router(iocs.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")

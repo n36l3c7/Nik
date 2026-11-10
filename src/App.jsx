@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Download, LogOut, PanelRight, Plus, RefreshCw, Settings, ShieldCheck } from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
 import { ANALYSIS_TABS, getTabById } from './config/tabs.js'
@@ -11,7 +11,9 @@ import TailPanel from './components/layout/TailPanel.jsx'
 import IncidentLoadingState from './components/layout/IncidentLoadingState.jsx'
 import OsPicker from './components/layout/OsPicker.jsx'
 import { DEFAULT_OS } from './config/os.js'
+import { isTypingTarget } from './utils/search.js'
 import SettingsPanel from './components/settings/SettingsPanel.jsx'
+import CommandPalette from './components/search/CommandPalette.jsx'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 
@@ -116,7 +118,7 @@ function UnreachableScreen({ error, onRetry }) {
 }
 
 export default function App() {
-  const { hasUsers, isAuthenticated, authReady, serverError, retry } = useAuth()
+  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout } = useAuth()
   const {
     activeIncident,
     activeSummary,
@@ -125,6 +127,7 @@ export default function App() {
     retryActiveIncident,
     storageError,
     createIncident,
+    exportIncident,
     loading,
   } = useIncidents()
 
@@ -148,6 +151,24 @@ export default function App() {
     setSettingsSection(section)
     setSettingsOpen(true)
   }
+
+  // Global search palette: Ctrl/Cmd+K anywhere, "/" outside text fields.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+    const onKeyDown = (event) => {
+      const modifier = event.ctrlKey || event.metaKey
+      if (modifier && !event.altKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((open) => !open)
+      } else if (event.key === '/' && !modifier && !isTypingTarget(event.target)) {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isAuthenticated])
 
   // Resizable sidebar width (persisted, re-clamped on load and on window resize).
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -193,6 +214,40 @@ export default function App() {
     setCreateOpen(false)
   }
 
+  // Palette actions (typed after ">").
+  const paletteActions = [
+    { id: 'new', label: 'New incident', icon: Plus, run: openCreateModal },
+    ...(activeIncident
+      ? ANALYSIS_TABS.map((tab) => ({
+          id: `tab:${tab.id}`,
+          label: `Go to ${tab.label}`,
+          icon: tab.icon,
+          hint: 'tab',
+          run: () => setActiveTabId(tab.id),
+        }))
+      : []),
+    ...(activeIncident
+      ? [
+          {
+            id: 'export',
+            label: 'Export incident (JSON)',
+            icon: Download,
+            run: () => exportIncident(activeIncident.id),
+          },
+          { id: 'tail', label: 'Toggle the tail -f panel', icon: PanelRight, run: () => setTailOpen(!tailOpen) },
+        ]
+      : []),
+    { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings('detection') },
+    {
+      id: 'allowlist',
+      label: 'Edit the IOC allowlist',
+      icon: ShieldCheck,
+      keywords: 'settings indicators',
+      run: () => openSettings('allowlist'),
+    },
+    { id: 'logout', label: 'Sign out', icon: LogOut, run: logout },
+  ]
+
   // ---- Initial async load of incidents from the API ----
   if (loading) {
     return (
@@ -218,7 +273,7 @@ export default function App() {
       <SidebarResizer onResize={handleSidebarResize} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header onOpenSettings={() => openSettings('detection')} />
+        <Header onOpenSettings={() => openSettings('detection')} onOpenSearch={() => setPaletteOpen(true)} />
         <TabBar
           activeTabId={activeTabId}
           onChange={setActiveTabId}
@@ -349,6 +404,13 @@ export default function App() {
           </div>
         </form>
       </Modal>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        actions={paletteActions}
+        onOpenTab={setActiveTabId}
+      />
 
       <SettingsPanel
         open={settingsOpen}

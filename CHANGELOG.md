@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicators export as CSV, a STIX 2.1 bundle or a MISP event. New
   endpoints: `GET /api/incidents/{id}/iocs`, `/iocs/export`,
   `GET /api/iocs/lookup` and `/iocs/shared`.
+- **Global search**: <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> (or <kbd>/</kbd>
+  outside a text field, or the header's *search…* button) opens a `nik>`
+  prompt over incidents, indicators from every incident and samples (new
+  `GET /api/search`), plus the open incident's events, notes and samples.
+  A query starting with `>` lists actions: go to a tab, new incident,
+  export, `tail -f` panel, settings, IOC allowlist, sign out. On PostgreSQL
+  migration `0012` adds `pg_trgm` indexes for the substring matches.
 - **Dependency audits** in a new `Audit` workflow, on every pull request and
   every Monday: `pip-audit` (backend, capa worker), `npm audit` and
   `shellcheck`. **Dependabot** opens grouped monthly update pull requests

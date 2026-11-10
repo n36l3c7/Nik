@@ -130,6 +130,13 @@
               <td>Indicators seen in two or more incidents, most widespread first.</td>
             </tr>
             <tr>
+              <td><code>GET /api/search?q=</code></td>
+              <td>
+                Global search (2+ characters): incidents by name, host or user; indicators from every incident (3+
+                characters); samples by hash prefix (6+ hex characters) or file type.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/incidents/{id}/iocs/export</code></td>
               <td>
                 <code>?format=csv|stix|misp</code>: CSV, a STIX 2.1 bundle or a MISP event; <code>types=</code> narrows

@@ -1,4 +1,4 @@
-import { LogOut, Settings, UserCircle } from 'lucide-react'
+import { LogOut, Search, Settings, UserCircle } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
@@ -8,9 +8,9 @@ import { formatRelative } from '../../utils/time.js'
  * ============================================================================
  * HEADER — active incident, current user chip, sign out, settings
  * ============================================================================
- * @param {{ onOpenSettings: () => void }} props
+ * @param {{ onOpenSettings: () => void, onOpenSearch: () => void }} props
  */
-export default function Header({ onOpenSettings }) {
+export default function Header({ onOpenSettings, onOpenSearch }) {
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
@@ -51,8 +51,19 @@ export default function Header({ onOpenSettings }) {
         )}
       </div>
 
-      {/* Current user chip + sign out + settings */}
+      {/* Search + current user chip + sign out + settings */}
       <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          aria-label="Search"
+          title="Search incidents, indicators, samples and events (Ctrl/Cmd+K or /)"
+          className="hidden items-center gap-2 border border-line px-2.5 py-1.5 font-mono text-xs text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:inline-flex"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>search…</span>
+          <kbd className="border border-line px-1 text-[10px] text-fg-subtle">ctrl k</kbd>
+        </button>
         {currentUser && (
           <div className="hidden items-center gap-2 border border-line px-2.5 py-1.5 sm:flex">
             <UserCircle className="h-5 w-5 shrink-0 text-fg-muted" aria-hidden="true" />
