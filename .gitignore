@@ -19,6 +19,8 @@ History.db-wal
 History.db-shm
 Downloads.plist
 Bookmarks.plist
+# Synthetic test fixtures (no real data) are the exception.
+!frontend/e2e/fixtures/*
 
 # Environment files with real secrets (docker-compose reads ./.env)
 .env
