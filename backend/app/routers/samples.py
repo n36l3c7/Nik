@@ -227,9 +227,11 @@ async def upload_sample(
 
     result = full_analysis(db, data)
     sha256 = result["hashes"]["sha256"]
+    # Always through the store: writes a missing file and repairs the mode of
+    # one stored by an older release, even when the sample is already known.
+    write_sample(sha256, data)
     row = db.get(Sample, sha256)
     if row is None:
-        write_sample(sha256, data)
         row = Sample(
             sha256=sha256,
             sha1=result["hashes"]["sha1"],

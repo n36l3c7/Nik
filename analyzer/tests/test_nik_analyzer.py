@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import nik_analyzer  # noqa: E402
 from nik_analyzer import (  # noqa: E402
     AnalysisError,
     DataIndex,
@@ -345,3 +346,13 @@ def test_warm_sessions_are_lent_once_evicted_and_expired():
     fourth = Closable()
     off.give(("d.bin", ()), fourth)
     assert fourth.closed  # disabled: nothing is kept
+
+
+def test_unreadable_sample_gets_a_clear_message(tmp_path, monkeypatch):
+    sample = tmp_path / "x.bin"
+    sample.write_bytes(b"MZ")
+    monkeypatch.setattr(nik_analyzer.os, "access", lambda path, mode: False)
+    with pytest.raises(nik_analyzer.AnalysisError, match="permission denied"):
+        nik_analyzer.check_readable(str(sample))
+    with pytest.raises(nik_analyzer.AnalysisError, match="not found"):
+        nik_analyzer.check_readable(str(tmp_path / "missing.bin"))

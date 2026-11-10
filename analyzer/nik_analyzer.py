@@ -92,6 +92,17 @@ class AnalysisError(Exception):
     """The file could not be analysed (bad input, rizin failure)."""
 
 
+def check_readable(path: str) -> None:
+    """Fail with a clear message before starting rizin, which only says it stopped."""
+    if not os.path.isfile(path):
+        raise AnalysisError("Sample not found in the store.")
+    if not os.access(path, os.R_OK):
+        raise AnalysisError(
+            "The analyzer cannot read the sample (permission denied): the file in the store is not "
+            "world-readable. Restart the api service, which repairs the store's permissions."
+        )
+
+
 class AnalysisTimeout(AnalysisError):
     """rizin did not finish within the time limit and was stopped."""
 
@@ -663,8 +674,7 @@ def analyze(
     Raises AnalysisTimeout when the disassembly itself runs over ``timeout``
     seconds; the decompilation pass only ever shortens to fit what is left.
     """
-    if not os.path.isfile(path):
-        raise AnalysisError("Sample not found in the store.")
+    check_readable(path)
     started = time.monotonic()
     session, timer, timed_out = _guarded(timeout, path, binary, signatures)
     try:
@@ -725,8 +735,7 @@ def decompile_one(
     With ``warm``, a session kept from an earlier request on the same file is
     reused (no new ``aaa``) and kept again afterwards.
     """
-    if not os.path.isfile(path):
-        raise AnalysisError("Sample not found in the store.")
+    check_readable(path)
     signatures = list(signatures)
     key = _warm_key(path, signatures)
     kept = warm.take(key) if warm is not None else None

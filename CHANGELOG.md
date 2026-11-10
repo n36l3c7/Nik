@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.2] - 2026-11-10
+
+### Fixed
+
+- Samples first stored by a release before 2.7.0 (mode `0440`) could not be
+  read by the analyzer and capa workers, which run as another user: the Code
+  view said "rizin stopped unexpectedly" and Capabilities "capa failed: 13".
+  The api now gives every stored sample mode `0444` at startup and whenever
+  a known sample is uploaded again (the file was previously left untouched).
+- Both workers check that the sample is readable before starting rizin or
+  capa and say so plainly ("cannot read the sample (permission denied)")
+  instead of reporting a crash or an exit code.
+
 ## [2.11.1] - 2026-11-10
 
 ### Fixed
@@ -457,7 +470,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.11.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.11.2...HEAD
+[2.11.2]: https://github.com/n36l3c7/Nik/compare/v2.11.1...v2.11.2
 [2.11.1]: https://github.com/n36l3c7/Nik/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/n36l3c7/Nik/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/n36l3c7/Nik/compare/v2.9.0...v2.10.0

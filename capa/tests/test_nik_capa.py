@@ -123,3 +123,11 @@ def test_validate_rule_against_the_bundled_rules():
     )
     assert nik_capa.validate_rule(RULE.replace("create process on Windows", "nik helper"), [helper])["ok"]
     assert not nik_capa.validate_rule("rule: [\n")["ok"]
+
+
+def test_unreadable_sample_gets_a_clear_message(tmp_path, monkeypatch):
+    sample = tmp_path / "x.bin"
+    sample.write_bytes(b"MZ")
+    monkeypatch.setattr(nik_capa.os, "access", lambda path, mode: False)
+    with pytest.raises(CapaError, match="permission denied"):
+        run_capa(str(sample), timeout=5)
