@@ -4,7 +4,7 @@ An ``.evtx`` file is a binary log (chunks of BinXML records) that the browser
 cannot read, so the app uploads it as is and the server parses it with the
 ``evtx`` package (a Rust parser with Python bindings). Only a curated set of
 forensically useful event IDs is kept (``CURATED``, mirrored by
-``src/config/eventLogs.js``); the rest is counted, not stored.
+``frontend/src/config/eventLogs.js``); the rest is counted, not stored.
 
 Each kept record becomes a flat event::
 
@@ -29,7 +29,7 @@ import warnings
 from datetime import datetime
 
 # --- Curated event IDs per channel (lower-case channel name) --------------- #
-# Keep in sync with CURATED_EVENTS in src/config/eventLogs.js (a frontend test
+# Keep in sync with CURATED_EVENTS in frontend/src/config/eventLogs.js (a frontend test
 # compares the two).
 CURATED: dict[str, frozenset[int]] = {
     "security": frozenset(

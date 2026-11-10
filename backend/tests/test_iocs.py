@@ -174,9 +174,9 @@ def test_settings_allowlist_round_trip(admin: TestClient):
 def test_backfill_indexes_existing_incidents(admin: TestClient):
     from sqlalchemy import delete, func, select
 
-    from app.db import SessionLocal
+    from app.core.db import SessionLocal
+    from app.core.models import IocEntry
     from app.iocs import backfill
-    from app.models import IocEntry
 
     key = make_key(admin, role="analyst")
     admin.post("/api/incidents", headers=key, json=incident_doc("old", commands=COMMANDS))

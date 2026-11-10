@@ -16,10 +16,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
-from ..models import AuditEntry, FunctionAnnotation, Sample, SampleCode
-from ..samples import is_sha256
-from ..security import Principal, now_iso, principal, writer_principal
+from ..core.db import get_db
+from ..core.models import AuditEntry, FunctionAnnotation, Sample, SampleCode
+from ..core.security import Principal, now_iso, principal, writer_principal
+from ..malware.samples import is_sha256
 
 router = APIRouter(tags=["samples"])
 

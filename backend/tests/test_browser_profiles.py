@@ -104,9 +104,9 @@ def test_migration_0003_moves_legacy_slots_into_profiles(tmp_path, monkeypatch):
                 {"id": incident_id, "doc": json.dumps(doc)},
             )
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     command.stamp(cfg, "0002_incident_os_column")
     command.upgrade(cfg, "0003_browser_profiles")
@@ -138,8 +138,8 @@ def test_get_and_patch_convert_legacy_documents(admin: TestClient):
 
 
 def test_get_saves_a_converted_legacy_document_once(admin: TestClient):
-    from app.db import SessionLocal
-    from app.models import Incident
+    from app.core.db import SessionLocal
+    from app.core.models import Incident
 
     admin.post("/api/incidents", json={"id": "p1", "data": {}})
     with SessionLocal() as db:  # simulate a database that skipped migration 0003

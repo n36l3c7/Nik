@@ -16,10 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
-from ..models import ApiKey
-from ..schemas import ApiKeyCreate, ApiKeyCreated, ApiKeysEnvelope
-from ..security import (
+from ..core.db import get_db
+from ..core.models import ApiKey
+from ..core.schemas import ApiKeyCreate, ApiKeyCreated, ApiKeysEnvelope
+from ..core.security import (
     SCOPE_READ,
     SCOPE_WRITE,
     Principal,

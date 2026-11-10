@@ -1,0 +1,7 @@
+# Keep the web build context lean: only what `npm run build` needs.
+node_modules
+dist
+e2e
+test-results
+playwright-report
+*.md

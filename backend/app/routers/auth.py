@@ -6,11 +6,11 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
-from ..models import User
-from ..ratelimit import limiter
-from ..schemas import BootstrapOut, LoginIn, UserEnvelope
-from ..security import (
+from ..core.db import get_db
+from ..core.models import User
+from ..core.ratelimit import limiter
+from ..core.schemas import BootstrapOut, LoginIn, UserEnvelope
+from ..core.security import (
     clear_session_cookie,
     create_session,
     current_user,

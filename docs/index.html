@@ -241,7 +241,8 @@
 <span class="prompt"></span>cp .env.example .env          # set COOKIE_SECURE=false for plain-HTTP dev
 <span class="prompt"></span>uvicorn app.main:app --reload --port 8000
 
-# terminal 2 — frontend (repository root)
+# terminal 2 — frontend
+<span class="prompt"></span>cd frontend
 <span class="prompt"></span>npm install
 <span class="prompt"></span>npm run dev                   # http://localhost:5173</code></pre>
       <p>
@@ -251,7 +252,7 @@
 
       <h3 id="production">Production without containers</h3>
       <p>
-        The README walks through a manual deployment on RHEL: a static bundle (<code>npm run build</code>) served by
+        The README walks through a manual deployment on RHEL: a static bundle (<code>npm run build</code> in <code>frontend/</code>) served by
         nginx, the backend under systemd with gunicorn + uvicorn workers, PostgreSQL, SELinux and TLS. See
         <a href="https://github.com/n36l3c7/Nik#22-manual-deployment-on-rhel">README § 2.2</a>.
       </p>
@@ -314,11 +315,12 @@
       </ol>
 
       <h3 id="development">Development checks</h3>
-      <pre><code><span class="prompt"></span>npm test               # frontend unit tests
+      <pre><code><span class="prompt"></span>cd frontend
+<span class="prompt"></span>npm test               # frontend unit tests
 <span class="prompt"></span>npm run lint           # ESLint
 <span class="prompt"></span>npm run format:check   # Prettier
 <span class="prompt"></span>npm run build &amp;&amp; npm run test:e2e   # Playwright smoke test of the whole stack
-<span class="prompt"></span>cd backend &amp;&amp; pytest &amp;&amp; ruff check . &amp;&amp; ruff format --check .</code></pre>
+<span class="prompt"></span>cd ../backend &amp;&amp; pytest &amp;&amp; ruff check . &amp;&amp; ruff format --check .</code></pre>
       <p>
         CI runs all of them on every pull request. The end-to-end test starts the backend on a throw-away SQLite
         database and the production build behind <code>vite preview</code>, then drives the app as an analyst would:

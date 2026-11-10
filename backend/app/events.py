@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .models import Webhook
+from .core.models import Webhook
 
 logger = logging.getLogger("nik.webhooks")
 

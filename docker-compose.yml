@@ -81,7 +81,7 @@ services:
   # read-only filesystem and memory / CPU / time limits. Samples are read and
   # disassembled, never executed.
   analyzer:
-    build: ./analyzer
+    build: ./workers/analyzer
     environment:
       ANALYZER_TOKEN: ${ANALYZER_TOKEN:-please-change-this-analyzer-token}
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
@@ -108,7 +108,7 @@ services:
   # read-only sample store, internal network only, no published port,
   # read-only filesystem, no capabilities, memory / CPU / time limits.
   capa:
-    build: ./capa
+    build: ./workers/capa
     environment:
       CAPA_TOKEN: ${CAPA_TOKEN:-please-change-this-capa-token}
       CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
@@ -128,7 +128,7 @@ services:
   # only (a document cannot call out), no published port, read-only
   # filesystem, no capabilities, memory / CPU limits.
   docview:
-    build: ./docview
+    build: ./workers/docview
     environment:
       DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:-please-change-this-docview-token}
     networks: [analysis]
@@ -146,7 +146,7 @@ services:
   # port, read-only filesystem, no capabilities (it never captures),
   # memory / CPU limits.
   pcap:
-    build: ./pcap
+    build: ./workers/pcap
     environment:
       PCAP_TOKEN: ${PCAP_TOKEN:-please-change-this-pcap-token}
     volumes:
@@ -167,7 +167,7 @@ services:
   # requests to private addresses and internal names. Read-only filesystem,
   # no capabilities, memory / CPU limits, no published port.
   browser:
-    build: ./browser
+    build: ./workers/browser
     environment:
       BROWSER_TOKEN: ${BROWSER_TOKEN:-please-change-this-browser-token}
       BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-3}
@@ -182,9 +182,7 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: .
-      dockerfile: deploy/web.Dockerfile
+    build: ./frontend
     environment:
       # Name users type in the browser; goes into the self-signed certificate.
       TLS_HOSTNAME: ${TLS_HOSTNAME:-localhost}

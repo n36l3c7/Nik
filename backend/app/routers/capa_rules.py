@@ -17,11 +17,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import capa, capa_rules
-from ..analyzer import AnalyzerError
-from ..db import get_db
-from ..models import AuditEntry, CapaRule
-from ..security import Principal, admin_principal, now_iso, principal
+from ..core.db import get_db
+from ..core.models import AuditEntry, CapaRule
+from ..core.security import Principal, admin_principal, now_iso, principal
+from ..malware import capa_rules
+from ..workers import capa
+from ..workers.analyzer import AnalyzerError
 
 router = APIRouter(prefix="/capa-rules", tags=["capa-rules"])
 

@@ -1,0 +1,25 @@
+# Ruff: lint and format for every Python component (backend, workers,
+# integration). CI runs `ruff check` and `ruff format --check` per component;
+# the analyzer extends this file for its older Python.
+target-version = "py312"
+line-length = 120
+# First-party code: the backend's `app` and `tests`, and each worker's modules.
+src = [
+  "backend",
+  "workers/analyzer",
+  "workers/browser",
+  "workers/capa",
+  "workers/docview",
+  "workers/pcap",
+]
+
+[lint]
+# pycodestyle errors/warnings, pyflakes, bugbear (likely bugs), isort.
+select = ["E", "F", "W", "B", "I"]
+
+[lint.flake8-bugbear]
+# FastAPI dependency markers are meant to be called in default arguments.
+extend-immutable-calls = [
+  "fastapi.Body", "fastapi.Cookie", "fastapi.Depends", "fastapi.File",
+  "fastapi.Header", "fastapi.Query",
+]

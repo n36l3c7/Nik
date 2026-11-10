@@ -16,8 +16,8 @@ import uuid
 from sqlalchemy import insert, or_, update
 from sqlalchemy.exc import IntegrityError
 
-from ..db import SessionLocal
-from ..models import Lease
+from ..core.db import SessionLocal
+from ..core.models import Lease
 from . import service
 
 logger = logging.getLogger("nik.enrichment")

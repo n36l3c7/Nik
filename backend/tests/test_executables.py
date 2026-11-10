@@ -6,7 +6,7 @@ import struct
 
 from fastapi.testclient import TestClient
 
-from app import yara_rules
+from app.malware import yara_rules
 from app.parsing.executables import parse_elf, parse_macho, parse_pe, parse_structure
 from tests.conftest import make_key
 
@@ -119,7 +119,7 @@ def test_parse_structure_tolerates_garbage():
 
 
 def test_builtin_yara_rules_compile_and_match(client: TestClient):
-    from app.db import SessionLocal
+    from app.core.db import SessionLocal
 
     with SessionLocal() as db:
         assert yara_rules.compiled_rules(db) is not None

@@ -19,8 +19,8 @@ os.environ.setdefault("ENRICHMENT_WORKER", "false")
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import security  # noqa: E402
-from app.db import Base, engine  # noqa: E402
+from app.core import security  # noqa: E402
+from app.core.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 # bcrypt's lowest cost: hashing in tests needs to be correct, not slow.

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from app import security
-from app.security import hash_password, verify_password
+from app.core import security
+from app.core.security import hash_password, verify_password
 
 # Made by passlib 1.7.4 (CryptContext(schemes=["bcrypt"])), which Nik used up to 2.10.
 PASSLIB_HASH = "$2b$12$TfBv2vzOx7uoEtClXpX0Hu3dfmAOS6IcHLO3baScNnDlbnNhGtNMG"  # correct horse battery staple

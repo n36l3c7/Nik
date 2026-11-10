@@ -13,10 +13,10 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
-from ..models import AuditEntry, User
-from ..schemas import AuditEnvelope, AuditIn, AuditOut
-from ..security import Principal, admin_principal, current_user, now_iso, principal
+from ..core.db import get_db
+from ..core.models import AuditEntry, User
+from ..core.schemas import AuditEnvelope, AuditIn, AuditOut
+from ..core.security import Principal, admin_principal, current_user, now_iso, principal
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 

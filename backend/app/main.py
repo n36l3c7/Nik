@@ -22,13 +22,14 @@ from sqlalchemy.orm import Session as OrmSession
 # Import models so their tables are registered on the shared metadata before
 # create_all runs. (The routers already import the models, but importing here
 # makes the dependency explicit and order-independent.)
-from . import models  # noqa: F401
-from .config import settings as app_settings
-from .db import Base, SessionLocal, engine, get_db
+from .core import models  # noqa: F401
+from .core.config import settings as app_settings
+from .core.db import Base, SessionLocal, engine, get_db
+from .core.observability import metrics_response, observability_middleware, setup_logging
+from .core.ratelimit import limiter
 from .enrichment import worker as enrichment_worker
 from .iocs import backfill as backfill_iocs
-from .observability import metrics_response, observability_middleware, setup_logging
-from .ratelimit import limiter
+from .malware.samples import repair_store_permissions
 from .routers import (
     annotations,
     audit,
@@ -52,7 +53,6 @@ from .routers import (
     webhooks,
     yara_rules,
 )
-from .samples import repair_store_permissions
 
 setup_logging(app_settings.LOG_LEVEL)
 
@@ -102,7 +102,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.17.0",
+    version="2.17.1",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",

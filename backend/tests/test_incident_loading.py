@@ -134,9 +134,9 @@ def test_migration_adds_and_backfills_the_os_column(tmp_path, monkeypatch):
             {"doc": json.dumps({"id": "i1", "os": "linux"})},
         )
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     command.stamp(cfg, "0001_baseline")
     command.upgrade(cfg, "0002_incident_os_column")

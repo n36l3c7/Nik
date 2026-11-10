@@ -1,6 +1,6 @@
 """Factory-default detection rules.
 
-These values are copied verbatim from ``src/config/detectionRules.js`` so the
+These values are copied verbatim from ``frontend/src/config/detectionRules.js`` so the
 backend can serve the same factory defaults the frontend historically shipped
 with. They are returned by ``GET /api/settings`` when the shared settings row
 has never been written.
@@ -23,7 +23,7 @@ def enrichment_defaults() -> dict[str, Any]:
     return deepcopy(DEFAULTS)
 
 
-# Mirror of DEFAULT_SUSPICIOUS_KEYWORDS in src/config/detectionRules.js.
+# Mirror of DEFAULT_SUSPICIOUS_KEYWORDS in frontend/src/config/detectionRules.js.
 DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
     {
         "id": "pastebin",
@@ -92,7 +92,7 @@ DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
     },
 ]
 
-# Mirror of DEFAULT_BUSINESS_HOURS in src/config/detectionRules.js.
+# Mirror of DEFAULT_BUSINESS_HOURS in frontend/src/config/detectionRules.js.
 DEFAULT_BUSINESS_HOURS: dict[str, Any] = {
     "startHour": 8,  # start of business hours (inclusive)
     "endHour": 18,  # end of business hours (exclusive)

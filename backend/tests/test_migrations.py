@@ -34,9 +34,9 @@ def test_migration_0010_moves_cfgs_and_pseudo_c_into_one_row_per_function(tmp_pa
             },
         )
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     command.stamp(cfg, "0009_sample_capa")
     command.upgrade(cfg, "0010_function_rows_capa_rules")
@@ -65,9 +65,9 @@ def test_migration_0011_creates_the_ioc_index(tmp_path, monkeypatch):
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     command.stamp(cfg, "0010_function_rows_capa_rules")
     command.upgrade(cfg, "0011_ioc_index")
@@ -90,9 +90,9 @@ def test_migration_0013_mirrors_ticket_and_severity(tmp_path, monkeypatch):
             {"doc": json.dumps({"ticketId": "INC-7", "severity": "high"})},
         )
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     command.stamp(cfg, "0012_search_trigram_indexes")
     command.upgrade(cfg, "0013_incident_ticket_severity")
@@ -111,9 +111,9 @@ def test_migration_0014_adds_mails_and_has_mail(tmp_path, monkeypatch):
         conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
         conn.execute(sa.text("INSERT INTO incidents VALUES ('a', '{}')"))
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     command.stamp(cfg, "0013_incident_ticket_severity")
     command.upgrade(cfg, "0014_mails")
@@ -130,9 +130,9 @@ def test_migration_0015_adds_enrichment_tables(tmp_path, monkeypatch):
     url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
     engine = sa.create_engine(url)
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
@@ -149,9 +149,9 @@ def test_migration_0016_adds_network_captures(tmp_path, monkeypatch):
     url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
     engine = sa.create_engine(url)
 
-    import app.db
+    import app.core.db
 
-    monkeypatch.setattr(app.db, "engine", engine)
+    monkeypatch.setattr(app.core.db, "engine", engine)
     cfg = Config("alembic.ini")
     command.stamp(cfg, "0015_ioc_enrichment")
     command.upgrade(cfg, "0016_network_captures")

@@ -18,16 +18,17 @@ from sqlalchemy import String, cast, delete, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import analyzer, capa, capa_rules, flirt, yara_rules
-from ..config import settings
-from ..db import get_db
+from ..core.config import settings
+from ..core.db import get_db
+from ..core.models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
+from ..core.security import Principal, now_iso, principal, writer_principal
 from ..events import emit
 from ..iocs import reindex_incident
-from ..models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
+from ..malware import capa_rules, flirt, yara_rules
+from ..malware.samples import DEFAULT_ZIP_PASSWORD, delete_sample, is_sha256, read_sample, write_sample, zip_sample
 from ..parsing.executables import parse_structure
 from ..parsing.malware import STRINGS_STORED, analyze, iter_strings
-from ..samples import DEFAULT_ZIP_PASSWORD, delete_sample, is_sha256, read_sample, write_sample, zip_sample
-from ..security import Principal, now_iso, principal, writer_principal
+from ..workers import analyzer, capa
 from .annotations import delete_for_sample as delete_annotations
 
 router = APIRouter(tags=["samples"])

@@ -33,10 +33,10 @@ from typing import Any, Iterable
 from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import vault
+from ..core import vault
+from ..core.models import Enrichment, Incident, IntegrationKey, IocEntry
+from ..core.security import now_iso
 from ..iocs import Allowlist, normalize
-from ..models import Enrichment, Incident, IntegrationKey, IocEntry
-from ..security import now_iso
 from .providers import BY_ID, HASHES, PROVIDERS, Provider, ProviderError
 
 VERDICT_ORDER = ("malicious", "suspicious", "harmless", "unknown")

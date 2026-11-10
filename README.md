@@ -229,7 +229,7 @@ Every image in the Dockerfiles and the Compose file names its registry
 (`docker.io/...`), so Podman never has to guess one from
 `/etc/containers/registries.conf` (on RHEL it would try `registry.redhat.io`
 first and ask for Red Hat credentials). Keep it that way when you add an
-image: `deploy/images.test.js` fails on a short name.
+image: `deploy/check-images.sh` (run by CI) fails on a short name.
 
 ### 1.2 Local development setup
 
@@ -262,19 +262,20 @@ uvicorn app.main:app --reload --port 8000
 
 Health check: `curl http://localhost:8000/api/health` → `{"status":"ok"}`.
 
-**Frontend** (terminal 2, from the repository root):
+**Frontend** (terminal 2):
 
 ```bash
+cd frontend
 npm install
 npm run dev        # http://localhost:5173
 ```
 
 The Vite dev server proxies every `/api` request to `http://127.0.0.1:8000`
-(see `vite.config.js`), so the frontend and backend work together end-to-end
+(see `frontend/vite.config.js`), so the frontend and backend work together end-to-end
 with no CORS configuration. On first load, create the first user (it becomes
 the admin) and sign in.
 
-Other npm scripts:
+Other npm scripts (from `frontend/`):
 
 ```bash
 npm run build      # production build (static site in dist/)
@@ -290,7 +291,7 @@ Line endings are LF everywhere, including Windows checkouts:
 `.gitattributes` sets `* text=auto eol=lf`, which overrides `core.autocrlf`,
 so Prettier and Ruff see the same files as CI.
 
-The end-to-end test (`e2e/smoke.spec.js`, `playwright.config.js`) starts the
+The end-to-end test (`frontend/e2e/smoke.spec.js`, `frontend/playwright.config.js`) starts the
 backend on a throw-away SQLite database and the production build behind
 `vite preview` (which proxies `/api`, like the dev server), then drives the app
 as an analyst would: first-run setup, sign-in, a new incident, demo data in
@@ -303,39 +304,39 @@ the Code view against real rizin output; likewise `E2E_CAPA_URL` /
 it checks the "not configured" messages.
 
 **Analyzer worker in development.** The Code view needs the rizin worker
-(`analyzer/`). With Docker:
+(`workers/analyzer/`). With Docker:
 
 ```bash
-docker build -t nik-analyzer analyzer
+docker build -t nik-analyzer workers/analyzer
 docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
   -v "$PWD/backend/samples:/samples:ro" -e ANALYZER_TOKEN=dev-token nik-analyzer
 # backend/.env: ANALYZER_URL=http://127.0.0.1:8700  ANALYZER_TOKEN=dev-token
 ```
 
-Its own checks: `cd analyzer && ruff check . && python -m pytest tests` (the
+Its own checks: `cd workers/analyzer && ruff check . && python -m pytest tests` (the
 tests use recorded rizin output; the live test runs only where `rizin` is
 installed).
 
 **capa worker in development.** The Capabilities view needs the capa worker
-(`capa/`):
+(`workers/capa/`):
 
 ```bash
-docker build -t nik-capa capa
+docker build -t nik-capa workers/capa
 docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
   -v "$PWD/backend/samples:/samples:ro" -e CAPA_TOKEN=dev-capa-token nik-capa
 # backend/.env: CAPA_URL=http://127.0.0.1:8710  CAPA_TOKEN=dev-capa-token
 ```
 
-Its own checks: `cd capa && ruff check . && python -m pytest tests` (on a
+Its own checks: `cd workers/capa && ruff check . && python -m pytest tests` (on a
 recorded capa report; capa itself is not needed).
 
 Backend tests run with `pytest`, the linter with `ruff check .` and the
 formatter with `ruff format .` (`--check` in CI), all from `backend/` after
-`pip install -r requirements-dev.txt`; Ruff settings live in `backend/ruff.toml`.
+`pip install -r requirements-dev.txt`; Ruff settings for every Python component live in `ruff.toml` at the repository root.
 Formatting is enforced, not reviewed: run the formatters before committing.
-Markdown is excluded from Prettier (see `.prettierignore`). CI runs the linters,
+Prettier also checks `docs/`, the workflows and the Compose file; Markdown is excluded (see `frontend/.prettierignore`). CI runs the linters,
 the format checks, both unit suites (the backend one on SQLite, and on
-PostgreSQL 16 and 18 after `alembic upgrade head`), the build and then the
+PostgreSQL 18 after `alembic upgrade head`), the build and then the
 end-to-end test; a change is done only when all of them pass. The documentation site in `docs/`
 is updated in the same change as the behaviour it describes.
 
@@ -376,17 +377,17 @@ is no `tailwind.config.js` and no extra setup step.
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
 | `SAMPLE_STORE` | `./samples` | Directory of the raw malware samples (one file per SHA-256, never executed). Exclude it from the server's antivirus and include it in backups. |
 | `SAMPLE_MAX_MB` | `100` | Per-file size limit for sample and e-mail uploads. |
-| `YARA_RULES` | `app/yara` | Directory of the built-in YARA rule files (`*.yar`); admin rules live in the database. |
+| `YARA_RULES` | `app/malware/yara` | Directory of the built-in YARA rule files (`*.yar`); admin rules live in the database. |
 | `ANALYZER_URL` | — | Base URL of the rizin worker (e.g. `http://analyzer:8700`). Empty: the Code view reports "not configured". |
 | `ANALYZER_TOKEN` | — | Shared secret sent to the worker in `X-Analyzer-Token`; the worker refuses to start without one. |
 | `ANALYZER_TIMEOUT` | `600` | Seconds rizin may spend on one sample before the worker stops it. |
 | `CAPA_URL` | — | Base URL of the capa worker (e.g. `http://capa:8710`). Empty: the Capabilities view reports "not configured". |
 | `CAPA_TOKEN` | — | Shared secret sent to the capa worker in `X-Analyzer-Token`; the worker refuses to start without one. |
 | `CAPA_TIMEOUT` | `1800` | Seconds capa may spend on one sample before the worker stops it (large binaries take ten minutes or more). |
-| `PCAP_URL` / `PCAP_TOKEN` | — | Packet capture worker (`pcap/`, e.g. `http://pcap:8740`) and its shared secret (`X-Pcap-Token`). Empty: captures are stored but not analysed. |
+| `PCAP_URL` / `PCAP_TOKEN` | — | Packet capture worker (`workers/pcap/`, e.g. `http://pcap:8740`) and its shared secret (`X-Pcap-Token`). Empty: captures are stored but not analysed. |
 | `PCAP_MAX_MB` | `500` | Largest packet capture accepted, in MB (nginx's `client_max_body_size` must allow it). |
-| `DOCVIEW_URL` / `DOCVIEW_TOKEN` | — | Document viewer worker (`docview/`, e.g. `http://docview:8720`) and its shared secret (`X-Docview-Token`). Empty: the Preview buttons say "not configured". |
-| `BROWSER_URL` / `BROWSER_TOKEN` | — | Isolated browser worker (`browser/`, e.g. `http://browser:8730`) and its shared secret (`X-Browser-Token`). Empty: "Open in isolated browser" says "not configured". |
+| `DOCVIEW_URL` / `DOCVIEW_TOKEN` | — | Document viewer worker (`workers/docview/`, e.g. `http://docview:8720`) and its shared secret (`X-Docview-Token`). Empty: the Preview buttons say "not configured". |
+| `BROWSER_URL` / `BROWSER_TOKEN` | — | Isolated browser worker (`workers/browser/`, e.g. `http://browser:8730`) and its shared secret (`X-Browser-Token`). Empty: "Open in isolated browser" says "not configured". |
 | `ENRICHMENT_WORKER` | `true` | Background thread of the automatic threat-intelligence lookups (one API process works at a time). `false` disables it; "Check now" still works. |
 
 **Compose** (root `.env` — see `.env.example`):
@@ -609,7 +610,7 @@ primary backup.
 
 #### Step 1 — Build the static bundle
 
-Build on the RHEL host or on any machine with Node 22+ and copy `dist/` over.
+Build on the RHEL host or on any machine with Node 22+ and copy `frontend/dist/` over.
 To install Node on RHEL (NodeSource, works on 8 and 9):
 
 ```bash
@@ -617,7 +618,7 @@ curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
 sudo dnf install -y nodejs
 ```
 
-Then, from the project directory:
+Then, from the project's `frontend/` directory:
 
 ```bash
 npm ci            # clean, reproducible install from package-lock.json
@@ -856,9 +857,9 @@ sign in.
 
 ```bash
 # Frontend — rebuild and replace the static files:
-npm ci && npm run build
+(cd frontend && npm ci && npm run build)
 sudo rm -rf /var/www/nik/*
-sudo cp -r dist/* /var/www/nik/
+sudo cp -r frontend/dist/* /var/www/nik/
 sudo restorecon -Rv /var/www/nik
 
 # Backend — refresh code and dependencies, restart the service:
@@ -1085,7 +1086,7 @@ WebAssembly). Rationale:
    API calls that persist results.
 
 The sql.js WASM module (~1 MB) is loaded **lazily** on the first SQLite import
-(see `src/services/sqliteParser.js`): analysts who only work with JSON/CSV
+(see `frontend/src/services/sqliteParser.js`): analysts who only work with JSON/CSV
 exports never download it.
 
 **File schema per engine.** Chromium browsers (Chrome/Edge/Brave/Opera) share
@@ -1112,173 +1113,204 @@ file itself to the server, because the sample *is* the evidence under study
 ### 3.3 Folder structure
 
 ```
-├── index.html                      # HTML shell (mount point #root)
-├── package.json                    # Frontend dependencies and npm scripts
-├── vite.config.js                  # React + Tailwind plugins, /api proxy (dev and preview)
-├── playwright.config.js            # E2E: starts backend (SQLite) + vite preview
-├── e2e/smoke.spec.js               # End-to-end smoke test of the whole stack
-├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
-├── docker-compose.yml              # db + api + analyzer + capa + docview + browser + pcap + web stack
-├── docview/                        # document viewer worker: Dockerfile (LibreOffice, pdfium),
-│                                   #   nik_docview.py (Office → PDF → page PNGs), server.py, tests/
-├── browser/                        # isolated browser worker: Dockerfile (Playwright Chromium),
-│                                   #   nik_browser.py (sessions, network rules), netlog.py (the
-│                                   #   DevTools-like request log), server.py, tests/
-├── pcap/                           # packet capture worker: Dockerfile (tshark, sharkd),
-│                                   #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
-├── capa/                           # capa worker: Dockerfile (pinned capa, rules, signatures),
-│                                   #   nik_capa.py (run + reduce the report), server.py, tests/
-├── analyzer/                       # rizin worker: Dockerfile, nik_analyzer.py (pipe + transforms),
-│                                   #   server.py (HTTP, token, job slots), tests/ (recorded output)
-├── .env.example                    # Compose configuration template
-├── deploy/
-│   ├── web.Dockerfile              # Multi-stage: build SPA with Node, serve with nginx
-│   └── nginx.conf                  # Container nginx: static + /api reverse proxy
-├── backend/
+├── frontend/                       # The single-page app (React 19, Vite, Tailwind v4)
+│   ├── Dockerfile                  # Multi-stage: build the SPA with Node, serve it with nginx
+│   ├── nginx/                      # nginx.conf (static + /api reverse proxy), gen-selfsigned.sh
+│   ├── index.html                  # HTML shell (mount point #root)
+│   ├── package.json                # Frontend dependencies and npm scripts
+│   ├── vite.config.js              # React + Tailwind plugins, /api proxy (dev and preview)
+│   ├── playwright.config.js        # E2E: starts the backend (SQLite) + vite preview
+│   ├── e2e/                        # End-to-end smoke test of the whole stack (+ fixtures/)
+│   └── src/                        # see below
+├── backend/                        # FastAPI API (Python 3.12, SQLAlchemy 2, Alembic)
 │   ├── Dockerfile                  # FastAPI image (gunicorn + uvicorn workers)
-│   ├── requirements.txt
-│   ├── .env.example                # Backend configuration template
-│   └── app/
-│       ├── main.py                 # FastAPI app: create_all on startup, /api routers
-│       ├── config.py               # Env-based settings (DATABASE_URL, SECRET_KEY, …)
-│       ├── db.py                   # SQLAlchemy engine / session factory
-│       ├── models.py               # users, sessions, incidents, audit_log, settings, samples, …
-│       ├── browser_profiles.py     # browser profiles: legacy conversion, upload routing
-│       ├── schemas.py              # Pydantic request/response models
-│       ├── security.py             # bcrypt hashing, session-auth dependencies
-│       ├── defaults.py             # Factory defaults for detection settings
-│       ├── samples.py              # Sample store (files by SHA-256, e-mails as .mail) + protected zip
-│       ├── vault.py                # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY)
-│       ├── network/                # Network Analysis: store (capture files, browser logs), service (analysis,
-│       │                           #   references, browser log sync), pcapng (log → pcapng), har (HAR 1.2)
-│       ├── enrichment/             # Threat intelligence: providers (one function each), service (what may be
-│       │                           #   sent, rate limits, cache), worker (background lookups, lease)
-│       ├── mail/                   # Mail analysis: parse (.eml/.msg, LZFu RTF), headers (route,
-│       │                           #   sender, Authentication-Results), verify (SPF/DKIM/DMARC),
-│       │                           #   links, content (nh3, QR, pressure), attachments, analyze
-│       ├── parsing/malware.py      # Static analysis: hashes, type, entropy, strings, IOC
-│       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
-│       ├── parsing/eventlog.py     # Windows .evtx → curated events + coverage (evtx package)
-│       ├── iocs.py                 # IOC extraction from incidents, index, allowlist, STIX/MISP
-│       ├── routers/search.py       # GET /api/search (incidents, indicators, samples)
-│       ├── report.py               # Incident report: HTML (EN/IT, TLP, ATT&CK) and PDF (WeasyPrint)
-│       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
-│       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
-│       ├── capa_rules.py           # Admin capa rules (worker validation, store, dependencies)
-│       ├── analyzer.py             # rizin worker client + disassembly job
-│       ├── capa.py                 # capa worker client + capabilities job (one at a time)
-│       ├── yara/                   # Built-in YARA rule files (*.yar)
-│       └── routers/                # auth, users, incidents, audit, settings, backup, samples,
-│                                   #   mails, enrichment, annotations, yara_rules, flirt, capa_rules
-└── src/
-    ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
-    │                               #   > SettingsProvider > IncidentProvider > App
-    ├── index.css                   # Tailwind v4, design tokens (@theme), bundled fonts,
-    │                               #   base + scrollbar
-    ├── assets/fonts/               # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
-    ├── App.jsx                     # Shell + auth gate: Sidebar | Header + TabBar + tab content
-    │                               #   + TailPanel
-    │
-    ├── config/                     # ★ DECLARATIVE EXTENSION POINTS ★
-    │   ├── tabs.js                 # ANALYSIS_TABS registry: the ONLY file to touch
-    │   │                           #   to register a new tab. buildDefaultIncidentData().
-    │   ├── os.js                   # Host OS registry (Windows/macOS/Linux)
-    │   ├── browsers.js             # BROWSER registry: engine, file sources, per-OS paths
-    │   ├── shells.js               # SHELL registry (Bash/Zsh/Fish/PowerShell): per-OS paths
-    │   ├── artifacts.js            # ENDPOINT ARTIFACT registry (execution/persistence/
-    │   │                           #   fileaccess/usb): columns, CSV aliases, per-OS sources
-    │   ├── eventLogs.js            # Windows event-log channels, curated event IDs (label,
-    │   │                           #   category, summary) and the collection script
-    │   └── detectionRules.js       # Factory keyword + command + artifact + event-log rules, business
-    │                               #   hours (keywords managed at runtime from Settings).
-    │
-    ├── context/
-    │   ├── AuditContext.jsx        # useAudit(): global audit log via the API
-    │   ├── AuthContext.jsx         # useAuth(): session auth (login/logout/me), users
-    │   ├── SettingsContext.jsx     # useSettings(): keywords, business hours, IOC allowlist;
-    │   │                           #   useSocEngine(): memoized detection engine
-    │   ├── IncidentContext.jsx     # useIncidents(): incident state, CRUD, flags, notes,
-    │   │                           #   export/import — optimistic model backed by the API
-    │   ├── IocLookupContext.jsx    # useIocLookup(): "Where seen", allowlist dialog, IOC menu; <IocValue>
-    │   ├── ContextMenuContext.jsx  # useContextMenu(): the app's right-click menu, askText()
-    │   ├── NavigationContext.jsx   # useNavigation(): go to a tab, open the search, import a file
-    │   └── ToastContext.jsx        # useToast(): short notices with an optional Undo
-    │
-    ├── services/
-    │   ├── api.js                  # The ONLY file that talks to the server (fetch wrapper)
-    │   ├── fileParsers.js          # parseBrowserSource(file, engine, source): dispatch
-    │   │                           #   SQLite/plist/JSON/CSV + lenient field mapping
-    │   ├── sqliteParser.js         # Chromium (History/Shortcuts), Firefox (places.sqlite) and
-    │   │                           #   Safari (History.db) parsers via sql.js (lazy WASM)
-    │   ├── plistParser.js          # parsePlist(buffer): binary (bplist00) + XML property lists
-    │   ├── safariParser.js         # Safari Downloads.plist / Bookmarks.plist → shared shapes
-    │   ├── __fixtures__/           # binary plist test fixtures (+ the script that makes them)
-    │   ├── shellParsers.js         # parseShellHistory(file, shell): bash/zsh/fish/PSReadLine
-    │   ├── artifactParsers.js      # parseArtifactImport(file, category, source): xbel/plist/
-    │   │                           #   configlines/setupapi/knowledgeC + CSV/JSON (script mode)
-    │   └── demoData.js             # getDemoBrowserData/getDemoShellData/getDemoArtifactData
-    │
-    ├── utils/
-    │   ├── id.js                   # generateId() → crypto.randomUUID (with fallback)
-    │   ├── path.js                 # fileNameFromPath (Windows/POSIX paths, file:// URIs)
-    │   ├── mergePatch.js           # createMergePatch(prev, next) — RFC 7396 diff (+ .test.js)
-    │   ├── asciiSkull.js           # renderSkull(): the loading/error/empty skull (+ .test.js)
-    │   ├── browserProfiles.js      # browser profiles: normalize, order, names, labels (+ .test.js)
-    │   ├── time.js                 # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…
-    │   ├── url.js                  # extractDomain, extractSearchQuery, topDomains…
-    │   ├── malware.js              # IOC detection, sample severity, timeline events (+ .test.js)
-    │   ├── code.js                 # Code view: API reach, call graph, CFG, pseudo-C lines (+ .test.js)
-    │   ├── triage.js               # Function origin, strings/IOC links, Start here (+ .test.js)
-    │   ├── events.js               # buildEvents, historyEventType, redirect helpers
-    │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
-    │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
-    │   ├── iocs.js                 # IOC types, source labels, guessIocType
-    │   ├── search.js               # searchIncident (open incident), matchActions
-    │   ├── incidentName.js         # deriveIncidentName ([ticket] title | host - user), severities
-    │   ├── fileRouting.js          # detectFileRoute: which tab a dropped file belongs to
-    │   ├── report.js               # report options, reportDetections (SOC hits + ATT&CK)
-    │   ├── hash.js                 # sha256Hex: digest of an imported file, in the browser
-    │   ├── eventLogs.js            # parseEventLogJson, buildEventLogEvents (event-log
-    │   │                           #   ruleset), logonSessions, coverage
-    │   ├── timeline.js             # buildTimelineEvents (merge all timestamped events)
-    │   └── soc.js                  # createSocEngine({keywords, commandKeywords,
-    │                               #   artifactKeywords, businessHours}) → analyze()
-    │
-    └── components/
-        ├── ui/                     # Reusable UI kit (Button, Card, Badge, Modal, DataTable,
-        │                           #   EmptyState, SearchInput, Select, StatCard, AsciiSkull,
-        │                           #   ErrorBoundary)
-        ├── auth/                   # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
-        ├── backup/                 # BackupModal (full export/restore, admin only)
-        ├── settings/               # SettingsPanel + sections/ (detection rules, business
-        │                           #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
-        │                           #   FLIRT signatures, capa rules, audit log)
-        ├── search/                 # CommandPalette (Ctrl/Cmd+K: nik> search and > actions)
-        ├── incident/               # IncidentFields (ticket, title, severity…), AddFileDialog
-        ├── menu/                   # useRowMenu (flag, comment, copy, timeline on any event row)
-        ├── report/                 # ReportDialog (options, preview, PDF/HTML download)
-        ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
-        │                           #   TailPanel (tail -f of the timeline)
-        └── tabs/
-            ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
-            ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
-            │                           #   filters, widgets, bookmarks/shortcuts tables
-            ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
-            ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
-            ├── iocs/                   # IocsTab (indicators, cross-incident counts, reputation, export),
-            │                           #   IocReputation (external answers, Check now)
-            ├── eventlogs/              # EventLogsTab, EvtxUpload (server-side parse + job poll),
-            │                           #   CoverageChart, EventsSection
-            ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
-            │                           #   StructureSection, YaraSection, IocSection, StringsSection,
-            │                           #   CapabilitiesSection, useWorkerJob (polled worker state),
-            │                           #   DownloadDialog; code/ CodeSection, GraphCanvas (ELK),
-            │                           #   DecompiledView, StartHere, FunctionNotes, hooks
-            ├── mail/                   # MailAnalysisTab, MailDetail, MailHeaders, MailBody (sandboxed
-            │                           #   frame), MailLinks, MailAttachments, HexView, RemoteBrowser
-            ├── network/                # NetworkAnalysisTab, CaptureDetail, PacketView (list, tree, bytes),
-            │                           #   FollowStream, RequestLog (DevTools-like Network panel)
-            └── timeline/               # TimelineTab (the super-timeline)
+│   ├── requirements.txt            # runtime dependencies (requirements-dev.txt adds the tools)
+│   ├── .env.example                # Backend configuration template (local development)
+│   ├── alembic/                    # Database migrations
+│   ├── tests/                      # pytest suite (SQLite by default, PostgreSQL in CI)
+│   └── app/                        # see below
+├── workers/                        # Isolated analysis workers, one container each
+│   ├── analyzer/                   # rizin: Dockerfile, nik_analyzer.py (pipe + transforms),
+│   │                               #   server.py (HTTP, token, job slots), tests/ (recorded output)
+│   ├── capa/                       # capa: Dockerfile (pinned capa, rules, signatures),
+│   │                               #   nik_capa.py (run + reduce the report), server.py, tests/
+│   ├── docview/                    # document viewer: Dockerfile (LibreOffice, pdfium),
+│   │                               #   nik_docview.py (Office → PDF → page PNGs), server.py, tests/
+│   ├── browser/                    # isolated browser: Dockerfile (Playwright Chromium),
+│   │                               #   nik_browser.py (sessions, network rules), netlog.py (the
+│   │                               #   DevTools-like request log), server.py, tests/
+│   └── pcap/                       # packet capture: Dockerfile (tshark, sharkd),
+│                                   #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
+├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, upgrade-postgres.sh,
+│                                   #   install-systemd.sh + systemd/, check-images.sh
+├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
+├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
+├── docker-compose.yml              # db + api + analyzer + capa + docview + browser + pcap + web
+├── .env.example                    # Compose configuration template
+└── ruff.toml                       # Ruff settings for every Python component
+```
+
+The backend package, `backend/app/`:
+
+```
+app/
+├── main.py                         # FastAPI app: create_all on startup, /api routers
+├── core/                           # Infrastructure shared by every feature
+│   ├── config.py                   # Env-based settings (DATABASE_URL, SECRET_KEY, …)
+│   ├── db.py                       # SQLAlchemy engine / session factory
+│   ├── models.py                   # users, sessions, incidents, audit_log, settings, samples, …
+│   ├── schemas.py                  # Pydantic request/response models
+│   ├── security.py                 # bcrypt hashing, session-auth dependencies
+│   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY)
+│   ├── ratelimit.py                # Shared rate limiter (slowapi)
+│   └── observability.py            # Request ids, structured access logs, Prometheus metrics
+├── workers/                        # Clients of the analysis workers
+│   ├── analyzer.py                 # rizin worker client + disassembly job
+│   ├── capa.py                     # capa worker client + capabilities job (one at a time)
+│   └── previews.py                 # document viewer and isolated browser clients
+├── malware/                        # Malware samples
+│   ├── samples.py                  # Sample store (files by SHA-256, e-mails as .mail) + protected zip
+│   ├── yara_rules.py               # YARA: built-in + admin rules compiled together, scan
+│   ├── yara/                       # Built-in YARA rule files (*.yar)
+│   ├── flirt.py                    # Admin FLIRT signature files (validation, store, worker paths)
+│   └── capa_rules.py               # Admin capa rules (worker validation, store, dependencies)
+├── network/                        # Network Analysis: store (capture files, browser logs), service (analysis,
+│                                   #   references, browser log sync), pcapng (log → pcapng), har (HAR 1.2)
+├── enrichment/                     # Threat intelligence: providers (one function each), service (what may be
+│                                   #   sent, rate limits, cache), worker (background lookups, lease)
+├── mail/                           # Mail analysis: parse (.eml/.msg, LZFu RTF), headers (route,
+│                                   #   sender, Authentication-Results), verify (SPF/DKIM/DMARC),
+│                                   #   links, content (nh3, QR, pressure), attachments, analyze
+├── parsing/                        # malware.py (hashes, type, entropy, strings, IOC), executables.py
+│                                   #   (PE, ELF, Mach-O), eventlog.py (.evtx), browser/shell/artifact ports
+├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
+├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&CK) and PDF (WeasyPrint)
+├── browser_profiles.py             # browser profiles: legacy conversion, upload routing
+├── defaults.py                     # Factory defaults for detection settings
+├── events.py                       # Outbound webhook events
+└── routers/                        # auth, users, incidents, audit, settings, backup, samples, mails,
+                                    #   network, previews, enrichment, search, yara_rules, flirt, capa_rules, …
+```
+
+The frontend sources, `frontend/src/`:
+
+```
+src/
+├── main.jsx                        # Entry: StrictMode > AuditProvider > AuthProvider
+│                                   #   > SettingsProvider > IncidentProvider > App
+├── index.css                       # Tailwind v4, design tokens (@theme), bundled fonts,
+│                                   #   base + scrollbar
+├── assets/fonts/                   # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
+├── App.jsx                         # Shell + auth gate: Sidebar | Header + TabBar + tab content
+│                                   #   + TailPanel
+│
+├── config/                         # ★ DECLARATIVE EXTENSION POINTS ★
+│   ├── tabs.js                     # ANALYSIS_TABS registry: the ONLY file to touch
+│   │                               #   to register a new tab. buildDefaultIncidentData().
+│   ├── os.js                       # Host OS registry (Windows/macOS/Linux)
+│   ├── browsers.js                 # BROWSER registry: engine, file sources, per-OS paths
+│   ├── shells.js                   # SHELL registry (Bash/Zsh/Fish/PowerShell): per-OS paths
+│   ├── artifacts.js                # ENDPOINT ARTIFACT registry (execution/persistence/
+│   │                               #   fileaccess/usb): columns, CSV aliases, per-OS sources
+│   ├── eventLogs.js                # Windows event-log channels, curated event IDs (label,
+│   │                               #   category, summary) and the collection script
+│   └── detectionRules.js           # Factory keyword + command + artifact + event-log rules, business
+│                                   #   hours (keywords managed at runtime from Settings).
+│
+├── context/
+│   ├── AuditContext.jsx            # useAudit(): global audit log via the API
+│   ├── AuthContext.jsx             # useAuth(): session auth (login/logout/me), users
+│   ├── SettingsContext.jsx         # useSettings(): keywords, business hours, IOC allowlist;
+│   │                               #   useSocEngine(): memoized detection engine
+│   ├── IncidentContext.jsx         # useIncidents(): incident state, CRUD, flags, notes,
+│   │                               #   export/import — optimistic model backed by the API
+│   ├── IocLookupContext.jsx        # useIocLookup(): "Where seen", allowlist dialog, IOC menu; <IocValue>
+│   ├── ContextMenuContext.jsx      # useContextMenu(): the app's right-click menu, askText()
+│   ├── NavigationContext.jsx       # useNavigation(): go to a tab, open the search, import a file
+│   └── ToastContext.jsx            # useToast(): short notices with an optional Undo
+│
+├── services/
+│   ├── api.js                      # The ONLY file that talks to the server (fetch wrapper)
+│   └── demoData.js                 # getDemoBrowserData/getDemoShellData/getDemoArtifactData
+│
+├── parsers/                        # Client-side file parsers (the analyst's files stay in the browser)
+│   ├── fileParsers.js              # parseBrowserSource(file, engine, source): dispatch
+│   │                               #   SQLite/plist/JSON/CSV + lenient field mapping
+│   ├── sqliteParser.js             # Chromium (History/Shortcuts), Firefox (places.sqlite) and
+│   │                               #   Safari (History.db) parsers via sql.js (lazy WASM)
+│   ├── plistParser.js              # parsePlist(buffer): binary (bplist00) + XML property lists
+│   ├── safariParser.js             # Safari Downloads.plist / Bookmarks.plist → shared shapes
+│   ├── shellParsers.js             # parseShellHistory(file, shell): bash/zsh/fish/PSReadLine
+│   ├── artifactParsers.js          # parseArtifactImport(file, category, source): xbel/plist/
+│   │                               #   configlines/setupapi/knowledgeC + CSV/JSON (script mode)
+│   └── __fixtures__/               # binary plist test fixtures (+ the script that makes them)
+│
+├── lib/                            # Generic helpers, no domain knowledge
+│   ├── id.js                       # generateId() → crypto.randomUUID (with fallback)
+│   ├── path.js                     # fileNameFromPath (Windows/POSIX paths, file:// URIs)
+│   ├── mergePatch.js               # createMergePatch(prev, next) — RFC 7396 diff (+ .test.js)
+│   ├── asciiSkull.js               # renderSkull(): the loading/error/empty skull (+ .test.js)
+│   ├── hash.js                     # sha256Hex: digest of an imported file, in the browser
+│   ├── time.js                     # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…
+│   └── url.js                      # extractDomain, extractSearchQuery, topDomains…
+│
+├── domain/                         # Forensic logic, pure and unit-tested (+ .test.js)
+│   ├── events.js                   # buildEvents, historyEventType, redirect helpers
+│   ├── browserProfiles.js          # browser profiles: normalize, order, names, labels
+│   ├── commands.js                 # buildCommandEvents, extractBinary, topBinaries
+│   ├── artifacts.js                # buildArtifactEvents (endpoint records → events)
+│   ├── eventLogs.js                # parseEventLogJson, buildEventLogEvents (event-log
+│   │                               #   ruleset), logonSessions, coverage
+│   ├── malware.js                  # IOC detection, sample severity, timeline events
+│   ├── code.js                     # Code view: API reach, call graph, CFG, pseudo-C lines
+│   ├── triage.js                   # Function origin, strings/IOC links, Start here
+│   ├── mail.js                     # Mail Analysis verdicts and colours
+│   ├── network.js                  # Network Analysis: request log, packet tree, follow stream
+│   ├── enrichment.js               # Threat-intelligence answers
+│   ├── iocs.js                     # IOC types, source labels, guessIocType
+│   ├── timeline.js                 # buildTimelineEvents (merge all timestamped events)
+│   ├── soc.js                      # createSocEngine({keywords, commandKeywords,
+│   │                               #   artifactKeywords, businessHours}) → analyze()
+│   ├── report.js                   # report options, reportDetections (SOC hits + ATT&CK)
+│   ├── search.js                   # searchIncident (open incident), matchActions
+│   ├── incidentName.js             # deriveIncidentName ([ticket] title | host - user), severities
+│   └── fileRouting.js              # detectFileRoute: which tab a dropped file belongs to
+│
+└── components/
+    ├── ui/                         # Reusable UI kit (Button, Card, Badge, Modal, DataTable,
+    │                               #   EmptyState, SearchInput, Select, StatCard, AsciiSkull,
+    │                               #   ErrorBoundary)
+    ├── auth/                       # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
+    ├── backup/                     # BackupModal (full export/restore, admin only)
+    ├── settings/                   # SettingsPanel + sections/ (detection rules, business
+    │                               #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
+    │                               #   FLIRT signatures, capa rules, audit log)
+    ├── search/                     # CommandPalette (Ctrl/Cmd+K: nik> search and > actions)
+    ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog
+    ├── menu/                       # useRowMenu (flag, comment, copy, timeline on any event row)
+    ├── report/                     # ReportDialog (options, preview, PDF/HTML download)
+    ├── layout/                     # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
+    │                               #   TailPanel (tail -f of the timeline)
+    └── tabs/
+        ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
+        ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
+        │                           #   filters, widgets, bookmarks/shortcuts tables
+        ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
+        ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
+        ├── iocs/                   # IocsTab (indicators, cross-incident counts, reputation, export),
+        │                           #   IocReputation (external answers, Check now)
+        ├── eventlogs/              # EventLogsTab, EvtxUpload (server-side parse + job poll),
+        │                           #   CoverageChart, EventsSection
+        ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
+        │                           #   StructureSection, YaraSection, IocSection, StringsSection,
+        │                           #   CapabilitiesSection, useWorkerJob (polled worker state),
+        │                           #   DownloadDialog; code/ CodeSection, GraphCanvas (ELK),
+        │                           #   DecompiledView, StartHere, FunctionNotes, hooks
+        ├── mail/                   # MailAnalysisTab, MailDetail, MailHeaders, MailBody (sandboxed
+        │                           #   frame), MailLinks, MailAttachments, HexView, RemoteBrowser
+        ├── network/                # NetworkAnalysisTab, CaptureDetail, PacketView (list, tree, bytes),
+        │                           #   FollowStream, RequestLog (DevTools-like Network panel)
+        └── timeline/               # TimelineTab (the super-timeline)
 ```
 
 **Naming an incident.** An incident has a **ticket ID** (the reference in your
@@ -1291,7 +1323,7 @@ analysts set, shown next to the name in the sidebar and the header but never
 part of it. Everything is editable from the Summary tab; the search palette and
 `GET /api/incidents?q=` also find incidents by ticket.
 
-**Right-click.** One menu for the whole app (`src/context/ContextMenuContext.jsx`):
+**Right-click.** One menu for the whole app (`frontend/src/context/ContextMenuContext.jsx`):
 on an indicator (anywhere it is shown: the IOCs tab, a sample's indicators,
 event-log addresses) *Where else was this seen?*, *Search for it*, *Copy*,
 *Copy defanged* (`hxxps[:]//evil[.]top`) and *Add to the allowlist…*; on an
@@ -1307,7 +1339,7 @@ available for a few seconds. Any analyst can do it.
 
 **Drag-and-drop anywhere.** Drop a file on any part of the app (outside the
 tabs' own drop zones) and a dialog proposes where it goes, from its first bytes
-and its name (`src/utils/fileRouting.js`): PE, ELF and Mach-O executables, PDF,
+and its name (`frontend/src/domain/fileRouting.js`): PE, ELF and Mach-O executables, PDF,
 Office documents, scripts and archives → Malware Analysis; `.evtx` and the
 event-log script's JSON → Event Logs; Chromium `History` / `Shortcuts` /
 `Bookmarks`, Firefox `places.sqlite`, Safari `History.db` and plists → Browser
@@ -1318,7 +1350,7 @@ and the source, then opens the tab and imports the file as its own drop zone
 would.
 
 Each incident is tied to a single host and carries an **operating system**
-(`windows` | `macos` | `linux`, see `src/config/os.js`), chosen when the
+(`windows` | `macos` | `linux`, see `frontend/src/config/os.js`), chosen when the
 incident is created and editable from the Summary tab. The OS drives the
 host-specific bits of the UI: the artifact paths suggested in Browser
 Forensics, which shells appear in Command History, and the incident icon shown
@@ -1326,18 +1358,18 @@ in the sidebar and header.
 
 The **Command History** tab mirrors Browser Forensics for terminal activity:
 one sub-tab per shell (Bash / Zsh / Fish / PowerShell, see
-`src/config/shells.js`), parsing the native history files (`.bash_history`,
+`frontend/src/config/shells.js`), parsing the native history files (`.bash_history`,
 `.zsh_history`, `fish_history`, PSReadLine `ConsoleHost_history.txt`) plus
 JSON/CSV exports. Commands run through the SOC engine — the shared keyword
 rules plus a built-in command ruleset (`DEFAULT_COMMAND_KEYWORDS` in
-`src/config/detectionRules.js`: download-and-execute, encoded payloads, reverse
+`frontend/src/config/detectionRules.js`: download-and-execute, encoded payloads, reverse
 shells, credential access, defense evasion, persistence, exfiltration, history
 tampering…) — can be flagged, searched, filtered by the suspicious window, and
 appear on the incident timeline exactly like browser events.
 
 The **Endpoint Artifacts** tab covers host forensic artifacts that neither the
 browser nor the shell captures, one sub-tab per category built from one or more
-**sources** (see `src/config/artifacts.js`): **Program Execution** (BAM,
+**sources** (see `frontend/src/config/artifacts.js`): **Program Execution** (BAM,
 KnowledgeC), **Persistence** (Run keys, Scheduled Tasks, services, startup,
 WMI, cron, systemd, SSH keys, rc files, LaunchAgents), **File & Folder Access**
 (GTK recently-used) and **USB & Devices** (USBSTOR, setupapi log, kernel
@@ -1351,12 +1383,12 @@ of two ways driven by the incident's host OS:
 
 - **file** — the data already lives in a plain text / XML / log / SQLite file,
   so the analyst uploads that existing file and it is parsed in-browser (custom
-  parsers in `src/services/artifactParsers.js`: `recently-used.xbel`,
+  parsers in `frontend/src/services/artifactParsers.js`: `recently-used.xbel`,
   `authorized_keys` / cron / rc files, LaunchAgent `.plist`, `setupapi.dev.log`,
   and `knowledgeC.db` via sql.js).
 - **script** — the data is live system state (registry, service manager,
   kernel journal), so the tab shows a native collection script
-  (`src/config/collectionScripts.js`, PowerShell / systemctl / journalctl only)
+  (`frontend/src/config/collectionScripts.js`, PowerShell / systemctl / journalctl only)
   with copy/download buttons; it writes a CSV whose headers match the importer
   1:1, which the analyst then imports.
 
@@ -1368,7 +1400,7 @@ explicit note rather than a dead end.
 The **Event Logs** tab (Windows) holds curated events from the host's event
 logs, per channel (Security, System, PowerShell, PowerShell classic, RDP
 sessions and authentication, Defender, Task Scheduler, Sysmon; see
-`src/config/eventLogs.js`). They arrive two ways: raw `.evtx` files copied
+`frontend/src/config/eventLogs.js`). They arrive two ways: raw `.evtx` files copied
 from `C:\Windows\System32\winevt\Logs\` (or a disk image), uploaded and
 parsed on the server, which also recovers records left in the file's unused
 space after a clear and keeps the file's SHA-256; or the JSON written by a
@@ -1388,7 +1420,7 @@ channel, the newest); the rest is counted. The tab shows:
 
 Command lines (4688, Sysmon 1) and PowerShell script blocks go through the
 command-line ruleset; the built-in event-log ruleset (`DEFAULT_EVENTLOG_RULES`,
-logic in `src/utils/eventLogs.js`) adds log cleared, audit policy changed,
+logic in `frontend/src/domain/eventLogs.js`) adds log cleared, audit policy changed,
 service installed (high when the binary sits in a user-writable path or runs a
 shell), suspicious PowerShell, brute force (10 failed logons for one account or
 source within 10 minutes), a logon right after 5 failures, RDP outside business
@@ -1450,7 +1482,7 @@ page numbers at the bottom. Its sections:
 - **MITRE ATT&CK** techniques from capa's capabilities, the YARA rules'
   `mitre_attack` metadata (the built-in rules carry it) and the SOC rules that
   matched (each built-in rule names its techniques in
-  `src/config/detectionRules.js`), each with where it was seen;
+  `frontend/src/config/detectionRules.js`), each with where it was seen;
 - **indicators of compromise** outside the allowlist, those seen in other
   incidents first (up to 500; the rest are in the CSV/STIX/MISP export);
 - **malware samples** with their hashes, YARA matches and capa capabilities;
@@ -1486,7 +1518,7 @@ hours, account management and the audit log.
 
 #### IncidentContext
 
-All incident state lives in `src/context/IncidentContext.jsx`, exposed through
+All incident state lives in `frontend/src/context/IncidentContext.jsx`, exposed through
 the `useIncidents()` hook:
 
 ```js
@@ -1554,7 +1586,7 @@ reopening one shows it at once and revalidates it with `If-None-Match`
 
 The cache is an **optimistic model**: every mutation updates local state
 immediately and persists only what changed, as an RFC 7396 JSON Merge Patch
-generated by `src/utils/mergePatch.js` from the previous and next document
+generated by `frontend/src/domain/mergePatch.js` from the previous and next document
 (`POST` / `PATCH` / `DELETE /api/incidents/{id}`). Toggling a flag therefore
 sends the flag, not the incident's artifacts. A failed write surfaces in
 `storageError`, shown by `App.jsx` as a red banner. `setActiveBrowser`, `setActiveProfile` and
@@ -1639,7 +1671,7 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
 > `history`/`bookmarks`/`shortcuts`, Firefox has `places`). Each entry
 > describes the imported file: `{ fileName, format, rows, importedAt }`.
 
-`data` is built by `buildDefaultIncidentData()` (`src/config/tabs.js`), which
+`data` is built by `buildDefaultIncidentData()` (`frontend/src/config/tabs.js`), which
 iterates the tab registry: each tab contributes `structuredClone(defaultData)`
 under its own `dataKey`. Every incident loaded from the server or imported from
 a file passes through `normalizeIncident()`, which merges the registry defaults
@@ -1660,7 +1692,7 @@ existing incidents receive the new tab's `defaultData` automatically (see
 
 #### Authentication
 
-Passwords are hashed with **bcrypt on the server** (`backend/app/security.py`).
+Passwords are hashed with **bcrypt on the server** (`backend/app/core/security.py`).
 A successful `POST /api/auth/login` creates a server-side session row and sets
 the **httpOnly** `nik_session` cookie (with the `Secure` flag when
 `COOKIE_SECURE=true`); `credentials: 'include'` on every fetch keeps it
@@ -1685,7 +1717,7 @@ enforced server-side.
 
 #### Audit log
 
-`src/context/AuditContext.jsx` records every meaningful action through the API:
+`frontend/src/context/AuditContext.jsx` records every meaningful action through the API:
 **who** (actor), **when** (`at`), **what** (`action`), the **details**, and
 which **incident** it belonged to. Entries are returned newest-first, capped at
 5000.
@@ -1732,7 +1764,7 @@ server. The flow:
    `POST /api/incidents/{id}/samples` (`services/api.js` → `upload()`, with
    progress).
 2. The server (`routers/samples.py`) computes the SHA-256 and writes the bytes
-   **once** to the sample store (`app/samples.py`: `SAMPLE_STORE/<sha256>.bin`,
+   **once** to the sample store (`app/malware/samples.py`: `SAMPLE_STORE/<sha256>.bin`,
    read-only, no execute bit), runs the static analysis
    (`parsing/malware.py`: hashes, magic-byte type, entropy overall and per
    64 KB block, ASCII/UTF-16 strings, indicators) and stores the result in the
@@ -1761,7 +1793,7 @@ resources, imphash, Authenticode presence, rich header, PDB path), ELF and
 Mach-O with Nik's own header parsers (segments, sections, needed libraries or
 dylibs, interpreter, code signature). Malformed headers, the norm in malware,
 become `warnings` instead of failures. Every sample is then scanned with YARA
-(`yara_rules.py`): the built-in rule files under `app/yara/` (`YARA_RULES`)
+(`yara_rules.py`): the built-in rule files under `app/malware/yara/` (`YARA_RULES`)
 plus the rule sets admins add in **Settings → YARA rules**, which are compiled
 on their own before being saved and recompiled together on change. A match's
 `meta.severity` (`high` / `medium`) and `meta.description` drive the badges;
@@ -1771,7 +1803,7 @@ runs the current engine on the stored file, so older samples catch up after
 an upgrade or a rule change.
 
 **Code view (disassembly and decompilation).** Both run in a separate
-worker, `analyzer/`, built on the official `rizin/rizin` image, which ships
+worker, `workers/analyzer/`, built on the official `rizin/rizin` image, which ships
 **rz-ghidra** (Ghidra's decompiler, Apache-2.0, as a rizin plugin, LGPL-3.0):
 no Java and no extra build step. The backend never runs rizin itself:
 
@@ -1870,7 +1902,7 @@ everyone opening the same sample.
 matches a community rule set against the program's code and reports what it
 can do (send data on a socket, create a process, encrypt with RC4, resolve
 APIs at runtime…), mapped to MITRE ATT&CK and the Malware Behavior Catalog.
-It runs in a third worker, `capa/`, built on `python:3.12-slim` with
+It runs in a third worker, `workers/capa/`, built on `python:3.12-slim` with
 `flare-capa`, its rules and its library signatures at a pinned version (the
 rules and signatures are checked against their SHA-256 at build time); capa
 uses its pure-Python vivisect backend, so no Java or IDA is needed. capa,
@@ -2025,7 +2057,7 @@ the analyst's machine. Like `analyzer` and `capa` they run as unprivileged
 users with a read-only filesystem, no capabilities, memory and CPU limits,
 no published port, and answer only the backend's shared token.
 
-**Documents** (`docview/`, internal network only). The Mail Analysis tab's
+**Documents** (`workers/docview/`, internal network only). The Mail Analysis tab's
 **Preview** sends the attachment to
 `POST /api/mails/{sha256}/attachments/{path}/preview`; the backend forwards
 it to the worker, which converts Word, Excel, PowerPoint, OpenDocument and
@@ -2036,7 +2068,7 @@ pdfium; images are re-encoded with Pillow. The browser receives PNG images
 only. The pages are kept under `SAMPLE_STORE/_previews/<sha256>.json` and
 removed with the last message that holds the attachment.
 
-**Isolated browser** (`browser/`). HTML attachments (**Open in isolated
+**Isolated browser** (`workers/browser/`). HTML attachments (**Open in isolated
 browser**) and links (Links view) open in Chromium, run by Playwright inside
 the worker's container. The analyst sees a JPEG of the viewport; clicks,
 double-clicks, typing, Enter / Tab / arrows and the wheel are sent to
@@ -2063,7 +2095,7 @@ never in the analyst's browser.
 ### 3.11 Network analysis
 
 The **Network Analysis** tab reads packet captures with Wireshark's own
-engine, in the `pcap` worker (`pcap/`): Debian's `tshark` and `sharkd`, run
+engine, in the `pcap` worker (`workers/pcap/`): Debian's `tshark` and `sharkd`, run
 as an unprivileged user in a container with a read-only filesystem and the
 sample store mounted read-only, no capabilities (nothing is ever captured)
 and the internal network only.
@@ -2113,12 +2145,12 @@ upload. It also exports as **HAR 1.2** (`network/har.py`).
 
 ### 4.1 Add a new analysis tab
 
-The `src/config/tabs.js` registry is the **only existing file to modify**.
+The `frontend/src/config/tabs.js` registry is the **only existing file to modify**.
 Example: a "DNS Logs" tab.
 
 **Step 1 — Create the tab component.** Every tab is a component with a default
 export that receives the active `incident` as a prop. Create
-`src/components/tabs/DnsLogsTab.jsx`:
+`frontend/src/components/tabs/DnsLogsTab.jsx`:
 
 ```jsx
 import { useState } from 'react'
@@ -2206,7 +2238,7 @@ export default function DnsLogsTab({ incident }) {
 }
 ```
 
-**Step 2 — Register the tab** in `src/config/tabs.js`:
+**Step 2 — Register the tab** in `frontend/src/config/tabs.js`:
 
 ```js
 // at the top of the file, next to the other lazy tabs:
@@ -2242,11 +2274,11 @@ This section is about extending things via **code**.
 
 The engine has three parts:
 
-- `src/config/detectionRules.js` — the **factory defaults**
+- `frontend/src/config/detectionRules.js` — the **factory defaults**
   (`DEFAULT_SUSPICIOUS_KEYWORDS`, `DEFAULT_BUSINESS_HOURS`);
-- `src/context/SettingsContext.jsx` — the runtime state (`useSettings()`) plus
+- `frontend/src/context/SettingsContext.jsx` — the runtime state (`useSettings()`) plus
   `useSocEngine()`, a memoized engine;
-- `src/utils/soc.js` — `createSocEngine({ keywords, businessHours })`, which
+- `frontend/src/domain/soc.js` — `createSocEngine({ keywords, businessHours })`, which
   compiles the regexes and analyzes events (`engine.analyze(entry)`).
 
 **Add a default keyword rule** — add an object to
@@ -2284,7 +2316,7 @@ export const DEFAULT_BUSINESS_HOURS = {
 set.
 
 **Add a new type of detection** (example: URLs pointing at a bare IP address, a
-classic C2/phishing indicator) — extend `src/utils/soc.js` in three places:
+classic C2/phishing indicator) — extend `frontend/src/domain/soc.js` in three places:
 
 ```js
 // a) the analysis function:
@@ -2316,7 +2348,7 @@ section.
 
 ### 4.3 Browsers, parsers and formats
 
-**Add a browser.** Browsers are a registry in `src/config/browsers.js`: adding
+**Add a browser.** Browsers are a registry in `frontend/src/config/browsers.js`: adding
 an entry to the `BROWSERS` array makes the sub-tab appear and wires up upload,
 path hints and sections automatically. Each browser declares `id`, `label`,
 `icon`, `engine` (`'chromium'` | `'firefox'` | `'safari'`), `accent`, optional
@@ -2329,12 +2361,12 @@ Paths may contain `<profile>`, explained by the optional `profileHint`.
 
 **Profiles.** Every browser holds one or more profiles; the profile helpers
 (normalization of pre-2.0.0 data, ordering, name validation, labels) live in
-`src/utils/browserProfiles.js` and mirror `backend/app/browser_profiles.py`. A
+`frontend/src/domain/browserProfiles.js` and mirror `backend/app/browser_profiles.py`. A
 browser always keeps at least one profile; deleting one keeps the flags placed
 on its rows, shown as coming from a deleted profile.
 
 **The parsing dispatcher.** All parsing goes through
-`parseBrowserSource(file, engine, source)` in `src/services/fileParsers.js`:
+`parseBrowserSource(file, engine, source)` in `frontend/src/services/fileParsers.js`:
 
 ```js
 parseBrowserSource(file, engine, source)
@@ -2379,8 +2411,8 @@ helper for the engine.
 
 ### 4.4 UI kit reference
 
-All components live in `src/components/ui/` with a default export, re-exported
-from the barrel `src/components/ui/index.js`:
+All components live in `frontend/src/components/ui/` with a default export, re-exported
+from the barrel `frontend/src/components/ui/index.js`:
 
 ```js
 import { Button, Card, Badge, Modal, DataTable, EmptyState, ErrorBoundary,
@@ -2473,7 +2505,7 @@ MicroSkull({ mood = 'animated' | 'closed' | 'x', className = '' })
 ```
 
 **Loading, error and empty states** use the ASCII skull, generated by
-`renderSkull()` in `src/utils/asciiSkull.js` (any size, always symmetric):
+`renderSkull()` in `frontend/src/domain/asciiSkull.js` (any size, always symmetric):
 
 | Where | Skull |
 |---|---|
@@ -2488,7 +2520,7 @@ The `large` preset is kept for future use. With *reduce motion* enabled in
 the operating system the skulls stay still.
 
 **Look and tokens.** Nik has a single dark, terminal-style theme. Colours
-are **named tokens** declared once in `src/index.css` (`@theme`), and
+are **named tokens** declared once in `frontend/src/index.css` (`@theme`), and
 components use the names, never raw palette classes:
 
 | Token | Use |
@@ -2507,7 +2539,7 @@ Tailwind turns each token into utilities (`bg-panel`, `text-fg-muted`,
 - Corners are square; borders are 1 px `border-line`.
 - Monospace (`font-mono`, JetBrains Mono) for data, labels, tabs and
   headings; Inter (`font-sans`) for prose and buttons. Both fonts are bundled
-  (`src/assets/fonts/`), no CDN.
+  (`frontend/src/assets/fonts/`), no CDN.
 - Severities differ in lightness as well as hue, so they stay readable for
   colour-blind analysts.
 

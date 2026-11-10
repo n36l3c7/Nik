@@ -1,6 +1,6 @@
 """Network Analysis: captures, the isolated browser's network log, pcapng and HAR.
 
-The workers are faked here; pcap/ and browser/ test themselves with tshark,
+The workers are faked here; workers/pcap/ and workers/browser/ test themselves with tshark,
 sharkd and Chromium.
 """
 
@@ -15,11 +15,11 @@ import pytest
 import pyzipper
 from fastapi.testclient import TestClient
 
-from app import previews
-from app.config import settings
-from app.db import SessionLocal
-from app.models import NetworkCapture
+from app.core.config import settings
+from app.core.db import SessionLocal
+from app.core.models import NetworkCapture
 from app.network import har, pcapng, store
+from app.workers import previews
 from tests.conftest import make_key
 
 T0 = 1762765200000.0

@@ -1,0 +1,11 @@
+# Prettier formats JS/JSX, CSS, JSON, HTML and YAML: the frontend, plus the
+# Pages site, the workflows and the Compose file (see the format scripts in
+# package.json). Markdown is left alone: Prettier pads tables to the longest
+# cell and rewrites some blockquotes and mixed lists, which makes the docs
+# harder to edit for no rendering gain.
+*.md
+dist/
+test-results/
+playwright-report/
+node_modules/
+package-lock.json

@@ -11,10 +11,10 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
-from ..models import Job
-from ..schemas import JobOut
-from ..security import Principal, principal
+from ..core.db import get_db
+from ..core.models import Job
+from ..core.schemas import JobOut
+from ..core.security import Principal, principal
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 

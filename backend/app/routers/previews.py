@@ -19,14 +19,14 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import previews
-from ..db import get_db
+from ..core.db import get_db
+from ..core.models import Incident, NetworkCapture
+from ..core.security import Principal, now_iso, principal, writer_principal
 from ..enrichment.service import internal_host
-from ..models import Incident, NetworkCapture
 from ..network import service as network_service
 from ..network import store as network_store
 from ..parsing.malware import detect_type, hashes
-from ..security import Principal, now_iso, principal, writer_principal
+from ..workers import previews
 from .mails import _attachment, _audit, _mail_or_404, _parsed
 
 router = APIRouter(tags=["previews"])

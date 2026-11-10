@@ -7,7 +7,7 @@ for external clients — **API keys** sent in the `X-API-Key` header.
 
 ## API keys & interactive docs
 
-The `principal` dependency (`app/security.py`) resolves a caller from **either**
+The `principal` dependency (`app/core/security.py`) resolves a caller from **either**
 the session cookie **or** an `X-API-Key` header, so incident / note / upload /
 settings-read endpoints work for both the browser and API clients. Keys are
 managed by an admin at `/api/keys` (create returns the plaintext once; only a
@@ -16,7 +16,7 @@ login; *Authorize* with a key to call).
 
 ## Server-side file parsing
 
-`app/parsing/` ports the client-side parsers (`src/services/*Parsers.js`) to
+`app/parsing/` ports the client-side parsers (`frontend/src/parsers/*Parsers.js`) to
 Python (stdlib `sqlite3`, `csv`, `json`, `xml.etree`, `plistlib`) so the upload
 endpoint `POST /api/incidents/{id}/upload` can accept raw artifact files and
 merge the normalized result into the incident. `parsing/registry.py` maps the
