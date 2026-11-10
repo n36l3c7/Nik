@@ -1,4 +1,4 @@
-"""Timestamp conversions — port of ``src/utils/time.js``.
+"""Timestamp conversions — port of ``frontend/src/lib/time.js``.
 
 All functions return Unix epoch **milliseconds** (int) or ``None``.
 """

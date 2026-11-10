@@ -6,8 +6,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app import analyzer
-from app.config import settings
+from app.core.config import settings
+from app.workers import analyzer
 from tests.conftest import make_key
 from tests.test_code import WORKER_RESULT, _upload, worker  # noqa: F401 (fixture)
 from tests.test_executables import minimal_pe

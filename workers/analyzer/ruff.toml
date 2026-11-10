@@ -1,0 +1,3 @@
+# The analyzer worker runs on Python 3.9 inside the rizin image.
+extend = "../../ruff.toml"
+target-version = "py39"

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.17.1] - 2026-11-10
+
+### Changed
+
+- **Repository layout**: one folder per component. The single-page app
+  moved to `frontend/` (with its Dockerfile, nginx configuration and the
+  end-to-end tests), the five analysis workers to `workers/` (`analyzer`,
+  `capa`, `docview`, `browser`, `pcap`). Run the npm scripts from
+  `frontend/`; Compose builds the web image from that folder only, so the
+  workers, their fixtures and the docs no longer enter its build context.
+- Backend package split by concern: `app/core/` (configuration, database,
+  models, schemas, security, vault, rate limit, observability),
+  `app/workers/` (worker clients) and `app/malware/` (sample store, YARA and
+  capa rules, FLIRT signatures, built-in YARA rules).
+- Frontend sources split by kind: `src/lib/` (generic helpers),
+  `src/domain/` (forensic logic) and `src/parsers/` (client-side file
+  parsers) replace `src/utils/` and most of `src/services/`.
+- One Ruff configuration (`ruff.toml`) for every Python component; the
+  analyzer extends it for Python 3.9.
+- The registry-name check on every image is a shell script,
+  `deploy/check-images.sh`, run by the Audit workflow.
+- Dependabot also watches the Dockerfiles of the web image and of the
+  document viewer, isolated browser and packet capture workers.
+
+### Removed
+
+- Python bytecode (`__pycache__`) committed by mistake; `.gitignore` now
+  excludes it everywhere.
+
+### Upgrading
+
+- Compose: nothing to do (`git pull`, then `compose up -d --build`); the
+  volumes keep their names.
+- Development: delete the old `node_modules/` at the repository root and
+  run `npm ci` in `frontend/`.
+
 ## [2.17.0] - 2026-11-10
 
 ### Added

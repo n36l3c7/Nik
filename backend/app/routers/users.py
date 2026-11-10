@@ -13,10 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
-from ..models import User
-from ..schemas import UserCreate, UserEnvelope, UsersEnvelope
-from ..security import (
+from ..core.db import get_db
+from ..core.models import User
+from ..core.schemas import UserCreate, UserEnvelope, UsersEnvelope
+from ..core.security import (
     Principal,
     admin_principal,
     hash_password,

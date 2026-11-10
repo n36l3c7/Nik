@@ -14,11 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import yara_rules
-from ..db import get_db
-from ..models import AuditEntry, YaraRule
-from ..schemas import YaraRuleIn, YaraRulesEnvelope
-from ..security import Principal, admin_principal, now_iso, principal
+from ..core.db import get_db
+from ..core.models import AuditEntry, YaraRule
+from ..core.schemas import YaraRuleIn, YaraRulesEnvelope
+from ..core.security import Principal, admin_principal, now_iso, principal
+from ..malware import yara_rules
 
 router = APIRouter(prefix="/yara-rules", tags=["yara-rules"])
 

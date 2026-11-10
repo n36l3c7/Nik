@@ -24,13 +24,14 @@ jobs:
         working-directory: backend
         run: pytest
       - name: Analyzer worker (lint, format, tests on recorded rizin output)
-        working-directory: analyzer
+        working-directory: workers/analyzer
         run: ruff check . && ruff format --check . && python -m pytest -q tests
       - name: capa worker (lint, format, tests on a recorded capa report)
-        working-directory: capa
+        working-directory: workers/capa
         run: ruff check . && ruff format --check . && python -m pytest -q tests
-      # Their tests need LibreOffice and Chromium: they run inside the images (e2e job).
+      # Their tests need LibreOffice, Chromium and tshark: they run inside the images (e2e job).
       - name: Document viewer, isolated browser and packet capture workers (lint, format)
+        working-directory: workers
         run: for d in docview browser pcap; do (cd "$d" && ruff check . && ruff format --check .) || exit 1; done
 
   # The same suite on PostgreSQL (the default job uses SQLite): the version
@@ -70,12 +71,16 @@ jobs:
 
   frontend-build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "26"
           cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
@@ -94,32 +99,35 @@ jobs:
         with:
           node-version: "26"
           cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install backend deps
         run: pip install -r backend/requirements-dev.txt
       - run: npm ci
+        working-directory: frontend
       - run: npx playwright install --with-deps chromium
+        working-directory: frontend
       - name: Start the analyzer worker (real rizin) on the E2E sample store
         run: |
-          docker build -t nik-analyzer analyzer
+          docker build -t nik-analyzer workers/analyzer
           mkdir -p backend/.e2e-samples
           docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
             -v "$PWD/backend/.e2e-samples:/samples:ro" -e ANALYZER_TOKEN=e2e-token nik-analyzer
       - name: Start the capa worker (real capa) on the E2E sample store
         run: |
-          docker build -t nik-capa capa
+          docker build -t nik-capa workers/capa
           # The worker's own tests, inside its image (with capa and the bundled rules).
-          docker run --rm -v "$PWD/capa/tests:/opt/nik-capa/tests:ro" -w /opt/nik-capa --entrypoint sh nik-capa \
+          docker run --rm -v "$PWD/workers/capa/tests:/opt/nik-capa/tests:ro" -w /opt/nik-capa --entrypoint sh nik-capa \
             -c "pip install --quiet --user pytest && python -m pytest -q -p no:cacheprovider tests"
           docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
             -v "$PWD/backend/.e2e-samples:/samples:ro" -e CAPA_TOKEN=e2e-capa-token nik-capa
       - name: Start the document viewer, the isolated browser and the packet capture worker
         run: |
-          docker build -t nik-docview docview
-          docker build -t nik-browser browser
-          docker build -t nik-pcap pcap
+          docker build -t nik-docview workers/docview
+          docker build -t nik-browser workers/browser
+          docker build -t nik-pcap workers/pcap
           # The workers' own tests, inside their images.
           for w in docview browser pcap; do
-            docker run --rm -v "$PWD/$w/tests:/opt/nik-$w/tests:ro" -w /opt/nik-$w --entrypoint sh nik-$w \
+            docker run --rm -v "$PWD/workers/$w/tests:/opt/nik-$w/tests:ro" -w /opt/nik-$w --entrypoint sh nik-$w \
               -c "pip install --quiet --user pytest && python -m pytest -q -p no:cacheprovider tests" || exit 1
           done
           docker run -d --name nik-docview -p 127.0.0.1:8720:8720 --read-only --tmpfs /tmp \
@@ -129,7 +137,9 @@ jobs:
           docker run -d --name nik-pcap -p 127.0.0.1:8740:8740 --read-only --tmpfs /tmp \
             -v "$PWD/backend/.e2e-samples:/samples:ro" -e PCAP_TOKEN=e2e-pcap-token nik-pcap
       - run: npm run build
+        working-directory: frontend
       - run: npm run test:e2e
+        working-directory: frontend
         env:
           E2E_ANALYZER_URL: http://127.0.0.1:8700
           E2E_ANALYZER_TOKEN: e2e-token
@@ -148,5 +158,5 @@ jobs:
         if: failure()
         with:
           name: playwright-report
-          path: test-results/
+          path: frontend/test-results/
           retention-days: 7

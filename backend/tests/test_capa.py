@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import capa
-from app.analyzer import AnalyzerError, WorkerBusy
-from app.config import settings
+from app.core.config import settings
+from app.workers import capa
+from app.workers.analyzer import AnalyzerError, WorkerBusy
 from tests.conftest import make_key
 from tests.test_code import _upload
 from tests.test_executables import minimal_pe
@@ -129,7 +129,7 @@ def _rule(name, extra=""):
 
 
 def test_admin_capa_rules_are_checked_stored_and_used(admin: TestClient, capa_worker, monkeypatch):
-    from app import capa_rules
+    from app.malware import capa_rules
 
     monkeypatch.setattr(capa_rules, "post_worker", lambda url, token, path, payload, timeout: _verdict(path, payload))
     analyst = make_key(admin, role="analyst")

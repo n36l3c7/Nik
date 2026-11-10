@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app import vault
-from app.db import SessionLocal
+from app.core import vault
+from app.core.db import SessionLocal
 from app.enrichment import providers, service, worker
 from app.iocs import Allowlist
 from tests.conftest import make_key

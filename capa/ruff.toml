@@ -1,6 +1,0 @@
-# Ruff for the capa worker; it runs on Python 3.12 inside its image.
-target-version = "py312"
-line-length = 120
-
-[lint]
-select = ["E", "F", "W", "B", "I"]

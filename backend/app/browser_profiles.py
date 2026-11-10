@@ -14,7 +14,7 @@ Profiles are keyed by a stable id (renaming does not move data) and ordered by
 ``createdAt`` (JSONB does not keep key order). Before 2.0.0 a browser held the
 artifact lists directly; :func:`normalize_browser_data` moves that legacy shape
 into a profile named "Default" with the fixed id ``default``. The same rules
-live in ``src/utils/browserProfiles.js`` for the frontend.
+live in ``frontend/src/domain/browserProfiles.js`` for the frontend.
 """
 
 from __future__ import annotations

@@ -14,11 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
+from ..core.db import get_db
+from ..core.models import Webhook
+from ..core.schemas import WebhookCreate, WebhookCreated, WebhooksEnvelope
+from ..core.security import Principal, admin_principal, now_iso
 from ..events import KNOWN_EVENTS
-from ..models import Webhook
-from ..schemas import WebhookCreate, WebhookCreated, WebhooksEnvelope
-from ..security import Principal, admin_principal, now_iso
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 

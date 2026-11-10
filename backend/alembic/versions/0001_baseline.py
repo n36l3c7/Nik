@@ -13,8 +13,8 @@ Create Date: 2026-07-11
 from __future__ import annotations
 
 from alembic import op
-from app import models  # noqa: F401 — register all tables on Base.metadata
-from app.db import Base
+from app.core import models  # noqa: F401 — register all tables on Base.metadata
+from app.core.db import Base
 
 revision = "0001_baseline"
 down_revision = None

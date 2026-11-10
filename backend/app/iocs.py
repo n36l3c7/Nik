@@ -39,7 +39,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import aliased
 
-from .models import Incident, IocEntry, Mail, NetworkCapture, Sample
+from .core.models import Incident, IocEntry, Mail, NetworkCapture, Sample
 from .parsing.malware import _FALSE_POSITIVE_DOMAINS, _IOC_PATTERNS
 
 TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")

@@ -35,13 +35,13 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..browser_profiles import normalize_browser_data
-from ..db import SessionLocal, get_db
+from ..core.db import SessionLocal, get_db
+from ..core.models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
+from ..core.schemas import NoteIn
+from ..core.security import Principal, now_iso, principal, writer_principal
 from ..events import emit, emit_now
 from ..iocs import reindex_incident
-from ..models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
 from ..parsing.registry import apply_upload
-from ..schemas import NoteIn
-from ..security import Principal, now_iso, principal, writer_principal
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 

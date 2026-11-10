@@ -15,9 +15,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import get_db
-from ..models import Incident, IocEntry, Sample
-from ..security import Principal, principal
+from ..core.db import get_db
+from ..core.models import Incident, IocEntry, Sample
+from ..core.security import Principal, principal
 
 router = APIRouter(prefix="/search", tags=["search"])
 

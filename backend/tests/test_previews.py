@@ -1,5 +1,5 @@
 """Previews of mail attachments: the API side (the workers are faked here;
-docview/ and browser/ test themselves with LibreOffice and Chromium)."""
+workers/docview/ and workers/browser/ test themselves with LibreOffice and Chromium)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from email.message import EmailMessage
 import pytest
 from fastapi.testclient import TestClient
 
-from app import previews
-from app.config import settings
+from app.core.config import settings
+from app.workers import previews
 from tests.conftest import make_key
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"

@@ -11,7 +11,7 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: /
+    directory: /frontend
     schedule:
       interval: monthly
     open-pull-requests-limit: 1
@@ -39,7 +39,14 @@ updates:
       prefix: "chore(deps)"
 
   - package-ecosystem: docker
-    directories: [/backend, /analyzer, /capa, /deploy]
+    directories:
+      - /backend
+      - /frontend
+      - /workers/analyzer
+      - /workers/browser
+      - /workers/capa
+      - /workers/docview
+      - /workers/pcap
     schedule:
       interval: monthly
     open-pull-requests-limit: 1

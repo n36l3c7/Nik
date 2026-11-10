@@ -16,10 +16,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import flirt
-from ..db import get_db
-from ..models import AuditEntry, FlirtSignature
-from ..security import Principal, admin_principal, now_iso, principal
+from ..core.db import get_db
+from ..core.models import AuditEntry, FlirtSignature
+from ..core.security import Principal, admin_principal, now_iso, principal
+from ..malware import flirt
 
 router = APIRouter(prefix="/flirt-signatures", tags=["flirt-signatures"])
 

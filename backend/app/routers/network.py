@@ -1,7 +1,7 @@
 """Network Analysis: packet captures (pcap / pcapng) and isolated browser sessions.
 
 Nothing here reads a packet: the packet capture worker does, with
-Wireshark's engine (``pcap/``). The routes store the files, proxy a fixed
+Wireshark's engine (``workers/pcap/``). The routes store the files, proxy a fixed
 set of the worker's calls (packet list, protocol tree, Follow Stream,
 Export Objects, filter checks), and serve the captures, exported objects
 and browser logs (HAR). Downloads are audited.
@@ -23,13 +23,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import previews, vault
-from ..config import settings
-from ..db import get_db
-from ..models import AuditEntry, Incident, NetworkCapture
+from ..core import vault
+from ..core.config import settings
+from ..core.db import get_db
+from ..core.models import AuditEntry, Incident, NetworkCapture
+from ..core.security import Principal, now_iso, principal, writer_principal
+from ..malware.samples import DEFAULT_ZIP_PASSWORD, zip_sample
 from ..network import har, service, store
-from ..samples import DEFAULT_ZIP_PASSWORD, zip_sample
-from ..security import Principal, now_iso, principal, writer_principal
+from ..workers import previews
 from .samples import store_sample
 
 router = APIRouter(tags=["network"])

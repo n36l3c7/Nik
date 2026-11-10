@@ -1,6 +1,0 @@
-# Ruff for the analyzer worker; it runs on Python 3.9 inside the rizin image.
-target-version = "py39"
-line-length = 120
-
-[lint]
-select = ["E", "F", "W", "B", "I"]

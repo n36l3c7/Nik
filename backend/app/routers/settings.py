@@ -13,14 +13,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..db import get_db
+from ..core.db import get_db
+from ..core.models import Setting, User
+from ..core.schemas import SettingsIn, SettingsOut
+from ..core.security import Principal, current_user, principal
 from ..defaults import default_settings_doc
 from ..enrichment.providers import BY_ID as _PROVIDERS
 from ..enrichment.service import config as enrichment_config
 from ..iocs import DEFAULT_ALLOWLIST
-from ..models import Setting, User
-from ..schemas import SettingsIn, SettingsOut
-from ..security import Principal, current_user, principal
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 PROVIDER_IDS = set(_PROVIDERS)

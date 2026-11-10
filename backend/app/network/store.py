@@ -17,7 +17,7 @@ import stat
 from pathlib import Path
 from typing import Any, Iterable
 
-from ..config import settings
+from ..core.config import settings
 
 STORE_MODE = 0o444
 _ID = re.compile(r"^[0-9a-f]{32}$")

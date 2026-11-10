@@ -23,15 +23,17 @@ jobs:
         with:
           node-version: "26"
           cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - run: pip install pip-audit
       - name: Python — backend
         run: pip-audit -r backend/requirements.txt
       - name: Python — capa worker (the version pinned in its Dockerfile)
         run: |
-          echo "flare-capa==$(sed -n 's/^ARG CAPA_VERSION=//p' capa/Dockerfile)" > "$RUNNER_TEMP/capa-requirements.txt"
+          echo "flare-capa==$(sed -n 's/^ARG CAPA_VERSION=//p' workers/capa/Dockerfile)" > "$RUNNER_TEMP/capa-requirements.txt"
           pip-audit -r "$RUNNER_TEMP/capa-requirements.txt"
       # The analyzer worker uses the Python standard library only.
       - name: npm (runtime and build tooling)
+        working-directory: frontend
         run: npm audit --audit-level=high
 
   shell:
@@ -39,4 +41,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: shellcheck
-        run: shellcheck deploy/*.sh backend/entrypoint.sh
+        run: shellcheck deploy/*.sh frontend/nginx/*.sh backend/entrypoint.sh
+      - name: Every image names its registry
+        run: deploy/check-images.sh
