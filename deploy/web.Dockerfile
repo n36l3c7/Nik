@@ -5,7 +5,7 @@
 # can see package.json, src/, index.html, etc.
 
 # ---- Stage 1: build the static bundle ----
-FROM docker.io/library/node:20-alpine AS build
+FROM docker.io/library/node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
