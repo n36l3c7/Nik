@@ -73,6 +73,10 @@ every action attributed to a named analyst and recorded in a global audit log.
   incidents each one appears in, any value opens **Where seen** across every
   analyst's incidents, a shared allowlist hides well-known domains and private
   addresses, and indicators export as CSV, STIX 2.1 or a MISP event.
+- **Global search** — <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> or <kbd>/</kbd>
+  opens a `nik>` prompt over incidents, indicators from every incident and
+  samples, plus the open incident's events and notes; `>` lists actions (go to
+  a tab, new incident, export, settings…).
 - **Super-timeline** — every timestamped event across all tabs merged into one
   chronological, filterable view, plus a collapsible `tail -f` side panel with
   the latest events on every tab.
@@ -787,6 +791,7 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/iocs/lookup?type=&value=` | Every incident an indicator appears in ("where seen"). `type`: ip, domain, url, email, md5, sha1, sha256. |
 | `GET /api/iocs/shared` | Indicators seen in two or more incidents, most widespread first (allowlisted values left out). |
 | `GET /api/incidents/{id}/iocs/export?format=csv\|stix\|misp` | Download the indicators as CSV, a STIX 2.1 bundle (identity, one indicator each, a report) or a MISP event (unpublished, organisation only). `types=ip,domain,…` narrows them; allowlisted values are left out unless `allowlisted=true`. Audited as `ioc.export`. |
+| `GET /api/search?q=` | Global search (at least 2 characters): incidents by name, host or user; indicators from every incident (3 characters or more) with the number of incidents; samples by hash prefix (6 hex characters or more) or file type. `limit` per group (default 8). |
 | `GET /api/settings` | Read the shared detection rules, business hours and IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`). `PUT` replaces them; a body without `iocAllowlist` keeps the stored list. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
@@ -968,6 +973,7 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
 │       ├── parsing/eventlog.py     # Windows .evtx → curated events + coverage (evtx package)
 │       ├── iocs.py                 # IOC extraction from incidents, index, allowlist, STIX/MISP
+│       ├── routers/search.py       # GET /api/search (incidents, indicators, samples)
 │       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
 │       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
 │       ├── capa_rules.py           # Admin capa rules (worker validation, store, dependencies)
@@ -1036,6 +1042,7 @@ file itself to the server, because the sample *is* the evidence under study
     │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
     │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
     │   ├── iocs.js                 # IOC types, source labels, guessIocType
+    │   ├── search.js               # searchIncident (open incident), matchActions
     │   ├── eventLogs.js            # parseEventLogJson, buildEventLogEvents (event-log
     │   │                           #   ruleset), logonSessions, coverage
     │   ├── timeline.js             # buildTimelineEvents (merge all timestamped events)
@@ -1049,8 +1056,9 @@ file itself to the server, because the sample *is* the evidence under study
         ├── auth/                   # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
-        │                           #   hours, accounts, API keys, YARA rules, FLIRT
-        │                           #   signatures, capa rules, audit log)
+        │                           #   hours, IOC allowlist, accounts, API keys, YARA rules,
+        │                           #   FLIRT signatures, capa rules, audit log)
+        ├── search/                 # CommandPalette (Ctrl/Cmd+K: nik> search and > actions)
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
         │                           #   TailPanel (tail -f of the timeline)
         └── tabs/
@@ -1186,6 +1194,19 @@ are hidden by default and never exported. The index keeps them, so editing the
 list applies at once. Exports: CSV, a **STIX 2.1** bundle and a **MISP** event,
 for a TIP or a firewall blocklist. Incidents saved before 2.12.0 are indexed on
 the api's first start.
+
+**Global search.** <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> anywhere, or
+<kbd>/</kbd> outside a text field, or the *search…* button in the header,
+opens a `nik>` prompt. As you type it asks the server (`GET /api/search`) for
+incidents, indicators from **every** incident and samples, and searches the
+**open** incident in memory: its timeline events (every tab), notes and
+samples (by file name too). Enter opens the result: an incident is selected,
+an indicator or a sample opens *Where seen*, an event jumps to its tab, a note
+to the Summary. A query starting with `>` lists actions instead: go to any
+tab, new incident, export the incident, toggle the `tail -f` panel, settings,
+the IOC allowlist, sign out. On PostgreSQL the substring matches use the
+trigram (`pg_trgm`) indexes of migration `0012`; when the extension cannot be
+created the search works without them.
 
 Platform configuration lives in one sectioned **Settings** panel (opened from
 the header, or deep-linked from the sidebar's Accounts / Audit buttons):

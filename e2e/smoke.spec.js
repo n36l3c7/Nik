@@ -91,6 +91,19 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
   await page.keyboard.press('Escape')
 })
 
+test('the search palette finds indicators and runs actions', async () => {
+  await page.keyboard.press('ControlOrMeta+k')
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  await expect(palette).toBeVisible()
+  await palette.getByRole('textbox', { name: 'Search' }).fill('185.220.101')
+  await expect(palette.getByRole('option', { name: /185\.220\.101\.47/ }).first()).toBeVisible()
+  // ">" lists actions: jump to the Timeline tab.
+  await palette.getByRole('textbox', { name: 'Search' }).fill('> timeline')
+  await page.keyboard.press('Enter')
+  await expect(palette).toBeHidden()
+  await expect(page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')).toContainText('Timeline')
+})
+
 test('a sample is stored, analysed and shown with its indicators', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
   await expect(page.getByText('No samples yet')).toBeVisible()
