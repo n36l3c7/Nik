@@ -4,7 +4,10 @@
 #   learns about them; enable them in Settings → Code security → Dependabot
 #   security updates.
 # - Version updates come once a month, one grouped pull request per ecosystem
-#   (npm, pip, Docker, Compose, GitHub Actions): at most five a month.
+#   (npm, pip, Docker, Compose, GitHub Actions): at most five a month. They
+#   carry minor and patch releases only: a major release (a new PostgreSQL
+#   data format, Vite, ESLint, Node…) needs migration work, so it is planned
+#   as its own change instead (GitHub Actions majors are still proposed).
 version: 2
 updates:
   - package-ecosystem: npm
@@ -15,6 +18,9 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
 
@@ -26,6 +32,9 @@ updates:
     groups:
       pip:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
 
@@ -37,6 +46,9 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
 
@@ -48,6 +60,9 @@ updates:
     groups:
       compose:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
 
