@@ -5,7 +5,7 @@
 # can see package.json, src/, index.html, etc.
 
 # ---- Stage 1: build the static bundle ----
-FROM node:20-alpine AS build
+FROM docker.io/library/node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build
 
 # ---- Stage 2: serve with nginx ----
-FROM nginx:alpine
+FROM docker.io/library/nginx:alpine
 # openssl backs the entrypoint hook that self-signs a TLS certificate when the
 # operator has not mounted one (see gen-selfsigned.sh).
 RUN apk add --no-cache openssl
