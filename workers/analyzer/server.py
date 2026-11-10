@@ -41,6 +41,15 @@ SIGNATURE = re.compile(r"^_flirt/[0-9a-f]{32}\.(sig|pat)$")
 _slots = threading.BoundedSemaphore(MAX_JOBS)
 
 
+def in_store(relative: str) -> str:
+    """The absolute path of ``relative`` in the store; ValueError when it would leave the store."""
+    root = os.path.realpath(SAMPLE_DIR)
+    path = os.path.realpath(os.path.join(root, relative))
+    if not path.startswith(root + os.sep):
+        raise ValueError("Not a path in the sample store.")
+    return path
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "nik-analyzer"
 
@@ -74,16 +83,21 @@ class Handler(BaseHTTPRequestHandler):
             signatures = body.get("signatures") or []
         except (ValueError, AttributeError, json.JSONDecodeError):
             return self._send(400, {"detail": "Invalid request body"})
-        if not isinstance(signatures, list) or not all(isinstance(s, str) and SIGNATURE.match(s) for s in signatures):
+        if not isinstance(signatures, list) or not all(
+            isinstance(s, str) and SIGNATURE.fullmatch(s) for s in signatures
+        ):
             return self._send(400, {"detail": "signatures must be _flirt/<32 hex>.sig or .pat paths"})
-        signature_paths = [p for p in (os.path.join(SAMPLE_DIR, s) for s in signatures) if os.path.isfile(p)]
-        if not SHA256.match(sha256 or ""):
+        if not isinstance(sha256, str) or not SHA256.fullmatch(sha256):
             return self._send(400, {"detail": "sha256 must be 64 lowercase hex characters"})
+        try:
+            path = in_store(f"{sha256}.bin")
+            signature_paths = [p for p in (in_store(s) for s in signatures) if os.path.isfile(p)]
+        except ValueError:
+            return self._send(400, {"detail": "Not a path in the sample store"})
         if self.path == "/decompile" and (not isinstance(addr, int) or isinstance(addr, bool) or addr < 0):
             return self._send(400, {"detail": "addr must be a non-negative integer"})
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "The analyzer is busy; try again later"})
-        path = os.path.join(SAMPLE_DIR, f"{sha256}.bin")
         try:
             if self.path == "/analyze":
                 result = analyze(

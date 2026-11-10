@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.1] - 2026-11-11
+
+### Security
+
+- Sample store paths: a SHA-256 is now matched in full (a digest followed by
+  a newline was accepted), and every stored sample and e-mail path is proven
+  to stay inside the store before it is opened.
+- The analyzer and capa workers check the same way every path they receive
+  (sample, FLIRT signatures, capa rules) before taking a job slot.
+- A malformed executable no longer sends the parser's internal error message
+  to the client: Malware Analysis shows a fixed warning and the server log
+  keeps the detail.
+- The CI and Audit workflows run with a read-only token.
+
 ## [2.18.0] - 2026-11-10
 
 ### Changed
