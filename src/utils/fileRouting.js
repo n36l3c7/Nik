@@ -14,6 +14,7 @@
  *   endpoint  { }                           (category and source are asked)
  *   eventlogs { kind: 'evtx' | 'json' }
  *   malware   { }
+ *   mail      { }                           (.eml, Outlook .msg)
  */
 
 export const HEAD_BYTES = 512
@@ -43,6 +44,10 @@ const MACHO = [
 // Files that run or carry code even without an executable header.
 const ACTIVE_EXTENSIONS =
   /\.(js|jse|vbs|vbe|wsf|hta|ps1|psm1|bat|cmd|scr|lnk|iso|img|vhd|vhdx|jar|apk|dmg|pkg|msi|one|chm|cpl|docm|xlsm|pptm|dotm|rtf|7z|rar|zip|gz|tgz)$/i
+
+// An RFC 5322 message saved without the .eml extension starts with headers.
+const MAIL_HEADERS =
+  /^(?:received|return-path|delivered-to|x-[\w-]+|from|message-id|mime-version|date|subject|to|arc-seal|dkim-signature|authentication-results):/i
 
 const SHELL_FILES = [
   [/(^|[\\/])\.?bash_history$/i, 'bash'],
@@ -89,6 +94,11 @@ export function detectFileRoute({ name = '', head = new Uint8Array() }) {
   for (const [pattern, shell] of SHELL_FILES) {
     if (pattern.test(base)) return { tab: 'commands', label: 'Shell history', params: { shell } }
   }
+
+  if (startsWith(head, MAGIC.ole) && lower.endsWith('.msg'))
+    return { tab: 'mail', label: 'Outlook message (.msg)', params: {} }
+  if (lower.endsWith('.eml') || (!lower.includes('.') && MAIL_HEADERS.test(text(head).trimStart())))
+    return { tab: 'mail', label: 'E-mail (.eml)', params: {} }
 
   if (lower.endsWith('.json') && text(head).includes('nik-eventlogs'))
     return { tab: 'eventlogs', label: 'Event logs (collection script)', params: { kind: 'json' } }

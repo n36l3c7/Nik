@@ -95,6 +95,16 @@
           </p>
         </div>
         <div class="card">
+          <h3>Mail analysis</h3>
+          <p>
+            Phishing triage of <code>.eml</code> and Outlook <code>.msg</code> files: the route and the sending server,
+            SPF, DKIM and DMARC checked through DNS next to your servers' reports, sender mismatches and look-alike
+            domains, links unwrapped from Safe Links and Proofpoint, the body in a sandboxed frame that runs and loads
+            nothing, attachments by their real type (macros, encrypted archives, disguised executables, QR codes), and a
+            verdict with every finding explained.
+          </p>
+        </div>
+        <div class="card">
           <h3>IOC correlation</h3>
           <p>
             Indicators from every tab indexed on the server: an IOCs tab with the number of other incidents each one
@@ -114,8 +124,8 @@
           <h3>Incident report</h3>
           <p>
             A printable HTML page or PDF built by the server (also via the API): executive summary, flagged events,
-            ATT&amp;CK techniques from capa, YARA and the SOC rules, indicators, samples, event-log coverage, notes and
-            an evidence appendix with SHA-256 — TLP-classified, in English or Italian, with your logo.
+            ATT&amp;CK techniques from capa, YARA and the SOC rules, indicators, samples, e-mails, event-log coverage,
+            notes and an evidence appendix with SHA-256 — TLP-classified, in English or Italian, with your logo.
           </p>
         </div>
         <div class="card">
@@ -247,6 +257,12 @@
           <strong>Analyse malware.</strong> Drop a suspicious file in the Malware Analysis tab: it goes to the server as
           is (up to <code>SAMPLE_MAX_MB</code>), is hashed, typed and scanned for strings and indicators, and can be
           downloaded again only inside a zip protected by the <code>infected</code> password or one you choose.
+        </li>
+        <li>
+          <strong>Triage a reported e-mail.</strong> Drop the <code>.eml</code> or <code>.msg</code> anywhere: the Mail
+          Analysis tab shows the verdict and why, the headers made readable, the body in a sandbox (remote images load
+          only if you ask), the links and the attachments, which open in hex or go to Malware Analysis in one click.
+          List your domains and mail servers under Settings → Mail analysis first.
         </li>
         <li>
           <strong>Review and flag.</strong> Tables are searchable and sortable; SOC detections highlight rows in red

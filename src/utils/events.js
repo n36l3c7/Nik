@@ -43,6 +43,8 @@ export const EVENT_TYPE_META = {
   sample: { label: 'Sample', color: 'red' },
   // Windows event-log event from the Event Logs tab.
   eventlog: { label: 'Event log', color: 'amber' },
+  // E-mail analysed in the Mail Analysis tab (time sent).
+  mail: { label: 'E-mail', color: 'cyan' },
 }
 
 /**

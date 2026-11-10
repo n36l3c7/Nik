@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-11-10
+
+### Added
+
+- **Mail Analysis** tab: phishing triage of reported messages, `.eml` or
+  Outlook `.msg` (read with `olefile`, compressed RTF bodies included).
+  - **Headers made readable**: the route (Received chain with the delay of
+    each hop, clocks going back, the sending server), the sender and its
+    mismatches (display name showing another address, Reply-To and
+    Return-Path on other domains), every header searchable.
+  - **SPF, DKIM and DMARC** checked by Nik through DNS (`pyspf`, `dkimpy`,
+    `dnspython`, alignment from the Public Suffix List), next to the
+    Authentication-Results of the receiving servers; only those of your own
+    servers are believed. A DNS failure reads `temperror`, never a pass.
+  - **Links** unwrapped from Microsoft Safe Links, Proofpoint, Google,
+    Facebook and Barracuda redirects and judged: text showing another site,
+    look-alikes of well-known brands and of your own domains (confusable
+    characters, punycode, one-letter swaps), shorteners, IP hosts, `@` in the
+    address, throwaway TLDs, pages on cloud services, forms.
+  - **Body** in a sandboxed frame: the HTML is sanitised on the server
+    (`nh3`), the frame runs no script and follows no link, and its
+    Content-Security-Policy blocks every request; remote images load only
+    after a warning, tracking pixels never. Hidden text is revealed; urgency,
+    payment, credential and secrecy phrases (English and Italian) are listed.
+    Text and source views too.
+  - **Attachments** by their real type: executables in disguise, double
+    extensions, right-to-left tricks, VBA/XLM macros (`oletools`), encrypted
+    zip archives (the password is looked for in the message and tried),
+    PDF actions, QR codes in images (`zxing-cpp`), calendar invitations;
+    attached messages are analysed in turn. A hex view, a protected-zip
+    download, and **Send to Malware Analysis**.
+  - A **score and a verdict** (phishing ≥ 70, suspicious 40–69, no strong
+    signs), each finding with its points.
+- **Settings → Mail analysis**: your organisation's domains and your mail
+  servers and gateways (Exchange Online, Google, Proofpoint, Mimecast…).
+- E-mails in the **IOC index** (`mail:<file>`: sender, sending IP, links,
+  attachment hashes, QR and invitation links), the **timeline** (high when the
+  verdict is phishing), the **report** (an E-mails section) and the evidence
+  appendix; a mail icon next to the incident in the sidebar.
+- Dropping an `.eml` or `.msg` anywhere opens it in Mail Analysis.
+- API: `POST /api/incidents/{id}/mails`, `GET /api/mails/{sha256}` (and
+  `/reanalyse`, `/source`, `/attachments/{path}/bytes|download`),
+  `POST /api/incidents/{id}/mails/{sha256}/attachments/{path}/sample`,
+  `DELETE /api/incidents/{id}/mails/{sha256}`; `hasMail` in the light incident
+  list; `mail` in the settings. Migration `0014` adds the `mails` table and
+  `incidents.has_mail`.
+
+### Changed
+
+- The file type check recognises PNG, JPEG and GIF images.
+- A sample sent from an e-mail records its origin in the incident and the
+  audit log.
+
+### Dependencies
+
+- Backend: `dkimpy`, `pyspf`, `dnspython`, `publicsuffixlist`, `nh3`,
+  `olefile`, `oletools`, `zxing-cpp` and `pillow` (already installed with
+  WeasyPrint). No system package; the API needs DNS resolution.
+
 ## [2.13.0] - 2026-11-10
 
 ### Added
@@ -626,7 +685,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.13.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.14.0...HEAD
+[2.14.0]: https://github.com/n36l3c7/Nik/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/n36l3c7/Nik/compare/v2.12.3...v2.13.0
 [2.12.3]: https://github.com/n36l3c7/Nik/compare/v2.12.2...v2.12.3
 [2.12.2]: https://github.com/n36l3c7/Nik/compare/v2.12.1...v2.12.2

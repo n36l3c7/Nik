@@ -43,6 +43,32 @@ def sample_path(sha256: str) -> Path:
     return store_dir() / f"{sha256}.bin"
 
 
+def mail_path(sha256: str) -> Path:
+    """An analysed e-mail (``.eml``/``.msg``): same store, its own suffix."""
+    return sample_path(sha256).with_suffix(".mail")
+
+
+def write_mail(sha256: str, data: bytes) -> Path:
+    path = mail_path(sha256)
+    if not path.exists():
+        tmp = path.with_suffix(".part")
+        tmp.write_bytes(data)
+        os.chmod(tmp, STORE_MODE)
+        tmp.replace(path)
+    return path
+
+
+def read_mail(sha256: str) -> bytes:
+    return mail_path(sha256).read_bytes()
+
+
+def delete_mail(sha256: str) -> None:
+    path = mail_path(sha256)
+    if path.exists():
+        os.chmod(path, 0o640)
+        path.unlink()
+
+
 def write_sample(sha256: str, data: bytes) -> Path:
     """Store the bytes if not already present; the file is read-only for everyone (0o444).
 

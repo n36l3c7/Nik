@@ -182,6 +182,39 @@
               <td>Run the current analysis engine and YARA rules again on the stored file.</td>
             </tr>
             <tr>
+              <td><code>POST /api/incidents/{id}/mails</code></td>
+              <td>
+                Analyse an e-mail (multipart <code>file</code>, <code>.eml</code> or Outlook <code>.msg</code>) and
+                attach it to the incident: route, SPF/DKIM/DMARC through DNS and as reported by your servers, sender,
+                links, body, attachments, <code>score</code> and <code>verdict</code> (<code>phishing</code> &ge; 70,
+                <code>suspicious</code> 40&ndash;69, <code>clean</code>). <code>422</code> for a file that is not an
+                e-mail.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/mails/{sha256}</code> · <code>POST …/reanalyse</code> · <code>GET …/source</code></td>
+              <td>
+                The full analysis and the incidents holding the message; analyse it again; the <code>.eml</code> as
+                text.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/mails/{sha256}/attachments/{path}/bytes</code> · <code>…/download</code></td>
+              <td>
+                A slice of an attachment (&le; 64 KiB, base64; <code>offset</code>, <code>length</code>) for the hex
+                view; the attachment in an AES-256 zip (<code>password</code>, default <code>infected</code>, audited).
+                <code>path</code> is the index, <code>2.0</code> inside the attached message at index 2.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/incidents/{id}/mails/{sha256}/attachments/{path}/sample</code></td>
+              <td>Send an attachment to Malware Analysis as a sample of the incident.</td>
+            </tr>
+            <tr>
+              <td><code>DELETE /api/incidents/{id}/mails/{sha256}</code></td>
+              <td>Detach the message; the file is deleted once no incident references it.</td>
+            </tr>
+            <tr>
               <td><code>GET/POST /api/samples/{sha256}/code</code></td>
               <td>
                 Disassembly by the rizin worker: state (<code>none</code> / <code>queued</code> / <code>running</code> /
@@ -246,7 +279,10 @@
             </tr>
             <tr>
               <td><code>GET /api/settings</code></td>
-              <td>Read the shared detection rules and business hours.</td>
+              <td>
+                Read the shared detection rules, business hours, IOC allowlist, report header and Mail Analysis settings
+                (<code>mail: { orgDomains, trustedAuthServers }</code>); <code>PUT</code> replaces them.
+              </td>
             </tr>
             <tr>
               <td><code>GET/POST/DELETE /api/webhooks</code></td>

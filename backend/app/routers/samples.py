@@ -202,26 +202,17 @@ def _save_doc(db: OrmSession, row: Incident, doc: dict) -> None:
     reindex_incident(db, row)
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-@router.post("/incidents/{incident_id}/samples", status_code=status.HTTP_201_CREATED)
-async def upload_sample(
-    incident_id: str,
-    file: UploadFile = File(..., description="The suspicious file, as is."),
-    caller: Principal = Depends(writer_principal),
-    db: OrmSession = Depends(get_db),
-    background_tasks: BackgroundTasks = None,
-) -> dict:
-    """Store a sample and attach it to the incident.
-
-    The file is written to the sample store (named by its SHA-256, never
-    executed), analysed statically (hashes, type, entropy, strings, IOC) and
-    referenced from the incident under `data.malware.samples`. Uploading a
-    file that is already in the store reuses its analysis.
-    """
-    incident = _incident_or_404(db, incident_id)
-    data = await file.read()
+def store_sample(
+    db: OrmSession,
+    incident: Incident,
+    data: bytes,
+    file_name: str,
+    caller: Principal,
+    background_tasks: BackgroundTasks | None,
+    origin: str = "",
+) -> tuple[Sample, dict[str, Any]]:
+    """Analyse and store a file as a sample of the incident (upload, or a mail
+    attachment sent to Malware Analysis); returns the row and the reference."""
     if not data:
         raise HTTPException(status_code=400, detail="The file is empty.")
     limit = settings.SAMPLE_MAX_MB * 1024 * 1024
@@ -251,7 +242,7 @@ async def upload_sample(
 
     doc = dict(incident.doc or {})
     refs = _refs(doc)
-    file_name = file.filename or sha256
+    file_name = file_name or sha256
     existing = next((ref for ref in refs if ref.get("sha256") == sha256), None)
     if existing is None:
         ref = {
@@ -259,20 +250,51 @@ async def upload_sample(
             "fileName": file_name,
             "importedAt": now_iso(),
             "importedBy": caller.actor,
+            **({"origin": origin} if origin else {}),
         }
         refs.append(ref)
     else:
         ref = existing
     _save_doc(db, incident, doc)
-    _audit(db, caller, "sample.upload", f"Uploaded sample {file_name} ({sha256[:12]}…, {row.type_label})", incident)
+    _audit(
+        db,
+        caller,
+        "sample.upload",
+        f"Uploaded sample {file_name} ({sha256[:12]}…, {row.type_label})" + (f" from {origin}" if origin else ""),
+        incident,
+    )
     db.commit()
     emit(
-        db, background_tasks, "upload.completed", {"incidentId": incident_id, "target": f"malware/{sha256}", "rows": 1}
+        db, background_tasks, "upload.completed", {"incidentId": incident.id, "target": f"malware/{sha256}", "rows": 1}
     )
     if db.get(SampleCode, sha256) is None:
         _queue_code(db, background_tasks, sha256, caller.actor)
     if db.get(SampleCapa, sha256) is None:
         _queue_capa(db, background_tasks, row, caller.actor)
+    return row, ref
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+@router.post("/incidents/{incident_id}/samples", status_code=status.HTTP_201_CREATED)
+async def upload_sample(
+    incident_id: str,
+    file: UploadFile = File(..., description="The suspicious file, as is."),
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+) -> dict:
+    """Store a sample and attach it to the incident.
+
+    The file is written to the sample store (named by its SHA-256, never
+    executed), analysed statically (hashes, type, entropy, strings, IOC) and
+    referenced from the incident under `data.malware.samples`. Uploading a
+    file that is already in the store reuses its analysis.
+    """
+    incident = _incident_or_404(db, incident_id)
+    data = await file.read()
+    row, ref = store_sample(db, incident, data, file.filename or "", caller, background_tasks)
     return {"sample": ref, "iocs": len(row.analysis.get("iocs", [])), "strings": row.analysis.get("stringsTotal", 0)}
 
 

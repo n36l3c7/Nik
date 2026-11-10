@@ -14,7 +14,9 @@ Sources:
 - shell commands, endpoint records: indicators in the text;
 - Windows event logs: address and host fields, and indicators in command
   lines, script blocks and service paths;
-- malware samples: the sample's hashes and the indicators in its strings.
+- malware samples: the sample's hashes and the indicators in its strings;
+- e-mails (Mail Analysis): sender addresses and domain, sending IP, link
+  targets and hosts, attachment hashes, QR-code and invitation links.
 
 The allowlist (Settings) hides well-known domains and private addresses when
 the index is read; the index itself keeps everything, so editing the list
@@ -34,7 +36,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import aliased
 
-from .models import Incident, IocEntry, Sample
+from .models import Incident, IocEntry, Mail, Sample
 from .parsing.malware import _FALSE_POSITIVE_DOMAINS, _IOC_PATTERNS
 
 TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
@@ -204,7 +206,9 @@ def _dicts(value: Any) -> Iterable[dict]:
     return ()
 
 
-def extract(doc: dict, samples: dict[str, Sample] | None = None) -> dict[tuple[str, str], dict[str, Any]]:
+def extract(
+    doc: dict, samples: dict[str, Sample] | None = None, mails: dict[str, Mail] | None = None
+) -> dict[tuple[str, str], dict[str, Any]]:
     """Every indicator of an incident document (see the module docstring)."""
     data = doc.get("data") if isinstance(doc.get("data"), dict) else {}
     out = _Collector()
@@ -268,6 +272,16 @@ def extract(doc: dict, samples: dict[str, Sample] | None = None) -> dict[tuple[s
             if ioc.get("kind") in ("url", "domain", "ip", "email"):
                 out.add(ioc["kind"], ioc.get("value"), source, when)
 
+    for ref in (data.get("mail") or {}).get("messages") or []:
+        if not isinstance(ref, dict):
+            continue
+        source = f"mail:{ref.get('fileName') or str(ref.get('sha256', ''))[:12]}"
+        when = ref.get("date") or _iso_ms(ref.get("importedAt"))
+        mail = (mails or {}).get(ref.get("sha256"))
+        for ioc in (mail.analysis.get("iocs") if mail is not None else None) or []:
+            if ioc.get("type") in TYPES:
+                out.add(ioc["type"], ioc.get("value"), source, when)
+
     return out.items
 
 
@@ -286,7 +300,10 @@ def reindex_incident(db: OrmSession, row: Incident) -> int:
     refs = ((doc.get("data") or {}).get("malware") or {}).get("samples") or []
     digests = [r.get("sha256") for r in refs if isinstance(r, dict) and r.get("sha256")]
     samples = {s.sha256: s for s in db.scalars(select(Sample).where(Sample.sha256.in_(digests)))} if digests else {}
-    items = extract(doc, samples)
+    mail_refs = ((doc.get("data") or {}).get("mail") or {}).get("messages") or []
+    mail_digests = [r.get("sha256") for r in mail_refs if isinstance(r, dict) and r.get("sha256")]
+    mails = {m.sha256: m for m in db.scalars(select(Mail).where(Mail.sha256.in_(mail_digests)))} if mail_digests else {}
+    items = extract(doc, samples, mails)
     db.execute(delete(IocEntry).where(IocEntry.incident_id == row.id))
     db.add_all(
         IocEntry(

@@ -58,6 +58,8 @@ def _sync_columns(incident: Incident) -> None:
     incident.ticket_id = str(doc.get("ticketId") or "")
     severity = str(doc.get("severity") or "")
     incident.severity = severity if severity in SEVERITIES else ""
+    mail = (doc.get("data") or {}).get("mail") if isinstance(doc.get("data"), dict) else None
+    incident.has_mail = bool(isinstance(mail, dict) and mail.get("messages"))
     incident.updated_at = str(doc.get("updatedAt") or "")
     incident.created_at = str(doc.get("createdAt") or "")
 
@@ -140,7 +142,7 @@ def list_incidents(
     """List incidents newest-updated first, filterable and paginated.
 
     ``view=summary`` returns light rows (id/name/host/username/os/ticketId/severity/
-    timestamps) WITHOUT
+    hasMail/timestamps) WITHOUT
     the heavy document body — use it for lists at scale, then fetch a single
     incident's full document from ``GET /incidents/{id}``. Backward compatible:
     with no params it returns every full document. Total count is also in the
@@ -176,6 +178,7 @@ def list_incidents(
                 Incident.os,
                 Incident.ticket_id,
                 Incident.severity,
+                Incident.has_mail,
                 Incident.created_at,
                 Incident.updated_at,
             )
@@ -192,6 +195,7 @@ def list_incidents(
                 "os": r.os,
                 "ticketId": r.ticket_id,
                 "severity": r.severity or None,
+                "hasMail": bool(r.has_mail),
                 "createdAt": r.created_at,
                 "updatedAt": r.updated_at,
             }

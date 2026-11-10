@@ -18,6 +18,7 @@ import { DEFAULT_OS } from '../../config/os.js'
 
 const TABS = [
   { id: 'malware', label: 'Malware Analysis' },
+  { id: 'mail', label: 'Mail Analysis' },
   { id: 'eventlogs', label: 'Event Logs' },
   { id: 'browser', label: 'Browser Forensics' },
   { id: 'commands', label: 'Command History' },

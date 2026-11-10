@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..db import get_db
 from ..iocs import Allowlist, incident_iocs
-from ..models import AuditEntry, Incident, Sample, SampleCapa
+from ..models import AuditEntry, Incident, Mail, Sample, SampleCapa
 from ..report import LANGS, SECTIONS, TLP_LEVELS, build_html, to_pdf
 from ..security import Principal, now_iso, principal
 from .settings import read_settings
@@ -74,6 +74,28 @@ def _samples(db: OrmSession, doc: dict) -> list[dict[str, Any]]:
     return out
 
 
+def _mails(db: OrmSession, doc: dict) -> list[dict[str, Any]]:
+    refs = [r for r in ((doc.get("data") or {}).get("mail") or {}).get("messages") or [] if isinstance(r, dict)]
+    digests = [r.get("sha256") for r in refs if r.get("sha256")]
+    rows = {m.sha256: m for m in db.scalars(select(Mail).where(Mail.sha256.in_(digests)))} if digests else {}
+    out = []
+    for ref in refs:
+        row = rows.get(ref.get("sha256"))
+        findings = (row.analysis or {}).get("findings", []) if row is not None else []
+        out.append(
+            {
+                "fileName": ref.get("fileName"),
+                "subject": ref.get("subject"),
+                "from": ref.get("from"),
+                "date": ref.get("date"),
+                "verdict": row.verdict if row is not None else ref.get("verdict"),
+                "score": row.score if row is not None else ref.get("score"),
+                "findings": [f.get("label") for f in findings if f.get("points")][:5],
+            }
+        )
+    return out
+
+
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -87,7 +109,7 @@ def incident_report(
     """The incident report, as a PDF (default) or HTML.
 
     Sections: summary, timeline (flagged events), attack, iocs, samples,
-    eventlogs, notes, evidence. ``detections`` lists the SOC rule hits with
+    mails, eventlogs, notes, evidence. ``detections`` lists the SOC rule hits with
     their ATT&CK ids; the app sends them, API clients may leave them out.
     """
     row = db.get(Incident, incident_id)
@@ -111,6 +133,7 @@ def incident_report(
         detections=[d.model_dump() for d in body.detections],
         iocs=incident_iocs(db, incident_id, Allowlist(settings.get("iocAllowlist") or [])),
         samples=_samples(db, doc),
+        mails=_mails(db, doc),
         branding=settings.get("report") or {},
         generated_by=caller.actor,
         generated_at=now,

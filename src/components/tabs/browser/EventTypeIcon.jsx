@@ -1,4 +1,4 @@
-import { Bug, CornerDownRight, Download, Link2, ScrollText, Search, Terminal } from 'lucide-react'
+import { Bug, CornerDownRight, Download, Link2, Mail, ScrollText, Search, Terminal } from 'lucide-react'
 import { EVENT_TYPE_META } from '../../../utils/events.js'
 
 /*
@@ -14,6 +14,7 @@ const ICONS = {
   command: Terminal,
   sample: Bug,
   eventlog: ScrollText,
+  mail: Mail,
 }
 
 // Per-type icon colors, each with its dark counterpart.
@@ -25,6 +26,7 @@ const ICON_COLORS = {
   command: 'text-violet',
   sample: 'text-high',
   eventlog: 'text-med',
+  mail: 'text-info',
 }
 
 /**

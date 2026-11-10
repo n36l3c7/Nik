@@ -6,7 +6,7 @@ store), so they are typed as ``dict``/``Any`` rather than fully modeled.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -103,6 +103,17 @@ class ReportBrandingIn(BaseModel):
     )
 
 
+_DOMAIN = r"^[A-Za-z0-9.-]{1,253}$"
+
+
+class MailSettingsIn(BaseModel):
+    """Mail Analysis: the organisation's own domains (impersonation checks)
+    and the servers whose Authentication-Results headers can be believed."""
+
+    orgDomains: list[Annotated[str, Field(pattern=_DOMAIN)]] = Field(default_factory=list, max_length=200)
+    trustedAuthServers: list[Annotated[str, Field(pattern=_DOMAIN)]] = Field(default_factory=list, max_length=200)
+
+
 class SettingsIn(BaseModel):
     """Shared settings request body."""
 
@@ -112,6 +123,8 @@ class SettingsIn(BaseModel):
     iocAllowlist: Optional[list[str]] = Field(default=None, max_length=5000)
     # Omitted: the stored report header is kept.
     report: Optional[ReportBrandingIn] = None
+    # Omitted: the stored mail settings are kept.
+    mail: Optional[MailSettingsIn] = None
 
 
 class SettingsOut(BaseModel):
@@ -121,6 +134,7 @@ class SettingsOut(BaseModel):
     businessHours: dict[str, Any]
     iocAllowlist: list[str]
     report: dict[str, Any]
+    mail: dict[str, Any]
     # The factory allowlist, for the Settings "restore defaults" button.
     iocAllowlistDefault: list[str]
 
