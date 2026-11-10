@@ -32,6 +32,7 @@ from .routers import (
     audit,
     auth,
     backup,
+    capa_rules,
     flirt,
     incidents,
     jobs,
@@ -71,6 +72,7 @@ TAGS_METADATA = [
         "name": "flirt-signatures",
         "description": "Admin-uploaded FLIRT signatures applied by the analyzer worker (admin to change).",
     },
+    {"name": "capa-rules", "description": "Admin capa rules, checked by the capa worker (admin to change)."},
     {
         "name": "samples",
         "description": "Malware samples: stored on the server, analysed statically, downloaded as a protected zip.",
@@ -90,7 +92,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.10.0",
+    version="2.11.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -147,6 +149,7 @@ app.include_router(samples.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")
 app.include_router(yara_rules.router, prefix="/api")
 app.include_router(flirt.router, prefix="/api")
+app.include_router(capa_rules.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")

@@ -215,6 +215,29 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   if (process.env.E2E_CAPA_URL) {
     await expect(page.getByText('capa found no capabilities in this sample.')).toBeVisible({ timeout: 120_000 })
     await expect(page.getByText('capa 10.0.0')).toBeVisible()
+    // An admin capa rule: checked by the worker, matched after Re-analyse, marked custom.
+    await page.getByRole('button', { name: 'Open platform settings' }).click()
+    const settings = page.getByRole('dialog', { name: 'Settings' })
+    await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('capa rules').click()
+    await settings.getByRole('button', { name: 'Add rule' }).click()
+    await settings
+      .getByLabel('capa rule (YAML)')
+      .fill(
+        'rule:\n  meta:\n    name: reference team C2 gate\n    namespace: team/c2\n    authors:\n      - e2e\n' +
+          '    scopes:\n      static: file\n      dynamic: file\n  features:\n    - string: /gate\\.php/\n',
+      )
+    await settings.getByRole('button', { name: 'Validate' }).click()
+    await expect(settings.getByText('Valid: reference team C2 gate')).toBeVisible({ timeout: 60_000 })
+    await settings.getByRole('button', { name: 'Save rule' }).click()
+    await expect(settings.getByRole('button', { name: 'Delete reference team C2 gate' })).toBeVisible({
+      timeout: 60_000,
+    })
+    await settings.getByRole('button', { name: 'Close' }).click()
+    await page.getByRole('button', { name: 'Re-analyse' }).click()
+    await page.getByRole('tab', { name: /^Capabilities/ }).click()
+    const custom = page.locator('tbody tr', { hasText: 'reference team C2 gate' })
+    await expect(custom).toBeVisible({ timeout: 120_000 })
+    await expect(custom.getByText('custom', { exact: true })).toBeVisible()
   } else {
     await expect(page.getByText('The capa worker is not configured.')).toBeVisible()
   }

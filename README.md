@@ -300,7 +300,9 @@ is no `tailwind.config.js` and no extra setup step.
 | `ANALYZER_TOKEN` | — | Shared secret between the `api` and `analyzer` services; set a long random value. |
 | `ANALYZER_TIMEOUT` | `600` | Per-sample time limit of the rizin worker, in seconds. |
 | `ANALYZER_DECOMPILE_SECONDS` | `300` | Share of that time the analysis spends decompiling functions up front; the rest are decompiled when first opened. |
-| `ANALYZER_MEMORY` / `ANALYZER_CPUS` | `2g` / `2` | Memory and CPU limits of the `analyzer` container. |
+| `ANALYZER_MAX_FUNCTIONS` | `20000` | Safety cap on the functions listed per sample (past it the list is marked truncated). |
+| `ANALYZER_WARM_SESSIONS` / `ANALYZER_WARM_IDLE` | `1` / `600` | Analysed rizin sessions kept open so that decompiling on demand takes seconds (`0` disables; each holds ~1 GB on a large binary), and how long an unused one stays open, in seconds. |
+| `ANALYZER_MEMORY` / `ANALYZER_CPUS` | `4g` / `2` | Memory and CPU limits of the `analyzer` container (two analyses plus a kept session). |
 | `CAPA_TOKEN` | — | Shared secret between the `api` and `capa` services; set a long random value, different from `ANALYZER_TOKEN`. |
 | `CAPA_TIMEOUT` | `1800` | Per-sample time limit of the capa worker, in seconds. |
 | `CAPA_MEMORY` / `CAPA_CPUS` | `4g` / `2` | Memory and CPU limits of the `capa` container. |
@@ -702,6 +704,7 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET/POST /api/samples/{sha256}/code` | Disassembly by the rizin worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error`) and, when done, the engine, binary info and functions with their calls; `POST` (re)starts it (`202`, `503` when no worker is configured). |
 | `GET/POST /api/samples/{sha256}/capabilities` | capa on the capa worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error` / `unsupported`) and, when done, the engine and the capabilities with their namespace, scope, ATT&CK and MBC mappings and addresses; `POST` (re)starts it (`202`; `503` when no worker is configured, `422` for a file type capa does not read). |
 | `GET /api/samples/{sha256}/annotations` · `PUT …/annotations/{addr}` | Analysts' names and comments for the sample's functions (shared by every incident holding the file, removed with it). `PUT` takes `{ name, comment }` and returns the annotation, or `null` when both are empty (it is removed); `409` before the sample is disassembled, `404` for an address that is not a function. Audited as `sample.annotate`. |
+| `GET/POST /api/capa-rules` · `PUT/DELETE …/{id}` · `POST …/validate` | capa rules (YAML, one rule each) matched with capa's bundled set (**admin** to change; any caller may list). The capa worker checks each rule against the bundled rules and the other admin rules before it is saved (`503` when no worker is configured); a rule another enabled rule `match`es cannot be renamed, disabled or deleted (`409`). |
 | `GET/POST /api/flirt-signatures` · `PUT/DELETE …/{id}` | FLIRT signatures (`.sig` or `.pat`, multipart `name` + `file`, up to 32 MB) the analyzer worker applies on top of rizin's bundled ones (**admin** to change; any caller may list). `PUT` takes `{ name, enabled }`. They apply from the next disassembly. |
 | `GET /api/samples/{sha256}/code/functions/{addr}` | Control-flow graph of one function: basic blocks with their instructions and `jump` / `fail` successors. |
 | `GET /api/samples/{sha256}/code/functions/{addr}/decompiled` | Pseudo-C of one function (rz-ghidra): `code` plus highlight `spans` (`[start, end, kind]`, or `[start, end, "f", address]` for a call target). Stored by the analysis (`source: "analysis"`) or decompiled on first request and kept (`source: "on-demand"`); `502` when the worker fails, `503` when none is configured. |
@@ -881,11 +884,12 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
 │       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
 │       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
+│       ├── capa_rules.py           # Admin capa rules (worker validation, store, dependencies)
 │       ├── analyzer.py             # rizin worker client + disassembly job
 │       ├── capa.py                 # capa worker client + capabilities job (one at a time)
 │       ├── yara/                   # Built-in YARA rule files (*.yar)
 │       └── routers/                # auth, users, incidents, audit, settings, backup, samples,
-│                                   #   annotations, yara_rules, flirt
+│                                   #   annotations, yara_rules, flirt, capa_rules
 └── src/
     ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
     │                               #   > SettingsProvider > IncidentProvider > App
@@ -954,7 +958,7 @@ file itself to the server, because the sample *is* the evidence under study
         ├── backup/                 # BackupModal (full export/restore, admin only)
         ├── settings/               # SettingsPanel + sections/ (detection rules, business
         │                           #   hours, accounts, API keys, YARA rules, FLIRT
-        │                           #   signatures, audit log)
+        │                           #   signatures, capa rules, audit log)
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
         │                           #   TailPanel (tail -f of the timeline)
         └── tabs/
@@ -1311,16 +1315,29 @@ no Java and no extra build step. The backend never runs rizin itself:
    the `call` instructions), and for each function its basic blocks (`afbj`)
    with their instructions (`pdfj`). A timer kills rizin after
    `ANALYZER_TIMEOUT`; at most `ANALYZER_MAX_JOBS` requests run at once.
+   Every function is listed: a 5,000-function Rust binary takes about 75 s;
+   `ANALYZER_MAX_FUNCTIONS` (20,000) is only a safety cap.
 3. In the same session the worker decompiles functions with `pdgj` for up to
    `ANALYZER_DECOMPILE_SECONDS` (entry point and `main` first, then the
-   smallest, for the most coverage per second). rz-ghidra's annotations are
-   reduced to highlight spans and call targets, about a tenth of their size.
-   A function that takes over 30 s is skipped. Functions left out are
-   decompiled when first opened (`POST /decompile` on the worker, which
-   reopens and reanalyses the sample: slower on large binaries) and kept.
-4. The backend stores the function list and, separately, the CFGs and the
-   pseudo-C, which the UI fetches one function at a time
-   (`GET /api/samples/{sha256}/code/functions/{addr}` and `…/decompiled`).
+   functions the worker does not recognise as library code — no FLIRT match,
+   no Rust crate, not a thunk — then the rest, smallest first within each
+   group). rz-ghidra's annotations are reduced to highlight spans and call
+   targets, about a tenth of their size. A function that takes over 30 s is
+   skipped. Functions left out are decompiled when first opened
+   (`POST /decompile` on the worker) and kept.
+4. The worker then keeps the analysed rizin session open
+   (`ANALYZER_WARM_SESSIONS`, default 1, for `ANALYZER_WARM_IDLE` seconds),
+   so a decompilation on demand takes seconds instead of a new `aaa` (on the
+   5,000-function sample: 0.1–3 s instead of 13 s and more). A session is lent
+   to one request at a time; if rizin died in the meantime the request falls
+   back to a fresh analysis. Each kept session holds rizin's memory for that
+   file (about 1 GB on a large binary), hence the 4 GB default limit.
+5. The backend stores the function list with the job (`sample_code`) and
+   each function's CFG and pseudo-C as a row of `sample_functions`, which the
+   UI fetches one function at a time
+   (`GET /api/samples/{sha256}/code/functions/{addr}` and `…/decompiled`):
+   the graphs of a large binary add up to tens of megabytes, and opening a
+   function reads only its own.
 
 rizin 0.9 can crash (segfault) after thousands of commands in one session,
 on a function it handles fine in a fresh one. The worker survives it: it
@@ -1412,6 +1429,18 @@ code, since crypto and TLS crates match many rules. Capabilities do not
 change the sample's severity. The `capa` service has the same isolation as
 `analyzer` (read-only store and filesystem, internal network only, no
 capabilities, memory / CPU / time limits).
+
+**capa rules of your own.** Admins add capa rules in **Settings → capa
+rules** (`capa_rules` table, one YAML rule each). Since only the worker has
+capa, the backend asks it to check a rule (`POST /validate`: parsed by capa
+and loaded together with the bundled rules and the other enabled admin rules,
+so syntax errors, unknown features, duplicate names and missing `match:`
+dependencies are caught) before saving it. Saved rules are written to
+`SAMPLE_STORE/_capa_rules/<id>.yml` and the enabled ones are passed to the
+worker with each analysis, as extra `-r` rule paths next to the bundled set.
+A rule another enabled rule matches cannot be renamed, disabled or deleted.
+Their matches carry a **custom** badge in the Capabilities view; new or
+changed rules apply from the next analysis (Re-analyse).
 
 ---
 

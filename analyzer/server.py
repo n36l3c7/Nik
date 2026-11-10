@@ -19,15 +19,22 @@ import json
 import os
 import re
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from nik_analyzer import AnalysisError, AnalysisTimeout, analyze, decompile_one, rizin_version
+from nik_analyzer import AnalysisError, AnalysisTimeout, WarmSessions, analyze, decompile_one, rizin_version
 
 SAMPLE_DIR = os.environ.get("SAMPLE_DIR", "/samples")
 TOKEN = os.environ.get("ANALYZER_TOKEN", "")
 TIMEOUT = float(os.environ.get("ANALYZER_TIMEOUT", "600"))
 DECOMPILE_SECONDS = float(os.environ.get("ANALYZER_DECOMPILE_SECONDS", "300"))
 MAX_JOBS = int(os.environ.get("ANALYZER_MAX_JOBS", "2"))
+# Analysed sessions kept open for the decompilations on demand that follow an
+# analysis (each holds rizin's memory for that file, ~1 GB on a large binary).
+WARM = WarmSessions(
+    size=int(os.environ.get("ANALYZER_WARM_SESSIONS", "1")),
+    idle=float(os.environ.get("ANALYZER_WARM_IDLE", "600")),
+)
 PORT = int(os.environ.get("ANALYZER_PORT", "8700"))
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SIGNATURE = re.compile(r"^_flirt/[0-9a-f]{32}\.(sig|pat)$")
@@ -79,9 +86,11 @@ class Handler(BaseHTTPRequestHandler):
         path = os.path.join(SAMPLE_DIR, f"{sha256}.bin")
         try:
             if self.path == "/analyze":
-                result = analyze(path, timeout=TIMEOUT, decompile_seconds=DECOMPILE_SECONDS, signatures=signature_paths)
+                result = analyze(
+                    path, timeout=TIMEOUT, decompile_seconds=DECOMPILE_SECONDS, signatures=signature_paths, warm=WARM
+                )
             else:
-                result = decompile_one(path, addr, timeout=TIMEOUT, signatures=signature_paths)
+                result = decompile_one(path, addr, timeout=TIMEOUT, signatures=signature_paths, warm=WARM)
             self._send(200, result)
         except AnalysisTimeout as exc:
             self._send(504, {"detail": str(exc)})
@@ -94,8 +103,15 @@ class Handler(BaseHTTPRequestHandler):
         print(f"{self.address_string()} {fmt % args}", flush=True)
 
 
+def _expire_warm_sessions() -> None:
+    while True:
+        time.sleep(60)
+        WARM.expire()
+
+
 if __name__ == "__main__":
     if not TOKEN:
         raise SystemExit("ANALYZER_TOKEN is not set: refusing to start without authentication.")
     print(f"nik-analyzer listening on :{PORT} (rizin {rizin_version()}, samples in {SAMPLE_DIR})", flush=True)
+    threading.Thread(target=_expire_warm_sessions, name="warm-sessions", daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

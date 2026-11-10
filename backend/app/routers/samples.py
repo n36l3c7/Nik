@@ -14,15 +14,15 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import String, cast, select
+from sqlalchemy import String, cast, delete, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import analyzer, capa, flirt, yara_rules
+from .. import analyzer, capa, capa_rules, flirt, yara_rules
 from ..config import settings
 from ..db import get_db
 from ..events import emit
-from ..models import AuditEntry, Incident, Sample, SampleCapa, SampleCode
+from ..models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
 from ..parsing.executables import parse_structure
 from ..parsing.malware import STRINGS_STORED, analyze, iter_strings
 from ..samples import DEFAULT_ZIP_PASSWORD, delete_sample, is_sha256, read_sample, write_sample, zip_sample
@@ -117,7 +117,7 @@ def _queue_code(db: OrmSession, background_tasks: BackgroundTasks, sha256: str, 
     if row is not None and row.status in ("queued", "running") and not analyzer.is_stale(row):
         return row
     if row is None:
-        row = SampleCode(sha256=sha256, summary={}, cfgs={})
+        row = SampleCode(sha256=sha256, summary={})
         db.add(row)
     row.status, row.error, row.finished_at = "queued", None, None
     row.requested_at, row.requested_by = now_iso(), actor
@@ -168,7 +168,8 @@ def _queue_capa(db: OrmSession, background_tasks: BackgroundTasks, sample: Sampl
     return row
 
 
-def _capa_state(row: SampleCapa | None, sample: Sample) -> dict[str, Any]:
+def _capa_state(row: SampleCapa | None, sample: Sample, custom: set[str] | None = None) -> dict[str, Any]:
+    """The job state; when done, the result with custom marking matches of admin rules."""
     if not capa.configured() and (row is None or row.status != "done"):
         return {"configured": False, "status": "none"}
     if row is None:
@@ -185,6 +186,9 @@ def _capa_state(row: SampleCapa | None, sample: Sample) -> dict[str, Any]:
     }
     if row.status == "done":
         state.update(row.result)
+        state["capabilities"] = [
+            {**c, "custom": c.get("name") in (custom or set())} for c in row.result.get("capabilities", [])
+        ]
     return state
 
 
@@ -326,7 +330,7 @@ def get_sample_capabilities(
 ) -> dict:
     """capa's state and, when done, the capabilities with their ATT&CK / MBC mappings and addresses."""
     sample = _sample_or_404(db, sha256)
-    return _capa_state(db.get(SampleCapa, sha256), sample)
+    return _capa_state(db.get(SampleCapa, sha256), sample, capa_rules.custom_names(db))
 
 
 @router.post("/samples/{sha256}/capabilities", status_code=status.HTTP_202_ACCEPTED)
@@ -359,7 +363,8 @@ def get_function_cfg(
     row = db.get(SampleCode, sha256)
     if row is None or row.status != "done":
         raise HTTPException(status_code=404, detail="No disassembly for this sample")
-    cfg = (row.cfgs or {}).get(str(addr))
+    function = db.get(SampleFunction, (sha256, addr))
+    cfg = function.cfg if function is not None else None
     if cfg is None:
         raise HTTPException(status_code=404, detail="No control-flow graph for this function")
     return {"addr": addr, **cfg}
@@ -375,8 +380,8 @@ def get_function_decompiled(
     """Pseudo-C of one function (rz-ghidra): stored by the analysis, or decompiled now and kept.
 
     The analysis decompiles functions up front within a time budget; the
-    others are decompiled on first request, which reopens the sample in the
-    worker and can take a while on large binaries.
+    others are decompiled on first request: quick while the worker still
+    holds the analysed sample, slower once it has to analyse it again.
     """
     row = db.get(SampleCode, sha256)
     if row is None or row.status != "done":
@@ -385,7 +390,8 @@ def get_function_decompiled(
     if addr not in known or known[addr].get("kind") == "import":
         raise HTTPException(status_code=404, detail="No function of this sample starts at this address")
     engine = (row.summary or {}).get("decompile", {}).get("engine", "rz-ghidra")
-    stored = (row.decompiled or {}).get(str(addr))
+    function = db.get(SampleFunction, (sha256, addr))
+    stored = function.decompiled if function is not None else None
     if stored is not None:
         return {"addr": addr, "engine": engine, "source": "analysis", **stored}
     if not analyzer.configured():
@@ -399,8 +405,10 @@ def get_function_decompiled(
         "spans": result.get("spans", []),
         "truncated": bool(result.get("truncated")),
     }
-    row.decompiled = {**(row.decompiled or {}), str(addr): code}
-    flag_modified(row, "decompiled")
+    if function is None:
+        function = SampleFunction(sha256=sha256, addr=addr)
+        db.add(function)
+    function.decompiled = code
     db.commit()
     return {"addr": addr, "engine": result.get("engine", engine), "source": "on-demand", **code}
 
@@ -490,6 +498,7 @@ def remove_sample(
         code = db.get(SampleCode, sha256)
         if code is not None:
             db.delete(code)
+        db.execute(delete(SampleFunction).where(SampleFunction.sha256 == sha256))
         capabilities = db.get(SampleCapa, sha256)
         if capabilities is not None:
             db.delete(capabilities)

@@ -1,6 +1,6 @@
 """Security helpers: password hashing, sessions, and auth dependencies.
 
-- Passwords and API keys are hashed with bcrypt via passlib.
+- Passwords are hashed with bcrypt; API keys (high-entropy tokens) with SHA-256.
 - Sessions are server-side rows keyed by a random hex token delivered in the
   ``nik_session`` httpOnly cookie.
 - ``current_user`` and ``require_admin`` resolve the session cookie to a live
@@ -12,13 +12,14 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from fastapi import Cookie, Depends, HTTPException, Request, Response, Security, status
 from fastapi.security import APIKeyHeader
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
@@ -27,8 +28,11 @@ from .db import get_db
 from .models import ApiKey, User
 from .models import Session as SessionModel
 
-# bcrypt password hashing context.
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt cost factor (2^12 rounds, the value the existing hashes use) and the
+# password length bcrypt reads.
+BCRYPT_ROUNDS = 12
+BCRYPT_MAX_BYTES = 72
+_BCRYPT_HASH = re.compile(r"^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$")
 
 
 # ---------------------------------------------------------------------------
@@ -50,18 +54,23 @@ def _parse_iso(value: str) -> datetime:
 # ---------------------------------------------------------------------------
 # Password hashing
 # ---------------------------------------------------------------------------
+def _password_bytes(password: str) -> bytes:
+    """UTF-8 bytes bcrypt reads: it uses the first 72 bytes only, so they are cut there
+    (as passlib, which created the existing hashes, did)."""
+    return password.encode("utf-8")[:BCRYPT_MAX_BYTES]
+
+
 def hash_password(password: str) -> str:
-    """Return a bcrypt hash of the given plaintext password."""
-    return _pwd_context.hash(password)
+    """Return a bcrypt (``$2b$``) hash of the given plaintext password."""
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("ascii")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a plaintext password against a stored bcrypt hash."""
-    try:
-        return _pwd_context.verify(password, password_hash)
-    except ValueError:
-        # Malformed/unknown hash format.
+    """Verify a plaintext password against a stored bcrypt hash (False for a malformed hash)."""
+    # Checked up front: some bcrypt releases abort (Rust panic) on a truncated hash.
+    if not _BCRYPT_HASH.match(password_hash or ""):
         return False
+    return bcrypt.checkpw(_password_bytes(password), password_hash.encode("ascii"))
 
 
 # ---------------------------------------------------------------------------

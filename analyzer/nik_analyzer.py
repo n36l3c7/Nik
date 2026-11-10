@@ -27,7 +27,9 @@ import time
 from collections import Counter
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
-MAX_FUNCTIONS = 3000
+# A safety cap, not a working limit: a ~5,000-function Rust binary is
+# disassembled in about 75 s; past the cap the list is marked truncated.
+MAX_FUNCTIONS = int(os.environ.get("ANALYZER_MAX_FUNCTIONS", "20000"))
 MAX_BLOCKS_PER_FUNCTION = 400
 MAX_OPS_PER_FUNCTION = 4000
 CALL_TYPES = {"call", "ucall", "rcall", "icall", "ircall", "ccall", "uccall"}
@@ -391,6 +393,14 @@ def _blank(code: str, start: int, end: int) -> bool:
     return gap.strip(" \t") == ""
 
 
+LIBRARY_PREFIXES = ("flirt.", "sub.", "case.")
+
+
+def looks_like_library(fn: Dict[str, Any]) -> bool:
+    """Library or glue code by the worker's own evidence: a FLIRT match, a Rust crate, a thunk."""
+    return bool(fn.get("crates")) or fn.get("name", "").startswith(LIBRARY_PREFIXES)
+
+
 def decompile_functions(
     session: Any,
     functions: List[Dict[str, Any]],
@@ -402,7 +412,9 @@ def decompile_functions(
     """Decompile the non-import ``functions`` until ``deadline`` (a ``clock`` value).
 
     Order: the addresses in ``first`` (entry point, ``main``), then the
-    smallest functions, which gives the most coverage per second. A function
+    functions not recognised as library code (no FLIRT match, no Rust crate,
+    not a thunk) before the others, the smallest first within each group,
+    which gives the most coverage of the code worth reading per second. A function
     that crashes rizin or runs over ``per_function`` seconds (the watchdog
     stops rizin) is skipped and the session restarted, while restarts last.
     Returns the pseudo-C keyed by address (as a string) and
@@ -415,6 +427,7 @@ def decompile_functions(
         key=lambda fn: (
             fn["addr"] not in first,
             first.index(fn["addr"]) if fn["addr"] in first else 0,
+            looks_like_library(fn),
             fn.get("size", 0),
         ),
     )
@@ -507,6 +520,62 @@ class Session:
             self.pipe.close()
 
 
+class WarmSessions:
+    """Analysed rizin sessions kept open after a request, so the next one skips ``aaa``.
+
+    Opening a large binary costs a full analysis (a minute or more); a
+    decompilation on demand right after costs a few seconds in a warm session.
+    A session is used by one request at a time: ``take`` removes it, ``give``
+    puts it back. At most ``size`` sessions are kept (the oldest is closed),
+    each for at most ``idle`` seconds without use. Keys identify the file and
+    the FLIRT signatures applied to it.
+    """
+
+    def __init__(self, size: int = 1, idle: float = 600, clock: Callable[[], float] = time.monotonic) -> None:
+        self.size, self.idle, self.clock = size, idle, clock
+        self._items: Dict[Tuple[Any, ...], Tuple[Any, float]] = {}
+        self._lock = threading.Lock()
+
+    def take(self, key: Tuple[Any, ...]) -> Optional[Any]:
+        with self._lock:
+            item = self._items.pop(key, None)
+        if item is None:
+            return None
+        session, since = item
+        if self.clock() - since > self.idle:
+            session.close()
+            return None
+        session.restarts = 0  # the crash allowance is per request
+        return session
+
+    def give(self, key: Tuple[Any, ...], session: Any) -> None:
+        if self.size <= 0:
+            session.close()
+            return
+        with self._lock:
+            replaced = self._items.pop(key, None)
+            self._items[key] = (session, self.clock())
+            evicted = [replaced[0]] if replaced else []
+            while len(self._items) > self.size:
+                oldest = min(self._items, key=lambda k: self._items[k][1])
+                evicted.append(self._items.pop(oldest)[0])
+        for old in evicted:
+            old.close()
+
+    def expire(self) -> None:
+        """Close the sessions idle for longer than ``idle`` (called periodically)."""
+        now = self.clock()
+        with self._lock:
+            stale = [k for k, (_, since) in self._items.items() if now - since > self.idle]
+            closing = [self._items.pop(k)[0] for k in stale]
+        for session in closing:
+            session.close()
+
+
+def _warm_key(path: str, signatures: Iterable[str]) -> Tuple[Any, ...]:
+    return (path, tuple(signatures))
+
+
 def disassemble_functions(
     session: Any, functions: List[Dict[str, Any]], names: Dict[int, str], index: Optional[DataIndex] = None
 ) -> List[Dict[str, Any]]:
@@ -583,10 +652,13 @@ def analyze(
     binary: str = "rizin",
     decompile_seconds: float = 300,
     signatures: Iterable[str] = (),
+    warm: Optional[WarmSessions] = None,
 ) -> Dict[str, Any]:
     """Disassemble the file at ``path``, then decompile within ``decompile_seconds``.
 
-    ``signatures`` are extra FLIRT files applied after rizin's own.
+    ``signatures`` are extra FLIRT files applied after rizin's own. With
+    ``warm``, the analysed session is kept for the decompilations on demand
+    that usually follow.
 
     Raises AnalysisTimeout when the disassembly itself runs over ``timeout``
     seconds; the decompilation pass only ever shortens to fit what is left.
@@ -614,13 +686,18 @@ def analyze(
             raise _timeout_error(timeout) from None
         raise
 
+    keep = False
     try:
         main = next((fn["addr"] for fn in results if fn["name"] in ("main", "sym.main", "dbg.main")), None)
         deadline = min(started + timeout - 5, time.monotonic() + decompile_seconds)
         decompiled, stats = decompile_functions(session, results, deadline, first=(entry, main))
+        keep = warm is not None and not timed_out.is_set() and stats["stopped"] != "error"
     finally:
         timer.cancel()
-        session.close()
+        if keep:
+            warm.give(_warm_key(path, session.signatures), session)
+        else:
+            session.close()
     return {
         "engine": {"name": "rizin", "version": rizin_version(binary)},
         "info": summarize_info(info),
@@ -636,24 +713,76 @@ def analyze(
 
 
 def decompile_one(
-    path: str, addr: int, timeout: float = 600, binary: str = "rizin", signatures: Iterable[str] = ()
+    path: str,
+    addr: int,
+    timeout: float = 600,
+    binary: str = "rizin",
+    signatures: Iterable[str] = (),
+    warm: Optional[WarmSessions] = None,
 ) -> Dict[str, Any]:
-    """Pseudo-C of the function at ``addr`` (on demand, for functions the up-front pass skipped)."""
+    """Pseudo-C of the function at ``addr`` (on demand, for functions the up-front pass skipped).
+
+    With ``warm``, a session kept from an earlier request on the same file is
+    reused (no new ``aaa``) and kept again afterwards.
+    """
     if not os.path.isfile(path):
         raise AnalysisError("Sample not found in the store.")
+    signatures = list(signatures)
+    key = _warm_key(path, signatures)
+    kept = warm.take(key) if warm is not None else None
+    if kept is not None:
+        timed_out = threading.Event()
+
+        def stop() -> None:
+            timed_out.set()
+            kept.stop()
+
+        timer = threading.Timer(timeout, stop)  # already analysed: only the decompilation is timed
+        timer.start()
+        try:
+            return _decompile_in(kept, addr, timeout, timer, timed_out, warm, key)
+        except _SessionLost:
+            pass  # the kept session had died (rizin crash): analyse the file again below
     session, timer, timed_out = _guarded(timeout, path, binary, signatures)
     try:
-        function = session.cmdj(f"afij @ {addr}") or []
-        if not function or function[0].get("offset") != addr:
+        return _decompile_in(session, addr, timeout, timer, timed_out, warm, key)
+    except _SessionLost as exc:
+        raise AnalysisError(str(exc)) from None
+
+
+class _SessionLost(AnalysisError):
+    """rizin stopped answering in the middle of a request (not a timeout)."""
+
+
+def _decompile_in(
+    session: Any,
+    addr: int,
+    timeout: float,
+    timer: threading.Timer,
+    timed_out: threading.Event,
+    warm: Optional[WarmSessions],
+    key: Tuple[Any, ...],
+) -> Dict[str, Any]:
+    """Decompile ``addr`` in ``session``; keep the session warm afterwards when it is still usable."""
+    healthy = False
+    try:
+        try:
+            function = session.cmdj(f"afij @ {addr}") or []
+            starts = bool(function) and function[0].get("offset") == addr
+            result = build_decompiled(session.cmdj(f"pdgj @ {addr}")) if starts else None
+        except AnalysisError as exc:
+            if timed_out.is_set():
+                raise _timeout_error(timeout) from None
+            raise _SessionLost(str(exc)) from None
+        healthy = True
+        if not starts:
             raise AnalysisError(f"No function starts at 0x{addr:x}.")
-        result = build_decompiled(session.cmdj(f"pdgj @ {addr}"))
         if result is None:
             raise AnalysisError(f"The decompiler produced no code for 0x{addr:x}.")
         return {"addr": addr, "engine": DECOMPILER, **result}
-    except AnalysisError:
-        if timed_out.is_set():
-            raise _timeout_error(timeout) from None
-        raise
     finally:
         timer.cancel()
-        session.close()
+        if warm is not None and healthy and not timed_out.is_set():
+            warm.give(key, session)
+        else:
+            session.close()

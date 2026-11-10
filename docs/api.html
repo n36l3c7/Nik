@@ -180,6 +180,16 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET/POST /api/capa-rules</code> · <code>PUT/DELETE …/{id}</code> · <code>POST …/validate</code>
+              </td>
+              <td>
+                capa rules (YAML, one each) matched with capa's bundled set (<strong>admin</strong> to change). The capa
+                worker checks a rule before it is saved; a rule another enabled rule matches cannot be renamed, disabled
+                or deleted.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET/POST /api/flirt-signatures</code> · <code>PUT/DELETE …/{id}</code></td>
               <td>
                 FLIRT signatures (<code>.sig</code> or <code>.pat</code>, multipart <code>name</code> +

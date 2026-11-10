@@ -219,8 +219,23 @@
               </td>
             </tr>
             <tr>
+              <td><code>ANALYZER_MAX_FUNCTIONS</code></td>
+              <td><code>20000</code></td>
+              <td>Safety cap on the functions listed per sample.</td>
+            </tr>
+            <tr>
+              <td><code>ANALYZER_WARM_SESSIONS</code> · <code>ANALYZER_WARM_IDLE</code></td>
+              <td><code>1</code> · <code>600</code></td>
+              <td>
+                Analysed sessions the rizin worker keeps open so that decompiling on demand takes seconds (<code
+                  >0</code
+                >
+                disables; about 1 GB each on a large binary), and how long an unused one stays open.
+              </td>
+            </tr>
+            <tr>
               <td><code>ANALYZER_MEMORY</code> · <code>ANALYZER_CPUS</code></td>
-              <td><code>2g</code> · <code>2</code></td>
+              <td><code>4g</code> · <code>2</code></td>
               <td>Memory and CPU limits of the rizin worker container.</td>
             </tr>
             <tr>
@@ -271,11 +286,12 @@
           </p>
         </div>
         <div class="card">
-          <h3>YARA rules, FLIRT signatures</h3>
+          <h3>YARA rules, FLIRT signatures, capa rules</h3>
           <p>
-            Admins add YARA rule sets (compiled before they are saved) and upload FLIRT signatures (<code>.sig</code> or
+            Admins add YARA rule sets (compiled before they are saved), upload FLIRT signatures (<code>.sig</code> or
             <code>.pat</code>) that the analyzer worker applies on top of rizin's own, so more library code is
-            recognised and hidden in the Code view. Both apply to samples analysed from then on: use Re-analyse on older
+            recognised and hidden in the Code view, and add capa rules (checked by the capa worker before they are
+            saved) matched with capa's bundled set. All apply to samples analysed from then on: use Re-analyse on older
             ones.
           </p>
         </div>
