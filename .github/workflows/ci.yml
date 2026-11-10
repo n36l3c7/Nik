@@ -70,7 +70,7 @@ jobs:
           # The worker's own tests, inside its image (with capa and the bundled rules).
           docker run --rm -v "$PWD/capa/tests:/opt/nik-capa/tests:ro" -w /opt/nik-capa --entrypoint sh nik-capa \
             -c "pip install --quiet --user pytest && python -m pytest -q -p no:cacheprovider tests"
-          docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --tmpfs /home/capa:uid=1000,gid=1000 \
+          docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
             -v "$PWD/backend/.e2e-samples:/samples:ro" -e CAPA_TOKEN=e2e-capa-token nik-capa
       - run: npm run build
       - run: npm run test:e2e

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.1] - 2026-11-10
+
+### Fixed
+
+- `podman compose up --build` on RHEL: every image is now named with its
+  registry (`docker.io/rizin/rizin`, `docker.io/library/python`, `node`,
+  `nginx`, `postgres`). Podman resolved the short names through
+  `/etc/containers/registries.conf`, tried `registry.redhat.io` first and
+  failed asking for Red Hat credentials. A test keeps every `FROM` and
+  Compose `image` fully qualified.
+- The capa worker no longer needs a tmpfs with `uid` / `gid` options, which
+  Podman rejects (`unknown mount option "uid=1000"`): the image sets
+  `HOME=/tmp`, so capa's rule cache and vivisect's settings live in the plain
+  `/tmp` tmpfs of the read-only container.
+
 ## [2.11.0] - 2026-11-10
 
 ### Added
@@ -442,7 +457,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.11.1...HEAD
+[2.11.1]: https://github.com/n36l3c7/Nik/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/n36l3c7/Nik/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/n36l3c7/Nik/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/n36l3c7/Nik/compare/v2.8.1...v2.9.0

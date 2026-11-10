@@ -136,7 +136,10 @@
 <span class="prompt"></span>docker compose ps             # container status
 <span class="prompt"></span>docker compose down           # stop (keeps the database volume)
 <span class="prompt"></span>docker compose down -v        # stop AND delete the database volume</code></pre>
-      <p>Podman is a drop-in replacement: <code>podman-compose up -d --build</code> (rootless is fine).</p>
+      <p>
+        Podman is a drop-in replacement: <code>podman-compose up -d --build</code> (rootless is fine). Every image names
+        its registry (<code>docker.io/…</code>), so Podman on RHEL does not try <code>registry.redhat.io</code> first.
+      </p>
 
       <h3 id="local">Local development</h3>
       <p>

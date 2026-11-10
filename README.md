@@ -149,6 +149,12 @@ cp .env.example .env
 podman-compose up -d --build  # or: podman compose up -d --build
 ```
 
+Every image in the Dockerfiles and the Compose file names its registry
+(`docker.io/...`), so Podman never has to guess one from
+`/etc/containers/registries.conf` (on RHEL it would try `registry.redhat.io`
+first and ask for Red Hat credentials). Keep it that way when you add an
+image: `deploy/images.test.js` fails on a short name.
+
 ### 1.2 Local development setup
 
 **Prerequisites:** Node.js 20+ (with npm) and Python 3.11–3.13. No database
@@ -235,7 +241,7 @@ installed).
 
 ```bash
 docker build -t nik-capa capa
-docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --tmpfs /home/capa:uid=1000,gid=1000 \
+docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
   -v "$PWD/backend/samples:/samples:ro" -e CAPA_TOKEN=dev-capa-token nik-capa
 # backend/.env: CAPA_URL=http://127.0.0.1:8710  CAPA_TOKEN=dev-capa-token
 ```

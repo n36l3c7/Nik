@@ -11,7 +11,7 @@
 
 services:
   db:
-    image: postgres:16-alpine
+    image: docker.io/library/postgres:16-alpine
     environment:
       POSTGRES_USER: nik
       POSTGRES_PASSWORD: ${DB_PASSWORD:-nik}
@@ -97,7 +97,7 @@ services:
       - sample-store:/samples:ro
     networks: [analysis]
     read_only: true
-    tmpfs: [/tmp, "/home/capa:uid=1000,gid=1000"]
+    tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${CAPA_MEMORY:-4g}
