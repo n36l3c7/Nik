@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.2] - 2026-11-11
+
+### Changed
+
+- **Documentation**: the README is now a short introduction (what Nik does,
+  installation, the settings to change, development) and points to the site.
+  The GitHub Pages site has a short homepage and new pages: a **user guide**
+  with screenshots (incidents, evidence, every analysis tab, search, report,
+  settings), **Deployment**, **Architecture** and a **Developer guide**, which
+  take the README's former technical sections.
+- The guide's screenshots are taken by a Playwright script,
+  `npm run docs:screenshots` in `frontend/`, so they can be retaken after a
+  change to the interface.
+- The end-to-end test's generated PE sample and phishing e-mail live in
+  `frontend/e2e/helpers.js`, shared with the screenshot script.
+
 ## [2.18.1] - 2026-11-11
 
 ### Security
