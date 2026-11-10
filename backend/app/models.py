@@ -123,6 +123,27 @@ class SampleCode(Base):
     decompiled: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, deferred=True)
 
 
+class SampleCapa(Base):
+    """capa's capabilities of a sample, from the capa worker: one row per sample.
+
+    ``status`` is queued → running → done | error | unsupported (a file type
+    capa does not analyse). ``result`` holds the reduced report: engine,
+    format, and the capabilities with their ATT&CK / MBC mappings and
+    addresses.
+    """
+
+    __tablename__ = "sample_capa"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    requested_at: Mapped[str] = mapped_column(String, nullable=False)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    started_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 class FunctionAnnotation(Base):
     """An analyst's name and comment for one function of a sample.
 

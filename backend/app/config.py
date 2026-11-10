@@ -124,6 +124,11 @@ class Settings:
         self.ANALYZER_URL: str = os.getenv("ANALYZER_URL", "").rstrip("/")
         self.ANALYZER_TOKEN: str = os.getenv("ANALYZER_TOKEN", "")
         self.ANALYZER_TIMEOUT: int = _get_int("ANALYZER_TIMEOUT", 600)
+        # capa worker for the Capabilities view; see capa/. Empty URL = the
+        # view reports "not configured".
+        self.CAPA_URL: str = os.getenv("CAPA_URL", "").rstrip("/")
+        self.CAPA_TOKEN: str = os.getenv("CAPA_TOKEN", "")
+        self.CAPA_TIMEOUT: int = _get_int("CAPA_TIMEOUT", 1800)
 
     @property
     def is_sqlite(self) -> bool:

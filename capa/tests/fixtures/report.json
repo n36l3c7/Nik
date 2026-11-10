@@ -1,0 +1,91 @@
+{
+  "meta": {
+    "version": "10.0.0",
+    "flavor": "static",
+    "sample": { "md5": "00000000000000000000000000000000", "path": "/samples/example.bin" },
+    "analysis": {
+      "format": "pe",
+      "arch": "amd64",
+      "os": "windows",
+      "extractor": "VivisectFeatureExtractor",
+      "rules": ["/opt/capa/rules"],
+      "base_address": { "type": "absolute", "value": 5368709120 },
+      "layout": { "functions": [] },
+      "feature_counts": { "file": 10, "functions": [] },
+      "library_functions": [{ "address": { "type": "absolute", "value": 5368713216 }, "name": "memcpy" }]
+    }
+  },
+  "rules": {
+    "send data on socket": {
+      "meta": {
+        "name": "send data on socket",
+        "namespace": "communication/socket/send",
+        "scopes": { "static": "function", "dynamic": "span of calls" },
+        "attack": [],
+        "mbc": [
+          {
+            "parts": ["Communication", "Socket Communication", "Send Data"],
+            "objective": "Communication",
+            "behavior": "Socket Communication",
+            "method": "Send Data",
+            "id": "C0001.007"
+          }
+        ],
+        "description": "",
+        "lib": false,
+        "is_subscope_rule": false
+      },
+      "matches": [
+        [{ "type": "absolute", "value": 5371943200 }, { "success": true }],
+        [{ "type": "absolute", "value": 5371943088 }, { "success": true }]
+      ]
+    },
+    "link function at runtime on Windows": {
+      "meta": {
+        "name": "link function at runtime on Windows",
+        "namespace": "linking/runtime-linking",
+        "scopes": { "static": "instruction", "dynamic": "call" },
+        "attack": [
+          {
+            "parts": ["Execution", "Shared Modules"],
+            "tactic": "Execution",
+            "technique": "Shared Modules",
+            "subtechnique": "",
+            "id": "T1129"
+          }
+        ],
+        "mbc": [],
+        "description": "",
+        "lib": false,
+        "is_subscope_rule": false
+      },
+      "matches": [[{ "type": "absolute", "value": 5371917199 }, { "success": true }]]
+    },
+    "compiled with rust": {
+      "meta": {
+        "name": "compiled with rust",
+        "namespace": "compiler/rust",
+        "scopes": { "static": "file", "dynamic": "file" },
+        "attack": [],
+        "mbc": [],
+        "description": "",
+        "lib": false,
+        "is_subscope_rule": false
+      },
+      "matches": [[{ "type": "no address" }, { "success": true }]]
+    },
+    "contain loop": {
+      "meta": {
+        "name": "contain loop",
+        "namespace": "",
+        "scopes": { "static": "function", "dynamic": "unsupported" },
+        "attack": [],
+        "mbc": [],
+        "description": "",
+        "lib": true,
+        "is_subscope_rule": false
+      },
+      "matches": [[{ "type": "absolute", "value": 5368713216 }, { "success": true }]]
+    }
+  }
+}

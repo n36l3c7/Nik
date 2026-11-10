@@ -125,6 +125,19 @@
               </td>
             </tr>
             <tr>
+              <td><code>CAPA_URL</code> · <code>CAPA_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Base URL of the capa worker and the shared secret it requires. Without them the Capabilities view
+                reports "not configured" and everything else works.
+              </td>
+            </tr>
+            <tr>
+              <td><code>CAPA_TIMEOUT</code></td>
+              <td><code>1800</code></td>
+              <td>Seconds capa may spend on one sample (large binaries take ten minutes or more).</td>
+            </tr>
+            <tr>
               <td><code>RUN_CREATE_ALL</code></td>
               <td><code>true</code></td>
               <td>
@@ -209,6 +222,19 @@
               <td><code>ANALYZER_MEMORY</code> · <code>ANALYZER_CPUS</code></td>
               <td><code>2g</code> · <code>2</code></td>
               <td>Memory and CPU limits of the rizin worker container.</td>
+            </tr>
+            <tr>
+              <td><code>CAPA_TOKEN</code> · <code>CAPA_TIMEOUT</code></td>
+              <td>— · <code>1800</code></td>
+              <td>
+                Shared secret between the <code>api</code> and <code>capa</code> services (different from the
+                analyzer's) and the per-sample time limit.
+              </td>
+            </tr>
+            <tr>
+              <td><code>CAPA_MEMORY</code> · <code>CAPA_CPUS</code></td>
+              <td><code>4g</code> · <code>2</code></td>
+              <td>Memory and CPU limits of the capa worker container.</td>
             </tr>
           </tbody>
         </table>

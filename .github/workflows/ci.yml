@@ -24,6 +24,9 @@ jobs:
       - name: Analyzer worker (lint, format, tests on recorded rizin output)
         working-directory: analyzer
         run: ruff check . && ruff format --check . && python -m pytest -q tests
+      - name: capa worker (lint, format, tests on a recorded capa report)
+        working-directory: capa
+        run: ruff check . && ruff format --check . && python -m pytest -q tests
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -61,14 +64,21 @@ jobs:
           mkdir -p backend/.e2e-samples
           docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
             -v "$PWD/backend/.e2e-samples:/samples:ro" -e ANALYZER_TOKEN=e2e-token nik-analyzer
+      - name: Start the capa worker (real capa) on the E2E sample store
+        run: |
+          docker build -t nik-capa capa
+          docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --tmpfs /home/capa:uid=1000,gid=1000 \
+            -v "$PWD/backend/.e2e-samples:/samples:ro" -e CAPA_TOKEN=e2e-capa-token nik-capa
       - run: npm run build
       - run: npm run test:e2e
         env:
           E2E_ANALYZER_URL: http://127.0.0.1:8700
           E2E_ANALYZER_TOKEN: e2e-token
-      - name: Analyzer logs
+          E2E_CAPA_URL: http://127.0.0.1:8710
+          E2E_CAPA_TOKEN: e2e-capa-token
+      - name: Worker logs
         if: failure()
-        run: docker logs nik-analyzer || true
+        run: docker logs nik-analyzer || true; docker logs nik-capa || true
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

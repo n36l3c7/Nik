@@ -51,7 +51,9 @@ every action attributed to a named analyst and recorded in a global audit log.
   recognises (FLIRT signatures, Rust crates) is hidden by default, a
   **Start here** list ranks the functions worth reading first, indicators
   link to the functions that use them, and analysts rename and comment
-  functions for everyone working on the same sample. All of it is
+  functions for everyone working on the same sample. A **Capabilities**
+  view from Mandiant capa, in its own isolated worker, lists what the code
+  can do mapped to MITRE ATT&CK and the Malware Behavior Catalog. All of it is
   flaggable like any other event, with links to VirusTotal and MalwareBazaar
   and a download only inside a password-protected zip.
 - **Super-timeline** — every timestamped event across all tabs merged into one
@@ -210,8 +212,9 @@ every tab, the timeline and the `tail -f` panel. It needs `npm run build`, the
 backend dependencies on `PATH` (activate the venv) and a Chromium from
 `npx playwright install chromium`. With the analyzer worker running and
 `E2E_ANALYZER_URL` / `E2E_ANALYZER_TOKEN` set (CI does both), it also checks
-the Code view against real rizin output; without them it checks the
-"not configured" message.
+the Code view against real rizin output; likewise `E2E_CAPA_URL` /
+`E2E_CAPA_TOKEN` for the Capabilities view and the capa worker. Without them
+it checks the "not configured" messages.
 
 **Analyzer worker in development.** The Code view needs the rizin worker
 (`analyzer/`). With Docker:
@@ -226,6 +229,19 @@ docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
 Its own checks: `cd analyzer && ruff check . && python -m pytest tests` (the
 tests use recorded rizin output; the live test runs only where `rizin` is
 installed).
+
+**capa worker in development.** The Capabilities view needs the capa worker
+(`capa/`):
+
+```bash
+docker build -t nik-capa capa
+docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --tmpfs /home/capa:uid=1000,gid=1000 \
+  -v "$PWD/backend/samples:/samples:ro" -e CAPA_TOKEN=dev-capa-token nik-capa
+# backend/.env: CAPA_URL=http://127.0.0.1:8710  CAPA_TOKEN=dev-capa-token
+```
+
+Its own checks: `cd capa && ruff check . && python -m pytest tests` (on a
+recorded capa report; capa itself is not needed).
 
 Backend tests run with `pytest`, the linter with `ruff check .` and the
 formatter with `ruff format .` (`--check` in CI), all from `backend/` after
@@ -265,6 +281,9 @@ is no `tailwind.config.js` and no extra setup step.
 | `ANALYZER_URL` | — | Base URL of the rizin worker (e.g. `http://analyzer:8700`). Empty: the Code view reports "not configured". |
 | `ANALYZER_TOKEN` | — | Shared secret sent to the worker in `X-Analyzer-Token`; the worker refuses to start without one. |
 | `ANALYZER_TIMEOUT` | `600` | Seconds rizin may spend on one sample before the worker stops it. |
+| `CAPA_URL` | — | Base URL of the capa worker (e.g. `http://capa:8710`). Empty: the Capabilities view reports "not configured". |
+| `CAPA_TOKEN` | — | Shared secret sent to the capa worker in `X-Analyzer-Token`; the worker refuses to start without one. |
+| `CAPA_TIMEOUT` | `1800` | Seconds capa may spend on one sample before the worker stops it (large binaries take ten minutes or more). |
 
 **Compose** (root `.env` — see `.env.example`):
 
@@ -282,6 +301,9 @@ is no `tailwind.config.js` and no extra setup step.
 | `ANALYZER_TIMEOUT` | `600` | Per-sample time limit of the rizin worker, in seconds. |
 | `ANALYZER_DECOMPILE_SECONDS` | `300` | Share of that time the analysis spends decompiling functions up front; the rest are decompiled when first opened. |
 | `ANALYZER_MEMORY` / `ANALYZER_CPUS` | `2g` / `2` | Memory and CPU limits of the `analyzer` container. |
+| `CAPA_TOKEN` | — | Shared secret between the `api` and `capa` services; set a long random value, different from `ANALYZER_TOKEN`. |
+| `CAPA_TIMEOUT` | `1800` | Per-sample time limit of the capa worker, in seconds. |
+| `CAPA_MEMORY` / `CAPA_CPUS` | `4g` / `2` | Memory and CPU limits of the `capa` container. |
 
 > **Two things that will bite you over plain HTTP:**
 >
@@ -678,6 +700,7 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `POST /api/samples/{sha256}/reanalyse` | Run the current analysis engine and YARA rules again on the stored file. |
 | `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
 | `GET/POST /api/samples/{sha256}/code` | Disassembly by the rizin worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error`) and, when done, the engine, binary info and functions with their calls; `POST` (re)starts it (`202`, `503` when no worker is configured). |
+| `GET/POST /api/samples/{sha256}/capabilities` | capa on the capa worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error` / `unsupported`) and, when done, the engine and the capabilities with their namespace, scope, ATT&CK and MBC mappings and addresses; `POST` (re)starts it (`202`; `503` when no worker is configured, `422` for a file type capa does not read). |
 | `GET /api/samples/{sha256}/annotations` · `PUT …/annotations/{addr}` | Analysts' names and comments for the sample's functions (shared by every incident holding the file, removed with it). `PUT` takes `{ name, comment }` and returns the annotation, or `null` when both are empty (it is removed); `409` before the sample is disassembled, `404` for an address that is not a function. Audited as `sample.annotate`. |
 | `GET/POST /api/flirt-signatures` · `PUT/DELETE …/{id}` | FLIRT signatures (`.sig` or `.pat`, multipart `name` + `file`, up to 32 MB) the analyzer worker applies on top of rizin's bundled ones (**admin** to change; any caller may list). `PUT` takes `{ name, enabled }`. They apply from the next disassembly. |
 | `GET /api/samples/{sha256}/code/functions/{addr}` | Control-flow graph of one function: basic blocks with their instructions and `jump` / `fail` successors. |
@@ -831,7 +854,9 @@ file itself to the server, because the sample *is* the evidence under study
 ├── playwright.config.js            # E2E: starts backend (SQLite) + vite preview
 ├── e2e/smoke.spec.js               # End-to-end smoke test of the whole stack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
-├── docker-compose.yml              # db + api + analyzer + web stack
+├── docker-compose.yml              # db + api + analyzer + capa + web stack
+├── capa/                           # capa worker: Dockerfile (pinned capa, rules, signatures),
+│                                   #   nik_capa.py (run + reduce the report), server.py, tests/
 ├── analyzer/                       # rizin worker: Dockerfile, nik_analyzer.py (pipe + transforms),
 │                                   #   server.py (HTTP, token, job slots), tests/ (recorded output)
 ├── .env.example                    # Compose configuration template
@@ -846,7 +871,7 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── main.py                 # FastAPI app: create_all on startup, /api routers
 │       ├── config.py               # Env-based settings (DATABASE_URL, SECRET_KEY, …)
 │       ├── db.py                   # SQLAlchemy engine / session factory
-│       ├── models.py               # users, sessions, incidents, audit_log, settings
+│       ├── models.py               # users, sessions, incidents, audit_log, settings, samples, …
 │       ├── browser_profiles.py     # browser profiles: legacy conversion, upload routing
 │       ├── schemas.py              # Pydantic request/response models
 │       ├── security.py             # bcrypt hashing, session-auth dependencies
@@ -856,6 +881,8 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
 │       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
 │       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
+│       ├── analyzer.py             # rizin worker client + disassembly job
+│       ├── capa.py                 # capa worker client + capabilities job (one at a time)
 │       ├── yara/                   # Built-in YARA rule files (*.yar)
 │       └── routers/                # auth, users, incidents, audit, settings, backup, samples,
 │                                   #   annotations, yara_rules, flirt
@@ -939,6 +966,7 @@ file itself to the server, because the sample *is* the evidence under study
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
             ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
             │                           #   StructureSection, YaraSection, IocSection, StringsSection,
+            │                           #   CapabilitiesSection, useWorkerJob (polled worker state),
             │                           #   DownloadDialog; code/ CodeSection, GraphCanvas (ELK),
             │                           #   DecompiledView, StartHere, FunctionNotes, hooks
             └── timeline/               # TimelineTab (the super-timeline)
@@ -1350,6 +1378,40 @@ table, a **Used by** column that opens the function in the Code view.
 Analysts **rename** and **comment** functions (`function_annotations`
 table): names replace rizin's in the list, the graphs and the pseudo-C for
 everyone opening the same sample.
+
+**Capabilities (capa).** [Mandiant capa](https://github.com/mandiant/capa)
+matches a community rule set against the program's code and reports what it
+can do (send data on a socket, create a process, encrypt with RC4, resolve
+APIs at runtime…), mapped to MITRE ATT&CK and the Malware Behavior Catalog.
+It runs in a third worker, `capa/`, built on `python:3.12-slim` with
+`flare-capa`, its rules and its library signatures at a pinned version (the
+rules and signatures are checked against their SHA-256 at build time); capa
+uses its pure-Python vivisect backend, so no Java or IDA is needed. capa,
+capa-rules and vivisect are Apache-2.0.
+
+1. After an upload and on Re-analyse (or the **Run capa** button) the
+   backend queues a job (`sample_capa` table) for x86 / x64 PE and ELF
+   files; other types are marked `unsupported` without calling the worker.
+2. The worker (`server.py`, standard library) runs `capa -j` on
+   `<store>/<sha256>.bin` from its read-only mount, kills it after
+   `CAPA_TIMEOUT`, and reduces the report (megabytes on a large binary) to
+   the capabilities with their namespace, scope, ATT&CK / MBC mappings and up
+   to 200 addresses each, a few kilobytes. Rules capa marks as library
+   helpers are dropped, as capa's own report does.
+3. capa is CPU-bound — seconds on a small file, ten minutes or more on a
+   large one — so the worker runs one analysis at a time and the backend
+   sends its jobs one after the other, waiting while the worker is busy.
+
+The **Capabilities** view lists them by namespace with ATT&CK and MBC badges.
+capa and rizin split a binary into functions differently, so each address
+capa reports is credited to the rizin function containing it
+(`placeCapabilities` in `utils/triage.js`): the view links each capability to
+those functions, the Code view shows the capabilities of each function, and
+**Start here** counts them — only for functions not recognised as library
+code, since crypto and TLS crates match many rules. Capabilities do not
+change the sample's severity. The `capa` service has the same isolation as
+`analyzer` (read-only store and filesystem, internal network only, no
+capabilities, memory / CPU / time limits).
 
 ---
 
