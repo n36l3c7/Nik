@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dependabot's monthly grouped pull requests carry minor and patch releases
+  only; major releases (PostgreSQL, Vite, ESLint, Node…) are planned as their
+  own changes. CI builds and tests the frontend on Node 26, as the image does.
+
 ## [2.12.0] - 2026-11-10
 
 ### Added

@@ -295,9 +295,11 @@ runs `pip-audit` on the backend and the capa worker, `npm audit
 so a new CVE in an unchanged dependency fails the build without waiting for
 a code change. Locally: `pip-audit -r backend/requirements.txt` and
 `npm audit`. **Dependabot** (`.github/dependabot.yml`) opens one grouped
-pull request a month per ecosystem (npm, pip, Docker, Compose, Actions) and a
-pull request as soon as a dependency gets a security fix; enable the latter in
-the repository's *Settings → Code security*.
+pull request a month per ecosystem (npm, pip, Docker, Compose, Actions) with
+the minor and patch releases, and a pull request as soon as a dependency gets
+a security fix; enable the latter in the repository's *Settings → Code
+security*. Major releases are left out (except for Actions): they need
+migration work and are planned as their own change.
 
 **Upgrading an existing database:** run `alembic upgrade head` from `backend/`
 after pulling a release that adds a migration (the Docker image does this on
