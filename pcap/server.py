@@ -29,6 +29,7 @@ PORT = int(os.environ.get("PCAP_PORT", "8740"))
 SAMPLE_DIR = os.environ.get("SAMPLE_DIR", "/samples")
 MAX_JOBS = int(os.environ.get("PCAP_MAX_JOBS", "2"))
 _ID = re.compile(r"^[0-9a-f]{32}$")
+EXTENSIONS = ("pcap", "pcapng", "cap", "gz")
 _PATH = re.compile(r"^_captures/([0-9a-f]{32})/capture\.(pcap|pcapng|cap|gz)$")
 _slots = threading.BoundedSemaphore(MAX_JOBS)
 
@@ -66,7 +67,13 @@ class Handler(BaseHTTPRequestHandler):
         match = _PATH.match(str(body.get("path") or ""))
         if not match or match.group(1) != capture_id:
             raise nik_pcap.CaptureError("Invalid capture path", 400)
-        path = os.path.join(SAMPLE_DIR, match.group(0))
+        # Rebuilt from fixed parts (the extension from a fixed list), then
+        # checked to stay inside the store.
+        ext = next(e for e in EXTENSIONS if e == match.group(2))
+        root = os.path.realpath(SAMPLE_DIR)
+        path = os.path.realpath(os.path.join(root, "_captures", capture_id, f"capture.{ext}"))
+        if not path.startswith(root + os.sep):
+            raise nik_pcap.CaptureError("Invalid capture path", 400)
         if not os.path.isfile(path):
             raise nik_pcap.CaptureError("The capture file is not in the store", 404)
         return body, capture_id, path
