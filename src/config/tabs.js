@@ -42,7 +42,7 @@ const MalwareAnalysisTab = lazy(() => import('../components/tabs/malware/Malware
 const MailAnalysisTab = lazy(() => import('../components/tabs/mail/MailAnalysisTab.jsx'))
 const IocsTab = lazy(() => import('../components/tabs/iocs/IocsTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
-const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
+const NetworkAnalysisTab = lazy(() => import('../components/tabs/network/NetworkAnalysisTab.jsx'))
 
 export const ANALYSIS_TABS = [
   {
@@ -157,11 +157,17 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'network',
-    label: 'Network Logs',
+    label: 'Network Analysis',
     icon: Network,
-    component: NetworkLogsTab,
+    component: NetworkAnalysisTab,
     dataKey: 'network',
-    defaultData: {},
+    // Captures live on the server (sample store + `network_captures`); the
+    // incident keeps light references: [{ id, kind: 'pcap' | 'browser',
+    // fileName, status, packets, held, beacons, … }]. The packet list, tree
+    // and bytes come from POST /api/captures/{id}/rpc (Wireshark's engine).
+    defaultData: {
+      captures: [],
+    },
   },
 ]
 

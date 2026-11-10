@@ -25,7 +25,18 @@ from typing import Any
 for _noisy in ("weasyprint", "weasyprint.progress", "fontTools"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
-SECTIONS = ("summary", "timeline", "attack", "iocs", "samples", "mails", "eventlogs", "notes", "evidence")
+SECTIONS = (
+    "summary",
+    "timeline",
+    "attack",
+    "iocs",
+    "samples",
+    "mails",
+    "network",
+    "eventlogs",
+    "notes",
+    "evidence",
+)
 TLP_LEVELS = ("clear", "green", "amber", "amber+strict", "red")
 LANGS = ("en", "it")
 MAX_IOCS = 500
@@ -131,6 +142,17 @@ T = {
         "findings": "Main findings",
         "no_mails": "No e-mail was analysed.",
         "verdicts": {"phishing": "phishing", "suspicious": "suspicious", "clean": "no strong signs"},
+        "network": "Network",
+        "capture": "Capture",
+        "packets": "Packets",
+        "network_findings": "Findings",
+        "no_network": "No network capture was analysed.",
+        "browser_session": "isolated browser session (reconstructed)",
+        "held": "submissions held, not sent",
+        "posts": "POST requests",
+        "beacons": "periodic connections (beacons)",
+        "objects": "exported objects",
+        "every": "every",
         "eventlogs": "Windows event logs",
         "channel": "Channel",
         "covers": "Covers",
@@ -201,6 +223,17 @@ T = {
         "findings": "Elementi principali",
         "no_mails": "Nessuna e-mail analizzata.",
         "verdicts": {"phishing": "phishing", "suspicious": "sospetta", "clean": "nessun segnale forte"},
+        "network": "Rete",
+        "capture": "Cattura",
+        "packets": "Pacchetti",
+        "network_findings": "Elementi",
+        "no_network": "Nessuna cattura di rete analizzata.",
+        "browser_session": "sessione del browser isolato (ricostruita)",
+        "held": "invii trattenuti, non inviati",
+        "posts": "richieste POST",
+        "beacons": "connessioni periodiche (beacon)",
+        "objects": "oggetti esportati",
+        "every": "ogni",
         "eventlogs": "Registri eventi Windows",
         "channel": "Canale",
         "covers": "Copre",
@@ -321,6 +354,29 @@ def attack_techniques(samples: list[dict[str, Any]], detections: list[dict[str, 
     return sorted(found.values(), key=lambda t: t["id"])
 
 
+def _capture_row(capture: dict[str, Any], t: dict[str, Any]) -> list[str]:
+    kind = t["browser_session"] if capture.get("kind") == "browser" else "pcap"
+    findings = []
+    for held in capture.get("held") or []:
+        findings.append(f'<div class="high">{esc(t["held"])}: {esc(held.get("method"))} {esc(held.get("url"))}</div>')
+    if capture.get("posts"):
+        findings.append(f"<div>{esc(capture['posts'])} {esc(t['posts'])}</div>")
+    for beacon in capture.get("beacons") or []:
+        findings.append(
+            f'<div class="high">{esc(t["beacons"])}: {esc(beacon.get("destination"))}:{esc(beacon.get("port"))}'
+            f" × {esc(beacon.get('count'))}, {esc(t['every'])} {esc(beacon.get('interval'))} s</div>"
+        )
+    if capture.get("objects"):
+        findings.append(f"<div>{esc(capture['objects'])} {esc(t['objects'])}</div>")
+    window = f"{_ms(capture.get('first'))} → {_ms(capture.get('last'))}" if capture.get("first") else ""
+    return [
+        f"{esc(capture.get('fileName'))}<br><span class='muted'>{esc(kind)}</span>"
+        f"<br><span class='mono'>{esc(capture.get('sha256') or '')}</span>",
+        f"{esc(capture.get('packets') or 0)}<br><span class='muted'>{esc(window)}</span>",
+        "".join(findings) or "—",
+    ]
+
+
 def evidence(doc: dict) -> list[dict[str, Any]]:
     """Every imported file: tab, source, file name, format, rows, time, SHA-256."""
     data = doc.get("data") or {}
@@ -352,6 +408,19 @@ def evidence(doc: dict) -> list[dict[str, Any]]:
             add("Endpoint", f"{category_id} · {source}", (slot or {}).get("meta"))
     for channel, slot in ((data.get("eventlogs") or {}).get("channels") or {}).items():
         add("Event logs", channel, (slot or {}).get("meta"))
+    for ref in ((data.get("network") or {}).get("captures") or []) if isinstance(data.get("network"), dict) else []:
+        if isinstance(ref, dict) and ref.get("sha256"):
+            rows.append(
+                {
+                    "tab": "Network",
+                    "source": "isolated browser" if ref.get("kind") == "browser" else "capture",
+                    "fileName": ref.get("fileName"),
+                    "format": "pcapng" if ref.get("kind") == "browser" else "pcap",
+                    "rows": ref.get("packets"),
+                    "importedAt": ref.get("createdAt"),
+                    "sha256": ref.get("sha256", ""),
+                }
+            )
     for ref in (data.get("mail") or {}).get("messages") or []:
         if isinstance(ref, dict):
             rows.append(
@@ -609,6 +678,20 @@ def build_html(
             out.append(_table([t["message"], t["verdict"], t["findings"]], rows, ["38%", "14%", "48%"]))
         else:
             out.append(f'<p class="muted">{esc(t["no_mails"])}</p>')
+
+    if "network" in wanted:
+        out.append(f"<h2>{esc(t['network'])}</h2>")
+        captures = [c for c in ((data.get("network") or {}).get("captures") or []) if isinstance(c, dict)]
+        if captures:
+            out.append(
+                _table(
+                    [t["capture"], t["packets"], t["network_findings"]],
+                    [_capture_row(c, t) for c in captures],
+                    ["40%", "16%", "44%"],
+                )
+            )
+        else:
+            out.append(f'<p class="muted">{esc(t["no_network"])}</p>')
 
     if "eventlogs" in wanted:
         out.append(f"<h2>{esc(t['eventlogs'])}</h2>")

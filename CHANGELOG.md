@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-11-10
+
+### Added
+
+- **Network Analysis** tab (replaces the Network Logs placeholder): packet
+  captures read by **Wireshark's own engine** in a new isolated `pcap`
+  worker (Debian's tshark and sharkd, read-only store, internal network, no
+  capabilities).
+  - pcap and pcapng (gzip too) up to `PCAP_MAX_MB` (500), uploaded or
+    dropped anywhere in the app.
+  - Wireshark's main window: the packet list with Wireshark's colouring
+    rules and three time formats, the protocol tree, the bytes in hex and
+    ASCII with the selected field highlighted, **display filters** in
+    Wireshark syntax (checked as you type), right-click on a field to apply
+    it as a filter.
+  - **Follow Stream** (TCP, UDP, HTTP, TLS…) in ASCII or hex, client and
+    server coloured.
+  - **Export Objects** (HTTP, SMB, FTP-DATA, TFTP, IMF, DICOM) with their
+    SHA-256, downloaded in a protected zip or sent to Malware Analysis.
+  - **TLS decryption** with a key log (`SSLKEYLOGFILE`), added at upload or
+    later, stored encrypted.
+  - A summary: hosts by bytes, DNS names and answers, HTTP requests, TLS
+    server names, POST / PUT / PATCH requests, **beacons** (regular
+    connections to the same address and port), Expert Info, protocols.
+  - Packets can be flagged into the incident timeline.
+- **Isolated browser: network capture.**
+  - Every request of a session is recorded (method, URL, type, headers,
+    bodies in clear with HTTPS already decrypted, response, server address,
+    certificate, timings, WebSocket messages), refused ones included; bodies
+    up to 2 MB each and 50 MB per session, past that size and SHA-256.
+  - A **Network panel** in the browser window, as in DevTools: type filters,
+    search, "blocked / held" and "submissions only", a waterfall, and per
+    request Headers, Payload (form fields), Preview (sandboxed), Response,
+    Timing and Messages.
+  - In a session with network, **submissions (POST, PUT, PATCH, DELETE) are
+    held** by default: recorded, not sent; the analyst may send them for the
+    session (audited).
+  - A session opened from an incident is kept in it: when it ends, its log
+    becomes a capture in Network Analysis, rebuilt as a **pcapng** with HTTPS
+    in clear (a comment marks it as a reconstruction), and exports as **HAR**.
+- Captures in the **IOC index** (`network:<file>`: public addresses, DNS
+  names, URLs and hosts, TLS server names, beacon destinations, object
+  hashes), the **timeline** (each capture, held submissions as high, beacons
+  as medium) and the **report** (a Network section; captures in the evidence
+  appendix).
+- API: `POST /api/incidents/{id}/captures`, `GET /api/captures/{id}`,
+  `POST /api/captures/{id}/rpc`, `…/objects/download`, `…/file`, `…/har`,
+  `…/requests`, `PUT/DELETE …/keylog`, `POST …/reanalyse`,
+  `POST /api/incidents/{id}/captures/{captureId}/objects/sample`,
+  `DELETE /api/incidents/{id}/captures/{captureId}`,
+  `GET /api/browser/sessions/{id}/network`; `incident` on
+  `POST /api/browser/sessions` and the `policy` action.
+- Compose: the `pcap` service; `PCAP_URL` / `PCAP_TOKEN` / `PCAP_MAX_MB`,
+  `PCAP_MEMORY` / `PCAP_CPUS`. Migration `0016`: `network_captures`.
+
+### Changed
+
+- nginx accepts uploads up to 600 MB and waits up to 330 s for the API
+  (opening a large capture takes minutes).
+- CI tests PostgreSQL 18 only (production moved to 18 in 2.12.2), lints the
+  new worker and runs its tests inside its image.
+- The configuration page of the documentation lists the document viewer,
+  isolated browser and threat-intelligence settings it was missing.
+
+### Security
+
+- `minimatch` 11.0.6 (moderate denial-of-service advisory; a dependency of
+  ESLint, build tooling only) through an npm override.
+
+### Upgrade
+
+- Set `PCAP_TOKEN` in `.env` (a long random value), then
+  `podman compose up -d --build`: the `pcap` image (about 400 MB) is built
+  and migration `0016` runs.
+
 ## [2.16.0] - 2026-11-10
 
 ### Added
@@ -766,7 +841,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.16.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.17.0...HEAD
+[2.17.0]: https://github.com/n36l3c7/Nik/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/n36l3c7/Nik/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/n36l3c7/Nik/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/n36l3c7/Nik/compare/v2.13.0...v2.14.0

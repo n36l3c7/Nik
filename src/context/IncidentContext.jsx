@@ -41,7 +41,7 @@ import { useAudit } from './AuditContext.jsx'
  *   suspiciousStart,      // Unix ms | null — start of suspicious activity
  *   suspiciousEnd,        // Unix ms | null — end of suspicious activity
  *   createdAt, updatedAt, createdBy,
- *   data: { summary, browser, commands, endpoint, malware, eventlogs, network },
+ *   data: { summary, browser, commands, endpoint, malware, mail, eventlogs, network },
  *   flags: { [key]: { key, browserId, profileId?, profileName?, section,
  *                     eventType, title, url, time, flaggedAt, flaggedBy,
  *                     comments: [...] } },
@@ -1039,6 +1039,47 @@ export function IncidentProvider({ children }) {
     [commit],
   )
 
+  /** Add or refresh a network capture's reference (the server already stored it). */
+  const putCapture = useCallback(
+    (incidentId, ref) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const captures = prev.data.network?.captures ?? []
+      const next = captures.some((c) => c.id === ref.id)
+        ? captures.map((c) => (c.id === ref.id ? ref : c))
+        : [...captures, ref]
+      const data = { ...prev.data, network: { ...(prev.data.network ?? {}), captures: next } }
+      commit(incidentId, (i) => ({ ...i, data }), { local: true })
+    },
+    [commit],
+  )
+
+  /** Replace the capture references with the server's list (sessions opened elsewhere, new states). */
+  const syncCaptures = useCallback(
+    (incidentId, refs) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const current = prev.data.network?.captures ?? []
+      if (JSON.stringify(current) === JSON.stringify(refs)) return
+      const data = { ...prev.data, network: { ...(prev.data.network ?? {}), captures: refs } }
+      commit(incidentId, (i) => ({ ...i, data }), { local: true })
+    },
+    [commit],
+  )
+
+  /** Remove a network capture: the server deletes its files and analysis. */
+  const removeCapture = useCallback(
+    async (incidentId, captureId) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      await api.del(`/incidents/${encodeURIComponent(incidentId)}/captures/${captureId}`)
+      const captures = (prev.data.network?.captures ?? []).filter((c) => c.id !== captureId)
+      const data = { ...prev.data, network: { ...(prev.data.network ?? {}), captures } }
+      commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), data }), { local: true })
+    },
+    [commit],
+  )
+
   const toggleFlag = useCallback(
     (incidentId, flaggable) => {
       const incident = find(incidentId)
@@ -1239,6 +1280,9 @@ export function IncidentProvider({ children }) {
     detachSample,
     attachMail,
     detachMail,
+    putCapture,
+    syncCaptures,
+    removeCapture,
     toggleFlag,
     addFlagComment,
     removeFlagComment,

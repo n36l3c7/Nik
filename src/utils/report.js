@@ -10,6 +10,7 @@ export const REPORT_SECTIONS = [
   { id: 'iocs', label: 'Indicators of compromise' },
   { id: 'samples', label: 'Malware samples' },
   { id: 'mails', label: 'E-mails' },
+  { id: 'network', label: 'Network captures' },
   { id: 'eventlogs', label: 'Windows event logs' },
   { id: 'notes', label: 'Analyst notes' },
   { id: 'evidence', label: 'Evidence appendix (files and SHA-256)' },

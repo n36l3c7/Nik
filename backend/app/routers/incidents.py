@@ -365,6 +365,9 @@ def delete_incident(
         name = (row.doc or {}).get("name") or incident_id
         _audit(db, caller, "incident.delete", f'Deleted incident "{name}"', row)
         db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
+        from .network import remove_incident_captures
+
+        remove_incident_captures(db, incident_id)
         db.delete(row)
         db.commit()
         emit(db, background_tasks, "incident.deleted", {"id": incident_id, "name": name})

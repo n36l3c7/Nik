@@ -15,6 +15,7 @@
  *   eventlogs { kind: 'evtx' | 'json' }
  *   malware   { }
  *   mail      { }                           (.eml, Outlook .msg)
+ *   network   { }                           (pcap, pcapng)
  */
 
 export const HEAD_BYTES = 512
@@ -32,7 +33,15 @@ const MAGIC = {
   sqlite: [...'SQLite format 3'].map((c) => c.charCodeAt(0)).concat(0),
   evtx: [...'ElfFile'].map((c) => c.charCodeAt(0)).concat(0),
   bplist: [...'bplist00'].map((c) => c.charCodeAt(0)),
+  pcapng: [0x0a, 0x0d, 0x0d, 0x0a],
 }
+// pcap in both byte orders, microsecond and nanosecond resolution.
+const PCAP = [
+  [0xd4, 0xc3, 0xb2, 0xa1],
+  [0xa1, 0xb2, 0xc3, 0xd4],
+  [0x4d, 0x3c, 0xb2, 0xa1],
+  [0xa1, 0xb2, 0x3c, 0x4d],
+]
 const MACHO = [
   [0xfe, 0xed, 0xfa, 0xce],
   [0xfe, 0xed, 0xfa, 0xcf],
@@ -94,6 +103,11 @@ export function detectFileRoute({ name = '', head = new Uint8Array() }) {
   for (const [pattern, shell] of SHELL_FILES) {
     if (pattern.test(base)) return { tab: 'commands', label: 'Shell history', params: { shell } }
   }
+
+  if (startsWith(head, MAGIC.pcapng)) return { tab: 'network', label: 'Packet capture (pcapng)', params: {} }
+  if (PCAP.some((sig) => startsWith(head, sig))) return { tab: 'network', label: 'Packet capture (pcap)', params: {} }
+  if (/\.(pcap|pcapng|cap)(\.gz)?$/.test(lower) && startsWith(head, [0x1f, 0x8b]))
+    return { tab: 'network', label: 'Packet capture (gzip)', params: {} }
 
   if (startsWith(head, MAGIC.ole) && lower.endsWith('.msg'))
     return { tab: 'mail', label: 'Outlook message (.msg)', params: {} }

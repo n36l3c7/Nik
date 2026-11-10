@@ -146,6 +146,35 @@ class Mail(Base):
     analysis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class NetworkCapture(Base):
+    """A packet capture of an incident: a pcap / pcapng the analyst uploaded,
+    or the network log of an isolated browser session rebuilt as pcapng
+    (``kind``). The file sits in ``SAMPLE_STORE/_captures/<id>/``; ``summary``
+    is the packet capture worker's analysis; ``keylog`` an optional TLS key
+    log, encrypted (``vault.py``). Referenced by the incident under
+    ``data.network.captures``."""
+
+    __tablename__ = "network_captures"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="pcap")  # pcap | browser
+    file_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    # live (browser session open) | indexing | ready | error | stored (no worker)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="indexing")
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    packets: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    last_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    meta: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    keylog: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 class IntegrationKey(Base):
     """A threat-intelligence provider's API key, encrypted (``vault.py``)."""
 

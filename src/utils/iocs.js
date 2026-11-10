@@ -43,6 +43,8 @@ export function sourceLabel(source) {
       return `Sample · ${id}`
     case 'mail':
       return `Mail · ${id}`
+    case 'network':
+      return `Network · ${id}`
     default:
       return String(source ?? '')
   }

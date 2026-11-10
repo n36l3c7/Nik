@@ -45,6 +45,8 @@ export const EVENT_TYPE_META = {
   eventlog: { label: 'Event log', color: 'amber' },
   // E-mail analysed in the Mail Analysis tab (time sent).
   mail: { label: 'E-mail', color: 'cyan' },
+  // Packet capture or isolated browser session (Network Analysis).
+  network: { label: 'Network', color: 'violet' },
 }
 
 /**

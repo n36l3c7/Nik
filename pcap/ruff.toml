@@ -1,0 +1,6 @@
+# Ruff for the packet capture worker (Python 3.12 image).
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "B", "I"]

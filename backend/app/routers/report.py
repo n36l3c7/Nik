@@ -109,7 +109,7 @@ def incident_report(
     """The incident report, as a PDF (default) or HTML.
 
     Sections: summary, timeline (flagged events), attack, iocs, samples,
-    mails, eventlogs, notes, evidence. ``detections`` lists the SOC rule hits with
+    mails, network, eventlogs, notes, evidence. ``detections`` lists the SOC rule hits with
     their ATT&CK ids; the app sends them, API clients may leave them out.
     """
     row = db.get(Incident, incident_id)

@@ -53,6 +53,8 @@ export default defineConfig({
         DOCVIEW_TOKEN: process.env.E2E_DOCVIEW_TOKEN ?? '',
         BROWSER_URL: process.env.E2E_BROWSER_URL ?? '',
         BROWSER_TOKEN: process.env.E2E_BROWSER_TOKEN ?? '',
+        PCAP_URL: process.env.E2E_PCAP_URL ?? '',
+        PCAP_TOKEN: process.env.E2E_PCAP_TOKEN ?? '',
       },
     },
     {

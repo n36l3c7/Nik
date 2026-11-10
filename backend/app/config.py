@@ -138,6 +138,11 @@ class Settings:
         self.DOCVIEW_TOKEN: str = os.getenv("DOCVIEW_TOKEN", "")
         self.BROWSER_URL: str = os.getenv("BROWSER_URL", "").rstrip("/")
         self.BROWSER_TOKEN: str = os.getenv("BROWSER_TOKEN", "")
+        # Packet capture worker (pcap/): Wireshark's engine for the Network
+        # Analysis tab. Empty URL = captures are stored but not analysed.
+        self.PCAP_URL: str = os.getenv("PCAP_URL", "").rstrip("/")
+        self.PCAP_TOKEN: str = os.getenv("PCAP_TOKEN", "")
+        self.PCAP_MAX_MB: int = _get_int("PCAP_MAX_MB", 500)
 
     @property
     def is_sqlite(self) -> bool:

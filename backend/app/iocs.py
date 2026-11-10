@@ -16,7 +16,10 @@ Sources:
   lines, script blocks and service paths;
 - malware samples: the sample's hashes and the indicators in its strings;
 - e-mails (Mail Analysis): sender addresses and domain, sending IP, link
-  targets and hosts, attachment hashes, QR-code and invitation links.
+  targets and hosts, attachment hashes, QR-code and invitation links;
+- network captures (Network Analysis): public addresses, DNS names, HTTP
+  URLs and hosts, TLS server names, beacon destinations, the SHA-256 of
+  exported objects.
 
 The allowlist (Settings) hides well-known domains and private addresses when
 the index is read; the index itself keeps everything, so editing the list
@@ -36,7 +39,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import aliased
 
-from .models import Incident, IocEntry, Mail, Sample
+from .models import Incident, IocEntry, Mail, NetworkCapture, Sample
 from .parsing.malware import _FALSE_POSITIVE_DOMAINS, _IOC_PATTERNS
 
 TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
@@ -207,7 +210,10 @@ def _dicts(value: Any) -> Iterable[dict]:
 
 
 def extract(
-    doc: dict, samples: dict[str, Sample] | None = None, mails: dict[str, Mail] | None = None
+    doc: dict,
+    samples: dict[str, Sample] | None = None,
+    mails: dict[str, Mail] | None = None,
+    captures: dict[str, NetworkCapture] | None = None,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """Every indicator of an incident document (see the module docstring)."""
     data = doc.get("data") if isinstance(doc.get("data"), dict) else {}
@@ -282,7 +288,40 @@ def extract(
             if ioc.get("type") in TYPES:
                 out.add(ioc["type"], ioc.get("value"), source, when)
 
+    for ref in (data.get("network") or {}).get("captures") or [] if isinstance(data.get("network"), dict) else []:
+        if not isinstance(ref, dict):
+            continue
+        capture = (captures or {}).get(ref.get("id"))
+        if capture is not None:
+            for kind, value, when in capture_iocs(capture.summary or {}):
+                out.add(kind, value, f"network:{ref.get('fileName') or ref.get('id')}", when)
+
     return out.items
+
+
+def capture_iocs(summary: dict[str, Any]) -> list[tuple[str, str, int | None]]:
+    """Indicators of a capture's analysis: ``(type, value, time ms)``."""
+    first = int(summary["first"] * 1000) if summary.get("first") else None
+    found: list[tuple[str, str, int | None]] = []
+    for host in summary.get("hosts") or []:
+        if host.get("public"):
+            found.append(("ip", host["address"], first))
+    for item in summary.get("dns") or []:
+        found.append(("domain", item["name"], first))
+    for item in summary.get("tlsServerNames") or []:
+        found.append(("domain", item["name"], first))
+    for item in summary.get("http") or []:
+        found.append(("url", item["url"], first))
+        if item.get("host"):
+            found.append(("domain", str(item["host"]).split(":")[0], first))
+    for item in summary.get("posts") or []:
+        found.append(("url", item["url"], int(item["time"] * 1000) if item.get("time") else first))
+    for beacon in summary.get("beacons") or []:
+        found.append(("ip", beacon["destination"], int(beacon["first"] * 1000) if beacon.get("first") else first))
+    for item in summary.get("objects") or []:
+        if item.get("sha256"):
+            found.append(("sha256", item["sha256"], first))
+    return found
 
 
 def _iso_ms(value: Any) -> int | None:
@@ -303,7 +342,16 @@ def reindex_incident(db: OrmSession, row: Incident) -> int:
     mail_refs = ((doc.get("data") or {}).get("mail") or {}).get("messages") or []
     mail_digests = [r.get("sha256") for r in mail_refs if isinstance(r, dict) and r.get("sha256")]
     mails = {m.sha256: m for m in db.scalars(select(Mail).where(Mail.sha256.in_(mail_digests)))} if mail_digests else {}
-    items = extract(doc, samples, mails)
+    network = (doc.get("data") or {}).get("network")
+    capture_ids = [
+        r.get("id") for r in (network.get("captures") or [] if isinstance(network, dict) else []) if isinstance(r, dict)
+    ]
+    captures = (
+        {c.id: c for c in db.scalars(select(NetworkCapture).where(NetworkCapture.id.in_(capture_ids)))}
+        if capture_ids
+        else {}
+    )
+    items = extract(doc, samples, mails, captures)
     db.execute(delete(IocEntry).where(IocEntry.incident_id == row.id))
     db.add_all(
         IocEntry(
