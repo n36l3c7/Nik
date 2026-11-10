@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, Bookmark, FolderInput, Info, Sparkles, Trash2, Upload, Zap } from 'lucide-react'
+import { Activity, Bookmark, FolderInput, Info, Trash2, Upload, Zap } from 'lucide-react'
 import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from './FileUploadZone.jsx'
 import EventsSection from './EventsSection.jsx'
@@ -10,7 +10,6 @@ import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { parseBrowserSource } from '../../../parsers/fileParsers.js'
 import { sha256Hex } from '../../../lib/hash.js'
-import { getDemoBrowserData } from '../../../services/demoData.js'
 import {
   BROWSERS,
   getBrowserById,
@@ -170,34 +169,6 @@ export default function BrowserAnalysisTab({ incident }) {
     removeBrowserSource(incident.id, activeBrowserId, profileId, source.key, source.produces)
   }
 
-  /* ---- Load demo data into the active browser ---- */
-  const handleLoadDemo = () => {
-    const demo = getDemoBrowserData(browser)
-    const importedAt = new Date().toISOString()
-    const patch = {
-      history: demo.history ?? [],
-      downloads: demo.downloads ?? [],
-      bookmarks: demo.bookmarks ?? [],
-      shortcuts: demo.shortcuts ?? [],
-      meta: {},
-    }
-    // A "demo" metadata entry for each source of the browser.
-    for (const source of browser.sources) {
-      const rows = source.produces.reduce((sum, k) => sum + (demo[k]?.length ?? 0), 0)
-      patch.meta[source.key] = {
-        fileName: 'Demo data',
-        format: 'demo',
-        rows,
-        importedAt,
-      }
-    }
-    setErrors({})
-    updateBrowserData(incident.id, activeBrowserId, profileId, patch, {
-      action: 'browser.demo',
-      details: `Loaded demo data into ${profileLabel}`,
-    })
-  }
-
   const handleConfirmClear = () => {
     clearBrowserData(incident.id, activeBrowserId, profileId)
     setErrors({})
@@ -296,9 +267,6 @@ export default function BrowserAnalysisTab({ incident }) {
         icon={Upload}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" icon={Sparkles} onClick={handleLoadDemo}>
-              Load demo data
-            </Button>
             {hasData && (
               <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
                 Clear profile

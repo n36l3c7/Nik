@@ -24,13 +24,17 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
  *  - id:          unique identifier (used to select the tab)
  *  - label:       label shown in the tab bar
  *  - icon:        Lucide icon shown next to the label
+ *  - group:       tab bar group, in this order: 'overview' (what the incident
+ *                 adds up to), 'threats' (mail, samples, network) and 'host'
+ *                 (what was collected on the machine); a thin rule separates
+ *                 the groups
  *  - component:   React component (lazy-loaded => automatic code-splitting).
  *                 Receives the `incident` prop (the active incident).
  *  - dataKey:     key under `incident.data` where the tab stores its data
  *  - defaultData: initial data structure for a new incident
  *
  * To add a tab: create the component under src/components/tabs/ and add an
- * entry below. See README.md § "Add a new analysis tab".
+ * entry below, in its group. See README.md § "Add a new analysis tab".
  */
 
 const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'))
@@ -48,14 +52,111 @@ export const ANALYSIS_TABS = [
   {
     id: 'summary',
     label: 'Summary',
+    group: 'overview',
     icon: LayoutDashboard,
     component: SummaryTab,
     dataKey: 'summary',
     defaultData: {},
   },
   {
+    id: 'timeline',
+    label: 'Timeline',
+    group: 'overview',
+    icon: ListTree,
+    component: TimelineTab,
+    dataKey: 'timelineView',
+    // The Timeline aggregates timestamped events from every other tab; it
+    // stores no data of its own (this key just holds view preferences, if any).
+    defaultData: {},
+  },
+  {
+    id: 'iocs',
+    label: 'IOCs',
+    group: 'overview',
+    icon: Crosshair,
+    component: IocsTab,
+    dataKey: 'iocsView',
+    // The server indexes the indicators of every tab when the incident is
+    // saved (GET /api/incidents/{id}/iocs); this tab stores no data of its own.
+    defaultData: {},
+  },
+  {
+    id: 'mail',
+    label: 'Mail Analysis',
+    group: 'threats',
+    icon: Mail,
+    component: MailAnalysisTab,
+    dataKey: 'mail',
+    // E-mails live on the server (sample store + `mails` table); the incident
+    // keeps light references: [{ sha256, fileName, subject, from, date,
+    // verdict, score, importedAt, … }]. The analysis is fetched per message
+    // from GET /api/mails/{sha256}.
+    defaultData: {
+      messages: [],
+    },
+  },
+  {
+    id: 'malware',
+    label: 'Malware Analysis',
+    group: 'threats',
+    icon: Bug,
+    component: MalwareAnalysisTab,
+    dataKey: 'malware',
+    // Samples live on the server (sample store + `samples` table); the
+    // incident keeps light references: [{ sha256, fileName, size, type,
+    // entropy, importedAt, importedBy, … }]. The analysis is fetched per
+    // sample from GET /api/samples/{sha256}.
+    defaultData: {
+      samples: [],
+    },
+  },
+  {
+    id: 'network',
+    label: 'Network Analysis',
+    group: 'threats',
+    icon: Network,
+    component: NetworkAnalysisTab,
+    dataKey: 'network',
+    // Captures live on the server (sample store + `network_captures`); the
+    // incident keeps light references: [{ id, kind: 'pcap' | 'browser',
+    // fileName, status, packets, held, beacons, … }]. The packet list, tree
+    // and bytes come from POST /api/captures/{id}/rpc (Wireshark's engine).
+    defaultData: {
+      captures: [],
+    },
+  },
+  {
+    id: 'endpoint',
+    label: 'Endpoint Artifacts',
+    group: 'host',
+    icon: HardDrive,
+    component: EndpointArtifactsTab,
+    dataKey: 'endpoint',
+    // Endpoint data is organized PER CATEGORY (execution/persistence/
+    // fileaccess/usb): each holds its own records array and imported-file
+    // metadata. See config/artifacts.js.
+    defaultData: {
+      categories: buildDefaultArtifactsMap(),
+    },
+  },
+  {
+    id: 'eventlogs',
+    label: 'Event Logs',
+    group: 'host',
+    icon: ScrollText,
+    component: EventLogsTab,
+    dataKey: 'eventlogs',
+    // Windows event logs PER CHANNEL (Security, System, PowerShell…): each
+    // holds its curated events and the imported file's metadata and coverage.
+    // See config/eventLogs.js and domain/eventLogs.js.
+    defaultData: {
+      channels: {},
+    },
+  },
+  {
     id: 'browser',
     label: 'Browser Forensics',
+    group: 'host',
     icon: Globe,
     component: BrowserAnalysisTab,
     dataKey: 'browser',
@@ -70,6 +171,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'commands',
     label: 'Command History',
+    group: 'host',
     icon: TerminalSquare,
     component: CommandHistoryTab,
     dataKey: 'commands',
@@ -79,94 +181,6 @@ export const ANALYSIS_TABS = [
     defaultData: {
       activeShell: SHELLS[0].id,
       shells: buildDefaultShellsMap(),
-    },
-  },
-  {
-    id: 'endpoint',
-    label: 'Endpoint Artifacts',
-    icon: HardDrive,
-    component: EndpointArtifactsTab,
-    dataKey: 'endpoint',
-    // Endpoint data is organized PER CATEGORY (execution/persistence/
-    // fileaccess/usb): each holds its own records array and imported-file
-    // metadata. See config/artifacts.js.
-    defaultData: {
-      categories: buildDefaultArtifactsMap(),
-    },
-  },
-  {
-    id: 'eventlogs',
-    label: 'Event Logs',
-    icon: ScrollText,
-    component: EventLogsTab,
-    dataKey: 'eventlogs',
-    // Windows event logs PER CHANNEL (Security, System, PowerShell…): each
-    // holds its curated events and the imported file's metadata and coverage.
-    // See config/eventLogs.js and domain/eventLogs.js.
-    defaultData: {
-      channels: {},
-    },
-  },
-  {
-    id: 'malware',
-    label: 'Malware Analysis',
-    icon: Bug,
-    component: MalwareAnalysisTab,
-    dataKey: 'malware',
-    // Samples live on the server (sample store + `samples` table); the
-    // incident keeps light references: [{ sha256, fileName, size, type,
-    // entropy, importedAt, importedBy, … }]. The analysis is fetched per
-    // sample from GET /api/samples/{sha256}.
-    defaultData: {
-      samples: [],
-    },
-  },
-  {
-    id: 'mail',
-    label: 'Mail Analysis',
-    icon: Mail,
-    component: MailAnalysisTab,
-    dataKey: 'mail',
-    // E-mails live on the server (sample store + `mails` table); the incident
-    // keeps light references: [{ sha256, fileName, subject, from, date,
-    // verdict, score, importedAt, … }]. The analysis is fetched per message
-    // from GET /api/mails/{sha256}.
-    defaultData: {
-      messages: [],
-    },
-  },
-  {
-    id: 'iocs',
-    label: 'IOCs',
-    icon: Crosshair,
-    component: IocsTab,
-    dataKey: 'iocsView',
-    // The server indexes the indicators of every tab when the incident is
-    // saved (GET /api/incidents/{id}/iocs); this tab stores no data of its own.
-    defaultData: {},
-  },
-  {
-    id: 'timeline',
-    label: 'Timeline',
-    icon: ListTree,
-    component: TimelineTab,
-    dataKey: 'timelineView',
-    // The Timeline aggregates timestamped events from every other tab; it
-    // stores no data of its own (this key just holds view preferences, if any).
-    defaultData: {},
-  },
-  {
-    id: 'network',
-    label: 'Network Analysis',
-    icon: Network,
-    component: NetworkAnalysisTab,
-    dataKey: 'network',
-    // Captures live on the server (sample store + `network_captures`); the
-    // incident keeps light references: [{ id, kind: 'pcap' | 'browser',
-    // fileName, status, packets, held, beacons, … }]. The packet list, tree
-    // and bytes come from POST /api/captures/{id}/rpc (Wireshark's engine).
-    defaultData: {
-      captures: [],
     },
   },
 ]

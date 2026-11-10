@@ -204,23 +204,3 @@ export function buildTimelineEvents(data = {}, engine) {
   out.sort((a, b) => b.time - a.time)
   return out
 }
-
-/**
- * The last `limit` timeline events as `tail -f` lines: oldest first, newest at
- * the bottom. `events` is buildTimelineEvents() output (newest first).
- * @returns {Array<{ id, time, source, sourceLabel, label, severity, flagged }>}
- */
-export function tailLines(events, flags = {}, limit = 50) {
-  return events
-    .slice(0, limit)
-    .reverse()
-    .map((event) => ({
-      id: event.id,
-      time: event.time,
-      source: event.sourceType,
-      sourceLabel: event.sourceLabel,
-      label: event.label,
-      severity: event.soc?.severity ?? null,
-      flagged: Boolean(flags[event.id]),
-    }))
-}

@@ -169,13 +169,13 @@ export default function BookmarksSection({ incident, browserId, profile = null, 
   // Cyan highlight for flagged rows (distinct from severity colors).
   const rowClassName = (row) => (flags[row.id] ? 'bg-accent-soft border-l-2 border-l-accent-strong' : '')
 
-  // No data: invite the user to import a file or load demo data.
+  // No data: invite the user to import a file.
   if (!bookmarks.length) {
     return (
       <EmptyState
         icon={Bookmark}
         title="No bookmarks loaded"
-        message="Import Chrome's 'Bookmarks' file (JSON) or a JSON/CSV export from the 'Data sources' card, or use the demo data."
+        message="Import Chrome's 'Bookmarks' file (JSON) or a JSON/CSV export from the 'Data sources' card."
       />
     )
   }

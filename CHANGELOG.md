@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-11-10
+
+### Changed
+
+- The analysis tabs follow the investigation, in three groups separated by a
+  thin rule: the overview (Summary, Timeline, IOCs), the threats (Mail,
+  Malware, Network) and the host (Endpoint Artifacts, Event Logs, Browser
+  Forensics, Command History).
+- The end-to-end test imports real evidence files (`frontend/e2e/fixtures/`)
+  dropped on the app instead of the demo data.
+
+### Removed
+
+- **Load demo data** in Browser Forensics, Command History, Endpoint
+  Artifacts and Event Logs. Incidents that already hold demo data keep it
+  and open as before.
+- The **`tail -f`** side panel and its command; the Timeline tab shows the
+  same events.
+
 ## [2.17.1] - 2026-11-10
 
 ### Changed

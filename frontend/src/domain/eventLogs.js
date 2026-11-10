@@ -8,7 +8,7 @@
  * parseEventLogJson() for the collection script's JSON):
  *   { id, time, eventId, channel, provider, computer, recordId, level, data,
  *     recovered? }
- * `meta`: { fileName, format: 'evtx'|'json'|'demo', importedAt, rows, total,
+ * `meta`: { fileName, format: 'evtx'|'json', importedAt, rows, total,
  *           kept, dropped, recovered, first, last, gaps: [[start, end]], sha256? }
  *
  * buildEventLogEvents() enriches events for the UI with the catalog label,

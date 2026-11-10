@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { AlertTriangle, Database, FileCode, FileJson, FileSpreadsheet, Sparkles, Upload, X } from 'lucide-react'
+import { AlertTriangle, Database, FileCode, FileJson, FileSpreadsheet, Upload, X } from 'lucide-react'
 import Badge from '../../ui/Badge.jsx'
 import AsciiSkull from '../../ui/AsciiSkull.jsx'
 import { formatDateTime } from '../../../lib/time.js'
@@ -17,7 +17,6 @@ const FORMAT_ICONS = {
   json: FileJson,
   csv: FileSpreadsheet,
   plist: FileCode,
-  demo: Sparkles,
 }
 
 /** Badge color depending on the format. */
@@ -26,7 +25,6 @@ const FORMAT_COLORS = {
   json: 'emerald',
   csv: 'amber',
   plist: 'violet',
-  demo: 'slate',
 }
 
 /**

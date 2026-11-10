@@ -7,7 +7,6 @@ import {
   Info,
   KeyRound,
   ScrollText,
-  Sparkles,
   Terminal,
   Trash2,
   TriangleAlert,
@@ -25,7 +24,6 @@ import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { EVENTLOG_COLLECTION_SCRIPT, EVENT_CHANNELS, LOGON_TYPES, getChannel } from '../../../config/eventLogs.js'
-import { getDemoEventLogData } from '../../../services/demoData.js'
 import { sha256Hex } from '../../../lib/hash.js'
 import { buildEventLogEvents, coverage, logonSessions, parseEventLogJson } from '../../../domain/eventLogs.js'
 import { guessIocType } from '../../../domain/iocs.js'
@@ -172,12 +170,6 @@ export default function EventLogsTab({ incident }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requests.eventlogs])
 
-  const handleDemo = () =>
-    setEventLogChannels(incident.id, getDemoEventLogData(), {
-      action: 'eventlog.demo',
-      details: 'Loaded demo event logs',
-    })
-
   return (
     <div className="space-y-6">
       <Card
@@ -185,9 +177,6 @@ export default function EventLogsTab({ incident }) {
         icon={Upload}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" icon={Sparkles} onClick={handleDemo}>
-              Load demo data
-            </Button>
             {loaded.length > 0 && (
               <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
                 Clear
@@ -322,7 +311,7 @@ export default function EventLogsTab({ incident }) {
         <EmptyState
           icon={ScrollText}
           title="No event logs yet"
-          message="Upload .evtx files or the script's JSON above, or use 'Load demo data' to explore the platform."
+          message="Upload .evtx files or the script's JSON above."
         />
       ) : (
         <>

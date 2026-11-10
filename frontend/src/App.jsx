@@ -1,15 +1,5 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
-import {
-  AlertTriangle,
-  Download,
-  FileText,
-  LogOut,
-  PanelRight,
-  Plus,
-  RefreshCw,
-  Settings,
-  ShieldCheck,
-} from 'lucide-react'
+import { AlertTriangle, Download, FileText, LogOut, Plus, RefreshCw, Settings, ShieldCheck } from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
 import { ANALYSIS_TABS, getTabById } from './config/tabs.js'
@@ -17,7 +7,6 @@ import { AsciiSkull, Button, EmptyState, ErrorBoundary, MicroSkull, Modal } from
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
-import TailPanel from './components/layout/TailPanel.jsx'
 import IncidentLoadingState from './components/layout/IncidentLoadingState.jsx'
 import { isTypingTarget } from './domain/search.js'
 import SettingsPanel from './components/settings/SettingsPanel.jsx'
@@ -146,10 +135,6 @@ export default function App() {
   } = useIncidents()
 
   const [activeTabId, setActiveTabId] = useState(ANALYSIS_TABS[0].id)
-  // `tail -f` side panel, open or closed per tab (open on Summary by default).
-  const [tailOpenByTab, setTailOpenByTab] = useState({ summary: true })
-  const tailOpen = Boolean(tailOpenByTab[activeTabId])
-  const setTailOpen = (open) => setTailOpenByTab((prev) => ({ ...prev, [activeTabId]: open }))
 
   // "New incident" modal: ticket ID, short title, severity, host, user, OS.
   const [createOpen, setCreateOpen] = useState(false)
@@ -316,7 +301,6 @@ export default function App() {
             icon: Download,
             run: () => exportIncident(activeIncident.id),
           },
-          { id: 'tail', label: 'Toggle the tail -f panel', icon: PanelRight, run: () => setTailOpen(!tailOpen) },
         ]
       : []),
     { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings('detection') },
@@ -361,12 +345,7 @@ export default function App() {
           onOpenSearch={() => setPaletteOpen(true)}
           onOpenReport={activeIncident ? () => setReportOpen(true) : null}
         />
-        <TabBar
-          activeTabId={activeTabId}
-          onChange={setActiveTabId}
-          tailOpen={tailOpen}
-          onToggleTail={() => setTailOpen(!tailOpen)}
-        />
+        <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />
 
         {storageError && (
           <div
@@ -425,13 +404,6 @@ export default function App() {
               </div>
             )}
           </main>
-          {tailOpen && activeIncident && (
-            <TailPanel
-              incident={activeIncident}
-              onClose={() => setTailOpen(false)}
-              className="hidden w-80 shrink-0 lg:flex"
-            />
-          )}
         </div>
       </div>
 

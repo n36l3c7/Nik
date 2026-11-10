@@ -125,8 +125,7 @@ every action attributed to a named analyst and recorded in a global audit log.
   with the SHA-256 of every imported file; TLP classification, English or
   Italian, the organisation's name and logo from Settings.
 - **Super-timeline** — every timestamped event across all tabs merged into one
-  chronological, filterable view, plus a collapsible `tail -f` side panel with
-  the latest events on every tab.
+  chronological, filterable view.
 - **SOC detection engine** — editable suspicious-keyword rules plus built-in
   command, endpoint and event-log rulesets, and a configurable business-hours window,
   highlight suspicious events automatically.
@@ -294,8 +293,8 @@ so Prettier and Ruff see the same files as CI.
 The end-to-end test (`frontend/e2e/smoke.spec.js`, `frontend/playwright.config.js`) starts the
 backend on a throw-away SQLite database and the production build behind
 `vite preview` (which proxies `/api`, like the dev server), then drives the app
-as an analyst would: first-run setup, sign-in, a new incident, demo data in
-every tab, the timeline and the `tail -f` panel. It needs `npm run build`, the
+as an analyst would: first-run setup, sign-in, a new incident, the evidence
+files of `frontend/e2e/fixtures/` dropped on the app, the timeline. It needs `npm run build`, the
 backend dependencies on `PATH` (activate the venv) and a Chromium from
 `npx playwright install chromium`. With the analyzer worker running and
 `E2E_ANALYZER_URL` / `E2E_ANALYZER_TOKEN` set (CI does both), it also checks
@@ -1202,7 +1201,6 @@ src/
 │                                   #   base + scrollbar
 ├── assets/fonts/                   # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
 ├── App.jsx                         # Shell + auth gate: Sidebar | Header + TabBar + tab content
-│                                   #   + TailPanel
 │
 ├── config/                         # ★ DECLARATIVE EXTENSION POINTS ★
 │   ├── tabs.js                     # ANALYSIS_TABS registry: the ONLY file to touch
@@ -1230,8 +1228,7 @@ src/
 │   └── ToastContext.jsx            # useToast(): short notices with an optional Undo
 │
 ├── services/
-│   ├── api.js                      # The ONLY file that talks to the server (fetch wrapper)
-│   └── demoData.js                 # getDemoBrowserData/getDemoShellData/getDemoArtifactData
+│   └── api.js                      # The ONLY file that talks to the server (fetch wrapper)
 │
 ├── parsers/                        # Client-side file parsers (the analyst's files stay in the browser)
 │   ├── fileParsers.js              # parseBrowserSource(file, engine, source): dispatch
@@ -1289,8 +1286,8 @@ src/
     ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog
     ├── menu/                       # useRowMenu (flag, comment, copy, timeline on any event row)
     ├── report/                     # ReportDialog (options, preview, PDF/HTML download)
-    ├── layout/                     # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
-    │                               #   TailPanel (tail -f of the timeline)
+    ├── layout/                     # Sidebar, Header, TabBar (grouped tabs), OsPicker,
+    │                               #   IncidentLoadingState
     └── tabs/
         ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
         ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
@@ -1504,7 +1501,7 @@ incidents, indicators from **every** incident and samples, and searches the
 samples (by file name too). Enter opens the result: an incident is selected,
 an indicator or a sample opens *Where seen*, an event jumps to its tab, a note
 to the Summary. A query starting with `>` lists actions instead: go to any
-tab, new incident, export the incident, toggle the `tail -f` panel, settings,
+tab, new incident, export the incident, settings,
 the IOC allowlist, sign out. On PostgreSQL the substring matches use the
 trigram (`pg_trgm`) indexes of migration `0012`; when the extension cannot be
 created the search works without them.
@@ -1559,7 +1556,7 @@ const {
   clearArtifactSource,    // (id, categoryId, sourceKey) => void — clear ONE source
   clearArtifactCategory,  // (id, categoryId) => void — clear ALL sources of a category
 
-  setEventLogChannels,    // (id, { [channel]: { events, meta } }, auditInfo?) => void — script JSON / demo
+  setEventLogChannels,    // (id, { [channel]: { events, meta } }, auditInfo?) => void — the script's JSON
   clearEventLogs,         // (id, channel?) => void — one channel, or all of them
   retryActiveIncident,    // () => void — refetch the open incident (after a server-side .evtx parse)
 
@@ -1641,7 +1638,7 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
           events: [ { id: 'evt:Security:9120', time, eventId: 4624, channel: 'Security', provider,
                       computer, recordId: 9120, level, data: { TargetUserName, LogonType, … },
                       recovered /* only when recovered after a clear */ } ],
-          meta: { fileName, format: 'evtx' | 'json' | 'demo', importedAt, rows, total, kept,
+          meta: { fileName, format: 'evtx' | 'json', importedAt, rows, total, kept,
                   dropped, recovered, first, last, gaps: [[start, end]], sha256 /* evtx */ },
         },
       },
@@ -1726,7 +1723,7 @@ Entry shape: `{ id, at, actor, action, target, details, incidentId, incidentName
 
 Action strings emitted include: `user.create`, `user.delete`, `auth.login`,
 `auth.logout`, `incident.create` / `.update` / `.delete` / `.export` /
-`.import`, `browser.upload` / `.demo` / `.clear` / `.removeFile`, `flag.add` /
+`.import`, `browser.upload` / `.clear` / `.removeFile`, `flag.add` /
 `.remove` / `.comment`, `note.add`, and `backup.export` / `backup.import`.
 
 The read-only **Audit log** modal (`AuditLogView.jsx`, opened from the sidebar)
@@ -1748,7 +1745,7 @@ Browser tab keeps its per-row work to a minimum:
   the filter.
 - `buildTimelineEvents()` takes `incident.data`, not the incident: flags and
   notes do not change the timeline, so toggling a flag does not rebuild the
-  Timeline tab or the tail panel.
+  Timeline tab.
 
 Tables stay paginated (25 rows by default), so the DOM never holds more than
 one page; the cost of a large incident is in these data passes, not in
@@ -2244,10 +2241,12 @@ export default function DnsLogsTab({ incident }) {
 // at the top of the file, next to the other lazy tabs:
 const DnsLogsTab = lazy(() => import('../components/tabs/DnsLogsTab.jsx'))
 
-// inside ANALYSIS_TABS (array order = order in the TabBar):
+// inside ANALYSIS_TABS, next to the tabs of its group (array order = order
+// in the TabBar):
 {
   id: 'dns',                  // unique, used to select the tab
   label: 'DNS Logs',          // label in the TabBar
+  group: 'threats',           // 'overview' | 'threats' | 'host': a thin rule separates groups
   icon: Network,              // lucide-react icon (import at the top)
   component: DnsLogsTab,      // lazy component → separate build chunk
   dataKey: 'dns',             // key under incident.data
@@ -2546,14 +2545,6 @@ Tailwind turns each token into utilities (`bg-panel`, `text-fg-muted`,
 - Flagged rows use the accent (`bg-accent-soft border-l-accent-strong`),
   SOC rows their severity (`bg-high-soft border-l-high-line`, `med` alike), so
   an analyst's flag never looks like a detection.
-
-**`tail -f` panel.** `TailPanel` (in `components/layout/`) lists the latest
-60 timestamped events of the open incident — oldest first, newest at the
-bottom, kept scrolled to the end — with the source, severity (`!!` HIGH, `!`
-MED) and flags. It is toggled from the tab bar and remembered per tab (open on
-Summary by default); it needs a wide screen (`lg`) and is unmounted when
-closed, so it costs nothing then. Its lines come from `tailLines()` in
-`utils/timeline.js`, over the same `buildTimelineEvents()` as the Timeline tab.
 
 ---
 
