@@ -32,6 +32,18 @@
       </p>
 
       <section class="release">
+        <h3>2.12.2 <span class="date">2026-11-10</span></h3>
+        <ul>
+          <li>
+            <span class="tag breaking">manual step</span> PostgreSQL 18 on a new volume. After <code>git pull</code>,
+            before <code>compose up</code>, run <code>sudo deploy/upgrade-postgres.sh</code>: backup, dump and restore,
+            row-count check, restart. The PostgreSQL 16 volume stays for a rollback for 14 days.
+          </li>
+          <li><span class="tag changed">changed</span> CI runs the backend tests on PostgreSQL 16 and 18 too.</li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.12.1 <span class="date">2026-11-10</span></h3>
         <ul>
           <li>
