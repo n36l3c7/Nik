@@ -38,7 +38,7 @@ import { useAudit } from './AuditContext.jsx'
  *   suspiciousStart,      // Unix ms | null — start of suspicious activity
  *   suspiciousEnd,        // Unix ms | null — end of suspicious activity
  *   createdAt, updatedAt, createdBy,
- *   data: { summary, browser, commands, endpoint, network },
+ *   data: { summary, browser, commands, endpoint, malware, eventlogs, network },
  *   flags: { [key]: { key, browserId, profileId?, profileName?, section,
  *                     eventType, title, url, time, flaggedAt, flaggedBy,
  *                     comments: [...] } },
@@ -889,6 +889,44 @@ export function IncidentProvider({ children }) {
     [audit, commit],
   )
 
+  /* ---- Windows event logs (data.eventlogs.channels) ---- */
+
+  /**
+   * Store parsed channels (from the collection script's JSON or demo data),
+   * replacing those with the same name. Raw .evtx files are parsed on the
+   * server, which writes the incident itself; see reloadActiveIncident.
+   */
+  const setEventLogChannels = useCallback(
+    (incidentId, channels, auditInfo) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const updatedAt = nowIso()
+      const current = prev.data.eventlogs?.channels ?? {}
+      const data = { ...prev.data, eventlogs: { ...prev.data.eventlogs, channels: { ...current, ...channels } } }
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
+      if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
+    },
+    [audit, commit],
+  )
+
+  /** Remove one channel, or every channel when `channel` is null. */
+  const clearEventLogs = useCallback(
+    (incidentId, channel = null) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const updatedAt = nowIso()
+      const { [channel]: _removed, ...rest } = prev.data.eventlogs?.channels ?? {}
+      const data = { ...prev.data, eventlogs: { ...prev.data.eventlogs, channels: channel ? rest : {} } }
+      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
+      audit('eventlog.clear', channel ? `Cleared event log ${channel}` : 'Cleared all event logs', {
+        ...prev,
+        updatedAt,
+        data,
+      })
+    },
+    [audit, commit],
+  )
+
   /* ---- flagging (mark entries as part of malicious activity) ---- */
 
   /**
@@ -1097,6 +1135,8 @@ export function IncidentProvider({ children }) {
     activeLoadError,
     activeLoadProgress,
     retryActiveIncident,
+    setEventLogChannels,
+    clearEventLogs,
     loading,
     storageError,
     createIncident,

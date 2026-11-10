@@ -52,7 +52,7 @@ test('a new incident opens on its summary', async () => {
 
 test('demo data fills the analysis tabs', async () => {
   const tabs = page.locator('nav[aria-label="Analysis tabs"]')
-  for (const tab of ['Browser Forensics', 'Command History', 'Endpoint Artifacts']) {
+  for (const tab of ['Browser Forensics', 'Command History', 'Endpoint Artifacts', 'Event Logs']) {
     await tabs.getByText(tab).click()
     const loaders = page.locator('button:has-text("Load demo data")')
     await expect(loaders.first()).toBeVisible({ timeout: 20_000 })

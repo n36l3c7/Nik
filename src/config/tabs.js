@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { Bug, LayoutDashboard, Globe, HardDrive, ListTree, Network, TerminalSquare } from 'lucide-react'
+import { Bug, LayoutDashboard, Globe, HardDrive, ListTree, Network, ScrollText, TerminalSquare } from 'lucide-react'
 import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
 import { buildDefaultShellsMap, SHELLS } from './shells.js'
 import { buildDefaultArtifactsMap } from './artifacts.js'
@@ -26,6 +26,7 @@ const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'
 const BrowserAnalysisTab = lazy(() => import('../components/tabs/browser/BrowserAnalysisTab.jsx'))
 const CommandHistoryTab = lazy(() => import('../components/tabs/commands/CommandHistoryTab.jsx'))
 const EndpointArtifactsTab = lazy(() => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'))
+const EventLogsTab = lazy(() => import('../components/tabs/eventlogs/EventLogsTab.jsx'))
 const MalwareAnalysisTab = lazy(() => import('../components/tabs/malware/MalwareAnalysisTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
@@ -78,6 +79,19 @@ export const ANALYSIS_TABS = [
     // metadata. See config/artifacts.js.
     defaultData: {
       categories: buildDefaultArtifactsMap(),
+    },
+  },
+  {
+    id: 'eventlogs',
+    label: 'Event Logs',
+    icon: ScrollText,
+    component: EventLogsTab,
+    dataKey: 'eventlogs',
+    // Windows event logs PER CHANNEL (Security, System, PowerShell…): each
+    // holds its curated events and the imported file's metadata and coverage.
+    // See config/eventLogs.js and utils/eventLogs.js.
+    defaultData: {
+      channels: {},
     },
   },
   {

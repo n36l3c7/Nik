@@ -258,7 +258,11 @@
 
 # Endpoint artifact (cron file or tool CSV → data.endpoint.categories.persistence)
 <span class="prompt"></span>curl -H "X-API-Key: $KEY" -F file=@crontab \
-  "https://localhost:8443/api/incidents/$ID/upload?tab=endpoint&amp;category=persistence&amp;source=cron"</code></pre>
+  "https://localhost:8443/api/incidents/$ID/upload?tab=endpoint&amp;category=persistence&amp;source=cron"
+
+# Windows event log (.evtx → data.eventlogs.channels.Security), parsed in the background
+<span class="prompt"></span>curl -H "X-API-Key: $KEY" -F file=@Security.evtx \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=eventlogs&amp;async=true"</code></pre>
       <ul>
         <li>
           <code>tab=browser</code> needs <code>browser</code> (chrome / firefox / edge / brave / opera / safari) and
@@ -270,6 +274,11 @@
         <li>
           <code>tab=endpoint</code> needs <code>category</code> (execution / persistence / fileaccess / usb) and
           <code>source</code> (the source key, e.g. <code>cron</code>).
+        </li>
+        <li>
+          <code>tab=eventlogs</code> needs nothing else: the channel comes from the <code>.evtx</code> file and the
+          result lists it in <code>channels</code>. Only the curated event IDs are kept, records left after a log clear
+          are recovered, and the channel's <code>meta</code> keeps the file's SHA-256 and the log's coverage.
         </li>
       </ul>
 

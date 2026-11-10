@@ -346,7 +346,12 @@ def delete_incident(
 # ---------------------------------------------------------------------------
 # File upload (server-side parsing) — API clients send raw artifact files
 # ---------------------------------------------------------------------------
-_UPLOAD_ACTIONS = {"browser": "browser.upload", "commands": "command.upload", "endpoint": "endpoint.upload"}
+_UPLOAD_ACTIONS = {
+    "browser": "browser.upload",
+    "commands": "command.upload",
+    "endpoint": "endpoint.upload",
+    "eventlogs": "eventlog.upload",
+}
 
 
 def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor):
@@ -406,7 +411,7 @@ def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor)
 async def upload_artifact(
     incident_id: str,
     file: UploadFile = File(..., description="The raw artifact file."),
-    tab: str = Query(..., description="browser | commands | endpoint"),
+    tab: str = Query(..., description="browser | commands | endpoint | eventlogs"),
     browser: str | None = Query(None, description="Browser id (tab=browser), e.g. chrome/firefox"),
     profile: str | None = Query(
         None, description='Browser profile NAME (tab=browser); created if missing. Default: "Default".'
@@ -427,6 +432,7 @@ async def upload_artifact(
       (add `&profile=Work` for a non-default browser profile)
     - `tab=commands&shell=bash` → a `.bash_history`
     - `tab=endpoint&category=persistence&source=cron` → a cron file / tool CSV
+    - `tab=eventlogs` → a Windows `.evtx` log (curated event IDs are kept)
 
     With `async=true` the file is parsed in the background: the call returns
     `202 { jobId }` immediately — poll `GET /api/jobs/{jobId}` for the result

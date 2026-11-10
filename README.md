@@ -19,8 +19,10 @@ every action attributed to a named analyst and recorded in a global audit log.
 - **Client-side artifact parsing** — SQLite artifacts (Chromium `History`,
   Firefox `places.sqlite`, Safari `History.db`, …) are parsed **in the
   analyst's browser** via WebAssembly (`sql.js`); Apple property lists (binary
-  or XML), shell histories and DFIR CSV/JSON exports are parsed the same way. Raw forensic files are never uploaded anywhere: only the
-  normalized entries reach the server.
+  or XML), shell histories and DFIR CSV/JSON exports are parsed the same way. Raw forensic files stay on the analyst's machine: only the
+  normalized entries reach the server. Binary formats a browser cannot read
+  (Windows `.evtx` logs) and malware samples are the exceptions, sent to the
+  Nik server on purpose.
 - **Centralized storage** — incidents, users, settings and the audit log live
   in PostgreSQL behind a FastAPI REST API. Every analyst who signs in sees the
   same data, from any machine, and work is attributable across the team.
@@ -41,6 +43,15 @@ every action attributed to a named analyst and recorded in a global audit log.
 - **Endpoint artifacts** — program execution, persistence, file & folder
   access and removable devices, imported from DFIR tool CSV/JSON exports with
   OS-specific guidance on where to find each source.
+- **Windows event logs** — raw `.evtx` files are parsed **on the server**
+  (records left after a log clear are recovered too) or the events are
+  exported live by a native PowerShell script; about 50 curated event IDs are
+  kept (logons, process creation, services, scheduled tasks, accounts and
+  groups, PowerShell, RDP, Defender, Sysmon). A coverage chart shows each
+  log's span, silences and clears against the suspicious window, logons are
+  paired into sessions, and a built-in ruleset flags log clearing, brute
+  force, RDP outside hours, suspicious PowerShell, services from user paths
+  and new admins.
 - **Malware analysis** — suspicious files are stored on the Nik server (named
   by SHA-256, never executed) and analysed statically: hashes, file type,
   entropy per block, strings and indicators of compromise, PE/ELF/Mach-O
@@ -60,7 +71,7 @@ every action attributed to a named analyst and recorded in a global audit log.
   chronological, filterable view, plus a collapsible `tail -f` side panel with
   the latest events on every tab.
 - **SOC detection engine** — editable suspicious-keyword rules plus built-in
-  command and endpoint rulesets, and a configurable business-hours window,
+  command, endpoint and event-log rulesets, and a configurable business-hours window,
   highlight suspicious events automatically.
 - **Case management** — per-event flags with comments, free-form notes, a
   vertical incident timeline, and self-contained JSON export/import for
@@ -822,6 +833,10 @@ curl -H "X-API-Key: $KEY" -F file=@.bash_history \
 # Endpoint artifact (cron file or tool CSV → data.endpoint.categories.persistence)
 curl -H "X-API-Key: $KEY" -F file=@crontab \
   "https://localhost:8443/api/incidents/$ID/upload?tab=endpoint&category=persistence&source=cron"
+
+# Windows event log (.evtx → data.eventlogs.channels.Security), parsed in the background
+curl -H "X-API-Key: $KEY" -F file=@Security.evtx \
+  "https://localhost:8443/api/incidents/$ID/upload?tab=eventlogs&async=true"
 ```
 
 Routing parameters: `tab=browser` needs `browser` (chrome/firefox/edge/brave/opera/safari)
@@ -830,7 +845,9 @@ plus an optional `profile` — the profile **name**, matched case-insensitively 
 created if missing (default `Default`); the response's `target` reads
 `browser/<id>/<profile>/<source>` and `profileId` names the profile; `tab=commands` needs `shell`
 (bash/zsh/fish/powershell); `tab=endpoint` needs `category`
-(execution/persistence/fileaccess/usb) and `source` (the source key, e.g. cron).
+(execution/persistence/fileaccess/usb) and `source` (the source key, e.g. cron);
+`tab=eventlogs` needs nothing else: the channel comes from the file, the result
+lists it in `channels`, and the file's SHA-256 is kept in the channel's `meta`.
 The server ports the client-side parsers (`backend/app/parsing/`), so uploads
 produce exactly the same normalized shapes the browser does.
 
@@ -892,13 +909,12 @@ downloads. **Safari** (macOS only) keeps history in a `History.db` database
 (`history_items`/`history_visits`) and downloads and bookmarks in two property
 lists, `Downloads.plist` and `Bookmarks.plist`, usually binary. Timestamps differ too — see [§4.3](#43-browsers-parsers-and-formats).
 
-**Heavy formats** (EVTX, PCAP, disk images) are a natural fit for server-side
-parsing with mature Python libraries (`python-evtx`, `scapy`, DFIR tooling).
-The seam is ready: every browser import goes through
-`parseBrowserSource(file, engine, source)` in `src/services/fileParsers.js`,
-which returns normalized entries — a server-side parser only needs to return
-the same shape, and the rest of the app (contexts, tables, detection) does not
-change.
+**Heavy binary formats** are parsed on the server instead. Windows event logs
+(`.evtx`, chunks of binary XML) are the first: the Event Logs tab uploads the
+file, `backend/app/parsing/eventlog.py` parses it with the `evtx` package (a
+Rust parser) in a background job and merges the curated events into the
+incident, in the same shape the browser produces from the collection script's
+JSON. PCAP and disk images would follow the same path.
 
 **The one exception: malware samples.** The Malware Analysis tab sends the
 file itself to the server, because the sample *is* the evidence under study
@@ -940,6 +956,7 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── samples.py              # Malware sample store (files by SHA-256) + protected zip
 │       ├── parsing/malware.py      # Static analysis: hashes, type, entropy, strings, IOC
 │       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
+│       ├── parsing/eventlog.py     # Windows .evtx → curated events + coverage (evtx package)
 │       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
 │       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
 │       ├── capa_rules.py           # Admin capa rules (worker validation, store, dependencies)
@@ -965,7 +982,9 @@ file itself to the server, because the sample *is* the evidence under study
     │   ├── shells.js               # SHELL registry (Bash/Zsh/Fish/PowerShell): per-OS paths
     │   ├── artifacts.js            # ENDPOINT ARTIFACT registry (execution/persistence/
     │   │                           #   fileaccess/usb): columns, CSV aliases, per-OS sources
-    │   └── detectionRules.js       # Factory keyword + command + artifact rules, business
+    │   ├── eventLogs.js            # Windows event-log channels, curated event IDs (label,
+    │   │                           #   category, summary) and the collection script
+    │   └── detectionRules.js       # Factory keyword + command + artifact + event-log rules, business
     │                               #   hours (keywords managed at runtime from Settings).
     │
     ├── context/
@@ -1004,6 +1023,8 @@ file itself to the server, because the sample *is* the evidence under study
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
     │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
     │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
+    │   ├── eventLogs.js            # parseEventLogJson, buildEventLogEvents (event-log
+    │   │                           #   ruleset), logonSessions, coverage
     │   ├── timeline.js             # buildTimelineEvents (merge all timestamped events)
     │   └── soc.js                  # createSocEngine({keywords, commandKeywords,
     │                               #   artifactKeywords, businessHours}) → analyze()
@@ -1026,6 +1047,8 @@ file itself to the server, because the sample *is* the evidence under study
             │                           #   filters, widgets, bookmarks/shortcuts tables
             ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
+            ├── eventlogs/              # EventLogsTab, EvtxUpload (server-side parse + job poll),
+            │                           #   CoverageChart, EventsSection
             ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
             │                           #   StructureSection, YaraSection, IocSection, StringsSection,
             │                           #   CapabilitiesSection, useWorkerJob (polled worker state),
@@ -1082,8 +1105,39 @@ Amcache, ShimCache, UserAssist, LNK, JumpLists, ShellBags, RecentDocs) are
 intentionally left out; a category with no custom source on a given OS shows an
 explicit note rather than a dead end.
 
+The **Event Logs** tab (Windows) holds curated events from the host's event
+logs, per channel (Security, System, PowerShell, PowerShell classic, RDP
+sessions and authentication, Defender, Task Scheduler, Sysmon; see
+`src/config/eventLogs.js`). They arrive two ways: raw `.evtx` files copied
+from `C:\Windows\System32\winevt\Logs\` (or a disk image), uploaded and
+parsed on the server, which also recovers records left in the file's unused
+space after a clear and keeps the file's SHA-256; or the JSON written by a
+native `Get-WinEvent` collection script on a live host, parsed in the
+browser. Only about 50 curated event IDs are stored (at most 20,000 per
+channel, the newest); the rest is counted. The tab shows:
+
+- the **log coverage**: one bar per channel from its first to its last record,
+  with silences of 6 hours or more hatched, clears marked in red and the
+  incident's suspicious window behind them — a gap or a clear inside the
+  window is where evidence may be missing;
+- the **logon sessions**: each 4624 paired with its logoff (4634/4647) and
+  admin privileges (4672) by logon id, service logons and machine accounts
+  left out;
+- every **event** with a readable summary, filters by detection, category,
+  channel and time, and a detail view with all its fields.
+
+Command lines (4688, Sysmon 1) and PowerShell script blocks go through the
+command-line ruleset; the built-in event-log ruleset (`DEFAULT_EVENTLOG_RULES`,
+logic in `src/utils/eventLogs.js`) adds log cleared, audit policy changed,
+service installed (high when the binary sits in a user-writable path or runs a
+shell), suspicious PowerShell, brute force (10 failed logons for one account or
+source within 10 minutes), a logon right after 5 failures, RDP outside business
+hours, account created, member added to a privileged group, Defender alerts and
+scheduled task created. Machine activity (service logons, boots) is not judged
+by the clock. Linux (journald, `auth.log`) and macOS unified logs will follow.
+
 The **Timeline** tab is the super-timeline: it merges every *timestamped* event
-from the Browser, Command History and Endpoint Artifacts tabs into a single
+from the Browser, Command History, Endpoint Artifacts and Event Logs tabs into a single
 chronological, filterable table (by source, detection and time window). Entries
 without a reliable timestamp (e.g. PSReadLine commands) are intentionally left
 out. Any row can be flagged straight from the timeline.
@@ -1140,6 +1194,10 @@ const {
   updateArtifactSource,   // (id, categoryId, sourceKey, patch, auditInfo?) => void — per-source
   clearArtifactSource,    // (id, categoryId, sourceKey) => void — clear ONE source
   clearArtifactCategory,  // (id, categoryId) => void — clear ALL sources of a category
+
+  setEventLogChannels,    // (id, { [channel]: { events, meta } }, auditInfo?) => void — script JSON / demo
+  clearEventLogs,         // (id, channel?) => void — one channel, or all of them
+  retryActiveIncident,    // () => void — refetch the open incident (after a server-side .evtx parse)
 
   toggleFlag,             // (id, flaggable) => void — flag/unflag an entry
   addFlagComment,         // (id, flagKey, text) => void
@@ -1206,6 +1264,17 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
     },
     network:  {},
     endpoint: {},
+    eventlogs: {
+      channels: {                          // one key per Windows event-log channel
+        Security: {
+          events: [ { id: 'evt:Security:9120', time, eventId: 4624, channel: 'Security', provider,
+                      computer, recordId: 9120, level, data: { TargetUserName, LogonType, … },
+                      recovered /* only when recovered after a clear */ } ],
+          meta: { fileName, format: 'evtx' | 'json' | 'demo', importedAt, rows, total, kept,
+                  dropped, recovered, first, last, gaps: [[start, end]], sha256 /* evtx */ },
+        },
+      },
+    },
   },
 
   // Entries the analyst flagged as malicious (keyed by the event id):

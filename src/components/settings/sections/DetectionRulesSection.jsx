@@ -4,6 +4,7 @@ import { Badge, Button } from '../../ui/index.js'
 import { useSettings, isValidRegex } from '../../../context/SettingsContext.jsx'
 import {
   DEFAULT_COMMAND_KEYWORDS,
+  DEFAULT_EVENTLOG_RULES,
   DEFAULT_ARTIFACT_KEYWORDS,
   DEFAULT_MALWARE_KEYWORDS,
 } from '../../../config/detectionRules.js'
@@ -212,6 +213,11 @@ export default function DetectionRulesSection() {
           title="Endpoint artifact tradecraft"
           description="Applied to program-execution, persistence, file-access and USB records."
           rules={DEFAULT_ARTIFACT_KEYWORDS}
+        />
+        <BuiltinRuleset
+          title="Windows event logs"
+          description="Applied to the curated event-log events; command lines and script blocks also go through the command-line ruleset."
+          rules={DEFAULT_EVENTLOG_RULES}
         />
         <BuiltinRuleset
           title="Malware sample tradecraft"
