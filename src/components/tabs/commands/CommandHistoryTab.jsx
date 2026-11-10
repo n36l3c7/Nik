@@ -4,6 +4,7 @@ import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from '../browser/FileUploadZone.jsx'
 import CommandsSection from './CommandsSection.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { parseShellHistory } from '../../../services/shellParsers.js'
 import { sha256Hex } from '../../../utils/hash.js'
 import { getDemoShellData } from '../../../services/demoData.js'
@@ -61,19 +62,19 @@ export default function CommandHistoryTab({ incident }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeShellId, incident.id])
 
-  /* ---- Import the history file ---- */
-  const handleFile = async (file) => {
+  /* ---- Import the history file (into the active shell, or `target`) ---- */
+  const handleFile = async (file, target = shell) => {
     setError(null)
     setLoading(true)
     try {
-      const [{ commands, format }, sha256] = await Promise.all([parseShellHistory(file, shell), sha256Hex(file)])
+      const [{ commands, format }, sha256] = await Promise.all([parseShellHistory(file, target), sha256Hex(file)])
       updateShellData(
         incident.id,
-        activeShellId,
+        target.id,
         {
           commands,
           meta: {
-            [source.key]: {
+            [target.source.key]: {
               fileName: file.name,
               format,
               rows: commands.length,
@@ -84,15 +85,25 @@ export default function CommandHistoryTab({ incident }) {
         },
         {
           action: 'command.upload',
-          details: `Imported ${shell.label} history (${commands.length} commands)`,
+          details: `Imported ${target.label} history (${commands.length} commands)`,
         },
       )
+      if (target.id !== activeShellId) setActiveShell(incident.id, target.id)
     } catch (err) {
       setError(err?.message ?? 'Unexpected error while parsing the file.')
     } finally {
       setLoading(false)
     }
   }
+
+  // A file dropped anywhere in the app for this tab (see NavigationContext).
+  const { requests, take } = useNavigation()
+  useEffect(() => {
+    if (!requests.commands) return
+    const request = take('commands')
+    if (request?.file) handleFile(request.file, getShellById(request.params?.shell) ?? shell)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests.commands])
 
   const handleRemoveSource = () => {
     setError(null)

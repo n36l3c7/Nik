@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Crosshair, Download, Link2, RefreshCw, ShieldCheck, Share2 } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
-import { IocValue } from '../../../context/IocLookupContext.jsx'
+import { IocValue, useIocLookup } from '../../../context/IocLookupContext.jsx'
+import { useSettings } from '../../../context/SettingsContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
 import { IOC_TYPES, sourceLabel } from '../../../utils/iocs.js'
 import { formatDateTime } from '../../../utils/time.js'
@@ -10,8 +11,9 @@ import { formatDateTime } from '../../../utils/time.js'
  * "IOCs" tab: every indicator of compromise of the incident, gathered on the
  * server from all the other tabs (browser, commands, endpoint, event logs,
  * samples) each time the incident is saved, with the number of OTHER
- * incidents it appears in. Clicking a value opens "Where seen". Allowlisted
- * values (Settings → IOC allowlist) are hidden by default and never exported.
+ * incidents it appears in. Clicking a value opens "Where seen"; right-click
+ * (or the shield button) adds it to the shared allowlist. Allowlisted values
+ * (Settings → IOC allowlist) are hidden by default and never exported.
  */
 
 const TYPE_OPTIONS = [
@@ -30,7 +32,7 @@ const EXPORTS = [
 // The frontend saves edits asynchronously: wait a moment before refetching.
 const REFRESH_DELAY_MS = 800
 
-const COLUMNS = [
+const BASE_COLUMNS = [
   {
     key: 'type',
     label: 'Type',
@@ -103,6 +105,31 @@ const COLUMNS = [
 ]
 
 export default function IocsTab({ incident }) {
+  const { openAllowlist, iocMenu } = useIocLookup()
+  const { iocAllowlist } = useSettings()
+  const columns = useMemo(
+    () => [
+      ...BASE_COLUMNS,
+      {
+        key: 'actions',
+        label: '',
+        className: 'w-px',
+        render: (row) =>
+          row.allowlisted ? null : (
+            <button
+              type="button"
+              onClick={() => openAllowlist(row.type, row.value)}
+              title="Add to the allowlist"
+              aria-label={`Add ${row.value} to the allowlist`}
+              className="p-1 text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <ShieldCheck className="h-4 w-4" />
+            </button>
+          ),
+      },
+    ],
+    [openAllowlist],
+  )
   const [state, setState] = useState({ loading: true, iocs: [], error: null })
   const [typeFilter, setTypeFilter] = useState('all')
   const [scope, setScope] = useState('all')
@@ -127,7 +154,8 @@ export default function IocsTab({ incident }) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [load, incident.updatedAt])
+    // The allowlist changes what is hidden: reload once Settings has saved it.
+  }, [load, incident.updatedAt, iocAllowlist])
 
   const visible = useMemo(
     () =>
@@ -221,7 +249,8 @@ export default function IocsTab({ incident }) {
           />
         ) : (
           <DataTable
-            columns={COLUMNS}
+            columns={columns}
+            onRowContextMenu={(event, row) => iocMenu(event, row.type, row.value)}
             data={visible}
             searchKeys={['value', 'type']}
             searchPlaceholder="Search indicators…"

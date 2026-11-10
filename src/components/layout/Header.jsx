@@ -3,6 +3,7 @@ import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
 import { formatRelative } from '../../utils/time.js'
+import { SeverityTag } from '../ui/index.js'
 
 /*
  * ============================================================================
@@ -32,18 +33,18 @@ export default function Header({ onOpenSettings, onOpenSearch, onOpenReport }) {
           <>
             <h1 className="flex items-center gap-2 truncate font-mono text-lg font-semibold leading-tight text-fg">
               {OsIcon && <OsIcon className={`h-4 w-4 shrink-0 ${os.accent}`} aria-label={os.label} />}
-              <span className="truncate">
-                {activeIncident.host || activeIncident.name}
-                {activeIncident.host && activeIncident.username && (
-                  <>
-                    <span className="text-fg-muted"> / </span>
-                    {activeIncident.username}
-                  </>
-                )}
-              </span>
+              <span className="truncate">{activeIncident.name}</span>
+              <SeverityTag severity={activeIncident.severity} />
             </h1>
-            <p className="text-xs text-fg-muted">
-              {os?.label ? `${os.label} · ` : ''}updated {formatRelative(activeIncident.updatedAt)}
+            <p className="truncate text-xs text-fg-muted">
+              {[
+                os?.label,
+                (activeIncident.ticketId || activeIncident.title) &&
+                  [activeIncident.host, activeIncident.username].filter(Boolean).join(' / '),
+                `updated ${formatRelative(activeIncident.updatedAt)}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </p>
           </>
         ) : (

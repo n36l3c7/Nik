@@ -20,6 +20,7 @@ import {
 } from '../config/artifacts.js'
 import { normalizeOs } from '../config/os.js'
 import { generateId } from '../utils/id.js'
+import { deriveIncidentName, hasIdentity, normalizeSeverity } from '../utils/incidentName.js'
 import { useAuth } from './AuthContext.jsx'
 import { useAudit } from './AuditContext.jsx'
 
@@ -32,9 +33,11 @@ import { useAudit } from './AuditContext.jsx'
  *
  * {
  *   id,
+ *   ticketId, title,      // ticket of the tracker, short title (both optional)
  *   host, username,       // identity (NOT unique; the id is the DB key)
+ *   severity,             // 'low' | 'medium' | 'high' | 'critical' | null — a tag
  *   os,                   // 'windows' | 'macos' | 'linux' — the host OS
- *   name,                 // derived: "host - username" | host | username
+ *   name,                 // derived: "[ticket] title" | "[ticket] host - username" …
  *   suspiciousStart,      // Unix ms | null — start of suspicious activity
  *   suspiciousEnd,        // Unix ms | null — end of suspicious activity
  *   createdAt, updatedAt, createdBy,
@@ -74,12 +77,7 @@ const IncidentContext = createContext(null)
 const nowIso = () => new Date().toISOString()
 
 /** Display name derived from host/username. */
-export function deriveIncidentName(host, username) {
-  const h = (host ?? '').trim()
-  const u = (username ?? '').trim()
-  if (h && u) return `${h} - ${u}`
-  return h || u || 'Untitled incident'
-}
+export { deriveIncidentName }
 
 /* ---- browser data normalization (per-browser, per-profile + legacy migration) ---- */
 function normalizeBrowserData(raw) {
@@ -186,20 +184,23 @@ function normalizeIncident(raw) {
   data.commands = normalizeCommandsData(raw.data?.commands)
   data.endpoint = normalizeEndpointData(raw.data?.endpoint)
 
-  const host = typeof raw.host === 'string' ? raw.host.trim() : ''
-  const username = typeof raw.username === 'string' ? raw.username.trim() : ''
-  // If no host/username but an old "name" exists, keep it as the display name.
-  const name =
-    host || username
-      ? deriveIncidentName(host, username)
-      : typeof raw.name === 'string' && raw.name.trim()
-        ? raw.name.trim()
-        : 'Untitled incident'
+  const identity = {
+    ticketId: typeof raw.ticketId === 'string' ? raw.ticketId.trim() : '',
+    title: typeof raw.title === 'string' ? raw.title.trim() : '',
+    host: typeof raw.host === 'string' ? raw.host.trim() : '',
+    username: typeof raw.username === 'string' ? raw.username.trim() : '',
+  }
+  // With no identity field but an old "name", keep it as the display name.
+  const name = hasIdentity(identity)
+    ? deriveIncidentName(identity)
+    : typeof raw.name === 'string' && raw.name.trim()
+      ? raw.name.trim()
+      : 'Untitled incident'
 
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : generateId(),
-    host,
-    username,
+    ...identity,
+    severity: normalizeSeverity(raw.severity),
     os: normalizeOs(raw.os),
     name,
     suspiciousStart: Number.isFinite(raw.suspiciousStart) ? raw.suspiciousStart : null,
@@ -256,6 +257,8 @@ function toSummary(incident) {
     host: incident.host,
     username: incident.username,
     os: incident.os,
+    ticketId: incident.ticketId ?? '',
+    severity: incident.severity ?? null,
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt,
   }
@@ -265,13 +268,16 @@ function toSummary(incident) {
 function normalizeSummary(raw) {
   const host = typeof raw.host === 'string' ? raw.host.trim() : ''
   const username = typeof raw.username === 'string' ? raw.username.trim() : ''
-  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : deriveIncidentName(host, username)
+  const name =
+    typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : deriveIncidentName({ host, username })
   return {
     id: raw.id,
     name,
     host,
     username,
     os: normalizeOs(raw.os),
+    ticketId: typeof raw.ticketId === 'string' ? raw.ticketId : '',
+    severity: normalizeSeverity(raw.severity),
     createdAt: raw.createdAt ?? '',
     updatedAt: raw.updatedAt ?? '',
   }
@@ -309,6 +315,8 @@ export function IncidentProvider({ children }) {
   incidentsRef.current = incidents
   const documentsRef = useRef(documents)
   const activeIncidentIdRef = useRef(activeIncidentId)
+  // POST promises of the incidents created in this session (see whenSaved).
+  const savedRef = useRef(new Map())
   activeIncidentIdRef.current = activeIncidentId
 
   /** Store a full document in the cache (and its summary row in the list). */
@@ -491,14 +499,20 @@ export function IncidentProvider({ children }) {
   /* ---- incident CRUD ---- */
 
   const createIncident = useCallback(
-    ({ host, username, os } = {}) => {
+    ({ ticketId, title, host, username, os, severity } = {}) => {
       const now = nowIso()
-      const incident = {
-        id: generateId(),
+      const identity = {
+        ticketId: (ticketId ?? '').trim(),
+        title: (title ?? '').trim(),
         host: (host ?? '').trim(),
         username: (username ?? '').trim(),
+      }
+      const incident = {
+        id: generateId(),
+        ...identity,
         os: normalizeOs(os),
-        name: deriveIncidentName(host, username),
+        severity: normalizeSeverity(severity),
+        name: deriveIncidentName(identity),
         suspiciousStart: null,
         suspiciousEnd: null,
         createdAt: now,
@@ -513,30 +527,49 @@ export function IncidentProvider({ children }) {
       syncUrl(incident.id)
       audit('incident.create', `Created incident "${incident.name}"`, incident)
       // Persist the full document; the server stamps its own createdBy.
-      api
+      const saved = api
         .post('/incidents', incident)
-        .then(() => setStorageError(null))
-        .catch((err) => setStorageError(err?.message || 'Unable to create the incident on the server.'))
+        .then(() => {
+          setStorageError(null)
+          return true
+        })
+        .catch((err) => {
+          setStorageError(err?.message || 'Unable to create the incident on the server.')
+          return false
+        })
+      savedRef.current.set(incident.id, saved)
       return incident
     },
     [actor, audit, storeDocument],
   )
+
+  /**
+   * Resolves once a just-created incident is on the server (true) or failed
+   * (false); immediately for any other incident. Server-side imports into a
+   * new incident (samples, .evtx) wait for it.
+   */
+  const whenSaved = useCallback((incidentId) => savedRef.current.get(incidentId) ?? Promise.resolve(true), [])
 
   /** Update incident identity/time attributes; recompute the display name. */
   const updateIncidentMeta = useCallback(
     (incidentId, patch) => {
       const prev = find(incidentId)
       if (!prev) return
-      const host = patch.host !== undefined ? patch.host.trim() : prev.host
-      const username = patch.username !== undefined ? patch.username.trim() : prev.username
+      const pick = (key) => (patch[key] !== undefined ? String(patch[key] ?? '').trim() : (prev[key] ?? ''))
+      const identity = {
+        ticketId: pick('ticketId'),
+        title: pick('title'),
+        host: pick('host'),
+        username: pick('username'),
+      }
       const os = patch.os !== undefined ? normalizeOs(patch.os) : prev.os
       const updatedAt = nowIso()
       const next = {
         ...prev,
-        host,
-        username,
+        ...identity,
         os,
-        name: host || username ? deriveIncidentName(host, username) : prev.name,
+        severity: patch.severity !== undefined ? normalizeSeverity(patch.severity) : (prev.severity ?? null),
+        name: hasIdentity(identity) ? deriveIncidentName(identity) : prev.name,
         suspiciousStart: patch.suspiciousStart !== undefined ? patch.suspiciousStart : prev.suspiciousStart,
         suspiciousEnd: patch.suspiciousEnd !== undefined ? patch.suspiciousEnd : prev.suspiciousEnd,
         updatedAt,
@@ -1151,6 +1184,7 @@ export function IncidentProvider({ children }) {
     setEventLogChannels,
     clearEventLogs,
     updateReportSettings,
+    whenSaved,
     loading,
     storageError,
     createIncident,

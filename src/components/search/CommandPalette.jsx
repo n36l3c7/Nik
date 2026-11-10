@@ -29,7 +29,7 @@ function Group({ title, children }) {
   )
 }
 
-export default function CommandPalette({ open, onClose, actions, onOpenTab }) {
+export default function CommandPalette({ open, onClose, actions, onOpenTab, initialQuery = '' }) {
   const { activeIncident, selectIncident } = useIncidents()
   const { openIoc } = useIocLookup()
   const engine = useSocEngine()
@@ -43,9 +43,11 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab }) {
 
   useEffect(() => {
     if (!open) return
-    setQuery('')
+    setQuery(initialQuery)
     setCursor(0)
     setRemote({ loading: false, data: NO_RESULTS, error: null })
+    // The query is seeded once per opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   // Server search, debounced; aborted when the query changes.

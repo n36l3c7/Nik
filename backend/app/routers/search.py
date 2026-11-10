@@ -43,6 +43,7 @@ def search(
         select(Incident.id, Incident.name, Incident.host, Incident.username, Incident.os, Incident.updated_at)
         .where(
             or_(
+                Incident.ticket_id.ilike(pattern, escape="\\"),
                 Incident.name.ilike(pattern, escape="\\"),
                 Incident.host.ilike(pattern, escape="\\"),
                 Incident.username.ilike(pattern, escape="\\"),

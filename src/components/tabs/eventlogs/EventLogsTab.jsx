@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   Clock,
@@ -21,6 +21,7 @@ import CoverageChart from './CoverageChart.jsx'
 import EventsSection from './EventsSection.jsx'
 import EvtxUpload from './EvtxUpload.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { EVENTLOG_COLLECTION_SCRIPT, EVENT_CHANNELS, LOGON_TYPES, getChannel } from '../../../config/eventLogs.js'
@@ -159,6 +160,18 @@ export default function EventLogsTab({ incident }) {
     }
   }
 
+  // A file dropped anywhere in the app for this tab (see NavigationContext).
+  const { requests, take } = useNavigation()
+  const [droppedEvtx, setDroppedEvtx] = useState(null)
+  useEffect(() => {
+    if (!requests.eventlogs) return
+    const request = take('eventlogs')
+    if (!request?.file) return
+    if (request.params?.kind === 'json') handleJson(request.file)
+    else setDroppedEvtx({ files: [request.file], at: Date.now() })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests.eventlogs])
+
   const handleDemo = () =>
     setEventLogChannels(incident.id, getDemoEventLogData(), {
       action: 'eventlog.demo',
@@ -199,7 +212,7 @@ export default function EventLogsTab({ incident }) {
                 ids, recovers records left after a clear and stores the file's SHA-256.
               </p>
             </div>
-            <EvtxUpload incidentId={incident.id} onDone={retryActiveIncident} />
+            <EvtxUpload incidentId={incident.id} onDone={retryActiveIncident} dropped={droppedEvtx} />
           </div>
           <div className="flex flex-col gap-2 border border-line p-3">
             <div>

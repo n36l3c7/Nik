@@ -78,3 +78,27 @@ def test_migration_0011_creates_the_ioc_index(tmp_path, monkeypatch):
     command.downgrade(cfg, "0010_function_rows_capa_rules")
     with engine.connect() as conn:
         assert "ioc_index" not in sa.inspect(conn).get_table_names()
+
+
+def test_migration_0013_mirrors_ticket_and_severity(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(
+            sa.text("INSERT INTO incidents VALUES ('a', :doc), ('b', '{}')"),
+            {"doc": json.dumps({"ticketId": "INC-7", "severity": "high"})},
+        )
+
+    import app.db
+
+    monkeypatch.setattr(app.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0012_search_trigram_indexes")
+    command.upgrade(cfg, "0013_incident_ticket_severity")
+    with engine.connect() as conn:
+        rows = conn.execute(sa.text("SELECT id, ticket_id, severity FROM incidents ORDER BY id")).all()
+    assert [tuple(r) for r in rows] == [("a", "INC-7", "high"), ("b", "", "")]
+    command.downgrade(cfg, "0012_search_trigram_indexes")
+    with engine.connect() as conn:
+        assert "ticket_id" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}

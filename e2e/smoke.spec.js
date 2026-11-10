@@ -83,12 +83,44 @@ test('the timeline and the tail -f panel merge the events', async () => {
 
 test('the IOCs tab gathers the indicators and shows where they were seen', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('IOCs').click()
-  const attacker = page.getByRole('button', { name: '185.220.101.47' })
+  const attacker = page.getByRole('button', { name: '185.220.101.47', exact: true })
   await expect(attacker).toBeVisible({ timeout: 20_000 })
   await attacker.click()
   const dialog = page.getByRole('dialog', { name: 'Where seen' })
   await expect(dialog).toContainText('WKS-FINANCE-01')
   await page.keyboard.press('Escape')
+})
+
+test('right-click on an indicator adds it to the allowlist, with undo', async () => {
+  await page.locator('nav[aria-label="Analysis tabs"]').getByText('IOCs').click()
+  const value = page.getByRole('button', { name: '185.220.101.47', exact: true })
+  await expect(value).toBeVisible({ timeout: 20_000 })
+  await value.click({ button: 'right' })
+  const menu = page.getByRole('menu')
+  await expect(menu).toContainText('Where else was this seen?')
+  await menu.getByRole('menuitem', { name: 'Add to the allowlist…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add to the allowlist' })
+  await expect(dialog).toContainText('185.220.101.0/24')
+  await dialog.getByRole('button', { name: 'Add to the allowlist' }).click()
+  await expect(value).toBeHidden({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(value).toBeVisible({ timeout: 10_000 })
+})
+
+test('a file dropped anywhere goes to the right tab', async () => {
+  const transfer = await page.evaluateHandle(() => {
+    const data = new DataTransfer()
+    data.items.add(new File(['#1762500000\nwhoami /priv\n'], '.zsh_history', { type: 'text/plain' }))
+    return data
+  })
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toContainText('Shell history')
+  await expect(dialog.getByLabel('Shell')).toHaveValue('zsh')
+  await dialog.getByRole('button', { name: 'Import' }).click()
+  await expect(page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')).toContainText('Command History')
+  await expect(page.getByText('whoami /priv').first()).toBeVisible()
 })
 
 test('the search palette finds indicators and runs actions', async () => {

@@ -6,11 +6,15 @@ import { AuthProvider } from './context/AuthContext.jsx'
 import { SettingsProvider } from './context/SettingsContext.jsx'
 import { IncidentProvider } from './context/IncidentContext.jsx'
 import { IocLookupProvider } from './context/IocLookupContext.jsx'
+import { ContextMenuProvider } from './context/ContextMenuContext.jsx'
+import { NavigationProvider } from './context/NavigationContext.jsx'
+import { ToastProvider } from './context/ToastContext.jsx'
 import './index.css'
 
 // Application entry point.
-// Global providers: audit log, authentication, settings, incidents, and the
-// "where seen" indicator lookup any table can open.
+// Global providers: audit log, authentication, settings, incidents; then the
+// app-wide helpers any component can use: navigation requests (tab, search,
+// import), toasts, the right-click menu and the indicator lookup/allowlist.
 // Audit sits above Auth so it can receive the actor explicitly (no cycle) and
 // be driven by Auth (refresh on login/logout). Settings and Incident sit below
 // Auth and load their data from the API only once the user is authenticated.
@@ -20,9 +24,15 @@ createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <SettingsProvider>
           <IncidentProvider>
-            <IocLookupProvider>
-              <App />
-            </IocLookupProvider>
+            <NavigationProvider>
+              <ToastProvider>
+                <ContextMenuProvider>
+                  <IocLookupProvider>
+                    <App />
+                  </IocLookupProvider>
+                </ContextMenuProvider>
+              </ToastProvider>
+            </NavigationProvider>
           </IncidentProvider>
         </SettingsProvider>
       </AuthProvider>

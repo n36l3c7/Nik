@@ -34,6 +34,8 @@ function compareValues(a, b) {
  *    className?, headerClassName?, align?='left'|'right' }`
  *
  * Data pipeline (all memoized): filter (search) → sort → paginate.
+ * `onRowContextMenu(event, row)` opens the app's right-click menu on a row (see
+ * ContextMenuContext); `initialQuery` pre-fills the search box.
  * `onRowClick(row)` makes rows selectable (click or Enter); clicks on buttons
  * and links inside a row keep their own behaviour.
  */
@@ -50,8 +52,10 @@ export default function DataTable({
   emptyMessage = 'No data available',
   rowKey = (row, i) => row.id ?? i,
   onRowClick = null,
+  onRowContextMenu = null,
+  initialQuery = '',
 }) {
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery)
   // The input updates at once; filtering and sorting follow when React is
   // idle, so typing stays responsive on large tables.
   const deferredQuery = useDeferredValue(query)
@@ -198,6 +202,7 @@ export default function DataTable({
                         }
                       : undefined
                   }
+                  onContextMenu={onRowContextMenu ? (event) => onRowContextMenu(event, row) : undefined}
                   tabIndex={onRowClick ? 0 : undefined}
                 >
                   {columns.map((column) => (

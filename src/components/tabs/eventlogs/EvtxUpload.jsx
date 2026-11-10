@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, FileArchive, Loader2 } from 'lucide-react'
 import { api, upload } from '../../../services/api.js'
 
@@ -26,7 +26,7 @@ async function waitForJob(jobId) {
 const formatSize = (bytes) =>
   bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 
-export default function EvtxUpload({ incidentId, onDone }) {
+export default function EvtxUpload({ incidentId, onDone, dropped = null }) {
   const inputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
   const [items, setItems] = useState([]) // [{ key, name, size, state, percent, result, error }]
@@ -71,6 +71,12 @@ export default function EvtxUpload({ incidentId, onDone }) {
       }
     }
   }
+
+  // Files dropped elsewhere in the app and routed here (EventLogsTab).
+  useEffect(() => {
+    if (dropped?.files?.length) handleFiles(dropped.files)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dropped])
 
   const openPicker = () => {
     if (!busy) inputRef.current?.click()

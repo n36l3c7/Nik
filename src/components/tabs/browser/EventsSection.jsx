@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
+import { useRowMenu } from '../../menu/useRowMenu.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { computeSocStats } from '../../../utils/soc.js'
 import { buildEvents, buildRedirectIndex, redirectTarget, formatBytes } from '../../../utils/events.js'
@@ -187,6 +188,7 @@ const NO_FLAGS = {}
 export default function EventsSection({ incident, browserId, profile = null, history = [], downloads = [] }) {
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
+  const rowMenu = useRowMenu(incident)
 
   const flags = incident?.flags ?? NO_FLAGS
 
@@ -399,6 +401,9 @@ export default function EventsSection({ incident, browserId, profile = null, his
           searchPlaceholder="Search by URL, title or file…"
           defaultSort={{ key: 'time', dir: 'desc' }}
           rowClassName={(row) => (flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? ''))}
+          onRowContextMenu={(event, row) =>
+            rowMenu(event, { flaggable: browserFlaggable(row, browserId, profile), record: row })
+          }
           toolbar={toolbar}
           emptyMessage="No events match the current filters"
         />
@@ -409,6 +414,21 @@ export default function EventsSection({ incident, browserId, profile = null, his
 
 /* ---- Column builders per tab ---------------------------------------------- */
 
+/** The payload toggleFlag() stores for a browser event row. */
+function browserFlaggable(row, browserId, profile) {
+  return {
+    key: row.id,
+    browserId,
+    profileId: profile?.id ?? null,
+    profileName: profile?.name ?? null,
+    section: 'events',
+    eventType: row.eventType,
+    title: row.title || row.fileName || '',
+    url: row.url || '',
+    time: row.time,
+  }
+}
+
 function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flags, toggleFlag }) {
   // Per-row flag toggle column (leftmost).
   const flagColumn = {
@@ -418,19 +438,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
     render: (row) => (
       <FlagButton
         flagged={Boolean(flags[row.id])}
-        onToggle={() =>
-          toggleFlag(incidentId, {
-            key: row.id,
-            browserId,
-            profileId: profile?.id ?? null,
-            profileName: profile?.name ?? null,
-            section: 'events',
-            eventType: row.eventType,
-            title: row.title || row.fileName || '',
-            url: row.url || '',
-            time: row.time,
-          })
-        }
+        onToggle={() => toggleFlag(incidentId, browserFlaggable(row, browserId, profile))}
       />
     ),
   }

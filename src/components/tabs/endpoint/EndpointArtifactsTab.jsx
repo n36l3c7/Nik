@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Info, Sparkles, Terminal, Trash2, Upload } from 'lucide-react'
 import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from '../browser/FileUploadZone.jsx'
 import ArtifactSection from './ArtifactSection.jsx'
 import ScriptBlock from './ScriptBlock.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { parseArtifactImport } from '../../../services/artifactParsers.js'
 import { sha256Hex } from '../../../utils/hash.js'
 import { getDemoArtifactData } from '../../../services/demoData.js'
@@ -83,6 +84,22 @@ export default function EndpointArtifactsTab({ incident }) {
       setLoading((p) => ({ ...p, [source.key]: false }))
     }
   }
+
+  // A file dropped anywhere in the app for this tab (see NavigationContext):
+  // switch to its category first, then import it into the chosen source.
+  const { requests, take } = useNavigation()
+  useEffect(() => {
+    const request = requests.endpoint
+    if (!request?.file) return
+    if (request.params?.category && request.params.category !== activeCategoryId) {
+      setActiveCategoryId(request.params.category)
+      return
+    }
+    take('endpoint')
+    const source = sources.find((s) => s.key === request.params?.source) ?? sources[0]
+    if (source) handleFile(source, request.file)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests.endpoint, activeCategoryId])
 
   /* ---- Load demo data into the first available source ---- */
   const handleLoadDemo = () => {

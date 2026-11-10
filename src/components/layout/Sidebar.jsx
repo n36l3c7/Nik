@@ -1,10 +1,26 @@
 import { useMemo, useRef, useState } from 'react'
-import { AlertTriangle, DatabaseBackup, Download, Info, Plus, ScrollText, Trash2, Upload, Users, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  DatabaseBackup,
+  Download,
+  FileText,
+  FolderOpen,
+  Info,
+  Link,
+  Plus,
+  ScrollText,
+  Trash2,
+  Upload,
+  Users,
+  X,
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
+import { useContextMenu } from '../../context/ContextMenuContext.jsx'
+import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../utils/time.js'
 import { getOsById } from '../../config/os.js'
-import { Button, MicroSkull, Modal } from '../ui/index.js'
+import { Button, MicroSkull, Modal, SeverityTag } from '../ui/index.js'
 import BackupModal from '../backup/BackupModal.jsx'
 
 /*
@@ -51,9 +67,11 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
  *   width?: number,                // pixel width (resizable), defaults to 288
  * }} props
  */
-export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, width = 288 }) {
+export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, onOpenReport, width = 288 }) {
   const { incidents, activeIncidentId, selectIncident, deleteIncident, exportIncident, importIncidentFromFile } =
     useIncidents()
+  const { openMenu } = useContextMenu()
+  const { showToast } = useToast()
   const { currentUser } = useAuth()
   const isAdmin = currentUser?.role === 'admin'
 
@@ -132,7 +150,42 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
               const os = getOsById(incident.os)
               const OsIcon = os?.icon
               return (
-                <li key={incident.id} className="group relative">
+                <li
+                  key={incident.id}
+                  className="group relative"
+                  onContextMenu={(event) =>
+                    openMenu(event, {
+                      title: incident.name,
+                      items: [
+                        { label: 'Open', icon: FolderOpen, onSelect: () => selectIncident(incident.id) },
+                        {
+                          label: 'Incident report…',
+                          icon: FileText,
+                          onSelect: () => {
+                            selectIncident(incident.id)
+                            onOpenReport?.()
+                          },
+                        },
+                        { label: 'Export (JSON)', icon: Download, onSelect: () => exportIncident(incident.id) },
+                        {
+                          label: 'Copy link',
+                          icon: Link,
+                          onSelect: async () => {
+                            const url = `${window.location.origin}/incident/${encodeURIComponent(incident.id)}`
+                            try {
+                              await navigator.clipboard.writeText(url)
+                              showToast({ message: 'Link copied.' })
+                            } catch {
+                              showToast({ message: 'The browser refused to copy.' })
+                            }
+                          },
+                        },
+                        'separator',
+                        { label: 'Delete…', icon: Trash2, onSelect: () => setDeleteTarget(incident) },
+                      ],
+                    })
+                  }
+                >
                   {/* Clickable row: selects the incident */}
                   <button
                     type="button"
@@ -153,7 +206,8 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, wi
                       {OsIcon && <OsIcon className={`h-3.5 w-3.5 shrink-0 ${os.accent}`} aria-label={os.label} />}
                       <span className="truncate">{incident.name}</span>
                     </span>
-                    <span className="block text-[11px] text-fg-muted">
+                    <span className="flex items-center gap-1.5 text-[11px] text-fg-muted">
+                      <SeverityTag severity={incident.severity} />
                       updated {formatRelative(incident.updatedAt)}
                     </span>
                   </button>

@@ -19,12 +19,14 @@ import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
 import TailPanel from './components/layout/TailPanel.jsx'
 import IncidentLoadingState from './components/layout/IncidentLoadingState.jsx'
-import OsPicker from './components/layout/OsPicker.jsx'
-import { DEFAULT_OS } from './config/os.js'
 import { isTypingTarget } from './utils/search.js'
 import SettingsPanel from './components/settings/SettingsPanel.jsx'
 import CommandPalette from './components/search/CommandPalette.jsx'
 import ReportDialog from './components/report/ReportDialog.jsx'
+import IncidentFields, { EMPTY_INCIDENT_FIELDS, canCreateIncident } from './components/incident/IncidentFields.jsx'
+import AddFileDialog from './components/incident/AddFileDialog.jsx'
+import { useNavigation } from './context/NavigationContext.jsx'
+import { detectFileRoute, readHead } from './utils/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 
@@ -138,6 +140,7 @@ export default function App() {
     retryActiveIncident,
     storageError,
     createIncident,
+    whenSaved,
     exportIncident,
     loading,
   } = useIncidents()
@@ -148,11 +151,59 @@ export default function App() {
   const tailOpen = Boolean(tailOpenByTab[activeTabId])
   const setTailOpen = (open) => setTailOpenByTab((prev) => ({ ...prev, [activeTabId]: open }))
 
-  // "New incident" modal (asks for host and/or username, not a name).
+  // "New incident" modal: ticket ID, short title, severity, host, user, OS.
   const [createOpen, setCreateOpen] = useState(false)
-  const [host, setHost] = useState('')
-  const [username, setUsername] = useState('')
-  const [os, setOs] = useState(DEFAULT_OS)
+  const [newFields, setNewFields] = useState(EMPTY_INCIDENT_FIELDS)
+
+  // Navigation requests from menus and dialogs (see NavigationContext).
+  const navigation = useNavigation()
+  const { importInto, clearSearch } = navigation
+  useEffect(() => {
+    if (navigation.focus) setActiveTabId(navigation.focus.tab)
+  }, [navigation.focus])
+
+  // A file dropped anywhere: the overlay while dragging, then the dialog.
+  const [dragging, setDragging] = useState(false)
+  const [drop, setDrop] = useState(null) // { file, route }
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+    let depth = 0
+    const hasFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
+    const onEnter = (event) => {
+      if (!hasFiles(event)) return
+      depth += 1
+      setDragging(true)
+    }
+    const onLeave = (event) => {
+      if (!hasFiles(event)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setDragging(false)
+    }
+    const onOver = (event) => {
+      if (hasFiles(event)) event.preventDefault()
+    }
+    const onDrop = async (event) => {
+      if (!hasFiles(event)) return
+      depth = 0
+      setDragging(false)
+      // A drop zone inside a tab (it calls preventDefault) handles its own files.
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      const file = event.dataTransfer.files?.[0]
+      if (!file) return
+      setDrop({ file, route: detectFileRoute({ name: file.name, head: await readHead(file) }) })
+    }
+    window.addEventListener('dragenter', onEnter)
+    window.addEventListener('dragleave', onLeave)
+    window.addEventListener('dragover', onOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onEnter)
+      window.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('dragover', onOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [isAuthenticated])
 
   // Unified settings panel: a single dialog with sections. `settingsSection`
   // lets the header/sidebar deep-link into Detection rules / Accounts / Audit.
@@ -168,6 +219,13 @@ export default function App() {
 
   // Global search palette: Ctrl/Cmd+K anywhere, "/" outside text fields.
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteQuery, setPaletteQuery] = useState('')
+  useEffect(() => {
+    if (!navigation.search) return
+    setPaletteQuery(navigation.search.query)
+    setPaletteOpen(true)
+    clearSearch()
+  }, [navigation.search, clearSearch])
   useEffect(() => {
     if (!isAuthenticated) return undefined
     const onKeyDown = (event) => {
@@ -215,17 +273,26 @@ export default function App() {
   if (!isAuthenticated) return <LoginScreen />
 
   const openCreateModal = () => {
-    setHost('')
-    setUsername('')
-    setOs(DEFAULT_OS)
+    setNewFields(EMPTY_INCIDENT_FIELDS)
     setCreateOpen(true)
   }
 
   const handleCreateSubmit = (event) => {
     event.preventDefault()
-    if (!host.trim() && !username.trim()) return // need host and/or username
-    createIncident({ host, username, os })
+    if (!canCreateIncident(newFields)) return
+    createIncident(newFields)
     setCreateOpen(false)
+  }
+
+  const handleDropConfirm = async ({ target, fields, tab, params }) => {
+    const { file } = drop
+    setDrop(null)
+    if (target === 'new') {
+      const incident = createIncident(fields)
+      // Samples and .evtx files go to the server: the incident must exist there first.
+      if (!(await whenSaved(incident.id))) return
+    }
+    importInto(tab, file, params)
   }
 
   // Palette actions (typed after ">").
@@ -284,6 +351,7 @@ export default function App() {
         onCreateIncident={openCreateModal}
         onOpenAudit={() => openSettings('audit')}
         onOpenUsers={() => openSettings('accounts')}
+        onOpenReport={() => setReportOpen(true)}
       />
       <SidebarResizer onResize={handleSidebarResize} />
 
@@ -367,17 +435,18 @@ export default function App() {
         </div>
       </div>
 
-      {/* New incident modal — identified by host and/or username */}
+      {/* New incident modal */}
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="New incident"
+        maxWidth="max-w-xl"
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" form="form-new-incident" disabled={!host.trim() && !username.trim()}>
+            <Button type="submit" form="form-new-incident" disabled={!canCreateIncident(newFields)}>
               Create incident
             </Button>
           </>
@@ -385,44 +454,28 @@ export default function App() {
       >
         <form id="form-new-incident" onSubmit={handleCreateSubmit} className="space-y-4">
           <p className="text-sm text-fg-muted">
-            Identify the incident by host, user, or both. This is a label (not a unique id), so duplicates are allowed.
+            Fill in at least one of ticket ID, short title, host or user. The name is a label, not a unique id, so
+            duplicates are allowed.
           </p>
-          <div>
-            <label htmlFor="new-host" className="mb-1.5 block font-mono text-xs text-fg-muted">
-              Host
-            </label>
-            <input
-              id="new-host"
-              type="text"
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="e.g. WKS-FINANCE-01"
-              autoFocus
-              className="w-full border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div>
-            <label htmlFor="new-username" className="mb-1.5 block font-mono text-xs text-fg-muted">
-              User
-            </label>
-            <input
-              id="new-username"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. m.rossi"
-              className="w-full border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div>
-            <span className="mb-1.5 block font-mono text-xs text-fg-muted">Host operating system</span>
-            <OsPicker value={os} onChange={setOs} idPrefix="new-os" />
-            <p className="mt-1.5 text-xs text-fg-muted">
-              Drives the suggested artifact paths and the available shells.
-            </p>
-          </div>
+          <IncidentFields value={newFields} onChange={setNewFields} idPrefix="new" />
         </form>
       </Modal>
+
+      <AddFileDialog
+        drop={drop}
+        activeIncident={activeIncident}
+        onClose={() => setDrop(null)}
+        onConfirm={handleDropConfirm}
+      />
+
+      {dragging && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-3 z-[80] flex items-center justify-center border-2 border-dashed border-accent bg-accent-soft/80"
+        >
+          <p className="font-mono text-lg text-accent-fg">drop the file: Nik finds the right tab</p>
+        </div>
+      )}
 
       <ReportDialog
         open={reportOpen && Boolean(activeIncident)}
@@ -432,7 +485,11 @@ export default function App() {
 
       <CommandPalette
         open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
+        initialQuery={paletteQuery}
+        onClose={() => {
+          setPaletteOpen(false)
+          setPaletteQuery('')
+        }}
         actions={paletteActions}
         onOpenTab={setActiveTabId}
       />
