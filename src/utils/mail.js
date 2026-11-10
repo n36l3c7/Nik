@@ -157,3 +157,44 @@ export function mailEvents(messages = [], engine) {
     }
   })
 }
+
+const OFFICE_EXT = new Set(
+  'doc docx docm dot dotx dotm rtf odt ott xls xlsx xlsm xlsb xlt xltx xltm ods csv ppt pptx pptm pps ppsx ppsm pot potx odp'.split(
+    ' ',
+  ),
+)
+const IMAGE_EXT = new Set('png jpg jpeg gif bmp tif tiff webp'.split(' '))
+const HTML_EXT = new Set('html htm shtml xhtml svg'.split(' '))
+
+/** How an attachment can be previewed: 'document', 'html' or null (mirrors backend previews.kind). */
+export function previewKind(item) {
+  if (!item?.size) return null
+  const ext = item.extension ?? ''
+  if (HTML_EXT.has(ext)) return 'html'
+  if (['pdf', 'rtf', 'png', 'jpeg', 'gif'].includes(item.type?.id) || ext === 'pdf') return 'document'
+  if (OFFICE_EXT.has(ext) || IMAGE_EXT.has(ext)) return 'document'
+  return null
+}
+
+/** Page coordinates of a click on a screenshot drawn at another size. */
+export function toPagePoint(clientX, clientY, rect, width, height) {
+  const x = Math.round(((clientX - rect.left) * width) / rect.width)
+  const y = Math.round(((clientY - rect.top) * height) / rect.height)
+  return { x: Math.min(width, Math.max(0, x)), y: Math.min(height, Math.max(0, y)) }
+}
+
+// Keys replayed as key presses (the worker accepts these); the rest is typed text.
+export const BROWSER_KEYS = new Set([
+  'Enter',
+  'Tab',
+  'Backspace',
+  'Delete',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+])

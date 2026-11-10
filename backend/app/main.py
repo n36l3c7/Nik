@@ -42,6 +42,7 @@ from .routers import (
     jobs,
     keys,
     mails,
+    previews,
     report,
     samples,
     search,
@@ -166,6 +167,7 @@ app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
 app.include_router(mails.router, prefix="/api")
+app.include_router(previews.router, prefix="/api")
 app.include_router(enrichment.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")
 app.include_router(yara_rules.router, prefix="/api")

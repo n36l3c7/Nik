@@ -7,6 +7,8 @@ import {
   frameDocument,
   hexRows,
   mailEvents,
+  previewKind,
+  toPagePoint,
   resultColor,
   verdictMeta,
 } from './mail.js'
@@ -66,4 +68,15 @@ test('mail timeline events carry the verdict as severity', () => {
   assert.equal(plain.label, 'm.eml')
   assert.equal(plain.time, Date.parse('2026-11-10T09:00:00Z'))
   assert.equal(plain.soc.severity, null)
+})
+
+test('attachment previews and screenshot coordinates', () => {
+  assert.equal(previewKind({ size: 10, extension: 'docx', type: { id: 'zip' } }), 'document')
+  assert.equal(previewKind({ size: 10, extension: 'bin', type: { id: 'pdf' } }), 'document')
+  assert.equal(previewKind({ size: 10, extension: 'htm', type: { id: 'text' } }), 'html')
+  assert.equal(previewKind({ size: 10, extension: 'exe', type: { id: 'pe32' } }), null)
+  assert.equal(previewKind({ size: 0, extension: 'pdf' }), null)
+  const rect = { left: 100, top: 50, width: 640, height: 400 }
+  assert.deepEqual(toPagePoint(420, 250, rect, 1280, 800), { x: 640, y: 400 })
+  assert.deepEqual(toPagePoint(0, 0, rect, 1280, 800), { x: 0, y: 0 })
 })

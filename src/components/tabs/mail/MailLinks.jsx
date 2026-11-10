@@ -1,3 +1,4 @@
+import { Globe } from 'lucide-react'
 import { Badge } from '../../ui/index.js'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 
@@ -9,7 +10,7 @@ import { IocValue } from '../../../context/IocLookupContext.jsx'
 
 const SEVERITY_COLOR = { high: 'red', medium: 'amber', low: 'slate' }
 
-export default function MailLinks({ links }) {
+export default function MailLinks({ links, onOpenUrl = null }) {
   if (!links.length) return <p className="font-mono text-xs text-fg-muted">The message holds no link.</p>
   const ordered = [...links].sort((a, b) => b.findings.length - a.findings.length)
   return (
@@ -40,6 +41,15 @@ export default function MailLinks({ links }) {
                   )}
                   {link.displayHost && link.displayHost !== link.host && (
                     <span className="mt-0.5 block text-[11px] text-high">reads as {link.displayHost}</span>
+                  )}
+                  {isWeb && onOpenUrl && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenUrl(link.target)}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      <Globe className="h-3 w-3" aria-hidden="true" /> open in isolated browser
+                    </button>
                   )}
                 </td>
                 <td className="break-words py-2 pr-3 text-fg-muted">

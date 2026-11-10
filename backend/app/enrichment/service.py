@@ -100,7 +100,7 @@ def usable(provider: Provider, cfg: dict[str, Any], all_keys: dict[str, str | No
 # --------------------------------------------------------------------------- #
 # What may be sent                                                            #
 # --------------------------------------------------------------------------- #
-def _internal_host(host: str) -> str | None:
+def internal_host(host: str) -> str | None:
     host = host.lower().strip("[]").rstrip(".")
     try:
         if not ipaddress.ip_address(host).is_global:
@@ -128,9 +128,9 @@ def blocked(db: OrmSession, kind: str, value: str, allowlist: Allowlist, red: se
     if kind not in LOOKUP_TYPES:
         return "this type is never sent to external services"
     if kind == "ip":
-        reason = _internal_host(value)
+        reason = internal_host(value)
     elif kind == "domain":
-        reason = _internal_host(value)
+        reason = internal_host(value)
     elif kind == "url":
         from urllib.parse import urlsplit
 
@@ -138,7 +138,7 @@ def blocked(db: OrmSession, kind: str, value: str, allowlist: Allowlist, red: se
             host = urlsplit(value).hostname or ""
         except ValueError:
             host = ""
-        reason = _internal_host(host) if host else "a URL without a host"
+        reason = internal_host(host) if host else "a URL without a host"
     else:
         reason = None
     if reason:

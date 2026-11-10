@@ -59,6 +59,11 @@ services:
       CAPA_URL: http://capa:8710
       CAPA_TOKEN: ${CAPA_TOKEN:-please-change-this-capa-token}
       CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
+      # Mail attachment previews (documents) and the isolated browser.
+      DOCVIEW_URL: http://docview:8720
+      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:-please-change-this-docview-token}
+      BROWSER_URL: http://browser:8730
+      BROWSER_TOKEN: ${BROWSER_TOKEN:-please-change-this-browser-token}
     volumes:
       - sample-store:/app/samples
     networks: [default, analysis]
@@ -114,6 +119,44 @@ services:
     cpus: ${CAPA_CPUS:-2}
     restart: unless-stopped
 
+  # Turns mail attachments (PDF, Office, OpenDocument, RTF, images) into page
+  # images: LibreOffice with macros disabled, then pdfium. Internal network
+  # only (a document cannot call out), no published port, read-only
+  # filesystem, no capabilities, memory / CPU limits.
+  docview:
+    build: ./docview
+    environment:
+      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:-please-change-this-docview-token}
+    networks: [analysis]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${DOCVIEW_MEMORY:-2g}
+    cpus: ${DOCVIEW_CPUS:-1}
+    restart: unless-stopped
+
+  # Isolated browser: opens HTML attachments and links in Chromium and sends
+  # back screenshots; the analyst's clicks and typing are replayed here. The
+  # only worker with a route to the internet (browser-egress), used only by
+  # sessions the analyst opens with network; the worker itself refuses
+  # requests to private addresses and internal names. Read-only filesystem,
+  # no capabilities, memory / CPU limits, no published port.
+  browser:
+    build: ./browser
+    environment:
+      BROWSER_TOKEN: ${BROWSER_TOKEN:-please-change-this-browser-token}
+      BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-3}
+    networks: [analysis, browser-egress]
+    read_only: true
+    tmpfs: [/tmp]
+    shm_size: 256m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${BROWSER_MEMORY:-2g}
+    cpus: ${BROWSER_CPUS:-2}
+    restart: unless-stopped
+
   web:
     build:
       context: .
@@ -145,3 +188,5 @@ networks:
   # Backend ↔ analysis workers only; `internal` gives them no route outside.
   analysis:
     internal: true
+  # The isolated browser's way out (no other service is on it).
+  browser-egress:

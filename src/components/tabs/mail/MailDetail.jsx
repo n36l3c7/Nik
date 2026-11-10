@@ -120,6 +120,8 @@ function Overview({ analysis }) {
  *   incident: object, message: object, detail: object | null, error: string | null,
  *   onRemove: () => void, removing: boolean, onReanalyse: () => void, reanalysing: boolean,
  *   onDownload: (item: object) => void, onSend: (item: object) => void, sending: string | null,
+ *   onOpen: (item: object, kind: 'document'|'html') => void, onOpenUrl: (url: string) => void,
+ *   previews: { documents: boolean, browser: boolean } | null,
  * }} props
  */
 export default function MailDetail({
@@ -134,6 +136,9 @@ export default function MailDetail({
   onDownload,
   onSend,
   sending,
+  onOpen,
+  onOpenUrl,
+  previews,
 }) {
   const [view, setView] = useState('overview')
   const analysis = detail?.analysis ?? null
@@ -270,7 +275,7 @@ export default function MailDetail({
           {view === 'overview' && <Overview analysis={analysis} />}
           {view === 'headers' && <MailHeaders analysis={analysis} />}
           {view === 'body' && <MailBody message={message} analysis={analysis} />}
-          {view === 'links' && <MailLinks links={analysis.links} />}
+          {view === 'links' && <MailLinks links={analysis.links} onOpenUrl={previews?.browser ? onOpenUrl : null} />}
           {view === 'attachments' && (
             <MailAttachments
               attachments={analysis.attachments}
@@ -278,6 +283,8 @@ export default function MailDetail({
               onDownload={onDownload}
               onSend={onSend}
               sending={sending}
+              onOpen={onOpen}
+              previews={previews}
             />
           )}
           {detail.incidents?.length > 1 && (

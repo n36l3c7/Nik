@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Binary, Bug, Download, FileCode, Mail, Paperclip } from 'lucide-react'
+import { Binary, Bug, Download, Eye, FileCode, Globe, Mail, Paperclip } from 'lucide-react'
 import { Badge, Button } from '../../ui/index.js'
 import HexView from './HexView.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { formatBytes } from '../../../utils/events.js'
-import { verdictMeta } from '../../../utils/mail.js'
+import { previewKind, verdictMeta } from '../../../utils/mail.js'
 
 /*
  * The attachments, each with what it really is (from its bytes, not its
@@ -30,10 +30,11 @@ function Findings({ findings }) {
   )
 }
 
-function Attachment({ item, sha256, onDownload, onSend, sending }) {
+function Attachment({ item, sha256, onDownload, onSend, sending, onOpen, previews }) {
   const [hex, setHex] = useState(false)
   const [macros, setMacros] = useState(false)
   const hasBytes = item.size > 0
+  const preview = previewKind(item)
   const nested = item.message
   return (
     <li className="space-y-2 border border-line p-3">
@@ -55,6 +56,38 @@ function Attachment({ item, sha256, onDownload, onSend, sending }) {
         </div>
         {hasBytes && (
           <span className="flex flex-wrap gap-1">
+            {preview === 'document' && (
+              <Button
+                variant="secondary"
+                size="xs"
+                icon={Eye}
+                onClick={() => onOpen(item, 'document')}
+                disabled={!previews?.documents}
+                title={
+                  previews?.documents
+                    ? 'Pages rendered in the isolated document viewer'
+                    : 'The document viewer is not configured'
+                }
+              >
+                Preview
+              </Button>
+            )}
+            {preview === 'html' && (
+              <Button
+                variant="secondary"
+                size="xs"
+                icon={Globe}
+                onClick={() => onOpen(item, 'html')}
+                disabled={!previews?.browser}
+                title={
+                  previews?.browser
+                    ? 'Runs in the isolated browser; you see screenshots'
+                    : 'The isolated browser is not configured'
+                }
+              >
+                Open in isolated browser
+              </Button>
+            )}
             <Button variant="ghost" size="xs" icon={Binary} onClick={() => setHex((v) => !v)} aria-expanded={hex}>
               Hex
             </Button>
@@ -193,6 +226,8 @@ function Attachment({ item, sha256, onDownload, onSend, sending }) {
               onDownload={onDownload}
               onSend={onSend}
               sending={sending}
+              onOpen={onOpen}
+              previews={previews}
             />
           )}
         </div>
@@ -201,7 +236,7 @@ function Attachment({ item, sha256, onDownload, onSend, sending }) {
   )
 }
 
-export default function MailAttachments({ attachments, sha256, onDownload, onSend, sending }) {
+export default function MailAttachments({ attachments, sha256, onDownload, onSend, sending, onOpen, previews }) {
   if (!attachments.length) return <p className="font-mono text-xs text-fg-muted">No attachment.</p>
   return (
     <ul className="space-y-2">
@@ -213,6 +248,8 @@ export default function MailAttachments({ attachments, sha256, onDownload, onSen
           onDownload={onDownload}
           onSend={onSend}
           sending={sending}
+          onOpen={onOpen}
+          previews={previews}
         />
       ))}
     </ul>

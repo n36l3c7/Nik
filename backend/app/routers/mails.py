@@ -19,6 +19,7 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import previews
 from ..config import settings
 from ..db import get_db
 from ..events import emit
@@ -144,6 +145,23 @@ def _parsed(sha256: str) -> dict[str, Any]:
         return parse_mail(read_mail(sha256))
     except (OSError, MailError) as exc:
         raise HTTPException(status_code=404, detail="The stored message cannot be read") from exc
+
+
+def _forget_previews(sha256: str) -> None:
+    """Drop the rendered pages of the message's attachments (they show its content)."""
+    try:
+        parsed = parse_mail(read_mail(sha256))
+    except (OSError, MailError):
+        return
+
+    def walk(node: dict[str, Any]) -> None:
+        for item in node.get("attachments") or []:
+            if item.get("data"):
+                previews.forget_document(hashes(item["data"])["sha256"])
+            if item.get("nested"):
+                walk(item["nested"])
+
+    walk(parsed)
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +346,7 @@ def remove_mail(
     doc["data"]["mail"]["messages"] = kept
     _save_doc(db, incident, doc)
     if not any(inc.id != incident_id for inc in _incidents_referencing(db, sha256)):
+        _forget_previews(sha256)
         delete_mail(sha256)
         db.delete(row)
     _audit(db, caller, "mail.delete", f"Removed e-mail {sha256[:12]}… from the incident", incident)
