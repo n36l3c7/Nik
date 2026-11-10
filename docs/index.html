@@ -101,7 +101,8 @@
             SPF, DKIM and DMARC checked through DNS next to your servers' reports, sender mismatches and look-alike
             domains, links unwrapped from Safe Links and Proofpoint, the body in a sandboxed frame that runs and loads
             nothing, attachments by their real type (macros, encrypted archives, disguised executables, QR codes), and a
-            verdict with every finding explained.
+            verdict with every finding explained. Documents are previewed as pages and HTML attachments and links open
+            in an isolated browser you click through on screenshots, without network unless you allow it.
           </p>
         </div>
         <div class="card">
@@ -271,7 +272,9 @@
           <strong>Triage a reported e-mail.</strong> Drop the <code>.eml</code> or <code>.msg</code> anywhere: the Mail
           Analysis tab shows the verdict and why, the headers made readable, the body in a sandbox (remote images load
           only if you ask), the links and the attachments, which open in hex or go to Malware Analysis in one click.
-          List your domains and mail servers under Settings → Mail analysis first.
+          Documents open as pages with <em>Preview</em>; HTML attachments and links open in the isolated browser,
+          without network unless you allow it for that session. List your domains and mail servers under Settings → Mail
+          analysis first.
         </li>
         <li>
           <strong>Check reputations.</strong> An admin enters the providers' free API keys under Settings → Threat

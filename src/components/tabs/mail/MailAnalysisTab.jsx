@@ -4,6 +4,8 @@ import { AsciiSkull, Badge, Button, Card, EmptyState } from '../../ui/index.js'
 import SampleDropZone from '../malware/SampleDropZone.jsx'
 import DownloadDialog from '../malware/DownloadDialog.jsx'
 import MailDetail from './MailDetail.jsx'
+import DocumentPreview from './DocumentPreview.jsx'
+import RemoteBrowser, { OpenBrowserDialog } from './RemoteBrowser.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
@@ -74,6 +76,17 @@ export default function MailAnalysisTab({ incident }) {
   const [reanalysing, setReanalysing] = useState(false)
   const [downloading, setDownloading] = useState(null)
   const [sending, setSending] = useState(null)
+  const [previews, setPreviews] = useState(null) // { documents, browser }: workers configured
+  const [documentTarget, setDocumentTarget] = useState(null)
+  const [browserChoice, setBrowserChoice] = useState(null)
+  const [browserRequest, setBrowserRequest] = useState(null)
+
+  useEffect(() => {
+    api
+      .get('/previews/status')
+      .then(setPreviews)
+      .catch(() => setPreviews({ documents: false, browser: false }))
+  }, [])
   const pending = useRef(new Set())
 
   useEffect(() => {
@@ -258,10 +271,27 @@ export default function MailAnalysisTab({ incident }) {
           }
           onSend={(item) => handleSend(current, item)}
           sending={sending}
+          previews={previews}
+          onOpen={(item, kind) =>
+            kind === 'document'
+              ? setDocumentTarget({ sha256: current.sha256, path: item.path, name: item.name })
+              : setBrowserChoice({ sha256: current.sha256, path: item.path, label: item.name })
+          }
+          onOpenUrl={(url) => setBrowserChoice({ url, label: url })}
         />
       )}
 
       <DownloadDialog sample={downloading} onClose={() => setDownloading(null)} />
+      <DocumentPreview target={documentTarget} onClose={() => setDocumentTarget(null)} />
+      <OpenBrowserDialog
+        target={browserChoice}
+        onCancel={() => setBrowserChoice(null)}
+        onOpen={(request) => {
+          setBrowserChoice(null)
+          setBrowserRequest(request)
+        }}
+      />
+      <RemoteBrowser request={browserRequest} onClose={() => setBrowserRequest(null)} />
     </div>
   )
 }

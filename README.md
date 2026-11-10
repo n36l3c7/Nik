@@ -81,7 +81,13 @@ every action attributed to a named analyst and recorded in a global audit log.
   calendar links, attached messages analysed in turn. The evidence adds up to
   a score and a verdict (phishing, suspicious, no strong signs), each finding
   explained; attachments open in a hex view, download in a protected zip or
-  go to Malware Analysis in one click.
+  go to Malware Analysis in one click. **Previews**: documents (PDF, Word,
+  Excel, PowerPoint, OpenDocument, RTF, images) as page images rendered in an
+  isolated worker (LibreOffice with macros disabled, pdfium), and HTML
+  attachments and links in an **isolated browser**: Chromium runs the page in
+  its own container and the analyst clicks, types and scrolls on its
+  screenshots; no network by default, internet only when the analyst allows it
+  for one session (never private addresses).
 - **IOC correlation** — the server indexes the indicators of every tab (IP
   addresses, domains, URLs, e-mail addresses, MD5/SHA-1/SHA-256) each time an
   incident is saved; an **IOCs** tab lists them with the number of other
@@ -365,6 +371,8 @@ is no `tailwind.config.js` and no extra setup step.
 | `CAPA_URL` | — | Base URL of the capa worker (e.g. `http://capa:8710`). Empty: the Capabilities view reports "not configured". |
 | `CAPA_TOKEN` | — | Shared secret sent to the capa worker in `X-Analyzer-Token`; the worker refuses to start without one. |
 | `CAPA_TIMEOUT` | `1800` | Seconds capa may spend on one sample before the worker stops it (large binaries take ten minutes or more). |
+| `DOCVIEW_URL` / `DOCVIEW_TOKEN` | — | Document viewer worker (`docview/`, e.g. `http://docview:8720`) and its shared secret (`X-Docview-Token`). Empty: the Preview buttons say "not configured". |
+| `BROWSER_URL` / `BROWSER_TOKEN` | — | Isolated browser worker (`browser/`, e.g. `http://browser:8730`) and its shared secret (`X-Browser-Token`). Empty: "Open in isolated browser" says "not configured". |
 | `ENRICHMENT_WORKER` | `true` | Background thread of the automatic threat-intelligence lookups (one API process works at a time). `false` disables it; "Check now" still works. |
 
 **Compose** (root `.env` — see `.env.example`):
@@ -388,6 +396,11 @@ is no `tailwind.config.js` and no extra setup step.
 | `CAPA_TOKEN` | — | Shared secret between the `api` and `capa` services; set a long random value, different from `ANALYZER_TOKEN`. |
 | `CAPA_TIMEOUT` | `1800` | Per-sample time limit of the capa worker, in seconds. |
 | `CAPA_MEMORY` / `CAPA_CPUS` | `4g` / `2` | Memory and CPU limits of the `capa` container. |
+| `DOCVIEW_TOKEN` | — | Shared secret between the `api` and `docview` services; set a long random value. |
+| `DOCVIEW_MEMORY` / `DOCVIEW_CPUS` | `2g` / `1` | Memory and CPU limits of the `docview` container (LibreOffice). |
+| `BROWSER_TOKEN` | — | Shared secret between the `api` and `browser` services; set a long random value. |
+| `BROWSER_MAX_SESSIONS` | `3` | Isolated browser sessions open at once (each idle one closes after 5 minutes, any after 30). |
+| `BROWSER_MEMORY` / `BROWSER_CPUS` | `2g` / `2` | Memory and CPU limits of the `browser` container (Chromium). |
 
 > **Two things that will bite you over plain HTTP:**
 >
@@ -897,6 +910,10 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/mails/{sha256}/source` | The `.eml` as text (`available: false` for a `.msg`). |
 | `GET /api/mails/{sha256}/attachments/{path}/bytes?offset=&length=` | A slice (≤ 64 KiB, base64) of an attachment for the hex view. `path` is its index, `2.0` for the first attachment of the attached message at index 2. |
 | `GET /api/mails/{sha256}/attachments/{path}/download?password=` | The attachment inside an AES-256 zip (default `infected`). Audited. |
+| `GET /api/previews/status` | Which preview workers are configured (`documents`, `browser`). |
+| `POST /api/mails/{sha256}/attachments/{path}/preview` | The attachment's first 20 pages as PNG (`pages: [{ png, width, height }]`, `total`, `converted`), rendered by the document viewer; `422` for a file that is not a document, `503` without the worker. |
+| `POST /api/browser/sessions` | Open an HTML attachment (`{ mail, path }`) or a link (`{ url }`) in the isolated browser, `network` true or false (default). Returns the state: `id`, `url`, `title`, `screenshot` (JPEG, base64), `blocked`, `events`. Audited. |
+| `POST /api/browser/sessions/{id}/action` · `DELETE …/{id}` | Replay an action (`click`/`dblclick` `{x, y}`, `type` `{text}`, `key` `{key}`, `scroll` `{dy}`, `navigate` `{url}`, `back`, `forward`, `reload`, `refresh`) and get the new state; close the session. Only the analyst who opened it. |
 | `POST /api/incidents/{id}/mails/{sha256}/attachments/{path}/sample` | Send an attachment to Malware Analysis as a sample of the incident. |
 | `DELETE /api/incidents/{id}/mails/{sha256}` | Detach the message; the file is deleted once no incident references it. |
 | `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
@@ -1071,7 +1088,11 @@ file itself to the server, because the sample *is* the evidence under study
 ├── playwright.config.js            # E2E: starts backend (SQLite) + vite preview
 ├── e2e/smoke.spec.js               # End-to-end smoke test of the whole stack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
-├── docker-compose.yml              # db + api + analyzer + capa + web stack
+├── docker-compose.yml              # db + api + analyzer + capa + docview + browser + web stack
+├── docview/                        # document viewer worker: Dockerfile (LibreOffice, pdfium),
+│                                   #   nik_docview.py (Office → PDF → page PNGs), server.py, tests/
+├── browser/                        # isolated browser worker: Dockerfile (Playwright Chromium),
+│                                   #   nik_browser.py (sessions, network rules), server.py, tests/
 ├── capa/                           # capa worker: Dockerfile (pinned capa, rules, signatures),
 │                                   #   nik_capa.py (run + reduce the report), server.py, tests/
 ├── analyzer/                       # rizin worker: Dockerfile, nik_analyzer.py (pipe + transforms),
@@ -1956,6 +1977,48 @@ API returns only whether a key is set and its last four characters. Changing
 `SECRET_KEY` makes the stored keys unreadable (Settings says so): enter them
 again. Requests use the standard library (`urllib`), so `HTTPS_PROXY` /
 `NO_PROXY` apply; a transparent proxy needs nothing.
+
+### 3.10 Attachment previews and the isolated browser
+
+Two more workers show what an attachment looks like without opening it on
+the analyst's machine. Like `analyzer` and `capa` they run as unprivileged
+users with a read-only filesystem, no capabilities, memory and CPU limits,
+no published port, and answer only the backend's shared token.
+
+**Documents** (`docview/`, internal network only). The Mail Analysis tab's
+**Preview** sends the attachment to
+`POST /api/mails/{sha256}/attachments/{path}/preview`; the backend forwards
+it to the worker, which converts Word, Excel, PowerPoint, OpenDocument and
+RTF to PDF with LibreOffice (a fresh profile per conversion: macro security
+"very high", macros disabled, links to other files or the network never
+updated, killed after 90 s) and renders the first 20 pages of the PDF with
+pdfium; images are re-encoded with Pillow. The browser receives PNG images
+only. The pages are kept under `SAMPLE_STORE/_previews/<sha256>.json` and
+removed with the last message that holds the attachment.
+
+**Isolated browser** (`browser/`). HTML attachments (**Open in isolated
+browser**) and links (Links view) open in Chromium, run by Playwright inside
+the worker's container. The analyst sees a JPEG of the viewport; clicks,
+double-clicks, typing, Enter / Tab / arrows and the wheel are sent to
+`POST /api/browser/sessions/{id}/action` and replayed there, with back,
+forward, reload and an address bar. Scripts of the page run in the worker,
+never in the analyst's browser.
+
+- **Network, chosen for each session.** Without network (the default) the
+  page is the attachment itself: every other request (images, scripts,
+  frames, form posts, links) is refused, and a navigation shows a "blocked
+  by Nik" page. With network, http and https go out through the server's
+  connection (the `browser-egress` network, the only one with a route
+  outside), except to private, loopback or link-local addresses and internal
+  names, so a page cannot reach the organisation's own network. Every
+  session is audited (`browser.open`), with or without network.
+- Downloads are refused and reported, alert / confirm / prompt dialogs are
+  dismissed and reported, permission prompts denied, a new tab replaces the
+  current one. A session belongs to the analyst who opened it, closes after
+  5 minutes without an action (30 minutes at most) and when the window is
+  closed; at most `BROWSER_MAX_SESSIONS` are open at once.
+- Chromium's own sandbox needs privileges the container does not give, so
+  it runs with `--no-sandbox`: the container is the sandbox.
 
 ---
 

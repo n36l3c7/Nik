@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-11-10
+
+### Added
+
+- **Previews of mail attachments.** Documents (PDF, Word, Excel, PowerPoint,
+  OpenDocument, RTF, images) open as page images with **Preview**: a new
+  `docview` worker converts Office formats to PDF with LibreOffice (fresh
+  profile, macro security "very high", macros disabled, links never updated,
+  90 s limit) and renders the first 20 pages with pdfium. It runs on the
+  internal network only; the analyst's browser receives PNG images. Pages are
+  cached and removed with the last message holding the attachment.
+- **Isolated browser.** HTML attachments (**Open in isolated browser**) and
+  links (Links view) run in Chromium inside a new `browser` worker; the
+  analyst sees screenshots and clicks, types, scrolls, goes back and forward
+  or types an address, replayed in the worker. Scripts never run in the
+  analyst's browser.
+  - **Network chosen per session**: none by default (only the attachment
+    loads, every other request is refused and a navigation shows a "blocked
+    by Nik" page); with network, http and https go out through the server,
+    never to private addresses or internal names. Every session is audited
+    with its choice.
+  - Downloads refused and reported, dialogs dismissed and reported, new
+    tabs shown in place; a session belongs to its analyst and closes after 5
+    minutes idle (30 at most), at most `BROWSER_MAX_SESSIONS` (3) at once.
+- API: `GET /api/previews/status`,
+  `POST /api/mails/{sha256}/attachments/{path}/preview`,
+  `POST /api/browser/sessions`, `POST /api/browser/sessions/{id}/action`,
+  `DELETE /api/browser/sessions/{id}`.
+- Compose: `docview` and `browser` services (read-only, no capabilities,
+  memory / CPU limits, no published port); `browser` alone is on the new
+  `browser-egress` network. Settings: `DOCVIEW_URL`/`DOCVIEW_TOKEN`,
+  `BROWSER_URL`/`BROWSER_TOKEN`, `BROWSER_MAX_SESSIONS`, memory and CPU
+  limits.
+
+### Fixed
+
+- The E2E test server could not restart when the sample store held a
+  sub-directory.
+
+### Upgrade
+
+- Set `DOCVIEW_TOKEN` and `BROWSER_TOKEN` in `.env` (long random values), then
+  `podman compose up -d --build`: the two new images are built (about 700 MB
+  and 1 GB).
+
 ## [2.15.0] - 2026-11-10
 
 ### Added
@@ -721,7 +766,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.15.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.16.0...HEAD
+[2.16.0]: https://github.com/n36l3c7/Nik/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/n36l3c7/Nik/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/n36l3c7/Nik/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/n36l3c7/Nik/compare/v2.12.3...v2.13.0

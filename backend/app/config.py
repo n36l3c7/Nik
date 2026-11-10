@@ -132,6 +132,12 @@ class Settings:
         # Automatic threat-intelligence lookups (Settings -> Threat
         # intelligence turns them on per type). false = no background thread.
         self.ENRICHMENT_WORKER: bool = _get_bool("ENRICHMENT_WORKER", True)
+        # Previews of mail attachments: document viewer and isolated browser
+        # (docview/, browser/). Empty URL = the buttons say "not configured".
+        self.DOCVIEW_URL: str = os.getenv("DOCVIEW_URL", "").rstrip("/")
+        self.DOCVIEW_TOKEN: str = os.getenv("DOCVIEW_TOKEN", "")
+        self.BROWSER_URL: str = os.getenv("BROWSER_URL", "").rstrip("/")
+        self.BROWSER_TOKEN: str = os.getenv("BROWSER_TOKEN", "")
 
     @property
     def is_sqlite(self) -> bool:

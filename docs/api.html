@@ -211,6 +211,20 @@
               <td>Send an attachment to Malware Analysis as a sample of the incident.</td>
             </tr>
             <tr>
+              <td><code>POST /api/mails/{sha256}/attachments/{path}/preview</code></td>
+              <td>
+                The attachment's first pages as PNG, rendered by the document viewer worker (LibreOffice with macros
+                disabled, pdfium). <code>GET /api/previews/status</code> says which preview workers are configured.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/browser/sessions</code> · <code>…/{id}/action</code> · <code>DELETE …/{id}</code></td>
+              <td>
+                The isolated browser: open an HTML attachment or a link (<code>network</code> true or false, audited),
+                replay clicks, typing, keys, scrolling and navigation, get a screenshot back; close the session.
+              </td>
+            </tr>
+            <tr>
               <td><code>DELETE /api/incidents/{id}/mails/{sha256}</code></td>
               <td>Detach the message; the file is deleted once no incident references it.</td>
             </tr>
