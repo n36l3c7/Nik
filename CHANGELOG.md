@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   database, the sample store, the `.env` file and their SHA-256 sums, in a
   root-only directory; old backups are deleted after `--keep-days` (14 by
   default). README § 2.1 documents the restore.
+- **Dependency audits** in a new `Audit` workflow, on every pull request and
+  every Monday: `pip-audit` (backend, capa worker), `npm audit` and
+  `shellcheck`. **Dependabot** opens grouped monthly update pull requests
+  (at most one per ecosystem) and immediate security updates.
+
+### Security
+
+- `pyzipper` 0.4.0 (PYSEC-2026-3044): the password-protected sample zips use
+  AE-2 and no longer carry the plaintext CRC32 of the sample in the header.
 
 ## [2.11.2] - 2026-11-10
 
