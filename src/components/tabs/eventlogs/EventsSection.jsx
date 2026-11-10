@@ -8,7 +8,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, Clock, Flag, RotateCcw, ScrollText } from 'lucide-react'
 import { Badge, Button, Card, DataTable, Modal, Select } from '../../ui/index.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { EVENT_CATEGORIES } from '../../../config/eventLogs.js'
+import { guessIocType } from '../../../utils/iocs.js'
 import { formatDateTime } from '../../../utils/time.js'
 import DateTimeRangeFilter from '../browser/DateTimeRangeFilter.jsx'
 
@@ -92,7 +94,9 @@ function Details({ event }) {
       {entries.map(([key, value]) => (
         <Fragment key={key}>
           <dt className="text-fg-subtle">{key}</dt>
-          <dd className="whitespace-pre-wrap break-all text-fg">{value}</dd>
+          <dd className="whitespace-pre-wrap break-all text-fg">
+            {guessIocType(value) ? <IocValue type={guessIocType(value)} value={value} /> : value}
+          </dd>
         </Fragment>
       ))}
     </dl>

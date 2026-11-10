@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -59,6 +59,25 @@ class Incident(Base):
     updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class IocEntry(Base):
+    """One indicator seen in one incident (see ``iocs.py``).
+
+    Rebuilt from the incident document whenever its data changes; looked up by
+    ``(type, value)`` to find every incident an indicator appears in.
+    """
+
+    __tablename__ = "ioc_index"
+    __table_args__ = (Index("ix_ioc_index_type_value", "type", "value"),)
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    value: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    sources: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_seen: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    last_seen: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
 
 class AuditEntry(Base):

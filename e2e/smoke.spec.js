@@ -81,6 +81,16 @@ test('the timeline and the tail -f panel merge the events', async () => {
   await expect(tail.locator('li')).not.toHaveCount(1) // more than the cursor line
 })
 
+test('the IOCs tab gathers the indicators and shows where they were seen', async () => {
+  await page.locator('nav[aria-label="Analysis tabs"]').getByText('IOCs').click()
+  const attacker = page.getByRole('button', { name: '185.220.101.47' })
+  await expect(attacker).toBeVisible({ timeout: 20_000 })
+  await attacker.click()
+  const dialog = page.getByRole('dialog', { name: 'Where seen' })
+  await expect(dialog).toContainText('WKS-FINANCE-01')
+  await page.keyboard.press('Escape')
+})
+
 test('a sample is stored, analysed and shown with its indicators', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
   await expect(page.getByText('No samples yet')).toBeVisible()

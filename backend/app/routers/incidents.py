@@ -30,14 +30,15 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..browser_profiles import normalize_browser_data
 from ..db import SessionLocal, get_db
 from ..events import emit, emit_now
-from ..models import AuditEntry, IdempotencyRecord, Incident, Job
+from ..iocs import reindex_incident
+from ..models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
 from ..parsing.registry import apply_upload
 from ..schemas import NoteIn
 from ..security import Principal, now_iso, principal, writer_principal
@@ -250,6 +251,8 @@ def create_incident(
         existing.doc = doc
         _sync_columns(existing)
         incident = existing
+    db.flush()
+    reindex_incident(db, incident)
 
     _audit(db, caller, "incident.create", f'Created incident "{doc.get("name") or incident_id}"', incident)
     db.commit()
@@ -318,6 +321,9 @@ def patch_incident(
     row.doc = merged
     flag_modified(row, "doc")
     _sync_columns(row)
+    # Flags, notes and the suspicious window leave the indicators unchanged.
+    if "data" in partial:
+        reindex_incident(db, row)
     _audit(db, caller, "incident.update", f'Updated attributes of "{merged.get("name") or incident_id}"', row)
     db.commit()
     emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": merged.get("name")})
@@ -337,6 +343,7 @@ def delete_incident(
     if row is not None:
         name = (row.doc or {}).get("name") or incident_id
         _audit(db, caller, "incident.delete", f'Deleted incident "{name}"', row)
+        db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
         db.delete(row)
         db.commit()
         emit(db, background_tasks, "incident.deleted", {"id": incident_id, "name": name})
@@ -376,6 +383,7 @@ def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor)
         row.doc = doc
         flag_modified(row, "doc")
         _sync_columns(row)
+        reindex_incident(db, row)
         db.add(
             AuditEntry(
                 id=str(uuid.uuid4()),
@@ -472,6 +480,7 @@ async def upload_artifact(
     row.doc = doc
     flag_modified(row, "doc")
     _sync_columns(row)
+    reindex_incident(db, row)
     _audit(
         db,
         caller,

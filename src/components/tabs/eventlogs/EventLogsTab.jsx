@@ -21,10 +21,12 @@ import CoverageChart from './CoverageChart.jsx'
 import EventsSection from './EventsSection.jsx'
 import EvtxUpload from './EvtxUpload.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { EVENTLOG_COLLECTION_SCRIPT, EVENT_CHANNELS, LOGON_TYPES, getChannel } from '../../../config/eventLogs.js'
 import { getDemoEventLogData } from '../../../services/demoData.js'
 import { buildEventLogEvents, coverage, logonSessions, parseEventLogJson } from '../../../utils/eventLogs.js'
+import { guessIocType } from '../../../utils/iocs.js'
 import { computeSocStats } from '../../../utils/soc.js'
 import { formatDateTime } from '../../../utils/time.js'
 
@@ -87,7 +89,7 @@ const SESSION_COLUMNS = [
     sortable: true,
     render: (row) =>
       row.source ? (
-        <span className="font-mono text-xs text-fg">{row.source}</span>
+        <IocValue type={guessIocType(row.source)} value={row.source} className="font-mono text-xs text-fg" />
       ) : (
         <span className="text-fg-muted">—</span>
       ),

@@ -115,6 +115,28 @@
               <td>Poll an async upload job.</td>
             </tr>
             <tr>
+              <td><code>GET /api/incidents/{id}/iocs</code></td>
+              <td>
+                The incident's indicators of compromise (type, value, sources, count, first/last seen, number of other
+                incidents, allowlisted), indexed from every tab each time its data is saved.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/iocs/lookup?type=&amp;value=</code></td>
+              <td>Every incident an indicator appears in ("where seen").</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/iocs/shared</code></td>
+              <td>Indicators seen in two or more incidents, most widespread first.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/{id}/iocs/export</code></td>
+              <td>
+                <code>?format=csv|stix|misp</code>: CSV, a STIX 2.1 bundle or a MISP event; <code>types=</code> narrows
+                the types, allowlisted values are left out unless <code>allowlisted=true</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>POST /api/incidents/{id}/samples</code></td>
               <td>
                 Upload a malware sample (multipart <code>file</code>): stored by SHA-256, analysed statically, attached

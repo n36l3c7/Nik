@@ -33,6 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the command ruleset. Events join the Timeline and the `tail -f` panel.
   `POST /api/incidents/{id}/upload?tab=eventlogs` takes `.evtx` files from
   scripts too.
+- **IOC correlation**. The server indexes the indicators of every tab — IP
+  addresses, domains, URLs, e-mail addresses and MD5/SHA-1/SHA-256 digests
+  from browser hosts and downloads, command lines, endpoint records, event
+  logs and samples — in a new `ioc_index` table (migration `0011`) each time
+  an incident's data is saved; existing incidents are indexed on the first
+  start. A new **IOCs** tab lists them with the number of other incidents
+  each one appears in; clicking a value (there, in a sample's indicators or
+  in the Event Logs tab) opens **Where seen** across every analyst's
+  incidents. A shared **IOC allowlist** in Settings (private ranges, common
+  vendor and CDN domains to start) hides well-known values, and the
+  indicators export as CSV, a STIX 2.1 bundle or a MISP event. New
+  endpoints: `GET /api/incidents/{id}/iocs`, `/iocs/export`,
+  `GET /api/iocs/lookup` and `/iocs/shared`.
 - **Dependency audits** in a new `Audit` workflow, on every pull request and
   every Monday: `pip-audit` (backend, capa worker), `npm audit` and
   `shellcheck`. **Dependabot** opens grouped monthly update pull requests

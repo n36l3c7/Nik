@@ -67,6 +67,12 @@ every action attributed to a named analyst and recorded in a global audit log.
   can do mapped to MITRE ATT&CK and the Malware Behavior Catalog. All of it is
   flaggable like any other event, with links to VirusTotal and MalwareBazaar
   and a download only inside a password-protected zip.
+- **IOC correlation** — the server indexes the indicators of every tab (IP
+  addresses, domains, URLs, e-mail addresses, MD5/SHA-1/SHA-256) each time an
+  incident is saved; an **IOCs** tab lists them with the number of other
+  incidents each one appears in, any value opens **Where seen** across every
+  analyst's incidents, a shared allowlist hides well-known domains and private
+  addresses, and indicators export as CSV, STIX 2.1 or a MISP event.
 - **Super-timeline** — every timestamped event across all tabs merged into one
   chronological, filterable view, plus a collapsible `tail -f` side panel with
   the latest events on every tab.
@@ -777,7 +783,11 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET/POST /api/flirt-signatures` · `PUT/DELETE …/{id}` | FLIRT signatures (`.sig` or `.pat`, multipart `name` + `file`, up to 32 MB) the analyzer worker applies on top of rizin's bundled ones (**admin** to change; any caller may list). `PUT` takes `{ name, enabled }`. They apply from the next disassembly. |
 | `GET /api/samples/{sha256}/code/functions/{addr}` | Control-flow graph of one function: basic blocks with their instructions and `jump` / `fail` successors. |
 | `GET /api/samples/{sha256}/code/functions/{addr}/decompiled` | Pseudo-C of one function (rz-ghidra): `code` plus highlight `spans` (`[start, end, kind]`, or `[start, end, "f", address]` for a call target). Stored by the analysis (`source: "analysis"`) or decompiled on first request and kept (`source: "on-demand"`); `502` when the worker fails, `503` when none is configured. |
-| `GET /api/settings` | Read the shared detection rules / business hours. |
+| `GET /api/incidents/{id}/iocs` | The incident's indicators of compromise (`type`, `value`, `sources`, `count`, `firstSeen`, `lastSeen`, `otherIncidents`, `allowlisted`), indexed from every tab each time its data is saved. |
+| `GET /api/iocs/lookup?type=&value=` | Every incident an indicator appears in ("where seen"). `type`: ip, domain, url, email, md5, sha1, sha256. |
+| `GET /api/iocs/shared` | Indicators seen in two or more incidents, most widespread first (allowlisted values left out). |
+| `GET /api/incidents/{id}/iocs/export?format=csv\|stix\|misp` | Download the indicators as CSV, a STIX 2.1 bundle (identity, one indicator each, a report) or a MISP event (unpublished, organisation only). `types=ip,domain,…` narrows them; allowlisted values are left out unless `allowlisted=true`. Audited as `ioc.export`. |
+| `GET /api/settings` | Read the shared detection rules, business hours and IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`). `PUT` replaces them; a body without `iocAllowlist` keeps the stored list. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
 | `GET/POST/DELETE /api/keys` | API-key management (**admin**). |
@@ -957,6 +967,7 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── parsing/malware.py      # Static analysis: hashes, type, entropy, strings, IOC
 │       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
 │       ├── parsing/eventlog.py     # Windows .evtx → curated events + coverage (evtx package)
+│       ├── iocs.py                 # IOC extraction from incidents, index, allowlist, STIX/MISP
 │       ├── yara_rules.py           # YARA: built-in + admin rules compiled together, scan
 │       ├── flirt.py                # Admin FLIRT signature files (validation, store, worker paths)
 │       ├── capa_rules.py           # Admin capa rules (worker validation, store, dependencies)
@@ -990,10 +1001,11 @@ file itself to the server, because the sample *is* the evidence under study
     ├── context/
     │   ├── AuditContext.jsx        # useAudit(): global audit log via the API
     │   ├── AuthContext.jsx         # useAuth(): session auth (login/logout/me), users
-    │   ├── SettingsContext.jsx     # useSettings(): keywords + business hours (server-side);
+    │   ├── SettingsContext.jsx     # useSettings(): keywords, business hours, IOC allowlist;
     │   │                           #   useSocEngine(): memoized detection engine
-    │   └── IncidentContext.jsx     # useIncidents(): incident state, CRUD, flags, notes,
-    │                               #   export/import — optimistic model backed by the API
+    │   ├── IncidentContext.jsx     # useIncidents(): incident state, CRUD, flags, notes,
+    │   │                           #   export/import — optimistic model backed by the API
+    │   └── IocLookupContext.jsx    # useIocLookup(): "Where seen" dialog; <IocValue> link
     │
     ├── services/
     │   ├── api.js                  # The ONLY file that talks to the server (fetch wrapper)
@@ -1023,6 +1035,7 @@ file itself to the server, because the sample *is* the evidence under study
     │   ├── events.js               # buildEvents, historyEventType, redirect helpers
     │   ├── commands.js             # buildCommandEvents, extractBinary, topBinaries
     │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
+    │   ├── iocs.js                 # IOC types, source labels, guessIocType
     │   ├── eventLogs.js            # parseEventLogJson, buildEventLogEvents (event-log
     │   │                           #   ruleset), logonSessions, coverage
     │   ├── timeline.js             # buildTimelineEvents (merge all timestamped events)
@@ -1047,6 +1060,7 @@ file itself to the server, because the sample *is* the evidence under study
             │                           #   filters, widgets, bookmarks/shortcuts tables
             ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
+            ├── iocs/                   # IocsTab (indicators, cross-incident counts, export)
             ├── eventlogs/              # EventLogsTab, EvtxUpload (server-side parse + job poll),
             │                           #   CoverageChart, EventsSection
             ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
@@ -1144,6 +1158,34 @@ out. Any row can be flagged straight from the timeline.
 
 The **sidebar is resizable**: drag its right edge to widen the incident list up
 to a quarter of the window; the width is remembered per browser.
+
+The **IOCs** tab lists the incident's indicators of compromise. The server
+builds them (`backend/app/iocs.py`) whenever the incident's data is saved —
+a merge patch that only touches flags or notes leaves them alone — and keeps
+one `ioc_index` row per incident, type and value, so "where else have we seen
+this?" is one indexed query for every analyst, whoever owns the other
+incident. The sources:
+
+- browser history: the visited **hosts** (not every URL); downloads: the URL,
+  its referrer and their hosts;
+- shell commands and endpoint records: URLs, IP addresses, domains (known
+  TLDs), e-mail addresses and MD5/SHA-1/SHA-256 digests in the text;
+- event logs: address and host fields (`IpAddress`, `DestinationIp`,
+  `QueryName`…), Sysmon `Hashes`, and the indicators in command lines, script
+  blocks and service paths;
+- malware samples: the sample's hashes and the network indicators in its
+  strings.
+
+Indicators also seen in other incidents come first, in red. Clicking a value
+here, in a sample's IOC table or in the Event Logs tab opens **Where seen**:
+every incident it appears in, with the sources, count and first/last time, and
+a link to open it. Settings → **IOC allowlist** (one entry per line: a domain
+and its subdomains, an IP or CIDR network, or an exact value) starts with
+private and loopback ranges and common vendor and CDN domains; matching values
+are hidden by default and never exported. The index keeps them, so editing the
+list applies at once. Exports: CSV, a **STIX 2.1** bundle and a **MISP** event,
+for a TIP or a firewall blocklist. Incidents saved before 2.12.0 are indexed on
+the api's first start.
 
 Platform configuration lives in one sectioned **Settings** panel (opened from
 the header, or deep-linked from the sidebar's Accounts / Audit buttons):
