@@ -7,11 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.1] - 2026-11-10
+
 ### Changed
 
+- Frontend toolchain on its new major releases: **Vite 8** (Rolldown: the
+  production build takes about 1.5 s instead of 13 s, and the main bundle
+  shrinks from 427 kB to 335 kB) with `@vitejs/plugin-react` 6, **ESLint 10**
+  (its scope analysis tracks JSX, so `eslint-plugin-react` is gone) and
+  **lucide-react 1.x**. React 19.3, Tailwind 4.3.5, sql.js 1.16, elkjs 0.12.1.
+  No visible change, except that Chrome's sub-tab icon is now an aperture
+  (lucide dropped the brand logos).
+- Local development needs Node.js 22 (or 20.19+), declared in `engines`.
 - Dependabot's monthly grouped pull requests carry minor and patch releases
   only; major releases (PostgreSQL, Vite, ESLint, Node…) are planned as their
   own changes. CI builds and tests the frontend on Node 26, as the image does.
+
+### Fixed
+
+- Network errors keep the original error as their `cause`.
+- The search palette's input is focused as it opens, so keys typed right after
+  Ctrl/Cmd+K are not lost.
 
 ## [2.12.0] - 2026-11-10
 
@@ -554,7 +570,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.12.1...HEAD
+[2.12.1]: https://github.com/n36l3c7/Nik/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/n36l3c7/Nik/compare/v2.11.2...v2.12.0
 [2.11.2]: https://github.com/n36l3c7/Nik/compare/v2.11.1...v2.11.2
 [2.11.1]: https://github.com/n36l3c7/Nik/compare/v2.11.0...v2.11.1
