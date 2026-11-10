@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.3] - 2026-11-11
+
+### Changed
+
+- Backend dependencies: the minimum versions of FastAPI (0.162.2),
+  dnspython (2.9.2), publicsuffixlist (1.1.2.20261107), Pillow (13.0.0) and
+  cryptography (46.0.7) are raised to the releases already tested by CI.
+
 ## [2.18.2] - 2026-11-11
 
 ### Changed
