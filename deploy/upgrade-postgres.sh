@@ -14,7 +14,9 @@
 # The old db-data volume is left untouched (mounted read-only) for a rollback:
 # remove it after 14 days. The api and the sample store are not affected.
 # If `compose up` already ran on the new release (its db then refuses to
-# start), the old volume is dumped with a temporary PostgreSQL 16 instead.
+# start), or a previous run stopped after starting PostgreSQL 18, the old
+# volume is dumped with a temporary PostgreSQL 16 instead. Running the script
+# again is always safe.
 #
 # Settings (environment): NIK_DIR, ENGINE, BACKUP_DIR as for backup.sh.
 set -euo pipefail
@@ -56,10 +58,13 @@ row_counts() {
   done
 }
 
+# Ready = accepting TCP connections. On a new volume the image first creates
+# the database with a temporary server that listens on the Unix socket only,
+# then restarts: a socket check would catch that temporary server.
 wait_ready() {
   local db=$1
-  for _ in $(seq 1 60); do
-    if $ENGINE exec "$db" pg_isready -U nik -d nik >/dev/null 2>&1; then return 0; fi
+  for _ in $(seq 1 "${2:-60}"); do
+    if $ENGINE exec "$db" pg_isready -h 127.0.0.1 -p 5432 -U nik -d nik >/dev/null 2>&1; then return 0; fi
     sleep 2
   done
   return 1
@@ -69,14 +74,20 @@ cd "$NIK_DIR"
 grep -q 'postgres:18' docker-compose.yml || die "docker-compose.yml is not the 2.12.2 one: run git pull first"
 backup_dir=${BACKUP_DIR:-/var/backups/nik}
 
-# A db container that answers: the previous release still running (16), or an
-# upgrade already done (18). One that does not answer is the new release's,
-# refusing to start until the data is moved.
+# A db container that answers: the previous release still running (16), or
+# PostgreSQL 18 — upgraded already, or left empty by an interrupted run. One
+# that does not answer is the new release's, refusing to start until the data
+# is moved.
 db=$(container_for db)
+if [ -n "$db" ]; then wait_ready "$db" 10 || true; fi
 version=$([ -n "$db" ] && sql "$db" "SHOW server_version_num" 2>/dev/null || true)
 if [ -n "$version" ] && [ "$version" -ge 180000 ]; then
-  log "the database already runs PostgreSQL $(sql "$db" 'SHOW server_version'): nothing to do"
-  exit 0
+  if [ -n "$(sql "$db" "SELECT 1 FROM pg_tables WHERE schemaname = 'public' LIMIT 1")" ]; then
+    log "the database already runs PostgreSQL $(sql "$db" 'SHOW server_version'): nothing to do"
+    exit 0
+  fi
+  log "PostgreSQL 18 is running with an empty database (an interrupted upgrade): resuming"
+  version=""
 fi
 
 if [ -n "$version" ]; then
@@ -124,7 +135,8 @@ NIK_PG_UPGRADE=1 $COMPOSE up -d db
 new_db=$(container_for db)
 [ -n "$new_db" ] || die "PostgreSQL 18 did not start: $COMPOSE logs db"
 wait_ready "$new_db" || die "PostgreSQL 18 is not ready: $COMPOSE logs db"
-[ "$(sql "$new_db" 'SHOW server_version_num')" -ge 180000 ] || die "the new db container is not PostgreSQL 18"
+new_version=$(sql "$new_db" 'SHOW server_version_num' || true)
+[ -n "$new_version" ] && [ "$new_version" -ge 180000 ] || die "the new db container is not PostgreSQL 18"
 [ -z "$(sql "$new_db" "SELECT 1 FROM pg_tables WHERE schemaname = 'public' LIMIT 1")" ] ||
   die "the PostgreSQL 18 database is not empty: was the upgrade already run?"
 
