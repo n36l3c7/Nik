@@ -26,3 +26,12 @@ test('forensic artifacts go to their tab and source', () => {
   assert.deepEqual(route('host.json', bytes('{"format":"nik-eventlogs"')).params, { kind: 'json' })
   assert.equal(route('autoruns.csv', bytes('name,path')).tab, 'endpoint')
 })
+
+test('e-mails go to Mail Analysis; other OLE files stay samples', () => {
+  const ole = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]
+  assert.equal(route('Reset password.msg', bytes(ole)).tab, 'mail')
+  assert.equal(route('Invoice.doc', bytes(ole)).tab, 'malware')
+  assert.equal(route('phish.eml', bytes('Received: from x')).tab, 'mail')
+  assert.equal(route('message', bytes('Return-Path: <a@b.c>')).tab, 'mail')
+  assert.equal(route('notes', bytes('hello')), null)
+})

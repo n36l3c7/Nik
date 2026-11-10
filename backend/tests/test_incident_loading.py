@@ -32,6 +32,7 @@ def test_summary_view_includes_os_without_document_body(admin: TestClient):
             "os": "macos",
             "ticketId": "",
             "severity": None,
+            "hasMail": False,
             "createdAt": "",
             "updatedAt": "",
         }

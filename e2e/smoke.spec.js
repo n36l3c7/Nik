@@ -309,6 +309,70 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   }
 })
 
+test('a reported e-mail is triaged: verdict, sandboxed body, attachment sent to Malware Analysis', async () => {
+  const exe = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200)]).toString('base64')
+  const eml = [
+    'Received: from mail.evil.example (mail.evil.example [185.220.101.47]) by mx.contoso.example; Tue, 10 Nov 2026 09:00:02 +0100',
+    'From: "PayPal Service" <service@paypai.example>',
+    'Reply-To: refunds@freemail.example',
+    'To: m.rossi@contoso.example',
+    'Subject: Your account will be suspended',
+    'Date: Tue, 10 Nov 2026 08:59:50 +0100',
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="b1"',
+    '',
+    '--b1',
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    '<p>Verify your account immediately.</p><p style="font-size:0">filler</p>' +
+      '<a href="https://login-paypa1.top/x">https://www.paypal.com/signin</a><script>alert(1)</script>',
+    '--b1',
+    'Content-Type: application/octet-stream; name="invoice.pdf.exe"',
+    'Content-Disposition: attachment; filename="invoice.pdf.exe"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    exe,
+    '--b1--',
+    '',
+  ].join('\r\n')
+  const transfer = await page.evaluateHandle((text) => {
+    const data = new DataTransfer()
+    data.items.add(new File([text], 'reported.eml', { type: 'message/rfc822' }))
+    return data
+  }, eml)
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toContainText('E-mail (.eml)')
+  await dialog.getByRole('button', { name: 'Import' }).click()
+  await expect(page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')).toContainText('Mail Analysis')
+  await expect(page.getByRole('list', { name: 'Messages' })).toContainText('Your account will be suspended', {
+    timeout: 60_000,
+  })
+  await expect(page.getByText('the sender domain paypai.example imitates paypal')).toBeVisible()
+  await expect(page.getByText(/^phishing · \d+$/)).toBeVisible()
+  await expect(page.locator('aside nav[aria-label="Incidents"]').getByLabel('Holds e-mails')).toBeVisible()
+  // The body is drawn in a frame that runs nothing and follows no link.
+  await page.getByRole('tab', { name: 'Body' }).click()
+  const frame = page.locator('iframe[title="Message body (sandboxed)"]')
+  await expect(frame).toHaveAttribute('sandbox', '')
+  await expect(page.getByText('1 hidden')).toBeVisible()
+  const body = page.frameLocator('iframe[title="Message body (sandboxed)"]')
+  await expect(body.getByText('Verify your account immediately.')).toBeVisible()
+  await expect(body.locator('script')).toHaveCount(0)
+  await expect(body.locator('a[href]')).toHaveCount(0)
+  await page.getByRole('tab', { name: /^Links/ }).click()
+  await expect(page.locator('tbody tr', { hasText: 'login-paypa1.top' })).toContainText('text ≠ target')
+  await page.getByRole('tab', { name: /^Attachments/ }).click()
+  await expect(page.getByText('double extension .pdf.exe')).toBeVisible()
+  await page.getByRole('button', { name: 'Hex' }).click()
+  await expect(page.getByText('00000000  4d 5a 00 00')).toBeVisible()
+  await page.getByRole('button', { name: 'Send to Malware Analysis' }).click()
+  const toast = page.getByRole('status').filter({ hasText: 'invoice.pdf.exe is now a sample of this incident.' })
+  await toast.getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Samples' })).toContainText('invoice.pdf.exe')
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

@@ -67,6 +67,21 @@ every action attributed to a named analyst and recorded in a global audit log.
   can do mapped to MITRE ATT&CK and the Malware Behavior Catalog. All of it is
   flaggable like any other event, with links to VirusTotal and MalwareBazaar
   and a download only inside a password-protected zip.
+- **Mail analysis** — phishing triage of reported messages (`.eml`, or `.msg`
+  saved from Outlook): the route the message took (Received headers with
+  delays and clock anomalies, the sending server), SPF, DKIM and DMARC checked
+  by Nik through DNS next to what your own mail servers reported, sender
+  mismatches (display name, Reply-To, Return-Path, look-alike domains), every
+  link unwrapped from Safe Links / Proofpoint / Google and judged (text that
+  shows another site, look-alikes and punycode, shorteners, throwaway TLDs,
+  forms), the body in a **sandboxed frame** that runs nothing and loads
+  nothing until asked (hidden text revealed, tracking pixels blocked), and
+  every attachment by its real type: macros (olevba), encrypted archives with
+  the password found in the text, executables in disguise, QR codes,
+  calendar links, attached messages analysed in turn. The evidence adds up to
+  a score and a verdict (phishing, suspicious, no strong signs), each finding
+  explained; attachments open in a hex view, download in a protected zip or
+  go to Malware Analysis in one click.
 - **IOC correlation** — the server indexes the indicators of every tab (IP
   addresses, domains, URLs, e-mail addresses, MD5/SHA-1/SHA-256) each time an
   incident is saved; an **IOCs** tab lists them with the number of other
@@ -80,7 +95,7 @@ every action attributed to a named analyst and recorded in a global audit log.
 - **Incident report** — built by the server as a printable HTML page or a
   **PDF** (also through the API): executive summary and key facts, flagged
   events, MITRE ATT&CK techniques from capa, YARA and the SOC rules,
-  indicators, samples, event-log coverage, notes and an evidence appendix
+  indicators, samples, e-mails, event-log coverage, notes and an evidence appendix
   with the SHA-256 of every imported file; TLP classification, English or
   Italian, the organisation's name and logo from Settings.
 - **Super-timeline** — every timestamped event across all tabs merged into one
@@ -97,7 +112,7 @@ every action attributed to a named analyst and recorded in a global audit log.
   indicators (where seen, search, copy, copy defanged, allowlist), on event
   rows (flag, comment, copy, show in the timeline) and on incidents (open,
   report, export, copy link, delete); a file dropped anywhere opens a dialog
-  that recognises it (executables by their header, `.evtx`, browser
+  that recognises it (executables by their header, e-mails, `.evtx`, browser
   databases, shell histories…) and imports it into the open incident or a new
   one.
 - **Full backup** — admins can export the entire platform (all incidents,
@@ -334,7 +349,7 @@ is no `tailwind.config.js` and no extra setup step.
 | `COOKIE_SECURE` | `true` | `Secure` flag on the session cookie (HTTPS only). Set `false` only for plain-HTTP local dev. |
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
 | `SAMPLE_STORE` | `./samples` | Directory of the raw malware samples (one file per SHA-256, never executed). Exclude it from the server's antivirus and include it in backups. |
-| `SAMPLE_MAX_MB` | `100` | Per-file size limit for sample uploads. |
+| `SAMPLE_MAX_MB` | `100` | Per-file size limit for sample and e-mail uploads. |
 | `YARA_RULES` | `app/yara` | Directory of the built-in YARA rule files (`*.yar`); admin rules live in the database. |
 | `ANALYZER_URL` | — | Base URL of the rizin worker (e.g. `http://analyzer:8700`). Empty: the Code view reports "not configured". |
 | `ANALYZER_TOKEN` | — | Shared secret sent to the worker in `X-Analyzer-Token`; the worker refuses to start without one. |
@@ -354,7 +369,7 @@ is no `tailwind.config.js` and no extra setup step.
 | `WEB_TLS_PORT` | `8443` | Host port the UI is published on (HTTPS). |
 | `TLS_HOSTNAME` | `localhost` | Name embedded in the auto-generated certificate (CN + SAN) — set it to what users type in the browser. |
 | `SESSION_TTL_HOURS` | `12` | Session lifetime. |
-| `SAMPLE_MAX_MB` | `100` | Per-file size limit for malware samples; the files live on the `sample-store` volume. |
+| `SAMPLE_MAX_MB` | `100` | Per-file size limit for malware samples and e-mails; the files live on the `sample-store` volume. |
 | `ANALYZER_TOKEN` | — | Shared secret between the `api` and `analyzer` services; set a long random value. |
 | `ANALYZER_TIMEOUT` | `600` | Per-sample time limit of the rizin worker, in seconds. |
 | `ANALYZER_DECOMPILE_SECONDS` | `300` | Share of that time the analysis spends decompiling functions up front; the rest are decompiled when first opened. |
@@ -855,7 +870,7 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/incidents` | List incidents. Query: `limit`/`offset`, `q` (name, host, user or ticket)/`host`/`username`, `view=summary` (light rows: id, name, host, username, os, ticketId, severity, timestamps — no document body). `X-Total-Count` header. |
+| `GET /api/incidents` | List incidents. Query: `limit`/`offset`, `q` (name, host, user or ticket)/`host`/`username`, `view=summary` (light rows: id, name, host, username, os, ticketId, severity, hasMail, timestamps — no document body). `X-Total-Count` header. |
 | `GET /api/incidents/{id}` | One incident (returns an `ETag`). Send `If-None-Match: <ETag>` to get `304` (no body) while your copy is current. |
 | `POST /api/incidents` | Create/upsert (id generated if omitted). |
 | `PATCH /api/incidents/{id}` | `application/json`: replace the given top-level fields. `application/merge-patch+json`: apply an [RFC 7396](https://www.rfc-editor.org/rfc/rfc7396) merge patch (nested merge, `null` deletes). Honors `If-Match` (→ `412` on a stale version). |
@@ -868,6 +883,13 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/samples/{sha256}/download` | The sample inside an AES-256 zip: `?password=` (default `infected`), `?name=` for the inner file name. Audited. |
 | `DELETE /api/incidents/{id}/samples/{sha256}` | Detach the sample; the file is deleted once no incident references it. |
 | `POST /api/samples/{sha256}/reanalyse` | Run the current analysis engine and YARA rules again on the stored file. |
+| `POST /api/incidents/{id}/mails` | Analyse an e-mail (multipart `file`, `.eml` or Outlook `.msg`, up to `SAMPLE_MAX_MB`) and attach it to the incident: route, SPF/DKIM/DMARC (DNS) and the servers' reports, sender, links, body, attachments, `score` and `verdict` (`phishing` ≥ 70, `suspicious` 40–69, `clean`). A known file reuses its analysis. `422` for a file that is not an e-mail. |
+| `GET /api/mails/{sha256}` · `POST …/reanalyse` | The full analysis and the incidents holding the message; `reanalyse` repeats it (DNS checks, Settings → Mail). |
+| `GET /api/mails/{sha256}/source` | The `.eml` as text (`available: false` for a `.msg`). |
+| `GET /api/mails/{sha256}/attachments/{path}/bytes?offset=&length=` | A slice (≤ 64 KiB, base64) of an attachment for the hex view. `path` is its index, `2.0` for the first attachment of the attached message at index 2. |
+| `GET /api/mails/{sha256}/attachments/{path}/download?password=` | The attachment inside an AES-256 zip (default `infected`). Audited. |
+| `POST /api/incidents/{id}/mails/{sha256}/attachments/{path}/sample` | Send an attachment to Malware Analysis as a sample of the incident. |
+| `DELETE /api/incidents/{id}/mails/{sha256}` | Detach the message; the file is deleted once no incident references it. |
 | `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
 | `GET/POST /api/samples/{sha256}/code` | Disassembly by the rizin worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error`) and, when done, the engine, binary info and functions with their calls; `POST` (re)starts it (`202`, `503` when no worker is configured). |
 | `GET/POST /api/samples/{sha256}/capabilities` | capa on the capa worker: `GET` returns the state (`none` / `queued` / `running` / `done` / `error` / `unsupported`) and, when done, the engine and the capabilities with their namespace, scope, ATT&CK and MBC mappings and addresses; `POST` (re)starts it (`202`; `503` when no worker is configured, `422` for a file type capa does not read). |
@@ -880,9 +902,9 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/iocs/lookup?type=&value=` | Every incident an indicator appears in ("where seen"). `type`: ip, domain, url, email, md5, sha1, sha256. |
 | `GET /api/iocs/shared` | Indicators seen in two or more incidents, most widespread first (allowlisted values left out). |
 | `GET /api/incidents/{id}/iocs/export?format=csv\|stix\|misp` | Download the indicators as CSV, a STIX 2.1 bundle (identity, one indicator each, a report) or a MISP event (unpublished, organisation only). `types=ip,domain,…` narrows them; allowlisted values are left out unless `allowlisted=true`. Audited as `ioc.export`. |
-| `POST /api/incidents/{id}/report` | The incident report, as a PDF (default) or HTML. Body (all optional): `format` (`pdf`/`html`), `lang` (`en`/`it`), `tlp` (`clear`, `green`, `amber`, `amber+strict`, `red`), `sections` (summary, timeline, attack, iocs, samples, eventlogs, notes, evidence), `executiveSummary`, `detections` (`[{ id, label, severity, count, attack: [technique ids] }]`, the SOC rule hits the app computes). Missing options come from the incident's saved `report` settings, then the defaults (English, TLP:AMBER, every section). Audited as `report.generate`. |
+| `POST /api/incidents/{id}/report` | The incident report, as a PDF (default) or HTML. Body (all optional): `format` (`pdf`/`html`), `lang` (`en`/`it`), `tlp` (`clear`, `green`, `amber`, `amber+strict`, `red`), `sections` (summary, timeline, attack, iocs, samples, mails, eventlogs, notes, evidence), `executiveSummary`, `detections` (`[{ id, label, severity, count, attack: [technique ids] }]`, the SOC rule hits the app computes). Missing options come from the incident's saved `report` settings, then the defaults (English, TLP:AMBER, every section). Audited as `report.generate`. |
 | `GET /api/search?q=` | Global search (at least 2 characters): incidents by name, host or user; indicators from every incident (3 characters or more) with the number of incidents; samples by hash prefix (6 hex characters or more) or file type. `limit` per group (default 8). |
-| `GET /api/settings` | Read the shared detection rules, business hours, IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`) and report header (`report: { orgName, logo }`, the logo a PNG/JPEG/SVG `data:` URI up to 256 KB). `PUT` replaces them; a body without `iocAllowlist` or `report` keeps the stored value. |
+| `GET /api/settings` | Read the shared detection rules, business hours, IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`) report header (`report: { orgName, logo }`, the logo a PNG/JPEG/SVG `data:` URI up to 256 KB) and Mail Analysis settings (`mail: { orgDomains, trustedAuthServers }`). `PUT` replaces them; a body without `iocAllowlist`, `report` or `mail` keeps the stored value. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
 | `GET/POST/DELETE /api/keys` | API-key management (**admin**). |
@@ -1058,7 +1080,10 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── schemas.py              # Pydantic request/response models
 │       ├── security.py             # bcrypt hashing, session-auth dependencies
 │       ├── defaults.py             # Factory defaults for detection settings
-│       ├── samples.py              # Malware sample store (files by SHA-256) + protected zip
+│       ├── samples.py              # Sample store (files by SHA-256, e-mails as .mail) + protected zip
+│       ├── mail/                   # Mail analysis: parse (.eml/.msg, LZFu RTF), headers (route,
+│       │                           #   sender, Authentication-Results), verify (SPF/DKIM/DMARC),
+│       │                           #   links, content (nh3, QR, pressure), attachments, analyze
 │       ├── parsing/malware.py      # Static analysis: hashes, type, entropy, strings, IOC
 │       ├── parsing/executables.py  # PE (pefile), ELF and Mach-O structure, imphash
 │       ├── parsing/eventlog.py     # Windows .evtx → curated events + coverage (evtx package)
@@ -1072,7 +1097,7 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── capa.py                 # capa worker client + capabilities job (one at a time)
 │       ├── yara/                   # Built-in YARA rule files (*.yar)
 │       └── routers/                # auth, users, incidents, audit, settings, backup, samples,
-│                                   #   annotations, yara_rules, flirt, capa_rules
+│                                   #   mails, annotations, yara_rules, flirt, capa_rules
 └── src/
     ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
     │                               #   > SettingsProvider > IncidentProvider > App
@@ -1177,6 +1202,8 @@ file itself to the server, because the sample *is* the evidence under study
             │                           #   CapabilitiesSection, useWorkerJob (polled worker state),
             │                           #   DownloadDialog; code/ CodeSection, GraphCanvas (ELK),
             │                           #   DecompiledView, StartHere, FunctionNotes, hooks
+            ├── mail/                   # MailAnalysisTab, MailDetail, MailHeaders, MailBody (sandboxed
+            │                           #   frame), MailLinks, MailAttachments, HexView
             └── timeline/               # TimelineTab (the super-timeline)
 ```
 
@@ -1319,7 +1346,9 @@ incident. The sources:
   `QueryName`…), Sysmon `Hashes`, and the indicators in command lines, script
   blocks and service paths;
 - malware samples: the sample's hashes and the network indicators in its
-  strings.
+  strings;
+- e-mails: sender addresses and domain, sending IP, link targets and hosts,
+  attachment hashes, QR-code and invitation links (`mail:<file name>`).
 
 Indicators also seen in other incidents come first, in red. Clicking a value
 here, in a sample's IOC table or in the Event Logs tab opens **Where seen**:
@@ -1507,6 +1536,10 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
         },
       },
     },
+    mail: {                                // analysed e-mails: light references, the analysis
+      messages: [ { sha256, fileName, format: 'eml' | 'msg', size, subject, from, date,
+                    verdict: 'phishing' | 'suspicious' | 'clean', score, importedAt, importedBy } ],
+    },                                     //   is fetched from GET /api/mails/{sha256}
   },
 
   // Entries the analyst flagged as malicious (keyed by the event id):
@@ -1800,6 +1833,65 @@ worker with each analysis, as extra `-r` rule paths next to the bundled set.
 A rule another enabled rule matches cannot be renamed, disabled or deleted.
 Their matches carry a **custom** badge in the Capabilities view; new or
 changed rules apply from the next analysis (Re-analyse).
+
+### 3.8 Mail analysis
+
+The **Mail Analysis** tab triages reported messages. Like samples, the file
+goes to the server once: `POST /api/incidents/{id}/mails` stores it in the
+sample store as `<sha256>.mail` (read-only), analyses it
+(`app/mail/analyze.py`) and keeps the result in the `mails` table; the
+incident gets a light reference under `data.mail.messages` and the
+`incidents.has_mail` column (mirrored, for the mail icon in the sidebar).
+Nothing in an attachment is opened by the program it is meant for.
+
+- **Parsing** (`mail/parse.py`): `.eml` with the standard library; `.msg`
+  (an OLE compound file of MAPI properties) with `olefile`: the original
+  Internet headers when Outlook kept them, the bodies (Outlook's compressed
+  RTF is decompressed, MS-OXRTFCP), the attachments and attached messages
+  (parsed in turn, three levels deep).
+- **Headers** (`mail/headers.py`): the `Received` chain in travel order with
+  the delay of each hop and clocks going back; the sending server is the
+  first public IP that is not one of your servers. Authentication-Results
+  (and ARC, Received-SPF) are read as written, but only those of your own
+  servers (**Settings → Mail analysis**) are believed: anyone can put such a
+  header in a message. A header without an authserv-id (Exchange Online) is
+  credited to the server that received the message last.
+- **Authentication** (`mail/verify.py`): DKIM signatures verified with
+  `dkimpy`, SPF of the sending IP with `pyspf`, DMARC policy and alignment
+  (relaxed/strict, organisational domain from the bundled Public Suffix List)
+  with `dnspython`. The server needs DNS; each lookup times out after 3 s and
+  a failure reads `temperror`, never a pass. These say what the DNS says
+  *now* (a rotated DKIM key fails), so the servers' verdicts are shown next
+  to them. A `.msg` keeps no original body: its DKIM cannot be checked.
+- **Links** (`mail/links.py`): anchors, forms and URLs in the text, unwrapped
+  from Safe Links, Proofpoint (v1–v3), Google, Facebook and Barracuda
+  redirects; look-alikes of well-known brands (Italian banks and public
+  services included) and of your own domains are found by folding
+  confusable characters and comparing edit distance, so punycode and
+  `rn`→`m` tricks show.
+- **Body** (`mail/content.py`): the HTML is cleaned with `nh3` (no scripts,
+  handlers, frames, objects or forms), inline `cid:` images become `data:`
+  URIs, hidden text is revealed. The browser shows it in an
+  `<iframe sandbox="">` (no scripts, no same-origin, no navigation of the
+  app) whose Content-Security-Policy refuses every request; links lose their
+  target (shown as a tooltip) and remote images load only after a warning,
+  tracking pixels never. Urgency, payment, credential and secrecy phrases
+  are listed (English and Italian).
+- **Attachments** (`mail/attachments.py`): type from the magic bytes against
+  the extension, double extensions and right-to-left tricks, VBA/XLM macros
+  (`oletools`), zip listings (the password is looked for in the text and
+  tried; the archive is never extracted to disk), PDF actions, QR codes in
+  images (`zxing-cpp`), calendar invitations.
+- **Verdict**: each finding weighs a fixed number of points (e.g. a
+  look-alike sender domain 40, DMARC failing 30, a password-protected archive
+  35, urgency 8); the score is capped at 100. It is an aid to triage, not a
+  proof: a clean score means nothing stood out.
+
+The message's indicators (sender addresses and domain, sending IP, link
+targets and hosts, attachment hashes, QR and invitation links) go into the
+IOC index as `mail:<file name>`; the timeline shows each message at the time
+it was sent, high when the verdict is phishing; the report has an **E-mails**
+section.
 
 ---
 

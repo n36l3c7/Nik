@@ -3,6 +3,7 @@ import {
   Bug,
   Crosshair,
   LayoutDashboard,
+  Mail,
   Globe,
   HardDrive,
   ListTree,
@@ -38,6 +39,7 @@ const CommandHistoryTab = lazy(() => import('../components/tabs/commands/Command
 const EndpointArtifactsTab = lazy(() => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'))
 const EventLogsTab = lazy(() => import('../components/tabs/eventlogs/EventLogsTab.jsx'))
 const MalwareAnalysisTab = lazy(() => import('../components/tabs/malware/MalwareAnalysisTab.jsx'))
+const MailAnalysisTab = lazy(() => import('../components/tabs/mail/MailAnalysisTab.jsx'))
 const IocsTab = lazy(() => import('../components/tabs/iocs/IocsTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkLogsTab = lazy(() => import('../components/tabs/NetworkLogsTab.jsx'))
@@ -117,6 +119,20 @@ export const ANALYSIS_TABS = [
     // sample from GET /api/samples/{sha256}.
     defaultData: {
       samples: [],
+    },
+  },
+  {
+    id: 'mail',
+    label: 'Mail Analysis',
+    icon: Mail,
+    component: MailAnalysisTab,
+    dataKey: 'mail',
+    // E-mails live on the server (sample store + `mails` table); the incident
+    // keeps light references: [{ sha256, fileName, subject, from, date,
+    // verdict, score, importedAt, … }]. The analysis is fetched per message
+    // from GET /api/mails/{sha256}.
+    defaultData: {
+      messages: [],
     },
   },
   {

@@ -99,4 +99,6 @@ def default_settings_doc() -> dict[str, Any]:
         "iocAllowlist": list(DEFAULT_ALLOWLIST),
         # Incident report header: organisation name and logo (a data: URI).
         "report": {"orgName": "", "logo": ""},
+        # Mail Analysis: own domains and trusted Authentication-Results servers.
+        "mail": {"orgDomains": [], "trustedAuthServers": []},
     }

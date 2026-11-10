@@ -41,6 +41,8 @@ export function sourceLabel(source) {
       return `Event log · ${getChannel(id)?.short ?? id}`
     case 'sample':
       return `Sample · ${id}`
+    case 'mail':
+      return `Mail · ${id}`
     default:
       return String(source ?? '')
   }

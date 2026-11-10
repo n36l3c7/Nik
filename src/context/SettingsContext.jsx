@@ -25,6 +25,9 @@ import { useAuth } from './AuthContext.jsx'
  *                   list with an empty one (the server keeps it on null).
  *  - report:        { orgName, logo } printed on incident reports (logo: a
  *                   data: URI); null until loaded, for the same reason.
+ *  - mail:          { orgDomains, trustedAuthServers } for Mail Analysis
+ *                   (your own domains; servers whose Authentication-Results
+ *                   can be believed); null until loaded.
  *
  * The factory defaults live in config/detectionRules.js. On mount the provider
  * starts from those defaults; once authenticated it loads the shared settings
@@ -58,6 +61,7 @@ function factorySettings() {
     iocAllowlist: null,
     iocAllowlistDefault: [],
     report: null,
+    mail: null,
   }
 }
 
@@ -72,6 +76,10 @@ function normalizeSettings(doc) {
     iocAllowlist: Array.isArray(doc?.iocAllowlist) ? doc.iocAllowlist : null,
     iocAllowlistDefault: Array.isArray(doc?.iocAllowlistDefault) ? doc.iocAllowlistDefault : [],
     report: doc?.report && typeof doc.report === 'object' ? { orgName: '', logo: '', ...doc.report } : null,
+    mail:
+      doc?.mail && typeof doc.mail === 'object'
+        ? { orgDomains: doc.mail.orgDomains ?? [], trustedAuthServers: doc.mail.trustedAuthServers ?? [] }
+        : null,
   }
 }
 
@@ -179,6 +187,20 @@ export function SettingsProvider({ children }) {
     setSettings((prev) => ({ ...prev, report: { orgName: '', logo: '', ...(prev.report ?? {}), ...patch } }))
   }, [])
 
+  /** Replaces the Mail Analysis settings (own domains, trusted servers). */
+  const setMailSettings = useCallback((patch) => {
+    const clean = (list) => [
+      ...new Set((list ?? []).map((d) => d.trim().toLowerCase().replace(/\.$/, '')).filter(Boolean)),
+    ]
+    setSettings((prev) => {
+      const next = { orgDomains: [], trustedAuthServers: [], ...(prev.mail ?? {}), ...patch }
+      return {
+        ...prev,
+        mail: { orgDomains: clean(next.orgDomains), trustedAuthServers: clean(next.trustedAuthServers) },
+      }
+    })
+  }, [])
+
   const value = useMemo(
     () => ({
       keywords: settings.keywords,
@@ -186,6 +208,7 @@ export function SettingsProvider({ children }) {
       iocAllowlist: settings.iocAllowlist,
       iocAllowlistDefault: settings.iocAllowlistDefault,
       reportBranding: settings.report,
+      mailSettings: settings.mail,
       addKeyword,
       updateKeyword,
       removeKeyword,
@@ -193,6 +216,7 @@ export function SettingsProvider({ children }) {
       setBusinessHours,
       setIocAllowlist,
       setReportBranding,
+      setMailSettings,
     }),
     [
       settings,
@@ -203,6 +227,7 @@ export function SettingsProvider({ children }) {
       setBusinessHours,
       setIocAllowlist,
       setReportBranding,
+      setMailSettings,
     ],
   )
 

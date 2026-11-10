@@ -37,6 +37,7 @@ const SOURCE_FILTER_OPTIONS = [
   { value: 'endpoint', label: 'Endpoint' },
   { value: 'eventlog', label: 'Event logs' },
   { value: 'sample', label: 'Samples' },
+  { value: 'mail', label: 'E-mails' },
 ]
 
 const ROW_SEVERITY_CLASSES = {

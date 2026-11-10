@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -60,6 +60,9 @@ class Incident(Base):
     # analysts' severity tag (low/medium/high/critical, or empty).
     ticket_id: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     severity: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    # The incident holds analysed e-mails (data.mail.messages): the sidebar
+    # shows a mail icon without reading documents.
+    has_mail: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -117,6 +120,27 @@ class Sample(Base):
     type_id: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
     type_label: Mapped[str] = mapped_column(String, nullable=False, default="")
     entropy: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    analysis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class Mail(Base):
+    """An analysed e-mail (``.eml`` / ``.msg``): the file sits in the sample
+    store as ``<sha256>.mail``; ``analysis`` is ``mail.analyze.analyse_mail``'s
+    result. One row per distinct file; incidents reference it under
+    ``data.mail.messages``."""
+
+    __tablename__ = "mails"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    format: Mapped[str] = mapped_column(String, nullable=False, default="eml")
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    subject: Mapped[str] = mapped_column(String, nullable=False, default="")
+    sender: Mapped[str] = mapped_column(String, nullable=False, default="")
+    sent_at: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    verdict: Mapped[str] = mapped_column(String, nullable=False, default="clean")
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     analysis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

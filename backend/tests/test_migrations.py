@@ -102,3 +102,25 @@ def test_migration_0013_mirrors_ticket_and_severity(tmp_path, monkeypatch):
     command.downgrade(cfg, "0012_search_trigram_indexes")
     with engine.connect() as conn:
         assert "ticket_id" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}
+
+
+def test_migration_0014_adds_mails_and_has_mail(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO incidents VALUES ('a', '{}')"))
+
+    import app.db
+
+    monkeypatch.setattr(app.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0013_incident_ticket_severity")
+    command.upgrade(cfg, "0014_mails")
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT has_mail FROM incidents")).scalar() in (0, False)
+        assert "mails" in sa.inspect(conn).get_table_names()
+    command.downgrade(cfg, "0013_incident_ticket_severity")
+    with engine.connect() as conn:
+        assert "mails" not in sa.inspect(conn).get_table_names()
+        assert "has_mail" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}

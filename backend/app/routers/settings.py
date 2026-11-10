@@ -1,7 +1,8 @@
 """Shared (global) settings routes.
 
-A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist, report }``
-(``report``: the organisation name and logo printed on incident reports). When it has never
+A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist, report, mail }``
+(``report``: the organisation name and logo printed on incident reports;
+``mail``: own domains and trusted mail servers for Mail Analysis). When it has never
 been written, the factory defaults from ``defaults.py`` are returned.
 """
 
@@ -59,6 +60,14 @@ def put_settings(
             else current["iocAllowlist"]
         ),
         "report": body.report.model_dump() if body.report is not None else current["report"],
+        "mail": (
+            {
+                key: sorted({d.strip().lower().strip(".") for d in getattr(body.mail, key) if d.strip(" .")})
+                for key in ("orgDomains", "trustedAuthServers")
+            }
+            if body.mail is not None
+            else current["mail"]
+        ),
     }
     row = db.get(Setting, SETTINGS_ID)
     if row is None:

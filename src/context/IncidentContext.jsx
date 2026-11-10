@@ -259,6 +259,7 @@ function toSummary(incident) {
     os: incident.os,
     ticketId: incident.ticketId ?? '',
     severity: incident.severity ?? null,
+    hasMail: (incident.data?.mail?.messages?.length ?? 0) > 0,
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt,
   }
@@ -278,6 +279,7 @@ function normalizeSummary(raw) {
     os: normalizeOs(raw.os),
     ticketId: typeof raw.ticketId === 'string' ? raw.ticketId : '',
     severity: normalizeSeverity(raw.severity),
+    hasMail: raw.hasMail === true,
     createdAt: raw.createdAt ?? '',
     updatedAt: raw.updatedAt ?? '',
   }
@@ -1011,6 +1013,32 @@ export function IncidentProvider({ children }) {
     [commit],
   )
 
+  /** Attach an analysed e-mail's reference (already stored by the server). */
+  const attachMail = useCallback(
+    (incidentId, ref) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      const messages = prev.data.mail?.messages ?? []
+      if (messages.some((m) => m.sha256 === ref.sha256)) return
+      const data = { ...prev.data, mail: { ...(prev.data.mail ?? {}), messages: [...messages, ref] } }
+      commit(incidentId, (i) => ({ ...i, updatedAt: ref.importedAt ?? nowIso(), data }), { local: true })
+    },
+    [commit],
+  )
+
+  /** Detach an e-mail: the server removes the reference (and the file, when unused). */
+  const detachMail = useCallback(
+    async (incidentId, sha256) => {
+      const prev = find(incidentId)
+      if (!prev) return
+      await api.del(`/incidents/${encodeURIComponent(incidentId)}/mails/${sha256}`)
+      const messages = (prev.data.mail?.messages ?? []).filter((m) => m.sha256 !== sha256)
+      const data = { ...prev.data, mail: { ...(prev.data.mail ?? {}), messages } }
+      commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), data }), { local: true })
+    },
+    [commit],
+  )
+
   const toggleFlag = useCallback(
     (incidentId, flaggable) => {
       const incident = find(incidentId)
@@ -1209,6 +1237,8 @@ export function IncidentProvider({ children }) {
     clearArtifactCategory,
     attachSample,
     detachSample,
+    attachMail,
+    detachMail,
     toggleFlag,
     addFlagComment,
     removeFlagComment,

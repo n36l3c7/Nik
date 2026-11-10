@@ -25,7 +25,7 @@ from typing import Any
 for _noisy in ("weasyprint", "weasyprint.progress", "fontTools"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
-SECTIONS = ("summary", "timeline", "attack", "iocs", "samples", "eventlogs", "notes", "evidence")
+SECTIONS = ("summary", "timeline", "attack", "iocs", "samples", "mails", "eventlogs", "notes", "evidence")
 TLP_LEVELS = ("clear", "green", "amber", "amber+strict", "red")
 LANGS = ("en", "it")
 MAX_IOCS = 500
@@ -125,6 +125,12 @@ T = {
         "yara": "YARA",
         "capabilities": "capa",
         "no_samples": "No sample was analysed.",
+        "mails": "E-mails",
+        "message": "Message",
+        "verdict": "Verdict",
+        "findings": "Main findings",
+        "no_mails": "No e-mail was analysed.",
+        "verdicts": {"phishing": "phishing", "suspicious": "suspicious", "clean": "no strong signs"},
         "eventlogs": "Windows event logs",
         "channel": "Channel",
         "covers": "Covers",
@@ -189,6 +195,12 @@ T = {
         "yara": "YARA",
         "capabilities": "capa",
         "no_samples": "Nessun campione analizzato.",
+        "mails": "E-mail",
+        "message": "Messaggio",
+        "verdict": "Verdetto",
+        "findings": "Elementi principali",
+        "no_mails": "Nessuna e-mail analizzata.",
+        "verdicts": {"phishing": "phishing", "suspicious": "sospetta", "clean": "nessun segnale forte"},
         "eventlogs": "Registri eventi Windows",
         "channel": "Canale",
         "covers": "Copre",
@@ -239,7 +251,13 @@ def _size(n: Any) -> str:
     return str(n)
 
 
-_SOURCE_KINDS = {"browser": "Browser", "commands": "Commands", "endpoint": "Endpoint", "eventlog": "Event log"}
+_SOURCE_KINDS = {
+    "browser": "Browser",
+    "commands": "Commands",
+    "endpoint": "Endpoint",
+    "eventlog": "Event log",
+    "mail": "Mail",
+}
 
 
 def _source(source: str) -> str:
@@ -334,6 +352,19 @@ def evidence(doc: dict) -> list[dict[str, Any]]:
             add("Endpoint", f"{category_id} · {source}", (slot or {}).get("meta"))
     for channel, slot in ((data.get("eventlogs") or {}).get("channels") or {}).items():
         add("Event logs", channel, (slot or {}).get("meta"))
+    for ref in (data.get("mail") or {}).get("messages") or []:
+        if isinstance(ref, dict):
+            rows.append(
+                {
+                    "tab": "Mail",
+                    "source": ref.get("subject") or "",
+                    "fileName": ref.get("fileName"),
+                    "format": ref.get("format", "eml"),
+                    "rows": None,
+                    "importedAt": ref.get("importedAt"),
+                    "sha256": ref.get("sha256", ""),
+                }
+            )
     for ref in (data.get("malware") or {}).get("samples") or []:
         if isinstance(ref, dict):
             rows.append(
@@ -409,6 +440,7 @@ def build_html(
     detections: list[dict[str, Any]] | None = None,
     iocs: list[dict[str, Any]] | None = None,
     samples: list[dict[str, Any]] | None = None,
+    mails: list[dict[str, Any]] | None = None,
     branding: dict[str, Any] | None = None,
     generated_by: str = "",
     generated_at: str = "",
@@ -556,6 +588,27 @@ def build_html(
             )
         else:
             out.append(f'<p class="muted">{esc(t["no_samples"])}</p>')
+
+    if "mails" in wanted:
+        out.append(f"<h2>{esc(t['mails'])}</h2>")
+        if mails:
+            rows = []
+            for mail in mails:
+                verdict = mail.get("verdict") or "clean"
+                label = t["verdicts"].get(verdict, verdict)
+                rows.append(
+                    [
+                        f"{esc(mail.get('subject') or '—')}<br><span class='muted'>{esc(mail.get('from'))}"
+                        f" · {esc(_ms(mail.get('date')))}</span><br><span class='muted'>{esc(mail.get('fileName'))}"
+                        "</span>",
+                        (f'<span class="high">{esc(label)}</span>' if verdict == "phishing" else esc(label))
+                        + f"<br><span class='muted'>{esc(mail.get('score'))}/100</span>",
+                        "".join(f"<div>{esc(f)}</div>" for f in mail.get("findings") or []) or "—",
+                    ]
+                )
+            out.append(_table([t["message"], t["verdict"], t["findings"]], rows, ["38%", "14%", "48%"]))
+        else:
+            out.append(f'<p class="muted">{esc(t["no_mails"])}</p>')
 
     if "eventlogs" in wanted:
         out.append(f"<h2>{esc(t['eventlogs'])}</h2>")

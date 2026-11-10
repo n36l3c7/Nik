@@ -31,3 +31,22 @@ evtx>=0.15,<0.16
 # Incident report PDF (HTML + CSS → PDF). Needs the Pango libraries, which
 # the Dockerfile installs (libpango-1.0-0, libpangoft2-1.0-0, a font).
 weasyprint>=70.0,<71
+# Mail Analysis (.eml / .msg phishing triage).
+# DKIM signatures (dkimpy), SPF (pyspf) and the DNS lookups behind them and
+# DMARC (dnspython); the organisational domain for DMARC alignment and
+# lookalike checks from the Public Suffix List (a bundled copy, no download).
+dkimpy>=1.1.8,<2.0
+pyspf>=2.0.14,<3.0
+dnspython>=2.9.0,<3.0
+publicsuffixlist>=1.1.0
+# HTML body sanitising (Rust ammonia bindings): scripts, handlers and forms
+# removed before the body is shown.
+nh3>=0.3.7,<0.4
+# Outlook .msg files (OLE compound files) and Office macros in attachments
+# (olevba reads VBA/XLM source without running it). BSD licences.
+olefile>=0.47
+oletools>=0.60.2,<0.61
+# QR codes in images (quishing): zxing-cpp wheels need no system package;
+# Pillow decodes the image (already a WeasyPrint dependency).
+zxing-cpp>=3.1.1,<4.0
+pillow>=12.0

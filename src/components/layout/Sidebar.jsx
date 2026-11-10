@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Info,
   Link,
+  Mail,
   Plus,
   ScrollText,
   Trash2,
@@ -204,6 +205,9 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, on
                       ].join(' ')}
                     >
                       {OsIcon && <OsIcon className={`h-3.5 w-3.5 shrink-0 ${os.accent}`} aria-label={os.label} />}
+                      {incident.hasMail && (
+                        <Mail className="h-3.5 w-3.5 shrink-0 text-accent" aria-label="Holds e-mails" />
+                      )}
                       <span className="truncate">{incident.name}</span>
                     </span>
                     <span className="flex items-center gap-1.5 text-[11px] text-fg-muted">

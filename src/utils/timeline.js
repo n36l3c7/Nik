@@ -25,6 +25,7 @@ import { buildArtifactEvents, combineCategoryRecords } from './artifacts.js'
 import { extractDomain, truncate } from './url.js'
 import { profileLabel } from './browserProfiles.js'
 import { sampleEvents } from './malware.js'
+import { mailEvents } from './mail.js'
 import { buildEventLogEvents } from './eventLogs.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
@@ -34,6 +35,7 @@ export const TIMELINE_SOURCE_META = {
   endpoint: { label: 'Endpoint', color: 'emerald' },
   eventlog: { label: 'Event log', color: 'amber' },
   sample: { label: 'Sample', color: 'red' },
+  mail: { label: 'E-mail', color: 'cyan' },
 }
 
 function hasTime(event) {
@@ -184,6 +186,11 @@ export function buildTimelineEvents(data = {}, engine) {
 
   /* ---- Malware samples (import time) ---- */
   for (const event of sampleEvents(data.malware?.samples ?? [], engine)) {
+    if (hasTime(event)) out.push(event)
+  }
+
+  /* ---- E-mails (time sent, else import time) ---- */
+  for (const event of mailEvents(data.mail?.messages ?? [], engine)) {
     if (hasTime(event)) out.push(event)
   }
 
