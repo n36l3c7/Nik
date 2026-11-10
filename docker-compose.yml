@@ -11,7 +11,7 @@
 
 services:
   db:
-    image: docker.io/library/postgres:16-alpine
+    image: docker.io/library/postgres:18-alpine
     environment:
       POSTGRES_USER: nik
       POSTGRES_PASSWORD: ${DB_PASSWORD:-nik}
