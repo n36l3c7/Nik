@@ -2,7 +2,7 @@
   "name": "nik",
   "description": "Nik — Forensic analysis platform",
   "private": true,
-  "version": "2.11.2",
+  "version": "2.12.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

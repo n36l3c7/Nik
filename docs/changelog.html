@@ -32,6 +32,41 @@
       </p>
 
       <section class="release">
+        <h3>2.12.0 <span class="date">2026-11-10</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Event Logs</strong> tab (Windows): raw <code>.evtx</code> files
+            parsed on the server (records left after a clear recovered) or a native <code>Get-WinEvent</code> export;
+            about 50 curated event IDs, a coverage chart with silences and clears, logon sessions and a built-in ruleset
+            (log cleared, brute force, RDP outside hours, suspicious PowerShell, services from user paths, new admins).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>IOC correlation</strong>: indicators from every tab indexed on
+            the server, an IOCs tab with the number of other incidents each one appears in, <em>Where seen</em> across
+            every analyst's incidents, a shared allowlist, export as CSV, STIX 2.1 or MISP.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Global search</strong>: <code>Ctrl/Cmd+K</code> or
+            <code>/</code> opens a <code>nik&gt;</code> prompt over incidents, indicators, samples and the open
+            incident's events and notes; <code>&gt;</code> lists actions.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Incident report</strong> as PDF or HTML, also via the API:
+            executive summary, flagged events, ATT&amp;CK techniques, indicators, samples, event-log coverage, notes and
+            an evidence appendix with SHA-256; TLP, English or Italian, organisation name and logo.
+          </li>
+          <li>
+            <span class="tag added">added</span> Start on boot and nightly backups with systemd
+            (<code>deploy/install-systemd.sh</code>); dependency audits in CI and grouped monthly Dependabot updates.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The backend image includes Pango for the PDF report (about 80 MB
+            larger). <code>pyzipper</code> 0.4.0 fixes PYSEC-2026-3044 in the protected sample zips.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.11.2 <span class="date">2026-11-10</span></h3>
         <ul>
           <li>
