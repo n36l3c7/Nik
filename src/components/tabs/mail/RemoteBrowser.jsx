@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowLeft, ArrowRight, Globe, Lock, RotateCw, WifiOff } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Globe,
+  Hand,
+  Lock,
+  RotateCw,
+  Send,
+  WifiOff,
+} from 'lucide-react'
 import { AsciiSkull, Badge, Button, Modal } from '../../ui/index.js'
 import { api } from '../../../services/api.js'
 import { BROWSER_KEYS, toPagePoint } from '../../../utils/mail.js'
+import RequestLog from '../network/RequestLog.jsx'
 
 /*
  * The isolated browser. The page runs in Chromium inside the `browser`
@@ -13,7 +25,10 @@ import { BROWSER_KEYS, toPagePoint } from '../../../utils/mail.js'
  *
  * Network, chosen before opening (OpenBrowserDialog): none by default (only
  * the attachment loads); with network the page reaches the internet, never
- * private addresses. Escape closes the window.
+ * private addresses; submissions are held until the analyst sends them. The
+ * Network panel lists every request (DevTools-like); opened from an incident,
+ * the log is kept there and becomes a capture in Network Analysis when the
+ * window closes. Escape closes the window.
  */
 
 export function OpenBrowserDialog({ target, onCancel, onOpen }) {
@@ -91,6 +106,7 @@ export default function RemoteBrowser({ request, onClose }) {
   const [state, setState] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [confirmRelease, setConfirmRelease] = useState(false)
   const [address, setAddress] = useState('')
   const sessionRef = useRef(null)
   const queue = useRef(Promise.resolve())
@@ -106,9 +122,8 @@ export default function RemoteBrowser({ request, onClose }) {
     let cancelled = false
     setState(null)
     setError(null)
-    const body = request.url
-      ? { url: request.url, network: request.network }
-      : { mail: request.sha256, path: request.path, network: request.network }
+    const source = request.url ? { url: request.url } : { mail: request.sha256, path: request.path }
+    const body = { ...source, network: request.network, ...(request.incident ? { incident: request.incident } : {}) }
     api
       .post('/browser/sessions', body)
       .then((res) => {
@@ -136,7 +151,7 @@ export default function RemoteBrowser({ request, onClose }) {
       setBusy(true)
       try {
         const res = await api.post(`/browser/sessions/${id}/action`, action)
-        setState(res)
+        setState((prev) => ({ ...res, captureId: res.captureId ?? prev?.captureId }))
         if (action.type !== 'refresh') setAddress(res.url)
         setError(null)
       } catch (err) {
@@ -147,6 +162,33 @@ export default function RemoteBrowser({ request, onClose }) {
     })
     return queue.current
   }, [])
+
+  // The Network panel: the session's requests, refreshed while it is open.
+  const [showNetwork, setShowNetwork] = useState(false)
+  const [entries, setEntries] = useState([])
+  const sessionId = state?.id
+  useEffect(() => {
+    if (!showNetwork || !sessionId) return undefined
+    let cancelled = false
+    const load = () =>
+      api
+        .get(`/browser/sessions/${sessionId}/network`)
+        .then((res) => !cancelled && setEntries(res.entries))
+        .catch(() => {})
+    load()
+    const timer = setInterval(load, REFRESH_MS)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [showNetwork, sessionId, state?.log?.requests])
+  const loadEntry = useCallback(
+    (id) =>
+      state?.captureId
+        ? api.get(`/captures/${state.captureId}/requests/${id}`)
+        : Promise.reject(new Error('Open the session from an incident to keep its requests.')),
+    [state?.captureId],
+  )
 
   // Pages change by themselves (redirects, timers): refresh the screenshot.
   useEffect(() => {
@@ -261,8 +303,58 @@ export default function RemoteBrowser({ request, onClose }) {
                 <WifiOff className="h-3 w-3" /> no network
               </Badge>
             ))}
+          {state?.network && (
+            <Button
+              variant={state.releasePosts ? 'secondary' : 'ghost'}
+              size="xs"
+              icon={state.releasePosts ? Send : Hand}
+              onClick={() =>
+                state.releasePosts ? send({ type: 'policy', releasePosts: false }) : setConfirmRelease(true)
+              }
+              title="Submissions (form posts, fetch POST…) are held by default: recorded, not sent"
+            >
+              {state.releasePosts ? 'Submissions sent' : 'Submissions held'}
+            </Button>
+          )}
+          {state && (
+            <Button
+              variant={showNetwork ? 'secondary' : 'ghost'}
+              size="xs"
+              icon={Activity}
+              onClick={() => setShowNetwork((v) => !v)}
+              aria-pressed={showNetwork}
+            >
+              Network · {state.log?.requests ?? 0}
+            </Button>
+          )}
           {busy && <span className="font-mono text-[11px] text-fg-muted">…</span>}
         </div>
+        <Modal
+          open={confirmRelease}
+          onClose={() => setConfirmRelease(false)}
+          title="Send the page's submissions?"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setConfirmRelease(false)}>
+                Keep holding
+              </Button>
+              <Button
+                onClick={() => {
+                  setConfirmRelease(false)
+                  send({ type: 'policy', releasePosts: true })
+                }}
+              >
+                Send submissions
+              </Button>
+            </>
+          }
+        >
+          <p className="flex gap-2 border-l-2 border-med-line bg-med-soft px-3 py-2 font-mono text-xs text-med-fg">
+            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            From now on, what the page submits reaches the site: use invented credentials only. This is recorded in the
+            audit log.
+          </p>
+        </Modal>
 
         {error && (
           <p role="alert" className="font-mono text-xs text-high">
@@ -296,11 +388,14 @@ export default function RemoteBrowser({ request, onClose }) {
             />
           </div>
         )}
+        {state && showNetwork && <RequestLog entries={entries} loadEntry={loadEntry} live />}
         {state && (
           <div className="flex flex-wrap items-start justify-between gap-2 font-mono text-[11px] text-fg-muted">
             <span className="flex items-center gap-1">
               <Lock className="h-3 w-3" aria-hidden="true" />
-              Runs in the worker; you see a picture. {state.blocked} request{state.blocked === 1 ? '' : 's'} refused.
+              Runs in the worker; you see a picture. {state.blocked} request{state.blocked === 1 ? '' : 's'} refused
+              {state.log?.held ? `, ${state.log.held} submission${state.log.held === 1 ? '' : 's'} held` : ''}.
+              {state.captureId ? ' The log is kept in the incident (Network Analysis).' : ''}
             </span>
             {state.events.length > 0 && (
               <ul className="max-w-xl space-y-0.5 text-right">

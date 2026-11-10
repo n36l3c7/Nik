@@ -38,6 +38,7 @@ const SOURCE_FILTER_OPTIONS = [
   { value: 'eventlog', label: 'Event logs' },
   { value: 'sample', label: 'Samples' },
   { value: 'mail', label: 'E-mails' },
+  { value: 'network', label: 'Network' },
 ]
 
 const ROW_SEVERITY_CLASSES = {

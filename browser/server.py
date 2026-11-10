@@ -1,6 +1,7 @@
 """HTTP front of the Nik isolated browser worker (standard library only).
 
     GET    /health                      -> {"status": "ok"}
+    GET    /sessions/{id}/network?owner=…&since=N&bodies=1 -> log entries changed since N
     POST   /sessions                    {"owner", "network", "html" (base64) | "url"} -> state
     POST   /sessions/{id}/action        {"owner", "type", ...}                         -> state
     DELETE /sessions/{id}?owner=…
@@ -29,7 +30,7 @@ from nik_browser import Browser, BrowserError
 TOKEN = os.environ.get("BROWSER_TOKEN", "")
 PORT = int(os.environ.get("BROWSER_PORT", "8730"))
 MAX_HTML = 10 * 1024 * 1024
-_SESSION_PATH = re.compile(r"^/sessions/([0-9a-f]{32})(/action)?$")
+_SESSION_PATH = re.compile(r"^/sessions/([0-9a-f]{32})(/action|/network)?$")
 BROWSER: Browser | None = None
 
 
@@ -79,9 +80,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path == "/health":
-            self._send(200, {"status": "ok"})
-        else:
-            self._send(404, {"detail": "Not found"})
+            return self._send(200, {"status": "ok"})
+        parts = urlsplit(self.path)
+        match = _SESSION_PATH.match(parts.path)
+        if not match or match.group(2) != "/network":
+            return self._send(404, {"detail": "Not found"})
+        query = parse_qs(parts.query)
+
+        def work():
+            owner = (query.get("owner") or [""])[0]
+            since = int((query.get("since") or ["0"])[0] or 0)
+            bodies = (query.get("bodies") or ["0"])[0] == "1"
+            return 200, browser().network(match.group(1), owner, since, bodies)
+
+        self._run(work)
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
@@ -102,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
 
             return self._run(work)
         match = _SESSION_PATH.match(path)
-        if match and match.group(2):
+        if match and match.group(2) == "/action":
 
             def work():
                 body = self._body()

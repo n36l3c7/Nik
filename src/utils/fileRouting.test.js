@@ -35,3 +35,10 @@ test('e-mails go to Mail Analysis; other OLE files stay samples', () => {
   assert.equal(route('message', bytes('Return-Path: <a@b.c>')).tab, 'mail')
   assert.equal(route('notes', bytes('hello')), null)
 })
+
+test('packet captures go to Network Analysis', () => {
+  assert.equal(route('capture.pcapng', bytes([0x0a, 0x0d, 0x0d, 0x0a])).tab, 'network')
+  assert.equal(route('dump', bytes([0xd4, 0xc3, 0xb2, 0xa1])).label, 'Packet capture (pcap)')
+  assert.equal(route('trace.pcap.gz', bytes([0x1f, 0x8b, 8])).tab, 'network')
+  assert.equal(route('other.gz', bytes([0x1f, 0x8b, 8])).tab, 'malware')
+})

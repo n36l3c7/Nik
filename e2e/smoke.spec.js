@@ -461,10 +461,52 @@ test('attachments are previewed by the isolated workers', async () => {
     await expect(remote.getByRole('application', { name: /Remote page/ })).toBeVisible({ timeout: 60_000 })
     await expect(remote).toContainText('no network')
     await expect(remote).toContainText(/request(s)? refused/)
+    // The Network panel lists the refused requests (the page's image, its form target).
+    await remote.getByRole('button', { name: /^Network/ }).click()
+    await expect(remote.locator('tbody tr', { hasText: 'logo.png' })).toContainText('blocked')
     await remote.getByRole('button', { name: 'Close' }).click()
+    // The session becomes a capture of the incident.
+    await page.locator('nav[aria-label="Analysis tabs"]').getByText('Network Analysis').click()
+    await expect(page.getByRole('list', { name: 'Captures' })).toContainText('attachment secure.html', {
+      timeout: 30_000,
+    })
   } else {
     await expect(browse).toBeDisabled()
   }
+})
+
+test('a packet capture opens as in Wireshark', async () => {
+  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Network Analysis').click()
+  await page
+    .getByRole('button', { name: 'Upload packet captures' })
+    .locator('input[type=file]')
+    .setInputFiles('e2e/fixtures/phish.pcapng')
+  await expect(page.getByRole('list', { name: 'Captures' })).toContainText('phish.pcapng')
+  await page.getByRole('list', { name: 'Captures' }).getByText('phish.pcapng').click()
+  if (!process.env.E2E_PCAP_URL) {
+    await expect(page.getByText('stored, not analysed')).toBeVisible()
+    return
+  }
+  const packets = page.getByRole('table', { name: 'Packets' })
+  await expect(packets.locator('tbody tr').first()).toBeVisible({ timeout: 120_000 })
+  // A Wireshark display filter, then the packet's tree and its bytes.
+  await page.getByLabel('Display filter').fill('http.request.method == "POST"')
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(packets.locator('tbody tr')).toHaveCount(1)
+  await packets.locator('tbody tr').first().click()
+  const tree = page.getByRole('tree', { name: 'Packet details' })
+  await expect(tree).toContainText('Hypertext Transfer Protocol')
+  await tree.getByText('Hypertext Transfer Protocol').click()
+  await expect(page.getByLabel('Packet bytes').locator('.bg-accent').first()).toBeVisible()
+  // Follow the HTTP stream: the credentials in clear.
+  await page.getByRole('button', { name: /^Follow HTTP stream/ }).click()
+  await expect(page.getByLabel('Stream content')).toContainText('pass=Winter2026')
+  await page.keyboard.press('Escape')
+  // Export Objects and the summary.
+  await page.getByRole('tab', { name: 'Objects' }).click()
+  await expect(page.locator('tbody tr', { hasText: 'invoice.exe' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Summary' }).click()
+  await expect(page.getByText('6 connections every 30 s')).toBeVisible()
 })
 
 test('the API is reachable through the same origin', async ({ request }) => {

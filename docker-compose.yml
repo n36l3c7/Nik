@@ -64,6 +64,10 @@ services:
       DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:-please-change-this-docview-token}
       BROWSER_URL: http://browser:8730
       BROWSER_TOKEN: ${BROWSER_TOKEN:-please-change-this-browser-token}
+      # Packet captures (Network Analysis), read with Wireshark's engine.
+      PCAP_URL: http://pcap:8740
+      PCAP_TOKEN: ${PCAP_TOKEN:-please-change-this-pcap-token}
+      PCAP_MAX_MB: ${PCAP_MAX_MB:-500}
     volumes:
       - sample-store:/app/samples
     networks: [default, analysis]
@@ -134,6 +138,26 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${DOCVIEW_MEMORY:-2g}
     cpus: ${DOCVIEW_CPUS:-1}
+    restart: unless-stopped
+
+  # Reads packet captures with Wireshark's engine (tshark for the summary,
+  # sharkd for the packet list, protocol tree, Follow Stream and Export
+  # Objects). Read-only sample store, internal network only, no published
+  # port, read-only filesystem, no capabilities (it never captures),
+  # memory / CPU limits.
+  pcap:
+    build: ./pcap
+    environment:
+      PCAP_TOKEN: ${PCAP_TOKEN:-please-change-this-pcap-token}
+    volumes:
+      - sample-store:/samples:ro
+    networks: [analysis]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${PCAP_MEMORY:-4g}
+    cpus: ${PCAP_CPUS:-2}
     restart: unless-stopped
 
   # Isolated browser: opens HTML attachments and links in Chromium and sends

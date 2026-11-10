@@ -288,7 +288,7 @@ export default function MailAnalysisTab({ incident }) {
         onCancel={() => setBrowserChoice(null)}
         onOpen={(request) => {
           setBrowserChoice(null)
-          setBrowserRequest(request)
+          setBrowserRequest({ ...request, incident: incident.id })
         }}
       />
       <RemoteBrowser request={browserRequest} onClose={() => setBrowserRequest(null)} />

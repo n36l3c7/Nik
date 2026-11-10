@@ -143,3 +143,20 @@ def test_migration_0015_adds_enrichment_tables(tmp_path, monkeypatch):
     command.downgrade(cfg, "0014_mails")
     with engine.connect() as conn:
         assert not {"ioc_enrichment", "integration_keys", "leases"} & set(sa.inspect(conn).get_table_names())
+
+
+def test_migration_0016_adds_network_captures(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+
+    import app.db
+
+    monkeypatch.setattr(app.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0015_ioc_enrichment")
+    command.upgrade(cfg, "0016_network_captures")
+    with engine.connect() as conn:
+        assert "network_captures" in sa.inspect(conn).get_table_names()
+    command.downgrade(cfg, "0015_ioc_enrichment")
+    with engine.connect() as conn:
+        assert "network_captures" not in sa.inspect(conn).get_table_names()

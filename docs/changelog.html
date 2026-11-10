@@ -32,6 +32,27 @@
       </p>
 
       <section class="release">
+        <h3>2.17.0 <span class="date">2026-11-10</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> Network Analysis: pcap and pcapng read by Wireshark's engine (packet
+            list with Wireshark's colours, protocol tree, bytes, display filters, Follow Stream, Export Objects, TLS
+            decryption with a key log), with a summary of hosts, DNS, HTTP, TLS server names, submissions and beacons.
+          </li>
+          <li>
+            <span class="tag added">added</span> Isolated browser: a DevTools-like Network panel with every request,
+            bodies in clear; submissions held until sent; sessions kept in the incident, as HAR and as a pcapng rebuilt
+            with HTTPS in clear.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The Network Logs placeholder became Network Analysis; CI tests
+            PostgreSQL 18 only.
+          </li>
+          <li><span class="tag fixed">fixed</span> A moderate advisory in a build-tool dependency (minimatch).</li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.16.0 <span class="date">2026-11-10</span></h3>
         <ul>
           <li>

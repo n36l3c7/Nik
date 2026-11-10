@@ -42,6 +42,7 @@ from .routers import (
     jobs,
     keys,
     mails,
+    network,
     previews,
     report,
     samples,
@@ -101,7 +102,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.16.0",
+    version="2.17.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -168,6 +169,7 @@ app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
 app.include_router(mails.router, prefix="/api")
 app.include_router(previews.router, prefix="/api")
+app.include_router(network.router, prefix="/api")
 app.include_router(enrichment.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")
 app.include_router(yara_rules.router, prefix="/api")

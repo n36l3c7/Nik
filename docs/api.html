@@ -220,9 +220,44 @@
             <tr>
               <td><code>POST /api/browser/sessions</code> · <code>…/{id}/action</code> · <code>DELETE …/{id}</code></td>
               <td>
-                The isolated browser: open an HTML attachment or a link (<code>network</code> true or false, audited),
-                replay clicks, typing, keys, scrolling and navigation, get a screenshot back; close the session.
+                The isolated browser: open an HTML attachment or a link (<code>network</code> true or false,
+                <code>incident</code> to keep the network log, audited), replay clicks, typing, keys, scrolling and
+                navigation, send or hold submissions (<code>policy</code>, audited), get a screenshot back; close the
+                session. <code>GET …/{id}/network</code> lists its requests.
               </td>
+            </tr>
+            <tr>
+              <td><code>POST/GET /api/incidents/{id}/captures</code> · <code>GET /api/captures/{id}</code></td>
+              <td>
+                Upload a pcap or pcapng (up to <code>PCAP_MAX_MB</code>, optional TLS key log), analysed in the
+                background; list the incident's captures; the capture's state and summary (hosts, DNS, HTTP, TLS server
+                names, submissions, beacons, objects, Expert Info).
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/captures/{id}/rpc</code></td>
+              <td>
+                Read-only calls to Wireshark's engine: <code>frames</code> (display filter, paging, time format),
+                <code>frame</code> (protocol tree and bytes), <code>follow</code>, <code>tap</code> (Export Objects,
+                Expert Info), <code>check</code>, <code>complete</code>, <code>status</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/captures/{id}/objects/download</code> · <code>…/file</code> · <code>…/har</code> ·
+                <code>…/requests</code>
+              </td>
+              <td>
+                An exported object in a protected zip, the capture file, an isolated browser session as HAR 1.2, its
+                requests (one in full with <code>…/requests/{entryId}</code>). Downloads are audited.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>PUT/DELETE /api/captures/{id}/keylog</code> · <code>POST …/reanalyse</code> ·
+                <code>DELETE /api/incidents/{id}/captures/{captureId}</code>
+              </td>
+              <td>Add or remove a TLS key log (stored encrypted), analyse again, remove the capture.</td>
             </tr>
             <tr>
               <td><code>DELETE /api/incidents/{id}/mails/{sha256}</code></td>

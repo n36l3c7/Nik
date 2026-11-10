@@ -26,6 +26,7 @@ import { extractDomain, truncate } from './url.js'
 import { profileLabel } from './browserProfiles.js'
 import { sampleEvents } from './malware.js'
 import { mailEvents } from './mail.js'
+import { networkEvents } from './network.js'
 import { buildEventLogEvents } from './eventLogs.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
@@ -36,6 +37,7 @@ export const TIMELINE_SOURCE_META = {
   eventlog: { label: 'Event log', color: 'amber' },
   sample: { label: 'Sample', color: 'red' },
   mail: { label: 'E-mail', color: 'cyan' },
+  network: { label: 'Network', color: 'violet' },
 }
 
 function hasTime(event) {
@@ -190,6 +192,11 @@ export function buildTimelineEvents(data = {}, engine) {
   }
 
   /* ---- E-mails (time sent, else import time) ---- */
+  /* ---- Network captures: the capture, held submissions, beacons ---- */
+  for (const event of networkEvents(data.network?.captures ?? [], engine)) {
+    if (hasTime(event)) out.push(event)
+  }
+
   for (const event of mailEvents(data.mail?.messages ?? [], engine)) {
     if (hasTime(event)) out.push(event)
   }

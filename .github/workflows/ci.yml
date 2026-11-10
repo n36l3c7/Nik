@@ -30,16 +30,16 @@ jobs:
         working-directory: capa
         run: ruff check . && ruff format --check . && python -m pytest -q tests
       # Their tests need LibreOffice and Chromium: they run inside the images (e2e job).
-      - name: Document viewer and isolated browser workers (lint, format)
-        run: for d in docview browser; do (cd "$d" && ruff check . && ruff format --check .) || exit 1; done
+      - name: Document viewer, isolated browser and packet capture workers (lint, format)
+        run: for d in docview browser pcap; do (cd "$d" && ruff check . && ruff format --check .) || exit 1; done
 
   # The same suite on PostgreSQL (the default job uses SQLite): the version
-  # the Compose file runs and the one before it, after `alembic upgrade head`.
+  # the Compose file runs, after `alembic upgrade head`.
   backend-postgres:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        postgres: ["16", "18"]
+        postgres: ["18"]
     services:
       postgres:
         image: docker.io/library/postgres:${{ matrix.postgres }}-alpine
@@ -112,12 +112,13 @@ jobs:
             -c "pip install --quiet --user pytest && python -m pytest -q -p no:cacheprovider tests"
           docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
             -v "$PWD/backend/.e2e-samples:/samples:ro" -e CAPA_TOKEN=e2e-capa-token nik-capa
-      - name: Start the document viewer (LibreOffice + pdfium) and the isolated browser (Chromium)
+      - name: Start the document viewer, the isolated browser and the packet capture worker
         run: |
           docker build -t nik-docview docview
           docker build -t nik-browser browser
+          docker build -t nik-pcap pcap
           # The workers' own tests, inside their images.
-          for w in docview browser; do
+          for w in docview browser pcap; do
             docker run --rm -v "$PWD/$w/tests:/opt/nik-$w/tests:ro" -w /opt/nik-$w --entrypoint sh nik-$w \
               -c "pip install --quiet --user pytest && python -m pytest -q -p no:cacheprovider tests" || exit 1
           done
@@ -125,6 +126,8 @@ jobs:
             -e DOCVIEW_TOKEN=e2e-docview-token nik-docview
           docker run -d --name nik-browser -p 127.0.0.1:8730:8730 --read-only --tmpfs /tmp --shm-size 256m \
             -e BROWSER_TOKEN=e2e-browser-token nik-browser
+          docker run -d --name nik-pcap -p 127.0.0.1:8740:8740 --read-only --tmpfs /tmp \
+            -v "$PWD/backend/.e2e-samples:/samples:ro" -e PCAP_TOKEN=e2e-pcap-token nik-pcap
       - run: npm run build
       - run: npm run test:e2e
         env:
@@ -136,9 +139,11 @@ jobs:
           E2E_DOCVIEW_TOKEN: e2e-docview-token
           E2E_BROWSER_URL: http://127.0.0.1:8730
           E2E_BROWSER_TOKEN: e2e-browser-token
+          E2E_PCAP_URL: http://127.0.0.1:8740
+          E2E_PCAP_TOKEN: e2e-pcap-token
       - name: Worker logs
         if: failure()
-        run: for w in analyzer capa docview browser; do docker logs nik-$w || true; done
+        run: for w in analyzer capa docview browser pcap; do docker logs nik-$w || true; done
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

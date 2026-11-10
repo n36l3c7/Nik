@@ -106,6 +106,16 @@
           </p>
         </div>
         <div class="card">
+          <h3>Network analysis</h3>
+          <p>
+            pcap and pcapng read by Wireshark's own engine in an isolated worker: the packet list with Wireshark's
+            colours, the protocol tree and the bytes, display filters, Follow Stream, Export Objects, TLS decryption
+            with a key log, and a summary of hosts, DNS, HTTP, TLS server names, submissions and beacons. Sessions of
+            the isolated browser are captures too, with a DevTools-like Network panel, held submissions, HAR and a
+            pcapng rebuilt with HTTPS in clear.
+          </p>
+        </div>
+        <div class="card">
           <h3>IOC correlation</h3>
           <p>
             Indicators from every tab indexed on the server: an IOCs tab with the number of other incidents each one
@@ -275,6 +285,12 @@
           Documents open as pages with <em>Preview</em>; HTML attachments and links open in the isolated browser,
           without network unless you allow it for that session. List your domains and mail servers under Settings → Mail
           analysis first.
+        </li>
+        <li>
+          <strong>Read the traffic.</strong> Drop a pcap or pcapng on the Network Analysis tab (add a TLS key log to
+          decrypt HTTPS): filter as in Wireshark, select a packet for its tree and bytes, follow its stream, export the
+          objects. In the isolated browser, the Network panel lists every request; submissions are held until you send
+          them, and the session lands in Network Analysis when you close it.
         </li>
         <li>
           <strong>Check reputations.</strong> An admin enters the providers' free API keys under Settings → Threat

@@ -87,7 +87,19 @@ every action attributed to a named analyst and recorded in a global audit log.
   attachments and links in an **isolated browser**: Chromium runs the page in
   its own container and the analyst clicks, types and scrolls on its
   screenshots; no network by default, internet only when the analyst allows it
-  for one session (never private addresses).
+  for one session (never private addresses). Its **Network panel** shows every
+  request like DevTools, refused ones and form posts included, with bodies in
+  clear; submissions are **held** until the analyst sends them.
+- **Network analysis** — pcap and pcapng files (up to 500 MB) read by
+  **Wireshark's own engine** in an isolated worker: the packet list with
+  Wireshark's colouring rules, the protocol tree, the bytes with the selected
+  field highlighted, **display filters** in Wireshark syntax, **Follow Stream**
+  (TCP, UDP, HTTP, TLS), **Export Objects** (HTTP, SMB, FTP, TFTP, IMF) to a
+  protected zip or Malware Analysis, TLS decryption with a key log
+  (`SSLKEYLOGFILE`, stored encrypted), and a summary: hosts, DNS, HTTP, TLS
+  server names, submissions, **beacons** (regular connections), Expert Info.
+  Sessions of the isolated browser become captures too: the log exports as
+  **HAR** and as a **pcapng** rebuilt with HTTPS already in clear.
 - **IOC correlation** — the server indexes the indicators of every tab (IP
   addresses, domains, URLs, e-mail addresses, MD5/SHA-1/SHA-256) each time an
   incident is saved; an **IOCs** tab lists them with the number of other
@@ -371,6 +383,8 @@ is no `tailwind.config.js` and no extra setup step.
 | `CAPA_URL` | — | Base URL of the capa worker (e.g. `http://capa:8710`). Empty: the Capabilities view reports "not configured". |
 | `CAPA_TOKEN` | — | Shared secret sent to the capa worker in `X-Analyzer-Token`; the worker refuses to start without one. |
 | `CAPA_TIMEOUT` | `1800` | Seconds capa may spend on one sample before the worker stops it (large binaries take ten minutes or more). |
+| `PCAP_URL` / `PCAP_TOKEN` | — | Packet capture worker (`pcap/`, e.g. `http://pcap:8740`) and its shared secret (`X-Pcap-Token`). Empty: captures are stored but not analysed. |
+| `PCAP_MAX_MB` | `500` | Largest packet capture accepted, in MB (nginx's `client_max_body_size` must allow it). |
 | `DOCVIEW_URL` / `DOCVIEW_TOKEN` | — | Document viewer worker (`docview/`, e.g. `http://docview:8720`) and its shared secret (`X-Docview-Token`). Empty: the Preview buttons say "not configured". |
 | `BROWSER_URL` / `BROWSER_TOKEN` | — | Isolated browser worker (`browser/`, e.g. `http://browser:8730`) and its shared secret (`X-Browser-Token`). Empty: "Open in isolated browser" says "not configured". |
 | `ENRICHMENT_WORKER` | `true` | Background thread of the automatic threat-intelligence lookups (one API process works at a time). `false` disables it; "Check now" still works. |
@@ -401,6 +415,9 @@ is no `tailwind.config.js` and no extra setup step.
 | `BROWSER_TOKEN` | — | Shared secret between the `api` and `browser` services; set a long random value. |
 | `BROWSER_MAX_SESSIONS` | `3` | Isolated browser sessions open at once (each idle one closes after 5 minutes, any after 30). |
 | `BROWSER_MEMORY` / `BROWSER_CPUS` | `2g` / `2` | Memory and CPU limits of the `browser` container (Chromium). |
+| `PCAP_TOKEN` | — | Shared secret between the `api` and `pcap` services; set a long random value. |
+| `PCAP_MAX_MB` | `500` | Largest packet capture accepted, in MB. |
+| `PCAP_MEMORY` / `PCAP_CPUS` | `4g` / `2` | Memory and CPU limits of the `pcap` container (sharkd keeps an open capture in memory: a few times its size). |
 
 > **Two things that will bite you over plain HTTP:**
 >
@@ -778,9 +795,10 @@ server {
     ssl_certificate     /etc/pki/nginx/nik.crt;
     ssl_certificate_key /etc/pki/nginx/private/nik.key;
 
-    # Large JSON payloads (backup restore, incidents with parsed artifacts)
-    # blow past nginx's 1m default and get rejected with 413.
-    client_max_body_size 200m;
+    # Large uploads (packet captures up to PCAP_MAX_MB, backup restore,
+    # incidents with parsed artifacts) blow past nginx's 1m default and get
+    # rejected with 413.
+    client_max_body_size 600m;
 
     root  /var/www/nik;
     index index.html;
@@ -788,6 +806,9 @@ server {
     # Reverse-proxy the REST API to the gunicorn/uvicorn backend.
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
+        # Opening a large packet capture in Wireshark's engine takes minutes.
+        proxy_read_timeout 330s;
+        proxy_send_timeout 330s;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -912,8 +933,17 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/mails/{sha256}/attachments/{path}/download?password=` | The attachment inside an AES-256 zip (default `infected`). Audited. |
 | `GET /api/previews/status` | Which preview workers are configured (`documents`, `browser`). |
 | `POST /api/mails/{sha256}/attachments/{path}/preview` | The attachment's first 20 pages as PNG (`pages: [{ png, width, height }]`, `total`, `converted`), rendered by the document viewer; `422` for a file that is not a document, `503` without the worker. |
-| `POST /api/browser/sessions` | Open an HTML attachment (`{ mail, path }`) or a link (`{ url }`) in the isolated browser, `network` true or false (default). Returns the state: `id`, `url`, `title`, `screenshot` (JPEG, base64), `blocked`, `events`. Audited. |
-| `POST /api/browser/sessions/{id}/action` · `DELETE …/{id}` | Replay an action (`click`/`dblclick` `{x, y}`, `type` `{text}`, `key` `{key}`, `scroll` `{dy}`, `navigate` `{url}`, `back`, `forward`, `reload`, `refresh`) and get the new state; close the session. Only the analyst who opened it. |
+| `POST /api/browser/sessions` | Open an HTML attachment (`{ mail, path }`) or a link (`{ url }`) in the isolated browser, `network` true or false (default), `incident` to keep the session's network log in that incident. Returns the state: `id`, `url`, `title`, `screenshot` (JPEG, base64), `blocked`, `log` (request counts), `releasePosts`, `events`, `captureId`. Audited. |
+| `POST /api/browser/sessions/{id}/action` · `DELETE …/{id}` | Replay an action (`click`/`dblclick` `{x, y}`, `type` `{text}`, `key` `{key}`, `scroll` `{dy}`, `navigate` `{url}`, `back`, `forward`, `reload`, `refresh`, `policy` `{releasePosts}`: send the page's submissions instead of holding them, audited) and get the new state; close the session (its log becomes a capture). Only the analyst who opened it. |
+| `GET /api/browser/sessions/{id}/network` | The session's requests without bodies (the live Network panel). |
+| `POST /api/incidents/{id}/captures` | Upload a packet capture (multipart `file`: pcap, pcapng or gzip, up to `PCAP_MAX_MB`; optional `keylog`: a TLS key log). Stored, then analysed in the background (`status`: indexing → ready / error). Audited. |
+| `GET /api/incidents/{id}/captures` | The incident's captures (references), isolated browser sessions opened by any analyst included; ended sessions are finalized. |
+| `GET /api/captures/{id}` · `POST …/reanalyse` · `DELETE /api/incidents/{id}/captures/{captureId}` | The capture's state and summary (hosts, DNS, HTTP, TLS server names, posts, beacons, objects, Expert Info); analyse it again; remove it with its files. |
+| `POST /api/captures/{id}/rpc` | A read-only call to Wireshark's engine (sharkd): `frames` (`filter`, `skip`, `limit`, `time`: relative/absolute/delta), `frame` (protocol tree and bytes), `follow` (`follow`: TCP, UDP, HTTP, HTTP2, TLS, QUIC, WebSocket… with a `filter`), `tap` (`eo:http`, `eo:smb`, `eo:ftp-data`, `eo:tftp`, `eo:imf`, `eo:dicom`, `expert`), `check` (a display filter), `complete`, `status`. Answers `{ result }`, sharkd's result. |
+| `GET /api/captures/{id}/objects/download?token=&password=` · `POST /api/incidents/{id}/captures/{captureId}/objects/sample` | An exported object in an AES-256 zip (audited), or sent to Malware Analysis. |
+| `GET /api/captures/{id}/file` · `…/har` | The capture file (audited); an isolated browser session's log as HAR 1.2. |
+| `GET /api/captures/{id}/requests` · `…/requests/{entryId}` | An isolated browser session's requests (light), and one request in full (headers, bodies base64, timings, WebSocket messages). |
+| `PUT/DELETE /api/captures/{id}/keylog` | Attach (multipart `file`, stored encrypted) or remove a TLS key log; the capture is analysed again. |
 | `POST /api/incidents/{id}/mails/{sha256}/attachments/{path}/sample` | Send an attachment to Malware Analysis as a sample of the incident. |
 | `DELETE /api/incidents/{id}/mails/{sha256}` | Detach the message; the file is deleted once no incident references it. |
 | `GET/POST/PUT/DELETE /api/yara-rules` · `POST …/validate` | Admin-managed YARA rule sets compiled with the built-in ones (**admin** to change; any caller may list). A source must compile before it is saved. |
@@ -932,7 +962,7 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET /api/iocs/lookup?type=&value=` | Every incident an indicator appears in ("where seen"). `type`: ip, domain, url, email, md5, sha1, sha256. |
 | `GET /api/iocs/shared` | Indicators seen in two or more incidents, most widespread first (allowlisted values left out). |
 | `GET /api/incidents/{id}/iocs/export?format=csv\|stix\|misp` | Download the indicators as CSV, a STIX 2.1 bundle (identity, one indicator each, a report) or a MISP event (unpublished, organisation only). `types=ip,domain,…` narrows them; allowlisted values are left out unless `allowlisted=true`. Audited as `ioc.export`. |
-| `POST /api/incidents/{id}/report` | The incident report, as a PDF (default) or HTML. Body (all optional): `format` (`pdf`/`html`), `lang` (`en`/`it`), `tlp` (`clear`, `green`, `amber`, `amber+strict`, `red`), `sections` (summary, timeline, attack, iocs, samples, mails, eventlogs, notes, evidence), `executiveSummary`, `detections` (`[{ id, label, severity, count, attack: [technique ids] }]`, the SOC rule hits the app computes). Missing options come from the incident's saved `report` settings, then the defaults (English, TLP:AMBER, every section). Audited as `report.generate`. |
+| `POST /api/incidents/{id}/report` | The incident report, as a PDF (default) or HTML. Body (all optional): `format` (`pdf`/`html`), `lang` (`en`/`it`), `tlp` (`clear`, `green`, `amber`, `amber+strict`, `red`), `sections` (summary, timeline, attack, iocs, samples, mails, network, eventlogs, notes, evidence), `executiveSummary`, `detections` (`[{ id, label, severity, count, attack: [technique ids] }]`, the SOC rule hits the app computes). Missing options come from the incident's saved `report` settings, then the defaults (English, TLP:AMBER, every section). Audited as `report.generate`. |
 | `GET /api/search?q=` | Global search (at least 2 characters): incidents by name, host or user; indicators from every incident (3 characters or more) with the number of incidents; samples by hash prefix (6 hex characters or more) or file type. `limit` per group (default 8). |
 | `GET /api/settings` | Read the shared detection rules, business hours, IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`) report header (`report: { orgName, logo }`, the logo a PNG/JPEG/SVG `data:` URI up to 256 KB) Mail Analysis settings (`mail: { orgDomains, trustedAuthServers }`) and threat intelligence (`enrichment: { auto: { ip, url, hash }, ttlHours, providers: { id: bool } }`, never the keys). `PUT` replaces them; a body without `iocAllowlist`, `report`, `mail` or `enrichment` keeps the stored value. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
@@ -1088,11 +1118,14 @@ file itself to the server, because the sample *is* the evidence under study
 ├── playwright.config.js            # E2E: starts backend (SQLite) + vite preview
 ├── e2e/smoke.spec.js               # End-to-end smoke test of the whole stack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
-├── docker-compose.yml              # db + api + analyzer + capa + docview + browser + web stack
+├── docker-compose.yml              # db + api + analyzer + capa + docview + browser + pcap + web stack
 ├── docview/                        # document viewer worker: Dockerfile (LibreOffice, pdfium),
 │                                   #   nik_docview.py (Office → PDF → page PNGs), server.py, tests/
 ├── browser/                        # isolated browser worker: Dockerfile (Playwright Chromium),
-│                                   #   nik_browser.py (sessions, network rules), server.py, tests/
+│                                   #   nik_browser.py (sessions, network rules), netlog.py (the
+│                                   #   DevTools-like request log), server.py, tests/
+├── pcap/                           # packet capture worker: Dockerfile (tshark, sharkd),
+│                                   #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
 ├── capa/                           # capa worker: Dockerfile (pinned capa, rules, signatures),
 │                                   #   nik_capa.py (run + reduce the report), server.py, tests/
 ├── analyzer/                       # rizin worker: Dockerfile, nik_analyzer.py (pipe + transforms),
@@ -1115,7 +1148,9 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── security.py             # bcrypt hashing, session-auth dependencies
 │       ├── defaults.py             # Factory defaults for detection settings
 │       ├── samples.py              # Sample store (files by SHA-256, e-mails as .mail) + protected zip
-│       ├── vault.py                # Encryption of the threat-intelligence API keys (Fernet, HKDF of SECRET_KEY)
+│       ├── vault.py                # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY)
+│       ├── network/                # Network Analysis: store (capture files, browser logs), service (analysis,
+│       │                           #   references, browser log sync), pcapng (log → pcapng), har (HAR 1.2)
 │       ├── enrichment/             # Threat intelligence: providers (one function each), service (what may be
 │       │                           #   sent, rate limits, cache), worker (background lookups, lease)
 │       ├── mail/                   # Mail analysis: parse (.eml/.msg, LZFu RTF), headers (route,
@@ -1225,7 +1260,6 @@ file itself to the server, because the sample *is* the evidence under study
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
         │                           #   TailPanel (tail -f of the timeline)
         └── tabs/
-            ├── NetworkLogsTab.jsx      # Placeholder, ready for expansion
             ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
             ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
             │                           #   filters, widgets, bookmarks/shortcuts tables
@@ -1241,7 +1275,9 @@ file itself to the server, because the sample *is* the evidence under study
             │                           #   DownloadDialog; code/ CodeSection, GraphCanvas (ELK),
             │                           #   DecompiledView, StartHere, FunctionNotes, hooks
             ├── mail/                   # MailAnalysisTab, MailDetail, MailHeaders, MailBody (sandboxed
-            │                           #   frame), MailLinks, MailAttachments, HexView
+            │                           #   frame), MailLinks, MailAttachments, HexView, RemoteBrowser
+            ├── network/                # NetworkAnalysisTab, CaptureDetail, PacketView (list, tree, bytes),
+            │                           #   FollowStream, RequestLog (DevTools-like Network panel)
             └── timeline/               # TimelineTab (the super-timeline)
 ```
 
@@ -1561,7 +1597,11 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
         safari:  { activeProfile, profiles: { … meta: { history, downloads, bookmarks } } },
       },
     },
-    network:  {},
+    network: {                             // packet captures: light references, the packets
+      captures: [ { id, kind: 'pcap' | 'browser', fileName, size, sha256, status, packets,
+                    first, last, keylog, label, held: [{ method, url, time }], posts,
+                    beacons: [{ destination, port, count, interval }], objects } ],
+    },                                     //   come from POST /api/captures/{id}/rpc
     endpoint: {},
     eventlogs: {
       channels: {                          // one key per Windows event-log channel
@@ -2019,6 +2059,53 @@ never in the analyst's browser.
   closed; at most `BROWSER_MAX_SESSIONS` are open at once.
 - Chromium's own sandbox needs privileges the container does not give, so
   it runs with `--no-sandbox`: the container is the sandbox.
+
+### 3.11 Network analysis
+
+The **Network Analysis** tab reads packet captures with Wireshark's own
+engine, in the `pcap` worker (`pcap/`): Debian's `tshark` and `sharkd`, run
+as an unprivileged user in a container with a read-only filesystem and the
+sample store mounted read-only, no capabilities (nothing is ever captured)
+and the internal network only.
+
+- **Upload** (`POST /api/incidents/{id}/captures`): pcap or pcapng, gzip
+  too, up to `PCAP_MAX_MB` (500), checked by its magic bytes, written to
+  `SAMPLE_STORE/_captures/<id>/` (read-only) and recorded in the
+  `network_captures` table. The worker then reads it once with tshark for
+  the **summary**: hosts by bytes, DNS names and answers, HTTP requests, TLS
+  server names, POST / PUT / PATCH requests, **beacons** (six or more
+  connections to the same address and port, at least 5 s apart, intervals
+  within 15 %), the exported objects with their SHA-256 and the Expert Info
+  counts. These feed the IOC index (`network:<file>`), the timeline and the
+  report's **Network** section.
+- **Viewing** goes through `sharkd`, Wireshark's daemon for web front ends,
+  one process per open capture (two at most, closed after 15 minutes
+  unused): the packet list with Wireshark's colouring rules, paged; the
+  protocol tree with the byte range of every field; Follow Stream; Export
+  Objects. The backend forwards a fixed set of read-only calls
+  (`POST /api/captures/{id}/rpc`); columns are never taken from the caller,
+  since some custom column definitions crash sharkd.
+- **TLS** is decrypted with a key log (`SSLKEYLOGFILE`, NSS format) added at
+  upload or later. It is stored encrypted like the API keys and written to
+  the worker's `/tmp` only while a capture is open.
+- Packets can be flagged into the incident timeline (`pcap:<capture>:<n>`).
+
+**Isolated browser sessions.** The browser worker records every request of
+a session (`netlog.py`): method, URL, type, headers, bodies in clear (the
+browser sees HTTPS decrypted, 2 MB per body and 50 MB per session, past that
+size and SHA-256 only), response, server address, certificate, timings and
+WebSocket messages; refused requests (no network, private address) and held
+submissions included. In a session with network, POST / PUT / PATCH /
+DELETE requests are **held** by default: recorded, not sent, the page shows
+"Submission held by Nik"; the analyst may send them for the session (audited).
+Opened from an incident, the session's log is copied after every action
+(`network/service.py`) and shown live in the window's **Network panel**,
+DevTools-like. When the window closes (or the session expires) the log is
+rebuilt as **pcapng** (`network/pcapng.py`): a DNS answer per host, a TCP
+handshake and HTTP/1.1 in clear per request, a comment saying it is a
+reconstruction and marking held and refused requests, so Wireshark's
+filters, Follow Stream and Export Objects work on it, then analysed like an
+upload. It also exports as **HAR 1.2** (`network/har.py`).
 
 ---
 
