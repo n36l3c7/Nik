@@ -30,6 +30,41 @@ jobs:
         working-directory: capa
         run: ruff check . && ruff format --check . && python -m pytest -q tests
 
+  # The same suite on PostgreSQL (the default job uses SQLite): the version
+  # the Compose file runs and the one before it, after `alembic upgrade head`.
+  backend-postgres:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres: ["16", "18"]
+    services:
+      postgres:
+        image: docker.io/library/postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_USER: nik
+          POSTGRES_PASSWORD: nik
+          POSTGRES_DB: nik
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nik -d nik" --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg://nik:nik@127.0.0.1:5432/nik
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Pango for WeasyPrint (incident report PDF)
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0
+      - name: Install backend deps
+        run: pip install -r backend/requirements-dev.txt
+      - name: Migrations
+        working-directory: backend
+        run: alembic upgrade head
+      - name: Run tests
+        working-directory: backend
+        run: pytest -q
+
   frontend-build:
     runs-on: ubuntu-latest
     steps:

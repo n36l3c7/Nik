@@ -184,6 +184,14 @@
         sums, kept 14 days by default. The README (§ 2.1) has the options and the restore steps.
       </p>
 
+      <h3 id="postgres-18">Upgrading to PostgreSQL 18</h3>
+      <p>
+        From 2.12.2 the Compose file runs PostgreSQL 18 on a new volume. After <code>git pull</code>, and before
+        <code>compose up</code>, run <code>sudo deploy/upgrade-postgres.sh</code>: it backs up the database, moves it
+        with a dump and a restore, checks the row counts and restarts the stack. The PostgreSQL 16 volume is left
+        untouched for a rollback; remove it after 14 days. README § 2.1 has the details.
+      </p>
+
       <h3 id="local">Local development</h3>
       <p>
         <strong>Prerequisites:</strong> Node.js 22+ and Python 3.11–3.13. No database server is needed: the backend
