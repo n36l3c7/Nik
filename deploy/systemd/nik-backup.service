@@ -1,0 +1,14 @@
+# Nik: one backup run (database dump + sample store + .env). Started by nik-backup.timer.
+[Unit]
+Description=Nik nightly backup
+Requires=nik.service
+After=nik.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@NIK_DIR@
+Environment=NIK_DIR=@NIK_DIR@
+Environment=ENGINE=@ENGINE@
+Environment=BACKUP_DIR=@BACKUP_DIR@
+Environment=KEEP_DAYS=@KEEP_DAYS@
+ExecStart=@NIK_DIR@/deploy/backup.sh
