@@ -152,11 +152,16 @@ def _proofpoint_v3(url: str) -> str | None:
     return "".join(out)
 
 
+def _on(host: str, domain: str) -> bool:
+    """The host is ``domain`` or one of its subdomains (not merely containing it)."""
+    return host == domain or host.endswith("." + domain)
+
+
 def unwrap(url: str) -> tuple[str, str | None]:
     """``(original URL, gateway)``; the URL itself and None when not wrapped."""
     host = host_of(url)
     query = parse_qs(urlsplit(url).query) if "?" in url else {}
-    if host.endswith("safelinks.protection.outlook.com") and "url" in query:
+    if _on(host, "safelinks.protection.outlook.com") and "url" in query:
         return query["url"][0], "Microsoft SafeLinks"
     if host == "urldefense.com" and "/v3/" in url:
         original = _proofpoint_v3(url)
@@ -167,13 +172,13 @@ def unwrap(url: str) -> tuple[str, str | None]:
         if "/v2/" in url:
             encoded = encoded.replace("-", "%").replace("_", "/")
         return unquote(encoded), "Proofpoint URLDefense"
-    if host.endswith("google.com") and urlsplit(url).path == "/url" and ("q" in query or "url" in query):
+    if _on(host, "google.com") and urlsplit(url).path == "/url" and ("q" in query or "url" in query):
         return (query.get("q") or query["url"])[0], "Google redirect"
     if host in ("l.facebook.com", "lm.facebook.com") and "u" in query:
         return query["u"][0], "Facebook redirect"
     if host == "linkprotect.cudasvc.com" and "a" in query:
         return query["a"][0], "Barracuda Link Protection"
-    if "mimecast.com" in host and urlsplit(url).path.startswith("/s/"):
+    if _on(host, "mimecast.com") and urlsplit(url).path.startswith("/s/"):
         return url, "Mimecast (opaque: the original cannot be read from the link)"
     return url, None
 

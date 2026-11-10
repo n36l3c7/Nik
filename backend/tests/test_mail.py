@@ -190,6 +190,11 @@ def test_lookalikes_and_genuine_domains():
 def test_link_unwrapping_and_findings():
     safelink = "https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fevil.top%2Fa&data=x&reserved=0"
     assert unwrap(safelink) == ("https://evil.top/a", "Microsoft SafeLinks")
+    # Only the gateways' own hosts are unwrapped, not look-alikes containing their names.
+    lookalike_gateway = "https://evilsafelinks.protection.outlook.com.evil.top/?url=https%3A%2F%2Fx.top"
+    assert unwrap(lookalike_gateway) == (lookalike_gateway, None)
+    assert unwrap("https://notgoogle.com/url?q=https://x.top")[1] is None
+    assert unwrap("https://www.google.com/url?q=https://x.top") == ("https://x.top", "Google redirect")
     links = extract('<a href="https://login-paypa1.top/x">https://www.paypal.com/signin</a>', "")
     assert [link["url"] for link in links] == ["https://login-paypa1.top/x"]
     found = {f["id"] for f in analyse(links, [], verify.org_domain)[0]["findings"]}
