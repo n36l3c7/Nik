@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.2] - 2026-11-10
+
+### Changed
+
+- **PostgreSQL 18** in the Compose file, on a new `db-data-18` volume.
+  **Upgrading needs one manual step**: after `git pull`, before
+  `compose up`, run `sudo deploy/upgrade-postgres.sh` (README § 2.1). It
+  takes a full backup, moves the data with a dump and a restore, compares the
+  row counts of every table and restarts the stack. The PostgreSQL 16
+  `db-data` volume is left untouched for a rollback; remove it after 14 days.
+  If `compose up` runs first, the `db` container refuses to create an empty
+  database while the old data is unmoved (`deploy/db-entrypoint.sh`) and the
+  script dumps the old volume with a temporary PostgreSQL 16.
+- CI runs the backend suite on PostgreSQL 16 and 18 too, after
+  `alembic upgrade head`.
+
 ## [2.12.1] - 2026-11-10
 
 ### Changed
@@ -570,7 +586,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.12.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.12.2...HEAD
+[2.12.2]: https://github.com/n36l3c7/Nik/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/n36l3c7/Nik/compare/v2.12.0...v2.12.1
 [2.12.0]: https://github.com/n36l3c7/Nik/compare/v2.11.2...v2.12.0
 [2.11.2]: https://github.com/n36l3c7/Nik/compare/v2.11.1...v2.11.2
