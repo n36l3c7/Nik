@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-11-10
+
+### Added
+
+- **Ticket ID, short title and severity** for incidents. The name puts the
+  ticket first in square brackets, then the short title when set (it
+  replaces host and user): `[INC-2041] Invoice phishing, finance`. The
+  severity (low, medium, high, critical) is a tag shown next to the name in
+  the sidebar and the header, never part of it. Editable in the Summary tab;
+  the light incident list, `?q=` and the search palette include the ticket
+  (migration `0013` mirrors ticket and severity into columns).
+- **Right-click menu** across the app: on indicators (where seen, search,
+  copy, copy defanged, add to the allowlist), on event rows of Browser,
+  Commands, Endpoint, Event Logs and Timeline (flag, comment, copy as text or
+  JSON, show in the timeline) and on incidents in the sidebar (open, report,
+  export, copy link, delete). Text fields, selected text and Shift +
+  right-click keep the browser's menu.
+- **One-click allowlist** from the IOCs tab (a shield button on each row) or
+  the right-click menu: the value or a wider entry (its domain or a parent
+  domain, its /24 network), with a comment line saying who added it, and
+  Undo. Any analyst can do it.
+- **Drop a file anywhere**: Nik recognises it from its first bytes and its
+  name (executables, Office documents, PDF, scripts and archives, `.evtx` and
+  the event-log JSON, browser databases and plists, shell histories, CSV) and
+  asks, every time, whether it goes into the open incident or a new one, then
+  imports it into the right tab and source.
+- The incident report shows the ticket and the severity.
+
+
 ## [2.12.3] - 2026-11-10
 
 ### Fixed
@@ -597,7 +626,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.12.3...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.13.0...HEAD
+[2.13.0]: https://github.com/n36l3c7/Nik/compare/v2.12.3...v2.13.0
 [2.12.3]: https://github.com/n36l3c7/Nik/compare/v2.12.2...v2.12.3
 [2.12.2]: https://github.com/n36l3c7/Nik/compare/v2.12.1...v2.12.2
 [2.12.1]: https://github.com/n36l3c7/Nik/compare/v2.12.0...v2.12.1
