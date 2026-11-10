@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nik deployment: Docker or Podman Compose, production hardening, manual RHEL install, backups."
+    />
+    <title>Nik — Deployment</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="guide.html">User guide</a>
+          <a href="deployment.html" aria-current="page">Deployment</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="api.html">API</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="developer.html">Developers</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Deployment</h1>
+      <p class="lead">
+        Run Nik with Docker or Podman Compose, harden it for production, install it by hand on RHEL, and back it up.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#quick-start-with-docker-podman">Quick start with Docker / Podman</a></li>
+          <li><a href="#production-deployment">Production deployment</a></li>
+          <li><a href="#full-platform-backup">Full platform backup</a></li>
+        </ol>
+      </nav>
+      <h2 id="quick-start-with-docker-podman">Quick start with Docker / Podman</h2>
+      <p>
+        The fastest way to run the whole stack — nginx (static SPA + <code>/api</code> reverse proxy), the FastAPI
+        backend and PostgreSQL — is the bundled Compose file:
+      </p>
+      <pre><code class="language-bash">cp .env.example .env          # then edit DB_PASSWORD and SECRET_KEY
+docker compose up -d --build  # build the images and start the whole stack
+</code></pre>
+      <p>
+        Open <strong>https://localhost:8443</strong> and create the first user — that account becomes the
+        <strong>admin</strong>. Database tables are created automatically on the API's first start, so there is nothing
+        to migrate.
+      </p>
+      <blockquote>
+        <p>
+          On first start the <code>web</code> container self-signs a TLS certificate, so the browser shows a one-time
+          "connection not private" warning — accept it to proceed (or mount a real certificate, see Docker / Podman in
+          production). Plain HTTP stays available on <strong>http://localhost:8080</strong>.
+        </p>
+      </blockquote>
+      <pre><code class="language-bash">docker compose logs -f api    # follow backend logs
+docker compose ps             # container status
+docker compose down           # stop (keeps the database volume)
+docker compose down -v        # stop AND delete the database volume (wipes data)
+</code></pre>
+      <p>Podman is a drop-in replacement (rootless is fine for ports 8080/8443):</p>
+      <pre><code class="language-bash">cp .env.example .env
+podman-compose up -d --build  # or: podman compose up -d --build
+</code></pre>
+      <p>
+        Every image in the Dockerfiles and the Compose file names its registry (<code>docker.io/...</code>), so Podman
+        never has to guess one from <code>/etc/containers/registries.conf</code> (on RHEL it would try
+        <code>registry.redhat.io</code> first and ask for Red Hat credentials). Keep it that way when you add an image:
+        <code>deploy/check-images.sh</code> (run by CI) fails on a short name.
+      </p>
+      <h2 id="production-deployment">Production deployment</h2>
+      <blockquote>
+        <p>
+          <strong>Upgrading from a "CSAP"-era deployment?</strong> The database role and name are now
+          <code>nik</code> (was <code>csap</code>). A pre-existing Postgres volume still holds the old
+          <code>csap</code> role/database, so either start on a <strong>fresh</strong> volume (<code
+            >docker volume rm nik_db-data-18</code
+          >
+          / your project's <code>*_db-data-18</code>), or keep the old names by setting <code>DB_USER</code>,
+          <code>DB_NAME</code> and the compose <code>POSTGRES_*</code> back to <code>csap</code>, or rename in place
+          with <code>ALTER ROLE csap RENAME TO nik;</code> and <code>ALTER DATABASE csap RENAME TO nik;</code>. The
+          session cookie also changed name, so everyone re-logs in once.
+        </p>
+      </blockquote>
+      <h3 id="docker-podman-in-production">Docker / Podman in production</h3>
+      <p>
+        The Compose stack publishes plain HTTP on <code>:8080</code> and HTTPS on <code>:8443</code>. On first start the
+        <code>web</code> container <strong>self-signs a certificate</strong> (for <code>TLS_HOSTNAME</code>, default
+        <code>localhost</code>) into the <code>web-certs</code> volume, so HTTPS works out of the box — browsers show
+        the usual warning until the certificate is trusted or replaced. For a real deployment set
+        <code>COOKIE_SECURE=true</code> and pick one of:
+      </p>
+      <ul>
+        <li>
+          <strong>Option A (recommended):</strong> provide your own certificate — internal CA or Let's Encrypt — as
+          <code>nik.crt</code> / <code>nik.key</code> in <code>/etc/nginx/certs</code>; the startup script never
+          overwrites an existing pair. Easiest wiring: swap the named volume for a bind mount in
+          <code>docker-compose.yml</code> (<code>- ./certs:/etc/nginx/certs</code>).
+        </li>
+        <li>
+          <strong>Option B:</strong> front the stack with a host reverse proxy that terminates TLS (nginx, Caddy,
+          Traefik) proxying to <code>127.0.0.1:8080</code>, and remove the <code>8443</code> port mapping.
+        </li>
+      </ul>
+      <p>
+        To regenerate the self-signed certificate (e.g. after changing <code>TLS_HOSTNAME</code>):
+        <code>docker compose down &amp;&amp; docker volume rm nik_web-certs</code>, then start the stack again.
+      </p>
+      <p>Notes for Podman on RHEL:</p>
+      <ul>
+        <li>
+          <strong>Rootless</strong> works out of the box — only host ports below 1024 require rootful Podman (or
+          lowering <code>net.ipv4.ip_unprivileged_port_start</code>).
+        </li>
+        <li>
+          <strong>Start on boot:</strong> <code>restart: unless-stopped</code> does not bring the stack back after a
+          reboot with <code>podman-compose</code>. Install the systemd units (next paragraph):
+          <code>nik.service</code> runs <code>podman compose up -d</code> at boot.
+        </li>
+        <li>
+          <strong>SELinux:</strong> named volumes (as used here) are relabeled automatically. If you switch to a bind
+          mount, add <code>:Z</code> to that mount.
+        </li>
+      </ul>
+      <p><strong>Start on boot and nightly backups (systemd).</strong> From the repository root, as root:</p>
+      <pre><code class="language-bash">sudo deploy/install-systemd.sh
+</code></pre>
+      <p>
+        It installs and enables three units, with the repository path and the compose command (<code
+          >podman compose</code
+        >, or <code>docker compose</code> where Podman is absent) filled in:
+      </p>
+      <ul>
+        <li><code>nik.service</code> — <code>compose up -d</code> at boot, <code>compose down</code> at shutdown;</li>
+        <li>
+          <code>nik-backup.timer</code> + <code>nik-backup.service</code> — <code>deploy/backup.sh</code> every night at
+          02:30 (a run missed while the server was off happens at the next boot).
+        </li>
+      </ul>
+      <p>
+        Options: <code>--backup-dir /srv/nik-backups</code> (default <code>/var/backups/nik</code>),
+        <code>--keep-days 30</code> (default 14), <code>--backup-time 03:15</code>, <code>--no-backup</code>,
+        <code>--uninstall</code>. Check with <code>systemctl status nik.service nik-backup.timer</code> and
+        <code>journalctl -u nik-backup</code>; run a backup now with <code>systemctl start nik-backup.service</code>.
+      </p>
+      <p>
+        <strong>Backups &amp; restore.</strong> Each backup is a directory <code>nik-YYYYMMDD-HHMMSS/</code>, readable
+        by root only, with:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Content</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>db.dump</code></td>
+              <td>
+                PostgreSQL dump (<code>pg_dump -Fc</code>): incidents, users, settings, audit log, sample analyses
+              </td>
+            </tr>
+            <tr>
+              <td><code>samples.tar</code></td>
+              <td>the sample store: <strong>live malware</strong>, keep the backups private</td>
+            </tr>
+            <tr>
+              <td><code>env</code></td>
+              <td>the <code>.env</code> file (secrets, database password)</td>
+            </tr>
+            <tr>
+              <td><code>SHA256SUMS</code></td>
+              <td>checksums: <code>sha256sum -c SHA256SUMS</code> before restoring</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <code>deploy/backup.sh</code> also runs by hand (<code>ENGINE</code>, <code>BACKUP_DIR</code>,
+        <code>KEEP_DAYS</code> in the environment). It reaches the <code>db</code> and <code>api</code> containers with
+        <code>podman exec</code> / <code>docker exec</code>, found by their Compose labels, never through
+        <code>compose exec</code>: <code>podman-compose</code> prints diagnostics on stdout, which would corrupt the
+        dump. To restore on a running stack (<code>B</code> = the backup directory; container names as in
+        <code>podman ps</code>):
+      </p>
+      <pre><code class="language-bash">cd &quot;$B&quot; &amp;&amp; sha256sum -c SHA256SUMS
+podman exec -i nik_db_1 pg_restore -U nik -d nik --clean --if-exists &lt; &quot;$B/db.dump&quot;
+podman exec -i nik_api_1 tar -C /app/samples -xf - &lt; &quot;$B/samples.tar&quot;
+podman restart nik_api_1    # also gives the restored samples their permissions
+</code></pre>
+      <p>
+        On a new server, put <code>env</code> back as <code>.env</code> before the first <code>compose up</code>, so the
+        database password matches the dump. The in-app <strong>Full backup</strong> (<a
+          href="deployment.html#full-platform-backup"
+          >full platform backup</a
+        >) remains the way to move data across database engines; it does not include the sample files.
+      </p>
+      <p><strong>Updates:</strong></p>
+      <pre><code class="language-bash">git pull
+podman compose up -d --build    # rebuild images, recreate containers, keep data
+</code></pre>
+      <p>Release notes say when an update needs more than this, as the move to PostgreSQL 18 below does.</p>
+      <h4 id="upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18 (2.12.2)</h4>
+      <p>
+        Releases up to 2.12.1 run PostgreSQL 16 on the <code>db-data</code> volume. From 2.12.2 the Compose file runs
+        <strong>PostgreSQL 18</strong> on a new <code>db-data-18</code> volume. PostgreSQL 18 cannot open the data files
+        of 16, so the data moves once, with a dump and a restore, by <code>deploy/upgrade-postgres.sh</code>. Plan a
+        short maintenance window: the app is down for the dump, the restore and the restart, a few minutes for a typical
+        database.
+      </p>
+      <ol>
+        <li>
+          Pull the new release, but <strong>do not</strong> run <code>compose up</code> yet; the running stack is still
+          the old one:
+        </li>
+      </ol>
+      <p><code>bash cd /opt/Nik &amp;&amp; git pull</code></p>
+      <ol start="2">
+        <li>Run the upgrade as root:</li>
+      </ol>
+      <p><code>bash sudo deploy/upgrade-postgres.sh</code></p>
+      <p>
+        It takes a full backup with <code>deploy/backup.sh</code> (under <code>/var/backups/nik</code>, or
+        <code>BACKUP_DIR</code>), counts the rows of every table, stops the stack, starts PostgreSQL 18 on the new
+        volume, restores the dump, compares the row counts and starts the whole stack again. It stops at the first error
+        and deletes nothing. Running it again is always safe: it carries on from where a previous run stopped, or says
+        there is nothing to do.
+      </p>
+      <ol start="3">
+        <li>Check the app (sign in, open an incident), then the database version:</li>
+      </ol>
+      <p><code>bash podman exec nik_db_1 psql -U nik -d nik -Atc 'SHOW server_version'</code></p>
+      <p>
+        <strong>If <code>compose up</code> already ran</strong> on 2.12.2 before the script, the <code>db</code>
+        container restarts in a loop and its log says
+        <code>run deploy/upgrade-postgres.sh</code>: it refuses to create an empty database while the old data has not
+        been moved (<code>deploy/db-entrypoint.sh</code>). Run the script anyway: it dumps the old volume with a
+        temporary PostgreSQL 16 container instead.
+      </p>
+      <p>
+        <strong>The old data stays.</strong> The <code>db-data</code> volume is not modified; the new
+        <code>db</code> container mounts it read-only. Keep it <strong>14 days</strong>, then remove it (the script
+        prints the exact name):
+      </p>
+      <pre><code class="language-bash">podman volume rm nik_db-data
+</code></pre>
+      <p>
+        <strong>Rollback</strong> (within those 14 days): go back to the previous release and start it; it runs
+        PostgreSQL 16 on the untouched <code>db-data</code> volume. Anything recorded after the upgrade is not in it:
+        export the incidents you need first (incident JSON export, or the in-app <strong>Full backup</strong>, which
+        restores across database versions).
+      </p>
+      <pre><code class="language-bash">podman compose down
+git checkout v2.12.1
+podman compose up -d --build
+</code></pre>
+      <h3 id="manual-deployment-on-rhel">Manual deployment on RHEL</h3>
+      <p>
+        Tested on <strong>RHEL 8 and 9</strong> (same steps on Rocky/AlmaLinux). nginx serves the static bundle and
+        reverse-proxies <code>/api/</code> to the backend, so the browser talks to a single origin — no CORS, and the
+        session cookie just works. All commands assume a <code>sudo</code>-capable user.
+      </p>
+      <p>
+        Because incidents, users and the audit log live in <strong>PostgreSQL on the server</strong>, back up the
+        <strong>database</strong> (<code>pg_dump</code>) or use the in-app <strong>Full backup</strong> (<a
+          href="deployment.html#full-platform-backup"
+          >full platform backup</a
+        >) — the per-incident JSON export (<a href="developer.html#incident-export-import-json"
+          >incident export format</a
+        >) is an exchange/archival format, not the primary backup.
+      </p>
+      <h4 id="step-1-build-the-static-bundle">Step 1 — Build the static bundle</h4>
+      <p>
+        Build on the RHEL host or on any machine with Node 22+ and copy <code>frontend/dist/</code> over. To install
+        Node on RHEL (NodeSource, works on 8 and 9):
+      </p>
+      <pre><code class="language-bash">curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+sudo dnf install -y nodejs
+</code></pre>
+      <p>Then, from the project's <code>frontend/</code> directory:</p>
+      <pre><code class="language-bash">npm ci            # clean, reproducible install from package-lock.json
+npm run build     # outputs the static site into dist/
+</code></pre>
+      <h4 id="step-2-install-and-configure-postgresql">Step 2 — Install and configure PostgreSQL</h4>
+      <p>Any PostgreSQL from 14 on works (CI tests 16 and 18); use the version your RHEL release ships.</p>
+      <pre><code class="language-bash">sudo dnf install -y postgresql-server postgresql-contrib
+sudo postgresql-setup --initdb
+sudo systemctl enable --now postgresql
+
+# Application role and database:
+sudo -u postgres createuser --pwprompt nik
+sudo -u postgres createdb -O nik nik
+</code></pre>
+      <p>
+        <strong>Enable password authentication.</strong> A fresh RHEL cluster uses <code>ident</code>/<code>peer</code>
+        auth for local TCP connections, which rejects the app's <code>nik</code> login. Edit
+        <code>/var/lib/pgsql/data/pg_hba.conf</code> so the local lines use <code>scram-sha-256</code>:
+      </p>
+      <pre><code class="language-conf"># TYPE  DATABASE  USER  ADDRESS         METHOD
+host    nik      nik  127.0.0.1/32    scram-sha-256
+host    nik      nik  ::1/128         scram-sha-256
+</code></pre>
+      <p>Then <code>sudo systemctl reload postgresql</code>. The connection string for the backend is:</p>
+      <pre><code>postgresql+psycopg://nik:STRONG_PASSWORD@localhost/nik
+</code></pre>
+      <p>
+        Tables (<code>users</code>, <code>sessions</code>, <code>incidents</code>, <code>audit_log</code>,
+        <code>settings</code>) are created automatically on the API's first startup — no migration step.
+      </p>
+      <h4 id="step-3-deploy-the-fastapi-backend-systemd">Step 3 — Deploy the FastAPI backend (systemd)</h4>
+      <p>
+        The backend needs <strong>Python 3.11+</strong> (RHEL 9 ships it; on RHEL 8 install <code>python3.11</code>).
+        Copy <code>backend/</code> to <code>/opt/nik/backend</code> and build a virtualenv:
+      </p>
+      <pre><code class="language-bash">sudo dnf install -y python3 python3-pip
+sudo useradd --system --home /opt/nik --shell /sbin/nologin nik
+
+sudo mkdir -p /opt/nik
+sudo cp -r backend /opt/nik/backend
+cd /opt/nik/backend
+
+sudo python3 -m venv .venv
+sudo .venv/bin/pip install --upgrade pip
+sudo .venv/bin/pip install -r requirements.txt
+sudo chown -R nik:nik /opt/nik
+</code></pre>
+      <p>Keep the secrets in <code>/etc/nik/nik.env</code> (readable only by root and the service account):</p>
+      <pre><code class="language-bash">sudo mkdir -p /etc/nik
+sudo tee /etc/nik/nik.env &gt;/dev/null &lt;&lt;'EOF'
+DATABASE_URL=postgresql+psycopg://nik:STRONG_PASSWORD@localhost/nik
+SECRET_KEY=replace-with-a-long-random-string   # e.g. `openssl rand -hex 32`
+COOKIE_SECURE=true                             # requires HTTPS
+EOF
+sudo chmod 640 /etc/nik/nik.env
+sudo chown root:nik /etc/nik/nik.env
+</code></pre>
+      <p>
+        Create <code>/etc/systemd/system/nik-api.service</code> — the API binds to <strong>loopback only</strong>; nginx
+        is the sole public entry point:
+      </p>
+      <pre><code class="language-ini">[Unit]
+Description=Nik FastAPI backend (gunicorn/uvicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=nik
+Group=nik
+WorkingDirectory=/opt/nik/backend
+EnvironmentFile=/etc/nik/nik.env
+ExecStart=/opt/nik/backend/.venv/bin/gunicorn \
+    -k uvicorn.workers.UvicornWorker \
+    app.main:app \
+    --bind 127.0.0.1:8000 \
+    --workers 3
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+      <pre><code class="language-bash">sudo systemctl daemon-reload
+sudo systemctl enable --now nik-api.service
+curl -s http://127.0.0.1:8000/api/health      # → {&quot;status&quot;:&quot;ok&quot;}
+</code></pre>
+      <h4 id="step-4-install-nginx-and-place-the-static-files">Step 4 — Install nginx and place the static files</h4>
+      <pre><code class="language-bash">sudo dnf install -y nginx
+sudo systemctl enable --now nginx
+
+sudo mkdir -p /var/www/nik
+sudo cp -r dist/* /var/www/nik/
+</code></pre>
+      <h4 id="step-5-selinux-enforced-by-default-on-rhel">Step 5 — SELinux (enforced by default on RHEL)</h4>
+      <pre><code class="language-bash"># a) Let nginx connect to the backend — without this, /api/ returns
+#    502 Bad Gateway with an &quot;AVC denied … name_connect&quot; in the audit log:
+sudo setsebool -P httpd_can_network_connect 1
+
+# b) Label the static-file directory — or nginx returns 403 Forbidden:
+sudo dnf install -y policycoreutils-python-utils
+sudo semanage fcontext -a -t httpd_sys_content_t &quot;/var/www/nik(/.*)?&quot;
+sudo restorecon -Rv /var/www/nik
+</code></pre>
+      <h4 id="step-6-tls-certificate">Step 6 — TLS certificate</h4>
+      <p>
+        For an internal host a self-signed certificate is enough (clients must trust it or accept the browser warning).
+        Replace the CN/SANs with your host:
+      </p>
+      <pre><code class="language-bash">sudo mkdir -p /etc/pki/nginx/private
+sudo openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
+  -keyout /etc/pki/nginx/private/nik.key \
+  -out    /etc/pki/nginx/nik.crt \
+  -subj &quot;/CN=nik.example.internal&quot; \
+  -addext &quot;subjectAltName=DNS:nik.example.internal,IP:10.0.0.10&quot;
+</code></pre>
+      <p>
+        For an internet-facing host use a real certificate instead (e.g. Let's Encrypt:
+        <code>sudo dnf install -y certbot python3-certbot-nginx</code>).
+      </p>
+      <h4 id="step-7-ensure-the-wasm-mime-type">Step 7 — Ensure the <code>.wasm</code> MIME type</h4>
+      <p>
+        sql.js loads a WebAssembly module. RHEL 9's nginx already maps it; RHEL 8's does not. Add the line to the
+        <code>types { … }</code> block of <code>/etc/nginx/mime.types</code> if missing:
+      </p>
+      <pre><code class="language-nginx">application/wasm  wasm;
+</code></pre>
+      <h4 id="step-8-nginx-server-block">Step 8 — nginx server block</h4>
+      <p>Create <code>/etc/nginx/conf.d/nik.conf</code>:</p>
+      <pre><code class="language-nginx"># Redirect plain HTTP to HTTPS (the app requires a secure context)
+server {
+    listen 80;
+    server_name nik.example.internal;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name nik.example.internal;
+
+    ssl_certificate     /etc/pki/nginx/nik.crt;
+    ssl_certificate_key /etc/pki/nginx/private/nik.key;
+
+    # Large uploads (packet captures up to PCAP_MAX_MB, backup restore,
+    # incidents with parsed artifacts) blow past nginx's 1m default and get
+    # rejected with 413.
+    client_max_body_size 600m;
+
+    root  /var/www/nik;
+    index index.html;
+
+    # Reverse-proxy the REST API to the gunicorn/uvicorn backend.
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        # Opening a large packet capture in Wireshark's engine takes minutes.
+        proxy_read_timeout 330s;
+        proxy_send_timeout 330s;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Fingerprinted assets can be cached forever…
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control &quot;public, immutable&quot;;
+    }
+
+    # …but never cache the HTML entry point, so updates are picked up.
+    location = /index.html {
+        add_header Cache-Control &quot;no-cache&quot;;
+    }
+
+    # Serve static files; fall back to index.html
+    location / {
+        try_files $uri /index.html;
+    }
+}
+</code></pre>
+      <blockquote>
+        <p>
+          If <code>/api/</code> returns <code>502 Bad Gateway</code>, the usual culprit is SELinux — confirm
+          <code>httpd_can_network_connect</code> is on (Step 5a) and that <code>nik-api.service</code> is running (<code
+            >curl http://127.0.0.1:8000/api/health</code
+          >).
+        </p>
+      </blockquote>
+      <h4 id="step-9-open-the-firewall-and-reload">Step 9 — Open the firewall and reload</h4>
+      <p>Only <strong>80/443</strong> are exposed; the backend stays on <code>127.0.0.1:8000</code>:</p>
+      <pre><code class="language-bash">sudo firewall-cmd --permanent --add-service=http --add-service=https
+sudo firewall-cmd --reload
+
+sudo nginx -t
+sudo systemctl reload nginx
+</code></pre>
+      <p>Browse to <code>https://nik.example.internal</code>, create the first (admin) user and sign in.</p>
+      <h4 id="updating-to-a-new-version">Updating to a new version</h4>
+      <pre><code class="language-bash"># Frontend — rebuild and replace the static files:
+(cd frontend &amp;&amp; npm ci &amp;&amp; npm run build)
+sudo rm -rf /var/www/nik/*
+sudo cp -r frontend/dist/* /var/www/nik/
+sudo restorecon -Rv /var/www/nik
+
+# Backend — refresh code and dependencies, restart the service:
+sudo cp -r backend/* /opt/nik/backend/
+sudo /opt/nik/backend/.venv/bin/pip install -r /opt/nik/backend/requirements.txt
+sudo chown -R nik:nik /opt/nik
+sudo systemctl restart nik-api.service
+</code></pre>
+      <p>
+        Upgrades do <strong>not</strong> wipe data: everything persists in PostgreSQL, and new tables are created on
+        startup. Take a <code>pg_dump</code> (or an in-app full backup,
+        <a href="deployment.html#full-platform-backup">full platform backup</a>) before upgrading if you want a rollback
+        point.
+      </p>
+      <hr />
+      <h2 id="full-platform-backup">Full platform backup</h2>
+      <p>
+        Admins can export and restore the <strong>entire platform</strong> — every incident (imported artifacts, flags
+        and notes included), every user account, the audit log and the shared detection settings — from the sidebar's
+        <strong>Full backup</strong> button. Typical uses: a safety copy before an upgrade, or moving a deployment to
+        another machine (including SQLite dev → PostgreSQL production, since the backup is database-agnostic).
+      </p>
+      <blockquote>
+        <p>
+          Routine upgrades do <strong>not</strong> require this: data persists in PostgreSQL across frontend/backend
+          updates and container rebuilds. The full backup is insurance and a migration vehicle, complementary to
+          <code>pg_dump</code>.
+        </p>
+        <p>
+          The backup envelope holds the <strong>analysis</strong> of every malware sample, not the raw files: those live
+          in the sample store (<code>SAMPLE_STORE</code>, the <code>sample-store</code> volume in Compose). Copy that
+          directory alongside the backup if the samples themselves must survive.
+        </p>
+      </blockquote>
+      <h3 id="export">Export</h3>
+      <p>
+        <code>GET /api/backup/export</code> (admin only, logged as <code>backup.export</code>) downloads
+        <code>nik-backup-&lt;timestamp&gt;.json</code>:
+      </p>
+      <pre><code class="language-json">{
+  &quot;app&quot;: &quot;Nik&quot;,
+  &quot;type&quot;: &quot;backup&quot;,
+  &quot;version&quot;: 1,
+  &quot;exportedAt&quot;: &quot;2026-07-08T09:00:00.000Z&quot;,
+  &quot;users&quot;:     [ { &quot;id&quot;: &quot;…&quot;, &quot;username&quot;: &quot;…&quot;, &quot;passwordHash&quot;: &quot;…&quot;,
+                   &quot;role&quot;: &quot;admin&quot;, &quot;createdAt&quot;: &quot;…&quot;, &quot;createdBy&quot;: null } ],
+  &quot;incidents&quot;: [ { &quot;…full incident documents, artifacts included…&quot;: &quot;&quot; } ],
+  &quot;audit&quot;:     [ { &quot;id&quot;: &quot;…&quot;, &quot;at&quot;: &quot;…&quot;, &quot;actor&quot;: &quot;…&quot;, &quot;action&quot;: &quot;…&quot; } ],
+  &quot;settings&quot;:  { &quot;keywords&quot;: [ ], &quot;businessHours&quot;: { } }
+}
+</code></pre>
+      <p>
+        ⚠️ The file contains <strong>bcrypt password hashes</strong>: treat it like a database dump (store it encrypted
+        / access-controlled).
+      </p>
+      <h3 id="restore">Restore</h3>
+      <p>
+        <code>POST /api/backup/import</code> (admin only, logged as <code>backup.import</code>)
+        <strong>replaces all current data</strong> with the file's content, in a single all-or-nothing transaction. The
+        UI asks for explicit confirmation and shows what the file contains before sending anything.
+      </p>
+      <p>Guarantees:</p>
+      <ul>
+        <li><strong>Atomic</strong> — on any validation or database error, nothing is changed.</li>
+        <li>
+          <strong>No lockout</strong> — the importing admin stays signed in: if their username exists in the backup, the
+          session re-attaches to that account (whose password becomes the one from the backup); otherwise their current
+          account is re-inserted unchanged alongside the imported users.
+        </li>
+        <li>
+          <strong>Sessions are reset</strong> — every other analyst must sign in again (with the credentials from the
+          backup).
+        </li>
+      </ul>
+      <p>After a successful restore the app reloads and every context refetches the restored data.</p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

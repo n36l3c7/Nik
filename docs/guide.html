@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nik user guide: sign in, create an incident, add evidence, work each analysis tab, search, report and share."
+    />
+    <title>Nik — User guide</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="guide.html" aria-current="page">User guide</a>
+          <a href="deployment.html">Deployment</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="api.html">API</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="developer.html">Developers</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>User guide</h1>
+      <p class="lead">
+        How an analyst works in Nik, from the first sign-in to the report: open an incident, bring in the evidence, read
+        it tab by tab, flag what matters and share the result.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#sign-in">Sign in</a></li>
+          <li><a href="#incidents">Incidents</a></li>
+          <li><a href="#evidence">Add evidence</a></li>
+          <li><a href="#tabs">The analysis tabs</a></li>
+          <li><a href="#overview-tabs">Summary, Timeline, IOCs</a></li>
+          <li><a href="#threat-tabs">Mail, Malware, Network</a></li>
+          <li><a href="#host-tabs">Endpoint, Event Logs, Browser, Commands</a></li>
+          <li><a href="#flags">Flags, comments and the right-click menu</a></li>
+          <li><a href="#search">Search</a></li>
+          <li><a href="#report">The incident report</a></li>
+          <li><a href="#share">Export, import and backup</a></li>
+          <li><a href="#settings">Settings</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="sign-in">Sign in</h2>
+      <p>
+        On a new installation the first screen asks for an account: the first one created becomes the
+        <strong>admin</strong>. Every other analyst gets an account from the admin (Settings → Accounts) as an
+        <strong>analyst</strong> or another admin. Every action is recorded under the analyst's name in the audit log.
+      </p>
+      <figure class="shot">
+        <img src="img/sign-in.png" alt="The sign-in screen" width="1600" height="1000" loading="lazy" />
+        <figcaption>The sign-in screen. The banner shows whether the server is reachable.</figcaption>
+      </figure>
+
+      <h2 id="incidents">Incidents</h2>
+      <p>
+        An <strong>incident</strong> is one case: one machine or one user under investigation, and everything found
+        about it. The sidebar lists them, newest first; click one to open it.
+      </p>
+      <ol>
+        <li>Click <strong>New incident</strong> in the sidebar.</li>
+        <li>
+          Fill in what you know: the <strong>ticket ID</strong> from your tracker, a <strong>short title</strong>, the
+          <strong>host</strong> and the <strong>user</strong>. At least one is needed. Pick the
+          <strong>severity</strong> (a tag, never part of the name) and the host's <strong>operating system</strong>,
+          which decides the artifact paths, shells and collection scripts Nik suggests.
+        </li>
+        <li>Click <strong>Create incident</strong>: the incident opens on its Summary tab.</li>
+      </ol>
+      <p>
+        The name is built from the fields: the ticket in square brackets, then the title, or
+        <code>host - user</code> when there is no title, for example <code>[INC-2041] Invoice phishing, finance</code>.
+        Everything stays editable from the Summary tab.
+      </p>
+      <figure class="shot">
+        <img src="img/new-incident.png" alt="The New incident dialog" width="1600" height="1000" loading="lazy" />
+        <figcaption>A new incident: ticket, title, host and user.</figcaption>
+      </figure>
+
+      <h2 id="evidence">Add evidence</h2>
+      <p>There are two ways to bring a file into an incident:</p>
+      <ul>
+        <li>
+          <strong>Drop it anywhere</strong> on the app. Nik reads the file's name and first bytes and proposes the tab
+          and the source: a Chrome <code>History</code> goes to Browser Forensics, a <code>.bash_history</code> to
+          Command History, an <code>.eml</code> to Mail Analysis, an executable to Malware Analysis, a
+          <code>.pcapng</code> to Network Analysis. Check the proposal, change it if needed, and click
+          <strong>Import</strong>. You can also send the file to a new incident from the same dialog.
+        </li>
+        <li>
+          Use the <strong>Data sources</strong> card of a tab, which also tells you where the file lives on the host
+          and, for endpoint artifacts and event logs, gives a native script that collects it.
+        </li>
+      </ul>
+      <p>
+        Browser databases, plists, shell histories and tool exports are parsed <strong>in your browser</strong>: the raw
+        file never leaves your machine, only the entries reach the server. Windows <code>.evtx</code> logs, e-mails,
+        malware samples and packet captures are sent to the Nik server, which analyses them without ever running them.
+      </p>
+      <figure class="shot">
+        <img
+          src="img/add-file.png"
+          alt="The Add a file dialog after a drop"
+          width="1600"
+          height="1000"
+          loading="lazy"
+        />
+        <figcaption>A file dropped on the app: Nik proposes the tab and the format.</figcaption>
+      </figure>
+
+      <h2 id="tabs">The analysis tabs</h2>
+      <p>The tab bar groups the tabs in the order of an investigation, separated by a thin rule:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>Tabs</th>
+              <th>What they hold</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Overview</td>
+              <td>Summary · Timeline · IOCs</td>
+              <td>What the incident adds up to: details, notes, every event in order, every indicator.</td>
+            </tr>
+            <tr>
+              <td>Threats</td>
+              <td>Mail · Malware · Network</td>
+              <td>The attack itself: the reported e-mail, the samples, the traffic.</td>
+            </tr>
+            <tr>
+              <td>Host</td>
+              <td>Endpoint Artifacts · Event Logs · Browser Forensics · Command History</td>
+              <td>What was collected on the machine.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="overview-tabs">Summary, Timeline, IOCs</h2>
+      <h3>Summary</h3>
+      <p>
+        The incident's details (ticket, title, severity, host, user, operating system), the
+        <strong>suspicious window</strong> (start and end of the malicious activity, used to highlight events in every
+        tab), counters per source, the flagged events and the analysts' <strong>notes</strong>.
+      </p>
+      <figure class="shot">
+        <img src="img/summary.png" alt="The Summary tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Summary: the incident details and the counters of each source.</figcaption>
+      </figure>
+      <h3>Timeline</h3>
+      <p>
+        Every timestamped event of every tab in one chronological list: browser visits and downloads, commands, endpoint
+        artifacts, Windows events, samples, e-mails and network captures. Filter by source, by text or by severity; the
+        detection engine marks suspicious events, and events inside the suspicious window stand out.
+      </p>
+      <figure class="shot">
+        <img src="img/timeline.png" alt="The Timeline tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Timeline: the events of all sources merged.</figcaption>
+      </figure>
+      <h3>IOCs</h3>
+      <p>
+        The server extracts the indicators (IP addresses, domains, URLs, hashes, e-mail addresses, file paths…) from
+        everything in the incident. Click an indicator for <strong>Where seen</strong>: the tabs and the other incidents
+        that hold it. <strong>Check now</strong> asks the threat-intelligence providers configured in Settings for its
+        reputation. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
+        <strong>allowlist</strong> (right-click → Add to the allowlist).
+      </p>
+      <figure class="shot">
+        <img src="img/iocs.png" alt="The IOCs tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>IOCs: every indicator, with where it was seen.</figcaption>
+      </figure>
+
+      <h2 id="threat-tabs">Mail, Malware, Network</h2>
+      <h3>Mail Analysis</h3>
+      <p>
+        Drop the reported e-mail (<code>.eml</code> or Outlook <code>.msg</code>). Nik gives a
+        <strong>verdict</strong> and a score with the reasons, and shows:
+      </p>
+      <ul>
+        <li><strong>Headers</strong>: the delivery route, the sender, SPF, DKIM and DMARC checked again by Nik.</li>
+        <li><strong>Body</strong>: drawn in a sandboxed frame that runs no script and follows no link.</li>
+        <li><strong>Links</strong>: each link with its real target; a text that differs from the target is flagged.</li>
+        <li>
+          <strong>Attachments</strong>: type, hashes, hex view, a preview of documents, and
+          <strong>Send to Malware Analysis</strong>. HTML attachments and links open in the
+          <strong>isolated browser</strong>, whose traffic is kept as a network capture of the incident.
+        </li>
+      </ul>
+      <figure class="shot">
+        <img src="img/mail.png" alt="The Mail Analysis tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Mail Analysis: verdict, reasons and the message's parts.</figcaption>
+      </figure>
+      <h3>Malware Analysis</h3>
+      <p>
+        Drop a suspicious file. It is stored on the server under its SHA-256, read-only and never executed, and analysed
+        statically: hashes, type, <strong>entropy</strong> per block, <strong>structure</strong> of PE, ELF and Mach-O
+        files, <strong>strings</strong>, <strong>indicators</strong>, <strong>YARA</strong> matches,
+        <strong>capabilities</strong> (capa, with MITRE ATT&amp;CK) and the <strong>Code</strong> view (functions, call
+        graph, control-flow graphs and decompiled code). <strong>Download zip</strong> gives the file in a
+        password-protected zip (<code>infected</code> by default) so nothing on the way opens it.
+      </p>
+      <figure class="shot">
+        <img src="img/malware.png" alt="The Malware Analysis tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Malware Analysis: a sample's overview, with the other views as tabs.</figcaption>
+      </figure>
+      <h3>Network Analysis</h3>
+      <p>Drop a <code>.pcap</code> or <code>.pcapng</code> (up to 500 MB). Wireshark's own engine reads it:</p>
+      <ul>
+        <li>
+          <strong>Packets</strong>: the packet list with Wireshark's colours, the protocol tree and the bytes. Type a
+          <strong>display filter</strong> in Wireshark's syntax; right-click a field to filter on it;
+          <strong>Follow</strong> a TCP, UDP, HTTP or TLS stream; <strong>Flag packet</strong> adds it to the incident's
+          flagged events.
+        </li>
+        <li>
+          <strong>Objects</strong>: files carried by HTTP, SMB, FTP and others, with their SHA-256, to download in a
+          protected zip or send to Malware Analysis.
+        </li>
+        <li>
+          <strong>Summary</strong>: hosts, DNS queries, HTTP requests, TLS server names, submissions (POST) and
+          <strong>beacons</strong> (regular connections to the same destination).
+        </li>
+      </ul>
+      <p>
+        Add a TLS key log (<code>SSLKEYLOGFILE</code>) to read HTTPS in clear. Sessions of the isolated browser appear
+        here too, with a <strong>Requests</strong> view like the browser's developer tools.
+      </p>
+      <figure class="shot">
+        <img
+          src="img/network-packets.png"
+          alt="A packet capture in Network Analysis"
+          width="1600"
+          height="1000"
+          loading="lazy"
+        />
+        <figcaption>Network Analysis: packet list, protocol tree and bytes.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img
+          src="img/network-summary.png"
+          alt="The summary of a packet capture"
+          width="1600"
+          height="1000"
+          loading="lazy"
+        />
+        <figcaption>The capture's summary: hosts, DNS, HTTP, submissions and beacons.</figcaption>
+      </figure>
+
+      <h2 id="host-tabs">Endpoint, Event Logs, Browser, Commands</h2>
+      <h3>Endpoint Artifacts</h3>
+      <p>
+        Four categories: <strong>program execution</strong>, <strong>persistence</strong>,
+        <strong>file and folder access</strong> and <strong>removable devices</strong>. Each source (BAM, Prefetch, Run
+        keys, LaunchAgents, systemd units, USB history…) says where it lives on the host's operating system and offers a
+        native collection script; import the CSV or JSON the script or your DFIR tool produces.
+      </p>
+      <figure class="shot">
+        <img src="img/endpoint.png" alt="The Endpoint Artifacts tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Endpoint Artifacts: program execution from a BAM export.</figcaption>
+      </figure>
+      <h3>Event Logs</h3>
+      <p>
+        Upload Windows <code>.evtx</code> files (parsed on the server, including records left after a log clear) or the
+        JSON of the collection script. About fifty event IDs that matter are kept: logons, process creation, services,
+        scheduled tasks, accounts, PowerShell, RDP, Defender, Sysmon. The <strong>coverage</strong> chart shows each
+        log's span, silences and clears against the suspicious window; logons are paired into sessions; a ruleset flags
+        log clearing, brute force, RDP outside business hours and more.
+      </p>
+      <figure class="shot">
+        <img src="img/event-logs.png" alt="The Event Logs tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Event Logs: failed logons from one address, then a successful one.</figcaption>
+      </figure>
+      <h3>Browser Forensics</h3>
+      <p>
+        One sub-tab per browser (Chrome, Firefox, Edge, Brave, Opera, Safari), each with several
+        <strong>profiles</strong>. Import the history, downloads, bookmarks and omnibox shortcuts as the browser keeps
+        them (SQLite, JSON, plist) or as a CSV/JSON export. Events are classified as visits, searches and redirects.
+      </p>
+      <figure class="shot">
+        <img src="img/browser.png" alt="The Browser Forensics tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Browser Forensics: the bookmarks of a Chrome profile.</figcaption>
+      </figure>
+      <h3>Command History</h3>
+      <p>
+        One sub-tab per shell (Bash, Zsh, Fish, PowerShell). Import the native history file; commands with a timestamp
+        join the timeline, and the detection engine marks download-and-execute, encoded payloads, reverse shells and
+        other tradecraft.
+      </p>
+      <figure class="shot">
+        <img src="img/commands.png" alt="The Command History tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Command History: a bash history with a download from the attacker's address.</figcaption>
+      </figure>
+
+      <h2 id="flags">Flags, comments and the right-click menu</h2>
+      <p>
+        Right-click any event row, in any tab, for the same menu: <strong>Flag as malicious</strong>,
+        <strong>Add a comment</strong>, <strong>Copy as text</strong> or <strong>JSON</strong>, and
+        <strong>Show in the Timeline</strong>. Flagged events are listed on the Summary tab and go into the report.
+        Right-click an indicator for <strong>Where else was this seen?</strong> and
+        <strong>Add to the allowlist</strong> (with Undo).
+      </p>
+
+      <h2 id="search">Search</h2>
+      <p>
+        Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>⌘</kbd>+<kbd>K</kbd> on a Mac) anywhere. Type to find incidents,
+        indicators, samples, events and notes; Enter opens the result. Start with <code>&gt;</code> for actions: go to a
+        tab, new incident, export, settings, sign out.
+      </p>
+      <figure class="shot">
+        <img src="img/search.png" alt="The search palette" width="1600" height="1000" loading="lazy" />
+        <figcaption>The search palette: an address found across the incident.</figcaption>
+      </figure>
+
+      <h2 id="report">The incident report</h2>
+      <p>
+        The report button in the header opens the report: write the executive summary, choose the sections, the TLP
+        classification and the language (English or Italian), then <strong>Preview</strong> and download it as PDF or
+        HTML. It holds the incident details, the timeline of flagged and detected events, indicators, samples, e-mails,
+        network captures, event-log coverage, notes and an evidence appendix with the SHA-256 of every imported file.
+        The organisation's name and logo come from Settings → Report header.
+      </p>
+      <figure class="shot">
+        <img src="img/report.png" alt="The incident report preview" width="1600" height="1000" loading="lazy" />
+        <figcaption>The report, previewed before download.</figcaption>
+      </figure>
+
+      <h2 id="share">Export, import and backup</h2>
+      <ul>
+        <li>
+          <strong>Export an incident</strong> from its row in the sidebar: a JSON file with everything the incident
+          holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back.
+        </li>
+        <li>
+          <strong>Full backup</strong> (admins): the whole platform in one file (incidents, users, settings, audit log
+          and the sample store), restored from the same dialog.
+        </li>
+        <li><strong>Audit log</strong>: who did what, when, on which incident.</li>
+      </ul>
+
+      <h2 id="settings">Settings</h2>
+      <p>The gear in the header opens the settings. Sections marked <em>admins</em> are shown to admins only.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Section</th>
+              <th>What it sets</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Detection rules</td>
+              <td>The suspicious keywords and the built-in command, endpoint and event-log rules.</td>
+            </tr>
+            <tr>
+              <td>Business hours</td>
+              <td>The working hours; activity outside them is highlighted.</td>
+            </tr>
+            <tr>
+              <td>IOC allowlist</td>
+              <td>Known-good indicators (addresses, networks, domains) left out of the IOCs tab.</td>
+            </tr>
+            <tr>
+              <td>Report header</td>
+              <td>The organisation's name and logo on the report.</td>
+            </tr>
+            <tr>
+              <td>Mail analysis</td>
+              <td>
+                Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
+                results are trusted.
+              </td>
+            </tr>
+            <tr>
+              <td>Threat intelligence</td>
+              <td>Providers, API keys (never shown again) and which indicator types may be sent out.</td>
+            </tr>
+            <tr>
+              <td>Accounts · API keys</td>
+              <td>Users and their roles; keys for scripts and integrations (admins).</td>
+            </tr>
+            <tr>
+              <td>YARA rules · FLIRT signatures · capa rules</td>
+              <td>Your own rules and signatures for Malware Analysis (admins).</td>
+            </tr>
+            <tr>
+              <td>Audit log</td>
+              <td>The platform's audit trail.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="shot">
+        <img src="img/settings.png" alt="The Settings dialog" width="1600" height="1000" loading="lazy" />
+        <figcaption>Settings: detection rules.</figcaption>
+      </figure>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>
