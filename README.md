@@ -496,7 +496,8 @@ minutes for a typical database.
    or `BACKUP_DIR`), counts the rows of every table, stops the stack, starts
    PostgreSQL 18 on the new volume, restores the dump, compares the row counts
    and starts the whole stack again. It stops at the first error and deletes
-   nothing.
+   nothing. Running it again is always safe: it carries on from where
+   a previous run stopped, or says there is nothing to do.
 
 3. Check the app (sign in, open an incident), then the database version:
 
