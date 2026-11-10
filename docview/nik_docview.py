@@ -79,8 +79,9 @@ def office_to_pdf(name: str, data: bytes) -> bytes:
         os.makedirs(os.path.join(profile, "user"))
         with open(os.path.join(profile, "user", "registrymodifications.xcu"), "w", encoding="utf-8") as handle:
             handle.write(_PROFILE)
-        # A neutral name: the extension tells LibreOffice the format, nothing else of the original is used.
-        ext = extension(name) or "bin"
+        # A neutral name: a known extension tells LibreOffice the format; nothing
+        # of the original name reaches the path or the command line.
+        ext = next((known for known in sorted(OFFICE) if known == extension(name)), "rtf")
         source = os.path.join(work, f"{uuid.uuid4().hex}.{ext}")
         with open(source, "wb") as handle:
             handle.write(data)

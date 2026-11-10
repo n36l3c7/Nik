@@ -57,6 +57,19 @@ def test_office_document_is_converted_and_rendered():
     assert page["width"] == nik_docview.WIDTH and base64.b64decode(page["png"]).startswith(b"\x89PNG")
 
 
+def test_unknown_or_hostile_names_never_reach_the_command(monkeypatch):
+    seen = []
+    real_run = nik_docview.subprocess.run
+
+    def run(command, **kwargs):
+        seen.append(command[-1])
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(nik_docview.subprocess, "run", run)
+    nik_docview.render("../../etc/passwd --infilter=x.rtf\\x", RTF)
+    assert seen[0].endswith(".rtf") and "passwd" not in seen[0] and "infilter" not in seen[0]
+
+
 def test_pdf_pages_are_capped():
     result = nik_docview.render("big.pdf", _pdf(25), max_pages=3)
     assert result["total"] == 25 and len(result["pages"]) == 3 and not result["converted"]
