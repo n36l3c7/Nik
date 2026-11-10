@@ -940,7 +940,7 @@ export function IncidentProvider({ children }) {
   /* ---- Windows event logs (data.eventlogs.channels) ---- */
 
   /**
-   * Store parsed channels (from the collection script's JSON or demo data),
+   * Store parsed channels (from the collection script's JSON),
    * replacing those with the same name. Raw .evtx files are parsed on the
    * server, which writes the incident itself; see reloadActiveIncident.
    */

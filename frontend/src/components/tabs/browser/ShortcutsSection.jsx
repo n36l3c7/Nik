@@ -175,7 +175,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
       <EmptyState
         icon={Zap}
         title="No shortcuts loaded"
-        message="Shortcuts are Chrome's omnibox shortcuts: they record what the user typed in the address bar and the associated destination. Import the 'Shortcuts' file (SQLite) or a JSON/CSV export, or use the demo data."
+        message="Shortcuts are Chrome's omnibox shortcuts: they record what the user typed in the address bar and the associated destination. Import the 'Shortcuts' file (SQLite) or a JSON/CSV export."
       />
     )
   }

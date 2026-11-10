@@ -36,6 +36,15 @@ MAX_VALIDATE_BYTES = 4 * 1024 * 1024  # one rule plus the other admin rules it m
 _slots = threading.BoundedSemaphore(MAX_JOBS)
 
 
+def in_store(relative: str) -> str:
+    """The absolute path of ``relative`` in the store; ValueError when it would leave the store."""
+    root = os.path.realpath(SAMPLE_DIR)
+    path = os.path.realpath(os.path.join(root, relative))
+    if not path.startswith(root + os.sep):
+        raise ValueError("Not a path in the sample store.")
+    return path
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "nik-capa"
 
@@ -86,15 +95,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def _analyze(self, body: dict) -> None:
         sha256, rules = body.get("sha256", ""), body.get("rules") or []
-        if not isinstance(sha256, str) or not SHA256.match(sha256):
+        if not isinstance(sha256, str) or not SHA256.fullmatch(sha256):
             return self._send(400, {"detail": "sha256 must be 64 lowercase hex characters"})
-        if not isinstance(rules, list) or not all(isinstance(r, str) and RULE_FILE.match(r) for r in rules):
+        if not isinstance(rules, list) or not all(isinstance(r, str) and RULE_FILE.fullmatch(r) for r in rules):
             return self._send(400, {"detail": "rules must be _capa_rules/<32 hex>.yml paths"})
-        rule_paths = [p for p in (os.path.join(SAMPLE_DIR, r) for r in rules) if os.path.isfile(p)]
+        try:
+            path = in_store(f"{sha256}.bin")
+            rule_paths = [p for p in (in_store(r) for r in rules) if os.path.isfile(p)]
+        except ValueError:
+            return self._send(400, {"detail": "Not a path in the sample store"})
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "capa is busy with another sample; try again later"})
         try:
-            path = os.path.join(SAMPLE_DIR, f"{sha256}.bin")
             self._send(200, analyze(path, timeout=TIMEOUT, extra_rules=rule_paths))
         except CapaTimeout as exc:
             self._send(504, {"detail": str(exc)})

@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nik for developers: local setup, tests, extending the platform, the incident JSON format."
+    />
+    <title>Nik — Developer guide</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="guide.html">User guide</a>
+          <a href="deployment.html">Deployment</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="api.html">API</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="developer.html" aria-current="page">Developers</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Developer guide</h1>
+      <p class="lead">
+        Set up a development environment, run the checks, extend Nik with new tabs, rules and parsers, and read the
+        incident export format.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#local-development-setup">Local development setup</a></li>
+          <li><a href="#add-a-new-analysis-tab">Add a new analysis tab</a></li>
+          <li><a href="#extend-the-soc-detection-rules">Extend the SOC detection rules</a></li>
+          <li><a href="#browsers-parsers-and-formats">Browsers, parsers and formats</a></li>
+          <li><a href="#ui-kit-reference">UI kit reference</a></li>
+          <li><a href="#incident-export-import-json">Incident export / import (JSON)</a></li>
+        </ol>
+      </nav>
+      <h2 id="local-development-setup">Local development setup</h2>
+      <p>
+        <strong>Prerequisites:</strong> Node.js 22+ (with npm; 20.19 or later also works) and Python 3.11–3.13. No
+        database server is needed: the backend defaults to a local SQLite file. The incident report's
+        <strong>PDF</strong> needs the Pango libraries WeasyPrint uses (Debian/Ubuntu:
+        <code>apt install libpango-1.0-0 libpangoft2-1.0-0</code>; Fedora/RHEL: <code>dnf install pango</code>; macOS:
+        <code>brew install pango</code>); everything else, the HTML report included, works without them. The container
+        image installs them.
+      </p>
+      <p><strong>Backend</strong> (terminal 1):</p>
+      <pre><code class="language-bash">cd backend
+
+python -m venv .venv
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Linux/macOS:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+
+cp .env.example .env
+# IMPORTANT for dev over plain HTTP: set COOKIE_SECURE=false in backend/.env,
+# otherwise the browser drops the session cookie and login won't stick.
+
+uvicorn app.main:app --reload --port 8000
+</code></pre>
+      <p>Health check: <code>curl http://localhost:8000/api/health</code> → <code>{"status":"ok"}</code>.</p>
+      <p><strong>Frontend</strong> (terminal 2):</p>
+      <pre><code class="language-bash">cd frontend
+npm install
+npm run dev        # http://localhost:5173
+</code></pre>
+      <p>
+        The Vite dev server proxies every <code>/api</code> request to <code>http://127.0.0.1:8000</code> (see
+        <code>frontend/vite.config.js</code>), so the frontend and backend work together end-to-end with no CORS
+        configuration. On first load, create the first user (it becomes the admin) and sign in.
+      </p>
+      <p>Other npm scripts (from <code>frontend/</code>):</p>
+      <pre><code class="language-bash">npm run build      # production build (static site in dist/)
+npm run preview    # serve the production build locally
+npm test           # frontend unit tests (Node's built-in test runner, no deps)
+npm run lint       # ESLint (recommended + React hooks rules), must report no problems
+npm run format     # Prettier: rewrite JS/JSX, CSS, JSON, HTML and YAML in place
+npm run format:check  # Prettier in check mode (what CI runs)
+npm run test:e2e   # Playwright smoke test of the whole stack (build first)
+</code></pre>
+      <p>
+        Line endings are LF everywhere, including Windows checkouts: <code>.gitattributes</code> sets
+        <code>* text=auto eol=lf</code>, which overrides <code>core.autocrlf</code>, so Prettier and Ruff see the same
+        files as CI.
+      </p>
+      <p>
+        The end-to-end test (<code>frontend/e2e/smoke.spec.js</code>, <code>frontend/playwright.config.js</code>) starts
+        the backend on a throw-away SQLite database and the production build behind <code>vite preview</code> (which
+        proxies <code>/api</code>, like the dev server), then drives the app as an analyst would: first-run setup,
+        sign-in, a new incident, the evidence files of <code>frontend/e2e/fixtures/</code> dropped on the app, the
+        timeline. It needs <code>npm run build</code>, the backend dependencies on <code>PATH</code> (activate the venv)
+        and a Chromium from <code>npx playwright install chromium</code>. With the analyzer worker running and
+        <code>E2E_ANALYZER_URL</code> / <code>E2E_ANALYZER_TOKEN</code> set (CI does both), it also checks the Code view
+        against real rizin output; likewise <code>E2E_CAPA_URL</code> / <code>E2E_CAPA_TOKEN</code> for the Capabilities
+        view and the capa worker. Without them it checks the "not configured" messages.
+      </p>
+      <p>
+        <strong>Analyzer worker in development.</strong> The Code view needs the rizin worker
+        (<code>workers/analyzer/</code>). With Docker:
+      </p>
+      <pre><code class="language-bash">docker build -t nik-analyzer workers/analyzer
+docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
+  -v &quot;$PWD/backend/samples:/samples:ro&quot; -e ANALYZER_TOKEN=dev-token nik-analyzer
+# backend/.env: ANALYZER_URL=http://127.0.0.1:8700  ANALYZER_TOKEN=dev-token
+</code></pre>
+      <p>
+        Its own checks: <code>cd workers/analyzer &amp;&amp; ruff check . &amp;&amp; python -m pytest tests</code> (the
+        tests use recorded rizin output; the live test runs only where <code>rizin</code> is installed).
+      </p>
+      <p>
+        <strong>capa worker in development.</strong> The Capabilities view needs the capa worker
+        (<code>workers/capa/</code>):
+      </p>
+      <pre><code class="language-bash">docker build -t nik-capa workers/capa
+docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
+  -v &quot;$PWD/backend/samples:/samples:ro&quot; -e CAPA_TOKEN=dev-capa-token nik-capa
+# backend/.env: CAPA_URL=http://127.0.0.1:8710  CAPA_TOKEN=dev-capa-token
+</code></pre>
+      <p>
+        Its own checks: <code>cd workers/capa &amp;&amp; ruff check . &amp;&amp; python -m pytest tests</code> (on a
+        recorded capa report; capa itself is not needed).
+      </p>
+      <p>
+        Backend tests run with <code>pytest</code>, the linter with <code>ruff check .</code> and the formatter with
+        <code>ruff format .</code> (<code>--check</code> in CI), all from <code>backend/</code> after
+        <code>pip install -r requirements-dev.txt</code>; Ruff settings for every Python component live in
+        <code>ruff.toml</code> at the repository root. Formatting is enforced, not reviewed: run the formatters before
+        committing. Prettier also checks <code>docs/</code>, the workflows and the Compose file; Markdown is excluded
+        (see <code>frontend/.prettierignore</code>). CI runs the linters, the format checks, both unit suites (the
+        backend one on SQLite, and on PostgreSQL 18 after <code>alembic upgrade head</code>), the build and then the
+        end-to-end test; a change is done only when all of them pass. The documentation site in <code>docs/</code> is
+        updated in the same change as the behaviour it describes.
+      </p>
+      <p>
+        <strong>Dependency audits.</strong> The <code>Audit</code> workflow (<code>.github/workflows/audit.yml</code>)
+        runs <code>pip-audit</code> on the backend and the capa worker, <code>npm audit --audit-level=high</code> and
+        <code>shellcheck</code> on every pull request and every Monday, so a new CVE in an unchanged dependency fails
+        the build without waiting for a code change. Locally: <code>pip-audit -r backend/requirements.txt</code> and
+        <code>npm audit</code>. <strong>Dependabot</strong> (<code>.github/dependabot.yml</code>) opens one grouped pull
+        request a month per ecosystem (npm, pip, Docker, Compose, Actions) with the minor and patch releases, and a pull
+        request as soon as a dependency gets a security fix; enable the latter in the repository's
+        <em>Settings → Code security</em>. Major releases are left out (except for Actions): they need migration work
+        and are planned as their own change.
+      </p>
+      <p>
+        <strong>Upgrading an existing database:</strong> run <code>alembic upgrade head</code> from
+        <code>backend/</code> after pulling a release that adds a migration (the Docker image does this on start). A
+        database created by the dev-mode <code>create_all</code> is adopted by the baseline migration. Upgrading to
+        <strong>2.0.0</strong> rewrites every incident once (migration <code>0003_browser_profiles</code>: browser data
+        moves into a "Default" profile); on large databases the first start takes longer — take a backup first.
+      </p>
+      <p>
+        Tailwind v4 is wired in through the Vite plugin (<code>@tailwindcss/vite</code>), so there is no
+        <code>tailwind.config.js</code> and no extra setup step.
+      </p>
+      <h3 id="documentation">Documentation and screenshots</h3>
+      <p>
+        The documentation is this site, plain HTML in <code>docs/</code> with one stylesheet: update it in the same pull
+        request as the behaviour it describes. The screenshots of the user guide (<code>docs/img/</code>) are taken by a
+        Playwright script that drives a fresh install with the evidence of <code>frontend/e2e/fixtures/</code>. Retake
+        them after a change to the interface:
+      </p>
+      <pre><code class="language-bash">cd frontend
+npm run build
+npm run docs:screenshots   # writes docs/img/*.png
+</code></pre>
+      <p>
+        It needs the same backend environment as the end-to-end test. Start the packet capture worker and set
+        <code>E2E_PCAP_URL</code> / <code>E2E_PCAP_TOKEN</code> for the Network Analysis screenshots; without it they
+        are skipped and the previous images stay.
+      </p>
+      <h2 id="add-a-new-analysis-tab">Add a new analysis tab</h2>
+      <p>
+        The <code>frontend/src/config/tabs.js</code> registry is the <strong>only existing file to modify</strong>.
+        Example: a "DNS Logs" tab.
+      </p>
+      <p>
+        <strong>Step 1 — Create the tab component.</strong> Every tab is a component with a default export that receives
+        the active <code>incident</code> as a prop. Create <code>frontend/src/components/tabs/DnsLogsTab.jsx</code>:
+      </p>
+      <pre><code class="language-jsx">import { useState } from 'react'
+import { Network, Upload, Trash2 } from 'lucide-react'
+import { useIncidents } from '../../context/IncidentContext.jsx'
+import { generateId } from '../../utils/id.js'
+import { Card, Button, DataTable, EmptyState, Badge } from '../ui/index.js'
+import { formatDateTime, anyToMs } from '../../utils/time.js'
+
+export default function DnsLogsTab({ incident }) {
+  const { updateTabData, clearTabData } = useIncidents()
+  const dns = incident.data.dns ?? { queries: [], meta: null }
+  const [error, setError] = useState(null)
+
+  async function handleFile(file) {
+    setError(null)
+    try {
+      const rows = JSON.parse(await file.text()) // [{ timestamp, domain, type, client }]
+      const queries = rows
+        .filter((r) =&gt; r.domain)
+        .map((r) =&gt; ({
+          id: generateId(),
+          domain: r.domain,
+          type: r.type ?? 'A',
+          client: r.client ?? null,
+          timestamp: anyToMs(r.timestamp),
+        }))
+      updateTabData(incident.id, 'dns', {
+        queries,
+        meta: { fileName: file.name, format: 'json',
+                rows: queries.length, importedAt: new Date().toISOString() },
+      })
+    } catch (err) {
+      setError(err.message ?? 'Invalid file.')
+    }
+  }
+
+  if (dns.queries.length === 0) {
+    return (
+      &lt;EmptyState
+        icon={Network}
+        title=&quot;No DNS logs loaded&quot;
+        message=&quot;Import a JSON export of DNS queries to start the analysis.&quot;
+        action={
+          &lt;label className=&quot;cursor-pointer&quot;&gt;
+            &lt;Button variant=&quot;primary&quot; icon={Upload}&gt;Import DNS logs&lt;/Button&gt;
+            &lt;input type=&quot;file&quot; hidden accept=&quot;.json&quot;
+                   onChange={(e) =&gt; e.target.files[0] &amp;&amp; handleFile(e.target.files[0])} /&gt;
+          &lt;/label&gt;
+        }
+      /&gt;
+    )
+  }
+
+  return (
+    &lt;div className=&quot;space-y-6&quot;&gt;
+      {error &amp;&amp; &lt;p className=&quot;text-sm text-red-500&quot;&gt;{error}&lt;/p&gt;}
+      &lt;Card
+        title=&quot;DNS queries&quot;
+        icon={Network}
+        actions={
+          &lt;Button variant=&quot;ghost&quot; size=&quot;sm&quot; icon={Trash2}
+                  onClick={() =&gt; clearTabData(incident.id, 'dns')}&gt;
+            Clear data
+          &lt;/Button&gt;
+        }
+      &gt;
+        &lt;DataTable
+          data={dns.queries}
+          searchKeys={['domain', 'client']}
+          defaultSort={{ key: 'timestamp', dir: 'desc' }}
+          columns={[
+            { key: 'timestamp', label: 'Date/Time', sortable: true,
+              className: 'font-mono text-xs',
+              render: (row) =&gt; formatDateTime(row.timestamp) },
+            { key: 'domain', label: 'Domain', sortable: true, className: 'font-mono text-xs' },
+            { key: 'type', label: 'Type', render: (row) =&gt; &lt;Badge color=&quot;cyan&quot;&gt;{row.type}&lt;/Badge&gt; },
+            { key: 'client', label: 'Client', className: 'font-mono text-xs' },
+          ]}
+          emptyMessage=&quot;No query matches the filters&quot;
+        /&gt;
+      &lt;/Card&gt;
+    &lt;/div&gt;
+  )
+}
+</code></pre>
+      <p><strong>Step 2 — Register the tab</strong> in <code>frontend/src/config/tabs.js</code>:</p>
+      <pre><code class="language-js">// at the top of the file, next to the other lazy tabs:
+const DnsLogsTab = lazy(() =&gt; import('../components/tabs/DnsLogsTab.jsx'))
+
+// inside ANALYSIS_TABS, next to the tabs of its group (array order = order
+// in the TabBar):
+{
+  id: 'dns',                  // unique, used to select the tab
+  label: 'DNS Logs',          // label in the TabBar
+  group: 'threats',           // 'overview' | 'threats' | 'host': a thin rule separates groups
+  icon: Network,              // lucide-react icon (import at the top)
+  component: DnsLogsTab,      // lazy component → separate build chunk
+  dataKey: 'dns',             // key under incident.data
+  defaultData: {              // initial structure for every new incident
+    queries: [],
+    meta: null,
+  },
+},
+</code></pre>
+      <p>
+        <strong>Step 3 — Nothing else is needed.</strong> The TabBar maps <code>ANALYSIS_TABS</code>,
+        <code>App.jsx</code> renders the active component inside <code>&lt;Suspense&gt;</code>, and
+        <code>buildDefaultIncidentData()</code> includes the new <code>dataKey</code> in every new incident. Existing
+        incidents are covered by <code>normalizeIncident()</code>, which fills missing <code>dataKey</code>s with the
+        registry <code>defaultData</code> on load — no manual migration. The registry <code>defaultData</code> is also
+        the reset state used by <code>clearTabData</code>.
+      </p>
+      <h2 id="extend-the-soc-detection-rules">Extend the SOC detection rules</h2>
+      <p>
+        <strong>End users</strong> edit rules at runtime from <strong>Settings</strong> (the ⚙ icon in the header):
+        add/edit/remove suspicious keywords and change the business hours. Changes are stored server-side and apply to
+        all analysts and all incidents. This section is about extending things via <strong>code</strong>.
+      </p>
+      <p>The engine has three parts:</p>
+      <ul>
+        <li>
+          <code>frontend/src/config/detectionRules.js</code> — the
+          <strong>factory defaults</strong> (<code>DEFAULT_SUSPICIOUS_KEYWORDS</code>,
+          <code>DEFAULT_BUSINESS_HOURS</code>);
+        </li>
+        <li>
+          <code>frontend/src/context/SettingsContext.jsx</code> — the runtime state (<code>useSettings()</code>) plus
+          <code>useSocEngine()</code>, a memoized engine;
+        </li>
+        <li>
+          <code>frontend/src/domain/soc.js</code> — <code>createSocEngine({ keywords, businessHours })</code>, which
+          compiles the regexes and analyzes events (<code>engine.analyze(entry)</code>).
+        </li>
+      </ul>
+      <p>
+        <strong>Add a default keyword rule</strong> — add an object to <code>DEFAULT_SUSPICIOUS_KEYWORDS</code>; regexes
+        are compiled case-insensitively and applied to <strong>URL + title + file name</strong> of each event:
+      </p>
+      <pre><code class="language-js">{
+  id: 'rat-tools',                 // unique rule identifier
+  label: 'RAT / C2',               // badge text in the UI
+  // Regex (string source → escape backslashes twice).
+  // Use \\b for short keywords that risk false positives: without it,
+  // &quot;rat&quot; would match &quot;administrator&quot; or &quot;strategy&quot;.
+  pattern: '\\brat\\b|cobalt[-_ ]?strike|meterpreter|\\bc2\\b',
+  severity: 'high',                // 'high' (red) | 'medium' (amber)
+  description: 'References to a Remote Access Trojan or a C2 framework.',
+},
+</code></pre>
+      <p>
+        Severity logic in <code>engine.analyze()</code>: at least one <code>high</code> match → red row; only
+        <code>medium</code> matches (or just a time anomaly) → amber row.
+      </p>
+      <p><strong>Business hours</strong> — factory default in <code>detectionRules.js</code>:</p>
+      <pre><code class="language-js">export const DEFAULT_BUSINESS_HOURS = {
+  startHour: 8,        // start of the window (inclusive)
+  endHour: 18,         // end of the window (exclusive)
+  flagWeekends: true,  // if true, the whole weekend is &quot;outside hours&quot;
+}
+</code></pre>
+      <p>
+        <code>isOutsideBusinessHours(ms, businessHours)</code> treats hours
+        <code>&lt; startHour || &gt;= endHour</code> as outside, plus the weekend when <code>flagWeekends</code> is set.
+      </p>
+      <p>
+        <strong>Add a new type of detection</strong> (example: URLs pointing at a bare IP address, a classic C2/phishing
+        indicator) — extend <code>frontend/src/domain/soc.js</code> in three places:
+      </p>
+      <pre><code class="language-js">// a) the analysis function:
+export function isRawIpUrl(url) {
+  try {
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+// b) include it in analyze() inside createSocEngine:
+const isRawIp = isRawIpUrl(entry.url)
+// … and let it contribute to `severity` and the returned object.
+</code></pre>
+      <pre><code class="language-jsx">// c) render it in EventsSection.jsx, next to the keyword badges:
+{event.soc.isRawIp &amp;&amp; (
+  &lt;Badge color=&quot;amber&quot; title=&quot;URL with a literal IP address: possible C2/phishing&quot;&gt;
+    direct IP
+  &lt;/Badge&gt;
+)}
+</code></pre>
+      <p>
+        If the new signal should appear in the StatCards, update <code>computeSocStats</code> accordingly; optionally
+        add an option to the detection filter in the events section.
+      </p>
+      <h2 id="browsers-parsers-and-formats">Browsers, parsers and formats</h2>
+      <p>
+        <strong>Add a browser.</strong> Browsers are a registry in <code>frontend/src/config/browsers.js</code>: adding
+        an entry to the <code>BROWSERS</code> array makes the sub-tab appear and wires up upload, path hints and
+        sections automatically. Each browser declares <code>id</code>, <code>label</code>, <code>icon</code>,
+        <code>engine</code> (<code>'chromium'</code> | <code>'firefox'</code> | <code>'safari'</code>),
+        <code>accent</code>, optional <code>platforms</code> (host OSes it exists on — Safari is <code>['macos']</code>;
+        the path note warns when the incident's OS is not listed), <code>profilePaths</code>, <code>artifacts</code> and
+        <code>sources</code> (the files to load, each with <code>key</code>, <code>produces</code>,
+        <code>paths</code> and <code>hint</code>). A Chromium browser can reuse <code>chromiumSources(bases)</code>; a
+        brand-new engine also needs a branch in the parsers, and in <code>backend/app/parsing/</code> for API uploads.
+        Paths may contain <code>&lt;profile&gt;</code>, explained by the optional <code>profileHint</code>.
+      </p>
+      <p>
+        <strong>Profiles.</strong> Every browser holds one or more profiles; the profile helpers (normalization of
+        pre-2.0.0 data, ordering, name validation, labels) live in
+        <code>frontend/src/domain/browserProfiles.js</code> and mirror <code>backend/app/browser_profiles.py</code>. A
+        browser always keeps at least one profile; deleting one keeps the flags placed on its rows, shown as coming from
+        a deleted profile.
+      </p>
+      <p>
+        <strong>The parsing dispatcher.</strong> All parsing goes through
+        <code>parseBrowserSource(file, engine, source)</code> in <code>frontend/src/services/fileParsers.js</code>:
+      </p>
+      <pre><code class="language-js">parseBrowserSource(file, engine, source)
+  → Promise&lt;{ produced, format }&gt;
+// produced: { history?, downloads?, bookmarks?, shortcuts? }
+// format:   'sqlite' | 'plist' | 'json' | 'csv'
+</code></pre>
+      <p>
+        Pipeline: <code>isSqliteBuffer()</code> (magic string in the first 16 bytes) → if SQLite, delegate to
+        <code>parseSqliteSource(buffer, engine, sourceKey)</code> in <code>sqliteParser.js</code> (Chromium parsers over
+        <code>urls</code>/<code>visits</code>/<code>downloads</code>/ <code>omni_box_shortcuts</code>, Firefox parsers
+        over <code>moz_places</code>/<code>moz_historyvisits</code>/ <code>moz_bookmarks</code>/<code>moz_annos</code>,
+        Safari over <code>history_items</code>/<code>history_visits</code>); else, a property list (<code
+          >bplist00</code
+        >
+        header or an XML <code>&lt;plist&gt;</code>) is decoded by <code>plistParser.js</code> — dependency-free — and
+        mapped by <code>safariParser.js</code> (Safari only); otherwise decode as text → JSON or CSV (papaparse). Field
+        mapping is <strong>lenient</strong> (multiple aliases per field, English and Italian column names), timestamps
+        are normalized, and every row gets a unique <code>id</code>.
+      </p>
+      <p>
+        A source <strong>owns</strong> its <code>produces</code>: re-importing it replaces those artifacts; removing it
+        (<code>removeBrowserSource</code>) zeroes them. Errors are always
+        <code>throw new Error('&lt;message&gt;')</code>, surfaced by <code>FileUploadZone</code>.
+      </p>
+      <p>
+        <strong>Add a field alias or a format.</strong> For a tool that names fields differently (e.g.
+        <code>visited_at</code>), extend the relevant <code>*_ALIASES</code> chain in <code>fileParsers.js</code>. For a
+        new format (e.g. NDJSON), add a branch in <code>parseBrowserSource</code> before the CSV fallback and reuse the
+        existing mappers (<code>mapHistoryRows</code>, <code>mapDownloadRows</code>, <code>mapBookmarkRows</code>,
+        <code>mapShortcutRows</code>). A new <code>format</code> value also needs its color in the <code>Badge</code> in
+        <code>FileUploadZone.jsx</code>.
+      </p>
+      <p><strong>Timestamps: mind the engine.</strong></p>
+      <ul>
+        <li>
+          <strong>Chromium</strong> uses "WebKit time" (µs since <strong>1601</strong>) → <code>webkitToMs</code> (<code
+            >ms = µs / 1000 − 11644473600000</code
+          >).
+        </li>
+        <li>
+          <strong>Firefox</strong> uses "PRTime" (µs since <strong>1970</strong>) → <code>firefoxToMs</code> (<code
+            >ms = µs / 1000</code
+          >).
+        </li>
+        <li>
+          <strong>Safari</strong> uses Mac absolute time (seconds since <strong>2001</strong>, fractional) →
+          <code>macToMs</code> (<code>ms = (s + 978307200) × 1000</code>); plist dates are decoded to <code>Date</code>.
+        </li>
+      </ul>
+      <p>Getting the conversion wrong shifts dates by ~369 years: always use the right helper for the engine.</p>
+      <h2 id="ui-kit-reference">UI kit reference</h2>
+      <p>
+        All components live in <code>frontend/src/components/ui/</code> with a default export, re-exported from the
+        barrel <code>frontend/src/components/ui/index.js</code>:
+      </p>
+      <pre><code class="language-js">import { Button, Card, Badge, Modal, DataTable, EmptyState, ErrorBoundary,
+         SearchInput, Select, StatCard, AsciiSkull, MicroSkull } from '../ui/index.js'
+</code></pre>
+      <p>
+        <strong>ErrorBoundary</strong> — keeps a rendering error inside the view that threw it. <code>App</code> wraps
+        the active analysis tab in one, and the Code view wraps its graph and pseudo-C panels: the broken view shows the
+        error and a <em>Reload this view</em> button while the rest of Nik keeps working. Pass a
+        <code>resetKey</code> (e.g. tab and incident) so that moving elsewhere clears the error. New tabs get it for
+        free.
+      </p>
+      <p>
+        <strong>DataTable</strong> — the workhorse for every tabular view (events, bookmarks, shortcuts, the audit log
+        and any future tab). Memoized internal pipeline: <strong>filter (search) → sort → paginate</strong>.
+      </p>
+      <pre><code class="language-js">&lt;DataTable
+  columns={[ /* see below */ ]}
+  data={rows}                       // rows (pre-filtered by the parent for custom filters)
+  searchKeys={['url', 'title']}     // string keys for the built-in search; [] = no search bar
+  searchPlaceholder=&quot;Search…&quot;
+  defaultPageSize={25}
+  pageSizeOptions={[10, 25, 50, 100]}
+  defaultSort={{ key: 'time', dir: 'desc' }}  // null = no initial sort
+  rowClassName={(row) =&gt; ''}        // extra classes per row (highlight anomalies)
+  toolbar={&lt;Select … /&gt;}            // node rendered next to the search
+  emptyMessage=&quot;No data available&quot;
+  rowKey={(row, i) =&gt; row.id ?? i}
+/&gt;
+</code></pre>
+      <p>Column definition:</p>
+      <pre><code class="language-js">{
+  key: 'time',                 // data key (also used for sorting)
+  label: 'Date/Time',          // header
+  sortable: true,              // header click: asc → desc cycle
+  render: (row) =&gt; node,       // custom cell render (optional)
+  sortAccessor: (row) =&gt; any,  // alternative value for sorting (optional)
+  className: 'font-mono text-xs',
+  headerClassName: '',
+  align: 'left' | 'right',
+}
+</code></pre>
+      <p>
+        Guaranteed behaviours: case-insensitive search on <code>searchKeys</code>; sort icons; pagination with a
+        page-size selector and an "X–Y of Z results" count; reset to page 1 when search or data change;
+        <code>overflow-x-auto</code> on the container.
+      </p>
+      <blockquote>
+        <p>
+          Tip: the parent cannot reset the DataTable's internal search/sort/pagination directly.
+          <code>EventsSection</code> clears them on "Reset filters" by bumping a <code>resetToken</code> used as the
+          DataTable <code>key</code>, forcing a remount.
+        </p>
+      </blockquote>
+      <p><strong>Main components:</strong></p>
+      <pre><code class="language-js">Button({ variant = 'primary' | 'secondary' | 'ghost' | 'danger',
+         size = 'md' | 'sm' | 'xs', icon: LucideIcon?, children?, … })
+
+Card({ title?, icon: LucideIcon?, actions? /* node right of the title */,
+       children, className = '', bodyClassName = '' })
+
+Badge({ color = 'slate' | 'cyan' | 'red' | 'amber' | 'emerald' | 'violet',
+        children, title?, className = '' })
+  // slate = neutral, cyan = info, red = HIGH, amber = MED, emerald = ok/accent
+
+Modal({ open, onClose, title, children, footer?, maxWidth = 'max-w-lg' })
+  // blurred backdrop; closes on Escape and on backdrop click
+
+EmptyState({ icon: LucideIcon, illustration?: ReactNode, title, message?, action?, className = '' })
+  // `illustration` (e.g. an &lt;AsciiSkull /&gt;) replaces the icon
+
+SearchInput({ value, onChange /* (string) =&gt; void */, placeholder, className })
+
+Select({ value, onChange /* (string) =&gt; void */,
+         options: [{ value, label }], label?, className = '' })
+
+StatCard({ icon: LucideIcon, label, value,
+           tone = 'default' | 'accent' | 'danger' | 'warn' | 'ok', hint? })
+
+AsciiSkull({ preset = 'block' | 'large' | 'medium' | 'small',
+             eyes = 'animated' | 'open' | 'closed' | 'x',
+             tone = 'accent' | 'muted', className = '' })
+  // decorative (aria-hidden): pair it with a role=&quot;status&quot; text
+
+MicroSkull({ mood = 'animated' | 'closed' | 'x', className = '' })
+  // inline &quot;(o.o)&quot; for busy buttons and status lines
+</code></pre>
+      <p>
+        <strong>Loading, error and empty states</strong> use the ASCII skull, generated by <code>renderSkull()</code> in
+        <code>frontend/src/domain/asciiSkull.js</code> (any size, always symmetric):
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Where</th>
+              <th>Skull</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Opening an incident (<code>IncidentLoadingState</code>)</td>
+              <td><code>block</code>, looking around, with the real download progress</td>
+            </tr>
+            <tr>
+              <td>Loading a tab's code (<code>Suspense</code> fallback in <code>App.jsx</code>)</td>
+              <td><code>medium</code>, looking around</td>
+            </tr>
+            <tr>
+              <td>An incident failed to load</td>
+              <td><code>medium</code>, eyes crossed out, muted</td>
+            </tr>
+            <tr>
+              <td>No incident open</td>
+              <td><code>medium</code>, eyes closed (asleep), muted</td>
+            </tr>
+            <tr>
+              <td>Parsing an uploaded file (<code>FileUploadZone</code>)</td>
+              <td><code>small</code>, looking around</td>
+            </tr>
+            <tr>
+              <td>Connecting, loading the list, busy buttons, server unreachable</td>
+              <td><code>MicroSkull</code> — <code>(o.o)</code>, or <code>(x.x)</code> on errors</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The <code>large</code> preset is kept for future use. With <em>reduce motion</em> enabled in the operating
+        system the skulls stay still.
+      </p>
+      <p>
+        <strong>Look and tokens.</strong> Nik has a single dark, terminal-style theme. Colours are
+        <strong>named tokens</strong> declared once in <code>frontend/src/index.css</code> (<code>@theme</code>), and
+        components use the names, never raw palette classes:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>Use</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>sunken</code> · <code>canvas</code> · <code>panel</code> · <code>raised</code></td>
+              <td>surfaces, darkest to lightest (sidebar/terminal panes, page, cards and inputs, hover)</td>
+            </tr>
+            <tr>
+              <td><code>line</code> · <code>line-soft</code></td>
+              <td>borders · table row dividers</td>
+            </tr>
+            <tr>
+              <td><code>fg</code> · <code>fg-muted</code> · <code>fg-subtle</code></td>
+              <td>text · secondary text · decoration and disabled only</td>
+            </tr>
+            <tr>
+              <td><code>accent</code> (+ <code>-strong</code>, <code>-fg</code>, <code>-soft</code>)</td>
+              <td>the green prompt: primary actions, focus rings, active tab</td>
+            </tr>
+            <tr>
+              <td>
+                <code>link</code> (+ <code>-fg</code>) · <code>info</code> (+ <code>-line</code>, <code>-soft</code>)
+              </td>
+              <td>links · informational badges</td>
+            </tr>
+            <tr>
+              <td>
+                <code>high</code> (+ <code>-fg</code>, <code>-line</code>, <code>-soft</code>) · <code>med</code> (…)
+              </td>
+              <td>SOC severities HIGH (red) and MED (amber)</td>
+            </tr>
+            <tr>
+              <td><code>violet</code> (+ <code>-line</code>, <code>-soft</code>)</td>
+              <td>commands / anti-forensics</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Tailwind turns each token into utilities (<code>bg-panel</code>, <code>text-fg-muted</code>,
+        <code>border-line</code>, <code>ring-accent</code>…). Other conventions:
+      </p>
+      <ul>
+        <li>Corners are square; borders are 1 px <code>border-line</code>.</li>
+        <li>
+          Monospace (<code>font-mono</code>, JetBrains Mono) for data, labels, tabs and headings; Inter
+          (<code>font-sans</code>) for prose and buttons. Both fonts are bundled
+          (<code>frontend/src/assets/fonts/</code>), no CDN.
+        </li>
+        <li>
+          <p>Severities differ in lightness as well as hue, so they stay readable for colour-blind analysts.</p>
+        </li>
+        <li>
+          <p>
+            Flagged rows use the accent (<code>bg-accent-soft border-l-accent-strong</code>), SOC rows their severity
+            (<code>bg-high-soft border-l-high-line</code>, <code>med</code> alike), so an analyst's flag never looks
+            like a detection.
+          </p>
+        </li>
+      </ul>
+      <hr />
+      <h2 id="incident-export-import-json">Incident export / import (JSON)</h2>
+      <h3 id="export">Export</h3>
+      <p>
+        <code>exportIncident(id)</code> (from <code>useIncidents()</code>) downloads
+        <code>nik-&lt;normalized-name&gt;.json</code> with this envelope:
+      </p>
+      <pre><code class="language-json">{
+  &quot;app&quot;: &quot;Nik&quot;,
+  &quot;version&quot;: 4,
+  &quot;exportedAt&quot;: &quot;2026-07-07T11:30:00.000Z&quot;,
+  &quot;incident&quot;: {
+    &quot;id&quot;: &quot;b3f1c9e2-…&quot;,
+    &quot;host&quot;: &quot;WKS-FINANCE-01&quot;,
+    &quot;username&quot;: &quot;m.rossi&quot;,
+    &quot;name&quot;: &quot;WKS-FINANCE-01 - m.rossi&quot;,
+    &quot;suspiciousStart&quot;: 1751871120000,
+    &quot;suspiciousEnd&quot;: 1751899999000,
+    &quot;createdAt&quot;: &quot;2026-07-01T09:00:00.000Z&quot;,
+    &quot;updatedAt&quot;: &quot;2026-07-07T11:29:58.000Z&quot;,
+    &quot;createdBy&quot;: &quot;analyst&quot;,
+    &quot;data&quot;: {
+      &quot;summary&quot;: {},
+      &quot;browser&quot;: {
+        &quot;activeBrowser&quot;: &quot;chrome&quot;,
+        &quot;browsers&quot;: {
+          &quot;chrome&quot;: { &quot;activeProfile&quot;: &quot;default&quot;, &quot;profiles&quot;: { &quot;default&quot;: {
+            &quot;id&quot;: &quot;default&quot;, &quot;name&quot;: &quot;Default&quot;, &quot;createdAt&quot;: &quot;1970-01-01T00:00:00.000Z&quot;,
+            &quot;history&quot;:   [ { &quot;id&quot;: &quot;…&quot;, &quot;url&quot;: &quot;https://…&quot;, &quot;title&quot;: &quot;…&quot;,
+                             &quot;visitCount&quot;: 3, &quot;visitTime&quot;: 1751871120000,
+                             &quot;visitId&quot;: 100, &quot;fromVisitId&quot;: 99, &quot;isRedirect&quot;: false } ],
+            &quot;downloads&quot;: [ { &quot;id&quot;: &quot;…&quot;, &quot;fileName&quot;: &quot;toolkit.zip&quot;,
+                             &quot;url&quot;: &quot;https://…&quot;, &quot;referrer&quot;: &quot;https://…&quot;,
+                             &quot;startTime&quot;: 1751871120000, &quot;totalBytes&quot;: 24000000 } ],
+            &quot;bookmarks&quot;: [ { &quot;id&quot;: &quot;…&quot;, &quot;name&quot;: &quot;…&quot;, &quot;url&quot;: &quot;…&quot;,
+                             &quot;folder&quot;: &quot;Bookmarks bar &gt; Work&quot;,
+                             &quot;dateAdded&quot;: 1751871120000 } ],
+            &quot;shortcuts&quot;: [ { &quot;id&quot;: &quot;…&quot;, &quot;text&quot;: &quot;…&quot;, &quot;url&quot;: &quot;…&quot;, &quot;title&quot;: &quot;…&quot;,
+                             &quot;lastAccessTime&quot;: 1751871120000, &quot;hits&quot;: 5 } ],
+            &quot;meta&quot;: {
+              &quot;history&quot;: { &quot;fileName&quot;: &quot;History&quot;, &quot;format&quot;: &quot;sqlite&quot;,
+                           &quot;rows&quot;: 1240, &quot;importedAt&quot;: &quot;2026-07-07T10:00:00.000Z&quot; },
+              &quot;bookmarks&quot;: null, &quot;shortcuts&quot;: null
+            }
+          } } },
+          &quot;firefox&quot;: { &quot;activeProfile&quot;: &quot;default&quot;, &quot;profiles&quot;: { &quot;default&quot;: {
+                       &quot;id&quot;: &quot;default&quot;, &quot;name&quot;: &quot;Default&quot;, &quot;createdAt&quot;: &quot;…&quot;,
+                       &quot;history&quot;: [], &quot;downloads&quot;: [], &quot;bookmarks&quot;: [],
+                       &quot;shortcuts&quot;: [], &quot;meta&quot;: { &quot;places&quot;: null } } } }
+        }
+      },
+      &quot;network&quot;:  {},
+      &quot;endpoint&quot;: {}
+    },
+    &quot;flags&quot;: { &quot;…&quot;: { } },
+    &quot;notes&quot;: [ { &quot;id&quot;: &quot;…&quot;, &quot;text&quot;: &quot;…&quot;, &quot;createdAt&quot;: &quot;…&quot;, &quot;updatedAt&quot;: &quot;…&quot;, &quot;author&quot;: &quot;…&quot; } ]
+  }
+}
+</code></pre>
+      <p>
+        All entry timestamps are <strong>Unix epoch in milliseconds</strong> — native browser formats are converted at
+        import time (<code>webkitToMs</code> / <code>firefoxToMs</code>).
+      </p>
+      <h3 id="import">Import</h3>
+      <p>
+        <code>importIncidentFromFile(file)</code> (async) accepts the envelope above (version 4, or 3 and older — their
+        single-profile browser data lands in a "Default" profile) or a <strong>bare incident object</strong>. Minimal
+        validation: <code>data</code> must be an object, otherwise an <code>Error</code> is thrown (surfaced by the
+        sidebar). On import the incident:
+      </p>
+      <ul>
+        <li>
+          always receives a <strong>new <code>id</code></strong> — importing the same file twice creates two distinct
+          copies, no collisions;
+        </li>
+        <li>
+          passes through <code>normalizeIncident()</code>, so the <code>dataKey</code>s of tabs added after the export
+          are filled in with their <code>defaultData</code>;
+        </li>
+        <li>
+          is inserted at the top of the list, <strong>activated automatically</strong>, and persisted to the server
+          (<code>POST /api/incidents</code>);
+        </li>
+        <li>is recorded as <code>incident.import</code> in the audit log.</li>
+      </ul>
+      <blockquote>
+        <p>
+          The JSON export is self-contained (it holds all imported data, flags and notes), which makes it a convenient
+          exchange/archival format between Nik installations.
+        </p>
+      </blockquote>
+      <hr />
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

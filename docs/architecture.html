@@ -1,0 +1,1287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nik architecture: design, folder structure, data model, authentication, samples, mail, network."
+    />
+    <title>Nik — Architecture</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="guide.html">User guide</a>
+          <a href="deployment.html">Deployment</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="api.html">API</a>
+          <a href="architecture.html" aria-current="page">Architecture</a>
+          <a href="developer.html">Developers</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Architecture</h1>
+      <p class="lead">
+        How Nik is built: the design choices, the folder structure, the data model and how each analysis works.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#high-level-design">High-level design</a></li>
+          <li><a href="#why-parsing-is-client-side">Why parsing is client-side</a></li>
+          <li><a href="#folder-structure">Folder structure</a></li>
+          <li><a href="#state-and-the-data-model">State and the data model</a></li>
+          <li><a href="#authentication-sessions-and-the-audit-log">Authentication, sessions and the audit log</a></li>
+          <li><a href="#large-data-sets">Large data sets</a></li>
+          <li><a href="#malware-samples">Malware samples</a></li>
+          <li><a href="#mail-analysis">Mail analysis</a></li>
+          <li><a href="#threat-intelligence">Threat intelligence</a></li>
+          <li>
+            <a href="#attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</a>
+          </li>
+          <li><a href="#network-analysis">Network analysis</a></li>
+        </ol>
+      </nav>
+      <h2 id="high-level-design">High-level design</h2>
+      <pre><code>        Analyst's browser                         Server
+┌──────────────────────────────┐     ┌────────────────────────────────┐
+│  React SPA (Vite build)      │     │  nginx                         │
+│  ├─ artifact parsing (WASM)  │────▶│  ├─ static files (dist/)       │
+│  ├─ SOC detection engine     │ TLS │  └─ /api/ ──▶ FastAPI (:8000)  │
+│  └─ REST client (/api)       │     │              └─▶ PostgreSQL    │
+└──────────────────────────────┘     └────────────────────────────────┘
+</code></pre>
+      <p>The split is deliberate:</p>
+      <ul>
+        <li>
+          <strong>Parsing stays in the browser.</strong> Raw artifact files (SQLite databases, JSON, CSV) are read and
+          normalized client-side; only the resulting entries are sent to the API as part of the incident document.
+        </li>
+        <li>
+          <strong>State lives on the server.</strong> Incidents, users, settings and the audit log are stored in the
+          database and shared by all analysts; nothing is kept in the browser's storage.
+        </li>
+        <li>
+          <strong>Single origin.</strong> nginx serves the SPA and proxies <code>/api/</code> to the backend, so no CORS
+          configuration is needed and the httpOnly session cookie flows transparently. In development, the Vite proxy
+          plays nginx's role.
+        </li>
+      </ul>
+      <p>
+        The REST API (<code>/api</code>) exposes: <code>auth</code> (bootstrap/login/logout/me), <code>users</code>,
+        <code>incidents</code>, <code>audit</code>, <code>settings</code> and <code>backup</code> routers, plus
+        <code>GET /api/health</code> as a liveness probe.
+      </p>
+      <h2 id="why-parsing-is-client-side">Why parsing is client-side</h2>
+      <p>
+        All artifact parsing — including Chromium's <code>History</code>, a binary <strong>SQLite</strong> database —
+        happens in the browser via <code>sql.js</code> (SQLite compiled to WebAssembly). Rationale:
+      </p>
+      <ol>
+        <li>
+          <strong>Privacy / chain of custody</strong> — forensic artifacts can hold personal and sensitive data (a
+          subject's browsing history, credentials in URLs…). The raw files never leave the analyst's machine; only
+          normalized entries are stored.
+        </li>
+        <li>
+          <strong>No upload pipeline</strong> — no file-size limits, no multipart handling, no temporary storage of
+          evidence on the server.
+        </li>
+        <li>
+          <strong>Works in the field</strong> — the parsing layer needs no connectivity beyond the API calls that
+          persist results.
+        </li>
+      </ol>
+      <p>
+        The sql.js WASM module (~1 MB) is loaded <strong>lazily</strong> on the first SQLite import (see
+        <code>frontend/src/services/sqliteParser.js</code>): analysts who only work with JSON/CSV exports never download
+        it.
+      </p>
+      <p>
+        <strong>File schema per engine.</strong> Chromium browsers (Chrome/Edge/Brave/Opera) share Chrome's SQLite
+        schema (<code>History</code> with <code>urls</code>/<code>visits</code>/<code>downloads</code>, a JSON
+        <code>Bookmarks</code> file, a <code>Shortcuts</code> database). <strong>Firefox</strong> is different: a single
+        <code>places.sqlite</code> database (<code>moz_*</code> schema) holds history, bookmarks and downloads.
+        <strong>Safari</strong> (macOS only) keeps history in a <code>History.db</code> database
+        (<code>history_items</code>/<code>history_visits</code>) and downloads and bookmarks in two property lists,
+        <code>Downloads.plist</code> and <code>Bookmarks.plist</code>, usually binary. Timestamps differ too — see
+        <a href="developer.html#browsers-parsers-and-formats">browsers, parsers and formats</a>.
+      </p>
+      <p>
+        <strong>Heavy binary formats</strong> are parsed on the server instead. Windows event logs (<code>.evtx</code>,
+        chunks of binary XML) are the first: the Event Logs tab uploads the file,
+        <code>backend/app/parsing/eventlog.py</code> parses it with the <code>evtx</code> package (a Rust parser) in a
+        background job and merges the curated events into the incident, in the same shape the browser produces from the
+        collection script's JSON. PCAP and disk images would follow the same path.
+      </p>
+      <p>
+        <strong>The one exception: malware samples.</strong> The Malware Analysis tab sends the file itself to the
+        server, because the sample <em>is</em> the evidence under study (not a container of entries to normalize) and
+        the later analysis stages (disassembly, decompilation) can only run server-side. See
+        <a href="architecture.html#malware-samples">malware samples</a>.
+      </p>
+      <h2 id="folder-structure">Folder structure</h2>
+      <pre><code>├── frontend/                       # The single-page app (React 19, Vite, Tailwind v4)
+│   ├── Dockerfile                  # Multi-stage: build the SPA with Node, serve it with nginx
+│   ├── nginx/                      # nginx.conf (static + /api reverse proxy), gen-selfsigned.sh
+│   ├── index.html                  # HTML shell (mount point #root)
+│   ├── package.json                # Frontend dependencies and npm scripts
+│   ├── vite.config.js              # React + Tailwind plugins, /api proxy (dev and preview)
+│   ├── playwright.config.js        # E2E: starts the backend (SQLite) + vite preview
+│   ├── e2e/                        # End-to-end smoke test of the whole stack (+ fixtures/)
+│   └── src/                        # see below
+├── backend/                        # FastAPI API (Python 3.12, SQLAlchemy 2, Alembic)
+│   ├── Dockerfile                  # FastAPI image (gunicorn + uvicorn workers)
+│   ├── requirements.txt            # runtime dependencies (requirements-dev.txt adds the tools)
+│   ├── .env.example                # Backend configuration template (local development)
+│   ├── alembic/                    # Database migrations
+│   ├── tests/                      # pytest suite (SQLite by default, PostgreSQL in CI)
+│   └── app/                        # see below
+├── workers/                        # Isolated analysis workers, one container each
+│   ├── analyzer/                   # rizin: Dockerfile, nik_analyzer.py (pipe + transforms),
+│   │                               #   server.py (HTTP, token, job slots), tests/ (recorded output)
+│   ├── capa/                       # capa: Dockerfile (pinned capa, rules, signatures),
+│   │                               #   nik_capa.py (run + reduce the report), server.py, tests/
+│   ├── docview/                    # document viewer: Dockerfile (LibreOffice, pdfium),
+│   │                               #   nik_docview.py (Office → PDF → page PNGs), server.py, tests/
+│   ├── browser/                    # isolated browser: Dockerfile (Playwright Chromium),
+│   │                               #   nik_browser.py (sessions, network rules), netlog.py (the
+│   │                               #   DevTools-like request log), server.py, tests/
+│   └── pcap/                       # packet capture: Dockerfile (tshark, sharkd),
+│                                   #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
+├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, upgrade-postgres.sh,
+│                                   #   install-systemd.sh + systemd/, check-images.sh
+├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
+├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
+├── docker-compose.yml              # db + api + analyzer + capa + docview + browser + pcap + web
+├── .env.example                    # Compose configuration template
+└── ruff.toml                       # Ruff settings for every Python component
+</code></pre>
+      <p>The backend package, <code>backend/app/</code>:</p>
+      <pre><code>app/
+├── main.py                         # FastAPI app: create_all on startup, /api routers
+├── core/                           # Infrastructure shared by every feature
+│   ├── config.py                   # Env-based settings (DATABASE_URL, SECRET_KEY, …)
+│   ├── db.py                       # SQLAlchemy engine / session factory
+│   ├── models.py                   # users, sessions, incidents, audit_log, settings, samples, …
+│   ├── schemas.py                  # Pydantic request/response models
+│   ├── security.py                 # bcrypt hashing, session-auth dependencies
+│   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY)
+│   ├── ratelimit.py                # Shared rate limiter (slowapi)
+│   └── observability.py            # Request ids, structured access logs, Prometheus metrics
+├── workers/                        # Clients of the analysis workers
+│   ├── analyzer.py                 # rizin worker client + disassembly job
+│   ├── capa.py                     # capa worker client + capabilities job (one at a time)
+│   └── previews.py                 # document viewer and isolated browser clients
+├── malware/                        # Malware samples
+│   ├── samples.py                  # Sample store (files by SHA-256, e-mails as .mail) + protected zip
+│   ├── yara_rules.py               # YARA: built-in + admin rules compiled together, scan
+│   ├── yara/                       # Built-in YARA rule files (*.yar)
+│   ├── flirt.py                    # Admin FLIRT signature files (validation, store, worker paths)
+│   └── capa_rules.py               # Admin capa rules (worker validation, store, dependencies)
+├── network/                        # Network Analysis: store (capture files, browser logs), service (analysis,
+│                                   #   references, browser log sync), pcapng (log → pcapng), har (HAR 1.2)
+├── enrichment/                     # Threat intelligence: providers (one function each), service (what may be
+│                                   #   sent, rate limits, cache), worker (background lookups, lease)
+├── mail/                           # Mail analysis: parse (.eml/.msg, LZFu RTF), headers (route,
+│                                   #   sender, Authentication-Results), verify (SPF/DKIM/DMARC),
+│                                   #   links, content (nh3, QR, pressure), attachments, analyze
+├── parsing/                        # malware.py (hashes, type, entropy, strings, IOC), executables.py
+│                                   #   (PE, ELF, Mach-O), eventlog.py (.evtx), browser/shell/artifact ports
+├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
+├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&amp;CK) and PDF (WeasyPrint)
+├── browser_profiles.py             # browser profiles: legacy conversion, upload routing
+├── defaults.py                     # Factory defaults for detection settings
+├── events.py                       # Outbound webhook events
+└── routers/                        # auth, users, incidents, audit, settings, backup, samples, mails,
+                                    #   network, previews, enrichment, search, yara_rules, flirt, capa_rules, …
+</code></pre>
+      <p>The frontend sources, <code>frontend/src/</code>:</p>
+      <pre><code>src/
+├── main.jsx                        # Entry: StrictMode &gt; AuditProvider &gt; AuthProvider
+│                                   #   &gt; SettingsProvider &gt; IncidentProvider &gt; App
+├── index.css                       # Tailwind v4, design tokens (@theme), bundled fonts,
+│                                   #   base + scrollbar
+├── assets/fonts/                   # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
+├── App.jsx                         # Shell + auth gate: Sidebar | Header + TabBar + tab content
+│
+├── config/                         # ★ DECLARATIVE EXTENSION POINTS ★
+│   ├── tabs.js                     # ANALYSIS_TABS registry: the ONLY file to touch
+│   │                               #   to register a new tab. buildDefaultIncidentData().
+│   ├── os.js                       # Host OS registry (Windows/macOS/Linux)
+│   ├── browsers.js                 # BROWSER registry: engine, file sources, per-OS paths
+│   ├── shells.js                   # SHELL registry (Bash/Zsh/Fish/PowerShell): per-OS paths
+│   ├── artifacts.js                # ENDPOINT ARTIFACT registry (execution/persistence/
+│   │                               #   fileaccess/usb): columns, CSV aliases, per-OS sources
+│   ├── eventLogs.js                # Windows event-log channels, curated event IDs (label,
+│   │                               #   category, summary) and the collection script
+│   └── detectionRules.js           # Factory keyword + command + artifact + event-log rules, business
+│                                   #   hours (keywords managed at runtime from Settings).
+│
+├── context/
+│   ├── AuditContext.jsx            # useAudit(): global audit log via the API
+│   ├── AuthContext.jsx             # useAuth(): session auth (login/logout/me), users
+│   ├── SettingsContext.jsx         # useSettings(): keywords, business hours, IOC allowlist;
+│   │                               #   useSocEngine(): memoized detection engine
+│   ├── IncidentContext.jsx         # useIncidents(): incident state, CRUD, flags, notes,
+│   │                               #   export/import — optimistic model backed by the API
+│   ├── IocLookupContext.jsx        # useIocLookup(): &quot;Where seen&quot;, allowlist dialog, IOC menu; &lt;IocValue&gt;
+│   ├── ContextMenuContext.jsx      # useContextMenu(): the app's right-click menu, askText()
+│   ├── NavigationContext.jsx       # useNavigation(): go to a tab, open the search, import a file
+│   └── ToastContext.jsx            # useToast(): short notices with an optional Undo
+│
+├── services/
+│   └── api.js                      # The ONLY file that talks to the server (fetch wrapper)
+│
+├── parsers/                        # Client-side file parsers (the analyst's files stay in the browser)
+│   ├── fileParsers.js              # parseBrowserSource(file, engine, source): dispatch
+│   │                               #   SQLite/plist/JSON/CSV + lenient field mapping
+│   ├── sqliteParser.js             # Chromium (History/Shortcuts), Firefox (places.sqlite) and
+│   │                               #   Safari (History.db) parsers via sql.js (lazy WASM)
+│   ├── plistParser.js              # parsePlist(buffer): binary (bplist00) + XML property lists
+│   ├── safariParser.js             # Safari Downloads.plist / Bookmarks.plist → shared shapes
+│   ├── shellParsers.js             # parseShellHistory(file, shell): bash/zsh/fish/PSReadLine
+│   ├── artifactParsers.js          # parseArtifactImport(file, category, source): xbel/plist/
+│   │                               #   configlines/setupapi/knowledgeC + CSV/JSON (script mode)
+│   └── __fixtures__/               # binary plist test fixtures (+ the script that makes them)
+│
+├── lib/                            # Generic helpers, no domain knowledge
+│   ├── id.js                       # generateId() → crypto.randomUUID (with fallback)
+│   ├── path.js                     # fileNameFromPath (Windows/POSIX paths, file:// URIs)
+│   ├── mergePatch.js               # createMergePatch(prev, next) — RFC 7396 diff (+ .test.js)
+│   ├── asciiSkull.js               # renderSkull(): the loading/error/empty skull (+ .test.js)
+│   ├── hash.js                     # sha256Hex: digest of an imported file, in the browser
+│   ├── time.js                     # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…
+│   └── url.js                      # extractDomain, extractSearchQuery, topDomains…
+│
+├── domain/                         # Forensic logic, pure and unit-tested (+ .test.js)
+│   ├── events.js                   # buildEvents, historyEventType, redirect helpers
+│   ├── browserProfiles.js          # browser profiles: normalize, order, names, labels
+│   ├── commands.js                 # buildCommandEvents, extractBinary, topBinaries
+│   ├── artifacts.js                # buildArtifactEvents (endpoint records → events)
+│   ├── eventLogs.js                # parseEventLogJson, buildEventLogEvents (event-log
+│   │                               #   ruleset), logonSessions, coverage
+│   ├── malware.js                  # IOC detection, sample severity, timeline events
+│   ├── code.js                     # Code view: API reach, call graph, CFG, pseudo-C lines
+│   ├── triage.js                   # Function origin, strings/IOC links, Start here
+│   ├── mail.js                     # Mail Analysis verdicts and colours
+│   ├── network.js                  # Network Analysis: request log, packet tree, follow stream
+│   ├── enrichment.js               # Threat-intelligence answers
+│   ├── iocs.js                     # IOC types, source labels, guessIocType
+│   ├── timeline.js                 # buildTimelineEvents (merge all timestamped events)
+│   ├── soc.js                      # createSocEngine({keywords, commandKeywords,
+│   │                               #   artifactKeywords, businessHours}) → analyze()
+│   ├── report.js                   # report options, reportDetections (SOC hits + ATT&amp;CK)
+│   ├── search.js                   # searchIncident (open incident), matchActions
+│   ├── incidentName.js             # deriveIncidentName ([ticket] title | host - user), severities
+│   └── fileRouting.js              # detectFileRoute: which tab a dropped file belongs to
+│
+└── components/
+    ├── ui/                         # Reusable UI kit (Button, Card, Badge, Modal, DataTable,
+    │                               #   EmptyState, SearchInput, Select, StatCard, AsciiSkull,
+    │                               #   ErrorBoundary)
+    ├── auth/                       # AuthLayout (banner + live status), FirstRunSetup, LoginScreen
+    ├── backup/                     # BackupModal (full export/restore, admin only)
+    ├── settings/                   # SettingsPanel + sections/ (detection rules, business
+    │                               #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
+    │                               #   FLIRT signatures, capa rules, audit log)
+    ├── search/                     # CommandPalette (Ctrl/Cmd+K: nik&gt; search and &gt; actions)
+    ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog
+    ├── menu/                       # useRowMenu (flag, comment, copy, timeline on any event row)
+    ├── report/                     # ReportDialog (options, preview, PDF/HTML download)
+    ├── layout/                     # Sidebar, Header, TabBar (grouped tabs), OsPicker,
+    │                               #   IncidentLoadingState
+    └── tabs/
+        ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
+        ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
+        │                           #   filters, widgets, bookmarks/shortcuts tables
+        ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
+        ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
+        ├── iocs/                   # IocsTab (indicators, cross-incident counts, reputation, export),
+        │                           #   IocReputation (external answers, Check now)
+        ├── eventlogs/              # EventLogsTab, EvtxUpload (server-side parse + job poll),
+        │                           #   CoverageChart, EventsSection
+        ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
+        │                           #   StructureSection, YaraSection, IocSection, StringsSection,
+        │                           #   CapabilitiesSection, useWorkerJob (polled worker state),
+        │                           #   DownloadDialog; code/ CodeSection, GraphCanvas (ELK),
+        │                           #   DecompiledView, StartHere, FunctionNotes, hooks
+        ├── mail/                   # MailAnalysisTab, MailDetail, MailHeaders, MailBody (sandboxed
+        │                           #   frame), MailLinks, MailAttachments, HexView, RemoteBrowser
+        ├── network/                # NetworkAnalysisTab, CaptureDetail, PacketView (list, tree, bytes),
+        │                           #   FollowStream, RequestLog (DevTools-like Network panel)
+        └── timeline/               # TimelineTab (the super-timeline)
+</code></pre>
+      <p>
+        <strong>Naming an incident.</strong> An incident has a <strong>ticket ID</strong> (the reference in your
+        tracker), a <strong>short title</strong>, a <strong>host</strong> and a <strong>user</strong>, all optional but
+        at least one. Its name is built from them: the ticket first, in square brackets, then the title when there is
+        one, otherwise <code>host - user</code>: <code>[INC-2041] Invoice phishing, finance</code>,
+        <code>[INC-2039] WKS-042 - m.rossi</code>, <code>SRV-FILE-01</code>. The <strong>severity</strong> (low, medium,
+        high, critical) is a tag the analysts set, shown next to the name in the sidebar and the header but never part
+        of it. Everything is editable from the Summary tab; the search palette and
+        <code>GET /api/incidents?q=</code> also find incidents by ticket.
+      </p>
+      <p>
+        <strong>Right-click.</strong> One menu for the whole app
+        (<code>frontend/src/context/ContextMenuContext.jsx</code>): on an indicator (anywhere it is shown: the IOCs tab,
+        a sample's indicators, event-log addresses) <em>Where else was this seen?</em>, <em>Search for it</em>,
+        <em>Copy</em>, <em>Copy defanged</em> (<code>hxxps[:]//evil[.]top</code>) and <em>Add to the allowlist…</em>; on
+        an event row (Browser, Commands, Endpoint, Event Logs, Timeline) <em>Flag</em> or <em>Remove the flag</em>,
+        <em>Add a comment…</em>, <em>Copy as text</em>, <em>Copy as JSON</em> and <em>Show in the Timeline</em>; on an
+        incident in the sidebar <em>Open</em>, <em>Incident report…</em>, <em>Export (JSON)</em>, <em>Copy link</em> and
+        <em>Delete…</em>. Text fields and selected text keep the browser's menu, and so does Shift + right-click.
+        <strong>Add to the allowlist</strong> (also the shield button on each IOC row) proposes the value or a wider
+        entry — its domain or a parent domain, its /24 network — and writes it to the shared allowlist with a comment
+        line saying who added it and when; <em>Undo</em> stays available for a few seconds. Any analyst can do it.
+      </p>
+      <p>
+        <strong>Drag-and-drop anywhere.</strong> Drop a file on any part of the app (outside the tabs' own drop zones)
+        and a dialog proposes where it goes, from its first bytes and its name
+        (<code>frontend/src/domain/fileRouting.js</code>): PE, ELF and Mach-O executables, PDF, Office documents,
+        scripts and archives → Malware Analysis; <code>.evtx</code> and the event-log script's JSON → Event Logs;
+        Chromium <code>History</code> / <code>Shortcuts</code> / <code>Bookmarks</code>, Firefox
+        <code>places.sqlite</code>, Safari <code>History.db</code> and plists → Browser Forensics; shell histories →
+        Command History; CSV → Endpoint Artifacts. The dialog always asks whether the file goes into the open incident
+        or a new one (with its ticket, title, severity, host, user and OS), lets you change the tab and the source, then
+        opens the tab and imports the file as its own drop zone would.
+      </p>
+      <p>
+        Each incident is tied to a single host and carries an <strong>operating system</strong> (<code>windows</code> |
+        <code>macos</code> | <code>linux</code>, see <code>frontend/src/config/os.js</code>), chosen when the incident
+        is created and editable from the Summary tab. The OS drives the host-specific bits of the UI: the artifact paths
+        suggested in Browser Forensics, which shells appear in Command History, and the incident icon shown in the
+        sidebar and header.
+      </p>
+      <p>
+        The <strong>Command History</strong> tab mirrors Browser Forensics for terminal activity: one sub-tab per shell
+        (Bash / Zsh / Fish / PowerShell, see <code>frontend/src/config/shells.js</code>), parsing the native history
+        files (<code>.bash_history</code>, <code>.zsh_history</code>, <code>fish_history</code>, PSReadLine
+        <code>ConsoleHost_history.txt</code>) plus JSON/CSV exports. Commands run through the SOC engine — the shared
+        keyword rules plus a built-in command ruleset (<code>DEFAULT_COMMAND_KEYWORDS</code> in
+        <code>frontend/src/config/detectionRules.js</code>: download-and-execute, encoded payloads, reverse shells,
+        credential access, defense evasion, persistence, exfiltration, history tampering…) — can be flagged, searched,
+        filtered by the suspicious window, and appear on the incident timeline exactly like browser events.
+      </p>
+      <p>
+        The <strong>Endpoint Artifacts</strong> tab covers host forensic artifacts that neither the browser nor the
+        shell captures, one sub-tab per category built from one or more <strong>sources</strong> (see
+        <code>frontend/src/config/artifacts.js</code>): <strong>Program Execution</strong> (BAM, KnowledgeC),
+        <strong>Persistence</strong> (Run keys, Scheduled Tasks, services, startup, WMI, cron, systemd, SSH keys, rc
+        files, LaunchAgents), <strong>File &amp; Folder Access</strong> (GTK recently-used) and
+        <strong>USB &amp; Devices</strong> (USBSTOR, setupapi log, kernel journal). The table shows the union of every
+        source's records, tagged by which source produced them, and runs the shared keywords plus a built-in artifact
+        ruleset (<code>DEFAULT_ARTIFACT_KEYWORDS</code>: execution from temp/user-writable paths, LOLBins, double
+        extensions, suspicious persistence, known offensive tool names).
+      </p>
+      <p>
+        Crucially, every source is collected <strong>without any third-party tool</strong>, in one of two ways driven by
+        the incident's host OS:
+      </p>
+      <ul>
+        <li>
+          <strong>file</strong> — the data already lives in a plain text / XML / log / SQLite file, so the analyst
+          uploads that existing file and it is parsed in-browser (custom parsers in
+          <code>frontend/src/services/artifactParsers.js</code>: <code>recently-used.xbel</code>,
+          <code>authorized_keys</code> / cron / rc files, LaunchAgent <code>.plist</code>,
+          <code>setupapi.dev.log</code>, and <code>knowledgeC.db</code> via sql.js).
+        </li>
+        <li>
+          <strong>script</strong> — the data is live system state (registry, service manager, kernel journal), so the
+          tab shows a native collection script (<code>frontend/src/config/collectionScripts.js</code>, PowerShell /
+          systemctl / journalctl only) with copy/download buttons; it writes a CSV whose headers match the importer 1:1,
+          which the analyst then imports.
+        </li>
+      </ul>
+      <p>
+        Artifacts that can only be recovered with third-party DFIR parsers (Prefetch, Amcache, ShimCache, UserAssist,
+        LNK, JumpLists, ShellBags, RecentDocs) are intentionally left out; a category with no custom source on a given
+        OS shows an explicit note rather than a dead end.
+      </p>
+      <p>
+        The <strong>Event Logs</strong> tab (Windows) holds curated events from the host's event logs, per channel
+        (Security, System, PowerShell, PowerShell classic, RDP sessions and authentication, Defender, Task Scheduler,
+        Sysmon; see <code>frontend/src/config/eventLogs.js</code>). They arrive two ways: raw <code>.evtx</code> files
+        copied from <code>C:\Windows\System32\winevt\Logs\</code> (or a disk image), uploaded and parsed on the server,
+        which also recovers records left in the file's unused space after a clear and keeps the file's SHA-256; or the
+        JSON written by a native <code>Get-WinEvent</code> collection script on a live host, parsed in the browser. Only
+        about 50 curated event IDs are stored (at most 20,000 per channel, the newest); the rest is counted. The tab
+        shows:
+      </p>
+      <ul>
+        <li>
+          the <strong>log coverage</strong>: one bar per channel from its first to its last record, with silences of 6
+          hours or more hatched, clears marked in red and the incident's suspicious window behind them — a gap or a
+          clear inside the window is where evidence may be missing;
+        </li>
+        <li>
+          the <strong>logon sessions</strong>: each 4624 paired with its logoff (4634/4647) and admin privileges (4672)
+          by logon id, service logons and machine accounts left out;
+        </li>
+        <li>
+          every <strong>event</strong> with a readable summary, filters by detection, category, channel and time, and a
+          detail view with all its fields.
+        </li>
+      </ul>
+      <p>
+        Command lines (4688, Sysmon 1) and PowerShell script blocks go through the command-line ruleset; the built-in
+        event-log ruleset (<code>DEFAULT_EVENTLOG_RULES</code>, logic in <code>frontend/src/domain/eventLogs.js</code>)
+        adds log cleared, audit policy changed, service installed (high when the binary sits in a user-writable path or
+        runs a shell), suspicious PowerShell, brute force (10 failed logons for one account or source within 10
+        minutes), a logon right after 5 failures, RDP outside business hours, account created, member added to a
+        privileged group, Defender alerts and scheduled task created. Machine activity (service logons, boots) is not
+        judged by the clock. Linux (journald, <code>auth.log</code>) and macOS unified logs will follow.
+      </p>
+      <p>
+        The <strong>Timeline</strong> tab is the super-timeline: it merges every <em>timestamped</em> event from the
+        Browser, Command History, Endpoint Artifacts and Event Logs tabs into a single chronological, filterable table
+        (by source, detection and time window). Entries without a reliable timestamp (e.g. PSReadLine commands) are
+        intentionally left out. Any row can be flagged straight from the timeline.
+      </p>
+      <p>
+        The <strong>sidebar is resizable</strong>: drag its right edge to widen the incident list up to a quarter of the
+        window; the width is remembered per browser.
+      </p>
+      <p>
+        The <strong>IOCs</strong> tab lists the incident's indicators of compromise. The server builds them
+        (<code>backend/app/iocs.py</code>) whenever the incident's data is saved — a merge patch that only touches flags
+        or notes leaves them alone — and keeps one <code>ioc_index</code> row per incident, type and value, so "where
+        else have we seen this?" is one indexed query for every analyst, whoever owns the other incident. The sources:
+      </p>
+      <ul>
+        <li>
+          browser history: the visited <strong>hosts</strong> (not every URL); downloads: the URL, its referrer and
+          their hosts;
+        </li>
+        <li>
+          shell commands and endpoint records: URLs, IP addresses, domains (known TLDs), e-mail addresses and
+          MD5/SHA-1/SHA-256 digests in the text;
+        </li>
+        <li>
+          event logs: address and host fields (<code>IpAddress</code>, <code>DestinationIp</code>,
+          <code>QueryName</code>…), Sysmon <code>Hashes</code>, and the indicators in command lines, script blocks and
+          service paths;
+        </li>
+        <li>malware samples: the sample's hashes and the network indicators in its strings;</li>
+        <li>
+          e-mails: sender addresses and domain, sending IP, link targets and hosts, attachment hashes, QR-code and
+          invitation links (<code>mail:&lt;file name&gt;</code>).
+        </li>
+      </ul>
+      <p>
+        Indicators also seen in other incidents come first, in red. Clicking a value here, in a sample's IOC table or in
+        the Event Logs tab opens <strong>Where seen</strong>: every incident it appears in, with the sources, count and
+        first/last time, and a link to open it. Settings → <strong>IOC allowlist</strong> (one entry per line: a domain
+        and its subdomains, an IP or CIDR network, or an exact value) starts with private and loopback ranges and common
+        vendor and CDN domains; matching values are hidden by default and never exported. The index keeps them, so
+        editing the list applies at once. Exports: CSV, a <strong>STIX 2.1</strong> bundle and a
+        <strong>MISP</strong> event, for a TIP or a firewall blocklist. Incidents saved before 2.12.0 are indexed on the
+        api's first start.
+      </p>
+      <p>
+        <strong>Incident report.</strong> The report button in the header (or <code>&gt; report</code> in the search
+        palette) opens the report dialog: language (English or Italian), TLP classification, the sections to include and
+        an executive summary — all saved with the incident (<code>report</code> key of the document) — a preview, and
+        the download as PDF or HTML. The server builds the report (<code>backend/app/report.py</code>) as one
+        self-contained HTML page styled for print, and renders the PDF with WeasyPrint: A4 pages with the organisation
+        and the TLP label at the top and page numbers at the bottom. Its sections:
+      </p>
+      <ul>
+        <li>
+          <strong>executive summary</strong> and key facts (flagged events, SOC detections, indicators, samples,
+          techniques);
+        </li>
+        <li><strong>flagged events</strong> in time order, with the analysts' comments;</li>
+        <li>
+          <strong>MITRE ATT&amp;CK</strong> techniques from capa's capabilities, the YARA rules'
+          <code>mitre_attack</code> metadata (the built-in rules carry it) and the SOC rules that matched (each built-in
+          rule names its techniques in <code>frontend/src/config/detectionRules.js</code>), each with where it was seen;
+        </li>
+        <li>
+          <strong>indicators of compromise</strong> outside the allowlist, those seen in other incidents first (up to
+          500; the rest are in the CSV/STIX/MISP export);
+        </li>
+        <li><strong>malware samples</strong> with their hashes, YARA matches and capa capabilities;</li>
+        <li><strong>Windows event logs</strong>: each channel's coverage and when it was cleared;</li>
+        <li><strong>analyst notes</strong>;</li>
+        <li>
+          an <strong>evidence appendix</strong>: every imported file with its format, rows, import time and SHA-256.
+          Browser, shell-history, endpoint and event-log JSON files are hashed in the browser when they are imported
+          (the file still never leaves the machine); <code>.evtx</code> files and samples are hashed by the server.
+        </li>
+      </ul>
+      <p>
+        The organisation name and logo come from Settings → <strong>Report header</strong>. API clients get the same
+        report from <code>POST /api/incidents/{id}/report</code>.
+      </p>
+      <p>
+        <strong>Global search.</strong> <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> anywhere, or <kbd>/</kbd> outside a
+        text field, or the <em>search…</em> button in the header, opens a <code>nik&gt;</code> prompt. As you type it
+        asks the server (<code>GET /api/search</code>) for incidents, indicators from <strong>every</strong> incident
+        and samples, and searches the <strong>open</strong> incident in memory: its timeline events (every tab), notes
+        and samples (by file name too). Enter opens the result: an incident is selected, an indicator or a sample opens
+        <em>Where seen</em>, an event jumps to its tab, a note to the Summary. A query starting with
+        <code>&gt;</code> lists actions instead: go to any tab, new incident, export the incident, settings, the IOC
+        allowlist, sign out. On PostgreSQL the substring matches use the trigram (<code>pg_trgm</code>) indexes of
+        migration <code>0012</code>; when the extension cannot be created the search works without them.
+      </p>
+      <p>
+        Platform configuration lives in one sectioned <strong>Settings</strong> panel (opened from the header, or
+        deep-linked from the sidebar's Accounts / Audit buttons): detection rules (with the built-in rulesets shown for
+        reference), business hours, account management and the audit log.
+      </p>
+      <h2 id="state-and-the-data-model">State and the data model</h2>
+      <h3 id="incidentcontext">IncidentContext</h3>
+      <p>
+        All incident state lives in <code>frontend/src/context/IncidentContext.jsx</code>, exposed through the
+        <code>useIncidents()</code> hook:
+      </p>
+      <pre><code class="language-js">const {
+  incidents,              // IncidentSummary[] — light rows {id, name, host, username, os, createdAt, updatedAt}
+  activeIncident,         // Incident | null — full document of the selected incident, once loaded
+  activeIncidentId,       // string | null
+  activeSummary,          // IncidentSummary | null — the selected row (available immediately)
+  activeLoading,          // boolean — the selected incident's document is downloading
+  activeLoadError,        // string | null — the download failed
+  activeLoadProgress,     // {received, total} | null — bytes of the first download (total null if unknown)
+  retryActiveIncident,    // () =&gt; void — retry after activeLoadError
+  loading,                // boolean — true until the incident LIST has loaded
+  storageError,           // string | null — persistence error surfaced in the UI
+
+  createIncident,         // ({host, username, os}) =&gt; Incident — creates AND activates
+  updateIncidentMeta,     // (id, patch) =&gt; void — edit host/username/os/suspicious window
+  deleteIncident,         // (id) =&gt; void — if active, activates the first remaining one
+  selectIncident,         // (id) =&gt; void
+
+  updateTabData,          // (id, dataKey, patch) =&gt; void — shallow-merge into data[dataKey]
+  clearTabData,           // (id, dataKey) =&gt; void — reset to the registry defaultData
+
+  updateBrowserData,      // (id, browserId, profileId, patch, auditInfo?) =&gt; void — per-profile merge
+  setActiveBrowser,       // (id, browserId) =&gt; void — switch browser sub-tab (local only)
+  setActiveProfile,       // (id, browserId, profileId) =&gt; void — switch profile (local only)
+  addBrowserProfile,      // (id, browserId, name) =&gt; profileId | null — create AND activate
+  renameBrowserProfile,   // (id, browserId, profileId, name) =&gt; void — also renames its flags
+  deleteBrowserProfile,   // (id, browserId, profileId) =&gt; void — never the last one; keeps flags
+  clearBrowserData,       // (id, browserId, profileId) =&gt; void — clear ONE profile
+  removeBrowserSource,    // (id, browserId, profileId, sourceKey, producedKeys) =&gt; void — ONE file
+
+  updateShellData,        // (id, shellId, patch, auditInfo?) =&gt; void — per-shell merge
+  setActiveShell,         // (id, shellId) =&gt; void — switch shell sub-tab (local only)
+  clearShellData,         // (id, shellId) =&gt; void — clear ONE shell's commands
+
+  updateArtifactSource,   // (id, categoryId, sourceKey, patch, auditInfo?) =&gt; void — per-source
+  clearArtifactSource,    // (id, categoryId, sourceKey) =&gt; void — clear ONE source
+  clearArtifactCategory,  // (id, categoryId) =&gt; void — clear ALL sources of a category
+
+  setEventLogChannels,    // (id, { [channel]: { events, meta } }, auditInfo?) =&gt; void — the script's JSON
+  clearEventLogs,         // (id, channel?) =&gt; void — one channel, or all of them
+  retryActiveIncident,    // () =&gt; void — refetch the open incident (after a server-side .evtx parse)
+
+  toggleFlag,             // (id, flaggable) =&gt; void — flag/unflag an entry
+  addFlagComment,         // (id, flagKey, text) =&gt; void
+  removeFlagComment,      // (id, flagKey, commentId) =&gt; void
+
+  addNote,                // (id, text) =&gt; void
+  updateNote,             // (id, noteId, text) =&gt; void
+  removeNote,             // (id, noteId) =&gt; void
+
+  exportIncident,         // async (id) =&gt; void — download the JSON (fetches it if not opened yet; see the incident export format)
+  importIncidentFromFile, // async (file) =&gt; Incident — throws Error(msg) if invalid
+} = useIncidents()
+</code></pre>
+      <p>
+        Loading is <strong>lazy</strong>. After authentication only the light list is fetched (<code
+          >GET /api/incidents?view=summary</code
+        >). Opening an incident downloads its full document (<code>GET /api/incidents/{id}</code>) while the main area
+        shows a non-blocking loading state — the sidebar stays usable and opening another incident cancels the pending
+        download. Documents stay cached in memory for the session; reopening one shows it at once and revalidates it
+        with <code>If-None-Match</code> (<code>304</code> when unchanged, refreshed when someone else edited it).
+      </p>
+      <p>
+        The cache is an <strong>optimistic model</strong>: every mutation updates local state immediately and persists
+        only what changed, as an RFC 7396 JSON Merge Patch generated by
+        <code>frontend/src/domain/mergePatch.js</code> from the previous and next document (<code>POST</code> /
+        <code>PATCH</code> / <code>DELETE /api/incidents/{id}</code>). Toggling a flag therefore sends the flag, not the
+        incident's artifacts. A failed write surfaces in <code>storageError</code>, shown by <code>App.jsx</code> as a
+        red banner. <code>setActiveBrowser</code>, <code>setActiveProfile</code> and <code>setActiveShell</code> are
+        view preferences, never sent on their own.
+      </p>
+      <h3 id="shape-of-an-incident">Shape of an incident</h3>
+      <pre><code class="language-js">{
+  id:        'uuid',
+  ticketId:  'INC-2041',                   // identity (NOT unique — the id is the key),
+  title:     '',                           //   all optional, at least one set
+  host:      'WKS-FINANCE-01',             //   &quot;
+  username:  'm.rossi',                    //   &quot;
+  name:      '[INC-2041] WKS-FINANCE-01 - m.rossi', // derived: &quot;[ticket] title&quot; | &quot;[ticket] host - username&quot;
+  severity:  'high',                       // 'low' | 'medium' | 'high' | 'critical' | null — a tag
+  suspiciousStart: 1751871120000,          // Unix ms | null — start of suspicious activity
+  suspiciousEnd:   1751899999000,          // Unix ms | null — end of suspicious activity
+  createdAt: '2026-07-07T09:00:00.000Z',   // ISO 8601
+  updatedAt: '2026-07-07T11:30:00.000Z',   // bumped on every change
+  createdBy: 'analyst',                    // username of the creator
+
+  data: {
+    // one key per tab registered in config/tabs.js:
+    summary: {},                           // the Summary tab reads incident.* directly
+    browser: {
+      activeBrowser: 'chrome',
+      browsers: {                          // data PER BROWSER, then PER PROFILE
+        chrome: {
+          activeProfile: 'default',
+          profiles: {                      // keyed by a stable id; shown in createdAt order
+            default: { id: 'default', name: 'Default', createdAt: '1970-01-01T00:00:00.000Z',
+                       history: [], downloads: [], bookmarks: [], shortcuts: [],
+                       meta: { history: null, bookmarks: null, shortcuts: null } },
+            '&lt;uuid&gt;': { id: '&lt;uuid&gt;', name: 'Work', createdAt: '2026-07-07T09:10:00.000Z', … },
+          },
+        },
+        firefox: { activeProfile, profiles: { … meta: { places: null } } },
+        edge: { … }, brave: { … }, opera: { … },
+        safari:  { activeProfile, profiles: { … meta: { history, downloads, bookmarks } } },
+      },
+    },
+    network: {                             // packet captures: light references, the packets
+      captures: [ { id, kind: 'pcap' | 'browser', fileName, size, sha256, status, packets,
+                    first, last, keylog, label, held: [{ method, url, time }], posts,
+                    beacons: [{ destination, port, count, interval }], objects } ],
+    },                                     //   come from POST /api/captures/{id}/rpc
+    endpoint: {},
+    eventlogs: {
+      channels: {                          // one key per Windows event-log channel
+        Security: {
+          events: [ { id: 'evt:Security:9120', time, eventId: 4624, channel: 'Security', provider,
+                      computer, recordId: 9120, level, data: { TargetUserName, LogonType, … },
+                      recovered /* only when recovered after a clear */ } ],
+          meta: { fileName, format: 'evtx' | 'json', importedAt, rows, total, kept,
+                  dropped, recovered, first, last, gaps: [[start, end]], sha256 /* evtx */ },
+        },
+      },
+    },
+    mail: {                                // analysed e-mails: light references, the analysis
+      messages: [ { sha256, fileName, format: 'eml' | 'msg', size, subject, from, date,
+                    verdict: 'phishing' | 'suspicious' | 'clean', score, importedAt, importedBy } ],
+    },                                     //   is fetched from GET /api/mails/{sha256}
+  },
+
+  // Entries the analyst flagged as malicious (keyed by the event id):
+  flags: {
+    '&lt;eventId&gt;': {
+      key, browserId, section, eventType, title, url, time,   // the flagged snapshot
+      profileId, profileName,                                  // browser flags only (2.0.0+)
+      flaggedAt, flaggedBy,                                    // provenance
+      comments: [ { id, text, at, author } ],                  // per-flag comments
+    },
+  },
+
+  // Free-form notes shown on the Summary timeline:
+  notes: [ { id, text, createdAt, updatedAt, author } ],
+}
+</code></pre>
+      <blockquote>
+        <p>
+          <code>meta</code> is indexed by <strong>file source</strong> (keys vary per engine: Chromium has
+          <code>history</code>/<code>bookmarks</code>/<code>shortcuts</code>, Firefox has <code>places</code>). Each
+          entry describes the imported file: <code>{ fileName, format, rows, importedAt }</code>.
+        </p>
+      </blockquote>
+      <p>
+        <code>data</code> is built by
+        <code>buildDefaultIncidentData()</code> (<code>frontend/src/config/tabs.js</code>), which iterates the tab
+        registry: each tab contributes <code>structuredClone(defaultData)</code> under its own <code>dataKey</code>.
+        Every incident loaded from the server or imported from a file passes through <code>normalizeIncident()</code>,
+        which merges the registry defaults with the stored <code>data</code> — so
+        <strong>adding a tab requires no data migration</strong>: existing incidents receive the new tab's
+        <code>defaultData</code> automatically (see
+        <a href="developer.html#add-a-new-analysis-tab">add a new analysis tab</a>).
+      </p>
+      <h3 id="where-things-are-stored">Where things are stored</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Store</th>
+              <th>Content</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Database <code>incidents</code></td>
+              <td>all incidents, imported artifacts included</td>
+            </tr>
+            <tr>
+              <td>Database <code>users</code> / <code>sessions</code></td>
+              <td>accounts (bcrypt hash) and server-side sessions</td>
+            </tr>
+            <tr>
+              <td>Database <code>audit_log</code></td>
+              <td>the global audit trail</td>
+            </tr>
+            <tr>
+              <td>Database <code>settings</code></td>
+              <td>detection keywords + business hours (shared by all analysts)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <h2 id="authentication-sessions-and-the-audit-log">Authentication, sessions and the audit log</h2>
+      <h3 id="authentication">Authentication</h3>
+      <p>
+        Passwords are hashed with <strong>bcrypt on the server</strong> (<code>backend/app/core/security.py</code>). A
+        successful <code>POST /api/auth/login</code> creates a server-side session row and sets the
+        <strong>httpOnly</strong> <code>nik_session</code> cookie (with the <code>Secure</code> flag when
+        <code>COOKIE_SECURE=true</code>); <code>credentials: 'include'</code> on every fetch keeps it flowing. Sessions
+        expire after <code>SESSION_TTL_HOURS</code>.
+      </p>
+      <p>
+        User shape: <code>{ id, username, role: 'admin' | 'analyst', createdAt, createdBy }</code> — the password hash
+        never leaves the backend.
+      </p>
+      <p>
+        The App shell (<code>App.jsx</code>) implements a three-state <strong>auth gate</strong>, driven by
+        <code>GET /api/auth/bootstrap</code> and <code>GET /api/auth/me</code>:
+      </p>
+      <ul>
+        <li>
+          <strong>no users at all</strong> → <code>FirstRunSetup</code>: the first <code>POST /api/users</code> succeeds
+          without authentication and the created account is <strong>forced to the <code>admin</code> role</strong>;
+        </li>
+        <li><strong>users exist but not signed in</strong> → <code>LoginScreen</code>;</li>
+        <li><strong>signed in</strong> → the main app.</li>
+      </ul>
+      <p>
+        Admins manage accounts from the <strong>User management</strong> modal: add a user (username + password + role)
+        or delete one — never the last remaining user, and never your own account. All other user operations require an
+        admin session, enforced server-side.
+      </p>
+      <h3 id="audit-log">Audit log</h3>
+      <p>
+        <code>frontend/src/context/AuditContext.jsx</code> records every meaningful action through the API:
+        <strong>who</strong> (actor), <strong>when</strong> (<code>at</code>),
+        <strong>what</strong> (<code>action</code>), the <strong>details</strong>, and which
+        <strong>incident</strong> it belonged to. Entries are returned newest-first, capped at 5000.
+      </p>
+      <p>Entry shape: <code>{ id, at, actor, action, target, details, incidentId, incidentName }</code>.</p>
+      <p>
+        Action strings emitted include: <code>user.create</code>, <code>user.delete</code>, <code>auth.login</code>,
+        <code>auth.logout</code>, <code>incident.create</code> / <code>.update</code> / <code>.delete</code> /
+        <code>.export</code> / <code>.import</code>, <code>browser.upload</code> / <code>.clear</code> /
+        <code>.removeFile</code>, <code>flag.add</code> / <code>.remove</code> / <code>.comment</code>,
+        <code>note.add</code>, and <code>backup.export</code> / <code>backup.import</code>.
+      </p>
+      <p>
+        The read-only <strong>Audit log</strong> modal (<code>AuditLogView.jsx</code>, opened from the sidebar) surfaces
+        the trail in a searchable table; an <strong>admin</strong> can clear the whole log behind an inline confirmation
+        step.
+      </p>
+      <h2 id="large-data-sets">Large data sets</h2>
+      <p>
+        A browser history of a few hundred thousand visits has to stay usable, so the Browser tab keeps its per-row work
+        to a minimum:
+      </p>
+      <ul>
+        <li>
+          <code>buildEvents()</code> parses each URL <strong>once</strong> (<code>analyzeUrl</code> in
+          <code>utils/url.js</code>) and stores <code>domain</code> and <code>searchQuery</code> on the event; the stat
+          cards, the ranking widgets and the table cells read those fields instead of parsing again (<code
+            >entryDomain()</code
+          >
+          / <code>entrySearchQuery()</code> fall back to parsing for raw entries).
+        </li>
+        <li>
+          <code>DataTable</code> sorts text with one shared <code>Intl.Collator</code>: <code>localeCompare</code> with
+          options builds a collator per comparison, which made a 300k-row sort take seconds. The search box uses
+          <code>useDeferredValue</code>, so typing never waits for the filter.
+        </li>
+        <li>
+          <code>buildTimelineEvents()</code> takes <code>incident.data</code>, not the incident: flags and notes do not
+          change the timeline, so toggling a flag does not rebuild the Timeline tab.
+        </li>
+      </ul>
+      <p>
+        Tables stay paginated (25 rows by default), so the DOM never holds more than one page; the cost of a large
+        incident is in these data passes, not in rendering. When you add a per-row computation, do it once in the
+        <code>build*</code> helper, not in a cell renderer.
+      </p>
+      <h2 id="malware-samples">Malware samples</h2>
+      <p>The <strong>Malware Analysis</strong> tab is the one place where a raw file reaches the server. The flow:</p>
+      <ol>
+        <li>
+          The analyst drops a file; the frontend posts it as is to <code>POST /api/incidents/{id}/samples</code> (<code
+            >services/api.js</code
+          >
+          → <code>upload()</code>, with progress).
+        </li>
+        <li>
+          The server (<code>routers/samples.py</code>) computes the SHA-256 and writes the bytes
+          <strong>once</strong> to the sample store (<code>app/malware/samples.py</code>:
+          <code>SAMPLE_STORE/&lt;sha256&gt;.bin</code>, read-only, no execute bit), runs the static analysis
+          (<code>parsing/malware.py</code>: hashes, magic-byte type, entropy overall and per 64 KB block, ASCII/UTF-16
+          strings, indicators) and stores the result in the <code>samples</code> table. The incident document gets only
+          a light reference under <code>data.malware.samples</code> (<code>sha256</code>, <code>fileName</code>, type,
+          size, who and when).
+        </li>
+        <li>
+          The tab fetches <code>GET /api/samples/{sha256}</code> when a sample is selected and runs the SOC engine on
+          the indicators client-side (<code>utils/malware.js</code>), with the built-in malware ruleset
+          (<code>DEFAULT_MALWARE_KEYWORDS</code>) on top of the shared keywords, exactly like the other tabs.
+        </li>
+        <li>
+          Downloads go through <code>GET /api/samples/{sha256}/download</code>, which wraps the file in an AES-256 zip
+          (<code>pyzipper</code>) protected by <code>infected</code> or a password the analyst types; the plain bytes
+          never leave the server. Uploads, downloads and removals are written to the audit log by the server.
+        </li>
+      </ol>
+      <p>
+        Design points: the same file in two incidents is stored and analysed once and deleted only when the last
+        reference goes; the first 5,000 strings are stored with the analysis and the rest is recomputed from the file on
+        demand (<code>/strings</code>); nothing ever opens the sample with a library that interprets its format. On the
+        host, <strong>exclude the sample store from the antivirus</strong> (it would quarantine the evidence) and
+        include it in backups (see the full platform backup).
+      </p>
+      <p>
+        <strong>Structure and YARA.</strong> For executables the analysis also parses the format
+        (<code>parsing/executables.py</code>): PE through <code>pefile</code> (machine, subsystem, compile time,
+        sections with entropy and flags, imports by library, exports, resources, imphash, Authenticode presence, rich
+        header, PDB path), ELF and Mach-O with Nik's own header parsers (segments, sections, needed libraries or dylibs,
+        interpreter, code signature). Malformed headers, the norm in malware, become <code>warnings</code> instead of
+        failures. Every sample is then scanned with YARA (<code>yara_rules.py</code>): the built-in rule files under
+        <code>app/malware/yara/</code> (<code>YARA_RULES</code>) plus the rule sets admins add in
+        <strong>Settings → YARA rules</strong>, which are compiled on their own before being saved and recompiled
+        together on change. A match's <code>meta.severity</code> (<code>high</code> / <code>medium</code>) and
+        <code>meta.description</code> drive the badges; YARA severity counts towards the sample's severity. The analysis
+        records its <code>analysisVersion</code>; <strong>Re-analyse</strong> (<code
+          >POST /api/samples/{sha256}/reanalyse</code
+        >) runs the current engine on the stored file, so older samples catch up after an upgrade or a rule change.
+      </p>
+      <p>
+        <strong>Code view (disassembly and decompilation).</strong> Both run in a separate worker,
+        <code>workers/analyzer/</code>, built on the official <code>rizin/rizin</code> image, which ships
+        <strong>rz-ghidra</strong> (Ghidra's decompiler, Apache-2.0, as a rizin plugin, LGPL-3.0): no Java and no extra
+        build step. The backend never runs rizin itself:
+      </p>
+      <ol>
+        <li>
+          After an upload (and on Re-analyse, or the <strong>Disassemble</strong> button) the backend queues a job
+          (<code>sample_code</code> table) and calls the worker's <code>POST /analyze</code> with the sample's SHA-256
+          and the shared <code>X-Analyzer-Token</code>.
+        </li>
+        <li>
+          The worker opens <code>&lt;store&gt;/&lt;sha256&gt;.bin</code> from its <strong>read-only</strong> mount in
+          rizin's pipe mode (<code>rizin -q0</code>, driven by <code>nik_analyzer.py</code>, standard library only),
+          runs <code>aaa</code> and returns functions (<code>aflj</code>), their calls (from the
+          <code>call</code> instructions), and for each function its basic blocks (<code>afbj</code>) with their
+          instructions (<code>pdfj</code>). A timer kills rizin after <code>ANALYZER_TIMEOUT</code>; at most
+          <code>ANALYZER_MAX_JOBS</code> requests run at once. Every function is listed: a 5,000-function Rust binary
+          takes about 75 s; <code>ANALYZER_MAX_FUNCTIONS</code> (20,000) is only a safety cap.
+        </li>
+        <li>
+          In the same session the worker decompiles functions with <code>pdgj</code> for up to
+          <code>ANALYZER_DECOMPILE_SECONDS</code> (entry point and <code>main</code> first, then the functions the
+          worker does not recognise as library code — no FLIRT match, no Rust crate, not a thunk — then the rest,
+          smallest first within each group). rz-ghidra's annotations are reduced to highlight spans and call targets,
+          about a tenth of their size. A function that takes over 30 s is skipped. Functions left out are decompiled
+          when first opened (<code>POST /decompile</code> on the worker) and kept.
+        </li>
+        <li>
+          The worker then keeps the analysed rizin session open (<code>ANALYZER_WARM_SESSIONS</code>, default 1, for
+          <code>ANALYZER_WARM_IDLE</code> seconds), so a decompilation on demand takes seconds instead of a new
+          <code>aaa</code> (on the 5,000-function sample: 0.1–3 s instead of 13 s and more). A session is lent to one
+          request at a time; if rizin died in the meantime the request falls back to a fresh analysis. Each kept session
+          holds rizin's memory for that file (about 1 GB on a large binary), hence the 4 GB default limit.
+        </li>
+        <li>
+          The backend stores the function list with the job (<code>sample_code</code>) and each function's CFG and
+          pseudo-C as a row of <code>sample_functions</code>, which the UI fetches one function at a time (<code
+            >GET /api/samples/{sha256}/code/functions/{addr}</code
+          >
+          and <code>…/decompiled</code>): the graphs of a large binary add up to tens of megabytes, and opening a
+          function reads only its own.
+        </li>
+      </ol>
+      <p>
+        rizin 0.9 can crash (segfault) after thousands of commands in one session, on a function it handles fine in a
+        fresh one. The worker survives it: it reopens the sample and retries that function once; a second crash skips
+        the function (it is listed, marked, without CFG). After three restarts in one request it gives up with an error.
+      </p>
+      <p>
+        In Compose the worker runs as the image's non-root user, with a read-only filesystem, no capabilities, memory
+        and CPU limits, no published port and no route outside the internal <code>analysis</code> network: the sample is
+        read and disassembled, never executed. Without a worker (<code>ANALYZER_URL</code> unset) the Code view says so
+        and everything else keeps working.
+      </p>
+      <p>
+        The UI (<code>components/tabs/malware/code/</code>) lists the functions with the severity of the APIs they reach
+        (the SOC malware ruleset applied to callee names, propagated through the call graph by
+        <code>utils/code.js</code>) and draws the <strong>call graph</strong> around the selected function and its
+        <strong>control-flow graph</strong> with <code>elkjs</code>: ELK's layered algorithm places the blocks (main
+        path in a column, branches on the sides), routes edges orthogonally in their own lanes and sends loops back
+        along the side, as a disassembler's graph view does. Nik draws the result as SVG with its own tokens, with pan,
+        zoom, a minimap and click to select. <code>elkjs</code> (~1.4 MB) is imported only when the Code view opens; it
+        is licensed EPL-2.0 / GPL-3.0 and used unmodified. The <strong>Decompiled</strong> panel shows the pseudo-C with
+        the decompiler's own highlighting (font ligatures off, so <code>!=</code> reads as written); a call to another
+        function of the sample is a link that opens it, and calls to suspicious APIs are red.
+      </p>
+      <p>
+        <strong>Function triage.</strong> A real binary has thousands of functions, most of them library code. The
+        worker reports, per function, what it can tell about its origin, and the UI (<code>utils/triage.js</code>) sorts
+        the list with it:
+      </p>
+      <ul>
+        <li>
+          <em>Library</em>: functions matched by a FLIRT signature (rizin's bundled set plus the <code>.sig</code> /
+          <code>.pat</code> files admins upload in <strong>Settings → FLIRT signatures</strong>, stored under
+          <code>SAMPLE_STORE/_flirt/</code> and passed to the worker, which applies them with <code>Fs</code> after
+          <code>aaa</code>), and, in Rust binaries, functions whose panic locations point at a crate's sources
+          (<code>…\.cargo\registry\src\…\&lt;crate&gt;-x.y.z\src\…rs</code>, or
+          <code>/rustc/&lt;hash&gt;/library/std/…</code> for the standard library). The worker finds those paths among
+          the strings, follows the <code>Location</code> structs that point at them, and credits each function with the
+          crates its instructions reference. The crates found are listed above the table.
+        </li>
+        <li>
+          <em>Runtime</em> (compiler start-up and C runtime support, by name), <em>thunk</em> (jumps to imports, switch
+          fragments) and <em>import</em>.
+        </li>
+        <li>
+          <em>Not recognised</em>: everything else. Release builds leave much library code without a signature or a
+          path, so this is "not recognised", not "the author's code".
+        </li>
+      </ul>
+      <p>
+        <strong>Hide recognised library code</strong> (on by default) keeps only the unrecognised functions in the list.
+        <strong>Start here</strong> ranks those that call suspicious APIs directly, use an indicator of compromise,
+        reach a suspicious API through their callees or are complex. The worker also reports the file offsets of the
+        strings each function references; matched against the analysis strings, they give each function's
+        <strong>strings used</strong> and, in the IOC table, a <strong>Used by</strong> column that opens the function
+        in the Code view. Analysts <strong>rename</strong> and <strong>comment</strong> functions (<code
+          >function_annotations</code
+        >
+        table): names replace rizin's in the list, the graphs and the pseudo-C for everyone opening the same sample.
+      </p>
+      <p>
+        <strong>Capabilities (capa).</strong> <a href="https://github.com/mandiant/capa">Mandiant capa</a> matches a
+        community rule set against the program's code and reports what it can do (send data on a socket, create a
+        process, encrypt with RC4, resolve APIs at runtime…), mapped to MITRE ATT&amp;CK and the Malware Behavior
+        Catalog. It runs in a third worker, <code>workers/capa/</code>, built on <code>python:3.12-slim</code> with
+        <code>flare-capa</code>, its rules and its library signatures at a pinned version (the rules and signatures are
+        checked against their SHA-256 at build time); capa uses its pure-Python vivisect backend, so no Java or IDA is
+        needed. capa, capa-rules and vivisect are Apache-2.0.
+      </p>
+      <ol>
+        <li>
+          After an upload and on Re-analyse (or the <strong>Run capa</strong> button) the backend queues a job (<code
+            >sample_capa</code
+          >
+          table) for x86 / x64 PE and ELF files; other types are marked <code>unsupported</code> without calling the
+          worker.
+        </li>
+        <li>
+          The worker (<code>server.py</code>, standard library) runs <code>capa -j</code> on
+          <code>&lt;store&gt;/&lt;sha256&gt;.bin</code> from its read-only mount, kills it after
+          <code>CAPA_TIMEOUT</code>, and reduces the report (megabytes on a large binary) to the capabilities with their
+          namespace, scope, ATT&amp;CK / MBC mappings and up to 200 addresses each, a few kilobytes. Rules capa marks as
+          library helpers are dropped, as capa's own report does.
+        </li>
+        <li>
+          capa is CPU-bound — seconds on a small file, ten minutes or more on a large one — so the worker runs one
+          analysis at a time and the backend sends its jobs one after the other, waiting while the worker is busy.
+        </li>
+      </ol>
+      <p>
+        The <strong>Capabilities</strong> view lists them by namespace with ATT&amp;CK and MBC badges. capa and rizin
+        split a binary into functions differently, so each address capa reports is credited to the rizin function
+        containing it (<code>placeCapabilities</code> in <code>utils/triage.js</code>): the view links each capability
+        to those functions, the Code view shows the capabilities of each function, and
+        <strong>Start here</strong> counts them — only for functions not recognised as library code, since crypto and
+        TLS crates match many rules. Capabilities do not change the sample's severity. The <code>capa</code> service has
+        the same isolation as <code>analyzer</code> (read-only store and filesystem, internal network only, no
+        capabilities, memory / CPU / time limits).
+      </p>
+      <p>
+        <strong>capa rules of your own.</strong> Admins add capa rules in <strong>Settings → capa rules</strong> (<code
+          >capa_rules</code
+        >
+        table, one YAML rule each). Since only the worker has capa, the backend asks it to check a rule (<code
+          >POST /validate</code
+        >: parsed by capa and loaded together with the bundled rules and the other enabled admin rules, so syntax
+        errors, unknown features, duplicate names and missing <code>match:</code>
+        dependencies are caught) before saving it. Saved rules are written to
+        <code>SAMPLE_STORE/_capa_rules/&lt;id&gt;.yml</code> and the enabled ones are passed to the worker with each
+        analysis, as extra <code>-r</code> rule paths next to the bundled set. A rule another enabled rule matches
+        cannot be renamed, disabled or deleted. Their matches carry a <strong>custom</strong> badge in the Capabilities
+        view; new or changed rules apply from the next analysis (Re-analyse).
+      </p>
+      <h2 id="mail-analysis">Mail analysis</h2>
+      <p>
+        The <strong>Mail Analysis</strong> tab triages reported messages. Like samples, the file goes to the server
+        once: <code>POST /api/incidents/{id}/mails</code> stores it in the sample store as
+        <code>&lt;sha256&gt;.mail</code> (read-only), analyses it (<code>app/mail/analyze.py</code>) and keeps the
+        result in the <code>mails</code> table; the incident gets a light reference under
+        <code>data.mail.messages</code> and the <code>incidents.has_mail</code> column (mirrored, for the mail icon in
+        the sidebar). Nothing in an attachment is opened by the program it is meant for.
+      </p>
+      <ul>
+        <li>
+          <strong>Parsing</strong> (<code>mail/parse.py</code>): <code>.eml</code> with the standard library;
+          <code>.msg</code> (an OLE compound file of MAPI properties) with <code>olefile</code>: the original Internet
+          headers when Outlook kept them, the bodies (Outlook's compressed RTF is decompressed, MS-OXRTFCP), the
+          attachments and attached messages (parsed in turn, three levels deep).
+        </li>
+        <li>
+          <strong>Headers</strong> (<code>mail/headers.py</code>): the <code>Received</code> chain in travel order with
+          the delay of each hop and clocks going back; the sending server is the first public IP that is not one of your
+          servers. Authentication-Results (and ARC, Received-SPF) are read as written, but only those of your own
+          servers (<strong>Settings → Mail analysis</strong>) are believed: anyone can put such a header in a message. A
+          header without an authserv-id (Exchange Online) is credited to the server that received the message last.
+        </li>
+        <li>
+          <strong>Authentication</strong> (<code>mail/verify.py</code>): DKIM signatures verified with
+          <code>dkimpy</code>, SPF of the sending IP with <code>pyspf</code>, DMARC policy and alignment
+          (relaxed/strict, organisational domain from the bundled Public Suffix List) with <code>dnspython</code>. The
+          server needs DNS; each lookup times out after 3 s and a failure reads <code>temperror</code>, never a pass.
+          These say what the DNS says <em>now</em> (a rotated DKIM key fails), so the servers' verdicts are shown next
+          to them. A <code>.msg</code> keeps no original body: its DKIM cannot be checked.
+        </li>
+        <li>
+          <strong>Links</strong> (<code>mail/links.py</code>): anchors, forms and URLs in the text, unwrapped from Safe
+          Links, Proofpoint (v1–v3), Google, Facebook and Barracuda redirects; look-alikes of well-known brands (Italian
+          banks and public services included) and of your own domains are found by folding confusable characters and
+          comparing edit distance, so punycode and <code>rn</code>→<code>m</code> tricks show.
+        </li>
+        <li>
+          <strong>Body</strong> (<code>mail/content.py</code>): the HTML is cleaned with <code>nh3</code> (no scripts,
+          handlers, frames, objects or forms), inline <code>cid:</code> images become <code>data:</code>
+          URIs, hidden text is revealed. The browser shows it in an
+          <code>&lt;iframe sandbox=""&gt;</code> (no scripts, no same-origin, no navigation of the app) whose
+          Content-Security-Policy refuses every request; links lose their target (shown as a tooltip) and remote images
+          load only after a warning, tracking pixels never. Urgency, payment, credential and secrecy phrases are listed
+          (English and Italian).
+        </li>
+        <li>
+          <strong>Attachments</strong> (<code>mail/attachments.py</code>): type from the magic bytes against the
+          extension, double extensions and right-to-left tricks, VBA/XLM macros (<code>oletools</code>), zip listings
+          (the password is looked for in the text and tried; the archive is never extracted to disk), PDF actions, QR
+          codes in images (<code>zxing-cpp</code>), calendar invitations.
+        </li>
+        <li>
+          <strong>Verdict</strong>: each finding weighs a fixed number of points (e.g. a look-alike sender domain 40,
+          DMARC failing 30, a password-protected archive 35, urgency 8); the score is capped at 100. It is an aid to
+          triage, not a proof: a clean score means nothing stood out.
+        </li>
+      </ul>
+      <p>
+        The message's indicators (sender addresses and domain, sending IP, link targets and hosts, attachment hashes, QR
+        and invitation links) go into the IOC index as <code>mail:&lt;file name&gt;</code>; the timeline shows each
+        message at the time it was sent, high when the verdict is phishing; the report has an
+        <strong>E-mails</strong> section.
+      </p>
+      <h2 id="threat-intelligence">Threat intelligence</h2>
+      <p>
+        Indicators get a reputation from external services (<code>app/enrichment/</code>). Each provider is one function
+        in <code>providers.py</code> that turns the service's answer into <code>{ verdict, summary, link, data }</code>;
+        <code>verdict</code> is <code>malicious</code>, <code>suspicious</code>, <code>harmless</code> or
+        <code>unknown</code> (not known, or nothing conclusive).
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Types</th>
+              <th>Key</th>
+              <th>Free tier (as Nik paces it)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>VirusTotal</td>
+              <td>IP, domain, URL, hash</td>
+              <td>required</td>
+              <td>1 request / 15 s, 500 a day</td>
+            </tr>
+            <tr>
+              <td>AbuseIPDB</td>
+              <td>IP</td>
+              <td>required</td>
+              <td>1,000 a day</td>
+            </tr>
+            <tr>
+              <td>abuse.ch: ThreatFox, URLhaus, MalwareBazaar</td>
+              <td>IP, domain, URL, hash</td>
+              <td>required (one Auth-Key)</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>AlienVault OTX</td>
+              <td>IP, domain, URL, hash</td>
+              <td>required</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>urlscan.io (search of public scans, nothing submitted)</td>
+              <td>domain, URL</td>
+              <td>optional</td>
+              <td>1,000 a day</td>
+            </tr>
+            <tr>
+              <td>GreyNoise Community</td>
+              <td>IP</td>
+              <td>optional</td>
+              <td>50 a day</td>
+            </tr>
+            <tr>
+              <td>Shodan InternetDB</td>
+              <td>IP</td>
+              <td>none</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>Google Safe Browsing</td>
+              <td>domain, URL</td>
+              <td>required</td>
+              <td>10,000 a day</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>What is never sent</strong> (<code>service.blocked</code>), whoever asks: private, loopback and other
+        non-public addresses, internal names (no dot, <code>.local</code>, <code>.lan</code>, <code>.internal</code>,
+        <code>.corp</code>, <code>.home.arpa</code>…) and URLs on them; values on the IOC allowlist; values seen in an
+        incident whose report is classified <strong>TLP:RED</strong>; e-mail addresses. MD5 and SHA-1 of stored samples
+        and mail attachments are not looked up automatically: their SHA-256 is.
+      </p>
+      <p>
+        <strong>Automatic lookups</strong> are off until an analyst turns them on in
+        <strong>Settings → Threat intelligence</strong>, per type: IP addresses, URLs and domains, file hashes. Every
+        API process starts a worker thread (<code>worker.py</code>); a lease row (<code>leases</code>) lets only one of
+        them work at a time, so several gunicorn workers do not multiply the requests. Every 30 seconds it checks the
+        indexed indicators not in the cache (newest incidents first) with every enabled provider that takes their type,
+        pacing each provider to its free tier. An answer is kept for the cache period (24 h by default, up to 30 days),
+        an error is retried after an hour; a provider that answers 429 waits an hour, one that refuses its key six
+        hours.
+      </p>
+      <p>
+        <strong>Check now</strong> in Where seen asks every usable provider at once (fresh answers are reused unless
+        "Check again"). The IOCs tab's <strong>Reputation</strong> column shows the worst cached verdict and how many
+        providers flag the value.
+      </p>
+      <p>
+        <strong>Keys</strong> are entered by admins and stored in <code>integration_keys</code>, encrypted with Fernet
+        under a key derived from <code>SECRET_KEY</code> (HKDF, <code>vault.py</code>): the API returns only whether a
+        key is set and its last four characters. Changing <code>SECRET_KEY</code> makes the stored keys unreadable
+        (Settings says so): enter them again. Requests use the standard library (<code>urllib</code>), so
+        <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> apply; a transparent proxy needs nothing.
+      </p>
+      <h2 id="attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</h2>
+      <p>
+        Two more workers show what an attachment looks like without opening it on the analyst's machine. Like
+        <code>analyzer</code> and <code>capa</code> they run as unprivileged users with a read-only filesystem, no
+        capabilities, memory and CPU limits, no published port, and answer only the backend's shared token.
+      </p>
+      <p>
+        <strong>Documents</strong> (<code>workers/docview/</code>, internal network only). The Mail Analysis tab's
+        <strong>Preview</strong> sends the attachment to
+        <code>POST /api/mails/{sha256}/attachments/{path}/preview</code>; the backend forwards it to the worker, which
+        converts Word, Excel, PowerPoint, OpenDocument and RTF to PDF with LibreOffice (a fresh profile per conversion:
+        macro security "very high", macros disabled, links to other files or the network never updated, killed after 90
+        s) and renders the first 20 pages of the PDF with pdfium; images are re-encoded with Pillow. The browser
+        receives PNG images only. The pages are kept under <code>SAMPLE_STORE/_previews/&lt;sha256&gt;.json</code> and
+        removed with the last message that holds the attachment.
+      </p>
+      <p>
+        <strong>Isolated browser</strong> (<code>workers/browser/</code>). HTML attachments (<strong
+          >Open in isolated browser</strong
+        >) and links (Links view) open in Chromium, run by Playwright inside the worker's container. The analyst sees a
+        JPEG of the viewport; clicks, double-clicks, typing, Enter / Tab / arrows and the wheel are sent to
+        <code>POST /api/browser/sessions/{id}/action</code> and replayed there, with back, forward, reload and an
+        address bar. Scripts of the page run in the worker, never in the analyst's browser.
+      </p>
+      <ul>
+        <li>
+          <strong>Network, chosen for each session.</strong> Without network (the default) the page is the attachment
+          itself: every other request (images, scripts, frames, form posts, links) is refused, and a navigation shows a
+          "blocked by Nik" page. With network, http and https go out through the server's connection (the
+          <code>browser-egress</code> network, the only one with a route outside), except to private, loopback or
+          link-local addresses and internal names, so a page cannot reach the organisation's own network. Every session
+          is audited (<code>browser.open</code>), with or without network.
+        </li>
+        <li>
+          Downloads are refused and reported, alert / confirm / prompt dialogs are dismissed and reported, permission
+          prompts denied, a new tab replaces the current one. A session belongs to the analyst who opened it, closes
+          after 5 minutes without an action (30 minutes at most) and when the window is closed; at most
+          <code>BROWSER_MAX_SESSIONS</code> are open at once.
+        </li>
+        <li>
+          Chromium's own sandbox needs privileges the container does not give, so it runs with
+          <code>--no-sandbox</code>: the container is the sandbox.
+        </li>
+      </ul>
+      <h2 id="network-analysis">Network analysis</h2>
+      <p>
+        The <strong>Network Analysis</strong> tab reads packet captures with Wireshark's own engine, in the
+        <code>pcap</code> worker (<code>workers/pcap/</code>): Debian's <code>tshark</code> and <code>sharkd</code>, run
+        as an unprivileged user in a container with a read-only filesystem and the sample store mounted read-only, no
+        capabilities (nothing is ever captured) and the internal network only.
+      </p>
+      <ul>
+        <li>
+          <strong>Upload</strong> (<code>POST /api/incidents/{id}/captures</code>): pcap or pcapng, gzip too, up to
+          <code>PCAP_MAX_MB</code> (500), checked by its magic bytes, written to
+          <code>SAMPLE_STORE/_captures/&lt;id&gt;/</code> (read-only) and recorded in the
+          <code>network_captures</code> table. The worker then reads it once with tshark for the
+          <strong>summary</strong>: hosts by bytes, DNS names and answers, HTTP requests, TLS server names, POST / PUT /
+          PATCH requests, <strong>beacons</strong> (six or more connections to the same address and port, at least 5 s
+          apart, intervals within 15 %), the exported objects with their SHA-256 and the Expert Info counts. These feed
+          the IOC index (<code>network:&lt;file&gt;</code>), the timeline and the report's
+          <strong>Network</strong> section.
+        </li>
+        <li>
+          <strong>Viewing</strong> goes through <code>sharkd</code>, Wireshark's daemon for web front ends, one process
+          per open capture (two at most, closed after 15 minutes unused): the packet list with Wireshark's colouring
+          rules, paged; the protocol tree with the byte range of every field; Follow Stream; Export Objects. The backend
+          forwards a fixed set of read-only calls (<code>POST /api/captures/{id}/rpc</code>); columns are never taken
+          from the caller, since some custom column definitions crash sharkd.
+        </li>
+        <li>
+          <strong>TLS</strong> is decrypted with a key log (<code>SSLKEYLOGFILE</code>, NSS format) added at upload or
+          later. It is stored encrypted like the API keys and written to the worker's <code>/tmp</code> only while a
+          capture is open.
+        </li>
+        <li>Packets can be flagged into the incident timeline (<code>pcap:&lt;capture&gt;:&lt;n&gt;</code>).</li>
+      </ul>
+      <p>
+        <strong>Isolated browser sessions.</strong> The browser worker records every request of a session
+        (<code>netlog.py</code>): method, URL, type, headers, bodies in clear (the browser sees HTTPS decrypted, 2 MB
+        per body and 50 MB per session, past that size and SHA-256 only), response, server address, certificate, timings
+        and WebSocket messages; refused requests (no network, private address) and held submissions included. In a
+        session with network, POST / PUT / PATCH / DELETE requests are <strong>held</strong> by default: recorded, not
+        sent, the page shows "Submission held by Nik"; the analyst may send them for the session (audited). Opened from
+        an incident, the session's log is copied after every action (<code>network/service.py</code>) and shown live in
+        the window's <strong>Network panel</strong>, DevTools-like. When the window closes (or the session expires) the
+        log is rebuilt as <strong>pcapng</strong> (<code>network/pcapng.py</code>): a DNS answer per host, a TCP
+        handshake and HTTP/1.1 in clear per request, a comment saying it is a reconstruction and marking held and
+        refused requests, so Wireshark's filters, Follow Stream and Export Objects work on it, then analysed like an
+        upload. It also exports as <strong>HAR 1.2</strong> (<code>network/har.py</code>).
+      </p>
+      <hr />
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

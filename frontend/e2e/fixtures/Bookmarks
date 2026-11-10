@@ -1,0 +1,32 @@
+{
+  "checksum": "00000000000000000000000000000000",
+  "roots": {
+    "bookmark_bar": {
+      "children": [
+        {
+          "date_added": "13406971200000000",
+          "guid": "6f0c3a52-0000-4000-8000-000000000001",
+          "id": "5",
+          "name": "Invoice portal",
+          "type": "url",
+          "url": "http://185.220.101.47/invoice/login"
+        },
+        {
+          "date_added": "13406971260000000",
+          "guid": "6f0c3a52-0000-4000-8000-000000000002",
+          "id": "6",
+          "name": "Intranet",
+          "type": "url",
+          "url": "https://intranet.example.com/"
+        }
+      ],
+      "date_added": "13406971200000000",
+      "id": "1",
+      "name": "Bookmarks bar",
+      "type": "folder"
+    },
+    "other": { "children": [], "id": "2", "name": "Other bookmarks", "type": "folder" },
+    "synced": { "children": [], "id": "3", "name": "Mobile bookmarks", "type": "folder" }
+  },
+  "version": 1
+}

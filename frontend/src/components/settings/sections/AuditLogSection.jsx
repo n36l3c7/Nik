@@ -16,7 +16,7 @@ function actionBadgeColor(action) {
   if (a.includes('delete') || a.includes('remove') || a.includes('clear')) return 'red'
   if (a.includes('create') || a.includes('add') || a.includes('import') || a.includes('upload')) return 'emerald'
   if (a.includes('login')) return 'cyan'
-  if (a.includes('update') || a.includes('edit') || a.includes('flag') || a.includes('demo')) return 'amber'
+  if (a.includes('update') || a.includes('edit') || a.includes('flag')) return 'amber'
   return 'slate'
 }
 

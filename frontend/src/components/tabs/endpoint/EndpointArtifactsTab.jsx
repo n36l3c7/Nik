@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Info, Sparkles, Terminal, Trash2, Upload } from 'lucide-react'
+import { Info, Terminal, Trash2, Upload } from 'lucide-react'
 import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from '../browser/FileUploadZone.jsx'
 import ArtifactSection from './ArtifactSection.jsx'
@@ -8,7 +8,6 @@ import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { parseArtifactImport } from '../../../parsers/artifactParsers.js'
 import { sha256Hex } from '../../../lib/hash.js'
-import { getDemoArtifactData } from '../../../services/demoData.js'
 import {
   ARTIFACT_CATEGORIES,
   getArtifactCategoryById,
@@ -101,29 +100,6 @@ export default function EndpointArtifactsTab({ incident }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requests.endpoint, activeCategoryId])
 
-  /* ---- Load demo data into the first available source ---- */
-  const handleLoadDemo = () => {
-    if (sources.length === 0) return
-    const target = sources[0]
-    const demo = getDemoArtifactData(category, os)
-    setErrors({})
-    updateArtifactSource(
-      incident.id,
-      category.id,
-      target.key,
-      {
-        records: demo.records,
-        meta: {
-          fileName: 'Demo data',
-          format: 'demo',
-          rows: demo.records.length,
-          importedAt: new Date().toISOString(),
-        },
-      },
-      { action: 'endpoint.demo', details: `Loaded demo ${category.label}` },
-    )
-  }
-
   const handleConfirmClear = () => {
     clearArtifactCategory(incident.id, category.id)
     setErrors({})
@@ -180,11 +156,6 @@ export default function EndpointArtifactsTab({ incident }) {
         icon={Upload}
         actions={
           <div className="flex items-center gap-2">
-            {sources.length > 0 && (
-              <Button variant="secondary" size="sm" icon={Sparkles} onClick={handleLoadDemo}>
-                Load demo data
-              </Button>
-            )}
             {hasData && (
               <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
                 Clear

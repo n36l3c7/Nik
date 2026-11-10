@@ -296,7 +296,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
       <EmptyState
         icon={Activity}
         title="No events to show"
-        message="Load the browser history or downloads from the 'Data sources' card, or use 'Load demo data' to explore the platform."
+        message="Load the browser history or downloads from the 'Data sources' card."
       />
     )
   }

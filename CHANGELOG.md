@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.2] - 2026-11-11
+
+### Changed
+
+- **Documentation**: the README is now a short introduction (what Nik does,
+  installation, the settings to change, development) and points to the site.
+  The GitHub Pages site has a short homepage and new pages: a **user guide**
+  with screenshots (incidents, evidence, every analysis tab, search, report,
+  settings), **Deployment**, **Architecture** and a **Developer guide**, which
+  take the README's former technical sections.
+- The guide's screenshots are taken by a Playwright script,
+  `npm run docs:screenshots` in `frontend/`, so they can be retaken after a
+  change to the interface.
+- The end-to-end test's generated PE sample and phishing e-mail live in
+  `frontend/e2e/helpers.js`, shared with the screenshot script.
+
+## [2.18.1] - 2026-11-11
+
+### Security
+
+- Sample store paths: a SHA-256 is now matched in full (a digest followed by
+  a newline was accepted), and every stored sample and e-mail path is proven
+  to stay inside the store before it is opened.
+- The analyzer and capa workers check the same way every path they receive
+  (sample, FLIRT signatures, capa rules) before taking a job slot.
+- A malformed executable no longer sends the parser's internal error message
+  to the client: Malware Analysis shows a fixed warning and the server log
+  keeps the detail.
+- The CI and Audit workflows run with a read-only token.
+
+## [2.18.0] - 2026-11-10
+
+### Changed
+
+- The analysis tabs follow the investigation, in three groups separated by a
+  thin rule: the overview (Summary, Timeline, IOCs), the threats (Mail,
+  Malware, Network) and the host (Endpoint Artifacts, Event Logs, Browser
+  Forensics, Command History).
+- The end-to-end test imports real evidence files (`frontend/e2e/fixtures/`)
+  dropped on the app instead of the demo data.
+
+### Removed
+
+- **Load demo data** in Browser Forensics, Command History, Endpoint
+  Artifacts and Event Logs. Incidents that already hold demo data keep it
+  and open as before.
+- The **`tail -f`** side panel and its command; the Timeline tab shows the
+  same events.
+
 ## [2.17.1] - 2026-11-10
 
 ### Changed

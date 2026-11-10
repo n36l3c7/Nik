@@ -1,10 +1,12 @@
+import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
+import { buildSamplePe, phishingEml } from './helpers.js'
 
 /*
  * Smoke test of the whole stack, as an analyst would use it on a fresh
- * install: create the first (admin) account, sign in, open an incident, load
- * the demo data of each tab and check that the timeline and the tail -f panel
- * see the events. One browser context is shared by the steps, in order.
+ * install: create the first (admin) account, sign in, open an incident, drop
+ * the evidence files of each tab (e2e/fixtures/) and check that the timeline
+ * merges their events. One browser context is shared by the steps, in order.
  */
 
 const ADMIN = { username: 'admin', password: 'supersecret' }
@@ -14,6 +16,25 @@ const ADMIN = { username: 'admin', password: 'supersecret' }
 test.describe.configure({ mode: 'serial', retries: 0 })
 
 let page
+
+/** Drop a fixture file on the app, as from the file manager, and import it where Nik proposes. */
+async function dropFixture(name) {
+  const content = readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
+  const transfer = await page.evaluateHandle(
+    ([fileName, text]) => {
+      const data = new DataTransfer()
+      data.items.add(new File([text], fileName))
+      return data
+    },
+    [name, content],
+  )
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Import' }).click()
+  await expect(dialog).toBeHidden()
+}
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage()
@@ -52,35 +73,36 @@ test('a new incident opens on its summary', async () => {
   await expect(page.locator('aside nav[aria-label="Incidents"]')).toContainText('WKS-FINANCE-01')
 })
 
-test('demo data fills the analysis tabs', async () => {
-  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
-  for (const tab of ['Browser Forensics', 'Command History', 'Endpoint Artifacts', 'Event Logs']) {
-    await tabs.getByText(tab).click()
-    const loaders = page.locator('button:has-text("Load demo data")')
-    await expect(loaders.first()).toBeVisible({ timeout: 20_000 })
-    const count = await loaders.count()
-    for (let i = 0; i < count; i++) {
-      await loaders.nth(i).click()
+test('evidence files dropped on the app fill the analysis tabs', async () => {
+  const current = page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')
+  const files = [
+    ['Bookmarks', 'Browser Forensics', /^Bookmarks/],
+    ['bash_history', 'Command History'],
+    ['bam-export.csv', 'Endpoint Artifacts'],
+    ['nik-eventlogs.json', 'Event Logs'],
+  ]
+  for (const [name, tab, section] of files) {
+    await dropFixture(name)
+    await expect(current).toContainText(tab)
+    if (section) {
+      await page
+        .getByRole('navigation', { name: 'Browser analysis sections' })
+        .getByRole('button', { name: section })
+        .click()
     }
-    // The data-sources card records the import and the tables fill up.
-    await expect(page.getByText('Demo data').first()).toBeVisible()
-    await expect(page.locator('tbody tr').first()).toBeVisible()
+    await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
   }
 })
 
-test('the timeline and the tail -f panel merge the events', async () => {
+test('the timeline merges the events of every tab', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Timeline').click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   const counter = page.getByText(/of \d+ results/)
   await expect(counter).toBeVisible()
   expect(await counter.textContent()).not.toMatch(/of 0 results/)
-
-  // The tail panel is remembered per tab; make sure it is open here.
-  const toggle = page.locator('button[title*="tail -f"]')
-  if ((await toggle.getAttribute('title')) !== 'Hide the tail -f panel') await toggle.click()
-  const tail = page.getByRole('complementary', { name: 'Latest incident events' })
-  await expect(tail).toBeVisible()
-  await expect(tail.locator('li')).not.toHaveCount(1) // more than the cursor line
+  for (const source of ['Bash', 'Security']) {
+    await expect(page.locator('tbody').getByText(source).first()).toBeVisible()
+  }
 })
 
 test('the IOCs tab gathers the indicators and shows where they were seen', async () => {
@@ -179,69 +201,11 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   if (process.env.E2E_ANALYZER_URL || process.env.E2E_CAPA_URL) test.setTimeout(300_000)
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
   await expect(page.getByText('No samples yet')).toBeVisible()
-  // A harmless but valid PE32 (one .text section) with a few indicators inside.
-  // .text starts with real x86 code at the entry point (test, branch, call a
-  // helper, return) so the analyzer has functions and a CFG to show. The helper
-  // loads the URL's address (mov eax, imm32), so the URL is linked to it.
-  const payload = Buffer.from(
-    '\0\0kernel32.dll\0VirtualAllocEx\0WriteProcessMemory\0CreateRemoteThread\0http://185.220.101.47/gate.php\0' +
-      'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\WinUpd\0',
-    'latin1',
-  )
-  const entry = Buffer.from('5589e585c07405e8030000005dc390', 'hex')
-  const helper = Buffer.from('b80000000031c0c3', 'hex')
-  helper.writeUInt32LE(0x401000 + entry.length + helper.length + payload.indexOf('http'), 1)
-  const code = Buffer.concat([entry, helper])
-  const fileAlign = 0x200
-  const rawSize = Math.ceil((code.length + payload.length) / fileAlign) * fileAlign
-  const headers = Buffer.alloc(0x200)
-  headers.write('MZ', 0, 'ascii')
-  headers.writeUInt32LE(0x80, 0x3c)
-  headers.write('PE\0\0', 0x80, 'ascii')
-  // IMAGE_FILE_HEADER: i386, 1 section, timestamp, optional header size 0xe0, EXECUTABLE_IMAGE | 32BIT
-  headers.writeUInt16LE(0x014c, 0x84)
-  headers.writeUInt16LE(1, 0x86)
-  headers.writeUInt32LE(0x5f5e1000, 0x88)
-  headers.writeUInt16LE(0xe0, 0x94)
-  headers.writeUInt16LE(0x0102, 0x96)
-  // IMAGE_OPTIONAL_HEADER32
-  const opt = 0x98
-  headers.writeUInt16LE(0x10b, opt) // PE32 magic
-  headers.writeUInt32LE(rawSize, opt + 4) // SizeOfCode
-  headers.writeUInt32LE(0x1000, opt + 16) // AddressOfEntryPoint
-  headers.writeUInt32LE(0x1000, opt + 20) // BaseOfCode
-  headers.writeUInt32LE(0x400000, opt + 28) // ImageBase
-  headers.writeUInt32LE(0x1000, opt + 32) // SectionAlignment
-  headers.writeUInt32LE(fileAlign, opt + 36) // FileAlignment
-  headers.writeUInt16LE(6, opt + 40) // MajorOperatingSystemVersion
-  headers.writeUInt16LE(6, opt + 48) // MajorSubsystemVersion
-  headers.writeUInt32LE(0x2000, opt + 56) // SizeOfImage
-  headers.writeUInt32LE(0x200, opt + 60) // SizeOfHeaders
-  headers.writeUInt16LE(2, opt + 68) // Subsystem: Windows GUI
-  headers.writeUInt32LE(0x100000, opt + 72) // SizeOfStackReserve
-  headers.writeUInt32LE(0x1000, opt + 76)
-  headers.writeUInt32LE(0x100000, opt + 80)
-  headers.writeUInt32LE(0x1000, opt + 84)
-  headers.writeUInt32LE(16, opt + 92) // NumberOfRvaAndSizes
-  // IMAGE_SECTION_HEADER for .text
-  const sec = opt + 0xe0
-  headers.write('.text', sec, 'ascii')
-  headers.writeUInt32LE(code.length + payload.length, sec + 8) // VirtualSize
-  headers.writeUInt32LE(0x1000, sec + 12) // VirtualAddress
-  headers.writeUInt32LE(rawSize, sec + 16) // SizeOfRawData
-  headers.writeUInt32LE(0x200, sec + 20) // PointerToRawData
-  headers.writeUInt32LE(0x60000020, sec + 36) // CODE | EXECUTE | READ
-  const body = Buffer.alloc(rawSize)
-  code.copy(body)
-  payload.copy(body, code.length)
-  await page
-    .getByRole('button', { name: 'Upload malware samples' })
-    .locator('input[type=file]')
-    .setInputFiles({
-      name: 'invoice_0423.pdf.exe',
-      mimeType: 'application/octet-stream',
-      buffer: Buffer.concat([headers, body]),
-    })
+  await page.getByRole('button', { name: 'Upload malware samples' }).locator('input[type=file]').setInputFiles({
+    name: 'invoice_0423.pdf.exe',
+    mimeType: 'application/octet-stream',
+    buffer: buildSamplePe(),
+  })
   await expect(page.getByRole('list', { name: 'Samples' })).toContainText('invoice_0423.pdf.exe')
   await expect(page.getByText('PE32 executable, Intel 80386').first()).toBeVisible()
   await expect(page.locator('dd', { hasText: /^[0-9a-f]{64}/ }).first()).toBeVisible()
@@ -339,31 +303,7 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
 })
 
 test('a reported e-mail is triaged: verdict, sandboxed body, attachment sent to Malware Analysis', async () => {
-  const exe = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200)]).toString('base64')
-  const eml = [
-    'Received: from mail.evil.example (mail.evil.example [185.220.101.47]) by mx.contoso.example; Tue, 10 Nov 2026 09:00:02 +0100',
-    'From: "PayPal Service" <service@paypai.example>',
-    'Reply-To: refunds@freemail.example',
-    'To: m.rossi@contoso.example',
-    'Subject: Your account will be suspended',
-    'Date: Tue, 10 Nov 2026 08:59:50 +0100',
-    'MIME-Version: 1.0',
-    'Content-Type: multipart/mixed; boundary="b1"',
-    '',
-    '--b1',
-    'Content-Type: text/html; charset=utf-8',
-    '',
-    '<p>Verify your account immediately.</p><p style="font-size:0">filler</p>' +
-      '<a href="https://login-paypa1.top/x">https://www.paypal.com/signin</a><script>alert(1)</script>',
-    '--b1',
-    'Content-Type: application/octet-stream; name="invoice.pdf.exe"',
-    'Content-Disposition: attachment; filename="invoice.pdf.exe"',
-    'Content-Transfer-Encoding: base64',
-    '',
-    exe,
-    '--b1--',
-    '',
-  ].join('\r\n')
+  const eml = phishingEml()
   const transfer = await page.evaluateHandle((text) => {
     const data = new DataTransfer()
     data.items.add(new File([text], 'reported.eml', { type: 'message/rfc822' }))

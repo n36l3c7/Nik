@@ -4,7 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <meta name="description" content="Nik — forensic analysis platform: overview, installation and usage." />
+    <meta
+      name="description"
+      content="Nik — a self-hosted forensic analysis platform: incidents, timeline, mail, malware and network analysis."
+    />
     <title>Nik — Forensic analysis platform</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -14,8 +17,12 @@
         <a class="brand" href="./">nik <span>· docs</span></a>
         <nav class="site-nav" aria-label="Documentation">
           <a href="./" aria-current="page">Overview</a>
+          <a href="guide.html">User guide</a>
+          <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
           <a href="api.html">API</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="developer.html">Developers</a>
           <a href="changelog.html">Changelog</a>
           <a href="https://github.com/n36l3c7/Nik">GitHub</a>
         </nav>
@@ -34,305 +41,112 @@
         <div>
           <h1 class="tagline">Forensic analysis platform</h1>
           <p class="lead">
-            A full-stack web platform for analysing digital-forensics artifacts, laid out like a SOC dashboard. Analysts
-            organise their work into <strong>incidents</strong>, import artifacts from a machine, flag suspicious events
-            and build a timeline of the malicious activity — every action attributed to a named analyst and recorded in
-            an audit log.
+            A self-hosted web platform for incident response teams. Open an incident, drop the evidence, read it in one
+            timeline and hand over a report. Every action is attributed to an analyst.
+          </p>
+          <p class="links">
+            <a href="guide.html">User guide →</a>
+            <a href="deployment.html">Deploy it →</a>
+            <a href="https://github.com/n36l3c7/Nik">Source on GitHub →</a>
           </p>
         </div>
       </section>
 
-      <h2 id="overview">Overview</h2>
+      <figure class="shot">
+        <img src="img/timeline.png" alt="An incident's timeline in Nik" width="1600" height="1000" />
+        <figcaption>One incident, every source on one timeline.</figcaption>
+      </figure>
+
+      <h2 id="features">What it does</h2>
       <div class="grid">
         <div class="card">
-          <h3>Client-side parsing</h3>
-          <p>
-            SQLite artifacts (Chromium <code>History</code>, Firefox <code>places.sqlite</code>, Safari
-            <code>History.db</code>), property lists, shell histories and DFIR CSV/JSON exports are parsed in the
-            analyst's browser. Raw files never leave the machine; only normalized entries reach the server. Windows
-            <code>.evtx</code> logs, a binary format, and malware samples are parsed on the Nik server instead.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Browser forensics</h3>
-          <p>
-            One sub-tab per browser (Chrome, Firefox, Edge, Brave, Opera, Safari), each with several profiles: history,
-            downloads, bookmarks and shortcuts, with visit / search / redirect classification.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Command history</h3>
-          <p>
-            Bash, Zsh, Fish and PowerShell history files, with built-in detection of shell and PowerShell tradecraft.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Endpoint artifacts</h3>
-          <p>
-            Program execution, persistence, file and folder access, removable devices — imported from DFIR tool exports,
-            with OS-specific guidance on where each source lives.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Windows event logs</h3>
-          <p>
-            Raw <code>.evtx</code> files parsed on the server (records left after a clear recovered) or a native
-            <code>Get-WinEvent</code> export: about 50 curated event IDs, a coverage chart with silences and clears,
-            logon sessions, and a ruleset for log clearing, brute force, RDP outside hours, suspicious PowerShell and
-            new admins.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Malware analysis</h3>
-          <p>
-            Suspicious files are stored on the Nik server, never executed, and analysed statically: hashes, file type,
-            entropy, strings, indicators of compromise, PE/ELF/Mach-O structure with imphash, YARA matches and a Code
-            view (functions, call graph, control-flow graphs, pseudo-C) from an isolated rizin worker that hides
-            recognised library code (FLIRT signatures, Rust crates), ranks where to start, links indicators to the
-            functions that use them and keeps the analysts' names and comments; a Capabilities view from Mandiant capa
-            (ATT&amp;CK and MBC), in its own isolated worker; links to VirusTotal and MalwareBazaar, password-protected
-            download.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Mail analysis</h3>
-          <p>
-            Phishing triage of <code>.eml</code> and Outlook <code>.msg</code> files: the route and the sending server,
-            SPF, DKIM and DMARC checked through DNS next to your servers' reports, sender mismatches and look-alike
-            domains, links unwrapped from Safe Links and Proofpoint, the body in a sandboxed frame that runs and loads
-            nothing, attachments by their real type (macros, encrypted archives, disguised executables, QR codes), and a
-            verdict with every finding explained. Documents are previewed as pages and HTML attachments and links open
-            in an isolated browser you click through on screenshots, without network unless you allow it.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Network analysis</h3>
-          <p>
-            pcap and pcapng read by Wireshark's own engine in an isolated worker: the packet list with Wireshark's
-            colours, the protocol tree and the bytes, display filters, Follow Stream, Export Objects, TLS decryption
-            with a key log, and a summary of hosts, DNS, HTTP, TLS server names, submissions and beacons. Sessions of
-            the isolated browser are captures too, with a DevTools-like Network panel, held submissions, HAR and a
-            pcapng rebuilt with HTTPS in clear.
-          </p>
-        </div>
-        <div class="card">
-          <h3>IOC correlation</h3>
-          <p>
-            Indicators from every tab indexed on the server: an IOCs tab with the number of other incidents each one
-            appears in, <em>Where seen</em> across every analyst's incidents, a shared allowlist, and export as CSV,
-            STIX 2.1 or MISP.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Threat intelligence</h3>
-          <p>
-            Reputation from VirusTotal, AbuseIPDB, abuse.ch, AlienVault OTX, urlscan.io, GreyNoise, Shodan InternetDB
-            and Google Safe Browsing: a column in the IOCs tab, every answer in Where seen, automatic lookups per type
-            within each free tier. Private addresses, internal names, allowlisted values and TLP:RED incidents are never
-            sent; keys are stored encrypted.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Global search</h3>
-          <p>
-            <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> or <kbd>/</kbd> opens a <code>nik&gt;</code> prompt over
-            incidents, indicators from every incident and samples, plus the open incident's events and notes;
-            <code>&gt;</code> lists actions.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Incident report</h3>
-          <p>
-            A printable HTML page or PDF built by the server (also via the API): executive summary, flagged events,
-            ATT&amp;CK techniques from capa, YARA and the SOC rules, indicators, samples, e-mails, event-log coverage,
-            notes and an evidence appendix with SHA-256 — TLP-classified, in English or Italian, with your logo.
-          </p>
-        </div>
-        <div class="card">
-          <h3>Right-click and drop</h3>
-          <p>
-            A right-click menu on indicators, event rows and incidents (where seen, copy defanged, allowlist, flag,
-            comment, show in the timeline); a file dropped anywhere is recognised and imported into the right tab.
-          </p>
+          <h3>Incidents</h3>
+          <p>One case per machine or user, shared by the team, with notes, flags and an audit trail.</p>
         </div>
         <div class="card">
           <h3>Super-timeline</h3>
-          <p>
-            Every timestamped event across all tabs merged into one chronological, filterable view, plus a
-            <code>tail -f</code> side panel with the latest events on every tab.
-          </p>
+          <p>Every timestamped event of every source in one filterable list.</p>
         </div>
         <div class="card">
-          <h3>SOC detection engine</h3>
-          <p>
-            Editable suspicious-keyword rules, built-in command, endpoint and event-log rulesets and a configurable
-            business-hours window highlight suspicious events automatically.
-          </p>
+          <h3>Mail analysis</h3>
+          <p>Verdict for reported e-mails: headers, SPF/DKIM/DMARC, links, attachments, isolated browser.</p>
         </div>
         <div class="card">
-          <h3>Team storage</h3>
-          <p>
-            Incidents, users, settings and the audit log live in PostgreSQL behind a FastAPI REST API. Incidents load
-            lazily: sign-in fetches the light list, an incident's artifacts when it is opened.
-          </p>
+          <h3>Malware analysis</h3>
+          <p>Static analysis, YARA, capa and a disassembler view. Samples are never executed.</p>
         </div>
         <div class="card">
-          <h3>Automation</h3>
-          <p>
-            The same REST API the app uses, with API keys, ETags, JSON Merge Patch, async uploads, webhooks and
-            Prometheus metrics. See the <a href="api.html">API reference</a>.
-          </p>
+          <h3>Network analysis</h3>
+          <p>pcap and pcapng read by Wireshark's engine: filters, streams, objects, TLS decryption, beacons.</p>
+        </div>
+        <div class="card">
+          <h3>Host evidence</h3>
+          <p>Browser history, shell history, endpoint artifacts and Windows event logs, with collection scripts.</p>
+        </div>
+        <div class="card">
+          <h3>Indicators</h3>
+          <p>IOCs from every tab, seen across incidents, checked with threat intelligence, exported as STIX or MISP.</p>
+        </div>
+        <div class="card">
+          <h3>Detection</h3>
+          <p>Built-in rules for commands, artifacts and event logs, plus your own keywords and business hours.</p>
+        </div>
+        <div class="card">
+          <h3>Report and API</h3>
+          <p>PDF or HTML incident report; a REST API with keys and webhooks for automation.</p>
         </div>
       </div>
 
-      <h2 id="installation">Installation</h2>
+      <h2 id="quick-start">Quick start</h2>
+      <pre><code><span class="prompt"></span>git clone https://github.com/n36l3c7/Nik.git &amp;&amp; cd Nik
+<span class="prompt"></span>cp .env.example .env          # set DB_PASSWORD, SECRET_KEY and the worker tokens
+<span class="prompt"></span>docker compose up -d --build  # or: podman compose up -d --build</code></pre>
+      <p>
+        Open <strong>https://localhost:8443</strong> and create the first account: it becomes the admin.
+        <a href="deployment.html">Deployment</a> covers production, TLS, backups and a manual RHEL install.
+      </p>
 
-      <h3 id="docker">Quick start with Docker / Podman</h3>
-      <p>
-        The fastest way to run the whole stack — nginx (static SPA + <code>/api</code> reverse proxy), the FastAPI
-        backend and PostgreSQL — is the bundled Compose file:
-      </p>
-      <pre><code><span class="prompt"></span>cp .env.example .env          # then edit DB_PASSWORD and SECRET_KEY
-<span class="prompt"></span>docker compose up -d --build  # build the images and start db + api + web</code></pre>
-      <p>
-        Open <strong>https://localhost:8443</strong> and create the first user: that account becomes the
-        <strong>admin</strong>. Database tables are created on the API's first start, so there is nothing to migrate.
-        Plain HTTP stays available on <strong>http://localhost:8080</strong>.
-      </p>
-      <div class="note">
-        On first start the <code>web</code> container self-signs a TLS certificate, so the browser shows a one-time
-        "connection not private" warning. Accept it, or mount a real certificate (see the README, § Deployment).
+      <h2 id="docs">Documentation</h2>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr>
+              <td><a href="guide.html">User guide</a></td>
+              <td>Incidents, evidence, every analysis tab, search, report and settings, with screenshots.</td>
+            </tr>
+            <tr>
+              <td><a href="deployment.html">Deployment</a></td>
+              <td>Docker or Podman Compose, production, manual RHEL install, backups.</td>
+            </tr>
+            <tr>
+              <td><a href="configuration.html">Configuration</a></td>
+              <td>Every environment variable and in-app setting.</td>
+            </tr>
+            <tr>
+              <td><a href="api.html">API</a></td>
+              <td>REST endpoints, authentication, uploads and automation.</td>
+            </tr>
+            <tr>
+              <td><a href="architecture.html">Architecture</a></td>
+              <td>Design, folder structure, data model and how each analysis works.</td>
+            </tr>
+            <tr>
+              <td><a href="developer.html">Developers</a></td>
+              <td>Local setup, tests, extending Nik, the incident JSON format.</td>
+            </tr>
+            <tr>
+              <td><a href="changelog.html">Changelog</a></td>
+              <td>What changed in each release.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <pre><code><span class="prompt"></span>docker compose logs -f api    # follow backend logs
-<span class="prompt"></span>docker compose ps             # container status
-<span class="prompt"></span>docker compose down           # stop (keeps the database volume)
-<span class="prompt"></span>docker compose down -v        # stop AND delete the database volume</code></pre>
-      <p>
-        Podman is a drop-in replacement: <code>podman-compose up -d --build</code> (rootless is fine). Every image names
-        its registry (<code>docker.io/…</code>), so Podman on RHEL does not try <code>registry.redhat.io</code> first.
-      </p>
-
-      <h3 id="boot-backup">Start on boot and nightly backups</h3>
-      <p>
-        On a server, install the systemd units as root from the repository root:
-        <code>sudo deploy/install-systemd.sh</code>. <code>nik.service</code> starts the stack at boot and
-        <code>nik-backup.timer</code> runs <code>deploy/backup.sh</code> every night: a <code>pg_dump</code> of the
-        database, the sample store (live malware: keep backups private), the <code>.env</code> file and their SHA-256
-        sums, kept 14 days by default. The README (§ 2.1) has the options and the restore steps.
-      </p>
-
-      <h3 id="postgres-18">Upgrading to PostgreSQL 18</h3>
-      <p>
-        From 2.12.2 the Compose file runs PostgreSQL 18 on a new volume. After <code>git pull</code>, and before
-        <code>compose up</code>, run <code>sudo deploy/upgrade-postgres.sh</code>: it backs up the database, moves it
-        with a dump and a restore, checks the row counts and restarts the stack. The PostgreSQL 16 volume is left
-        untouched for a rollback; remove it after 14 days. README § 2.1 has the details.
-      </p>
-
-      <h3 id="local">Local development</h3>
-      <p>
-        <strong>Prerequisites:</strong> Node.js 22+ and Python 3.11–3.13. No database server is needed: the backend
-        defaults to a local SQLite file.
-      </p>
-      <pre><code># terminal 1 — backend
-<span class="prompt"></span>cd backend
-<span class="prompt"></span>python -m venv .venv &amp;&amp; source .venv/bin/activate
-<span class="prompt"></span>pip install -r requirements.txt
-<span class="prompt"></span>cp .env.example .env          # set COOKIE_SECURE=false for plain-HTTP dev
-<span class="prompt"></span>uvicorn app.main:app --reload --port 8000
-
-# terminal 2 — frontend
-<span class="prompt"></span>cd frontend
-<span class="prompt"></span>npm install
-<span class="prompt"></span>npm run dev                   # http://localhost:5173</code></pre>
-      <p>
-        The Vite dev server proxies every <code>/api</code> request to the backend, so both work together with no CORS
-        configuration. On first load, create the first user and sign in.
-      </p>
-
-      <h3 id="production">Production without containers</h3>
-      <p>
-        The README walks through a manual deployment on RHEL: a static bundle (<code>npm run build</code> in
-        <code>frontend/</code>) served by nginx, the backend under systemd with gunicorn + uvicorn workers, PostgreSQL,
-        SELinux and TLS. See <a href="https://github.com/n36l3c7/Nik#22-manual-deployment-on-rhel">README § 2.2</a>.
-      </p>
-
-      <h2 id="usage">Usage</h2>
-      <ol>
-        <li>
-          <strong>Sign in.</strong> The first account created on a fresh install is the admin; admins create the other
-          analysts under Settings → Accounts.
-        </li>
-        <li>
-          <strong>Create an incident</strong> from the sidebar: a ticket ID, a short title, the host and/or the user
-          (the name is <code>[ticket] title</code> or <code>[ticket] host - user</code>), a severity tag, plus the host
-          OS (Windows, macOS, Linux), which drives the suggested artifact paths and the available shells. Or just drop a
-          file anywhere: Nik recognises it and offers to start the incident with it.
-        </li>
-        <li>
-          <strong>Import artifacts.</strong> Each analysis tab has a <em>Data sources</em> card: drop the native file (a
-          Chromium <code>History</code>, a <code>.bash_history</code>, a tool's CSV export…) and it is parsed in the
-          browser. <em>Load demo data</em> fills a tab with sample entries to explore the platform.
-        </li>
-        <li>
-          <strong>Analyse malware.</strong> Drop a suspicious file in the Malware Analysis tab: it goes to the server as
-          is (up to <code>SAMPLE_MAX_MB</code>), is hashed, typed and scanned for strings and indicators, and can be
-          downloaded again only inside a zip protected by the <code>infected</code> password or one you choose.
-        </li>
-        <li>
-          <strong>Triage a reported e-mail.</strong> Drop the <code>.eml</code> or <code>.msg</code> anywhere: the Mail
-          Analysis tab shows the verdict and why, the headers made readable, the body in a sandbox (remote images load
-          only if you ask), the links and the attachments, which open in hex or go to Malware Analysis in one click.
-          Documents open as pages with <em>Preview</em>; HTML attachments and links open in the isolated browser,
-          without network unless you allow it for that session. List your domains and mail servers under Settings → Mail
-          analysis first.
-        </li>
-        <li>
-          <strong>Read the traffic.</strong> Drop a pcap or pcapng on the Network Analysis tab (add a TLS key log to
-          decrypt HTTPS): filter as in Wireshark, select a packet for its tree and bytes, follow its stream, export the
-          objects. In the isolated browser, the Network panel lists every request; submissions are held until you send
-          them, and the session lands in Network Analysis when you close it.
-        </li>
-        <li>
-          <strong>Check reputations.</strong> An admin enters the providers' free API keys under Settings → Threat
-          intelligence; turn on automatic lookups for IP addresses, URLs and domains or hashes, or use
-          <em>Check now</em> in Where seen. The IOCs tab shows the worst verdict of each indicator.
-        </li>
-        <li>
-          <strong>Review and flag.</strong> Tables are searchable and sortable; SOC detections highlight rows in red
-          (high) or amber (medium). Flag any row as part of the malicious activity and add a comment.
-        </li>
-        <li>
-          <strong>Build the story.</strong> The Timeline tab merges every timestamped event; the Summary tab holds the
-          incident details, the suspicious window, flagged events and notes. The <code>tail -f</code> panel shows the
-          latest events on every tab.
-        </li>
-        <li>
-          <strong>Report, export or automate.</strong> The header's report button builds the incident report (PDF or
-          HTML); incidents export as JSON; admins take a full platform backup; scripts use the
-          <a href="api.html">REST API</a> with an API key.
-        </li>
-      </ol>
-
-      <h3 id="development">Development checks</h3>
-      <pre><code><span class="prompt"></span>cd frontend
-<span class="prompt"></span>npm test               # frontend unit tests
-<span class="prompt"></span>npm run lint           # ESLint
-<span class="prompt"></span>npm run format:check   # Prettier
-<span class="prompt"></span>npm run build &amp;&amp; npm run test:e2e   # Playwright smoke test of the whole stack
-<span class="prompt"></span>cd ../backend &amp;&amp; pytest &amp;&amp; ruff check . &amp;&amp; ruff format --check .</code></pre>
-      <p>
-        CI runs all of them on every pull request. The end-to-end test starts the backend on a throw-away SQLite
-        database and the production build behind <code>vite preview</code>, then drives the app as an analyst would:
-        first-run setup, sign-in, a new incident, demo data, timeline and tail panel.
-      </p>
     </main>
 
     <footer class="site-footer">
       <div class="inner">
         <span>Nik · MIT licence</span>
         <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
-        <a href="https://github.com/n36l3c7/Nik/blob/main/README.md">Full README</a>
         <span class="cursor" aria-hidden="true">▍</span>
       </div>
     </footer>
