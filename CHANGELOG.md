@@ -16,6 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   database, the sample store, the `.env` file and their SHA-256 sums, in a
   root-only directory; old backups are deleted after `--keep-days` (14 by
   default). README § 2.1 documents the restore.
+- **Event Logs tab** (Windows). Raw `.evtx` files are uploaded and parsed on
+  the server in a background job (the new `evtx` dependency, a Rust parser
+  with prebuilt wheels), which also recovers records left in the file after a
+  log clear and keeps the file's SHA-256; on a live host a native
+  `Get-WinEvent` script exports the same events as JSON, parsed in the
+  browser. About 50 curated event IDs are kept across Security, System,
+  PowerShell, RDP, Defender, Task Scheduler and Sysmon. The tab shows a
+  coverage chart per channel (silences of 6 h or more, clears, the
+  suspicious window), logon sessions paired from 4624/4634/4672, and every
+  event with a readable summary and its fields. A built-in `eventlog`
+  ruleset flags log cleared, audit policy changed, services (high from user
+  paths), suspicious PowerShell, brute force, a logon right after failures,
+  RDP outside hours, new accounts, privileged group changes, Defender alerts
+  and new scheduled tasks; command lines and script blocks also go through
+  the command ruleset. Events join the Timeline and the `tail -f` panel.
+  `POST /api/incidents/{id}/upload?tab=eventlogs` takes `.evtx` files from
+  scripts too.
 - **Dependency audits** in a new `Audit` workflow, on every pull request and
   every Monday: `pip-audit` (backend, capa worker), `npm audit` and
   `shellcheck`. **Dependabot** opens grouped monthly update pull requests

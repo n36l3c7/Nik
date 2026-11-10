@@ -41,6 +41,8 @@ export const EVENT_TYPE_META = {
   command: { label: 'Command', color: 'violet' },
   // Malware sample imported in the Malware Analysis tab.
   sample: { label: 'Sample', color: 'red' },
+  // Windows event-log event from the Event Logs tab.
+  eventlog: { label: 'Event log', color: 'amber' },
 }
 
 /**

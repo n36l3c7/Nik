@@ -319,6 +319,92 @@ export const DEFAULT_MALWARE_KEYWORDS = [
   },
 ]
 
+/*
+ * Windows event-log ruleset. Unlike the keyword rulesets these rules look at
+ * the event id and its fields (or at groups of events, for brute force), so
+ * the logic lives in utils/eventLogs.js; this list names them for the badges
+ * and the Settings reference. Process command lines and PowerShell script
+ * blocks also go through the command-line ruleset above.
+ */
+export const DEFAULT_EVENTLOG_RULES = [
+  {
+    id: 'evt-log-cleared',
+    label: 'log cleared',
+    severity: 'high',
+    description: 'The Security audit log (1102) or another event log (104) was cleared: anti-forensics.',
+  },
+  {
+    id: 'evt-audit-policy',
+    label: 'audit policy changed',
+    severity: 'medium',
+    description: 'The audit policy was changed (4719); attackers turn auditing off to hide their tracks.',
+  },
+  {
+    id: 'evt-service-user-path',
+    label: 'service from user path',
+    severity: 'high',
+    description:
+      'A service was installed (7045/4697) whose binary lives in a user-writable folder or runs a shell, as remote-execution tools and malware do.',
+  },
+  {
+    id: 'evt-service-installed',
+    label: 'service installed',
+    severity: 'medium',
+    description: 'A new service was installed (7045/4697): a common persistence and lateral-movement step.',
+  },
+  {
+    id: 'evt-ps-suspicious',
+    label: 'suspicious PowerShell',
+    severity: 'high',
+    description:
+      'Encoded command, download cradle, Invoke-Expression, hidden window or AMSI tampering in a PowerShell script block, pipeline or command line.',
+  },
+  {
+    id: 'evt-bruteforce',
+    label: 'brute force',
+    severity: 'high',
+    description: '10 or more failed logons (4625) for the same account or from the same source within 10 minutes.',
+  },
+  {
+    id: 'evt-logon-after-failures',
+    label: 'logon after failures',
+    severity: 'high',
+    description:
+      'A successful logon (4624) for an account or from a source with 5 or more failed logons in the previous 30 minutes.',
+  },
+  {
+    id: 'evt-rdp-off-hours',
+    label: 'RDP outside hours',
+    severity: 'high',
+    description: 'A remote desktop logon (4624 type 10, 21, 25, 1149) outside the configured business hours.',
+  },
+  {
+    id: 'evt-account-created',
+    label: 'account created',
+    severity: 'medium',
+    description: 'A local or domain account was created or enabled (4720/4722).',
+  },
+  {
+    id: 'evt-admin-group',
+    label: 'added to admins',
+    severity: 'high',
+    description:
+      'An account was added to a privileged group (Administrators, Domain/Enterprise Admins, Remote Desktop Users, Backup Operators).',
+  },
+  {
+    id: 'evt-defender',
+    label: 'Defender alert',
+    severity: 'high',
+    description: 'Microsoft Defender detected malware (1116/1117) or real-time protection was turned off (5001).',
+  },
+  {
+    id: 'evt-task-created',
+    label: 'task created',
+    severity: 'medium',
+    description: 'A scheduled task was created (4698/106): a common persistence mechanism.',
+  },
+]
+
 export const DEFAULT_BUSINESS_HOURS = {
   startHour: 8, // start of business hours (inclusive)
   endHour: 18, // end of business hours (exclusive)

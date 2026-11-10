@@ -4,7 +4,8 @@
  * ============================================================================
  *
  * Merges every TIMESTAMPED event of an incident — browser history/downloads,
- * shell commands, and endpoint artifacts — into a single chronological stream.
+ * shell commands, endpoint artifacts, Windows event logs and sample imports —
+ * into a single chronological stream.
  * Entries without a usable timestamp are deliberately left out (a timeline row
  * with no time is meaningless).
  *
@@ -24,12 +25,14 @@ import { buildArtifactEvents, combineCategoryRecords } from './artifacts.js'
 import { extractDomain, truncate } from './url.js'
 import { profileLabel } from './browserProfiles.js'
 import { sampleEvents } from './malware.js'
+import { buildEventLogEvents } from './eventLogs.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
 export const TIMELINE_SOURCE_META = {
   browser: { label: 'Browser', color: 'cyan' },
   command: { label: 'Command', color: 'violet' },
   endpoint: { label: 'Endpoint', color: 'emerald' },
+  eventlog: { label: 'Event log', color: 'amber' },
   sample: { label: 'Sample', color: 'red' },
 }
 
@@ -153,6 +156,30 @@ export function buildTimelineEvents(data = {}, engine) {
         },
       })
     }
+  }
+
+  /* ---- Windows event logs (per channel) ---- */
+  for (const event of buildEventLogEvents({ channels: data.eventlogs?.channels ?? {}, engine })) {
+    if (!hasTime(event)) continue
+    out.push({
+      id: event.id,
+      time: event.time,
+      sourceType: 'eventlog',
+      sourceLabel: event.channelLabel,
+      eventType: 'eventlog',
+      label: `${event.eventId} ${event.label}`,
+      detail: event.summary,
+      soc: event.soc,
+      flaggable: {
+        key: event.id,
+        browserId: event.channelLabel,
+        section: 'eventlogs',
+        eventType: 'eventlog',
+        title: event.title,
+        url: '',
+        time: event.time,
+      },
+    })
   }
 
   /* ---- Malware samples (import time) ---- */

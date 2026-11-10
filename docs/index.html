@@ -49,7 +49,8 @@
           <p>
             SQLite artifacts (Chromium <code>History</code>, Firefox <code>places.sqlite</code>, Safari
             <code>History.db</code>), property lists, shell histories and DFIR CSV/JSON exports are parsed in the
-            analyst's browser. Raw files never leave the machine; only normalized entries reach the server.
+            analyst's browser. Raw files never leave the machine; only normalized entries reach the server. Windows
+            <code>.evtx</code> logs, a binary format, and malware samples are parsed on the Nik server instead.
           </p>
         </div>
         <div class="card">
@@ -70,6 +71,15 @@
           <p>
             Program execution, persistence, file and folder access, removable devices — imported from DFIR tool exports,
             with OS-specific guidance on where each source lives.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Windows event logs</h3>
+          <p>
+            Raw <code>.evtx</code> files parsed on the server (records left after a clear recovered) or a native
+            <code>Get-WinEvent</code> export: about 50 curated event IDs, a coverage chart with silences and clears,
+            logon sessions, and a ruleset for log clearing, brute force, RDP outside hours, suspicious PowerShell and
+            new admins.
           </p>
         </div>
         <div class="card">
@@ -94,8 +104,8 @@
         <div class="card">
           <h3>SOC detection engine</h3>
           <p>
-            Editable suspicious-keyword rules, built-in command and endpoint rulesets and a configurable business-hours
-            window highlight suspicious events automatically.
+            Editable suspicious-keyword rules, built-in command, endpoint and event-log rulesets and a configurable
+            business-hours window highlight suspicious events automatically.
           </p>
         </div>
         <div class="card">

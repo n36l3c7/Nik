@@ -7,11 +7,13 @@ parser and merged into the incident document exactly like the frontend does.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 
 from ..browser_profiles import profile_for_upload
 from . import artifact as artifact_mod
 from . import browser as browser_mod
+from . import eventlog as eventlog_mod
 from . import shell as shell_mod
 
 # --- Browsers: id -> engine + per-source `produces` ------------------------ #
@@ -208,4 +210,18 @@ def apply_upload(doc: dict, tab: str, params: dict, data: bytes, file_name: str)
         }
         return {"rows": len(produced["records"]), "format": fmt, "target": f"endpoint/{category_id}/{source_key}"}
 
-    raise _bad(f"Unknown tab '{tab}' (expected browser|commands|endpoint).")
+    if tab == "eventlogs":
+        parsed = eventlog_mod.parse_evtx(data)
+        channels = data_root.setdefault("eventlogs", {}).setdefault("channels", {})
+        digest = hashlib.sha256(data).hexdigest()
+        rows = 0
+        for channel, result in parsed.items():
+            channels[channel] = {
+                "events": result["events"],
+                "meta": {**meta_base, "format": "evtx", "sha256": digest, "size": len(data), **result["stats"]},
+            }
+            rows += len(result["events"])
+        names = sorted(parsed)
+        return {"rows": rows, "format": "evtx", "target": f"eventlogs/{','.join(names)}", "channels": names}
+
+    raise _bad(f"Unknown tab '{tab}' (expected browser|commands|endpoint|eventlogs).")
