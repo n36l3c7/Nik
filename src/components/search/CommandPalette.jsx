@@ -33,7 +33,6 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab }) {
   const { activeIncident, selectIncident } = useIncidents()
   const { openIoc } = useIocLookup()
   const engine = useSocEngine()
-  const inputRef = useRef(null)
   const listRef = useRef(null)
   const [query, setQuery] = useState('')
   const [remote, setRemote] = useState({ loading: false, data: NO_RESULTS, error: null })
@@ -47,8 +46,6 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab }) {
     setQuery('')
     setCursor(0)
     setRemote({ loading: false, data: NO_RESULTS, error: null })
-    // Focus after the dialog is painted.
-    requestAnimationFrame(() => inputRef.current?.focus())
   }, [open])
 
   // Server search, debounced; aborted when the query changes.
@@ -223,7 +220,9 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab }) {
             nik&gt;
           </span>
           <input
-            ref={inputRef}
+            // The input mounts with the dialog: focused at once, so the keys
+            // typed right after Ctrl/Cmd+K land in it.
+            autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}

@@ -59,7 +59,7 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
   } catch (networkError) {
     if (networkError?.name === 'AbortError') throw networkError
     // fetch only rejects on network failure (server unreachable, DNS, CORS…).
-    throw new Error(networkError?.message || 'Cannot reach the server.')
+    throw new Error(networkError?.message || 'Cannot reach the server.', { cause: networkError })
   }
 
   // 204 No Content — nothing to parse; 304 — the caller's copy is current.
@@ -167,7 +167,7 @@ export async function postForBlob(path, body, { signal } = {}) {
     })
   } catch (networkError) {
     if (networkError?.name === 'AbortError') throw networkError
-    throw new Error(networkError?.message || 'Cannot reach the server.')
+    throw new Error(networkError?.message || 'Cannot reach the server.', { cause: networkError })
   }
   if (!response.ok) {
     let detail = `Request failed (${response.status})`

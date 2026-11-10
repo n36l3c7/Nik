@@ -1,12 +1,12 @@
 /*
  * ESLint (flat config). `npm run lint` checks the frontend; CI runs it too.
  *  - @eslint/js recommended rules
- *  - eslint-plugin-react: JSX awareness (components used only in JSX count as used)
+ *  - JSX: ESLint 10's scope analysis counts a component used only in JSX as
+ *    used, so eslint-plugin-react (react/jsx-uses-vars) is no longer needed
  *  - eslint-plugin-react-hooks: the classic Rules of Hooks and exhaustive deps
  */
 import js from '@eslint/js'
 import globals from 'globals'
-import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 
 export default [
@@ -20,10 +20,8 @@ export default [
       globals: { ...globals.browser },
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
-    settings: { react: { version: 'detect' } },
-    plugins: { react, 'react-hooks': reactHooks },
+    plugins: { 'react-hooks': reactHooks },
     rules: {
-      'react/jsx-uses-vars': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
