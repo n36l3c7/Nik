@@ -10,6 +10,7 @@ import { CalendarClock, Check, Clock, Copy, Flag, RotateCcw, TriangleAlert } fro
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useRowMenu } from '../../menu/useRowMenu.js'
 import { computeSocStats } from '../../../utils/soc.js'
 import { buildArtifactEvents } from '../../../utils/artifacts.js'
 import { formatDateTime } from '../../../utils/time.js'
@@ -141,6 +142,7 @@ const NO_FLAGS = {}
 export default function ArtifactSection({ incident, category, records = [] }) {
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
+  const rowMenu = useRowMenu(incident)
   const flags = incident?.flags ?? NO_FLAGS
 
   const [detectionFilter, setDetectionFilter] = useState('all')
@@ -248,12 +250,28 @@ export default function ArtifactSection({ incident, category, records = [] }) {
           searchPlaceholder={`Search ${category.label.toLowerCase()}…`}
           defaultSort={{ key: 'time', dir: 'desc' }}
           rowClassName={(row) => (flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? ''))}
+          onRowContextMenu={(event, row) =>
+            rowMenu(event, { flaggable: artifactFlaggable(row, category), record: row.fields })
+          }
           toolbar={toolbar}
           emptyMessage="No records match the current filters"
         />
       </Card>
     </div>
   )
+}
+
+/** The payload toggleFlag() stores for an endpoint record. */
+function artifactFlaggable(row, category) {
+  return {
+    key: row.id,
+    browserId: category.id, // reuse the flag "source" field for the category
+    section: `endpoint:${category.id}`,
+    eventType: category.id,
+    title: row.fields?.[category.primaryField] || '',
+    url: '',
+    time: row.time,
+  }
 }
 
 function buildColumns({ category, incidentId, flags, toggleFlag }) {
@@ -264,17 +282,7 @@ function buildColumns({ category, incidentId, flags, toggleFlag }) {
     render: (row) => (
       <FlagButton
         flagged={Boolean(flags[row.id])}
-        onToggle={() =>
-          toggleFlag(incidentId, {
-            key: row.id,
-            browserId: category.id, // reuse the flag "source" field for the category
-            section: `endpoint:${category.id}`,
-            eventType: category.id,
-            title: row.fields?.[category.primaryField] || '',
-            url: '',
-            time: row.time,
-          })
-        }
+        onToggle={() => toggleFlag(incidentId, artifactFlaggable(row, category))}
       />
     ),
   }

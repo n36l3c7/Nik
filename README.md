@@ -89,9 +89,17 @@ every action attributed to a named analyst and recorded in a global audit log.
 - **SOC detection engine** — editable suspicious-keyword rules plus built-in
   command, endpoint and event-log rulesets, and a configurable business-hours window,
   highlight suspicious events automatically.
-- **Case management** — per-event flags with comments, free-form notes, a
-  vertical incident timeline, and self-contained JSON export/import for
-  exchanging cases between analysts.
+- **Case management** — incidents named after the ticket of your tracker
+  (`[INC-2041] Invoice phishing`) with a severity tag, per-event flags with
+  comments, free-form notes, a vertical incident timeline, and self-contained
+  JSON export/import for exchanging cases between analysts.
+- **Right-click and drag-and-drop everywhere** — a right-click menu on
+  indicators (where seen, search, copy, copy defanged, allowlist), on event
+  rows (flag, comment, copy, show in the timeline) and on incidents (open,
+  report, export, copy link, delete); a file dropped anywhere opens a dialog
+  that recognises it (executables by their header, `.evtx`, browser
+  databases, shell histories…) and imports it into the open incident or a new
+  one.
 - **Full backup** — admins can export the entire platform (all incidents,
   users, settings and the audit log) to a single JSON file and restore it
   later, e.g. when moving the deployment to another machine.
@@ -847,7 +855,7 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/incidents` | List incidents. Query: `limit`/`offset`, `q`/`host`/`username`, `view=summary` (light rows: id, name, host, username, os, timestamps — no document body). `X-Total-Count` header. |
+| `GET /api/incidents` | List incidents. Query: `limit`/`offset`, `q` (name, host, user or ticket)/`host`/`username`, `view=summary` (light rows: id, name, host, username, os, ticketId, severity, timestamps — no document body). `X-Total-Count` header. |
 | `GET /api/incidents/{id}` | One incident (returns an `ETag`). Send `If-None-Match: <ETag>` to get `304` (no body) while your copy is current. |
 | `POST /api/incidents` | Create/upsert (id generated if omitted). |
 | `PATCH /api/incidents/{id}` | `application/json`: replace the given top-level fields. `application/merge-patch+json`: apply an [RFC 7396](https://www.rfc-editor.org/rfc/rfc7396) merge patch (nested merge, `null` deletes). Honors `If-Match` (→ `412` on a stale version). |
@@ -1094,7 +1102,10 @@ file itself to the server, because the sample *is* the evidence under study
     │   │                           #   useSocEngine(): memoized detection engine
     │   ├── IncidentContext.jsx     # useIncidents(): incident state, CRUD, flags, notes,
     │   │                           #   export/import — optimistic model backed by the API
-    │   └── IocLookupContext.jsx    # useIocLookup(): "Where seen" dialog; <IocValue> link
+    │   ├── IocLookupContext.jsx    # useIocLookup(): "Where seen", allowlist dialog, IOC menu; <IocValue>
+    │   ├── ContextMenuContext.jsx  # useContextMenu(): the app's right-click menu, askText()
+    │   ├── NavigationContext.jsx   # useNavigation(): go to a tab, open the search, import a file
+    │   └── ToastContext.jsx        # useToast(): short notices with an optional Undo
     │
     ├── services/
     │   ├── api.js                  # The ONLY file that talks to the server (fetch wrapper)
@@ -1126,6 +1137,8 @@ file itself to the server, because the sample *is* the evidence under study
     │   ├── artifacts.js            # buildArtifactEvents (endpoint records → events)
     │   ├── iocs.js                 # IOC types, source labels, guessIocType
     │   ├── search.js               # searchIncident (open incident), matchActions
+    │   ├── incidentName.js         # deriveIncidentName ([ticket] title | host - user), severities
+    │   ├── fileRouting.js          # detectFileRoute: which tab a dropped file belongs to
     │   ├── report.js               # report options, reportDetections (SOC hits + ATT&CK)
     │   ├── hash.js                 # sha256Hex: digest of an imported file, in the browser
     │   ├── eventLogs.js            # parseEventLogJson, buildEventLogEvents (event-log
@@ -1144,6 +1157,8 @@ file itself to the server, because the sample *is* the evidence under study
         │                           #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
         │                           #   FLIRT signatures, capa rules, audit log)
         ├── search/                 # CommandPalette (Ctrl/Cmd+K: nik> search and > actions)
+        ├── incident/               # IncidentFields (ticket, title, severity…), AddFileDialog
+        ├── menu/                   # useRowMenu (flag, comment, copy, timeline on any event row)
         ├── report/                 # ReportDialog (options, preview, PDF/HTML download)
         ├── layout/                 # Sidebar, Header, TabBar, OsPicker, IncidentLoadingState,
         │                           #   TailPanel (tail -f of the timeline)
@@ -1164,6 +1179,42 @@ file itself to the server, because the sample *is* the evidence under study
             │                           #   DecompiledView, StartHere, FunctionNotes, hooks
             └── timeline/               # TimelineTab (the super-timeline)
 ```
+
+**Naming an incident.** An incident has a **ticket ID** (the reference in your
+tracker), a **short title**, a **host** and a **user**, all optional but at
+least one. Its name is built from them: the ticket first, in square brackets,
+then the title when there is one, otherwise `host - user`:
+`[INC-2041] Invoice phishing, finance`, `[INC-2039] WKS-042 - m.rossi`,
+`SRV-FILE-01`. The **severity** (low, medium, high, critical) is a tag the
+analysts set, shown next to the name in the sidebar and the header but never
+part of it. Everything is editable from the Summary tab; the search palette and
+`GET /api/incidents?q=` also find incidents by ticket.
+
+**Right-click.** One menu for the whole app (`src/context/ContextMenuContext.jsx`):
+on an indicator (anywhere it is shown: the IOCs tab, a sample's indicators,
+event-log addresses) *Where else was this seen?*, *Search for it*, *Copy*,
+*Copy defanged* (`hxxps[:]//evil[.]top`) and *Add to the allowlist…*; on an
+event row (Browser, Commands, Endpoint, Event Logs, Timeline) *Flag* or
+*Remove the flag*, *Add a comment…*, *Copy as text*, *Copy as JSON* and *Show in
+the Timeline*; on an incident in the sidebar *Open*, *Incident report…*,
+*Export (JSON)*, *Copy link* and *Delete…*. Text fields and selected text keep
+the browser's menu, and so does Shift + right-click. **Add to the allowlist**
+(also the shield button on each IOC row) proposes the value or a wider entry —
+its domain or a parent domain, its /24 network — and writes it to the shared
+allowlist with a comment line saying who added it and when; *Undo* stays
+available for a few seconds. Any analyst can do it.
+
+**Drag-and-drop anywhere.** Drop a file on any part of the app (outside the
+tabs' own drop zones) and a dialog proposes where it goes, from its first bytes
+and its name (`src/utils/fileRouting.js`): PE, ELF and Mach-O executables, PDF,
+Office documents, scripts and archives → Malware Analysis; `.evtx` and the
+event-log script's JSON → Event Logs; Chromium `History` / `Shortcuts` /
+`Bookmarks`, Firefox `places.sqlite`, Safari `History.db` and plists → Browser
+Forensics; shell histories → Command History; CSV → Endpoint Artifacts. The
+dialog always asks whether the file goes into the open incident or a new one
+(with its ticket, title, severity, host, user and OS), lets you change the tab
+and the source, then opens the tab and imports the file as its own drop zone
+would.
 
 Each incident is tied to a single host and carries an **operating system**
 (`windows` | `macos` | `linux`, see `src/config/os.js`), chosen when the
@@ -1411,9 +1462,12 @@ sends the flag, not the incident's artifacts. A failed write surfaces in
 ```js
 {
   id:        'uuid',
-  host:      'WKS-FINANCE-01',             // identity (NOT unique — the id is the key)
+  ticketId:  'INC-2041',                   // identity (NOT unique — the id is the key),
+  title:     '',                           //   all optional, at least one set
+  host:      'WKS-FINANCE-01',             //   "
   username:  'm.rossi',                    //   "
-  name:      'WKS-FINANCE-01 - m.rossi',   // derived: "host - username" | host | username
+  name:      '[INC-2041] WKS-FINANCE-01 - m.rossi', // derived: "[ticket] title" | "[ticket] host - username"
+  severity:  'high',                       // 'low' | 'medium' | 'high' | 'critical' | null — a tag
   suspiciousStart: 1751871120000,          // Unix ms | null — start of suspicious activity
   suspiciousEnd:   1751899999000,          // Unix ms | null — end of suspicious activity
   createdAt: '2026-07-07T09:00:00.000Z',   // ISO 8601

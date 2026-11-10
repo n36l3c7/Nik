@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CalendarClock, Check, Clock, Copy, Flag, Hash, RotateCcw, Terminal, TriangleAlert } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
+import { useRowMenu } from '../../menu/useRowMenu.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { computeSocStats } from '../../../utils/soc.js'
 import { buildCommandEvents } from '../../../utils/commands.js'
@@ -127,6 +128,7 @@ const NO_FLAGS = {}
 export default function CommandsSection({ incident, shellId, commands = [] }) {
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
+  const rowMenu = useRowMenu(incident)
   const flags = incident?.flags ?? NO_FLAGS
 
   const [detectionFilter, setDetectionFilter] = useState('all')
@@ -243,6 +245,7 @@ export default function CommandsSection({ incident, shellId, commands = [] }) {
           rowClassName={(row) => (flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? ''))}
           toolbar={toolbar}
           emptyMessage="No commands match the current filters"
+          onRowContextMenu={(event, row) => rowMenu(event, { flaggable: commandFlaggable(row, shellId), record: row })}
         />
       </Card>
     </div>
@@ -270,6 +273,19 @@ function NoTimestampNote({ withTime, total }) {
 
 /* ---- Columns -------------------------------------------------------------- */
 
+/** The payload toggleFlag() stores for a command row. */
+function commandFlaggable(row, shellId) {
+  return {
+    key: row.id,
+    browserId: shellId, // reuse the flag "source" field for the shell id
+    section: 'commands',
+    eventType: 'command',
+    title: row.command,
+    url: '',
+    time: row.time,
+  }
+}
+
 function buildColumns({ incidentId, shellId, flags, toggleFlag }) {
   return [
     {
@@ -279,17 +295,7 @@ function buildColumns({ incidentId, shellId, flags, toggleFlag }) {
       render: (row) => (
         <FlagButton
           flagged={Boolean(flags[row.id])}
-          onToggle={() =>
-            toggleFlag(incidentId, {
-              key: row.id,
-              browserId: shellId, // reuse the flag "source" field for the shell id
-              section: 'commands',
-              eventType: 'command',
-              title: row.command,
-              url: '',
-              time: row.time,
-            })
-          }
+          onToggle={() => toggleFlag(incidentId, commandFlaggable(row, shellId))}
         />
       ),
     },

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Activity, CalendarClock, Clock, Flag, ListTree, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
+import { useNavigation } from '../../../context/NavigationContext.jsx'
+import { useRowMenu } from '../../menu/useRowMenu.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { computeSocStats } from '../../../utils/soc.js'
 import { buildTimelineEvents, TIMELINE_SOURCE_META } from '../../../utils/timeline.js'
@@ -118,7 +120,11 @@ function DetectionCell({ event }) {
 export default function TimelineTab({ incident }) {
   const engine = useSocEngine()
   const { toggleFlag } = useIncidents()
+  const rowMenu = useRowMenu(incident, { timeline: false })
+  const { requests, take } = useNavigation()
   const flags = incident?.flags ?? NO_FLAGS
+  // "Show in the Timeline" from another tab: search for that event.
+  const [initialQuery, setInitialQuery] = useState('')
 
   const [detectionFilter, setDetectionFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
@@ -132,6 +138,17 @@ export default function TimelineTab({ incident }) {
     setRange({ start: incident?.suspiciousStart ?? null, end: incident?.suspiciousEnd ?? null })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incident?.id])
+
+  useEffect(() => {
+    if (!requests.timeline) return
+    const request = take('timeline')
+    if (request?.search == null) return
+    setDetectionFilter('all')
+    setSourceFilter('all')
+    setRange({ start: null, end: null })
+    setInitialQuery(request.search)
+    setResetToken((t) => t + 1)
+  }, [requests.timeline, take])
 
   const data = incident?.data
   const events = useMemo(() => buildTimelineEvents(data, engine), [data, engine])
@@ -172,6 +189,7 @@ export default function TimelineTab({ incident }) {
     setDetectionFilter('all')
     setSourceFilter('all')
     setRange({ start: null, end: null })
+    setInitialQuery('')
     setResetToken((t) => t + 1)
   }
 
@@ -238,6 +256,8 @@ export default function TimelineTab({ incident }) {
           searchPlaceholder="Search the timeline…"
           defaultSort={{ key: 'time', dir: 'desc' }}
           rowClassName={(row) => (flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? ''))}
+          onRowContextMenu={(event, row) => rowMenu(event, { flaggable: row.flaggable, record: row })}
+          initialQuery={initialQuery}
           toolbar={toolbar}
           emptyMessage="No events match the current filters"
         />

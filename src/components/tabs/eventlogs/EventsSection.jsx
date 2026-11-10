@@ -8,6 +8,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, Clock, Flag, RotateCcw, ScrollText } from 'lucide-react'
 import { Badge, Button, Card, DataTable, Modal, Select } from '../../ui/index.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useRowMenu } from '../../menu/useRowMenu.js'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { EVENT_CATEGORIES } from '../../../config/eventLogs.js'
 import { guessIocType } from '../../../utils/iocs.js'
@@ -108,6 +109,7 @@ function Details({ event }) {
  */
 export default function EventsSection({ incident, events, channelOptions }) {
   const { toggleFlag } = useIncidents()
+  const rowMenu = useRowMenu(incident)
   const flags = incident?.flags ?? NO_FLAGS
   const [detectionFilter, setDetectionFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -281,6 +283,18 @@ export default function EventsSection({ incident, events, channelOptions }) {
           `cursor-pointer ${flags[row.id] ? FLAG_HIGHLIGHT : (ROW_SEVERITY_CLASSES[row.soc.severity] ?? '')}`
         }
         onRowClick={(row) => setExpanded(row.id)}
+        onRowContextMenu={(event, row) =>
+          rowMenu(event, {
+            flaggable: eventLogFlaggable(row),
+            record: {
+              time: row.time,
+              eventId: row.eventId,
+              channel: row.channel,
+              computer: row.computer,
+              data: row.data,
+            },
+          })
+        }
         toolbar={toolbar}
         emptyMessage="No events match the current filters"
       />

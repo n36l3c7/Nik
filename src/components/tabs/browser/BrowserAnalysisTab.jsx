@@ -7,6 +7,7 @@ import BookmarksSection from './BookmarksSection.jsx'
 import ShortcutsSection from './ShortcutsSection.jsx'
 import ProfileBar from './ProfileBar.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { parseBrowserSource } from '../../../services/fileParsers.js'
 import { sha256Hex } from '../../../utils/hash.js'
 import { getDemoBrowserData } from '../../../services/demoData.js'
@@ -146,6 +147,22 @@ export default function BrowserAnalysisTab({ incident }) {
       setLoading((prev) => ({ ...prev, [source.key]: false }))
     }
   }
+
+  // A file dropped anywhere in the app for this tab (see NavigationContext):
+  // switch to its browser first, then import it into the active profile.
+  const { requests, take } = useNavigation()
+  useEffect(() => {
+    const request = requests.browser
+    if (!request?.file) return
+    if (request.params?.browser && request.params.browser !== activeBrowserId) {
+      setActiveBrowser(incident.id, request.params.browser)
+      return
+    }
+    take('browser')
+    const source = browser.sources.find((s) => s.key === request.params?.source) ?? browser.sources[0]
+    handleFile(source, request.file)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests.browser, activeBrowserId])
 
   /* ---- Remove a single file ---- */
   const handleRemoveSource = (source) => {

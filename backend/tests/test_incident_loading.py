@@ -30,6 +30,8 @@ def test_summary_view_includes_os_without_document_body(admin: TestClient):
             "host": "wks01",
             "username": "",
             "os": "macos",
+            "ticketId": "",
+            "severity": None,
             "createdAt": "",
             "updatedAt": "",
         }

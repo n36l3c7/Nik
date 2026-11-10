@@ -6,13 +6,16 @@ import {
   CalendarClock,
   FileText,
   Flag,
+  Gauge,
   HardDrive,
+  Hash,
   ListTree,
   MonitorCog,
   Save,
   Server,
   StickyNote,
   Terminal,
+  Type,
   User,
 } from 'lucide-react'
 import { Button, Card, StatCard } from '../../ui/index.js'
@@ -23,6 +26,7 @@ import { BROWSERS } from '../../../config/browsers.js'
 import { SHELLS } from '../../../config/shells.js'
 import { ARTIFACT_CATEGORIES } from '../../../config/artifacts.js'
 import { normalizeOs } from '../../../config/os.js'
+import { SEVERITIES } from '../../../utils/incidentName.js'
 import { formatDateTime } from '../../../utils/time.js'
 
 /*
@@ -31,7 +35,8 @@ import { formatDateTime } from '../../../utils/time.js'
  * ============================================================================
  *
  * The incident's home screen. It offers three things:
- *   1. Editable incident details (host, username, suspicious start/end) saved
+ *   1. Editable incident details (ticket ID, short title, severity, host,
+ *      username, OS, suspicious start/end) saved
  *      through updateIncidentMeta.
  *   2. A recap row of StatCards computed from the incident's data.
  *   3. The vertical incident timeline (flags + notes).
@@ -67,6 +72,9 @@ export default function SummaryTab({ incident }) {
   const { updateIncidentMeta } = useIncidents()
 
   /* ---- editable draft, reseeded whenever the active incident changes ---- */
+  const [ticketId, setTicketId] = useState(incident.ticketId ?? '')
+  const [title, setTitle] = useState(incident.title ?? '')
+  const [severity, setSeverity] = useState(incident.severity ?? '')
   const [host, setHost] = useState(incident.host)
   const [username, setUsername] = useState(incident.username)
   const [os, setOs] = useState(normalizeOs(incident.os))
@@ -76,6 +84,9 @@ export default function SummaryTab({ incident }) {
   useEffect(() => {
     // Only reset the draft on a genuine incident switch — not on every save
     // (which bumps updatedAt but keeps the same id), so typed edits survive.
+    setTicketId(incident.ticketId ?? '')
+    setTitle(incident.title ?? '')
+    setSeverity(incident.severity ?? '')
     setHost(incident.host)
     setUsername(incident.username)
     setOs(normalizeOs(incident.os))
@@ -91,6 +102,9 @@ export default function SummaryTab({ incident }) {
 
   const handleSave = () => {
     updateIncidentMeta(incident.id, {
+      ticketId,
+      title,
+      severity: severity || null,
       host,
       username,
       os,
@@ -125,13 +139,53 @@ export default function SummaryTab({ incident }) {
 
   const flaggedCount = Object.keys(incident.flags ?? {}).length
   const notesCount = incident.notes?.length ?? 0
-  const namePreview = deriveIncidentName(host, username)
+  const namePreview = deriveIncidentName({ ticketId, title, host, username })
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       {/* ---- 1. Incident details ---- */}
       <Card title="Incident details" icon={FileText}>
         <div className="grid gap-4 sm:grid-cols-2">
+          <Field id="incident-ticket" label="Ticket ID" icon={Hash}>
+            <input
+              id="incident-ticket"
+              type="text"
+              value={ticketId}
+              onChange={(e) => setTicketId(e.target.value)}
+              placeholder="e.g. INC-2041"
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field id="incident-severity" label="Severity" icon={Gauge}>
+            <select
+              id="incident-severity"
+              value={severity}
+              onChange={(e) => setSeverity(e.target.value)}
+              className={INPUT_CLASS}
+            >
+              <option value="">—</option>
+              {SEVERITIES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <div className="sm:col-span-2">
+            <Field id="incident-title" label="Short title (replaces host and user in the name)" icon={Type}>
+              <input
+                id="incident-title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Invoice phishing, finance"
+                className={INPUT_CLASS}
+              />
+            </Field>
+          </div>
+
           <Field id="incident-host" label="Host" icon={Server}>
             <input
               id="incident-host"

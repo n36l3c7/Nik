@@ -45,6 +45,8 @@ from ..security import Principal, now_iso, principal, writer_principal
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
+SEVERITIES = ("low", "medium", "high", "critical")
+
 
 def _sync_columns(incident: Incident) -> None:
     """Refresh the mirrored scalar columns from the incident ``doc``."""
@@ -53,6 +55,9 @@ def _sync_columns(incident: Incident) -> None:
     incident.host = str(doc.get("host") or "")
     incident.username = str(doc.get("username") or "")
     incident.os = str(doc.get("os") or "")
+    incident.ticket_id = str(doc.get("ticketId") or "")
+    severity = str(doc.get("severity") or "")
+    incident.severity = severity if severity in SEVERITIES else ""
     incident.updated_at = str(doc.get("updatedAt") or "")
     incident.created_at = str(doc.get("createdAt") or "")
 
@@ -134,7 +139,8 @@ def list_incidents(
 ) -> dict:
     """List incidents newest-updated first, filterable and paginated.
 
-    ``view=summary`` returns light rows (id/name/host/username/os/timestamps) WITHOUT
+    ``view=summary`` returns light rows (id/name/host/username/os/ticketId/severity/
+    timestamps) WITHOUT
     the heavy document body — use it for lists at scale, then fetch a single
     incident's full document from ``GET /incidents/{id}``. Backward compatible:
     with no params it returns every full document. Total count is also in the
@@ -143,7 +149,14 @@ def list_incidents(
     conditions = []
     if q:
         like = f"%{q}%"
-        conditions.append(or_(Incident.name.ilike(like), Incident.host.ilike(like), Incident.username.ilike(like)))
+        conditions.append(
+            or_(
+                Incident.name.ilike(like),
+                Incident.host.ilike(like),
+                Incident.username.ilike(like),
+                Incident.ticket_id.ilike(like),
+            )
+        )
     if host:
         conditions.append(Incident.host.ilike(f"%{host}%"))
     if username:
@@ -161,6 +174,8 @@ def list_incidents(
                 Incident.host,
                 Incident.username,
                 Incident.os,
+                Incident.ticket_id,
+                Incident.severity,
                 Incident.created_at,
                 Incident.updated_at,
             )
@@ -175,6 +190,8 @@ def list_incidents(
                 "host": r.host,
                 "username": r.username,
                 "os": r.os,
+                "ticketId": r.ticket_id,
+                "severity": r.severity or None,
                 "createdAt": r.created_at,
                 "updatedAt": r.updated_at,
             }

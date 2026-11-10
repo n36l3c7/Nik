@@ -1,15 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { Crosshair, ExternalLink, ShieldCheck } from 'lucide-react'
-import { Badge, Modal } from '../components/ui/index.js'
+import { Copy, Crosshair, ExternalLink, Search, ShieldCheck } from 'lucide-react'
+import { Badge, Button, Modal } from '../components/ui/index.js'
 import { api } from '../services/api.js'
-import { IOC_TYPES, sourceLabel } from '../utils/iocs.js'
+import { IOC_TYPES, allowlistOptions, defang, sourceLabel } from '../utils/iocs.js'
 import { formatDateTime } from '../utils/time.js'
+import { useAuth } from './AuthContext.jsx'
+import { useContextMenu } from './ContextMenuContext.jsx'
 import { useIncidents } from './IncidentContext.jsx'
+import { useNavigation } from './NavigationContext.jsx'
+import { useSettings } from './SettingsContext.jsx'
+import { useToast } from './ToastContext.jsx'
 
 /*
- * "Where seen": any table can call openIoc(type, value) to show, in one
- * shared dialog, every incident the indicator appears in (all analysts'),
- * from GET /api/iocs/lookup, with a link to open each incident.
+ * Indicators anywhere in the app:
+ *   - openIoc(type, value): "Where seen", every incident the indicator appears
+ *     in (all analysts'), from GET /api/iocs/lookup, with a link to each;
+ *   - openAllowlist(type, value): add it, or a wider entry (its domain, its
+ *     /24), to the shared IOC allowlist, with Undo;
+ *   - iocMenu(event, type, value): the right-click menu of an indicator.
+ * <IocValue> renders a value that does all three.
  */
 
 const IocLookupContext = createContext(null)
@@ -110,20 +119,152 @@ function WhereSeen({ lookup, onClose }) {
   )
 }
 
+function AllowlistDialog({ target, onClose }) {
+  const { iocAllowlist, setIocAllowlist } = useSettings()
+  const { currentUser } = useAuth()
+  const { showToast } = useToast()
+  const options = useMemo(() => (target ? allowlistOptions(target.type, target.value) : []), [target])
+  const [choice, setChoice] = useState(0)
+  const [note, setNote] = useState('')
+
+  useEffect(() => {
+    setChoice(options.length > 1 && target?.type !== 'ip' ? 1 : 0)
+    setNote('')
+  }, [options, target])
+
+  if (!target) return null
+  const loaded = Array.isArray(iocAllowlist)
+  const option = options[choice]
+  const already =
+    loaded && option && iocAllowlist.some((line) => line.trim().toLowerCase() === option.entry.toLowerCase())
+
+  const add = () => {
+    if (!loaded || !option) return
+    const comment = `# ${note.trim() || target.value} · added by ${currentUser?.username ?? 'unknown'} on ${new Date()
+      .toISOString()
+      .slice(0, 10)}`
+    const before = iocAllowlist
+    setIocAllowlist([...before, comment, option.entry])
+    showToast({
+      message: `${option.entry} added to the IOC allowlist.`,
+      action: { label: 'Undo', run: () => setIocAllowlist(before) },
+      duration: 8000,
+    })
+    onClose()
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add to the allowlist"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button icon={ShieldCheck} onClick={add} disabled={!loaded || already}>
+            {already ? 'Already in the allowlist' : 'Add to the allowlist'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-fg">
+          Hide <code className="break-all font-mono">{target.value}</code> in every incident and leave it out of the
+          exports. Everyone shares the allowlist (Settings → IOC allowlist).
+        </p>
+        <fieldset className="space-y-2">
+          <legend className="sr-only">What to allowlist</legend>
+          {options.map((o, i) => (
+            <label
+              key={o.entry}
+              className={[
+                'flex cursor-pointer items-start gap-2 border px-3 py-2 text-sm',
+                i === choice ? 'border-accent-strong bg-accent-soft' : 'border-line',
+              ].join(' ')}
+            >
+              <input
+                type="radio"
+                name="allowlist-choice"
+                checked={i === choice}
+                onChange={() => setChoice(i)}
+                className="mt-1 accent-accent"
+              />
+              <span className="min-w-0">
+                <span className="block break-all font-mono text-xs text-fg">{o.entry}</span>
+                <span className="text-xs text-fg-muted">{o.label}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <label htmlFor="allowlist-note" className="block space-y-1">
+          <span className="block font-mono text-xs text-fg-muted">Why (optional, kept as a comment in the list)</span>
+          <input
+            id="allowlist-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g. our SharePoint tenant"
+            className="w-full border border-line bg-canvas px-3 py-2 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          />
+        </label>
+      </div>
+    </Modal>
+  )
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function IocLookupProvider({ children }) {
   const [lookup, setLookup] = useState(null)
+  const [allowlistTarget, setAllowlistTarget] = useState(null)
+  const { openMenu } = useContextMenu()
+  const { openSearch } = useNavigation()
+  const { showToast } = useToast()
+
   const openIoc = useCallback((type, value) => setLookup({ type, value: String(value) }), [])
+  const openAllowlist = useCallback((type, value) => setAllowlistTarget({ type, value: String(value) }), [])
   const close = useCallback(() => setLookup(null), [])
-  const value = useMemo(() => ({ openIoc }), [openIoc])
+
+  const iocMenu = useCallback(
+    (event, type, value) => {
+      const text = String(value)
+      const copy = async (content, what) =>
+        showToast({ message: (await copyText(content)) ? `${what} copied.` : 'The browser refused to copy.' })
+      return openMenu(event, {
+        title: `${IOC_TYPES[type]?.label ?? type} · ${text}`,
+        items: [
+          { label: 'Where else was this seen?', icon: Crosshair, onSelect: () => openIoc(type, text) },
+          { label: 'Search for it', icon: Search, hint: 'ctrl k', onSelect: () => openSearch(text) },
+          'separator',
+          { label: 'Copy', icon: Copy, onSelect: () => copy(text, 'Value') },
+          { label: 'Copy defanged', icon: Copy, hint: '[.]', onSelect: () => copy(defang(text), 'Defanged value') },
+          'separator',
+          { label: 'Add to the allowlist…', icon: ShieldCheck, onSelect: () => openAllowlist(type, text) },
+        ],
+      })
+    },
+    [openMenu, openIoc, openSearch, openAllowlist, showToast],
+  )
+
+  const value = useMemo(() => ({ openIoc, openAllowlist, iocMenu }), [openIoc, openAllowlist, iocMenu])
   return (
     <IocLookupContext.Provider value={value}>
       {children}
       <WhereSeen lookup={lookup} onClose={close} />
+      <AllowlistDialog target={allowlistTarget} onClose={() => setAllowlistTarget(null)} />
     </IocLookupContext.Provider>
   )
 }
 
-/** `{ openIoc(type, value) }` — show every incident an indicator is in. */
+/** `{ openIoc, openAllowlist, iocMenu }` — see the module comment. */
 export function useIocLookup() {
   const ctx = useContext(IocLookupContext)
   if (!ctx) throw new Error('useIocLookup must be used inside <IocLookupProvider>')
@@ -132,7 +273,7 @@ export function useIocLookup() {
 
 /** An indicator value that opens "Where seen" when clicked. */
 export function IocValue({ type, value, className = '' }) {
-  const { openIoc } = useIocLookup()
+  const { openIoc, iocMenu } = useIocLookup()
   if (!type) return <span className={className}>{value}</span>
   return (
     <button
@@ -141,7 +282,8 @@ export function IocValue({ type, value, className = '' }) {
         event.stopPropagation()
         openIoc(type, value)
       }}
-      title="Where else was this seen?"
+      onContextMenu={(event) => iocMenu(event, type, value)}
+      title="Where else was this seen? (right-click for more)"
       className={[
         'group inline-flex max-w-full items-center gap-1 text-left underline decoration-dotted decoration-fg-subtle underline-offset-2',
         'hover:text-accent-fg hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',

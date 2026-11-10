@@ -132,3 +132,26 @@ def test_webhook_delivery(admin: TestClient):
         assert any("X-Nik-Signature" in h for h, _ in received)
     finally:
         srv.shutdown()
+
+
+def test_ticket_and_severity_in_the_light_list_and_search(admin: TestClient):
+    k = TestClient(fastapi_app)
+    H = make_key(admin)
+    doc = {
+        "id": "t1",
+        "name": "[INC-2041] Invoice phishing",
+        "ticketId": "INC-2041",
+        "severity": "critical",
+        "data": {},
+    }
+    assert k.post("/api/incidents", headers=H, json=doc).status_code == 201
+    k.post("/api/incidents", headers=H, json={"id": "t2", "name": "WKS", "severity": "bogus", "data": {}})
+    rows = {r["id"]: r for r in k.get("/api/incidents?view=summary", headers=H).json()["incidents"]}
+    assert rows["t1"]["ticketId"] == "INC-2041" and rows["t1"]["severity"] == "critical"
+    assert rows["t2"]["severity"] is None  # unknown values are not mirrored
+    assert [i["id"] for i in k.get("/api/search", headers=H, params={"q": "INC-20"}).json()["incidents"]] == ["t1"]
+    assert [r["id"] for r in k.get("/api/incidents?view=summary&q=inc-2041", headers=H).json()["incidents"]] == ["t1"]
+    # Editing the document updates the columns.
+    k.patch("/api/incidents/t1", headers=H, json={"severity": "low", "ticketId": ""})
+    row = next(r for r in k.get("/api/incidents?view=summary", headers=H).json()["incidents"] if r["id"] == "t1")
+    assert row["severity"] == "low" and row["ticketId"] == ""

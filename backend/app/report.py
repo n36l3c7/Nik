@@ -82,6 +82,8 @@ _TECHNIQUE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
 T = {
     "en": {
         "title": "Incident report",
+        "ticket": "Ticket",
+        "severity": "Severity",
         "host": "Host",
         "user": "User",
         "os": "Operating system",
@@ -144,6 +146,8 @@ T = {
     },
     "it": {
         "title": "Report dell'incidente",
+        "ticket": "Ticket",
+        "severity": "Severità",
         "host": "Host",
         "user": "Utente",
         "os": "Sistema operativo",
@@ -443,6 +447,8 @@ def build_html(
         else t["not_set"]
     )
     meta = [
+        *([(t["ticket"], doc["ticketId"])] if doc.get("ticketId") else []),
+        *([(t["severity"], doc["severity"])] if doc.get("severity") else []),
         (t["host"], doc.get("host") or "—"),
         (t["user"], doc.get("username") or "—"),
         (t["os"], doc.get("os") or "—"),

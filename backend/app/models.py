@@ -56,6 +56,10 @@ class Incident(Base):
     host: Mapped[str] = mapped_column(String, nullable=False, default="")
     username: Mapped[str] = mapped_column(String, nullable=False, default="")
     os: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    # Ticket of the organisation's tracker (first part of the name) and the
+    # analysts' severity tag (low/medium/high/critical, or empty).
+    ticket_id: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    severity: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

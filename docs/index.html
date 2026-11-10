@@ -119,6 +119,13 @@
           </p>
         </div>
         <div class="card">
+          <h3>Right-click and drop</h3>
+          <p>
+            A right-click menu on indicators, event rows and incidents (where seen, copy defanged, allowlist, flag,
+            comment, show in the timeline); a file dropped anywhere is recognised and imported into the right tab.
+          </p>
+        </div>
+        <div class="card">
           <h3>Super-timeline</h3>
           <p>
             Every timestamped event across all tabs merged into one chronological, filterable view, plus a
@@ -226,8 +233,10 @@
           analysts under Settings → Accounts.
         </li>
         <li>
-          <strong>Create an incident</strong> from the sidebar: host name and/or username, plus the host OS (Windows,
-          macOS, Linux), which drives the suggested artifact paths and the available shells.
+          <strong>Create an incident</strong> from the sidebar: a ticket ID, a short title, the host and/or the user
+          (the name is <code>[ticket] title</code> or <code>[ticket] host - user</code>), a severity tag, plus the host
+          OS (Windows, macOS, Linux), which drives the suggested artifact paths and the available shells. Or just drop a
+          file anywhere: Nik recognises it and offers to start the incident with it.
         </li>
         <li>
           <strong>Import artifacts.</strong> Each analysis tab has a <em>Data sources</em> card: drop the native file (a
