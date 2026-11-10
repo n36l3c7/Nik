@@ -1,10 +1,11 @@
+import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 
 /*
  * Smoke test of the whole stack, as an analyst would use it on a fresh
- * install: create the first (admin) account, sign in, open an incident, load
- * the demo data of each tab and check that the timeline and the tail -f panel
- * see the events. One browser context is shared by the steps, in order.
+ * install: create the first (admin) account, sign in, open an incident, drop
+ * the evidence files of each tab (e2e/fixtures/) and check that the timeline
+ * merges their events. One browser context is shared by the steps, in order.
  */
 
 const ADMIN = { username: 'admin', password: 'supersecret' }
@@ -14,6 +15,25 @@ const ADMIN = { username: 'admin', password: 'supersecret' }
 test.describe.configure({ mode: 'serial', retries: 0 })
 
 let page
+
+/** Drop a fixture file on the app, as from the file manager, and import it where Nik proposes. */
+async function dropFixture(name) {
+  const content = readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
+  const transfer = await page.evaluateHandle(
+    ([fileName, text]) => {
+      const data = new DataTransfer()
+      data.items.add(new File([text], fileName))
+      return data
+    },
+    [name, content],
+  )
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Import' }).click()
+  await expect(dialog).toBeHidden()
+}
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage()
@@ -52,35 +72,36 @@ test('a new incident opens on its summary', async () => {
   await expect(page.locator('aside nav[aria-label="Incidents"]')).toContainText('WKS-FINANCE-01')
 })
 
-test('demo data fills the analysis tabs', async () => {
-  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
-  for (const tab of ['Browser Forensics', 'Command History', 'Endpoint Artifacts', 'Event Logs']) {
-    await tabs.getByText(tab).click()
-    const loaders = page.locator('button:has-text("Load demo data")')
-    await expect(loaders.first()).toBeVisible({ timeout: 20_000 })
-    const count = await loaders.count()
-    for (let i = 0; i < count; i++) {
-      await loaders.nth(i).click()
+test('evidence files dropped on the app fill the analysis tabs', async () => {
+  const current = page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')
+  const files = [
+    ['Bookmarks', 'Browser Forensics', /^Bookmarks/],
+    ['bash_history', 'Command History'],
+    ['bam-export.csv', 'Endpoint Artifacts'],
+    ['nik-eventlogs.json', 'Event Logs'],
+  ]
+  for (const [name, tab, section] of files) {
+    await dropFixture(name)
+    await expect(current).toContainText(tab)
+    if (section) {
+      await page
+        .getByRole('navigation', { name: 'Browser analysis sections' })
+        .getByRole('button', { name: section })
+        .click()
     }
-    // The data-sources card records the import and the tables fill up.
-    await expect(page.getByText('Demo data').first()).toBeVisible()
-    await expect(page.locator('tbody tr').first()).toBeVisible()
+    await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
   }
 })
 
-test('the timeline and the tail -f panel merge the events', async () => {
+test('the timeline merges the events of every tab', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Timeline').click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   const counter = page.getByText(/of \d+ results/)
   await expect(counter).toBeVisible()
   expect(await counter.textContent()).not.toMatch(/of 0 results/)
-
-  // The tail panel is remembered per tab; make sure it is open here.
-  const toggle = page.locator('button[title*="tail -f"]')
-  if ((await toggle.getAttribute('title')) !== 'Hide the tail -f panel') await toggle.click()
-  const tail = page.getByRole('complementary', { name: 'Latest incident events' })
-  await expect(tail).toBeVisible()
-  await expect(tail.locator('li')).not.toHaveCount(1) // more than the cursor line
+  for (const source of ['Bash', 'Security']) {
+    await expect(page.locator('tbody').getByText(source).first()).toBeVisible()
+  }
 })
 
 test('the IOCs tab gathers the indicators and shows where they were seen', async () => {

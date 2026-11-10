@@ -1,4 +1,3 @@
-import { SquareTerminal } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { ANALYSIS_TABS } from '../../config/tabs.js'
 
@@ -9,18 +8,14 @@ import { ANALYSIS_TABS } from '../../config/tabs.js'
  * ============================================================================
  *
  * Tabs come from the ANALYSIS_TABS registry: adding an entry there makes the
- * tab appear here automatically, without touching this file.
+ * tab appear here automatically, without touching this file. A thin rule
+ * separates the registry's groups (overview, threats, host).
  */
 
 /**
- * @param {{
- *   activeTabId: string,
- *   onChange: (tabId: string) => void,
- *   tailOpen: boolean,             // the `tail -f` side panel is open
- *   onToggleTail: () => void,
- * }} props
+ * @param {{ activeTabId: string, onChange: (tabId: string) => void }} props
  */
-export default function TabBar({ activeTabId, onChange, tailOpen, onToggleTail }) {
+export default function TabBar({ activeTabId, onChange }) {
   const { activeSummary } = useIncidents()
   // Without an active incident there is nothing to analyze: tabs are disabled.
   // They stay usable while the selected incident is still loading.
@@ -28,10 +23,12 @@ export default function TabBar({ activeTabId, onChange, tailOpen, onToggleTail }
 
   return (
     <nav aria-label="Analysis tabs" className="flex shrink-0 gap-1 overflow-x-auto border-b border-line bg-canvas px-6">
-      {ANALYSIS_TABS.map((tab) => {
+      {ANALYSIS_TABS.map((tab, index) => {
         const Icon = tab.icon
         const isActive = tab.id === activeTabId
-        return (
+        const newGroup = index > 0 && tab.group !== ANALYSIS_TABS[index - 1].group
+        return [
+          newGroup && <span key={`${tab.id}-rule`} aria-hidden="true" className="mx-2 my-2.5 w-px shrink-0 bg-line" />,
           <button
             key={tab.id}
             type="button"
@@ -52,28 +49,9 @@ export default function TabBar({ activeTabId, onChange, tailOpen, onToggleTail }
               </span>
             )}
             {tab.label}
-          </button>
-        )
+          </button>,
+        ]
       })}
-      {/* `tail -f` side panel toggle (the panel needs a wide screen) */}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onToggleTail}
-        aria-pressed={tailOpen}
-        title={tailOpen ? 'Hide the tail -f panel' : 'Show the latest events (tail -f)'}
-        className={[
-          'my-1.5 ml-auto hidden shrink-0 items-center gap-1.5 border px-2.5 font-mono text-xs transition-colors lg:inline-flex',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          tailOpen
-            ? 'border-accent-strong bg-accent-soft text-accent-fg'
-            : 'border-line text-fg-muted hover:bg-raised hover:text-fg',
-        ].join(' ')}
-      >
-        <SquareTerminal className="h-3.5 w-3.5" aria-hidden="true" />
-        tail -f
-      </button>
     </nav>
   )
 }

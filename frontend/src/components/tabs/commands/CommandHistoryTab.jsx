@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FolderInput, Info, Sparkles, Trash2, Upload } from 'lucide-react'
+import { FolderInput, Info, Trash2, Upload } from 'lucide-react'
 import { Button, Card, Modal } from '../../ui/index.js'
 import FileUploadZone from '../browser/FileUploadZone.jsx'
 import CommandsSection from './CommandsSection.jsx'
@@ -7,7 +7,6 @@ import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { parseShellHistory } from '../../../parsers/shellParsers.js'
 import { sha256Hex } from '../../../lib/hash.js'
-import { getDemoShellData } from '../../../services/demoData.js'
 import { SHELLS, getShellById, buildDefaultShellData, shellsForOs } from '../../../config/shells.js'
 import { getOsById, DEFAULT_OS } from '../../../config/os.js'
 
@@ -110,28 +109,6 @@ export default function CommandHistoryTab({ incident }) {
     clearShellData(incident.id, activeShellId)
   }
 
-  /* ---- Load demo data into the active shell ---- */
-  const handleLoadDemo = () => {
-    const demo = getDemoShellData(shell)
-    setError(null)
-    updateShellData(
-      incident.id,
-      activeShellId,
-      {
-        commands: demo.commands,
-        meta: {
-          [source.key]: {
-            fileName: 'Demo data',
-            format: 'demo',
-            rows: demo.commands.length,
-            importedAt: new Date().toISOString(),
-          },
-        },
-      },
-      { action: 'command.demo', details: `Loaded demo commands into ${activeShellId}` },
-    )
-  }
-
   const handleConfirmClear = () => {
     clearShellData(incident.id, activeShellId)
     setError(null)
@@ -203,9 +180,6 @@ export default function CommandHistoryTab({ incident }) {
         icon={Upload}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" icon={Sparkles} onClick={handleLoadDemo}>
-              Load demo data
-            </Button>
             {hasData && (
               <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
                 Clear {shell.label}

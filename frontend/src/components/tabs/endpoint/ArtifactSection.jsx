@@ -199,7 +199,7 @@ export default function ArtifactSection({ incident, category, records = [] }) {
       <EmptyState
         icon={category.icon}
         title={`No ${category.label.toLowerCase()} yet`}
-        message="Import a CSV/JSON export from the 'Data source' card above, or use 'Load demo data' to explore the platform."
+        message="Import a CSV/JSON export from the 'Data source' card above."
       />
     )
   }

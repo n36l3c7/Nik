@@ -181,7 +181,7 @@ export default function CommandsSection({ incident, shellId, commands = [] }) {
       <EmptyState
         icon={Terminal}
         title="No commands to show"
-        message="Load the shell history from the 'Data source' card above, or use 'Load demo data' to explore the platform."
+        message="Load the shell history from the 'Data source' card above."
       />
     )
   }

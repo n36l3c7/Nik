@@ -1,0 +1,118 @@
+{
+  "format": "nik-eventlogs",
+  "host": "WKS-FINANCE-01",
+  "logs": [
+    {
+      "name": "Security",
+      "total": 7
+    }
+  ],
+  "events": [
+    {
+      "LogName": "Security",
+      "Id": 4625,
+      "RecordId": 9100,
+      "TimeCreated": "2025-11-07T02:00:00Z",
+      "MachineName": "WKS-FINANCE-01",
+      "ProviderName": "Microsoft-Windows-Security-Auditing",
+      "Level": 0,
+      "Data": {
+        "TargetUserName": "administrator",
+        "LogonType": "10",
+        "IpAddress": "185.220.101.47",
+        "Status": "0xc000006d"
+      }
+    },
+    {
+      "LogName": "Security",
+      "Id": 4625,
+      "RecordId": 9101,
+      "TimeCreated": "2025-11-07T02:01:00Z",
+      "MachineName": "WKS-FINANCE-01",
+      "ProviderName": "Microsoft-Windows-Security-Auditing",
+      "Level": 0,
+      "Data": {
+        "TargetUserName": "administrator",
+        "LogonType": "10",
+        "IpAddress": "185.220.101.47",
+        "Status": "0xc000006d"
+      }
+    },
+    {
+      "LogName": "Security",
+      "Id": 4625,
+      "RecordId": 9102,
+      "TimeCreated": "2025-11-07T02:02:00Z",
+      "MachineName": "WKS-FINANCE-01",
+      "ProviderName": "Microsoft-Windows-Security-Auditing",
+      "Level": 0,
+      "Data": {
+        "TargetUserName": "administrator",
+        "LogonType": "10",
+        "IpAddress": "185.220.101.47",
+        "Status": "0xc000006d"
+      }
+    },
+    {
+      "LogName": "Security",
+      "Id": 4625,
+      "RecordId": 9103,
+      "TimeCreated": "2025-11-07T02:03:00Z",
+      "MachineName": "WKS-FINANCE-01",
+      "ProviderName": "Microsoft-Windows-Security-Auditing",
+      "Level": 0,
+      "Data": {
+        "TargetUserName": "administrator",
+        "LogonType": "10",
+        "IpAddress": "185.220.101.47",
+        "Status": "0xc000006d"
+      }
+    },
+    {
+      "LogName": "Security",
+      "Id": 4625,
+      "RecordId": 9104,
+      "TimeCreated": "2025-11-07T02:04:00Z",
+      "MachineName": "WKS-FINANCE-01",
+      "ProviderName": "Microsoft-Windows-Security-Auditing",
+      "Level": 0,
+      "Data": {
+        "TargetUserName": "administrator",
+        "LogonType": "10",
+        "IpAddress": "185.220.101.47",
+        "Status": "0xc000006d"
+      }
+    },
+    {
+      "LogName": "Security",
+      "Id": 4625,
+      "RecordId": 9105,
+      "TimeCreated": "2025-11-07T02:05:00Z",
+      "MachineName": "WKS-FINANCE-01",
+      "ProviderName": "Microsoft-Windows-Security-Auditing",
+      "Level": 0,
+      "Data": {
+        "TargetUserName": "administrator",
+        "LogonType": "10",
+        "IpAddress": "185.220.101.47",
+        "Status": "0xc000006d"
+      }
+    },
+    {
+      "LogName": "Security",
+      "Id": 4624,
+      "RecordId": 9120,
+      "TimeCreated": "2025-11-07T02:16:00Z",
+      "MachineName": "WKS-FINANCE-01",
+      "ProviderName": "Microsoft-Windows-Security-Auditing",
+      "Level": 0,
+      "Data": {
+        "TargetUserName": "administrator",
+        "TargetDomainName": "CORP",
+        "LogonType": "10",
+        "IpAddress": "185.220.101.47",
+        "TargetLogonId": "0x9f00"
+      }
+    }
+  ]
+}
