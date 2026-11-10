@@ -11,13 +11,23 @@
 
 services:
   db:
-    image: docker.io/library/postgres:16-alpine
+    image: docker.io/library/postgres:18-alpine
+    # Refuses to create an empty cluster while unmigrated PostgreSQL 16 data
+    # sits on the old volume (see deploy/db-entrypoint.sh and README § 2.1).
+    entrypoint: ["/usr/local/bin/nik-db-entrypoint.sh"]
+    command: ["postgres"]
     environment:
       POSTGRES_USER: nik
       POSTGRES_PASSWORD: ${DB_PASSWORD:-nik}
       POSTGRES_DB: nik
+      NIK_PG_UPGRADE: ${NIK_PG_UPGRADE:-}
     volumes:
-      - db-data:/var/lib/postgresql/data
+      # PostgreSQL 18 keeps its data under /var/lib/postgresql/18/docker.
+      - db-data-18:/var/lib/postgresql
+      # The PostgreSQL 16 data of releases before 2.12.2, read-only: kept for
+      # a rollback after deploy/upgrade-postgres.sh, empty on a new install.
+      - db-data:/var/lib/postgresql-16:ro
+      - ./deploy/db-entrypoint.sh:/usr/local/bin/nik-db-entrypoint.sh:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nik -d nik"]
       interval: 5s
@@ -123,6 +133,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  db-data-18:
+  # PostgreSQL 16 data (releases before 2.12.2). After the upgrade, remove it
+  # with `podman volume rm <project>_db-data` once you no longer need a rollback.
   db-data:
   sample-store:
   web-certs:

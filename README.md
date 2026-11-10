@@ -4,7 +4,7 @@
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-009688?logo=fastapi&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker%20%2F%20Podman-Compose-2496ED?logo=docker&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -285,8 +285,9 @@ formatter with `ruff format .` (`--check` in CI), all from `backend/` after
 `pip install -r requirements-dev.txt`; Ruff settings live in `backend/ruff.toml`.
 Formatting is enforced, not reviewed: run the formatters before committing.
 Markdown is excluded from Prettier (see `.prettierignore`). CI runs the linters,
-the format checks, both unit suites, the build and then the end-to-end test; a
-change is done only when all of them pass. The documentation site in `docs/`
+the format checks, both unit suites (the backend one on SQLite, and on
+PostgreSQL 16 and 18 after `alembic upgrade head`), the build and then the
+end-to-end test; a change is done only when all of them pass. The documentation site in `docs/`
 is updated in the same change as the behaviour it describes.
 
 **Dependency audits.** The `Audit` workflow (`.github/workflows/audit.yml`)
@@ -372,7 +373,7 @@ is no `tailwind.config.js` and no extra setup step.
 > **Upgrading from a "CSAP"-era deployment?** The database role and name are now
 > `nik` (was `csap`). A pre-existing Postgres volume still holds the old `csap`
 > role/database, so either start on a **fresh** volume (`docker volume rm
-> nik_db-data` / your project's `*_db-data`), or keep the old names by setting
+> nik_db-data-18` / your project's `*_db-data-18`), or keep the old names by setting
 > `DB_USER`, `DB_NAME` and the compose `POSTGRES_*` back to `csap`, or rename in
 > place with `ALTER ROLE csap RENAME TO nik;` and `ALTER DATABASE csap RENAME TO
 > nik;`. The session cookie also changed name, so everyone re-logs in once.
@@ -466,6 +467,70 @@ git pull
 podman compose up -d --build    # rebuild images, recreate containers, keep data
 ```
 
+Release notes say when an update needs more than this, as the move to
+PostgreSQL 18 below does.
+
+#### Upgrading to PostgreSQL 18 (2.12.2)
+
+Releases up to 2.12.1 run PostgreSQL 16 on the `db-data` volume. From 2.12.2
+the Compose file runs **PostgreSQL 18** on a new `db-data-18` volume.
+PostgreSQL 18 cannot open the data files of 16, so the data moves once, with a
+dump and a restore, by `deploy/upgrade-postgres.sh`. Plan a short maintenance
+window: the app is down for the dump, the restore and the restart, a few
+minutes for a typical database.
+
+1. Pull the new release, but **do not** run `compose up` yet; the running
+   stack is still the old one:
+
+   ```bash
+   cd /opt/Nik && git pull
+   ```
+
+2. Run the upgrade as root:
+
+   ```bash
+   sudo deploy/upgrade-postgres.sh
+   ```
+
+   It takes a full backup with `deploy/backup.sh` (under `/var/backups/nik`,
+   or `BACKUP_DIR`), counts the rows of every table, stops the stack, starts
+   PostgreSQL 18 on the new volume, restores the dump, compares the row counts
+   and starts the whole stack again. It stops at the first error and deletes
+   nothing.
+
+3. Check the app (sign in, open an incident), then the database version:
+
+   ```bash
+   podman exec nik_db_1 psql -U nik -d nik -Atc 'SHOW server_version'
+   ```
+
+**If `compose up` already ran** on 2.12.2 before the script, the `db`
+container restarts in a loop and its log says
+`run deploy/upgrade-postgres.sh`: it refuses to create an empty database while
+the old data has not been moved (`deploy/db-entrypoint.sh`). Run the script
+anyway: it dumps the old volume with a temporary PostgreSQL 16 container
+instead.
+
+**The old data stays.** The `db-data` volume is not modified; the new `db`
+container mounts it read-only. Keep it **14 days**, then remove it (the
+script prints the exact name):
+
+```bash
+podman volume rm nik_db-data
+```
+
+**Rollback** (within those 14 days): go back to the previous release and
+start it; it runs PostgreSQL 16 on the untouched `db-data` volume. Anything
+recorded after the upgrade is not in it: export the incidents you need first
+(incident JSON export, or the in-app **Full backup**, which restores across
+database versions).
+
+```bash
+podman compose down
+git checkout v2.12.1
+podman compose up -d --build
+```
+
 ### 2.2 Manual deployment on RHEL
 
 Tested on **RHEL 8 and 9** (same steps on Rocky/AlmaLinux). nginx serves the
@@ -497,6 +562,9 @@ npm run build     # outputs the static site into dist/
 ```
 
 #### Step 2 — Install and configure PostgreSQL
+
+Any PostgreSQL from 14 on works (CI tests 16 and 18); use the version your
+RHEL release ships.
 
 ```bash
 sudo dnf install -y postgresql-server postgresql-contrib
