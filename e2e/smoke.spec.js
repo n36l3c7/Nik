@@ -9,7 +9,9 @@ import { test, expect } from '@playwright/test'
 
 const ADMIN = { username: 'admin', password: 'supersecret' }
 
-test.describe.configure({ mode: 'serial' })
+// No retries: the steps share one server and one account, so a retry from the
+// first step can only fail ("first run" is over) and hide the real error.
+test.describe.configure({ mode: 'serial', retries: 0 })
 
 let page
 
@@ -172,6 +174,9 @@ test('the incident report is built by the server and previewed', async () => {
 })
 
 test('a sample is stored, analysed and shown with its indicators', async () => {
+  // With the real workers this test waits for rizin, two capa rule checks
+  // (~10 s each) and a second capa run: more than the 60 s default.
+  if (process.env.E2E_ANALYZER_URL || process.env.E2E_CAPA_URL) test.setTimeout(300_000)
   await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
   await expect(page.getByText('No samples yet')).toBeVisible()
   // A harmless but valid PE32 (one .text section) with a few indicators inside.
