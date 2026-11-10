@@ -1,5 +1,15 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Download, LogOut, PanelRight, Plus, RefreshCw, Settings, ShieldCheck } from 'lucide-react'
+import {
+  AlertTriangle,
+  Download,
+  FileText,
+  LogOut,
+  PanelRight,
+  Plus,
+  RefreshCw,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
 import { ANALYSIS_TABS, getTabById } from './config/tabs.js'
@@ -14,6 +24,7 @@ import { DEFAULT_OS } from './config/os.js'
 import { isTypingTarget } from './utils/search.js'
 import SettingsPanel from './components/settings/SettingsPanel.jsx'
 import CommandPalette from './components/search/CommandPalette.jsx'
+import ReportDialog from './components/report/ReportDialog.jsx'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 
@@ -152,6 +163,9 @@ export default function App() {
     setSettingsOpen(true)
   }
 
+  // Incident report dialog (preview, PDF/HTML download).
+  const [reportOpen, setReportOpen] = useState(false)
+
   // Global search palette: Ctrl/Cmd+K anywhere, "/" outside text fields.
   const [paletteOpen, setPaletteOpen] = useState(false)
   useEffect(() => {
@@ -228,6 +242,7 @@ export default function App() {
       : []),
     ...(activeIncident
       ? [
+          { id: 'report', label: 'Incident report (PDF)', icon: FileText, run: () => setReportOpen(true) },
           {
             id: 'export',
             label: 'Export incident (JSON)',
@@ -273,7 +288,11 @@ export default function App() {
       <SidebarResizer onResize={handleSidebarResize} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header onOpenSettings={() => openSettings('detection')} onOpenSearch={() => setPaletteOpen(true)} />
+        <Header
+          onOpenSettings={() => openSettings('detection')}
+          onOpenSearch={() => setPaletteOpen(true)}
+          onOpenReport={activeIncident ? () => setReportOpen(true) : null}
+        />
         <TabBar
           activeTabId={activeTabId}
           onChange={setActiveTabId}
@@ -404,6 +423,12 @@ export default function App() {
           </div>
         </form>
       </Modal>
+
+      <ReportDialog
+        open={reportOpen && Boolean(activeIncident)}
+        onClose={() => setReportOpen(false)}
+        incident={activeIncident}
+      />
 
       <CommandPalette
         open={paletteOpen}

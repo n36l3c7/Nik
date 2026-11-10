@@ -8,6 +8,7 @@ import ShortcutsSection from './ShortcutsSection.jsx'
 import ProfileBar from './ProfileBar.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { parseBrowserSource } from '../../../services/fileParsers.js'
+import { sha256Hex } from '../../../utils/hash.js'
 import { getDemoBrowserData } from '../../../services/demoData.js'
 import {
   BROWSERS,
@@ -113,7 +114,10 @@ export default function BrowserAnalysisTab({ incident }) {
     setErrors((prev) => ({ ...prev, [source.key]: null }))
     setLoading((prev) => ({ ...prev, [source.key]: true }))
     try {
-      const { produced, format } = await parseBrowserSource(file, browser.engine, source)
+      const [{ produced, format }, sha256] = await Promise.all([
+        parseBrowserSource(file, browser.engine, source),
+        sha256Hex(file),
+      ])
       const rows = source.produces.reduce((sum, k) => sum + (produced[k]?.length ?? 0), 0)
       const patch = {
         meta: {
@@ -123,6 +127,7 @@ export default function BrowserAnalysisTab({ incident }) {
             format,
             rows,
             importedAt: new Date().toISOString(),
+            sha256,
           },
         },
       }

@@ -53,10 +53,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A query starting with `>` lists actions: go to a tab, new incident,
   export, `tail -f` panel, settings, IOC allowlist, sign out. On PostgreSQL
   migration `0012` adds `pg_trgm` indexes for the substring matches.
+- **Incident report**, built by the server as a printable HTML page or a
+  **PDF** (WeasyPrint): executive summary and key facts, flagged events with
+  comments, MITRE ATT&CK techniques from capa, YARA (`mitre_attack` meta,
+  now on the built-in rules) and the SOC rules that matched (each built-in
+  rule names its techniques), indicators outside the allowlist, samples,
+  event-log coverage and clears, notes, and an evidence appendix listing
+  every imported file with its SHA-256. TLP classification, English or
+  Italian (default English), sections to include; the options and the
+  summary are saved with the incident. The organisation name and logo come
+  from the new Settings → **Report header**. Opened from the header's report
+  button or the search palette; `POST /api/incidents/{id}/report` serves the
+  same to API clients.
+- Imported browser, shell-history, endpoint and event-log JSON files are
+  hashed (SHA-256) in the browser and the digest is kept with the import
+  metadata, for the report's evidence appendix.
 - **Dependency audits** in a new `Audit` workflow, on every pull request and
   every Monday: `pip-audit` (backend, capa worker), `npm audit` and
   `shellcheck`. **Dependabot** opens grouped monthly update pull requests
   (at most one per ecosystem) and immediate security updates.
+
+### Changed
+
+- The backend image installs Pango, HarfBuzz and the DejaVu fonts for
+  WeasyPrint (about 80 MB larger); CI installs Pango for the backend tests.
 
 ### Security
 

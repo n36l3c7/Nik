@@ -16,6 +16,8 @@
  *                 risk false positives (e.g. "tor" inside "tutorial").
  *  - severity:    'high' (red) | 'medium' (amber)
  *  - description: explanation shown in the tooltip / detail
+ *  - attack:      MITRE ATT&CK technique ids the rule points to (built-in
+ *                 rulesets only), aggregated in the incident report
  *
  * To change the factory defaults edit this array; for runtime changes use the
  * Settings UI. See README.md § "Extend the detection rules".
@@ -102,6 +104,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'download → execute',
     pattern: '(curl|wget)[^|;&]*\\|\\s*(ba|z|da)?sh\\b|iwr\\b.*\\|\\s*iex|iex\\s*\\(.*(iwr|downloadstring)',
     severity: 'high',
+    attack: ['T1105', 'T1059'],
     description: 'Remote content downloaded and piped straight into a shell interpreter.',
   },
   {
@@ -109,6 +112,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'encoded payload',
     pattern: 'base64\\s+(-d|--decode)|frombase64string|-encodedcommand|\\s-enc\\s|certutil.*-decode',
     severity: 'high',
+    attack: ['T1140', 'T1027'],
     description: 'Base64/encoded payload decoding, a common obfuscation step.',
   },
   {
@@ -116,6 +120,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'reverse shell',
     pattern: '\\bnc(at)?\\b[^|]*\\s-e\\s|/dev/tcp/|bash\\s+-i\\s+>&|mkfifo\\s+/tmp|socat\\b.*exec',
     severity: 'high',
+    attack: ['T1059'],
     description: 'Classic reverse/bind shell one-liners (netcat -e, /dev/tcp, socat exec…).',
   },
   {
@@ -123,6 +128,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'history tampering',
     pattern: 'history\\s+-c|unset\\s+histfile|histsize=0|histfilesize=0|clear-history|rm\\s+[^|;&]*_history',
     severity: 'high',
+    attack: ['T1070.003'],
     description: 'Attempt to clear or disable the shell history (anti-forensics).',
   },
   {
@@ -130,6 +136,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'credential access',
     pattern: '/etc/shadow|mimikatz|lazagne|secretsdump|hashdump|ntds\\.dit|lsass|procdump[^|;&]*lsass',
     severity: 'high',
+    attack: ['T1003'],
     description: 'Access to credential stores (shadow file, LSASS, NTDS) or dumping tools.',
   },
   {
@@ -138,6 +145,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     pattern:
       'set-mppreference|amsi(utils|\\.dll)|setenforce\\s+0|systemctl\\s+(stop|disable)\\s+(falcon|sentinel|cb|auditd)|auditctl\\s+-e\\s*0',
     severity: 'high',
+    attack: ['T1562'],
     description: 'Disabling AV/EDR/auditing (Defender, SELinux, auditd, EDR services).',
   },
   {
@@ -145,6 +153,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'privilege escalation',
     pattern: 'sudo\\s+su\\b|chmod\\s+\\+s\\b|chmod\\s+4755|/etc/sudoers|pkexec\\b',
     severity: 'medium',
+    attack: ['T1548'],
     description: 'Privilege escalation attempts (setuid bits, sudoers edits, pkexec).',
   },
   {
@@ -153,6 +162,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     pattern:
       'crontab\\s+-|authorized_keys|systemctl\\s+enable|schtasks\\b|reg\\s+add\\b[^|;&]*\\\\run|launchctl\\s+(load|bootstrap)',
     severity: 'medium',
+    attack: ['T1053', 'T1543'],
     description: 'Persistence mechanisms: cron, SSH keys, services, Run keys, LaunchAgents.',
   },
   {
@@ -160,6 +170,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'recon / scanning',
     pattern: '\\bnmap\\b|masscan|whoami\\s*/priv|net\\s+group\\s+.domain|smbclient\\b|bloodhound|sharphound',
     severity: 'medium',
+    attack: ['T1046', 'T1082'],
     description: 'Network/AD reconnaissance and scanning tools.',
   },
   {
@@ -167,6 +178,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'exfiltration',
     pattern: '\\brclone\\b|curl\\s+(-T|--upload-file)|tar\\b[^|;&]*\\|\\s*ssh|scp\\s+[^|;&]*@',
     severity: 'medium',
+    attack: ['T1048'],
     description: 'Bulk data transfer toward remote hosts (rclone, scp, curl upload, tar over ssh).',
   },
   {
@@ -174,6 +186,7 @@ export const DEFAULT_COMMAND_KEYWORDS = [
     label: 'destructive',
     pattern: 'rm\\s+-rf\\s+(/|~)(\\s|$)|mkfs\\.|dd\\s+if=[^|;&]*of=/dev/(sd|nvme|vd)|vssadmin\\s+delete\\s+shadows',
     severity: 'high',
+    attack: ['T1485'],
     description: 'Destructive commands: filesystem wipe, shadow-copy deletion (ransomware pattern).',
   },
 ]
@@ -195,6 +208,7 @@ export const DEFAULT_ARTIFACT_KEYWORDS = [
     pattern:
       '\\\\(temp|tmp|windows\\\\temp)\\\\[^\\\\]*\\.(exe|dll|ps1|bat|cmd|scr|js|vbs)|/tmp/[^/]*\\.(sh|elf|py)|/dev/shm/',
     severity: 'high',
+    attack: ['T1204.002'],
     description: 'Executable or script running from a temporary directory — classic malware staging.',
   },
   {
@@ -203,6 +217,7 @@ export const DEFAULT_ARTIFACT_KEYWORDS = [
     pattern:
       '\\\\(users\\\\[^\\\\]+\\\\(appdata|downloads|desktop|documents))\\\\[^\\\\]*\\.(exe|dll|ps1|scr|js|vbs)|/home/[^/]+/(downloads|\\.cache)/[^/]*\\.(sh|elf)',
     severity: 'medium',
+    attack: ['T1204.002'],
     description: 'Execution from a user-writable location (AppData/Downloads/Desktop) rather than Program Files.',
   },
   {
@@ -211,6 +226,7 @@ export const DEFAULT_ARTIFACT_KEYWORDS = [
     pattern:
       '\\b(mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|cscript|wscript|installutil|msbuild|hh|forfiles)\\.exe\\b',
     severity: 'medium',
+    attack: ['T1218'],
     description: 'Living-off-the-land binary frequently abused for execution or download.',
   },
   {
@@ -218,6 +234,7 @@ export const DEFAULT_ARTIFACT_KEYWORDS = [
     label: 'double extension',
     pattern: '\\.(pdf|doc|docx|xls|xlsx|jpg|png|txt)\\s*\\.(exe|scr|js|vbs|bat|cmd|lnk)\\b',
     severity: 'high',
+    attack: ['T1036.007'],
     description: 'Double-extension file masquerading as a document — a common phishing lure.',
   },
   {
@@ -226,6 +243,7 @@ export const DEFAULT_ARTIFACT_KEYWORDS = [
     pattern:
       'currentversion\\\\run|\\\\tasks\\\\|authorized_keys|/etc/cron|launchagents|launchdaemons|\\.service\\b|rc\\.local',
     severity: 'medium',
+    attack: ['T1053.005'],
     description: 'Common persistence location (Run key, scheduled task, cron, systemd, LaunchAgent, SSH keys).',
   },
   {
@@ -234,6 +252,7 @@ export const DEFAULT_ARTIFACT_KEYWORDS = [
     pattern:
       '\\b(mimikatz|psexec|procdump|lazagne|rubeus|cobalt|meterpreter|beacon|nc\\.exe|ncat|winpeas|linpeas|svch0st|scvhost)\\b',
     severity: 'high',
+    attack: ['T1036'],
     description: 'File or process name matching a known offensive tool or a masquerading system name.',
   },
 ]
@@ -264,6 +283,7 @@ export const DEFAULT_MALWARE_KEYWORDS = [
     pattern:
       'VirtualAllocEx|WriteProcessMemory|CreateRemoteThread|NtCreateThreadEx|QueueUserAPC|SetThreadContext|NtUnmapViewOfSection',
     severity: 'high',
+    attack: ['T1055'],
     description: 'Windows APIs used to run code inside another process.',
   },
   {
@@ -271,6 +291,7 @@ export const DEFAULT_MALWARE_KEYWORDS = [
     label: 'anti-analysis',
     pattern: 'IsDebuggerPresent|CheckRemoteDebuggerPresent|NtQueryInformationProcess|sbiedll|vboxservice|vmtoolsd',
     severity: 'medium',
+    attack: ['T1622'],
     description: 'Debugger or sandbox detection.',
   },
   {
@@ -278,6 +299,7 @@ export const DEFAULT_MALWARE_KEYWORDS = [
     label: 'persistence',
     pattern: 'CurrentVersion\\\\(Run|RunOnce|Explorer\\\\Shell Folders)|schtasks|CreateService|\\\\Startup\\\\',
     severity: 'medium',
+    attack: ['T1547.001'],
     description: 'Run keys, scheduled tasks, services or startup folders.',
   },
   {
@@ -286,6 +308,7 @@ export const DEFAULT_MALWARE_KEYWORDS = [
     pattern:
       '/(gate|panel|bot|cmd|task|beacon|checkin|c2)\\.php|/api/v\\d/(bot|client)s?/|User-Agent: Mozilla/4\\.0 \\(compatible; MSIE',
     severity: 'high',
+    attack: ['T1071.001'],
     description: 'URL paths and headers typical of command-and-control traffic.',
   },
   {
@@ -293,6 +316,7 @@ export const DEFAULT_MALWARE_KEYWORDS = [
     label: 'encoded powershell',
     pattern: 'powershell[^\\n]*(-enc|-e |-encodedcommand|frombase64string|-nop|-w hidden)',
     severity: 'high',
+    attack: ['T1059.001', 'T1027'],
     description: 'PowerShell launched with an encoded or hidden payload.',
   },
   {
@@ -308,6 +332,7 @@ export const DEFAULT_MALWARE_KEYWORDS = [
     pattern:
       'CryptEncrypt|BCryptEncrypt|vssadmin[^\\n]*delete shadows|wbadmin delete|your files have been encrypted|decrypt',
     severity: 'high',
+    attack: ['T1486'],
     description: 'File encryption APIs, shadow-copy deletion or ransom-note wording.',
   },
   {
@@ -315,6 +340,7 @@ export const DEFAULT_MALWARE_KEYWORDS = [
     label: 'recon & credentials',
     pattern: 'GetAsyncKeyState|mimikatz|sekurlsa|lsass|CreateToolhelp32Snapshot|NetUserAdd|\\\\SAM\\b',
     severity: 'high',
+    attack: ['T1082', 'T1003'],
     description: 'Keylogging, credential dumping or host enumeration.',
   },
 ]
@@ -331,18 +357,21 @@ export const DEFAULT_EVENTLOG_RULES = [
     id: 'evt-log-cleared',
     label: 'log cleared',
     severity: 'high',
+    attack: ['T1070.001'],
     description: 'The Security audit log (1102) or another event log (104) was cleared: anti-forensics.',
   },
   {
     id: 'evt-audit-policy',
     label: 'audit policy changed',
     severity: 'medium',
+    attack: ['T1562.002'],
     description: 'The audit policy was changed (4719); attackers turn auditing off to hide their tracks.',
   },
   {
     id: 'evt-service-user-path',
     label: 'service from user path',
     severity: 'high',
+    attack: ['T1543.003', 'T1569.002'],
     description:
       'A service was installed (7045/4697) whose binary lives in a user-writable folder or runs a shell, as remote-execution tools and malware do.',
   },
@@ -350,12 +379,14 @@ export const DEFAULT_EVENTLOG_RULES = [
     id: 'evt-service-installed',
     label: 'service installed',
     severity: 'medium',
+    attack: ['T1543.003'],
     description: 'A new service was installed (7045/4697): a common persistence and lateral-movement step.',
   },
   {
     id: 'evt-ps-suspicious',
     label: 'suspicious PowerShell',
     severity: 'high',
+    attack: ['T1059.001'],
     description:
       'Encoded command, download cradle, Invoke-Expression, hidden window or AMSI tampering in a PowerShell script block, pipeline or command line.',
   },
@@ -363,12 +394,14 @@ export const DEFAULT_EVENTLOG_RULES = [
     id: 'evt-bruteforce',
     label: 'brute force',
     severity: 'high',
+    attack: ['T1110'],
     description: '10 or more failed logons (4625) for the same account or from the same source within 10 minutes.',
   },
   {
     id: 'evt-logon-after-failures',
     label: 'logon after failures',
     severity: 'high',
+    attack: ['T1110', 'T1078'],
     description:
       'A successful logon (4624) for an account or from a source with 5 or more failed logons in the previous 30 minutes.',
   },
@@ -376,18 +409,21 @@ export const DEFAULT_EVENTLOG_RULES = [
     id: 'evt-rdp-off-hours',
     label: 'RDP outside hours',
     severity: 'high',
+    attack: ['T1021.001'],
     description: 'A remote desktop logon (4624 type 10, 21, 25, 1149) outside the configured business hours.',
   },
   {
     id: 'evt-account-created',
     label: 'account created',
     severity: 'medium',
+    attack: ['T1136.001'],
     description: 'A local or domain account was created or enabled (4720/4722).',
   },
   {
     id: 'evt-admin-group',
     label: 'added to admins',
     severity: 'high',
+    attack: ['T1098'],
     description:
       'An account was added to a privileged group (Administrators, Domain/Enterprise Admins, Remote Desktop Users, Backup Operators).',
   },
@@ -395,12 +431,14 @@ export const DEFAULT_EVENTLOG_RULES = [
     id: 'evt-defender',
     label: 'Defender alert',
     severity: 'high',
+    attack: ['T1562.001'],
     description: 'Microsoft Defender detected malware (1116/1117) or real-time protection was turned off (5001).',
   },
   {
     id: 'evt-task-created',
     label: 'task created',
     severity: 'medium',
+    attack: ['T1053.005'],
     description: 'A scheduled task was created (4698/106): a common persistence mechanism.',
   },
 ]

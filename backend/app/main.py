@@ -39,6 +39,7 @@ from .routers import (
     iocs,
     jobs,
     keys,
+    report,
     samples,
     search,
     settings,
@@ -155,6 +156,7 @@ app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
 app.include_router(iocs.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
+app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")

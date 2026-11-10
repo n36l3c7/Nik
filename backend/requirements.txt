@@ -28,3 +28,6 @@ yara-python>=4.5,<5.0
 # Windows event logs (.evtx): a Rust parser with Python bindings (abi3 wheels,
 # no system package needed); it also recovers records left after a log clear.
 evtx>=0.15,<0.16
+# Incident report PDF (HTML + CSS → PDF). Needs the Pango libraries, which
+# the Dockerfile installs (libpango-1.0-0, libpangoft2-1.0-0, a font).
+weasyprint>=66,<71

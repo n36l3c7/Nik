@@ -30,8 +30,9 @@ from collections.abc import Iterable
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import aliased
 
 from .models import Incident, IocEntry, Sample
 from .parsing.malware import _FALSE_POSITIVE_DOMAINS, _IOC_PATTERNS
@@ -330,6 +331,39 @@ def backfill(session_factory) -> int:
             except Exception:  # noqa: BLE001 - another worker got there first
                 db.rollback()
     return indexed
+
+
+def incident_iocs(db: OrmSession, incident_id: str, allowlist: Allowlist) -> list[dict[str, Any]]:
+    """The incident's indicators with the number of OTHER incidents each is in."""
+    other = aliased(IocEntry)
+    counts = db.execute(
+        select(IocEntry.type, IocEntry.value, func.count(other.incident_id))
+        .join(
+            other,
+            and_(
+                other.type == IocEntry.type,
+                other.value == IocEntry.value,
+                other.incident_id != IocEntry.incident_id,
+            ),
+        )
+        .where(IocEntry.incident_id == incident_id)
+        .group_by(IocEntry.type, IocEntry.value)
+    )
+    shared = {(kind, value): n for kind, value, n in counts}
+    rows = db.scalars(select(IocEntry).where(IocEntry.incident_id == incident_id)).all()
+    return [
+        {
+            "type": row.type,
+            "value": row.value,
+            "sources": row.sources,
+            "count": row.count,
+            "firstSeen": row.first_seen,
+            "lastSeen": row.last_seen,
+            "otherIncidents": shared.get((row.type, row.value), 0),
+            "allowlisted": allowlist.matches(row.type, row.value),
+        }
+        for row in rows
+    ]
 
 
 # --------------------------------------------------------------------------- #

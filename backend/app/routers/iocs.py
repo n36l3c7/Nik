@@ -12,16 +12,15 @@ import io
 import json
 import re
 import uuid
-from typing import Any, Literal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
-from sqlalchemy.orm import aliased
 
 from ..db import get_db
-from ..iocs import TYPES, Allowlist, misp_event, normalize, stix_bundle
+from ..iocs import TYPES, Allowlist, incident_iocs, misp_event, normalize, stix_bundle
 from ..models import AuditEntry, Incident, IocEntry
 from ..security import Principal, now_iso, principal
 from .settings import read_settings
@@ -40,41 +39,8 @@ def _incident_or_404(db: OrmSession, incident_id: str) -> Incident:
     return row
 
 
-def _incident_iocs(db: OrmSession, incident_id: str, allowlist: Allowlist) -> list[dict[str, Any]]:
-    """The incident's indicators with the number of OTHER incidents each is in."""
-    other = aliased(IocEntry)
-    counts = db.execute(
-        select(IocEntry.type, IocEntry.value, func.count(other.incident_id))
-        .join(
-            other,
-            and_(
-                other.type == IocEntry.type,
-                other.value == IocEntry.value,
-                other.incident_id != IocEntry.incident_id,
-            ),
-        )
-        .where(IocEntry.incident_id == incident_id)
-        .group_by(IocEntry.type, IocEntry.value)
-    )
-    shared = {(kind, value): n for kind, value, n in counts}
-    rows = db.scalars(select(IocEntry).where(IocEntry.incident_id == incident_id)).all()
-    return [
-        {
-            "type": row.type,
-            "value": row.value,
-            "sources": row.sources,
-            "count": row.count,
-            "firstSeen": row.first_seen,
-            "lastSeen": row.last_seen,
-            "otherIncidents": shared.get((row.type, row.value), 0),
-            "allowlisted": allowlist.matches(row.type, row.value),
-        }
-        for row in rows
-    ]
-
-
 @router.get("/incidents/{incident_id}/iocs")
-def list_incident_iocs(
+def listincident_iocs(
     incident_id: str,
     _caller: Principal = Depends(principal),
     db: OrmSession = Depends(get_db),
@@ -82,7 +48,7 @@ def list_incident_iocs(
     """Every indicator of the incident: where it was seen, how often, when, and
     in how many other incidents. ``allowlisted`` marks well-known values."""
     _incident_or_404(db, incident_id)
-    iocs = _incident_iocs(db, incident_id, _allowlist(db))
+    iocs = incident_iocs(db, incident_id, _allowlist(db))
     iocs.sort(key=lambda i: (-i["otherIncidents"], i["type"], i["value"]))
     return {"iocs": iocs, "total": len(iocs)}
 
@@ -148,7 +114,7 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 @router.get("/incidents/{incident_id}/iocs/export")
-def export_incident_iocs(
+def exportincident_iocs(
     incident_id: str,
     format: Literal["csv", "stix", "misp"] = Query("csv"),
     types: str | None = Query(None, description="Comma-separated types to keep, e.g. ip,domain,sha256"),
@@ -162,7 +128,7 @@ def export_incident_iocs(
     wanted = {t.strip() for t in (types or "").split(",") if t.strip() in TYPES} or set(TYPES)
     iocs = [
         ioc
-        for ioc in _incident_iocs(db, incident_id, _allowlist(db))
+        for ioc in incident_iocs(db, incident_id, _allowlist(db))
         if ioc["type"] in wanted and (include_allowlisted or not ioc["allowlisted"])
     ]
     iocs.sort(key=lambda i: (i["type"], i["value"]))

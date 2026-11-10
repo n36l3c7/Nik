@@ -5,6 +5,7 @@ import FileUploadZone from '../browser/FileUploadZone.jsx'
 import CommandsSection from './CommandsSection.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { parseShellHistory } from '../../../services/shellParsers.js'
+import { sha256Hex } from '../../../utils/hash.js'
 import { getDemoShellData } from '../../../services/demoData.js'
 import { SHELLS, getShellById, buildDefaultShellData, shellsForOs } from '../../../config/shells.js'
 import { getOsById, DEFAULT_OS } from '../../../config/os.js'
@@ -65,7 +66,7 @@ export default function CommandHistoryTab({ incident }) {
     setError(null)
     setLoading(true)
     try {
-      const { commands, format } = await parseShellHistory(file, shell)
+      const [{ commands, format }, sha256] = await Promise.all([parseShellHistory(file, shell), sha256Hex(file)])
       updateShellData(
         incident.id,
         activeShellId,
@@ -77,6 +78,7 @@ export default function CommandHistoryTab({ incident }) {
               format,
               rows: commands.length,
               importedAt: new Date().toISOString(),
+              sha256,
             },
           },
         },

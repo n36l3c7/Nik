@@ -93,6 +93,16 @@ class AuditEnvelope(BaseModel):
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
+class ReportBrandingIn(BaseModel):
+    """Organisation shown on incident reports."""
+
+    orgName: str = Field(default="", max_length=200)
+    # A data: URI (PNG, JPEG or SVG), at most ~256 KB of base64.
+    logo: str = Field(
+        default="", max_length=350_000, pattern=r"^(|data:image/(png|jpeg|svg\+xml);base64,[A-Za-z0-9+/=]+)$"
+    )
+
+
 class SettingsIn(BaseModel):
     """Shared settings request body."""
 
@@ -100,6 +110,8 @@ class SettingsIn(BaseModel):
     businessHours: dict[str, Any] = Field(default_factory=dict)
     # Omitted (older clients): the stored allowlist is kept.
     iocAllowlist: Optional[list[str]] = Field(default=None, max_length=5000)
+    # Omitted: the stored report header is kept.
+    report: Optional[ReportBrandingIn] = None
 
 
 class SettingsOut(BaseModel):
@@ -108,6 +120,7 @@ class SettingsOut(BaseModel):
     keywords: list[dict[str, Any]]
     businessHours: dict[str, Any]
     iocAllowlist: list[str]
+    report: dict[str, Any]
     # The factory allowlist, for the Settings "restore defaults" button.
     iocAllowlistDefault: list[str]
 

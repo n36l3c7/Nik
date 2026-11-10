@@ -1,6 +1,7 @@
 /*
   Nik built-in YARA rules. Each rule carries `severity` ("high" or "medium")
-  and `description` in its meta: the UI reads both. Keep rules conservative:
+  and `description` in its meta: the UI reads both; `mitre_attack` (ATT&CK
+  technique ids, comma-separated) feeds the incident report. Keep rules conservative:
   a false positive here colours a sample red for every analyst.
 */
 
@@ -9,6 +10,7 @@ rule upx_packed
     meta:
         description = "UPX packer section names or signature"
         severity = "medium"
+        mitre_attack = "T1027.002"
     strings:
         $s1 = "UPX0" ascii
         $s2 = "UPX1" ascii
@@ -23,6 +25,7 @@ rule pe_process_injection_apis
     meta:
         description = "Imports the classic process injection API chain"
         severity = "high"
+        mitre_attack = "T1055"
     strings:
         $a1 = "VirtualAllocEx" ascii
         $a2 = "WriteProcessMemory" ascii
@@ -39,6 +42,7 @@ rule pe_anti_debug
     meta:
         description = "Debugger and sandbox detection APIs"
         severity = "medium"
+        mitre_attack = "T1622"
     strings:
         $d1 = "IsDebuggerPresent" ascii
         $d2 = "CheckRemoteDebuggerPresent" ascii
@@ -53,6 +57,7 @@ rule powershell_encoded_command
     meta:
         description = "PowerShell launched with an encoded or hidden payload"
         severity = "high"
+        mitre_attack = "T1059.001, T1027"
     strings:
         $p1 = "powershell" ascii wide nocase
         $e1 = "-EncodedCommand" ascii wide nocase
@@ -69,6 +74,7 @@ rule ransomware_note_wording
     meta:
         description = "Ransom note wording and shadow copy deletion"
         severity = "high"
+        mitre_attack = "T1486, T1490"
     strings:
         $r1 = "your files have been encrypted" ascii wide nocase
         $r2 = "decrypt your files" ascii wide nocase
@@ -84,6 +90,7 @@ rule credential_dumping_tools
     meta:
         description = "Strings of credential dumping tooling"
         severity = "high"
+        mitre_attack = "T1003"
     strings:
         $m1 = "mimikatz" ascii wide nocase
         $m2 = "sekurlsa::logonpasswords" ascii wide nocase
@@ -100,6 +107,7 @@ rule elf_reverse_shell_hints
     meta:
         description = "ELF with shell spawning and socket connect strings"
         severity = "medium"
+        mitre_attack = "T1059.004"
     strings:
         $s1 = "/bin/sh" ascii
         $s2 = "/bin/bash" ascii
@@ -115,6 +123,7 @@ rule macho_encrypted_or_antidebug
     meta:
         description = "Mach-O with ptrace anti-debugging"
         severity = "medium"
+        mitre_attack = "T1622"
     strings:
         $p1 = "ptrace" ascii
         $p2 = "PT_DENY_ATTACH" ascii
@@ -128,6 +137,7 @@ rule office_macro_autoopen
     meta:
         description = "Office document with auto-executing macro keywords"
         severity = "medium"
+        mitre_attack = "T1204.002, T1059.005"
     strings:
         $m1 = "AutoOpen" ascii wide nocase
         $m2 = "Auto_Open" ascii wide nocase
@@ -144,6 +154,7 @@ rule pdf_javascript_launch
     meta:
         description = "PDF with JavaScript, Launch or OpenAction"
         severity = "medium"
+        mitre_attack = "T1204.002"
     strings:
         $j1 = "/JavaScript" ascii
         $j2 = "/JS" ascii

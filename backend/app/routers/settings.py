@@ -1,6 +1,7 @@
 """Shared (global) settings routes.
 
-A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist }``. When it has never
+A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist, report }``
+(``report``: the organisation name and logo printed on incident reports). When it has never
 been written, the factory defaults from ``defaults.py`` are returned.
 """
 
@@ -57,6 +58,7 @@ def put_settings(
             if body.iocAllowlist is not None
             else current["iocAllowlist"]
         ),
+        "report": body.report.model_dump() if body.report is not None else current["report"],
     }
     row = db.get(Setting, SETTINGS_ID)
     if row is None:

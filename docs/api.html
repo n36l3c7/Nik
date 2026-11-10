@@ -130,6 +130,15 @@
               <td>Indicators seen in two or more incidents, most widespread first.</td>
             </tr>
             <tr>
+              <td><code>POST /api/incidents/{id}/report</code></td>
+              <td>
+                The incident report as a PDF (default) or HTML. Body, all optional: <code>format</code>,
+                <code>lang</code> (<code>en</code>/<code>it</code>), <code>tlp</code>, <code>sections</code>,
+                <code>executiveSummary</code>, <code>detections</code> (SOC rule hits with ATT&amp;CK ids). Missing
+                options come from the incident's saved report settings.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/search?q=</code></td>
               <td>
                 Global search (2+ characters): incidents by name, host or user; indicators from every incident (3+
