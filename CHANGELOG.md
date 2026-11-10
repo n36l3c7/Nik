@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-11-10
+
+### Added
+
+- **Threat intelligence**: the reputation of indicators from VirusTotal,
+  AbuseIPDB, abuse.ch (ThreatFox, URLhaus, MalwareBazaar), AlienVault OTX,
+  urlscan.io (search of public scans), GreyNoise Community, Shodan
+  InternetDB and Google Safe Browsing. Each answer is reduced to a verdict
+  (malicious, suspicious, harmless, unknown), a one-line summary and a link
+  to the provider's page.
+  - A **Reputation** column in the IOCs tab (worst verdict, how many
+    providers flag the value) and an **External reputation** section in
+    Where seen with every provider's answer and **Check now**.
+  - **Automatic lookups**, off until turned on in Settings → Threat
+    intelligence, per type: IP addresses, URLs and domains, file hashes.
+    One API process works at a time (a lease), pacing each provider to its
+    free tier; answers are cached 24 h by default (6 h to 30 days), errors
+    retried after an hour, a provider answering 429 waits an hour.
+  - **Never sent**, automatically or on request: private and reserved
+    addresses, internal names and URLs on them, allowlisted values, values of
+    incidents whose report is TLP:RED, e-mail addresses.
+  - **API keys** entered by admins, stored encrypted (Fernet, key derived from
+    `SECRET_KEY`), never returned by the API (only the last four characters).
+    Providers can be turned off one by one.
+- API: `GET /api/enrichment/providers`, `PUT/DELETE
+  /api/enrichment/providers/{id}/key`, `GET /api/enrichment`,
+  `POST /api/enrichment/check`; `reputation` on each indicator of
+  `GET /api/incidents/{id}/iocs`; `enrichment` in the settings.
+- `ENRICHMENT_WORKER` (default `true`) turns the background thread off.
+- Migration `0015`: `ioc_enrichment`, `integration_keys`, `leases`.
+
+### Dependencies
+
+- Backend: `cryptography` listed directly (it was already installed with
+  `oletools`). Requests use the standard library; `HTTPS_PROXY` applies.
+
 ## [2.14.0] - 2026-11-10
 
 ### Added
@@ -685,7 +721,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.14.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.15.0...HEAD
+[2.15.0]: https://github.com/n36l3c7/Nik/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/n36l3c7/Nik/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/n36l3c7/Nik/compare/v2.12.3...v2.13.0
 [2.12.3]: https://github.com/n36l3c7/Nik/compare/v2.12.2...v2.12.3

@@ -113,6 +113,15 @@
           </p>
         </div>
         <div class="card">
+          <h3>Threat intelligence</h3>
+          <p>
+            Reputation from VirusTotal, AbuseIPDB, abuse.ch, AlienVault OTX, urlscan.io, GreyNoise, Shodan InternetDB
+            and Google Safe Browsing: a column in the IOCs tab, every answer in Where seen, automatic lookups per type
+            within each free tier. Private addresses, internal names, allowlisted values and TLP:RED incidents are never
+            sent; keys are stored encrypted.
+          </p>
+        </div>
+        <div class="card">
           <h3>Global search</h3>
           <p>
             <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> or <kbd>/</kbd> opens a <code>nik&gt;</code> prompt over
@@ -263,6 +272,11 @@
           Analysis tab shows the verdict and why, the headers made readable, the body in a sandbox (remote images load
           only if you ask), the links and the attachments, which open in hex or go to Malware Analysis in one click.
           List your domains and mail servers under Settings → Mail analysis first.
+        </li>
+        <li>
+          <strong>Check reputations.</strong> An admin enters the providers' free API keys under Settings → Threat
+          intelligence; turn on automatic lookups for IP addresses, URLs and domains or hashes, or use
+          <em>Check now</em> in Where seen. The IOCs tab shows the worst verdict of each indicator.
         </li>
         <li>
           <strong>Review and flag.</strong> Tables are searchable and sortable; SOC detections highlight rows in red

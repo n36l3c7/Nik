@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..db import get_db
+from ..enrichment.service import summaries
 from ..iocs import TYPES, Allowlist, incident_iocs, misp_event, normalize, stix_bundle
 from ..models import AuditEntry, Incident, IocEntry
 from ..security import Principal, now_iso, principal
@@ -46,9 +47,14 @@ def listincident_iocs(
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Every indicator of the incident: where it was seen, how often, when, and
-    in how many other incidents. ``allowlisted`` marks well-known values."""
+    in how many other incidents. ``allowlisted`` marks well-known values;
+    ``reputation`` sums up the cached threat-intelligence answers
+    (``{verdict, flagged, checked}``, or null when never checked)."""
     _incident_or_404(db, incident_id)
     iocs = incident_iocs(db, incident_id, _allowlist(db))
+    reputation = summaries(db, ((i["type"], i["value"]) for i in iocs))
+    for item in iocs:
+        item["reputation"] = reputation.get((item["type"], item["value"]))
     iocs.sort(key=lambda i: (-i["otherIncidents"], i["type"], i["value"]))
     return {"iocs": iocs, "total": len(iocs)}
 

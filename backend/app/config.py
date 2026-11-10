@@ -129,6 +129,9 @@ class Settings:
         self.CAPA_URL: str = os.getenv("CAPA_URL", "").rstrip("/")
         self.CAPA_TOKEN: str = os.getenv("CAPA_TOKEN", "")
         self.CAPA_TIMEOUT: int = _get_int("CAPA_TIMEOUT", 1800)
+        # Automatic threat-intelligence lookups (Settings -> Threat
+        # intelligence turns them on per type). false = no background thread.
+        self.ENRICHMENT_WORKER: bool = _get_bool("ENRICHMENT_WORKER", True)
 
     @property
     def is_sqlite(self) -> bool:

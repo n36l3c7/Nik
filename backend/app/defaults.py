@@ -14,6 +14,15 @@ from typing import Any
 
 from .iocs import DEFAULT_ALLOWLIST
 
+
+def enrichment_defaults() -> dict[str, Any]:
+    from copy import deepcopy
+
+    from .enrichment.service import DEFAULTS
+
+    return deepcopy(DEFAULTS)
+
+
 # Mirror of DEFAULT_SUSPICIOUS_KEYWORDS in src/config/detectionRules.js.
 DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
     {
@@ -101,4 +110,7 @@ def default_settings_doc() -> dict[str, Any]:
         "report": {"orgName": "", "logo": ""},
         # Mail Analysis: own domains and trusted Authentication-Results servers.
         "mail": {"orgDomains": [], "trustedAuthServers": []},
+        # Threat intelligence: automatic lookups per type, cache period,
+        # allowed providers (the API keys live in integration_keys).
+        "enrichment": enrichment_defaults(),
     }

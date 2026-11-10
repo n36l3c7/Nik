@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session as OrmSession
 from . import models  # noqa: F401
 from .config import settings as app_settings
 from .db import Base, SessionLocal, engine, get_db
+from .enrichment import worker as enrichment_worker
 from .iocs import backfill as backfill_iocs
 from .observability import metrics_response, observability_middleware, setup_logging
 from .ratelimit import limiter
@@ -34,6 +35,7 @@ from .routers import (
     auth,
     backup,
     capa_rules,
+    enrichment,
     flirt,
     incidents,
     iocs,
@@ -129,6 +131,9 @@ def on_startup() -> None:
     repair_store_permissions()
     # Incidents saved before 2.12.0 have no indicator index yet.
     backfill_iocs(SessionLocal)
+    # Automatic threat-intelligence lookups (one process at a time, see worker.py).
+    if app_settings.ENRICHMENT_WORKER:
+        enrichment_worker.start()
 
 
 @app.get("/api/health", tags=["health"])
@@ -161,6 +166,7 @@ app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
 app.include_router(mails.router, prefix="/api")
+app.include_router(enrichment.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")
 app.include_router(yara_rules.router, prefix="/api")
 app.include_router(flirt.router, prefix="/api")

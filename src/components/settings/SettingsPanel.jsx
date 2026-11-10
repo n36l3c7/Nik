@@ -19,6 +19,7 @@ import BusinessHoursSection from './sections/BusinessHoursSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
 import ReportBrandingSection from './sections/ReportBrandingSection.jsx'
 import MailSettingsSection from './sections/MailSettingsSection.jsx'
+import ThreatIntelSection from './sections/ThreatIntelSection.jsx'
 import AccountsSection from './sections/AccountsSection.jsx'
 import ApiKeysSection from './sections/ApiKeysSection.jsx'
 import AuditLogSection from './sections/AuditLogSection.jsx'
@@ -33,7 +34,7 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
  *
  * A large, sectioned dialog replacing the old cramped settings/users/audit
  * modals. Sections (left nav): Detection rules, Business hours, IOC allowlist,
- * Report header, Mail analysis, Accounts
+ * Report header, Mail analysis, Threat intelligence, Accounts
  * (admin only), Audit log. The active section is owned by App so the header
  * and sidebar buttons can deep-link into a specific section.
  */
@@ -44,6 +45,7 @@ const SECTIONS = [
   { id: 'allowlist', label: 'IOC allowlist', icon: ShieldCheck, Component: IocAllowlistSection },
   { id: 'report', label: 'Report header', icon: FileText, Component: ReportBrandingSection },
   { id: 'mail', label: 'Mail analysis', icon: Mail, Component: MailSettingsSection },
+  { id: 'intel', label: 'Threat intelligence', icon: Radar, Component: ThreatIntelSection },
   { id: 'accounts', label: 'Accounts', icon: Users, Component: AccountsSection, adminOnly: true },
   { id: 'apikeys', label: 'API keys', icon: KeyRound, Component: ApiKeysSection, adminOnly: true },
   { id: 'yara', label: 'YARA rules', icon: FileSearch, Component: YaraRulesSection, adminOnly: true },

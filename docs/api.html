@@ -278,10 +278,26 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET /api/enrichment/providers</code> · <code>PUT/DELETE …/{id}/key</code></td>
+              <td>
+                Threat-intelligence providers and whether each has a key (last four characters only); store an encrypted
+                key or remove it (<strong>admin</strong>, audited).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/enrichment?type=&amp;value=</code> · <code>POST /api/enrichment/check</code></td>
+              <td>
+                The cached answers about an indicator (verdict, summary, link) and why it is never sent, if so; ask
+                every usable provider now (<code>{ type, value, force }</code>, <code>422</code> for a private,
+                internal, allowlisted or TLP:RED value, audited).
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/settings</code></td>
               <td>
                 Read the shared detection rules, business hours, IOC allowlist, report header and Mail Analysis settings
-                (<code>mail: { orgDomains, trustedAuthServers }</code>); <code>PUT</code> replaces them.
+                (<code>mail: { orgDomains, trustedAuthServers }</code>) and threat-intelligence options
+                (<code>enrichment</code>, never the keys); <code>PUT</code> replaces them.
               </td>
             </tr>
             <tr>

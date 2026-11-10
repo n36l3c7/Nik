@@ -28,6 +28,9 @@ import { useAuth } from './AuthContext.jsx'
  *  - mail:          { orgDomains, trustedAuthServers } for Mail Analysis
  *                   (your own domains; servers whose Authentication-Results
  *                   can be believed); null until loaded.
+ *  - enrichment:    { auto: { ip, url, hash }, ttlHours, providers: { id: bool } }
+ *                   threat-intelligence lookups (the API keys never come here);
+ *                   null until loaded.
  *
  * The factory defaults live in config/detectionRules.js. On mount the provider
  * starts from those defaults; once authenticated it loads the shared settings
@@ -62,6 +65,7 @@ function factorySettings() {
     iocAllowlistDefault: [],
     report: null,
     mail: null,
+    enrichment: null,
   }
 }
 
@@ -79,6 +83,14 @@ function normalizeSettings(doc) {
     mail:
       doc?.mail && typeof doc.mail === 'object'
         ? { orgDomains: doc.mail.orgDomains ?? [], trustedAuthServers: doc.mail.trustedAuthServers ?? [] }
+        : null,
+    enrichment:
+      doc?.enrichment && typeof doc.enrichment === 'object'
+        ? {
+            auto: { ip: false, url: false, hash: false, ...(doc.enrichment.auto ?? {}) },
+            ttlHours: doc.enrichment.ttlHours ?? 24,
+            providers: { ...(doc.enrichment.providers ?? {}) },
+          }
         : null,
   }
 }
@@ -201,6 +213,22 @@ export function SettingsProvider({ children }) {
     })
   }, [])
 
+  /** Updates the threat-intelligence settings (partial merge). */
+  const setEnrichment = useCallback((patch) => {
+    setSettings((prev) => {
+      const current = prev.enrichment ?? { auto: { ip: false, url: false, hash: false }, ttlHours: 24, providers: {} }
+      return {
+        ...prev,
+        enrichment: {
+          ...current,
+          ...patch,
+          auto: { ...current.auto, ...(patch.auto ?? {}) },
+          providers: { ...current.providers, ...(patch.providers ?? {}) },
+        },
+      }
+    })
+  }, [])
+
   const value = useMemo(
     () => ({
       keywords: settings.keywords,
@@ -209,6 +237,7 @@ export function SettingsProvider({ children }) {
       iocAllowlistDefault: settings.iocAllowlistDefault,
       reportBranding: settings.report,
       mailSettings: settings.mail,
+      enrichmentSettings: settings.enrichment,
       addKeyword,
       updateKeyword,
       removeKeyword,
@@ -217,6 +246,7 @@ export function SettingsProvider({ children }) {
       setIocAllowlist,
       setReportBranding,
       setMailSettings,
+      setEnrichment,
     }),
     [
       settings,
@@ -228,6 +258,7 @@ export function SettingsProvider({ children }) {
       setIocAllowlist,
       setReportBranding,
       setMailSettings,
+      setEnrichment,
     ],
   )
 

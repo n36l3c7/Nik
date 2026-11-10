@@ -1,8 +1,9 @@
 """Shared (global) settings routes.
 
-A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist, report, mail }``
+A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist, report, mail, enrichment }``
 (``report``: the organisation name and logo printed on incident reports;
-``mail``: own domains and trusted mail servers for Mail Analysis). When it has never
+``mail``: own domains and trusted mail servers for Mail Analysis;
+``enrichment``: automatic threat-intelligence lookups, never the API keys). When it has never
 been written, the factory defaults from ``defaults.py`` are returned.
 """
 
@@ -14,12 +15,15 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..db import get_db
 from ..defaults import default_settings_doc
+from ..enrichment.providers import BY_ID as _PROVIDERS
+from ..enrichment.service import config as enrichment_config
 from ..iocs import DEFAULT_ALLOWLIST
 from ..models import Setting, User
 from ..schemas import SettingsIn, SettingsOut
 from ..security import Principal, current_user, principal
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+PROVIDER_IDS = set(_PROVIDERS)
 
 # Fixed primary key for the single shared settings row.
 SETTINGS_ID = 1
@@ -30,7 +34,9 @@ def read_settings(db: OrmSession) -> dict:
     row = db.get(Setting, SETTINGS_ID)
     doc = (row.doc if row is not None else None) or {}
     defaults = default_settings_doc()
-    return {key: doc.get(key, value) for key, value in defaults.items()}
+    merged = {key: doc.get(key, value) for key, value in defaults.items()}
+    merged["enrichment"] = enrichment_config(merged)
+    return merged
 
 
 def _out(doc: dict) -> dict:
@@ -67,6 +73,14 @@ def put_settings(
             }
             if body.mail is not None
             else current["mail"]
+        ),
+        "enrichment": (
+            {
+                **body.enrichment.model_dump(),
+                "providers": {k: v for k, v in body.enrichment.providers.items() if k in PROVIDER_IDS},
+            }
+            if body.enrichment is not None
+            else current["enrichment"]
         ),
     }
     row = db.get(Setting, SETTINGS_ID)

@@ -114,6 +114,21 @@ class MailSettingsIn(BaseModel):
     trustedAuthServers: list[Annotated[str, Field(pattern=_DOMAIN)]] = Field(default_factory=list, max_length=200)
 
 
+class EnrichmentAutoIn(BaseModel):
+    ip: bool = False
+    url: bool = False
+    hash: bool = False
+
+
+class EnrichmentSettingsIn(BaseModel):
+    """Threat intelligence: automatic lookups per type (IP addresses, URLs and
+    domains, file hashes), cache period, providers the analysts allow."""
+
+    auto: EnrichmentAutoIn = Field(default_factory=EnrichmentAutoIn)
+    ttlHours: int = Field(default=24, ge=1, le=720)
+    providers: dict[str, bool] = Field(default_factory=dict)
+
+
 class SettingsIn(BaseModel):
     """Shared settings request body."""
 
@@ -125,6 +140,8 @@ class SettingsIn(BaseModel):
     report: Optional[ReportBrandingIn] = None
     # Omitted: the stored mail settings are kept.
     mail: Optional[MailSettingsIn] = None
+    # Omitted: the stored threat-intelligence settings are kept.
+    enrichment: Optional[EnrichmentSettingsIn] = None
 
 
 class SettingsOut(BaseModel):
@@ -135,6 +152,7 @@ class SettingsOut(BaseModel):
     iocAllowlist: list[str]
     report: dict[str, Any]
     mail: dict[str, Any]
+    enrichment: dict[str, Any]
     # The factory allowlist, for the Settings "restore defaults" button.
     iocAllowlistDefault: list[str]
 

@@ -88,7 +88,31 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
   await attacker.click()
   const dialog = page.getByRole('dialog', { name: 'Where seen' })
   await expect(dialog).toContainText('WKS-FINANCE-01')
+  // External reputation: keyless providers are ready; nothing is sent until asked.
+  const reputation = dialog.getByRole('region', { name: 'External reputation' })
+  await expect(reputation.getByRole('button', { name: 'Check now' })).toBeVisible()
+  await expect(reputation).toContainText('Not checked yet')
   await page.keyboard.press('Escape')
+})
+
+test('threat intelligence is configured in Settings, keys never shown', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
+  const ips = settings.getByRole('switch', { name: /IP addresses/ })
+  await expect(ips).not.toBeChecked()
+  await ips.check()
+  await expect(ips).toBeChecked()
+  await settings.getByLabel('VirusTotal API key').fill('e2e-virustotal-key-0042')
+  await settings
+    .getByRole('listitem')
+    .filter({ hasText: 'VirusTotal' })
+    .getByRole('button', { name: 'Save key' })
+    .click()
+  await expect(settings.getByText('key …0042')).toBeVisible()
+  await expect(settings.getByLabel('VirusTotal API key')).toHaveValue('')
+  await ips.uncheck()
+  await settings.getByRole('button', { name: 'Close' }).click()
 })
 
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {
