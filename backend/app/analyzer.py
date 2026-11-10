@@ -14,10 +14,12 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import delete
+
 from . import flirt
 from .config import settings
 from .db import SessionLocal
-from .models import SampleCode
+from .models import SampleCode, SampleFunction
 from .security import now_iso
 
 
@@ -75,18 +77,20 @@ def post_worker(base_url: str, token: str, path: str, payload: dict[str, Any], t
         raise AnalyzerError(f"Cannot reach the worker: {exc}") from exc
 
 
-def split_result(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Separate the per-function CFGs and pseudo-C (fetched one at a time) from the summary."""
-    functions, cfgs = [], {}
+def split_result(result: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Separate the per-function CFGs and pseudo-C (stored one row per function) from the summary."""
+    functions, rows = [], {}
     for fn in result.get("functions", []):
         fn = dict(fn)
         cfg = fn.pop("cfg", None)
         if cfg is not None:
-            cfgs[str(fn["addr"])] = cfg
+            rows[fn["addr"]] = {"addr": fn["addr"], "cfg": cfg, "decompiled": None}
         functions.append(fn)
+    for addr, code in (result.get("decompiled") or {}).items():
+        rows.setdefault(int(addr), {"addr": int(addr), "cfg": None, "decompiled": None})["decompiled"] = code
     summary = {key: value for key, value in result.items() if key not in ("functions", "decompiled")}
     summary["functions"] = functions
-    return summary, cfgs, dict(result.get("decompiled") or {})
+    return summary, [rows[addr] for addr in sorted(rows)]
 
 
 def run_code_job(sha256: str) -> None:
@@ -99,9 +103,10 @@ def run_code_job(sha256: str) -> None:
         row.status = "running"
         db.commit()
         try:
-            summary, cfgs, decompiled = split_result(request_code_analysis(sha256, flirt.enabled_paths(db)))
-            row.summary, row.cfgs, row.decompiled = summary, cfgs, decompiled
-            row.status, row.error = "done", None
+            summary, functions = split_result(request_code_analysis(sha256, flirt.enabled_paths(db)))
+            db.execute(delete(SampleFunction).where(SampleFunction.sha256 == sha256))
+            db.add_all(SampleFunction(sha256=sha256, **fn) for fn in functions)
+            row.summary, row.status, row.error = summary, "done", None
         except AnalyzerError as exc:
             row.status, row.error = "error", str(exc)
         row.finished_at = now_iso()

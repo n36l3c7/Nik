@@ -76,3 +76,50 @@ def test_run_capa_reports_capa_errors_and_timeouts(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _completed(0, stdout=json.dumps(REPORT).encode()))
     assert run_capa(str(sample), timeout=5)["meta"]["version"] == "10.0.0"
+
+
+def test_admin_rules_are_passed_after_the_bundled_ones(tmp_path, monkeypatch):
+    sample = tmp_path / "s.bin"
+    sample.write_bytes(b"MZ")
+    seen = []
+
+    def record(command, **kwargs):
+        seen.append(command)
+        return _completed(0, stdout=json.dumps(REPORT).encode())
+
+    monkeypatch.setattr(subprocess, "run", record)
+    run_capa(str(sample), timeout=5, extra_rules=["/samples/_capa_rules/a.yml", "/samples/_capa_rules/b.yml"])
+    command = seen[0]
+    rules = [command[i + 1] for i, arg in enumerate(command) if arg == "-r"]
+    assert rules == [nik_capa.RULES, "/samples/_capa_rules/a.yml", "/samples/_capa_rules/b.yml"]
+    assert command[-1] == str(sample)
+
+
+RULE = """rule:
+  meta:
+    name: nik test mutex and process
+    namespace: nik/test
+    authors: [nik]
+    scopes:
+      static: function
+      dynamic: process
+  features:
+    - and:
+      - api: kernel32.CreateMutexA
+      - match: create process on Windows
+"""
+
+
+@pytest.mark.skipif(not Path(nik_capa.RULES).is_dir(), reason="needs capa and its rules (the worker image)")
+def test_validate_rule_against_the_bundled_rules():
+    ok = nik_capa.validate_rule(RULE)
+    assert ok["ok"] and ok["name"] == "nik test mutex and process" and ok["scope"] == "function"
+    duplicate = nik_capa.validate_rule(RULE.replace("nik test mutex and process", "create process on Windows"))
+    assert not duplicate["ok"] and "duplicate rule name" in duplicate["errors"][0]
+    missing = nik_capa.validate_rule(RULE.replace("create process on Windows", "nik helper"))
+    assert not missing["ok"] and "missing rule" in missing["errors"][0]
+    helper = RULE.replace("nik test mutex and process", "nik helper").replace(
+        "      - match: create process on Windows\n", ""
+    )
+    assert nik_capa.validate_rule(RULE.replace("create process on Windows", "nik helper"), [helper])["ok"]
+    assert not nik_capa.validate_rule("rule: [\n")["ok"]

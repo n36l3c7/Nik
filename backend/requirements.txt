@@ -8,10 +8,8 @@ SQLAlchemy>=2.0,<2.1
 # PostgreSQL driver (production). Not used by the SQLite dev default, but kept
 # here so a single install works for both environments.
 psycopg[binary]>=3.1
-passlib[bcrypt]>=1.7,<2.0
-# passlib 1.7.x is incompatible with bcrypt>=4.1's removed __about__ attribute
-# in some combinations; pin bcrypt to a known-good range.
-bcrypt>=4.0,<4.1
+# Password hashing (used directly; hashes are standard $2b$ bcrypt).
+bcrypt>=4.0,<6.0
 pydantic>=2.5,<3.0
 python-multipart>=0.0.9
 python-dotenv>=1.0

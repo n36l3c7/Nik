@@ -210,9 +210,10 @@ def test_decompile_errors(admin: TestClient, monkeypatch, worker):
 
 
 def test_split_result_keeps_cfgs_and_pseudo_c_apart():
-    summary, cfgs, decompiled = analyzer.split_result(WORKER_RESULT)
-    assert list(cfgs) == [str(0x401000), str(0x40100F)]
-    assert list(decompiled) == [str(0x401000)]
+    summary, functions = analyzer.split_result(WORKER_RESULT)
+    assert [f["addr"] for f in functions] == [0x401000, 0x40100F]  # one row per function, imports have none
+    assert functions[0]["cfg"]["blocks"] and functions[0]["decompiled"]["code"].startswith("void entry0")
+    assert functions[1]["cfg"] == {"truncated": False, "blocks": []} and functions[1]["decompiled"] is None
     assert all("cfg" not in f for f in summary["functions"]) and "decompiled" not in summary
     assert summary["engine"]["name"] == "rizin" and summary["entry"] == 0x401000
     assert summary["decompile"]["engine"] == "rz-ghidra"

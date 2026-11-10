@@ -68,6 +68,11 @@ services:
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
       ANALYZER_DECOMPILE_SECONDS: ${ANALYZER_DECOMPILE_SECONDS:-300}
       ANALYZER_MAX_JOBS: ${ANALYZER_MAX_JOBS:-2}
+      ANALYZER_MAX_FUNCTIONS: ${ANALYZER_MAX_FUNCTIONS:-20000}
+      # Analysed sessions kept for the decompilations on demand (~1 GB each on a
+      # large binary) and how long an unused one stays open, in seconds.
+      ANALYZER_WARM_SESSIONS: ${ANALYZER_WARM_SESSIONS:-1}
+      ANALYZER_WARM_IDLE: ${ANALYZER_WARM_IDLE:-600}
     volumes:
       - sample-store:/samples:ro
     networks: [analysis]
@@ -75,7 +80,7 @@ services:
     tmpfs: [/tmp, /home/rizin]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: ${ANALYZER_MEMORY:-2g}
+    mem_limit: ${ANALYZER_MEMORY:-4g}
     cpus: ${ANALYZER_CPUS:-2}
     restart: unless-stopped
 

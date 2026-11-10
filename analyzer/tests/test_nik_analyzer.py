@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from nik_analyzer import (  # noqa: E402
     AnalysisError,
     DataIndex,
+    WarmSessions,
     analyze,
     build_decompiled,
     build_function,
@@ -287,7 +288,60 @@ def test_live_analysis(tmp_path):
     assert result["engine"]["name"] == "rizin" and result["engine"]["version"][0].isdigit()
     assert result["decompile"]["stopped"] is None and result["decompile"]["done"] == result["decompile"]["total"]
     assert result["decompiled"][str(0x401000)]["code"].startswith("void entry0")
-    one = decompile_one(str(sample), 0x40100F, timeout=60)
+    warm = WarmSessions(size=1)
+    analyze(str(sample), timeout=60, warm=warm)  # the analysed session is kept
+    one = decompile_one(str(sample), 0x40100F, timeout=60, warm=warm)
+    assert warm.take((str(sample), ())) is not None  # used and kept again
     assert one["engine"] == "rz-ghidra" and "return 0;" in one["code"]
     with pytest.raises(AnalysisError):
         decompile_one(str(sample), 0x401001, timeout=60)  # not a function start
+
+
+def test_decompile_pass_reads_unrecognised_functions_before_library_code():
+    functions = [
+        {"addr": 0x10, "kind": "function", "size": 5, "name": "flirt.memcpy"},
+        {"addr": 0x20, "kind": "function", "size": 6, "name": "fcn.20", "crates": {"tokio": 2}},
+        {"addr": 0x30, "kind": "function", "size": 7, "name": "sub.KERNEL32.dll_Sleep"},
+        {"addr": 0x40, "kind": "function", "size": 900, "name": "fcn.40"},
+        {"addr": 0x50, "kind": "function", "size": 50, "name": "fcn.50"},
+    ]
+    session = FakeSession({f["addr"]: CODE for f in functions})
+    decompile_functions(session, functions, deadline=float("inf"))
+    assert session.asked == [0x50, 0x40, 0x10, 0x20, 0x30]
+
+
+class Closable:
+    def __init__(self):
+        self.closed = False
+        self.restarts = 2
+
+    def close(self):
+        self.closed = True
+
+
+def test_warm_sessions_are_lent_once_evicted_and_expired():
+    clock = Clock()
+    warm = WarmSessions(size=1, idle=600, clock=clock)
+    first, second = Closable(), Closable()
+    warm.give(("a.bin", ()), first)
+    assert warm.take(("b.bin", ())) is None  # another file
+    lent = warm.take(("a.bin", ()))
+    assert lent is first and first.restarts == 0  # the crash allowance starts again
+    assert warm.take(("a.bin", ())) is None  # lent to one request at a time
+
+    warm.give(("a.bin", ()), first)
+    warm.give(("b.bin", ()), second)  # over the size: the oldest is closed
+    assert first.closed and not second.closed
+
+    clock.now = 601
+    assert warm.take(("b.bin", ())) is None and second.closed  # idle too long
+    third = Closable()
+    warm.give(("c.bin", ()), third)
+    clock.now = 1300
+    warm.expire()
+    assert third.closed
+
+    off = WarmSessions(size=0)
+    fourth = Closable()
+    off.give(("d.bin", ()), fourth)
+    assert fourth.closed  # disabled: nothing is kept

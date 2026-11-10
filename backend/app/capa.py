@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from . import capa_rules
 from .analyzer import AnalyzerError, WorkerBusy, post_worker
 from .config import settings
 from .db import SessionLocal
@@ -34,11 +35,13 @@ def supported(type_id: str) -> bool:
     return type_id in SUPPORTED_TYPES
 
 
-def request_capabilities(sha256: str) -> dict[str, Any]:
-    """POST /analyze to the capa worker: the sample's capabilities."""
-    return post_worker(
-        settings.CAPA_URL, settings.CAPA_TOKEN, "/analyze", {"sha256": sha256}, settings.CAPA_TIMEOUT + 30
-    )
+def request_capabilities(sha256: str, rules: list[str]) -> dict[str, Any]:
+    """POST /analyze to the capa worker: the sample's capabilities.
+
+    rules are the enabled admin rule files, relative to the store.
+    """
+    payload = {"sha256": sha256, "rules": rules}
+    return post_worker(settings.CAPA_URL, settings.CAPA_TOKEN, "/analyze", payload, settings.CAPA_TIMEOUT + 30)
 
 
 def _run_seconds() -> int:
@@ -51,12 +54,12 @@ def _queue_seconds() -> int:
     return QUEUE_RUNS * _run_seconds()
 
 
-def _request_when_free(sha256: str) -> dict[str, Any]:
+def _request_when_free(sha256: str, rules: list[str]) -> dict[str, Any]:
     """Ask the worker, waiting while it is busy with a sample sent by another backend process."""
     waited = 0.0
     while True:
         try:
-            return request_capabilities(sha256)
+            return request_capabilities(sha256, rules)
         except WorkerBusy:
             if waited >= _queue_seconds():
                 raise AnalyzerError("capa stayed busy with other samples; run it again later") from None
@@ -79,7 +82,8 @@ def run_capa_job(sha256: str) -> None:
             row.status, row.started_at = "running", now_iso()
             db.commit()
             try:
-                row.result, row.status, row.error = _request_when_free(sha256), "done", None
+                rules = capa_rules.enabled_paths(db)
+                row.result, row.status, row.error = _request_when_free(sha256, rules), "done", None
             except AnalyzerError as exc:
                 row.status, row.error = "error", str(exc)
             row.finished_at = now_iso()

@@ -104,10 +104,8 @@ class SampleCode(Base):
 
     ``status`` is queued → running → done | error. ``summary`` holds the
     engine, binary info, the function list with their calls and the
-    decompilation stats; ``cfgs`` and ``decompiled`` map each function address
-    (as a string) to its control-flow graph and its pseudo-C, fetched one
-    function at a time by the UI. Both are deferred: reading the summary never
-    loads them.
+    decompilation stats; each function's control-flow graph and pseudo-C are
+    rows of ``sample_functions``, fetched one function at a time by the UI.
     """
 
     __tablename__ = "sample_code"
@@ -119,8 +117,42 @@ class SampleCode(Base):
     requested_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    cfgs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, deferred=True)
-    decompiled: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, deferred=True)
+
+
+class SampleFunction(Base):
+    """One function of a disassembled sample: its control-flow graph and, once
+    decompiled (up front or on demand), its pseudo-C.
+
+    One row per function keeps opening a function cheap on large binaries,
+    whose graphs add up to tens of megabytes.
+    """
+
+    __tablename__ = "sample_functions"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    addr: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    cfg: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(none_as_null=True), nullable=True)
+    decompiled: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON(none_as_null=True), nullable=True)
+
+
+class CapaRule(Base):
+    """A capa rule (YAML) added by an admin, matched with capa's bundled rules when enabled.
+
+    ``name``, ``namespace`` and ``scope`` come from the rule itself, as the capa
+    worker parsed it when the rule was validated.
+    """
+
+    __tablename__ = "capa_rules"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    namespace: Mapped[str] = mapped_column(String, nullable=False, default="")
+    scope: Mapped[str] = mapped_column(String, nullable=False, default="")
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
 class SampleCapa(Base):

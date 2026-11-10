@@ -13,8 +13,10 @@ import json
 import os
 import re
 import subprocess
+import threading
 from importlib import metadata
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, Iterable, List
 
 CAPA = os.environ.get("CAPA_BIN", "capa")
 RULES = os.environ.get("CAPA_RULES", "/opt/capa/rules")
@@ -35,11 +37,17 @@ def capa_version() -> str:
     return metadata.version("flare-capa")
 
 
-def run_capa(path: str, timeout: float) -> Dict[str, Any]:
-    """capa's JSON report of ``path``; the process is killed after ``timeout`` seconds."""
+def run_capa(path: str, timeout: float, extra_rules: Iterable[str] = ()) -> Dict[str, Any]:
+    """capa's JSON report of ``path``; the process is killed after ``timeout`` seconds.
+
+    ``extra_rules`` are rule files (admin rules) matched with the bundled set.
+    """
     if not os.path.isfile(path):
         raise CapaError("The sample is not in the store.")
-    command = [CAPA, "-r", RULES, "-s", SIGNATURES, "-j", path]
+    command = [CAPA, "-r", RULES]
+    for rule in extra_rules:
+        command += ["-r", rule]
+    command += ["-s", SIGNATURES, "-j", path]
     # A wide "terminal" keeps each of capa's log messages on one line.
     env = {**os.environ, "COLUMNS": "1000"}
     try:
@@ -115,5 +123,54 @@ def compact(report: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def analyze(path: str, timeout: float) -> Dict[str, Any]:
-    return compact(run_capa(path, timeout))
+def analyze(path: str, timeout: float, extra_rules: Iterable[str] = ()) -> Dict[str, Any]:
+    return compact(run_capa(path, timeout, extra_rules))
+
+
+# ---------------------------------------------------------------------------
+# Rule validation (admin rules)
+# ---------------------------------------------------------------------------
+_bundled_lock = threading.Lock()
+_bundled: List[Any] = []
+
+
+def _bundled_rules() -> List[Any]:
+    """The bundled rules, parsed once (capa also caches them on disk)."""
+    from capa.rules import get_rules
+
+    with _bundled_lock:
+        if not _bundled:
+            _bundled.extend(get_rules([Path(RULES)]).rules.values())
+        return list(_bundled)
+
+
+def validate_rule(source: str, others: Iterable[str] = ()) -> Dict[str, Any]:
+    """Parse one capa rule and check it against the bundled rules and the ``others`` (admin rules).
+
+    Returns ``{ok, errors, name, namespace, scope}``: a duplicate name, a
+    missing dependency (``match:`` of an unknown rule), an unknown feature or
+    bad YAML is an error.
+    """
+    from capa.rules import Rule, RuleSet
+
+    try:
+        rule = Rule.from_yaml(source)
+        extra = [Rule.from_yaml(other) for other in others]
+        RuleSet(_bundled_rules() + extra + [rule])
+    except Exception as exc:  # capa raises InvalidRule, yaml errors and others for bad input
+        return {
+            "ok": False,
+            "errors": [" ".join(str(exc).split())[:500]],
+            "name": None,
+            "namespace": None,
+            "scope": None,
+        }
+    scopes = getattr(rule, "scopes", None)
+    static = getattr(scopes, "static", None)
+    return {
+        "ok": True,
+        "errors": [],
+        "name": rule.name,
+        "namespace": rule.meta.get("namespace") or "",
+        "scope": getattr(static, "value", str(static or "")),
+    }

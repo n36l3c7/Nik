@@ -1,7 +1,12 @@
 """HTTP front of the Nik capa worker (standard library only).
 
-    GET  /health            → {"status": "ok", "engine": "capa x.y.z"}
-    POST /analyze {"sha256"} → the capabilities of SAMPLE_DIR/<sha256>.bin
+    GET  /health                       → {"status": "ok", "engine": "capa x.y.z"}
+    POST /analyze {"sha256", "rules"}  → the capabilities of SAMPLE_DIR/<sha256>.bin
+    POST /validate {"source", "others"} → whether a capa rule parses and fits the rule set
+
+``rules`` are admin rule files the backend stored in the shared sample store
+(``_capa_rules/<id>.yml``), matched with the bundled rules; ``others`` are
+the sources of the other admin rules, so a rule may depend on them.
 
 Only the Nik backend talks to this server: it is not published outside the
 container network, and every request must carry the shared token in
@@ -18,7 +23,7 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from nik_capa import CapaError, CapaTimeout, analyze, capa_version
+from nik_capa import CapaError, CapaTimeout, analyze, capa_version, validate_rule
 
 SAMPLE_DIR = os.environ.get("SAMPLE_DIR", "/samples")
 TOKEN = os.environ.get("CAPA_TOKEN", "")
@@ -26,6 +31,8 @@ TIMEOUT = float(os.environ.get("CAPA_TIMEOUT", "1800"))
 MAX_JOBS = int(os.environ.get("CAPA_MAX_JOBS", "1"))
 PORT = int(os.environ.get("CAPA_PORT", "8710"))
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+RULE_FILE = re.compile(r"^_capa_rules/[0-9a-f]{32}\.yml$")
+MAX_VALIDATE_BYTES = 4 * 1024 * 1024  # one rule plus the other admin rules it may depend on
 _slots = threading.BoundedSemaphore(MAX_JOBS)
 
 
@@ -49,22 +56,46 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"detail": "Not found"})
 
+    def _body(self, limit: int) -> dict:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > limit:
+            raise ValueError("Request body too large")
+        body = json.loads(self.rfile.read(length) or b"{}")
+        if not isinstance(body, dict):
+            raise ValueError("Request body must be an object")
+        return body
+
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/analyze":
+        if self.path not in ("/analyze", "/validate"):
             return self._send(404, {"detail": "Not found"})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong analyzer token"})
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            sha256 = json.loads(self.rfile.read(min(length, 4096)) or b"{}").get("sha256", "")
-        except (ValueError, AttributeError, json.JSONDecodeError):
-            return self._send(400, {"detail": "Invalid request body"})
+            body = self._body(MAX_VALIDATE_BYTES if self.path == "/validate" else 64 * 1024)
+        except (ValueError, json.JSONDecodeError) as exc:
+            return self._send(400, {"detail": f"Invalid request body: {exc}"})
+        if self.path == "/validate":
+            return self._validate(body)
+        return self._analyze(body)
+
+    def _validate(self, body: dict) -> None:
+        source, others = body.get("source"), body.get("others") or []
+        if not isinstance(source, str) or not isinstance(others, list) or not all(isinstance(o, str) for o in others):
+            return self._send(400, {"detail": "source must be a string and others a list of strings"})
+        self._send(200, validate_rule(source, others))
+
+    def _analyze(self, body: dict) -> None:
+        sha256, rules = body.get("sha256", ""), body.get("rules") or []
         if not isinstance(sha256, str) or not SHA256.match(sha256):
             return self._send(400, {"detail": "sha256 must be 64 lowercase hex characters"})
+        if not isinstance(rules, list) or not all(isinstance(r, str) and RULE_FILE.match(r) for r in rules):
+            return self._send(400, {"detail": "rules must be _capa_rules/<32 hex>.yml paths"})
+        rule_paths = [p for p in (os.path.join(SAMPLE_DIR, r) for r in rules) if os.path.isfile(p)]
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "capa is busy with another sample; try again later"})
         try:
-            self._send(200, analyze(os.path.join(SAMPLE_DIR, f"{sha256}.bin"), timeout=TIMEOUT))
+            path = os.path.join(SAMPLE_DIR, f"{sha256}.bin")
+            self._send(200, analyze(path, timeout=TIMEOUT, extra_rules=rule_paths))
         except CapaTimeout as exc:
             self._send(504, {"detail": str(exc)})
         except CapaError as exc:

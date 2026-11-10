@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-11-10
+
+### Added
+
+- **capa rules of your own** (Settings → capa rules, admin): one YAML rule
+  each, checked by the capa worker against the bundled rules and the other
+  admin rules before it is saved (syntax, features, unique name, `match:`
+  dependencies), then matched with the bundled set from the next analysis.
+  Their matches carry a **custom** badge in the Capabilities view; a rule
+  another enabled rule matches cannot be renamed, disabled or deleted.
+  REST API: `GET/POST /api/capa-rules`, `PUT/DELETE /api/capa-rules/{id}`,
+  `POST /api/capa-rules/validate`; capa worker: `POST /validate`.
+- rizin worker settings `ANALYZER_MAX_FUNCTIONS` (default 20000),
+  `ANALYZER_WARM_SESSIONS` (default 1) and `ANALYZER_WARM_IDLE` (default
+  600 s).
+
+### Changed
+
+- The Code view lists **every function** of large binaries: the 3,000-function
+  limit is gone (a 5,000-function Rust binary is disassembled in about 75 s;
+  20,000 remains as a safety cap). Each function's control-flow graph and
+  pseudo-C are stored as a row of the new `sample_functions` table instead of
+  two JSON columns read in full on every request, so opening a function stays
+  fast however large the binary (Alembic migration
+  `0010_function_rows_capa_rules` moves existing data).
+- **Decompiling on demand takes seconds**: the rizin worker keeps the
+  analysed session open after an analysis or a decompilation (0.1–3 s instead
+  of 13 s and more on a 5,000-function binary) and falls back to a fresh one
+  if rizin died meanwhile. The up-front pass decompiles the functions not
+  recognised as library code before the others. The Compose default memory
+  limit of the `analyzer` service rises from 2g to 4g to hold the kept
+  session.
+- Passwords are hashed with **bcrypt directly**; the unmaintained passlib is
+  removed and bcrypt is no longer pinned below 4.1. Existing hashes keep
+  working (the same `$2b$` format, passwords cut at 72 bytes as before).
+
 ## [2.10.0] - 2026-11-10
 
 ### Added
@@ -406,7 +442,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/n36l3c7/Nik/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/n36l3c7/Nik/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/n36l3c7/Nik/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/n36l3c7/Nik/compare/v2.8.0...v2.8.1
