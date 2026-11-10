@@ -42,6 +42,8 @@ export default defineConfig({
         COOKIE_SECURE: 'false',
         RATE_LIMIT_DEFAULT: '100000/minute',
         SAMPLE_STORE: E2E_SAMPLES,
+        // No automatic threat-intelligence lookups from the test server.
+        ENRICHMENT_WORKER: 'false',
         // Set by CI when the analyzer container runs (see .github/workflows/ci.yml).
         ANALYZER_URL: process.env.E2E_ANALYZER_URL ?? '',
         ANALYZER_TOKEN: process.env.E2E_ANALYZER_TOKEN ?? '',

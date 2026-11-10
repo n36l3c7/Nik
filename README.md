@@ -88,6 +88,14 @@ every action attributed to a named analyst and recorded in a global audit log.
   incidents each one appears in, any value opens **Where seen** across every
   analyst's incidents, a shared allowlist hides well-known domains and private
   addresses, and indicators export as CSV, STIX 2.1 or a MISP event.
+- **Threat intelligence** — the reputation of indicators from VirusTotal,
+  AbuseIPDB, abuse.ch (ThreatFox, URLhaus, MalwareBazaar), AlienVault OTX,
+  urlscan.io, GreyNoise, Shodan InternetDB and Google Safe Browsing: a
+  **Reputation** column in the IOCs tab and every provider's answer in
+  **Where seen**, with **Check now**. Automatic lookups are turned on per type
+  (IP addresses, URLs and domains, file hashes) and respect each free tier's
+  limits; private addresses, internal names, allowlisted values and values of
+  TLP:RED incidents are never sent. API keys are stored encrypted.
 - **Global search** — <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd> or <kbd>/</kbd>
   opens a `nik>` prompt over incidents, indicators from every incident and
   samples, plus the open incident's events and notes; `>` lists actions (go to
@@ -357,6 +365,7 @@ is no `tailwind.config.js` and no extra setup step.
 | `CAPA_URL` | — | Base URL of the capa worker (e.g. `http://capa:8710`). Empty: the Capabilities view reports "not configured". |
 | `CAPA_TOKEN` | — | Shared secret sent to the capa worker in `X-Analyzer-Token`; the worker refuses to start without one. |
 | `CAPA_TIMEOUT` | `1800` | Seconds capa may spend on one sample before the worker stops it (large binaries take ten minutes or more). |
+| `ENRICHMENT_WORKER` | `true` | Background thread of the automatic threat-intelligence lookups (one API process works at a time). `false` disables it; "Check now" still works. |
 
 **Compose** (root `.env` — see `.env.example`):
 
@@ -898,13 +907,17 @@ Actions performed with a key are recorded in the audit log as `api:<label>`.
 | `GET/POST /api/flirt-signatures` · `PUT/DELETE …/{id}` | FLIRT signatures (`.sig` or `.pat`, multipart `name` + `file`, up to 32 MB) the analyzer worker applies on top of rizin's bundled ones (**admin** to change; any caller may list). `PUT` takes `{ name, enabled }`. They apply from the next disassembly. |
 | `GET /api/samples/{sha256}/code/functions/{addr}` | Control-flow graph of one function: basic blocks with their instructions and `jump` / `fail` successors. |
 | `GET /api/samples/{sha256}/code/functions/{addr}/decompiled` | Pseudo-C of one function (rz-ghidra): `code` plus highlight `spans` (`[start, end, kind]`, or `[start, end, "f", address]` for a call target). Stored by the analysis (`source: "analysis"`) or decompiled on first request and kept (`source: "on-demand"`); `502` when the worker fails, `503` when none is configured. |
-| `GET /api/incidents/{id}/iocs` | The incident's indicators of compromise (`type`, `value`, `sources`, `count`, `firstSeen`, `lastSeen`, `otherIncidents`, `allowlisted`), indexed from every tab each time its data is saved. |
+| `GET /api/incidents/{id}/iocs` | The incident's indicators of compromise (`type`, `value`, `sources`, `count`, `firstSeen`, `lastSeen`, `otherIncidents`, `allowlisted`, `reputation`: `{ verdict, flagged, checked }` from the threat-intelligence cache or null), indexed from every tab each time its data is saved. |
+| `GET /api/enrichment/providers` | Threat-intelligence providers: types, key requirement, whether a key is set (with its last four characters, never the key), free-tier note, and the `enrichment` settings. |
+| `PUT/DELETE /api/enrichment/providers/{id}/key` | Store (`{ key }`, encrypted) or remove a provider's API key (**admin**). Audited. |
+| `GET /api/enrichment?type=&value=` | The cached answers about an indicator (`provider`, `verdict` malicious/suspicious/harmless/unknown, `summary`, `link`, `data`, `checkedAt`), the providers that would be asked, and `blocked` (why it is never sent, or null). |
+| `POST /api/enrichment/check` | `{ type, value, force }`: ask every usable provider now (fresh answers reused unless `force`); `skipped` lists providers waiting for their rate limit. `422` for a value that is never sent (private, internal, allowlisted, TLP:RED). Audited. |
 | `GET /api/iocs/lookup?type=&value=` | Every incident an indicator appears in ("where seen"). `type`: ip, domain, url, email, md5, sha1, sha256. |
 | `GET /api/iocs/shared` | Indicators seen in two or more incidents, most widespread first (allowlisted values left out). |
 | `GET /api/incidents/{id}/iocs/export?format=csv\|stix\|misp` | Download the indicators as CSV, a STIX 2.1 bundle (identity, one indicator each, a report) or a MISP event (unpublished, organisation only). `types=ip,domain,…` narrows them; allowlisted values are left out unless `allowlisted=true`. Audited as `ioc.export`. |
 | `POST /api/incidents/{id}/report` | The incident report, as a PDF (default) or HTML. Body (all optional): `format` (`pdf`/`html`), `lang` (`en`/`it`), `tlp` (`clear`, `green`, `amber`, `amber+strict`, `red`), `sections` (summary, timeline, attack, iocs, samples, mails, eventlogs, notes, evidence), `executiveSummary`, `detections` (`[{ id, label, severity, count, attack: [technique ids] }]`, the SOC rule hits the app computes). Missing options come from the incident's saved `report` settings, then the defaults (English, TLP:AMBER, every section). Audited as `report.generate`. |
 | `GET /api/search?q=` | Global search (at least 2 characters): incidents by name, host or user; indicators from every incident (3 characters or more) with the number of incidents; samples by hash prefix (6 hex characters or more) or file type. `limit` per group (default 8). |
-| `GET /api/settings` | Read the shared detection rules, business hours, IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`) report header (`report: { orgName, logo }`, the logo a PNG/JPEG/SVG `data:` URI up to 256 KB) and Mail Analysis settings (`mail: { orgDomains, trustedAuthServers }`). `PUT` replaces them; a body without `iocAllowlist`, `report` or `mail` keeps the stored value. |
+| `GET /api/settings` | Read the shared detection rules, business hours, IOC allowlist (`iocAllowlist`, plus the factory list as `iocAllowlistDefault`) report header (`report: { orgName, logo }`, the logo a PNG/JPEG/SVG `data:` URI up to 256 KB) Mail Analysis settings (`mail: { orgDomains, trustedAuthServers }`) and threat intelligence (`enrichment: { auto: { ip, url, hash }, ttlHours, providers: { id: bool } }`, never the keys). `PUT` replaces them; a body without `iocAllowlist`, `report`, `mail` or `enrichment` keeps the stored value. |
 | `GET/POST/DELETE /api/webhooks` | Manage event subscriptions (**admin**). |
 | `GET/POST/DELETE /api/users` | User management (**admin**). |
 | `GET/POST/DELETE /api/keys` | API-key management (**admin**). |
@@ -1081,6 +1094,9 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── security.py             # bcrypt hashing, session-auth dependencies
 │       ├── defaults.py             # Factory defaults for detection settings
 │       ├── samples.py              # Sample store (files by SHA-256, e-mails as .mail) + protected zip
+│       ├── vault.py                # Encryption of the threat-intelligence API keys (Fernet, HKDF of SECRET_KEY)
+│       ├── enrichment/             # Threat intelligence: providers (one function each), service (what may be
+│       │                           #   sent, rate limits, cache), worker (background lookups, lease)
 │       ├── mail/                   # Mail analysis: parse (.eml/.msg, LZFu RTF), headers (route,
 │       │                           #   sender, Authentication-Results), verify (SPF/DKIM/DMARC),
 │       │                           #   links, content (nh3, QR, pressure), attachments, analyze
@@ -1097,7 +1113,7 @@ file itself to the server, because the sample *is* the evidence under study
 │       ├── capa.py                 # capa worker client + capabilities job (one at a time)
 │       ├── yara/                   # Built-in YARA rule files (*.yar)
 │       └── routers/                # auth, users, incidents, audit, settings, backup, samples,
-│                                   #   mails, annotations, yara_rules, flirt, capa_rules
+│                                   #   mails, enrichment, annotations, yara_rules, flirt, capa_rules
 └── src/
     ├── main.jsx                    # Entry: StrictMode > AuditProvider > AuthProvider
     │                               #   > SettingsProvider > IncidentProvider > App
@@ -1194,7 +1210,8 @@ file itself to the server, because the sample *is* the evidence under study
             │                           #   filters, widgets, bookmarks/shortcuts tables
             ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
             ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
-            ├── iocs/                   # IocsTab (indicators, cross-incident counts, export)
+            ├── iocs/                   # IocsTab (indicators, cross-incident counts, reputation, export),
+            │                           #   IocReputation (external answers, Check now)
             ├── eventlogs/              # EventLogsTab, EvtxUpload (server-side parse + job poll),
             │                           #   CoverageChart, EventsSection
             ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
@@ -1892,6 +1909,53 @@ targets and hosts, attachment hashes, QR and invitation links) go into the
 IOC index as `mail:<file name>`; the timeline shows each message at the time
 it was sent, high when the verdict is phishing; the report has an **E-mails**
 section.
+
+### 3.9 Threat intelligence
+
+Indicators get a reputation from external services (`app/enrichment/`).
+Each provider is one function in `providers.py` that turns the service's
+answer into `{ verdict, summary, link, data }`; `verdict` is `malicious`,
+`suspicious`, `harmless` or `unknown` (not known, or nothing conclusive).
+
+| Provider | Types | Key | Free tier (as Nik paces it) |
+|---|---|---|---|
+| VirusTotal | IP, domain, URL, hash | required | 1 request / 15 s, 500 a day |
+| AbuseIPDB | IP | required | 1,000 a day |
+| abuse.ch: ThreatFox, URLhaus, MalwareBazaar | IP, domain, URL, hash | required (one Auth-Key) | — |
+| AlienVault OTX | IP, domain, URL, hash | required | — |
+| urlscan.io (search of public scans, nothing submitted) | domain, URL | optional | 1,000 a day |
+| GreyNoise Community | IP | optional | 50 a day |
+| Shodan InternetDB | IP | none | — |
+| Google Safe Browsing | domain, URL | required | 10,000 a day |
+
+**What is never sent** (`service.blocked`), whoever asks: private, loopback
+and other non-public addresses, internal names (no dot, `.local`, `.lan`,
+`.internal`, `.corp`, `.home.arpa`…) and URLs on them; values on the IOC
+allowlist; values seen in an incident whose report is classified
+**TLP:RED**; e-mail addresses. MD5 and SHA-1 of stored samples and mail
+attachments are not looked up automatically: their SHA-256 is.
+
+**Automatic lookups** are off until an analyst turns them on in **Settings
+→ Threat intelligence**, per type: IP addresses, URLs and domains, file
+hashes. Every API process starts a worker thread (`worker.py`); a lease row
+(`leases`) lets only one of them work at a time, so several gunicorn workers
+do not multiply the requests. Every 30 seconds it checks the indexed
+indicators not in the cache (newest incidents first) with every enabled
+provider that takes their type, pacing each provider to its free tier. An
+answer is kept for the cache period (24 h by default, up to 30 days), an
+error is retried after an hour; a provider that answers 429 waits an hour,
+one that refuses its key six hours.
+
+**Check now** in Where seen asks every usable provider at once (fresh
+answers are reused unless "Check again"). The IOCs tab's **Reputation**
+column shows the worst cached verdict and how many providers flag the value.
+
+**Keys** are entered by admins and stored in `integration_keys`, encrypted
+with Fernet under a key derived from `SECRET_KEY` (HKDF, `vault.py`): the
+API returns only whether a key is set and its last four characters. Changing
+`SECRET_KEY` makes the stored keys unreadable (Settings says so): enter them
+again. Requests use the standard library (`urllib`), so `HTTPS_PROXY` /
+`NO_PROXY` apply; a transparent proxy needs nothing.
 
 ---
 

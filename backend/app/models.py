@@ -146,6 +146,50 @@ class Mail(Base):
     analysis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class IntegrationKey(Base):
+    """A threat-intelligence provider's API key, encrypted (``vault.py``)."""
+
+    __tablename__ = "integration_keys"
+
+    provider: Mapped[str] = mapped_column(String, primary_key=True)
+    secret: Mapped[str] = mapped_column(Text, nullable=False)
+    hint: Mapped[str] = mapped_column(String, nullable=False, default="")  # last 4 characters
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class Enrichment(Base):
+    """One provider's answer about one indicator (``enrichment/``), kept for
+    the cache period of Settings -> Threat intelligence."""
+
+    __tablename__ = "ioc_enrichment"
+
+    type: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, primary_key=True)
+    provider: Mapped[str] = mapped_column(String, primary_key=True)
+    # done | error | running
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
+    # malicious | suspicious | harmless | unknown
+    verdict: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    summary: Mapped[str] = mapped_column(String, nullable=False, default="")
+    link: Mapped[str] = mapped_column(String, nullable=False, default="")
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    checked_at: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (Index("ix_ioc_enrichment_value", "value"),)
+
+
+class Lease(Base):
+    """A lease held by one API process at a time (the enrichment worker)."""
+
+    __tablename__ = "leases"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    holder: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 class SampleCode(Base):
     """Disassembly of a sample by the analyzer worker (rizin): one row per sample.
 

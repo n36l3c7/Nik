@@ -5,6 +5,7 @@ import { IocValue, useIocLookup } from '../../../context/IocLookupContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
 import { IOC_TYPES, sourceLabel } from '../../../utils/iocs.js'
+import { reputationRank, verdictMeta } from '../../../utils/enrichment.js'
 import { formatDateTime } from '../../../utils/time.js'
 
 /*
@@ -87,6 +88,25 @@ const BASE_COLUMNS = [
       ) : (
         <span className="text-fg-muted">—</span>
       ),
+  },
+  {
+    key: 'reputation',
+    label: 'Reputation',
+    sortable: true,
+    sortAccessor: (row) => reputationRank(row.reputation),
+    render: (row) => {
+      if (!row.reputation) return <span className="text-fg-muted">—</span>
+      const meta = verdictMeta(row.reputation.verdict)
+      return (
+        <Badge
+          color={meta.color}
+          title={`${row.reputation.flagged} of ${row.reputation.checked} providers flag it: click the value for details`}
+        >
+          {meta.label}
+          {row.reputation.flagged > 0 && ` ${row.reputation.flagged}/${row.reputation.checked}`}
+        </Badge>
+      )
+    },
   },
   {
     key: 'otherIncidents',

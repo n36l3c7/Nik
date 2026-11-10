@@ -124,3 +124,22 @@ def test_migration_0014_adds_mails_and_has_mail(tmp_path, monkeypatch):
     with engine.connect() as conn:
         assert "mails" not in sa.inspect(conn).get_table_names()
         assert "has_mail" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}
+
+
+def test_migration_0015_adds_enrichment_tables(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+
+    import app.db
+
+    monkeypatch.setattr(app.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+    command.stamp(cfg, "0014_mails")
+    command.upgrade(cfg, "0015_ioc_enrichment")
+    with engine.connect() as conn:
+        assert {"ioc_enrichment", "integration_keys", "leases"} <= set(sa.inspect(conn).get_table_names())
+    command.downgrade(cfg, "0014_mails")
+    with engine.connect() as conn:
+        assert not {"ioc_enrichment", "integration_keys", "leases"} & set(sa.inspect(conn).get_table_names())

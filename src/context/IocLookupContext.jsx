@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Copy, Crosshair, ExternalLink, Search, ShieldCheck } from 'lucide-react'
 import { Badge, Button, Modal } from '../components/ui/index.js'
+import IocReputation from '../components/tabs/iocs/IocReputation.jsx'
 import { api } from '../services/api.js'
 import { IOC_TYPES, allowlistOptions, defang, sourceLabel } from '../utils/iocs.js'
 import { formatDateTime } from '../utils/time.js'
@@ -113,6 +114,7 @@ function WhereSeen({ lookup, onClose }) {
               </ul>
             </>
           )}
+          <IocReputation type={lookup.type} value={state.data?.value ?? lookup.value} />
         </div>
       )}
     </Modal>
