@@ -44,6 +44,11 @@ def run_capa(path: str, timeout: float, extra_rules: Iterable[str] = ()) -> Dict
     """
     if not os.path.isfile(path):
         raise CapaError("The sample is not in the store.")
+    if not os.access(path, os.R_OK):
+        raise CapaError(
+            "capa cannot read the sample (permission denied): the file in the store is not world-readable. "
+            "Restart the api service, which repairs the store's permissions."
+        )
     command = [CAPA, "-r", RULES]
     for rule in extra_rules:
         command += ["-r", rule]

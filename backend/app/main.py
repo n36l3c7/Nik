@@ -43,6 +43,7 @@ from .routers import (
     webhooks,
     yara_rules,
 )
+from .samples import repair_store_permissions
 
 setup_logging(app_settings.LOG_LEVEL)
 
@@ -92,7 +93,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.11.1",
+    version="2.11.2",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -111,13 +112,16 @@ app.add_middleware(SlowAPIMiddleware)
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Create all tables when not using migrations.
+    """Create all tables when not using migrations, and repair the sample store.
 
     In production run Alembic (``alembic upgrade head``, see backend/alembic).
-    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema.
+    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema. The
+    store pass makes samples saved by older releases readable by the workers.
     """
     if app_settings.RUN_CREATE_ALL:
         Base.metadata.create_all(bind=engine)
+    # Samples stored by releases before 2.7.0 are 0o440: the workers could not read them.
+    repair_store_permissions()
 
 
 @app.get("/api/health", tags=["health"])
