@@ -1,4 +1,4 @@
-import { Bookmark, Chrome, Compass, Database, Download, Flame, Globe, Navigation, Shield, Zap } from 'lucide-react'
+import { Aperture, Bookmark, Compass, Database, Download, Flame, Globe, Navigation, Shield, Zap } from 'lucide-react'
 
 /*
  * ============================================================================
@@ -163,7 +163,8 @@ export const BROWSERS = [
     id: 'chrome',
     profileHint: 'Default, Profile 1, Profile 2… (one folder per profile)',
     label: 'Chrome',
-    icon: Chrome,
+    // lucide 1.0 dropped the brand logos: the aperture is the closest shape.
+    icon: Aperture,
     engine: 'chromium',
     accent: 'text-med',
     profilePaths: CHROME_PROFILES,

@@ -1,7 +1,7 @@
 # Nik — Forensic analysis platform
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
@@ -108,7 +108,7 @@ GitHub Pages (plain HTML, no build step).
 
 | Layer | Technology |
 |---|---|
-| Frontend | [React](https://react.dev) 19 · [Vite](https://vite.dev) 6 · [Tailwind CSS](https://tailwindcss.com) 4 · [lucide-react](https://lucide.dev) · [sql.js](https://sql.js.org) (SQLite → WASM) · [papaparse](https://www.papaparse.com) |
+| Frontend | [React](https://react.dev) 19 · [Vite](https://vite.dev) 8 · [Tailwind CSS](https://tailwindcss.com) 4 · [lucide-react](https://lucide.dev) · [sql.js](https://sql.js.org) (SQLite → WASM) · [papaparse](https://www.papaparse.com) |
 | Backend | [FastAPI](https://fastapi.tiangolo.com) (Python 3.11+) · SQLAlchemy 2 · gunicorn + uvicorn |
 | Database | PostgreSQL (production) · SQLite (zero-setup development) |
 | Delivery | nginx (static SPA + `/api` reverse proxy) · Docker/Podman Compose · systemd on RHEL |
@@ -184,7 +184,7 @@ image: `deploy/images.test.js` fails on a short name.
 
 ### 1.2 Local development setup
 
-**Prerequisites:** Node.js 20+ (with npm) and Python 3.11–3.13. No database
+**Prerequisites:** Node.js 22+ (with npm; 20.19 or later also works) and Python 3.11–3.13. No database
 server is needed: the backend defaults to a local SQLite file. The incident
 report's **PDF** needs the Pango libraries WeasyPrint uses (Debian/Ubuntu:
 `apt install libpango-1.0-0 libpangoft2-1.0-0`; Fedora/RHEL:
@@ -231,7 +231,7 @@ Other npm scripts:
 npm run build      # production build (static site in dist/)
 npm run preview    # serve the production build locally
 npm test           # frontend unit tests (Node's built-in test runner, no deps)
-npm run lint       # ESLint (React + hooks rules), must report no problems
+npm run lint       # ESLint (recommended + React hooks rules), must report no problems
 npm run format     # Prettier: rewrite JS/JSX, CSS, JSON, HTML and YAML in place
 npm run format:check  # Prettier in check mode (what CI runs)
 npm run test:e2e   # Playwright smoke test of the whole stack (build first)
@@ -481,7 +481,7 @@ primary backup.
 
 #### Step 1 — Build the static bundle
 
-Build on the RHEL host or on any machine with Node 20+ and copy `dist/` over.
+Build on the RHEL host or on any machine with Node 22+ and copy `dist/` over.
 To install Node on RHEL (NodeSource, works on 8 and 9):
 
 ```bash
