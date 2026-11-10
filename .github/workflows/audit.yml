@@ -1,0 +1,42 @@
+name: Audit
+
+# Known vulnerabilities in the dependencies, and shell script lint.
+# Runs on every pull request and every Monday, so a new CVE in an unchanged
+# dependency shows up without waiting for a code change.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+      - run: pip install pip-audit
+      - name: Python — backend
+        run: pip-audit -r backend/requirements.txt
+      - name: Python — capa worker (the version pinned in its Dockerfile)
+        run: |
+          echo "flare-capa==$(sed -n 's/^ARG CAPA_VERSION=//p' capa/Dockerfile)" > "$RUNNER_TEMP/capa-requirements.txt"
+          pip-audit -r "$RUNNER_TEMP/capa-requirements.txt"
+      # The analyzer worker uses the Python standard library only.
+      - name: npm (runtime and build tooling)
+        run: npm audit --audit-level=high
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: shellcheck deploy/*.sh backend/entrypoint.sh

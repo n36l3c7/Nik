@@ -258,6 +258,16 @@ the format checks, both unit suites, the build and then the end-to-end test; a
 change is done only when all of them pass. The documentation site in `docs/`
 is updated in the same change as the behaviour it describes.
 
+**Dependency audits.** The `Audit` workflow (`.github/workflows/audit.yml`)
+runs `pip-audit` on the backend and the capa worker, `npm audit
+--audit-level=high` and `shellcheck` on every pull request and every Monday,
+so a new CVE in an unchanged dependency fails the build without waiting for
+a code change. Locally: `pip-audit -r backend/requirements.txt` and
+`npm audit`. **Dependabot** (`.github/dependabot.yml`) opens one grouped
+pull request a month per ecosystem (npm, pip, Docker, Compose, Actions) and a
+pull request as soon as a dependency gets a security fix; enable the latter in
+the repository's *Settings → Code security*.
+
 **Upgrading an existing database:** run `alembic upgrade head` from `backend/`
 after pulling a release that adds a migration (the Docker image does this on
 start). A database created by the dev-mode `create_all` is adopted by the
