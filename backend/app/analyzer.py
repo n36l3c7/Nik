@@ -25,6 +25,10 @@ class AnalyzerError(Exception):
     """The worker could not be reached or refused the request."""
 
 
+class WorkerBusy(AnalyzerError):
+    """The worker is running as many jobs as it allows (HTTP 503)."""
+
+
 def configured() -> bool:
     return bool(settings.ANALYZER_URL and settings.ANALYZER_TOKEN)
 
@@ -43,24 +47,32 @@ def request_decompile(sha256: str, addr: int, signatures: list[str]) -> dict[str
 
 
 def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """POST JSON to the worker; the parsed JSON result or AnalyzerError."""
+    """POST JSON to the rizin worker; the parsed JSON result or AnalyzerError."""
+    return post_worker(
+        settings.ANALYZER_URL, settings.ANALYZER_TOKEN, path, payload, timeout=settings.ANALYZER_TIMEOUT + 30
+    )
+
+
+def post_worker(base_url: str, token: str, path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+    """POST JSON to an analysis worker (rizin or capa); the parsed JSON result or AnalyzerError."""
     request = urllib.request.Request(
-        f"{settings.ANALYZER_URL}{path}",
+        f"{base_url}{path}",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "X-Analyzer-Token": settings.ANALYZER_TOKEN},
+        headers={"Content-Type": "application/json", "X-Analyzer-Token": token},
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=settings.ANALYZER_TIMEOUT + 30) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         try:
             detail = json.loads(exc.read()).get("detail")
         except Exception:
             detail = None
-        raise AnalyzerError(detail or f"The analyzer answered {exc.code}") from exc
+        error = WorkerBusy if exc.code == 503 else AnalyzerError
+        raise error(detail or f"The worker answered {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise AnalyzerError(f"Cannot reach the analyzer: {exc}") from exc
+        raise AnalyzerError(f"Cannot reach the worker: {exc}") from exc
 
 
 def split_result(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:

@@ -18,11 +18,11 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import analyzer, flirt, yara_rules
+from .. import analyzer, capa, flirt, yara_rules
 from ..config import settings
 from ..db import get_db
 from ..events import emit
-from ..models import AuditEntry, Incident, Sample, SampleCode
+from ..models import AuditEntry, Incident, Sample, SampleCapa, SampleCode
 from ..parsing.executables import parse_structure
 from ..parsing.malware import STRINGS_STORED, analyze, iter_strings
 from ..samples import DEFAULT_ZIP_PASSWORD, delete_sample, is_sha256, read_sample, write_sample, zip_sample
@@ -145,6 +145,49 @@ def _code_state(row: SampleCode | None) -> dict[str, Any]:
     return state
 
 
+def _queue_capa(db: OrmSession, background_tasks: BackgroundTasks, sample: Sample, actor: str) -> SampleCapa | None:
+    """(Re)start capa on the worker when it is configured; None otherwise.
+
+    File types capa does not read are marked ``unsupported`` without a job.
+    """
+    if not capa.configured():
+        return None
+    row = db.get(SampleCapa, sample.sha256)
+    if row is not None and row.status in ("queued", "running") and not capa.is_stale(row):
+        return row
+    if row is None:
+        row = SampleCapa(sha256=sample.sha256, result={})
+        db.add(row)
+    supported = capa.supported(sample.type_id)
+    row.status, row.error, row.result = ("queued" if supported else "unsupported"), None, {}
+    row.requested_at, row.requested_by = now_iso(), actor
+    row.started_at = row.finished_at = None
+    db.commit()
+    if supported:
+        background_tasks.add_task(capa.run_capa_job, sample.sha256)
+    return row
+
+
+def _capa_state(row: SampleCapa | None, sample: Sample) -> dict[str, Any]:
+    if not capa.configured() and (row is None or row.status != "done"):
+        return {"configured": False, "status": "none"}
+    if row is None:
+        return {"configured": True, "status": "none" if capa.supported(sample.type_id) else "unsupported"}
+    stale = capa.is_stale(row)
+    state = {
+        "configured": capa.configured(),
+        "status": "error" if stale else row.status,
+        "error": "The analysis was interrupted; run it again." if stale else row.error,
+        "requestedAt": row.requested_at,
+        "requestedBy": row.requested_by,
+        "startedAt": row.started_at,
+        "finishedAt": row.finished_at,
+    }
+    if row.status == "done":
+        state.update(row.result)
+    return state
+
+
 def _save_doc(db: OrmSession, row: Incident, doc: dict) -> None:
     doc["updatedAt"] = now_iso()
     row.doc = doc
@@ -219,6 +262,8 @@ async def upload_sample(
     )
     if db.get(SampleCode, sha256) is None:
         _queue_code(db, background_tasks, sha256, caller.actor)
+    if db.get(SampleCapa, sha256) is None:
+        _queue_capa(db, background_tasks, row, caller.actor)
     return {"sample": ref, "iocs": len(row.analysis.get("iocs", [])), "strings": row.analysis.get("stringsTotal", 0)}
 
 
@@ -240,6 +285,7 @@ def reanalyse_sample(
     _audit(db, caller, "sample.reanalyse", f"Re-analysed sample {sha256[:12]}… ({row.type_label})", None)
     db.commit()
     _queue_code(db, background_tasks, sha256, caller.actor)
+    _queue_capa(db, background_tasks, row, caller.actor)
     incidents = [{"id": inc.id, "name": (inc.doc or {}).get("name", "")} for inc in _incidents_referencing(db, sha256)]
     return {**_summary(row), "analysis": row.analysis, "incidents": incidents}
 
@@ -270,6 +316,36 @@ def start_sample_code(
     _audit(db, caller, "sample.disassemble", f"Requested the disassembly of sample {sha256[:12]}…", None)
     db.commit()
     return _code_state(row)
+
+
+@router.get("/samples/{sha256}/capabilities")
+def get_sample_capabilities(
+    sha256: str,
+    _caller: Principal = Depends(principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """capa's state and, when done, the capabilities with their ATT&CK / MBC mappings and addresses."""
+    sample = _sample_or_404(db, sha256)
+    return _capa_state(db.get(SampleCapa, sha256), sample)
+
+
+@router.post("/samples/{sha256}/capabilities", status_code=status.HTTP_202_ACCEPTED)
+def start_sample_capabilities(
+    sha256: str,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+) -> dict:
+    """Start (or restart) capa on the worker; poll GET …/capabilities for the result."""
+    sample = _sample_or_404(db, sha256)
+    if not capa.configured():
+        raise HTTPException(status_code=503, detail="The capa worker is not configured (CAPA_URL).")
+    if not capa.supported(sample.type_id):
+        raise HTTPException(status_code=422, detail="capa analyses x86 and x64 PE and ELF files only.")
+    row = _queue_capa(db, background_tasks, sample, caller.actor)
+    _audit(db, caller, "sample.capabilities", f"Requested the capa analysis of sample {sha256[:12]}…", None)
+    db.commit()
+    return _capa_state(row, sample)
 
 
 @router.get("/samples/{sha256}/code/functions/{addr}")
@@ -414,6 +490,9 @@ def remove_sample(
         code = db.get(SampleCode, sha256)
         if code is not None:
             db.delete(code)
+        capabilities = db.get(SampleCapa, sha256)
+        if capabilities is not None:
+            db.delete(capabilities)
         delete_annotations(db, sha256)
     _audit(db, caller, "sample.delete", f"Removed sample {sha256[:12]}… from the incident", incident)
     db.commit()

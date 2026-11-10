@@ -209,6 +209,15 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   } else {
     await expect(page.getByText('The analyzer worker is not configured.')).toBeVisible()
   }
+  // Capabilities view: real capa in CI (capa container), "not configured" elsewhere.
+  // The smoke sample is too small to match any capa rule.
+  await page.getByRole('tab', { name: /^Capabilities/ }).click()
+  if (process.env.E2E_CAPA_URL) {
+    await expect(page.getByText('capa found no capabilities in this sample.')).toBeVisible({ timeout: 120_000 })
+    await expect(page.getByText('capa 10.0.0')).toBeVisible()
+  } else {
+    await expect(page.getByText('The capa worker is not configured.')).toBeVisible()
+  }
 })
 
 test('the API is reachable through the same origin', async ({ request }) => {

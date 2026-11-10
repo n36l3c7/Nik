@@ -153,10 +153,56 @@ export function iocKey(ioc) {
 }
 
 /**
+ * The function of the disassembly that contains `addr`: the one starting at
+ * it, else the closest one before it whose extent (`size`) covers it.
+ * @param {Array<{addr, size}>} sorted functions sorted by address
+ * @returns {object|null}
+ */
+export function functionAt(sorted, addr) {
+  let lo = 0
+  let hi = sorted.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (sorted[mid].addr <= addr) lo = mid + 1
+    else hi = mid - 1
+  }
+  const fn = sorted[hi]
+  return fn && (fn.addr === addr || addr < fn.addr + (fn.size ?? 0)) ? fn : null
+}
+
+/**
+ * capa's capabilities per function of the disassembly. capa and rizin split
+ * a binary into functions differently, so each address capa reports is
+ * credited to the rizin function containing it; the rest stay unplaced.
+ * @param {Array<object>} functions worker functions (`addr`, `size`, `kind`)
+ * @param {Array<object>} capabilities capa capabilities (`name`, `addresses`)
+ * @returns {{ byFunction: Map<number, string[]>, placed: Map<string, number[]> }}
+ *   function address → capability names; capability name → function addresses
+ */
+export function placeCapabilities(functions = [], capabilities = []) {
+  const sorted = functions.filter((fn) => fn.kind !== 'import').sort((a, b) => a.addr - b.addr)
+  const byFunction = new Map()
+  const placed = new Map()
+  for (const capability of capabilities) {
+    const addrs = new Set()
+    for (const address of capability.addresses ?? []) {
+      const fn = functionAt(sorted, address)
+      if (fn) addrs.add(fn.addr)
+    }
+    placed.set(capability.name, [...addrs])
+    for (const addr of addrs) {
+      if (!byFunction.has(addr)) byFunction.set(addr, [])
+      byFunction.get(addr).push(capability.name)
+    }
+  }
+  return { byFunction, placed }
+}
+
+/**
  * The unrecognised functions most worth reading first, with the reasons:
- * direct calls to suspicious APIs, indicators of compromise used, suspicious
- * APIs reached through callees, complexity.
- * @param {Array<object>} functions analyzeFunctions() output with `origin`
+ * direct calls to suspicious APIs, indicators of compromise used, capa
+ * capabilities, suspicious APIs reached through callees, complexity.
+ * @param {Array<object>} functions analyzeFunctions() output with `origin` (and `capabilities`)
  * @param {{ byFunction: Map }} links linkStrings() output
  * @returns {Array<{ fn, score, reasons: string[] }>}
  */
@@ -181,6 +227,12 @@ export function startHere(functions = [], links = { byFunction: new Map() }, lim
       score += 3 + Math.min(iocs.length, 3)
       const shown = [...new Set(iocs.map((ioc) => ioc.value))].slice(0, 2).join(', ')
       reasons.push(`uses ${iocs.length === 1 ? 'an indicator' : `${iocs.length} indicators`}: ${shown}`)
+    }
+    const capabilities = fn.capabilities ?? []
+    if (capabilities.length > 0) {
+      score += 2 + Math.min(capabilities.length, 3)
+      const shown = capabilities.slice(0, 2).join(', ')
+      reasons.push(`capa: ${shown}${capabilities.length > 2 ? ` +${capabilities.length - 2}` : ''}`)
     }
     if (fn.cc >= 10) {
       score += 1

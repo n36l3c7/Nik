@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-11-10
+
+### Added
+
+- **Capabilities** view for malware samples: what the code can do according
+  to [Mandiant capa](https://github.com/mandiant/capa) (send data on a
+  socket, create a process, encrypt with RC4, resolve APIs at runtime…),
+  grouped by namespace and mapped to MITRE ATT&CK and the Malware Behavior
+  Catalog, with links to the Code view functions where each capability was
+  found.
+- **capa worker** (`capa/`): capa 10.0.0 with its rules and library
+  signatures pinned and checksum-verified, in its own container with the
+  same isolation as the rizin worker (read-only sample store and
+  filesystem, internal network only, no capabilities, memory / CPU / time
+  limits). It runs after upload and Re-analyse, for x86 / x64 PE and ELF
+  files, one sample at a time; other file types are reported as
+  unsupported.
+- The Code view shows the capabilities of each function, and **Start here**
+  ranks unrecognised functions with capabilities higher. Capabilities do not
+  change a sample's severity.
+- Configuration: `CAPA_URL`, `CAPA_TOKEN`, `CAPA_TIMEOUT` (backend),
+  `CAPA_TOKEN`, `CAPA_TIMEOUT`, `CAPA_MEMORY`, `CAPA_CPUS` (Compose).
+- REST API: `GET/POST /api/samples/{sha256}/capabilities`. Alembic
+  migration `0009_sample_capa`.
+
 ## [2.9.0] - 2026-11-10
 
 ### Added
@@ -381,7 +406,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/n36l3c7/Nik/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/n36l3c7/Nik/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/n36l3c7/Nik/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/n36l3c7/Nik/compare/v2.7.0...v2.8.0

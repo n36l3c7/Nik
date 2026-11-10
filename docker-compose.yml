@@ -45,6 +45,10 @@ services:
       ANALYZER_URL: http://analyzer:8700
       ANALYZER_TOKEN: ${ANALYZER_TOKEN:-please-change-this-analyzer-token}
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
+      # capa worker (capabilities, ATT&CK / MBC), same internal network.
+      CAPA_URL: http://capa:8710
+      CAPA_TOKEN: ${CAPA_TOKEN:-please-change-this-capa-token}
+      CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
     volumes:
       - sample-store:/app/samples
     networks: [default, analysis]
@@ -75,6 +79,26 @@ services:
     cpus: ${ANALYZER_CPUS:-2}
     restart: unless-stopped
 
+  # Runs Mandiant capa on samples for the Capabilities view, one at a time
+  # (CPU-bound: minutes on large binaries). Same isolation as the analyzer:
+  # read-only sample store, internal network only, no published port,
+  # read-only filesystem, no capabilities, memory / CPU / time limits.
+  capa:
+    build: ./capa
+    environment:
+      CAPA_TOKEN: ${CAPA_TOKEN:-please-change-this-capa-token}
+      CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
+    volumes:
+      - sample-store:/samples:ro
+    networks: [analysis]
+    read_only: true
+    tmpfs: [/tmp, "/home/capa:uid=1000,gid=1000"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${CAPA_MEMORY:-4g}
+    cpus: ${CAPA_CPUS:-2}
+    restart: unless-stopped
+
   web:
     build:
       context: .
@@ -100,6 +124,6 @@ volumes:
 
 networks:
   default:
-  # Backend ↔ analyzer only; `internal` gives the analyzer no route outside.
+  # Backend ↔ analysis workers only; `internal` gives them no route outside.
   analysis:
     internal: true

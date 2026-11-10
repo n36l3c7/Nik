@@ -45,6 +45,8 @@ export default defineConfig({
         // Set by CI when the analyzer container runs (see .github/workflows/ci.yml).
         ANALYZER_URL: process.env.E2E_ANALYZER_URL ?? '',
         ANALYZER_TOKEN: process.env.E2E_ANALYZER_TOKEN ?? '',
+        CAPA_URL: process.env.E2E_CAPA_URL ?? '',
+        CAPA_TOKEN: process.env.E2E_CAPA_TOKEN ?? '',
       },
     },
     {

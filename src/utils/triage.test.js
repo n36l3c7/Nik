@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyFunction, iocKey, linkStrings, nameOf, startHere, stringRanges } from './triage.js'
+import {
+  classifyFunction,
+  functionAt,
+  iocKey,
+  linkStrings,
+  nameOf,
+  placeCapabilities,
+  startHere,
+  stringRanges,
+} from './triage.js'
 
 test('functions are classified by signature, Rust crate, symbol, runtime name or shape', () => {
   const inventory = new Set(['hyper', 'tokio'])
@@ -104,4 +113,40 @@ test('start here ranks unrecognised functions by suspicious APIs, indicators and
 test('the analyst name wins over the rizin name', () => {
   assert.equal(nameOf({ addr: 1, name: 'fcn.00401000' }, { 1: { name: 'inject_payload' } }), 'inject_payload')
   assert.equal(nameOf({ addr: 1, name: 'sym.imp.KERNEL32.dll_Sleep' }, {}), 'Sleep')
+})
+
+test('capa addresses are credited to the rizin function containing them', () => {
+  const functions = [
+    { addr: 0x1000, size: 0x40, kind: 'function' },
+    { addr: 0x1100, size: 0x10, kind: 'function' },
+    { addr: 0x9000, size: 6, kind: 'import' },
+  ]
+  const sorted = functions.slice(0, 2)
+  assert.equal(functionAt(sorted, 0x1000).addr, 0x1000)
+  assert.equal(functionAt(sorted, 0x103f).addr, 0x1000)
+  assert.equal(functionAt(sorted, 0x1040), null) // in the gap between functions
+  assert.equal(functionAt(sorted, 0x0fff), null)
+
+  const { byFunction, placed } = placeCapabilities(functions, [
+    { name: 'send data', addresses: [0x1004, 0x1008, 0x1104] },
+    { name: 'create process', addresses: [0x1010, 0x5000] },
+    { name: 'compiled with rust', addresses: [] },
+  ])
+  assert.deepEqual(byFunction.get(0x1000), ['send data', 'create process'])
+  assert.deepEqual(byFunction.get(0x1100), ['send data'])
+  assert.deepEqual(placed.get('send data'), [0x1000, 0x1100])
+  assert.deepEqual(placed.get('create process'), [0x1000]) // 0x5000 is in no function
+  assert.deepEqual(placed.get('compiled with rust'), [])
+})
+
+test('capa capabilities raise an unrecognised function in start here', () => {
+  const plain = { addr: 1, origin: 'unknown', kind: 'function', rules: [], cc: 2 }
+  const capable = { ...plain, addr: 2, capabilities: ['send data on socket', 'resolve DNS', 'create mutex'] }
+  const library = { ...capable, addr: 3, origin: 'library' }
+  const ranked = startHere([plain, capable, library])
+  assert.deepEqual(
+    ranked.map((r) => r.fn.addr),
+    [2],
+  )
+  assert.equal(ranked[0].reasons[0], 'capa: send data on socket, resolve DNS +1')
 })
