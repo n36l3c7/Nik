@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Start on boot and nightly backups** with systemd:
+  `deploy/install-systemd.sh` installs `nik.service` (`compose up -d` at
+  boot, `down` at shutdown) and `nik-backup.timer`, which runs
+  `deploy/backup.sh` every night. Each backup holds a `pg_dump` of the
+  database, the sample store, the `.env` file and their SHA-256 sums, in a
+  root-only directory; old backups are deleted after `--keep-days` (14 by
+  default). README § 2.1 documents the restore.
+
 ## [2.11.2] - 2026-11-10
 
 ### Fixed

@@ -1,0 +1,11 @@
+# Nik: run the backup every night; a run missed while the server was off happens at the next boot.
+[Unit]
+Description=Nik nightly backup
+
+[Timer]
+OnCalendar=*-*-* @BACKUP_TIME@
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

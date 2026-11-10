@@ -1,0 +1,19 @@
+# Nik: start the Compose stack at boot, stop it at shutdown.
+# Installed by deploy/install-systemd.sh, which fills in @NIK_DIR@ and @COMPOSE@.
+[Unit]
+Description=Nik forensic analysis platform (Compose stack)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@NIK_DIR@
+ExecStart=@COMPOSE@ up -d
+ExecStop=@COMPOSE@ down
+# The first start after an update may build images.
+TimeoutStartSec=1800
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -360,25 +360,67 @@ Notes for Podman on RHEL:
 
 - **Rootless** works out of the box — only host ports below 1024 require
   rootful Podman (or lowering `net.ipv4.ip_unprivileged_port_start`).
-- **Start on boot:** generate a systemd unit with
-  `podman generate systemd --files --name …`, or use a **Quadlet** unit under
-  `/etc/containers/systemd/`.
+- **Start on boot:** `restart: unless-stopped` does not bring the stack back
+  after a reboot with `podman-compose`. Install the systemd units (next
+  paragraph): `nik.service` runs `podman compose up -d` at boot.
 - **SELinux:** named volumes (as used here) are relabeled automatically. If you
   switch to a bind mount, add `:Z` to that mount.
 
-**Backups & updates.** Data lives in the `db-data` PostgreSQL volume and
-survives `up`/`down`/rebuilds. For an application-level backup file (works
-across database engines), use the in-app **Full backup**
-([§6](#6-full-platform-backup)):
+**Start on boot and nightly backups (systemd).** From the repository root,
+as root:
 
 ```bash
-# Backup / restore the database
-docker compose exec db pg_dump -U nik nik > nik-backup.sql
-cat nik-backup.sql | docker compose exec -T db psql -U nik nik
+sudo deploy/install-systemd.sh
+```
 
-# Update to a new version (rebuild images, recreate containers, keep data)
+It installs and enables three units, with the repository path and the compose
+command (`podman compose`, or `docker compose` where Podman is absent) filled
+in:
+
+- `nik.service` — `compose up -d` at boot, `compose down` at shutdown;
+- `nik-backup.timer` + `nik-backup.service` — `deploy/backup.sh` every night
+  at 02:30 (a run missed while the server was off happens at the next boot).
+
+Options: `--backup-dir /srv/nik-backups` (default `/var/backups/nik`),
+`--keep-days 30` (default 14), `--backup-time 03:15`, `--no-backup`,
+`--uninstall`. Check with `systemctl status nik.service nik-backup.timer`
+and `journalctl -u nik-backup`; run a backup now with
+`systemctl start nik-backup.service`.
+
+**Backups & restore.** Each backup is a directory
+`nik-YYYYMMDD-HHMMSS/`, readable by root only, with:
+
+| File | Content |
+|---|---|
+| `db.dump` | PostgreSQL dump (`pg_dump -Fc`): incidents, users, settings, audit log, sample analyses |
+| `samples.tar` | the sample store: **live malware**, keep the backups private |
+| `env` | the `.env` file (secrets, database password) |
+| `SHA256SUMS` | checksums: `sha256sum -c SHA256SUMS` before restoring |
+
+`deploy/backup.sh` also runs by hand (`ENGINE`, `BACKUP_DIR`, `KEEP_DAYS`
+in the environment). It reaches the `db` and `api` containers with
+`podman exec` / `docker exec`, found by their Compose labels, never through
+`compose exec`: `podman-compose` prints diagnostics on stdout, which would
+corrupt the dump. To restore on a running stack (`B` = the backup
+directory; container names as in `podman ps`):
+
+```bash
+cd "$B" && sha256sum -c SHA256SUMS
+podman exec -i nik_db_1 pg_restore -U nik -d nik --clean --if-exists < "$B/db.dump"
+podman exec -i nik_api_1 tar -C /app/samples -xf - < "$B/samples.tar"
+podman restart nik_api_1    # also gives the restored samples their permissions
+```
+
+On a new server, put `env` back as `.env` before the first `compose up`, so
+the database password matches the dump. The in-app **Full backup**
+([§6](#6-full-platform-backup)) remains the way to move data across database
+engines; it does not include the sample files.
+
+**Updates:**
+
+```bash
 git pull
-docker compose up -d --build
+podman compose up -d --build    # rebuild images, recreate containers, keep data
 ```
 
 ### 2.2 Manual deployment on RHEL

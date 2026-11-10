@@ -141,6 +141,15 @@
         its registry (<code>docker.io/…</code>), so Podman on RHEL does not try <code>registry.redhat.io</code> first.
       </p>
 
+      <h3 id="boot-backup">Start on boot and nightly backups</h3>
+      <p>
+        On a server, install the systemd units as root from the repository root:
+        <code>sudo deploy/install-systemd.sh</code>. <code>nik.service</code> starts the stack at boot and
+        <code>nik-backup.timer</code> runs <code>deploy/backup.sh</code> every night: a <code>pg_dump</code> of the
+        database, the sample store (live malware: keep backups private), the <code>.env</code> file and their SHA-256
+        sums, kept 14 days by default. The README (§ 2.1) has the options and the restore steps.
+      </p>
+
       <h3 id="local">Local development</h3>
       <p>
         <strong>Prerequisites:</strong> Node.js 20+ and Python 3.11–3.13. No database server is needed: the backend
