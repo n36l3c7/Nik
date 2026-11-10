@@ -1,7 +1,7 @@
 # Nik backend dependencies.
 # Pinned to compatible major versions; works on Python 3.11-3.13.
 
-fastapi>=0.162.0,<1.0
+fastapi>=0.162.2,<1.0
 uvicorn[standard]>=0.54.0,<1.0
 gunicorn>=26.2.0
 SQLAlchemy>=2.1.8,<2.2
@@ -37,8 +37,8 @@ weasyprint>=70.0,<71
 # lookalike checks from the Public Suffix List (a bundled copy, no download).
 dkimpy>=1.1.8,<2.0
 pyspf>=2.0.14,<3.0
-dnspython>=2.9.0,<3.0
-publicsuffixlist>=1.1.0
+dnspython>=2.9.2,<3.0
+publicsuffixlist>=1.1.2.20261107
 # HTML body sanitising (Rust ammonia bindings): scripts, handlers and forms
 # removed before the body is shown.
 nh3>=0.3.7,<0.4
@@ -49,8 +49,8 @@ oletools>=0.60.2,<0.61
 # QR codes in images (quishing): zxing-cpp wheels need no system package;
 # Pillow decodes the image (already a WeasyPrint dependency).
 zxing-cpp>=3.1.1,<4.0
-pillow>=12.0
+pillow>=13.0.0
 # Threat-intelligence API keys are stored encrypted (Fernet, key derived
 # from SECRET_KEY with HKDF). Already pulled in by oletools; listed because
 # Nik imports it directly.
-cryptography>=46.0.0
+cryptography>=46.0.7
