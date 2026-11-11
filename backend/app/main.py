@@ -19,6 +19,8 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
 
+from .artifacts import backfill as backfill_artifacts
+
 # Import models so their tables are registered on the shared metadata before
 # create_all runs. (The routers already import the models, but importing here
 # makes the dependency explicit and order-independent.)
@@ -32,6 +34,7 @@ from .iocs import backfill as backfill_iocs
 from .malware.samples import repair_store_permissions
 from .routers import (
     annotations,
+    artifacts,
     audit,
     auth,
     backup,
@@ -87,6 +90,10 @@ TAGS_METADATA = [
         "name": "samples",
         "description": "Malware samples: stored on the server, analysed statically, downloaded as a protected zip.",
     },
+    {
+        "name": "artifacts",
+        "description": "Files, e-mails and captures analysed on their own, then linked to incidents.",
+    },
     {"name": "webhooks", "description": "Outbound event subscriptions (admin session or admin key)."},
     {"name": "settings", "description": "Shared detection rules and business hours (read via key)."},
     {
@@ -102,7 +109,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.18.3",
+    version="2.19.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -133,6 +140,8 @@ def on_startup() -> None:
     repair_store_permissions()
     # Incidents saved before 2.12.0 have no indicator index yet.
     backfill_iocs(SessionLocal)
+    # Samples, e-mails and captures stored before 2.19.0 have no artifact entry yet.
+    backfill_artifacts(SessionLocal)
     # Automatic threat-intelligence lookups (one process at a time, see worker.py).
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
@@ -170,6 +179,7 @@ app.include_router(samples.router, prefix="/api")
 app.include_router(mails.router, prefix="/api")
 app.include_router(previews.router, prefix="/api")
 app.include_router(network.router, prefix="/api")
+app.include_router(artifacts.router, prefix="/api")
 app.include_router(enrichment.router, prefix="/api")
 app.include_router(annotations.router, prefix="/api")
 app.include_router(yara_rules.router, prefix="/api")

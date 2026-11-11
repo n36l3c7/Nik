@@ -39,6 +39,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import aliased
 
+from . import artifacts
 from .core.models import Incident, IocEntry, Mail, NetworkCapture, Sample
 from .parsing.malware import _FALSE_POSITIVE_DOMAINS, _IOC_PATTERNS
 
@@ -351,6 +352,12 @@ def reindex_incident(db: OrmSession, row: Incident) -> int:
         if capture_ids
         else {}
     )
+    names = {
+        r["sha256"]: str(r.get("fileName") or "")
+        for r in [*refs, *mail_refs]
+        if isinstance(r, dict) and r.get("sha256")
+    }
+    artifacts.sync_links(db, row, samples, mails, captures, names)
     items = extract(doc, samples, mails, captures)
     db.execute(delete(IocEntry).where(IocEntry.incident_id == row.id))
     db.add_all(

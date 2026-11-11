@@ -119,10 +119,14 @@ def _refs(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 def save_reference(db: OrmSession, row: NetworkCapture, remove: bool = False) -> None:
     """Add, refresh or remove the capture's reference in its incident, then reindex the indicators."""
+    from .. import artifacts
     from ..iocs import reindex_incident
     from ..routers.incidents import _sync_columns
 
-    incident = db.get(Incident, row.incident_id)
+    db.flush()
+    if not remove:
+        artifacts.register_capture(db, row)
+    incident = db.get(Incident, row.incident_id) if row.incident_id else None
     if incident is None:
         return
     doc = dict(incident.doc or {})
@@ -253,7 +257,22 @@ def remove_capture(db: OrmSession, row: NetworkCapture, update_incident: bool = 
             previews._browser("DELETE", f"/sessions/{row.id}?owner={quote((row.meta or {}).get('owner') or '')}")
         except previews.WorkerError:
             logger.info("Browser session %s was already closed", row.id)
+    from .. import artifacts
+
     if update_incident:
         save_reference(db, row, remove=True)
     store.remove(row.id)
+    artifacts.forget(db, "pcap", row.id)
     db.delete(row)
+
+
+def attach(db: OrmSession, row: NetworkCapture, incident: Incident) -> None:
+    """Put the capture in the incident (a capture belongs to one incident at most)."""
+    row.incident_id = incident.id
+    save_reference(db, row)
+
+
+def detach(db: OrmSession, row: NetworkCapture) -> None:
+    """Take the capture out of its incident; it stays as an artifact."""
+    save_reference(db, row, remove=True)
+    row.incident_id = None

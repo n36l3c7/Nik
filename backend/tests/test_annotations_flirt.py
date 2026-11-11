@@ -50,6 +50,8 @@ def test_annotations_are_shared_audited_and_removed_with_the_sample(admin: TestC
     assert admin.delete(f"/api/incidents/a1/samples/{sha}", headers=key).status_code == 204
     assert len(admin.get(url, headers=key).json()["annotations"]) == 1  # still held by a2
     assert admin.delete(f"/api/incidents/a2/samples/{sha}", headers=key).status_code == 204
+    assert len(admin.get(url, headers=key).json()["annotations"]) == 1  # the sample stays as an artifact
+    assert admin.delete(f"/api/artifacts/file-{sha}", headers=key).status_code == 204
     assert admin.get(url, headers=key).status_code == 404
 
 

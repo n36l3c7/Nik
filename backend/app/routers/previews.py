@@ -19,6 +19,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import artifacts
 from ..core.db import get_db
 from ..core.models import Incident, NetworkCapture
 from ..core.security import Principal, now_iso, principal, writer_principal
@@ -152,6 +153,10 @@ async def open_session(
         )
         db.add(row)
         await run_in_threadpool(_sync_and_save, db, row)
+        if source.get("mail"):
+            artifacts.relate(
+                db, artifacts.artifact_id("mail", source["mail"]), artifacts.artifact_id("pcap", row.id), "session"
+            )
         state["captureId"] = row.id
     db.commit()
     return state

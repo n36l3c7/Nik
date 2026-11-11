@@ -18,6 +18,7 @@ from sqlalchemy import String, cast, delete, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import artifacts
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
@@ -203,17 +204,72 @@ def _save_doc(db: OrmSession, row: Incident, doc: dict) -> None:
     reindex_incident(db, row)
 
 
+def attach_sample(
+    db: OrmSession, incident: Incident, row: Sample, file_name: str, actor: str, origin: str = ""
+) -> dict[str, Any]:
+    """Reference the sample from the incident (kept once); returns the reference."""
+    doc = dict(incident.doc or {})
+    refs = _refs(doc)
+    ref = next((item for item in refs if item.get("sha256") == row.sha256), None)
+    if ref is None:
+        ref = {
+            **_summary(row),
+            "fileName": file_name or row.sha256,
+            "importedAt": now_iso(),
+            "importedBy": actor,
+            **({"origin": origin} if origin else {}),
+        }
+        refs.append(ref)
+        _save_doc(db, incident, doc)
+    return ref
+
+
+def detach_sample(db: OrmSession, incident: Incident, sha256: str) -> bool:
+    """Drop the incident's reference; False when it had none. The sample stays."""
+    doc = dict(incident.doc or {})
+    refs = _refs(doc)
+    kept = [ref for ref in refs if ref.get("sha256") != sha256]
+    if len(kept) == len(refs):
+        return False
+    doc["data"]["malware"]["samples"] = kept
+    _save_doc(db, incident, doc)
+    return True
+
+
+def delete_sample_data(db: OrmSession, row: Sample) -> None:
+    """Delete the sample everywhere: every incident's reference, the file, the analyses."""
+    sha256 = row.sha256
+    for incident in _incidents_referencing(db, sha256):
+        detach_sample(db, incident, sha256)
+    delete_sample(sha256)
+    code = db.get(SampleCode, sha256)
+    if code is not None:
+        db.delete(code)
+    db.execute(delete(SampleFunction).where(SampleFunction.sha256 == sha256))
+    capabilities = db.get(SampleCapa, sha256)
+    if capabilities is not None:
+        db.delete(capabilities)
+    delete_annotations(db, sha256)
+    artifacts.forget(db, "file", sha256)
+    db.delete(row)
+
+
 def store_sample(
     db: OrmSession,
-    incident: Incident,
+    incident: Incident | None,
     data: bytes,
     file_name: str,
     caller: Principal,
     background_tasks: BackgroundTasks | None,
     origin: str = "",
-) -> tuple[Sample, dict[str, Any]]:
-    """Analyse and store a file as a sample of the incident (upload, or a mail
-    attachment sent to Malware Analysis); returns the row and the reference."""
+    parent: tuple[str, str] | None = None,
+) -> tuple[Sample, dict[str, Any] | None]:
+    """Analyse and store a file as a sample: of the incident, or on its own
+    when ``incident`` is None. Returns the row and the incident's reference.
+
+    ``parent`` is ``(artifact id, relation)`` when the file was taken out of
+    another artifact (a mail attachment, an object of a capture).
+    """
     if not data:
         raise HTTPException(status_code=400, detail="The file is empty.")
     limit = settings.SAMPLE_MAX_MB * 1024 * 1024
@@ -240,23 +296,15 @@ def store_sample(
             analysis=result,
         )
         db.add(row)
-
-    doc = dict(incident.doc or {})
-    refs = _refs(doc)
     file_name = file_name or sha256
-    existing = next((ref for ref in refs if ref.get("sha256") == sha256), None)
-    if existing is None:
-        ref = {
-            **_summary(row),
-            "fileName": file_name,
-            "importedAt": now_iso(),
-            "importedBy": caller.actor,
-            **({"origin": origin} if origin else {}),
-        }
-        refs.append(ref)
-    else:
-        ref = existing
-    _save_doc(db, incident, doc)
+    db.flush()
+    artifact = artifacts.register_file(db, row, file_name)
+    if parent is not None:
+        artifacts.relate(db, parent[0], artifact.id, parent[1])
+
+    ref = None
+    if incident is not None:
+        ref = attach_sample(db, incident, row, file_name, caller.actor, origin)
     _audit(
         db,
         caller,
@@ -265,9 +313,13 @@ def store_sample(
         incident,
     )
     db.commit()
-    emit(
-        db, background_tasks, "upload.completed", {"incidentId": incident.id, "target": f"malware/{sha256}", "rows": 1}
-    )
+    if incident is not None:
+        emit(
+            db,
+            background_tasks,
+            "upload.completed",
+            {"incidentId": incident.id, "target": f"malware/{sha256}", "rows": 1},
+        )
     if db.get(SampleCode, sha256) is None:
         _queue_code(db, background_tasks, sha256, caller.actor)
     if db.get(SampleCapa, sha256) is None:
@@ -314,6 +366,7 @@ def reanalyse_sample(
     row.type_label = result["type"]["label"]
     row.entropy = result["entropy"]
     flag_modified(row, "analysis")
+    artifacts.register_file(db, row)
     _audit(db, caller, "sample.reanalyse", f"Re-analysed sample {sha256[:12]}… ({row.type_label})", None)
     db.commit()
     _queue_code(db, background_tasks, sha256, caller.actor)
@@ -508,29 +561,12 @@ def remove_sample(
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response:
-    """Detach the sample from the incident; the file is deleted once no incident references it."""
+    """Detach the sample from the incident. The sample stays as an artifact
+    (`DELETE /api/artifacts/file-<sha256>` deletes it)."""
     incident = _incident_or_404(db, incident_id)
-    row = _sample_or_404(db, sha256)
-    doc = dict(incident.doc or {})
-    refs = _refs(doc)
-    kept = [ref for ref in refs if ref.get("sha256") != sha256]
-    if len(kept) == len(refs):
+    _sample_or_404(db, sha256)
+    if not detach_sample(db, incident, sha256):
         raise HTTPException(status_code=404, detail="The incident does not reference this sample")
-    doc["data"]["malware"]["samples"] = kept
-    _save_doc(db, incident, doc)
-    db.flush()
-    still_referenced = any(inc.id != incident_id for inc in _incidents_referencing(db, sha256))
-    if not still_referenced:
-        delete_sample(sha256)
-        db.delete(row)
-        code = db.get(SampleCode, sha256)
-        if code is not None:
-            db.delete(code)
-        db.execute(delete(SampleFunction).where(SampleFunction.sha256 == sha256))
-        capabilities = db.get(SampleCapa, sha256)
-        if capabilities is not None:
-            db.delete(capabilities)
-        delete_annotations(db, sha256)
     _audit(db, caller, "sample.delete", f"Removed sample {sha256[:12]}… from the incident", incident)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
