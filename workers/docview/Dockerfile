@@ -3,12 +3,15 @@
 # on the internal network only: a document cannot reach anything outside.
 FROM docker.io/library/python:3.12-slim
 
+# The Python packages are pinned in requirements.txt, where Dependabot and
+# pip-audit see them.
+COPY requirements.txt /tmp/requirements.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
        fonts-dejavu-core fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir "pypdfium2==5.15.2" "pillow==13.0.0" \
+    && pip install --no-cache-dir -r /tmp/requirements.txt \
     && useradd --create-home --uid 1000 viewer
 
 WORKDIR /opt/nik-docview

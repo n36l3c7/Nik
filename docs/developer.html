@@ -142,21 +142,48 @@ docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
         <code>pip install -r requirements-dev.txt</code>; Ruff settings for every Python component live in
         <code>ruff.toml</code> at the repository root. Formatting is enforced, not reviewed: run the formatters before
         committing. Prettier also checks <code>docs/</code>, the workflows and the Compose file; Markdown is excluded
-        (see <code>frontend/.prettierignore</code>). CI runs the linters, the format checks, both unit suites (the
-        backend one on SQLite, and on PostgreSQL 18 after <code>alembic upgrade head</code>), the build and then the
-        end-to-end test; a change is done only when all of them pass. The documentation site in <code>docs/</code> is
-        updated in the same change as the behaviour it describes.
+        (see <code>frontend/.prettierignore</code>). The documentation site in <code>docs/</code> is updated in the same
+        change as the behaviour it describes.
+      </p>
+      <p>
+        <strong>CI</strong> (<code>.github/workflows/ci.yml</code>) runs on every pull request, and a change is done
+        only when all of it passes:
+      </p>
+      <ul>
+        <li><strong>lint</strong>: Ruff on the backend and the workers, with nothing else to install;</li>
+        <li>
+          <strong>backend-tests</strong> and <strong>backend-postgres</strong>: the backend suite on SQLite, and on
+          PostgreSQL 18 after <code>alembic upgrade head</code>;
+        </li>
+        <li><strong>frontend-build</strong>: ESLint, Prettier, the unit tests and the build;</li>
+        <li>
+          <strong>stack</strong>: <code>.github/scripts/stack-smoke.sh</code> starts the database, the backend and the
+          web server from the Compose file, as an operator would, and checks what only the running stack shows (the
+          redirect to HTTPS, the security headers, the unprivileged backend, the refusal of the example secrets). Run it
+          locally the same way: it uses its own project name and ports;
+        </li>
+        <li>
+          <strong>e2e</strong>: builds the five worker images, runs each worker's tests inside its image, then the
+          end-to-end suite against them.
+        </li>
+      </ul>
+      <p>
+        Steps that download from the network go through <code>.github/scripts/retry.sh</code>, so a mirror that does not
+        answer for a moment does not fail the build. Actions are pinned to a commit, with the version in a comment that
+        Dependabot keeps in step.
       </p>
       <p>
         <strong>Dependency audits.</strong> The <code>Audit</code> workflow (<code>.github/workflows/audit.yml</code>)
-        runs <code>pip-audit</code> on the backend and the capa worker, <code>npm audit --audit-level=high</code> and
+        runs <code>pip-audit</code> on the backend and on the workers that decode hostile files (their packages are
+        pinned in <code>workers/*/requirements.txt</code>), <code>npm audit --audit-level=high</code> and
         <code>shellcheck</code> on every pull request and every Monday, so a new CVE in an unchanged dependency fails
-        the build without waiting for a code change. Locally: <code>pip-audit -r backend/requirements.txt</code> and
-        <code>npm audit</code>. <strong>Dependabot</strong> (<code>.github/dependabot.yml</code>) opens one grouped pull
-        request a month per ecosystem (npm, pip, Docker, Compose, Actions) with the minor and patch releases, and a pull
-        request as soon as a dependency gets a security fix; enable the latter in the repository's
-        <em>Settings → Code security</em>. Major releases are left out (except for Actions): they need migration work
-        and are planned as their own change.
+        the build without waiting for a code change. Every Monday it also builds each image from scratch and scans it
+        with Trivy: a critical vulnerability with a fix fails the job, the high ones are listed in its summary. Locally:
+        <code>pip-audit -r backend/requirements.txt</code> and <code>npm audit</code>.
+        <strong>Dependabot</strong> (<code>.github/dependabot.yml</code>) opens one grouped pull request a month per
+        ecosystem (npm, pip, Docker, Compose, Actions) with the minor and patch releases, and a pull request as soon as
+        a dependency gets a security fix; enable the latter in the repository's <em>Settings → Code security</em>. Major
+        releases are left out (except for Actions): they need migration work and are planned as their own change.
       </p>
       <p>
         <strong>Upgrading an existing database:</strong> run <code>alembic upgrade head</code> from

@@ -1,8 +1,9 @@
 name: Audit
 
-# Known vulnerabilities in the dependencies, and shell script lint.
-# Runs on every pull request and every Monday, so a new CVE in an unchanged
-# dependency shows up without waiting for a code change.
+# Known vulnerabilities in the dependencies and in the images, and shell script
+# lint. Dependencies and scripts are checked on every pull request; everything
+# runs every Monday, so a new CVE in an unchanged dependency or base image shows
+# up without waiting for a code change.
 on:
   push:
     branches: [main]
@@ -15,15 +16,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   dependencies:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "26"
           cache: npm
@@ -31,11 +36,16 @@ jobs:
       - run: pip install pip-audit
       - name: Python — backend
         run: pip-audit -r backend/requirements.txt
+      # The workers parse the hostile files: their packages are audited like the backend's.
+      - name: Python — isolated browser and document viewer workers
+        run: |
+          pip-audit -r workers/browser/requirements.txt
+          pip-audit -r workers/docview/requirements.txt
       - name: Python — capa worker (the version pinned in its Dockerfile)
         run: |
           echo "flare-capa==$(sed -n 's/^ARG CAPA_VERSION=//p' workers/capa/Dockerfile)" > "$RUNNER_TEMP/capa-requirements.txt"
           pip-audit -r "$RUNNER_TEMP/capa-requirements.txt"
-      # The analyzer worker uses the Python standard library only.
+      # The analyzer and packet capture workers use the Python standard library only.
       - name: npm (runtime and build tooling)
         working-directory: frontend
         run: npm audit --audit-level=high
@@ -43,8 +53,48 @@ jobs:
   shell:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: shellcheck
-        run: shellcheck deploy/*.sh frontend/nginx/*.sh backend/entrypoint.sh
+        run: shellcheck deploy/*.sh frontend/nginx/*.sh backend/entrypoint.sh .github/scripts/*.sh
+      - name: Scripts an operator runs are executable
+        run: |
+          for script in deploy/*.sh .github/scripts/*.sh; do
+            [ -x "$script" ] || { echo "::error file=$script::not executable (git update-index --chmod=+x $script)"; exit 1; }
+          done
       - name: Every image names its registry
         run: deploy/check-images.sh
+
+  # The images as they are built today, with today's base images and system
+  # packages (LibreOffice, Wireshark, Chromium: where the next vulnerability
+  # will be). Fails on a critical vulnerability that has a fix, and lists the
+  # high ones. Weekly and on demand: seven image builds are too slow for every
+  # pull request, and nothing in a pull request changes what a base image holds.
+  images:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: api, context: backend }
+          - { name: web, context: frontend }
+          - { name: analyzer, context: workers/analyzer }
+          - { name: capa, context: workers/capa }
+          - { name: docview, context: workers/docview }
+          - { name: browser, context: workers/browser }
+          - { name: pcap, context: workers/pcap }
+    env:
+      # The scanner is an image pinned to a version, not a third-party action.
+      TRIVY: docker.io/aquasec/trivy:0.76.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build ${{ matrix.name }} from scratch (current base image and packages)
+        run: .github/scripts/retry.sh 3 docker build --pull --no-cache -t "nik-${{ matrix.name }}" "${{ matrix.context }}"
+      - name: High and critical vulnerabilities (listed)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image --quiet --scanners vuln \
+            --severity HIGH,CRITICAL --ignore-unfixed --format table "nik-${{ matrix.name }}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Critical vulnerabilities with a fix (fail)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image --quiet --scanners vuln \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 "nik-${{ matrix.name }}"
