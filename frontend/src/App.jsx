@@ -30,6 +30,7 @@ import AddFileDialog from './components/incident/AddFileDialog.jsx'
 import ArtifactPage from './components/artifacts/ArtifactPage.jsx'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
+import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
 import BackupModal from './components/backup/BackupModal.jsx'
 import { kindForTab } from './domain/artifactRegistry.js'
 import { recognise } from './domain/pasted.js'
@@ -323,6 +324,9 @@ export default function App() {
     setSettingsOpen(true)
   }
 
+  // The list of keyboard shortcuts ("?" or the header button).
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+
   // Incident report dialog (preview, PDF/HTML download).
   const [reportOpen, setReportOpen] = useState(false)
 
@@ -531,6 +535,7 @@ export default function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Header
           onOpenSearch={() => setPaletteOpen(true)}
+          onOpenShortcuts={() => setShortcutsOpen(true)}
           onOpenReport={activeIncident && !artifactOpen ? () => setReportOpen(true) : null}
           artifactView={artifactOpen}
         />
@@ -657,6 +662,7 @@ export default function App() {
         }}
       />
 
+      <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <PastePrompt
         pasted={pasted}
         busy={pastedBusy}

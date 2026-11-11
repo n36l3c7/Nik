@@ -12,11 +12,15 @@ export function flagItems({ incident, flaggable, toggleFlag, addFlagComment, ask
     {
       label: flagged ? 'Remove the flag' : what ? `Flag the${noun}` : 'Flag as malicious',
       icon: Flag,
+      hint: 'F',
+      shortcut: 'flag',
       onSelect: () => toggleFlag(incident.id, flaggable),
     },
     {
       label: 'Add a comment…',
       icon: MessageSquarePlus,
+      hint: 'C',
+      shortcut: 'comment',
       onSelect: async () => {
         const comment = await askText({
           title: `Comment on the${noun || ' event'}`,

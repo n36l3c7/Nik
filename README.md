@@ -76,7 +76,8 @@ Every other variable and the in-app settings are in the
 2. Drop the evidence anywhere on the app; Nik proposes the tab. An e-mail, a
    suspicious file or a capture can also be analysed on its own (**New
    analysis**) and linked to an incident later.
-3. Read each tab, flag events (right-click), check the indicators.
+3. Read each tab, flag events (right-click, or `F` on the row under the
+   pointer), check the indicators.
 4. Write the report from the header and download it.
 
 The [user guide](https://n36l3c7.github.io/Nik/guide.html) walks through every

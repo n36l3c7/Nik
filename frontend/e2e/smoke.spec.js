@@ -707,6 +707,51 @@ test('an incident has a status and an assignee, set from the panel and filtered 
   await expect(row).not.toContainText('closed')
 })
 
+test('keyboard shortcuts: F flags the row under the pointer, C comments, ? lists them', async () => {
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
+  const flag = sample.getByLabel('Flagged')
+  const before = await flag.count()
+
+  // F toggles the flag of the row under the pointer, as its menu would.
+  await sample.hover()
+  await page.keyboard.press('f')
+  await expect(flag).toHaveCount(before ? 0 : 1)
+  await expect(page.getByText(before ? 'Flag removed: dropper.bin' : 'Flagged: dropper.bin')).toBeVisible()
+  await page.keyboard.press('f')
+  await expect(flag).toHaveCount(before)
+
+  // C asks for the comment.
+  await page.keyboard.press('c')
+  const comment = page.getByRole('dialog', { name: 'Comment on the sample' })
+  await expect(comment).toBeVisible()
+  // Typing in a field is typing: no shortcut runs.
+  await comment.getByRole('textbox').fill('fc?')
+  await expect(comment.getByRole('textbox')).toHaveValue('fc?')
+  await page.keyboard.press('Escape')
+  await expect(comment).toHaveCount(0)
+  await expect(flag).toHaveCount(before)
+
+  // The menu shows the keys; "?" and the header button list every shortcut.
+  await sample.click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: /flag/i }).first()).toContainText('F')
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('?')
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+  await expect(help).toContainText('Flag the row under the pointer')
+  await page.keyboard.press('Escape')
+  await expect(help).toHaveCount(0)
+  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+  await expect(help).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // Nothing to flag under the pointer: said, not guessed.
+  await page.getByRole('banner').hover()
+  await page.keyboard.press('f')
+  await expect(page.getByText('Nothing to flag under the pointer.')).toBeVisible()
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()
