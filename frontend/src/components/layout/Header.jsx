@@ -1,4 +1,4 @@
-import { FileText, LogOut, Search, Settings, UserCircle } from 'lucide-react'
+import { FileText, LogOut, Search, UserCircle } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
@@ -7,11 +7,17 @@ import { SeverityTag } from '../ui/index.js'
 
 /*
  * ============================================================================
- * HEADER — active incident, current user chip, sign out, settings
+ * HEADER — what the main area shows, search, current user chip, sign out
  * ============================================================================
- * @param {{ onOpenSettings: () => void, onOpenSearch: () => void, onOpenReport: (() => void) | null }} props
+ * Settings, audit log, users and backup are on the rail (Rail.jsx).
+ *
+ * @param {{
+ *   onOpenSearch: () => void,
+ *   onOpenReport: (() => void) | null,
+ *   artifactView?: boolean,   // the main area shows an artifact, not the active incident
+ * }} props
  */
-export default function Header({ onOpenSettings, onOpenSearch, onOpenReport }) {
+export default function Header({ onOpenSearch, onOpenReport, artifactView = false }) {
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
@@ -29,7 +35,12 @@ export default function Header({ onOpenSettings, onOpenSearch, onOpenReport }) {
     <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-canvas px-6 py-3">
       {/* Active incident (or an empty-state message) */}
       <div className="min-w-0">
-        {activeIncident ? (
+        {artifactView ? (
+          <>
+            <h1 className="truncate font-mono text-lg font-semibold leading-tight text-fg">artifact analysis</h1>
+            <p className="truncate text-xs text-fg-muted">on its own: link it to an incident from the page below</p>
+          </>
+        ) : activeIncident ? (
           <>
             <h1 className="flex items-center gap-2 truncate font-mono text-lg font-semibold leading-tight text-fg">
               {OsIcon && <OsIcon className={`h-4 w-4 shrink-0 ${os.accent}`} aria-label={os.label} />}
@@ -89,16 +100,6 @@ export default function Header({ onOpenSettings, onOpenSearch, onOpenReport }) {
 
         <button type="button" onClick={logout} aria-label="Sign out" title="Sign out" className={iconButton}>
           <LogOut className="h-4 w-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label="Open platform settings"
-          title="Settings (detection rules, business hours)"
-          className={iconButton}
-        >
-          <Settings className="h-4 w-4" />
         </button>
       </div>
     </header>

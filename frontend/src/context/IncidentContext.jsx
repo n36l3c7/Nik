@@ -343,7 +343,10 @@ export function IncidentProvider({ children }) {
 
   // Browser back/forward: follow the URL to the corresponding incident.
   useEffect(() => {
-    const onPopState = () => setActiveIncidentId(incidentIdFromUrl())
+    // An artifact's permalink (/artifact/<id>) keeps the active incident as it is.
+    const onPopState = () => {
+      if (!window.location.pathname.startsWith('/artifact/')) setActiveIncidentId(incidentIdFromUrl())
+    }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])

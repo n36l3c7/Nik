@@ -39,7 +39,9 @@
         <ol>
           <li><a href="#sign-in">Sign in</a></li>
           <li><a href="#incidents">Incidents</a></li>
+          <li><a href="#layout">The screen</a></li>
           <li><a href="#evidence">Add evidence</a></li>
+          <li><a href="#artifacts">Analyse without an incident</a></li>
           <li><a href="#tabs">The analysis tabs</a></li>
           <li><a href="#overview-tabs">Summary, Timeline, IOCs</a></li>
           <li><a href="#threat-tabs">Mail, Malware, Network</a></li>
@@ -66,10 +68,10 @@
       <h2 id="incidents">Incidents</h2>
       <p>
         An <strong>incident</strong> is one case: one machine or one user under investigation, and everything found
-        about it. The sidebar lists them, newest first; click one to open it.
+        about it. The incidents panel lists them, newest first; click one to open it.
       </p>
       <ol>
-        <li>Click <strong>New incident</strong> in the sidebar.</li>
+        <li>Click <strong>New incident</strong> at the top of the incidents panel.</li>
         <li>
           Fill in what you know: the <strong>ticket ID</strong> from your tracker, a <strong>short title</strong>, the
           <strong>host</strong> and the <strong>user</strong>. At least one is needed. Pick the
@@ -88,15 +90,25 @@
         <figcaption>A new incident: ticket, title, host and user.</figcaption>
       </figure>
 
+      <h2 id="layout">The screen</h2>
+      <p>
+        The narrow column of icons on the left edge is the <strong>rail</strong>. Its top icons choose what the side
+        panel lists: <strong>incidents</strong> or <strong>artifacts</strong> (the files, e-mails and captures analysed
+        so far). Click the active icon again to close the panel and give the whole width to the analysis; drag the
+        panel's edge to resize it. The rail also opens the search, and at the bottom the audit log, the users, the full
+        backup (admins) and the settings.
+      </p>
+
       <h2 id="evidence">Add evidence</h2>
-      <p>There are two ways to bring a file into an incident:</p>
+      <p>There are two ways to bring a file into Nik:</p>
       <ul>
         <li>
           <strong>Drop it anywhere</strong> on the app. Nik reads the file's name and first bytes and proposes the tab
           and the source: a Chrome <code>History</code> goes to Browser Forensics, a <code>.bash_history</code> to
           Command History, an <code>.eml</code> to Mail Analysis, an executable to Malware Analysis, a
-          <code>.pcapng</code> to Network Analysis. Check the proposal, change it if needed, and click
-          <strong>Import</strong>. You can also send the file to a new incident from the same dialog.
+          <code>.pcapng</code> to Network Analysis. Check the proposal, change it if needed, then choose where it goes:
+          the open incident, a new incident, or, for e-mails, suspicious files and captures, an
+          <strong>analysis on its own</strong> with no incident.
         </li>
         <li>
           Use the <strong>Data sources</strong> card of a tab, which also tells you where the file lives on the host
@@ -116,7 +128,46 @@
           height="1000"
           loading="lazy"
         />
-        <figcaption>A file dropped on the app: Nik proposes the tab and the format.</figcaption>
+        <figcaption>A file dropped on the app: Nik proposes the tab and asks where it goes.</figcaption>
+      </figure>
+
+      <h2 id="artifacts">Analyse without an incident</h2>
+      <p>
+        Not everything starts as a case. To check a reported e-mail, a suspicious file or a capture, click
+        <strong>New analysis</strong> in the artifacts panel (or drop the file anywhere and choose
+        <strong>Start analysis</strong>). The result is an <strong>artifact</strong>: it has the same analysis views as
+        in an incident and the whole team sees it in the artifacts panel, with who added it and its verdict. Host
+        evidence (browser and shell history, endpoint artifacts, event logs) always belongs to an incident.
+      </p>
+      <figure class="shot">
+        <img src="img/new-analysis.png" alt="The New analysis dialog" width="1600" height="1000" loading="lazy" />
+        <figcaption>New analysis: drop or choose a file; nothing is executed.</figcaption>
+      </figure>
+      <p>On the artifact's page you can:</p>
+      <ul>
+        <li>
+          <strong>Link to incident</strong>: the artifact appears in that incident's tab, indicators, timeline and
+          report. A file or an e-mail can be in several incidents, a capture in one. Removing it from an incident keeps
+          the artifact.
+        </li>
+        <li><strong>New incident from this</strong>: create the incident and link the artifact in one step.</li>
+        <li>
+          <strong>Tags</strong>: free labels (a campaign, a malware family, a customer) that the panel's filter and the
+          list show.
+        </li>
+        <li>
+          <strong>Related</strong>: where it comes from and what was taken out of it, for example the e-mail an
+          attachment was sent from, or the files extracted from a capture.
+        </li>
+        <li><strong>Delete</strong>: the file, its analyses and its reference in every incident.</li>
+      </ul>
+      <p>
+        A file that was already analysed is recognised before the upload: Nik shows who added it and in which incidents
+        it is, and opens the existing analysis.
+      </p>
+      <figure class="shot">
+        <img src="img/artifact.png" alt="An e-mail opened as an artifact" width="1600" height="1000" loading="lazy" />
+        <figcaption>An artifact: its incident, its tags and the same analysis as in the incident's tab.</figcaption>
       </figure>
 
       <h2 id="tabs">The analysis tabs</h2>
@@ -341,18 +392,20 @@
       <h2 id="share">Export, import and backup</h2>
       <ul>
         <li>
-          <strong>Export an incident</strong> from its row in the sidebar: a JSON file with everything the incident
-          holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back.
+          <strong>Export an incident</strong> from its row in the incidents panel: a JSON file with everything the
+          incident holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back.
         </li>
         <li>
-          <strong>Full backup</strong> (admins): the whole platform in one file (incidents, users, settings, audit log
-          and the sample store), restored from the same dialog.
+          <strong>Full backup</strong> (admins, on the rail): the whole platform in one file (incidents, users,
+          settings, audit log and the sample store), restored from the same dialog.
         </li>
-        <li><strong>Audit log</strong>: who did what, when, on which incident.</li>
+        <li><strong>Audit log</strong> (on the rail): who did what, when, on which incident.</li>
       </ul>
 
       <h2 id="settings">Settings</h2>
-      <p>The gear in the header opens the settings. Sections marked <em>admins</em> are shown to admins only.</p>
+      <p>
+        The gear at the bottom of the rail opens the settings. Sections marked <em>admins</em> are shown to admins only.
+      </p>
       <div class="table-wrap">
         <table>
           <thead>

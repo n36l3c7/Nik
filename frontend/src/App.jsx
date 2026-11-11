@@ -1,9 +1,22 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Download, FileText, LogOut, Plus, RefreshCw, Settings, ShieldCheck } from 'lucide-react'
+import {
+  AlertTriangle,
+  Download,
+  FileText,
+  LogOut,
+  Microscope,
+  Plus,
+  RefreshCw,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
+import { useArtifacts } from './context/ArtifactContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
+import { useToast } from './context/ToastContext.jsx'
 import { ANALYSIS_TABS, getTabById } from './config/tabs.js'
 import { AsciiSkull, Button, EmptyState, ErrorBoundary, MicroSkull, Modal } from './components/ui/index.js'
+import Rail from './components/layout/Rail.jsx'
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
@@ -14,6 +27,11 @@ import CommandPalette from './components/search/CommandPalette.jsx'
 import ReportDialog from './components/report/ReportDialog.jsx'
 import IncidentFields, { EMPTY_INCIDENT_FIELDS, canCreateIncident } from './components/incident/IncidentFields.jsx'
 import AddFileDialog from './components/incident/AddFileDialog.jsx'
+import ArtifactPage from './components/artifacts/ArtifactPage.jsx'
+import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
+import BackupModal from './components/backup/BackupModal.jsx'
+import { kindForTab } from './domain/artifactRegistry.js'
+import { sha256Hex } from './lib/hash.js'
 import { useNavigation } from './context/NavigationContext.jsx'
 import { detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
@@ -33,8 +51,9 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
  *   - users but not signed in → login screen
  *   - signed in            → the main app
  *
- * Layout: fixed sidebar (incident management) + right column with header,
- * analysis tab bar and a scrollable content area.
+ * Layout: the rail (icons), the side panel it opens (incidents or
+ * artifacts, collapsible) and the main column: header, then either the
+ * active incident (analysis tab bar + tab) or the artifact opened on its own.
  */
 
 // Sidebar width bounds. The maximum is a quarter of the viewport (computed at
@@ -42,6 +61,10 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_DEFAULT_WIDTH = 288
 const SIDEBAR_WIDTH_KEY = 'nik.sidebarWidth'
+// The side panel the rail last opened: 'incidents', 'artifacts' or '' (closed).
+const PANEL_KEY = 'nik.panel'
+// Above this size a file is not hashed in the browser to look it up before the upload.
+const LOOKUP_MAX_BYTES = 100 * 1024 * 1024
 
 /** Clamp a sidebar width to [MIN, 25% of the viewport]. */
 function clampSidebarWidth(width) {
@@ -120,7 +143,7 @@ function UnreachableScreen({ error, onRetry }) {
 }
 
 export default function App() {
-  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout } = useAuth()
+  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout, currentUser } = useAuth()
   const {
     activeIncident,
     activeSummary,
@@ -132,7 +155,15 @@ export default function App() {
     whenSaved,
     exportIncident,
     loading,
+    incidents,
+    selectIncident,
+    activeIncidentId,
+    retryActiveIncident: reloadActiveIncident,
   } = useIncidents()
+  const artifacts = useArtifacts()
+  const { showToast } = useToast()
+  // The main area shows an artifact on its own instead of the active incident.
+  const artifactOpen = Boolean(artifacts.currentId)
 
   const [activeTabId, setActiveTabId] = useState(ANALYSIS_TABS[0].id)
 
@@ -140,12 +171,63 @@ export default function App() {
   const [createOpen, setCreateOpen] = useState(false)
   const [newFields, setNewFields] = useState(EMPTY_INCIDENT_FIELDS)
 
+  // Side panel chosen on the rail (null = collapsed), remembered across sessions.
+  const [panel, setPanelState] = useState(() => {
+    const stored = localStorage.getItem(PANEL_KEY)
+    return stored === '' ? null : stored === 'artifacts' ? 'artifacts' : 'incidents'
+  })
+  const setPanel = useCallback((next) => {
+    setPanelState(next)
+    localStorage.setItem(PANEL_KEY, next ?? '')
+  }, [])
+  // An artifact opened from a permalink shows its panel.
+  useEffect(() => {
+    if (artifactOpen) setPanelState((open) => (open === null ? open : 'artifacts'))
+  }, [artifactOpen])
+
+  // Leaving an artifact without opening an incident: the URL follows.
+  useEffect(() => {
+    if (artifactOpen || !window.location.pathname.startsWith('/artifact/')) return
+    const path = activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'
+    window.history.replaceState({}, '', path)
+  }, [artifactOpen, activeIncidentId])
+
+  const [backupOpen, setBackupOpen] = useState(false)
+  const [analysisOpen, setAnalysisOpen] = useState(false)
+  // The artifact a new incident is being created from (linked once it is saved).
+  const [seedArtifact, setSeedArtifact] = useState(null)
+
   // Navigation requests from menus and dialogs (see NavigationContext).
   const navigation = useNavigation()
   const { importInto, clearSearch } = navigation
   useEffect(() => {
     if (navigation.focus) setActiveTabId(navigation.focus.tab)
   }, [navigation.focus])
+
+  /** Open an incident in the main area (leaving an artifact opened on its own). */
+  const { closeArtifact } = artifacts
+  const openIncident = useCallback(
+    (incidentId) => {
+      closeArtifact()
+      selectIncident(incidentId)
+    },
+    [closeArtifact, selectIncident],
+  )
+
+  /**
+   * A file to place (dropped anywhere, or chosen in "New analysis"): detect
+   * what it is and whether it was analysed before, then ask where it goes.
+   */
+  const { lookup } = artifacts
+  const placeFile = useCallback(
+    async (file, { preferAnalysis = false } = {}) => {
+      const route = detectFileRoute({ name: file.name, head: await readHead(file) })
+      const analysable = Boolean(kindForTab(route?.tab ?? 'malware'))
+      const known = analysable && file.size <= LOOKUP_MAX_BYTES ? await lookup(await sha256Hex(file)) : []
+      setDrop({ file, route, known, preferAnalysis })
+    },
+    [lookup],
+  )
 
   // A file dropped anywhere: the overlay while dragging, then the dialog.
   const [dragging, setDragging] = useState(false)
@@ -167,7 +249,7 @@ export default function App() {
     const onOver = (event) => {
       if (hasFiles(event)) event.preventDefault()
     }
-    const onDrop = async (event) => {
+    const onDrop = (event) => {
       if (!hasFiles(event)) return
       depth = 0
       setDragging(false)
@@ -175,8 +257,7 @@ export default function App() {
       if (event.defaultPrevented) return
       event.preventDefault()
       const file = event.dataTransfer.files?.[0]
-      if (!file) return
-      setDrop({ file, route: detectFileRoute({ name: file.name, head: await readHead(file) }) })
+      if (file) placeFile(file)
     }
     window.addEventListener('dragenter', onEnter)
     window.addEventListener('dragleave', onLeave)
@@ -188,7 +269,7 @@ export default function App() {
       window.removeEventListener('dragover', onOver)
       window.removeEventListener('drop', onDrop)
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, placeFile])
 
   // Unified settings panel: a single dialog with sections. `settingsSection`
   // lets the header/sidebar deep-link into Detection rules / Accounts / Audit.
@@ -258,20 +339,55 @@ export default function App() {
   if (!isAuthenticated) return <LoginScreen />
 
   const openCreateModal = () => {
+    setSeedArtifact(null)
     setNewFields(EMPTY_INCIDENT_FIELDS)
+    setCreateOpen(true)
+  }
+
+  /** "New incident from this" on an artifact: the usual modal, then the link. */
+  const openCreateFromArtifact = (artifact) => {
+    setSeedArtifact(artifact)
+    setNewFields({ ...EMPTY_INCIDENT_FIELDS, title: artifact.name.slice(0, 80) })
     setCreateOpen(true)
   }
 
   const handleCreateSubmit = (event) => {
     event.preventDefault()
     if (!canCreateIncident(newFields)) return
-    createIncident(newFields)
+    const incident = createIncident(newFields)
     setCreateOpen(false)
+    if (!seedArtifact) {
+      closeArtifact()
+      return
+    }
+    // The incident must exist on the server before the artifact is linked to it.
+    const artifact = seedArtifact
+    setSeedArtifact(null)
+    whenSaved(incident.id)
+      .then((saved) => (saved ? artifacts.link(artifact.id, incident.id) : Promise.reject(new Error('not saved'))))
+      .then(() => {
+        closeArtifact()
+        reloadActiveIncident()
+        showToast({ message: `${artifact.name} is in the new incident.` })
+      })
+      .catch((err) => showToast({ message: `The artifact was not linked: ${err.message}` }))
   }
 
   const handleDropConfirm = async ({ target, fields, tab, params }) => {
     const { file } = drop
     setDrop(null)
+    if (target === 'analysis') {
+      // On its own: upload it as an artifact and open its page.
+      try {
+        const artifact = await artifacts.startAnalysis(kindForTab(tab), file)
+        setPanel('artifacts')
+        artifacts.openArtifact(artifact.id)
+      } catch (err) {
+        showToast({ message: `${file.name}: ${err.message}` })
+      }
+      return
+    }
+    closeArtifact()
     if (target === 'new') {
       const incident = createIncident(fields)
       // Samples and .evtx files go to the server: the incident must exist there first.
@@ -283,13 +399,23 @@ export default function App() {
   // Palette actions (typed after ">").
   const paletteActions = [
     { id: 'new', label: 'New incident', icon: Plus, run: openCreateModal },
+    {
+      id: 'analysis',
+      label: 'New analysis (no incident)',
+      icon: Microscope,
+      keywords: 'artifact file mail upload',
+      run: () => setAnalysisOpen(true),
+    },
     ...(activeIncident
       ? ANALYSIS_TABS.map((tab) => ({
           id: `tab:${tab.id}`,
           label: `Go to ${tab.label}`,
           icon: tab.icon,
           hint: 'tab',
-          run: () => setActiveTabId(tab.id),
+          run: () => {
+            closeArtifact()
+            setActiveTabId(tab.id)
+          },
         }))
       : []),
     ...(activeIncident
@@ -330,22 +456,42 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        width={sidebarWidth}
-        onCreateIncident={openCreateModal}
-        onOpenAudit={() => openSettings('audit')}
-        onOpenUsers={() => openSettings('accounts')}
-        onOpenReport={() => setReportOpen(true)}
+      <Rail
+        panel={panel}
+        onPanel={setPanel}
+        counts={{
+          incidents: incidents.length,
+          artifacts: artifacts.counts.file + artifacts.counts.mail + artifacts.counts.pcap,
+        }}
+        isAdmin={currentUser?.role === 'admin'}
+        onSearch={() => setPaletteOpen(true)}
+        onAudit={() => openSettings('audit')}
+        onUsers={() => openSettings('accounts')}
+        onBackup={() => setBackupOpen(true)}
+        onSettings={() => openSettings('detection')}
       />
-      <SidebarResizer onResize={handleSidebarResize} />
+      {panel && (
+        <>
+          <Sidebar
+            panel={panel}
+            width={sidebarWidth}
+            onCreateIncident={openCreateModal}
+            onNewAnalysis={() => setAnalysisOpen(true)}
+            onSelectIncident={openIncident}
+            incidentShown={!artifactOpen}
+            onOpenReport={() => setReportOpen(true)}
+          />
+          <SidebarResizer onResize={handleSidebarResize} />
+        </>
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header
-          onOpenSettings={() => openSettings('detection')}
           onOpenSearch={() => setPaletteOpen(true)}
-          onOpenReport={activeIncident ? () => setReportOpen(true) : null}
+          onOpenReport={activeIncident && !artifactOpen ? () => setReportOpen(true) : null}
+          artifactView={artifactOpen}
         />
-        <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />
+        {!artifactOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
 
         {storageError && (
           <div
@@ -359,7 +505,9 @@ export default function App() {
 
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto p-6">
-            {activeIncident ? (
+            {artifactOpen ? (
+              <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
+            ) : activeIncident ? (
               <Suspense
                 fallback={
                   <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
@@ -394,11 +542,16 @@ export default function App() {
                 <EmptyState
                   illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
                   title="No active incident"
-                  message="Create a new incident to get started, or import an existing one from the sidebar."
+                  message="Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere."
                   action={
-                    <Button icon={Plus} onClick={openCreateModal}>
-                      New incident
-                    </Button>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button icon={Plus} onClick={openCreateModal}>
+                        New incident
+                      </Button>
+                      <Button variant="secondary" icon={Microscope} onClick={() => setAnalysisOpen(true)}>
+                        New analysis
+                      </Button>
+                    </div>
                   }
                 />
               </div>
@@ -411,7 +564,7 @@ export default function App() {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="New incident"
+        title={seedArtifact ? 'New incident from this artifact' : 'New incident'}
         maxWidth="max-w-xl"
         footer={
           <>
@@ -438,7 +591,23 @@ export default function App() {
         activeIncident={activeIncident}
         onClose={() => setDrop(null)}
         onConfirm={handleDropConfirm}
+        onOpenKnown={(artifact) => {
+          setDrop(null)
+          setPanel('artifacts')
+          artifacts.openArtifact(artifact.id)
+        }}
       />
+
+      <NewAnalysisDialog
+        open={analysisOpen}
+        onClose={() => setAnalysisOpen(false)}
+        onFile={(file) => {
+          setAnalysisOpen(false)
+          placeFile(file, { preferAnalysis: true })
+        }}
+      />
+
+      {currentUser?.role === 'admin' && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />}
 
       {dragging && (
         <div
@@ -450,7 +619,7 @@ export default function App() {
       )}
 
       <ReportDialog
-        open={reportOpen && Boolean(activeIncident)}
+        open={reportOpen && Boolean(activeIncident) && !artifactOpen}
         onClose={() => setReportOpen(false)}
         incident={activeIncident}
       />
@@ -463,7 +632,10 @@ export default function App() {
           setPaletteQuery('')
         }}
         actions={paletteActions}
-        onOpenTab={setActiveTabId}
+        onOpenTab={(tab) => {
+          closeArtifact()
+          setActiveTabId(tab)
+        }}
       />
 
       <SettingsPanel

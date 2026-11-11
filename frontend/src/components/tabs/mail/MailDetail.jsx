@@ -150,7 +150,7 @@ export default function MailDetail({
       <Badge color={verdict.color}>
         {verdict.label} · {analysis?.score ?? message.score}
       </Badge>
-      <Badge color="cyan">.{message.format}</Badge>
+      {(message.format ?? analysis?.format) && <Badge color="cyan">.{message.format ?? analysis.format}</Badge>}
     </span>
   )
 
@@ -176,16 +176,18 @@ export default function MailDetail({
           >
             {reanalysing ? 'Re-analysing…' : 'Re-analyse'}
           </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            icon={Trash2}
-            onClick={onRemove}
-            disabled={removing}
-            title="Remove the message from this incident"
-          >
-            Remove
-          </Button>
+          {onRemove && (
+            <Button
+              variant="ghost"
+              size="xs"
+              icon={Trash2}
+              onClick={onRemove}
+              disabled={removing}
+              title="Remove the message from this incident (it stays as an artifact)"
+            >
+              Remove
+            </Button>
+          )}
         </>
       }
     >
@@ -291,7 +293,7 @@ export default function MailDetail({
             <p className="font-mono text-[11px] text-fg-muted">
               Also in{' '}
               {detail.incidents
-                .filter((i) => i.id !== incident.id)
+                .filter((i) => i.id !== incident?.id)
                 .map((i) => i.name)
                 .join(', ')}
             </p>

@@ -128,6 +128,27 @@ test('the threat tabs', async () => {
   await shot('malware')
 })
 
+test('artifacts on their own', async () => {
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel.getByRole('button', { name: 'New analysis' }).click()
+  await expect(page.getByRole('dialog', { name: 'New analysis' })).toBeVisible()
+  await shot('new-analysis')
+  await page.keyboard.press('Escape')
+  // The reported e-mail, opened as an artifact: its incident, its tags, the same analysis.
+  await panel.getByRole('navigation', { name: 'Artifacts' }).getByText('Your account will be suspended').click()
+  const artifact = page.getByRole('region', { name: 'Artifact' })
+  await expect(artifact.getByRole('heading', { name: 'Your account will be suspended' })).toBeVisible()
+  await artifact.getByRole('button', { name: 'Add tags' }).click()
+  await artifact.getByLabel('Tags').fill('phishing-kit campaign:q4')
+  await artifact.getByRole('button', { name: 'Save' }).click()
+  await expect(artifact).toContainText('#phishing-kit')
+  await expect(page.getByText(/^phishing · \d+$/).first()).toBeVisible({ timeout: 30_000 })
+  await shot('artifact')
+  await artifact.getByRole('button', { name: '[INC-2041] Invoice phishing, finance', exact: true }).click()
+  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+})
+
 test('a packet capture', async () => {
   test.skip(!process.env.E2E_PCAP_URL, 'the packet capture worker is not running')
   await tabs().getByText('Network Analysis').click()

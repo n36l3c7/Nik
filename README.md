@@ -70,8 +70,10 @@ Every other variable and the in-app settings are in the
 
 ## Usage
 
-1. **New incident** in the sidebar: ticket, title, host, user.
-2. Drop the evidence anywhere on the app; Nik proposes the tab.
+1. **New incident** in the incidents panel: ticket, title, host, user.
+2. Drop the evidence anywhere on the app; Nik proposes the tab. An e-mail, a
+   suspicious file or a capture can also be analysed on its own (**New
+   analysis**) and linked to an incident later.
 3. Read each tab, flag events (right-click), check the indicators.
 4. Write the report from the header and download it.
 

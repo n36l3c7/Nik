@@ -1,38 +1,22 @@
 import { useMemo, useRef, useState } from 'react'
-import {
-  AlertTriangle,
-  DatabaseBackup,
-  Download,
-  FileText,
-  FolderOpen,
-  Info,
-  Link,
-  Mail,
-  Plus,
-  ScrollText,
-  Trash2,
-  Upload,
-  Users,
-  X,
-} from 'lucide-react'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { AlertTriangle, Download, FileText, FolderOpen, Link, Mail, Plus, Trash2, Upload, X } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../lib/time.js'
 import { getOsById } from '../../config/os.js'
 import { Button, MicroSkull, Modal, SeverityTag } from '../ui/index.js'
-import BackupModal from '../backup/BackupModal.jsx'
+import ArtifactsPanel from '../artifacts/ArtifactsPanel.jsx'
 
 /*
  * ============================================================================
- * SIDEBAR — incident navigation and management
+ * SIDEBAR — the panel next to the rail: incidents or artifacts
  * ============================================================================
  *
- * Contains: brand, "New incident" button (opens the modal owned by App via
- * the `onCreateIncident` callback), the incident list sorted by last update
- * with per-row actions (export / delete), JSON import from file, and a footer
- * with quick access to the Audit log and User management.
+ * The rail (Rail.jsx) chooses the panel. The incidents panel holds the "New
+ * incident" button (opens the modal owned by App via `onCreateIncident`), the
+ * incident list sorted by last update with per-row actions (export / delete)
+ * and the JSON import; the artifacts panel is ArtifactsPanel.
  *
  * Note: incidents are NOT renamed here — their identity (host/username) is
  * edited in the Summary tab, which recomputes the display name.
@@ -62,27 +46,33 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
 /**
  * Application sidebar.
  * @param {{
+ *   panel: 'incidents' | 'artifacts',
  *   onCreateIncident: () => void,  // opens the "New incident" modal owned by App
- *   onOpenAudit: () => void,       // opens the Audit log modal
- *   onOpenUsers: () => void,       // opens the User management modal
+ *   onNewAnalysis: () => void,     // opens the "New analysis" dialog owned by App
+ *   onSelectIncident: (id: string) => void,  // opens an incident (leaves an open artifact)
+ *   incidentShown: boolean,        // the main area shows the active incident (not an artifact)
+ *   onOpenReport: () => void,
  *   width?: number,                // pixel width (resizable), defaults to 288
  * }} props
  */
-export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, onOpenReport, width = 288 }) {
-  const { incidents, activeIncidentId, selectIncident, deleteIncident, exportIncident, importIncidentFromFile } =
-    useIncidents()
+export default function Sidebar({
+  panel,
+  onCreateIncident,
+  onNewAnalysis,
+  onSelectIncident,
+  incidentShown,
+  onOpenReport,
+  width = 288,
+}) {
+  const { incidents, activeIncidentId, deleteIncident, exportIncident, importIncidentFromFile } = useIncidents()
+  const selectIncident = onSelectIncident
   const { openMenu } = useContextMenu()
   const { showToast } = useToast()
-  const { currentUser } = useAuth()
-  const isAdmin = currentUser?.role === 'admin'
 
   // Incident pending deletion confirmation (null = modal closed).
   const [deleteTarget, setDeleteTarget] = useState(null)
   // Incident being exported (its document may need fetching first).
   const [exportingId, setExportingId] = useState(null)
-
-  // Full-backup modal (admin only).
-  const [backupOpen, setBackupOpen] = useState(false)
 
   // Import-from-file state: dismissible error shown in the sidebar + loading.
   const [importError, setImportError] = useState(null)
@@ -118,36 +108,32 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, on
     }
   }
 
-  return (
-    <aside style={{ width }} className="flex h-full shrink-0 flex-col border-r border-line bg-sunken">
-      {/* ----- Brand ----- */}
-      <div className="flex items-center gap-3 border-b border-line px-4 py-4">
-        <span aria-hidden="true" className="shrink-0 bg-accent px-2 py-1 font-mono text-sm font-extrabold text-canvas">
-          &gt;_
-        </span>
-        <div className="min-w-0">
-          <p className="font-mono text-lg font-extrabold leading-tight tracking-widest text-fg">nik</p>
-          <p className="truncate text-[11px] text-fg-muted">forensic analysis platform</p>
-        </div>
-      </div>
+  if (panel === 'artifacts') return <ArtifactsPanel width={width} onNewAnalysis={onNewAnalysis} />
 
-      {/* ----- New incident ----- */}
-      <div className="px-4 pt-4">
-        <Button icon={Plus} className="w-full justify-center" onClick={onCreateIncident}>
+  return (
+    <aside
+      aria-label="Incidents panel"
+      style={{ width }}
+      className="flex h-full shrink-0 flex-col border-r border-line bg-sunken"
+    >
+      {/* ----- Title + new incident ----- */}
+      <div className="flex items-center gap-2 border-b border-line px-3 py-3">
+        <p className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-wider text-fg-muted">
+          INCIDENTS · {incidents.length}
+        </p>
+        <Button size="sm" icon={Plus} onClick={onCreateIncident}>
           New incident
         </Button>
       </div>
 
       {/* ----- Incident list (independent scroll) ----- */}
-      <nav aria-label="Incidents" className="mt-4 flex-1 overflow-y-auto px-3 pb-2">
-        <p className="px-1 pb-2 font-mono text-[11px] tracking-wider text-fg-muted">INCIDENTS · {incidents.length}</p>
-
+      <nav aria-label="Incidents" className="flex-1 overflow-y-auto px-3 py-2">
         {sortedIncidents.length === 0 ? (
           <p className="px-1 text-sm text-fg-muted">No incidents yet: create a new one or import an existing file.</p>
         ) : (
           <ul className="space-y-1">
             {sortedIncidents.map((incident) => {
-              const isActive = incident.id === activeIncidentId
+              const isActive = incidentShown && incident.id === activeIncidentId
               const os = getOsById(incident.os)
               const OsIcon = os?.icon
               return (
@@ -279,38 +265,7 @@ export default function Sidebar({ onCreateIncident, onOpenAudit, onOpenUsers, on
           {importing ? 'Importing…' : 'Import incident'}
         </Button>
         <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
-
-        {/* Quick access to the Audit log and User management modals */}
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={ScrollText} className="flex-1 justify-center" onClick={onOpenAudit}>
-            Audit log
-          </Button>
-          <Button variant="ghost" size="sm" icon={Users} className="flex-1 justify-center" onClick={onOpenUsers}>
-            Users
-          </Button>
-        </div>
-
-        {/* Full backup (export/restore everything) — admin only */}
-        {isAdmin && (
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={DatabaseBackup}
-            className="w-full justify-center"
-            onClick={() => setBackupOpen(true)}
-          >
-            Full backup
-          </Button>
-        )}
-
-        <p className="flex items-start gap-1.5 text-[11px] text-fg-muted">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Artifacts are parsed locally; cases are stored on the Nik server
-        </p>
       </div>
-
-      {/* ----- Full-backup modal (admin only) ----- */}
-      {isAdmin && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />}
 
       {/* ----- Delete confirmation modal ----- */}
       <Modal
