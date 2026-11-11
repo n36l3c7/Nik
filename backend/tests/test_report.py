@@ -6,7 +6,7 @@ import base64
 
 from fastapi.testclient import TestClient
 
-from app.report import attack_techniques, build_html, evidence
+from app.report import attack_techniques, build_html, evidence, flagged_scope
 from tests.conftest import make_key
 
 LOGO = (
@@ -145,11 +145,18 @@ def test_report_endpoint_html_pdf_and_branding(admin: TestClient):
         json={
             "format": "html",
             "detections": [{"id": "evt-log-cleared", "label": "log cleared", "count": 1, "attack": ["T1070.001"]}],
+            "scope": "all",
         },
     )
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
     assert "ACME SOC" in r.text and LOGO in r.text and "T1070.001" in r.text
     assert "185.220.101.47" in r.text  # from the IOC index
+    assert "everything in the incident" in r.text and "ConsoleHost_history.txt" in r.text
+    # By default only what was flagged: the indicator and the PowerShell history are not.
+    flagged = admin.post("/api/incidents/r1/report", headers=key, json={"format": "html"})
+    assert "what the analysts flagged" in flagged.text and "cleared by" in flagged.text
+    assert "185.220.101.47" not in flagged.text and "ConsoleHost_history.txt" not in flagged.text
+    assert "Security.evtx" in flagged.text and "System.evtx" not in flagged.text
     assert "TLP:AMBER" in r.text  # default
 
     # Saved per-incident settings are the defaults; the body overrides them.
@@ -168,3 +175,91 @@ def test_report_endpoint_html_pdf_and_branding(admin: TestClient):
     actions = [e["action"] for e in admin.get("/api/audit", headers=key).json()["entries"]]
     assert "report.generate" in actions
     assert admin.post("/api/incidents/nope/report", headers=key, json={}).status_code == 404
+
+
+SHA_A, SHA_B, MAIL = "a" * 64, "b" * 64, "c" * 64
+SCOPED = {
+    "id": "r2",
+    "name": "scoped",
+    "flags": {
+        f"sample:{SHA_A}:ioc:url:http://evil.top/gate.php": {"section": "malware", "title": "gate"},
+        "ioc:ip:185.220.101.47": {"section": "iocs", "title": "185.220.101.47"},
+        "ioc:domain:not-indexed.example": {"section": "iocs", "title": "not-indexed.example"},
+        f"mail:{MAIL}": {"section": "mail", "title": "Your account"},
+        "pcap:" + "1" * 32 + ":6": {"section": "network", "title": "GET /signin"},
+        "url:" + "2" * 32: {"section": "urls", "title": "login-paypa1.top"},
+        "cmd-7": {"section": "commands", "browserId": "bash", "title": "curl"},
+        "hist-3": {"section": "events", "browserId": "chrome", "title": "visit"},
+        "art-1": {"section": "endpoint:execution", "browserId": "execution", "title": "s.exe"},
+    },
+    "data": {
+        "malware": {
+            "samples": [
+                {"sha256": SHA_A, "fileName": "flagged.exe", "importedAt": "2026-03-04T09:00:00Z"},
+                {"sha256": SHA_B, "fileName": "ignored.exe", "importedAt": "2026-03-04T09:00:00Z"},
+            ]
+        },
+        "mail": {"messages": [{"sha256": MAIL, "fileName": "reported.eml", "subject": "Your account"}]},
+        "network": {
+            "captures": [
+                {"id": "1" * 32, "fileName": "flagged.pcapng", "sha256": "9" * 64, "packets": 67},
+                {"id": "3" * 32, "fileName": "ignored.pcapng", "sha256": "8" * 64, "packets": 5},
+            ]
+        },
+        "urls": {
+            "scans": [
+                {"id": "2" * 32, "url": "https://login-paypa1.top/signin", "verdict": "phishing", "score": 90},
+                {"id": "4" * 32, "url": "https://ignored.example/", "verdict": "clean", "score": 0},
+            ]
+        },
+        "commands": {
+            "shells": {
+                "bash": {"meta": {"history": {"fileName": "bash_history", "format": "bash", "sha256": "5" * 64}}},
+                "zsh": {"meta": {"history": {"fileName": "zsh_history", "format": "zsh", "sha256": "6" * 64}}},
+            }
+        },
+    },
+}
+
+
+def test_flagged_scope_reads_the_flag_keys():
+    scope = flagged_scope(SCOPED)
+    assert scope["samples"] == {SHA_A} and scope["mails"] == {MAIL}
+    assert scope["captures"] == {"1" * 32} and scope["urls"] == {"2" * 32}
+    assert scope["iocs"] == {
+        ("url", "http://evil.top/gate.php"),
+        ("ip", "185.220.101.47"),
+        ("domain", "not-indexed.example"),
+    }
+    assert scope["shells"] == {"bash"} and scope["browsers"] == {"chrome"} and scope["categories"] == {"execution"}
+
+
+def test_report_lists_only_what_was_flagged_unless_asked_for_everything():
+    samples = [
+        {"sha256": SHA_A, "fileName": "flagged.exe", "yara": [], "capa": None},
+        {"sha256": SHA_B, "fileName": "ignored.exe", "yara": [], "capa": None},
+    ]
+    iocs = [
+        {"type": "ip", "value": "185.220.101.47", "sources": ["commands:bash"], "otherIncidents": 2},
+        {"type": "domain", "value": "never-flagged.example", "sources": ["commands:bash"], "otherIncidents": 0},
+    ]
+    html = build_html(SCOPED, samples=samples, iocs=iocs, mails=[{"sha256": MAIL, "subject": "Your account"}])
+    for shown in ("flagged.exe", "185.220.101.47", "not-indexed.example", "flagged.pcapng", "login-paypa1.top"):
+        assert shown in html, shown
+    for hidden in ("ignored.exe", "never-flagged.example", "ignored.pcapng", "ignored.example", "zsh_history"):
+        assert hidden not in html, hidden
+    assert "bash_history" in html and "Your account" in html
+    assert "what the analysts flagged" in html
+
+    everything = build_html(SCOPED, samples=samples, iocs=iocs, scope="all")
+    for shown in ("ignored.exe", "never-flagged.example", "ignored.pcapng", "ignored.example", "zsh_history"):
+        assert shown in everything, shown
+    # Nothing flagged: the sections say so instead of listing everything.
+    empty = build_html({"id": "r3", "name": "empty", "data": SCOPED["data"]}, samples=samples, iocs=iocs)
+    assert "Nothing was flagged here." in empty and "flagged.exe" not in empty
+    assert {r["fileName"] for r in evidence(SCOPED, flagged_scope(SCOPED))} == {
+        "flagged.exe",
+        "reported.eml",
+        "flagged.pcapng",
+        "bash_history",
+    }

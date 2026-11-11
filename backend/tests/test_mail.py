@@ -317,7 +317,9 @@ def test_mail_api_flow(admin: TestClient, no_dns):
     assert "mail:phish.eml" in sources
 
     report = admin.post(
-        "/api/incidents/p1/report", headers=key, json={"format": "html", "sections": ["mails", "evidence"]}
+        "/api/incidents/p1/report",
+        headers=key,
+        json={"format": "html", "sections": ["mails", "evidence"], "scope": "all"},
     )
     assert "service@paypai.com" in report.text and "imitates paypal" in report.text and "phish.eml" in report.text
 

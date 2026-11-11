@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.0] - 2026-11-11
+
+### Changed
+
+- **The incident report lists what was flagged**, so it stays about the
+  incident instead of everything that was imported:
+  - the indicators flagged by hand (it used to list every indicator, up to
+    the cap);
+  - the samples, e-mails, captures and scanned addresses that are flagged
+    or hold something flagged (an indicator or a function of a sample, a
+    packet, a held submission or a beacon of a capture);
+  - the ATT&CK techniques of those samples and of the detections on flagged
+    events; the event logs that hold a flagged event;
+  - an evidence appendix with only the imported files that hold something
+    flagged.
+  Flagged events and notes are listed as before. A section with nothing
+  flagged says so.
+- **Include everything** in the report dialog (kept per incident), or
+  `"scope": "all"` in `POST /api/incidents/{id}/report`, gives the full
+  inventory as before.
+
 ## [2.23.0] - 2026-11-11
 
 ### Added

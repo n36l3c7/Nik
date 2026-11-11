@@ -55,11 +55,19 @@ export default function ReportDialog({ open, onClose, incident }) {
   }, [open, incident?.id])
 
   const detections = useMemo(
-    () => (open && incident ? reportDetections(buildTimelineEvents(incident.data, engine)) : []),
-    [open, incident, engine],
+    () =>
+      open && incident
+        ? reportDetections(
+            buildTimelineEvents(incident.data, engine),
+            // A report of what was flagged counts the detections on flagged events only.
+            options.scope === 'all' ? null : (incident.flags ?? {}),
+          )
+        : [],
+    [open, incident, engine, options.scope],
   )
 
   if (!incident) return null
+  const flaggedCount = Object.keys(incident.flags ?? {}).length
 
   const update = (patch, { debounce = false } = {}) => {
     setOptions((prev) => ({ ...prev, ...patch }))
@@ -159,6 +167,26 @@ export default function ReportDialog({ open, onClose, incident }) {
               </select>
             </label>
           </div>
+
+          <fieldset className="space-y-1.5">
+            <legend className="mb-1 font-mono text-xs text-fg-muted">Content</legend>
+            <label className="flex items-start gap-2 text-sm text-fg">
+              <input
+                type="checkbox"
+                checked={options.scope === 'all'}
+                onChange={(event) => update({ scope: event.target.checked ? 'all' : 'flagged' })}
+                className="mt-0.5 accent-accent"
+              />
+              <span>
+                Include everything
+                <span className="block text-xs text-fg-muted">
+                  {options.scope === 'all'
+                    ? 'Every indicator, sample, e-mail, capture and imported file of the incident.'
+                    : `Only what is flagged (${flaggedCount} item${flaggedCount === 1 ? '' : 's'}): flag from the right-click menu.`}
+                </span>
+              </span>
+            </label>
+          </fieldset>
 
           <fieldset className="space-y-1.5">
             <legend className="mb-1 font-mono text-xs text-fg-muted">Sections</legend>
