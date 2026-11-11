@@ -147,7 +147,7 @@ class Mail(Base):
 
 
 class NetworkCapture(Base):
-    """A packet capture of an incident: a pcap / pcapng the analyst uploaded,
+    """A packet capture: a pcap / pcapng the analyst uploaded,
     or the network log of an isolated browser session rebuilt as pcapng
     (``kind``). The file sits in ``SAMPLE_STORE/_captures/<id>/``; ``summary``
     is the packet capture worker's analysis; ``keylog`` an optional TLS key
@@ -157,7 +157,8 @@ class NetworkCapture(Base):
     __tablename__ = "network_captures"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    incident_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # The incident that holds the capture; None for a capture analysed on its own.
+    incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String, nullable=False, default="pcap")  # pcap | browser
     file_name: Mapped[str] = mapped_column(String, nullable=False, default="")
     size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
@@ -173,6 +174,60 @@ class NetworkCapture(Base):
     meta: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     keylog: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class Artifact(Base):
+    """Something analysed on its own: a file, an e-mail or a packet capture.
+
+    The registry over ``samples``, ``mails`` and ``network_captures``: one row
+    per analysed object, whether or not an incident references it. ``id`` is
+    ``<kind>-<ref>`` (``file-<sha256>``, ``mail-<sha256>``, ``pcap-<capture id>``).
+    ``verdict``, ``score`` and ``detail`` are a copy of what the list shows,
+    refreshed when the object is analysed again.
+    """
+
+    __tablename__ = "artifacts"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False, index=True)  # file | mail | pcap
+    ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    verdict: Mapped[str] = mapped_column(String, nullable=False, default="")
+    score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    detail: Mapped[str] = mapped_column(String, nullable=False, default="")
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class ArtifactLink(Base):
+    """An incident references the artifact. An index of the incident documents,
+    rebuilt each time an incident is saved (``artifacts.sync_links``)."""
+
+    __tablename__ = "artifact_links"
+
+    artifact_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("artifacts.id", ondelete="CASCADE"), primary_key=True
+    )
+    incident_id: Mapped[str] = mapped_column(
+        String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class ArtifactRelation(Base):
+    """Where an artifact comes from: ``child`` was taken out of ``parent``
+    (``attachment`` of an e-mail, ``extracted`` from a capture, ``session``
+    of an isolated browser opened from an e-mail)."""
+
+    __tablename__ = "artifact_relations"
+
+    parent_id: Mapped[str] = mapped_column(String(80), ForeignKey("artifacts.id", ondelete="CASCADE"), primary_key=True)
+    child_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("artifacts.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    relation: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class IntegrationKey(Base):

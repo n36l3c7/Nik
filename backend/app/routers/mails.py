@@ -19,6 +19,7 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import artifacts
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, Mail
@@ -164,6 +165,84 @@ def _forget_previews(sha256: str) -> None:
     walk(parsed)
 
 
+async def store_mail(
+    db: OrmSession,
+    incident: Incident | None,
+    data: bytes,
+    file_name: str,
+    caller: Principal,
+    background_tasks: BackgroundTasks | None,
+) -> tuple[Mail, dict[str, Any] | None]:
+    """Analyse and store an e-mail: in the incident, or on its own when
+    ``incident`` is None. Returns the row and the incident's reference."""
+    if not data:
+        raise HTTPException(status_code=400, detail="The file is empty.")
+    if len(data) > settings.SAMPLE_MAX_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"The file exceeds the {settings.SAMPLE_MAX_MB} MB limit.")
+    sha256 = hashes(data)["sha256"]
+    row = db.get(Mail, sha256)
+    if row is None:
+        try:
+            # DNS lookups (SPF, DKIM, DMARC) block: keep them off the event loop.
+            result = await run_in_threadpool(_analyse, db, data)
+        except MailError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        row = Mail(sha256=sha256, created_at=now_iso(), created_by=caller.actor)
+        _apply(row, result)
+        db.add(row)
+    write_mail(sha256, data)
+    file_name = file_name or f"{sha256[:12]}.{row.format}"
+    db.flush()
+    artifacts.register_mail(db, row, file_name)
+    ref = attach_mail(db, incident, row, file_name, caller.actor) if incident is not None else None
+    _audit(db, caller, "mail.upload", f"Analysed e-mail {file_name} ({row.verdict}, score {row.score})", incident)
+    db.commit()
+    if incident is not None:
+        emit(
+            db, background_tasks, "upload.completed", {"incidentId": incident.id, "target": f"mail/{sha256}", "rows": 1}
+        )
+    return row, ref
+
+
+def attach_mail(db: OrmSession, incident: Incident, row: Mail, file_name: str, actor: str) -> dict[str, Any]:
+    """Reference the message from the incident (kept once); returns the reference."""
+    doc = dict(incident.doc or {})
+    refs = _refs(doc)
+    ref = next((item for item in refs if item.get("sha256") == row.sha256), None)
+    if ref is None:
+        ref = {
+            **_summary(row),
+            "fileName": file_name or f"{row.sha256[:12]}.{row.format}",
+            "importedAt": now_iso(),
+            "importedBy": actor,
+        }
+        refs.append(ref)
+        _save_doc(db, incident, doc)
+    return ref
+
+
+def detach_mail(db: OrmSession, incident: Incident, sha256: str) -> bool:
+    """Drop the incident's reference; False when it had none. The message stays."""
+    doc = dict(incident.doc or {})
+    refs = _refs(doc)
+    kept = [ref for ref in refs if ref.get("sha256") != sha256]
+    if len(kept) == len(refs):
+        return False
+    doc["data"]["mail"]["messages"] = kept
+    _save_doc(db, incident, doc)
+    return True
+
+
+def delete_mail_data(db: OrmSession, row: Mail) -> None:
+    """Delete the message everywhere: every incident's reference, the file, its previews."""
+    for incident in _incidents_referencing(db, row.sha256):
+        detach_mail(db, incident, row.sha256)
+    _forget_previews(row.sha256)
+    delete_mail(row.sha256)
+    artifacts.forget(db, "mail", row.sha256)
+    db.delete(row)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -184,35 +263,7 @@ async def upload_mail(
     same message again reuses its analysis.
     """
     incident = _incident_or_404(db, incident_id)
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="The file is empty.")
-    if len(data) > settings.SAMPLE_MAX_MB * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"The file exceeds the {settings.SAMPLE_MAX_MB} MB limit.")
-    sha256 = hashes(data)["sha256"]
-    row = db.get(Mail, sha256)
-    if row is None:
-        try:
-            # DNS lookups (SPF, DKIM, DMARC) block: keep them off the event loop.
-            result = await run_in_threadpool(_analyse, db, data)
-        except MailError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        row = Mail(sha256=sha256, created_at=now_iso(), created_by=caller.actor)
-        _apply(row, result)
-        db.add(row)
-    write_mail(sha256, data)
-
-    doc = dict(incident.doc or {})
-    refs = _refs(doc)
-    file_name = file.filename or f"{sha256[:12]}.{row.format}"
-    ref = next((r for r in refs if r.get("sha256") == sha256), None)
-    if ref is None:
-        ref = {**_summary(row), "fileName": file_name, "importedAt": now_iso(), "importedBy": caller.actor}
-        refs.append(ref)
-    _save_doc(db, incident, doc)
-    _audit(db, caller, "mail.upload", f"Analysed e-mail {file_name} ({row.verdict}, score {row.score})", incident)
-    db.commit()
-    emit(db, background_tasks, "upload.completed", {"incidentId": incident_id, "target": f"mail/{sha256}", "rows": 1})
+    _row, ref = await store_mail(db, incident, await file.read(), file.filename or "", caller, background_tasks)
     return {"message": ref}
 
 
@@ -243,6 +294,7 @@ async def reanalyse_mail(
     except (OSError, MailError) as exc:
         raise HTTPException(status_code=422, detail=f"The stored message cannot be analysed: {exc}") from exc
     _apply(row, result)
+    artifacts.register_mail(db, row)
     for incident in _incidents_referencing(db, sha256):
         doc = dict(incident.doc or {})
         for ref in _refs(doc):
@@ -323,7 +375,14 @@ def attachment_to_sample(
     item = _attachment(_parsed(sha256), path)
     origin = f"e-mail “{row.subject[:80]}”" if row.subject else f"e-mail {sha256[:12]}…"
     sample, ref = store_sample(
-        db, incident, item.get("data") or b"", item.get("name") or "", caller, background_tasks, origin
+        db,
+        incident,
+        item.get("data") or b"",
+        item.get("name") or "",
+        caller,
+        background_tasks,
+        origin,
+        parent=(artifacts.artifact_id("mail", sha256), "attachment"),
     )
     return {"sample": ref, "iocs": len(sample.analysis.get("iocs", []))}
 
@@ -335,20 +394,12 @@ def remove_mail(
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response:
-    """Detach the message from the incident; the file is deleted once no incident references it."""
+    """Detach the message from the incident. It stays as an artifact
+    (`DELETE /api/artifacts/mail-<sha256>` deletes it)."""
     incident = _incident_or_404(db, incident_id)
-    row = _mail_or_404(db, sha256)
-    doc = dict(incident.doc or {})
-    refs = _refs(doc)
-    kept = [ref for ref in refs if ref.get("sha256") != sha256]
-    if len(kept) == len(refs):
+    _mail_or_404(db, sha256)
+    if not detach_mail(db, incident, sha256):
         raise HTTPException(status_code=404, detail="The incident does not reference this message")
-    doc["data"]["mail"]["messages"] = kept
-    _save_doc(db, incident, doc)
-    if not any(inc.id != incident_id for inc in _incidents_referencing(db, sha256)):
-        _forget_previews(sha256)
-        delete_mail(sha256)
-        db.delete(row)
     _audit(db, caller, "mail.delete", f"Removed e-mail {sha256[:12]}… from the incident", incident)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

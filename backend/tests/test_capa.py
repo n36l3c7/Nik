@@ -79,6 +79,7 @@ def test_upload_runs_capa_and_stores_the_capabilities(admin: TestClient, capa_wo
 
     # Removing the last reference removes the capabilities with the sample.
     assert admin.delete(f"/api/incidents/k1/samples/{sha}", headers=key).status_code == 204
+    assert admin.delete(f"/api/artifacts/file-{sha}", headers=key).status_code == 204
     assert admin.get(f"/api/samples/{sha}/capabilities", headers=key).status_code == 404
 
 

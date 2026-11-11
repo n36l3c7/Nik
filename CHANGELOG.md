@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-11-11
+
+### Added
+
+- **Artifacts** (API): a file, an e-mail or a packet capture can be analysed
+  **without an incident** and linked to incidents later.
+  - `POST /api/artifacts/files`, `/mails`, `/captures` start an analysis on
+    its own (or in an incident with the `incident` field).
+  - `GET /api/artifacts` lists them for the whole team, with search, kind,
+    tag, "mine" and linked filters, and the incidents that reference each.
+  - `POST /api/artifacts/{id}/links` and `DELETE …/links/{incidentId}` link
+    and unlink; a file or an e-mail can be in several incidents, a capture
+    in one.
+  - `GET /api/artifacts/lookup?sha256=` tells whether a file is already
+    known before it is uploaded.
+  - Tags (`PUT …/tags`) and relations: an attachment analysed as a file, an
+    object taken out of a capture and an isolated browser session opened
+    from an e-mail are recorded as children of their source.
+- Migration `0017`: the `artifacts`, `artifact_links` and
+  `artifact_relations` tables; `network_captures.incident_id` becomes
+  optional. What is already stored is registered on the first start.
+
+### Changed
+
+- Removing a sample, an e-mail or a capture from an incident no longer
+  deletes it when no other incident references it: it stays as an artifact.
+  `DELETE /api/artifacts/{id}` deletes it everywhere.
+- Deleting an incident deletes the samples, e-mails and captures that only
+  that incident references (samples and e-mails used to stay on disk with
+  nothing pointing at them); those another incident references stay.
+
 ## [2.18.3] - 2026-11-11
 
 ### Changed

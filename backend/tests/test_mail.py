@@ -322,7 +322,10 @@ def test_mail_api_flow(admin: TestClient, no_dns):
     assert "service@paypai.com" in report.text and "imitates paypal" in report.text and "phish.eml" in report.text
 
     assert admin.post(f"/api/mails/{sha}/reanalyse", headers=key).json()["verdict"] == "phishing"
+    # Removed from the incident, the message stays as an artifact until it is deleted.
     assert admin.delete(f"/api/incidents/p1/mails/{sha}", headers=key).status_code == 204
+    assert admin.get(f"/api/mails/{sha}", headers=key).status_code == 200
+    assert admin.delete(f"/api/artifacts/mail-{sha}", headers=key).status_code == 204
     assert admin.get(f"/api/mails/{sha}", headers=key).status_code == 404
     assert admin.get("/api/incidents?view=summary", headers=key).json()["incidents"][0]["hasMail"] is False
 

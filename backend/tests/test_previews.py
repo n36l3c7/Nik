@@ -83,6 +83,7 @@ def test_document_preview_is_rendered_once(admin: TestClient, workers):
     assert admin.post(f"/api/mails/{sha}/attachments/2/preview", headers=key).status_code == 422  # an .exe
     # Removing the message removes the rendered pages too.
     assert admin.delete(f"/api/incidents/pv/mails/{sha}", headers=key).status_code == 204
+    assert admin.delete(f"/api/artifacts/mail-{sha}", headers=key).status_code == 204
     again = _mail(admin, key)  # another message with the same attachment
     assert admin.post(f"/api/mails/{again}/attachments/0/preview", headers=key).status_code == 200
     assert len([c for c in workers if c[2] == "/render"]) == 2

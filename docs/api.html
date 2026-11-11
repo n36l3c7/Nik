@@ -179,7 +179,7 @@
             </tr>
             <tr>
               <td><code>DELETE /api/incidents/{id}/samples/{sha256}</code></td>
-              <td>Detach the sample; the file is deleted once no incident references it.</td>
+              <td>Detach the sample from the incident; it stays as an artifact until the artifact is deleted.</td>
             </tr>
             <tr>
               <td><code>POST /api/samples/{sha256}/reanalyse</code></td>
@@ -261,11 +261,62 @@
                 <code>PUT/DELETE /api/captures/{id}/keylog</code> · <code>POST …/reanalyse</code> ·
                 <code>DELETE /api/incidents/{id}/captures/{captureId}</code>
               </td>
-              <td>Add or remove a TLS key log (stored encrypted), analyse again, remove the capture.</td>
+              <td>
+                Add or remove a TLS key log (stored encrypted), analyse again, take the capture out of the incident (it
+                stays as an artifact).
+              </td>
             </tr>
             <tr>
               <td><code>DELETE /api/incidents/{id}/mails/{sha256}</code></td>
-              <td>Detach the message; the file is deleted once no incident references it.</td>
+              <td>Detach the message from the incident; it stays as an artifact until the artifact is deleted.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/artifacts</code> · <code>GET /api/artifacts/{id}</code></td>
+              <td>
+                The files, e-mails and captures analysed on their own or in incidents, newest first, each with the
+                incidents that reference it. Query: <code>kind</code> (<code>file</code>, <code>mail</code>,
+                <code>pcap</code>), <code>q</code>, <code>tag</code>, <code>mine</code>, <code>linked</code>,
+                <code>limit</code> / <code>offset</code>. One artifact also lists its <code>parents</code> and
+                <code>children</code> (the e-mail an attachment came from, the objects taken out of a capture). Ids are
+                <code>file-&lt;sha256&gt;</code>, <code>mail-&lt;sha256&gt;</code>,
+                <code>pcap-&lt;capture id&gt;</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/artifacts/lookup?sha256=</code></td>
+              <td>Is this file already known? The artifacts with that digest, to check before an upload.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/artifacts/files</code> · <code>…/mails</code> · <code>…/captures</code></td>
+              <td>
+                Analyse a file, an e-mail or a capture <strong>without an incident</strong> (multipart
+                <code>file</code>; optional form field <code>incident</code> to link it at once; <code>keylog</code>
+                for a capture). The analysis is then read from the samples, mails and captures endpoints.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/artifacts/{id}/links</code> · <code>DELETE …/links/{incidentId}</code></td>
+              <td>
+                Link the artifact to an incident (<code>{"incidentId"}</code>) or take it out. A file or an e-mail can
+                be in several incidents, a capture in one. Unlinking never deletes the artifact.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/artifacts/{id}/attachments/{path}/sample</code> ·
+                <code>POST /api/artifacts/{id}/objects/sample</code>
+              </td>
+              <td>
+                Analyse an e-mail's attachment, or an object exported from a capture, as a file artifact related to its
+                source (optional <code>?incident=</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/artifacts/{id}/tags</code> · <code>DELETE /api/artifacts/{id}</code></td>
+              <td>
+                Replace the tags (<code>{"tags": []}</code>, 12 at most). Delete the artifact: its file, its analyses
+                and its reference in every incident.
+              </td>
             </tr>
             <tr>
               <td><code>GET/POST /api/samples/{sha256}/code</code></td>

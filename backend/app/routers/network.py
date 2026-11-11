@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import artifacts
 from ..core import vault
 from ..core.config import settings
 from ..core.db import get_db
@@ -65,6 +66,10 @@ def _incident_or_404(db: OrmSession, incident_id: str) -> Incident:
     return row
 
 
+def _incident_of(db: OrmSession, row: NetworkCapture) -> Incident | None:
+    return db.get(Incident, row.incident_id) if row.incident_id else None
+
+
 def _capture_or_404(db: OrmSession, capture_id: str, incident_id: str | None = None) -> NetworkCapture:
     row = db.get(NetworkCapture, capture_id) if store.is_capture_id(capture_id) else None
     if row is None or (incident_id is not None and row.incident_id != incident_id):
@@ -103,21 +108,15 @@ def _keylog_text(data: bytes) -> str:
     return text
 
 
-# --------------------------------------------------------------------------- #
-# Captures                                                                    #
-# --------------------------------------------------------------------------- #
-@router.post("/incidents/{incident_id}/captures", status_code=status.HTTP_201_CREATED)
-async def upload_capture(
-    incident_id: str,
-    file: UploadFile = File(..., description="A pcap or pcapng file (optionally gzip-compressed)."),
-    keylog: UploadFile | None = File(None, description="Optional TLS key log (SSLKEYLOGFILE) to decrypt HTTPS."),
-    caller: Principal = Depends(writer_principal),
-    db: OrmSession = Depends(get_db),
-    background_tasks: BackgroundTasks = None,
-) -> dict:
-    """Store a packet capture in the incident and analyse it in the background
-    (``status``: indexing, then ready or error). Up to ``PCAP_MAX_MB``."""
-    incident = _incident_or_404(db, incident_id)
+async def store_capture(
+    db: OrmSession,
+    incident: Incident | None,
+    file: UploadFile,
+    keylog: UploadFile | None,
+    caller: Principal,
+    background_tasks: BackgroundTasks | None,
+) -> NetworkCapture:
+    """Store an uploaded capture, in the incident or on its own, and queue its analysis."""
     head = await file.read(CHUNK)
     ext = store.capture_format(head)
     if ext is None:
@@ -143,7 +142,7 @@ async def upload_capture(
     store.seal(part, store.capture_path(capture_id, ext))
     row = NetworkCapture(
         id=capture_id,
-        incident_id=incident_id,
+        incident_id=incident.id if incident is not None else None,
         kind="pcap",
         file_name=(file.filename or f"capture.{ext}")[:255],
         size=size,
@@ -157,6 +156,25 @@ async def upload_capture(
     db.add(row)
     _audit(db, caller, "capture.upload", f"Uploaded capture {row.file_name} ({size} bytes)", incident)
     service.queue_analysis(db, row, background_tasks)
+    return row
+
+
+# --------------------------------------------------------------------------- #
+# Captures                                                                    #
+# --------------------------------------------------------------------------- #
+@router.post("/incidents/{incident_id}/captures", status_code=status.HTTP_201_CREATED)
+async def upload_capture(
+    incident_id: str,
+    file: UploadFile = File(..., description="A pcap or pcapng file (optionally gzip-compressed)."),
+    keylog: UploadFile | None = File(None, description="Optional TLS key log (SSLKEYLOGFILE) to decrypt HTTPS."),
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+) -> dict:
+    """Store a packet capture in the incident and analyse it in the background
+    (``status``: indexing, then ready or error). Up to ``PCAP_MAX_MB``."""
+    incident = _incident_or_404(db, incident_id)
+    row = await store_capture(db, incident, file, keylog, caller, background_tasks)
     return {"capture": service.reference(row)}
 
 
@@ -269,6 +287,7 @@ async def object_to_sample(
         caller,
         background_tasks,
         f"capture {row.file_name}",
+        (artifacts.artifact_id("pcap", row.id), "extracted"),
     )
     return {"sample": ref, "iocs": len(sample.analysis.get("iocs", []))}
 
@@ -359,7 +378,7 @@ async def set_keylog(
         caller,
         "capture.keylog",
         f"Added a TLS key log to capture {row.file_name}",
-        db.get(Incident, row.incident_id),
+        _incident_of(db, row),
     )
     service.queue_analysis(db, row, background_tasks)
     return service.reference(row)
@@ -381,7 +400,7 @@ def delete_keylog(
         caller,
         "capture.keylog",
         f"Removed the TLS key log of capture {row.file_name}",
-        db.get(Incident, row.incident_id),
+        _incident_of(db, row),
     )
     service.queue_analysis(db, row, background_tasks)
     return service.reference(row)
@@ -408,11 +427,16 @@ def remove_capture(
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response:
-    """Remove the capture from the incident, with its files and analysis."""
+    """Take the capture out of the incident. It stays as an artifact
+    (`DELETE /api/artifacts/pcap-<id>` deletes it). A browser session that is
+    still open is closed and deleted."""
     incident = _incident_or_404(db, incident_id)
     row = _capture_or_404(db, capture_id, incident_id)
-    _audit(db, caller, "capture.delete", f"Removed capture {row.file_name}", incident)
-    service.remove_capture(db, row)
+    _audit(db, caller, "capture.delete", f"Removed capture {row.file_name} from the incident", incident)
+    if row.status == "live":
+        service.remove_capture(db, row)
+    else:
+        service.detach(db, row)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

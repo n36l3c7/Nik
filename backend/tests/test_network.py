@@ -260,11 +260,14 @@ def test_capture_limits_and_removal(admin: TestClient, workers, monkeypatch):
         "capture"
     ]["id"]
     assert store.find_capture(capture_id) is not None
+    # Removed from the incident, the capture stays as an artifact until it is deleted.
     assert admin.delete(f"/api/incidents/net1/captures/{capture_id}", headers=key).status_code == 204
+    assert admin.get("/api/incidents/net1", headers=key).json()["data"]["network"]["captures"] == []
+    assert admin.get(f"/api/captures/{capture_id}", headers=key).json()["incidentId"] is None
+    assert admin.delete(f"/api/artifacts/pcap-{capture_id}", headers=key).status_code == 204
     assert store.find_capture(capture_id) is None
     assert admin.get(f"/api/captures/{capture_id}", headers=key).status_code == 404
-    assert admin.get("/api/incidents/net1", headers=key).json()["data"]["network"]["captures"] == []
-    # Deleting the incident deletes its captures.
+    # Deleting the incident deletes the captures only it holds.
     other = admin.post("/api/incidents/net1/captures", headers=key, files={"file": ("b.pcapng", _pcap())}).json()[
         "capture"
     ]
