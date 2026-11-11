@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bookmark,
   CalendarClock,
+  CircleDot,
   FileText,
   Flag,
   Gauge,
@@ -17,6 +18,7 @@ import {
   Terminal,
   Type,
   User,
+  UserCheck,
 } from 'lucide-react'
 import { Button, Card, StatCard } from '../../ui/index.js'
 import IncidentTimeline from './IncidentTimeline.jsx'
@@ -26,7 +28,7 @@ import { BROWSERS } from '../../../config/browsers.js'
 import { SHELLS } from '../../../config/shells.js'
 import { ARTIFACT_CATEGORIES } from '../../../config/artifacts.js'
 import { normalizeOs } from '../../../config/os.js'
-import { SEVERITIES } from '../../../domain/incidentName.js'
+import { SEVERITIES, STATUSES } from '../../../domain/incidentName.js'
 import { formatDateTime } from '../../../lib/time.js'
 
 /*
@@ -35,7 +37,7 @@ import { formatDateTime } from '../../../lib/time.js'
  * ============================================================================
  *
  * The incident's home screen. It offers three things:
- *   1. Editable incident details (ticket ID, short title, severity, host,
+ *   1. Editable incident details (ticket ID, short title, severity, status, assignee, host,
  *      username, OS, suspicious start/end) saved
  *      through updateIncidentMeta.
  *   2. A recap row of StatCards computed from the incident's data.
@@ -69,12 +71,14 @@ const INPUT_CLASS =
 const DATETIME_CLASS = `${INPUT_CLASS} [color-scheme:light]`
 
 export default function SummaryTab({ incident }) {
-  const { updateIncidentMeta } = useIncidents()
+  const { updateIncidentMeta, assignees } = useIncidents()
 
   /* ---- editable draft, reseeded whenever the active incident changes ---- */
   const [ticketId, setTicketId] = useState(incident.ticketId ?? '')
   const [title, setTitle] = useState(incident.title ?? '')
   const [severity, setSeverity] = useState(incident.severity ?? '')
+  const [status, setStatus] = useState(incident.status ?? 'open')
+  const [assignee, setAssignee] = useState(incident.assignee ?? '')
   const [host, setHost] = useState(incident.host)
   const [username, setUsername] = useState(incident.username)
   const [os, setOs] = useState(normalizeOs(incident.os))
@@ -87,6 +91,8 @@ export default function SummaryTab({ incident }) {
     setTicketId(incident.ticketId ?? '')
     setTitle(incident.title ?? '')
     setSeverity(incident.severity ?? '')
+    setStatus(incident.status ?? 'open')
+    setAssignee(incident.assignee ?? '')
     setHost(incident.host)
     setUsername(incident.username)
     setOs(normalizeOs(incident.os))
@@ -94,6 +100,12 @@ export default function SummaryTab({ incident }) {
     setEnd(msToLocalInput(incident.suspiciousEnd))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incident.id])
+
+  // The status and the assignee also change from the panel's menu: follow them.
+  useEffect(() => {
+    setStatus(incident.status ?? 'open')
+    setAssignee(incident.assignee ?? '')
+  }, [incident.status, incident.assignee])
 
   const startMs = localInputToMs(start)
   const endMs = localInputToMs(end)
@@ -105,6 +117,8 @@ export default function SummaryTab({ incident }) {
       ticketId,
       title,
       severity: severity || null,
+      status,
+      assignee,
       host,
       username,
       os,
@@ -168,6 +182,37 @@ export default function SummaryTab({ incident }) {
               {SEVERITIES.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field id="incident-status" label="Status" icon={CircleDot}>
+            <select
+              id="incident-status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className={INPUT_CLASS}
+            >
+              {STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field id="incident-assignee" label="Assigned to" icon={UserCheck}>
+            <select
+              id="incident-assignee"
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              className={INPUT_CLASS}
+            >
+              <option value="">nobody</option>
+              {[...new Set([...assignees, assignee].filter(Boolean))].map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </select>

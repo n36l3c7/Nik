@@ -343,8 +343,11 @@
         one, otherwise <code>host - user</code>: <code>[INC-2041] Invoice phishing, finance</code>,
         <code>[INC-2039] WKS-042 - m.rossi</code>, <code>SRV-FILE-01</code>. The <strong>severity</strong> (low, medium,
         high, critical) is a tag the analysts set, shown next to the name in the sidebar and the header but never part
-        of it. Everything is editable from the Summary tab; the search palette and
-        <code>GET /api/incidents?q=</code> also find incidents by ticket.
+        of it. The <strong>status</strong> (<code>open</code>, <code>in_progress</code>, <code>closed</code>; an
+        incident with none is open) and the <strong>assignee</strong> (a username) live in the document and are mirrored
+        into columns, like the ticket and the severity, so the panel lists and filters them without reading documents.
+        Everything is editable from the Summary tab; the search palette and <code>GET /api/incidents?q=</code> also find
+        incidents by ticket.
       </p>
       <p>
         <strong>Right-click.</strong> One menu for the whole app
@@ -639,6 +642,8 @@
   username:  'm.rossi',                    //   &quot;
   name:      '[INC-2041] WKS-FINANCE-01 - m.rossi', // derived: &quot;[ticket] title&quot; | &quot;[ticket] host - username&quot;
   severity:  'high',                       // 'low' | 'medium' | 'high' | 'critical' | null — a tag
+  status:    'in_progress',                // 'open' | 'in_progress' | 'closed' — where the work stands
+  assignee:  'a.bianchi',                  // username of the analyst who has it, or ''
   suspiciousStart: 1751871120000,          // Unix ms | null — start of suspicious activity
   suspiciousEnd:   1751899999000,          // Unix ms | null — end of suspicious activity
   createdAt: '2026-07-07T09:00:00.000Z',   // ISO 8601

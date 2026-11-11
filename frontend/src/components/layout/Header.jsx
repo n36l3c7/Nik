@@ -3,7 +3,7 @@ import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
 import { formatRelative } from '../../lib/time.js'
-import { SeverityTag } from '../ui/index.js'
+import { SeverityTag, StatusTag } from '../ui/index.js'
 
 /*
  * ============================================================================
@@ -46,12 +46,14 @@ export default function Header({ onOpenSearch, onOpenReport, artifactView = fals
               {OsIcon && <OsIcon className={`h-4 w-4 shrink-0 ${os.accent}`} aria-label={os.label} />}
               <span className="truncate">{activeIncident.name}</span>
               <SeverityTag severity={activeIncident.severity} />
+              <StatusTag status={activeIncident.status} />
             </h1>
             <p className="truncate text-xs text-fg-muted">
               {[
                 os?.label,
                 (activeIncident.ticketId || activeIncident.title) &&
                   [activeIncident.host, activeIncident.username].filter(Boolean).join(' / '),
+                activeIncident.assignee && `assigned to ${activeIncident.assignee}`,
                 `updated ${formatRelative(activeIncident.updatedAt)}`,
               ]
                 .filter(Boolean)

@@ -1,11 +1,27 @@
 import { useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Download, FileText, FolderOpen, Link, Mail, Plus, Trash2, Upload, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  CircleDot,
+  Download,
+  FileText,
+  FolderOpen,
+  Link,
+  Mail,
+  Plus,
+  Trash2,
+  Upload,
+  UserCheck,
+  UserMinus,
+  X,
+} from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../lib/time.js'
 import { getOsById } from '../../config/os.js'
-import { Button, MicroSkull, Modal, SeverityTag } from '../ui/index.js'
+import { Button, MicroSkull, Modal, SeverityTag, StatusTag } from '../ui/index.js'
+import { STATUSES, filterIncidents } from '../../domain/incidentName.js'
 import ArtifactsPanel from '../artifacts/ArtifactsPanel.jsx'
 
 /*
@@ -15,7 +31,8 @@ import ArtifactsPanel from '../artifacts/ArtifactsPanel.jsx'
  *
  * The rail (Rail.jsx) chooses the panel. The incidents panel holds the "New
  * incident" button (opens the modal owned by App via `onCreateIncident`), the
- * incident list sorted by last update with per-row actions (export / delete)
+ * incident list sorted by last update, filtered by status and by "mine", with
+ * per-row actions (export / delete; status and assignee in the right-click menu)
  * and the JSON import; the artifacts panel is ArtifactsPanel.
  *
  * Note: incidents are NOT renamed here — their identity (host/username) is
@@ -64,7 +81,13 @@ export default function Sidebar({
   onOpenReport,
   width = 288,
 }) {
-  const { incidents, activeIncidentId, deleteIncident, exportIncident, importIncidentFromFile } = useIncidents()
+  const { incidents, activeIncidentId, deleteIncident, exportIncident, importIncidentFromFile, setIncidentTriage } =
+    useIncidents()
+  const { currentUser } = useAuth()
+  const me = currentUser?.username ?? ''
+  // The panel's filters: a status (or all) and only the incidents assigned to the analyst.
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [mineOnly, setMineOnly] = useState(false)
   const selectIncident = onSelectIncident
   const { openMenu } = useContextMenu()
   const { showToast } = useToast()
@@ -81,8 +104,11 @@ export default function Sidebar({
 
   // List ordered by last update (most recent first).
   const sortedIncidents = useMemo(
-    () => [...incidents].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
-    [incidents],
+    () =>
+      filterIncidents(incidents, { status: statusFilter, assignee: mineOnly ? me : '' }).sort(
+        (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+      ),
+    [incidents, statusFilter, mineOnly, me],
   )
 
   /** Confirm permanent deletion of the incident. */
@@ -119,17 +145,54 @@ export default function Sidebar({
       {/* ----- Title + new incident ----- */}
       <div className="flex items-center gap-2 border-b border-line px-3 py-3">
         <p className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-wider text-fg-muted">
-          INCIDENTS · {incidents.length}
+          INCIDENTS ·{' '}
+          {sortedIncidents.length === incidents.length
+            ? incidents.length
+            : `${sortedIncidents.length}/${incidents.length}`}
         </p>
         <Button size="sm" icon={Plus} onClick={onCreateIncident}>
           New incident
         </Button>
       </div>
 
+      {/* ----- Filters: status, mine ----- */}
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <select
+          aria-label="Status filter"
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+          className="h-7 min-w-0 flex-1 border border-line bg-canvas px-1.5 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <option value="all">every status</option>
+          {STATUSES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          aria-pressed={mineOnly}
+          onClick={() => setMineOnly((value) => !value)}
+          title="Only the incidents assigned to me"
+          className={[
+            'h-7 shrink-0 border px-2 font-mono text-xs transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+            mineOnly ? 'border-accent text-accent' : 'border-line text-fg-muted hover:bg-raised hover:text-fg',
+          ].join(' ')}
+        >
+          mine
+        </button>
+      </div>
+
       {/* ----- Incident list (independent scroll) ----- */}
       <nav aria-label="Incidents" className="flex-1 overflow-y-auto px-3 py-2">
         {sortedIncidents.length === 0 ? (
-          <p className="px-1 text-sm text-fg-muted">No incidents yet: create a new one or import an existing file.</p>
+          <p className="px-1 text-sm text-fg-muted">
+            {incidents.length === 0
+              ? 'No incidents yet: create a new one or import an existing file.'
+              : 'No incident matches the filters.'}
+          </p>
         ) : (
           <ul className="space-y-1">
             {sortedIncidents.map((incident) => {
@@ -168,6 +231,30 @@ export default function Sidebar({
                           },
                         },
                         'separator',
+                        ...STATUSES.filter((s) => s.value !== incident.status).map((s) => ({
+                          label: `Mark as ${s.label}`,
+                          icon: CircleDot,
+                          onSelect: () => setIncidentTriage(incident.id, { status: s.value }),
+                        })),
+                        ...(me && incident.assignee.toLowerCase() !== me.toLowerCase()
+                          ? [
+                              {
+                                label: 'Assign to me',
+                                icon: UserCheck,
+                                onSelect: () => setIncidentTriage(incident.id, { assignee: me }),
+                              },
+                            ]
+                          : []),
+                        ...(incident.assignee
+                          ? [
+                              {
+                                label: `Remove the assignee (${incident.assignee})`,
+                                icon: UserMinus,
+                                onSelect: () => setIncidentTriage(incident.id, { assignee: '' }),
+                              },
+                            ]
+                          : []),
+                        'separator',
                         { label: 'Delete…', icon: Trash2, onSelect: () => setDeleteTarget(incident) },
                       ],
                     })
@@ -187,7 +274,7 @@ export default function Sidebar({
                     <span
                       className={[
                         'flex items-center gap-1.5 truncate pr-14 font-mono text-[13px] font-semibold',
-                        isActive ? 'text-fg' : 'text-fg/90',
+                        incident.status === 'closed' ? 'text-fg-muted' : isActive ? 'text-fg' : 'text-fg/90',
                       ].join(' ')}
                     >
                       {OsIcon && <OsIcon className={`h-3.5 w-3.5 shrink-0 ${os.accent}`} aria-label={os.label} />}
@@ -197,8 +284,14 @@ export default function Sidebar({
                       <span className="truncate">{incident.name}</span>
                     </span>
                     <span className="flex items-center gap-1.5 text-[11px] text-fg-muted">
+                      <StatusTag status={incident.status} />
                       <SeverityTag severity={incident.severity} />
-                      updated {formatRelative(incident.updatedAt)}
+                      {incident.assignee && (
+                        <span className="truncate font-mono" title={`Assigned to ${incident.assignee}`}>
+                          @{incident.assignee}
+                        </span>
+                      )}
+                      <span className="shrink-0">updated {formatRelative(incident.updatedAt)}</span>
                     </span>
                   </button>
 

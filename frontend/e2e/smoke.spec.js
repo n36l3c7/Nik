@@ -666,6 +666,47 @@ test('pasted text is recognised: an address to scan, an indicator to look up', a
   await page.keyboard.press('Escape')
 })
 
+test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
+  const panel = page.locator('aside[aria-label="Incidents panel"]')
+  const list = panel.locator('nav[aria-label="Incidents"]')
+  const row = list.locator('li', { hasText: 'WKS-FINANCE-01' })
+  const menu = page.getByRole('menu')
+
+  // From the right-click menu of the panel.
+  await row.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Assign to me' }).click()
+  await expect(row).toContainText('@admin')
+  await row.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Mark as in progress' }).click()
+  await expect(row).toContainText('in progress')
+
+  // The Summary shows the same and saves a change; the header follows.
+  await row.getByRole('button').first().click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.locator('#incident-status')).toHaveValue('in_progress')
+  await expect(page.locator('#incident-assignee')).toHaveValue('admin')
+  await expect(page.getByRole('banner')).toContainText('assigned to admin')
+  await page.locator('#incident-status').selectOption('closed')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(row).toContainText('closed')
+
+  // The filters of the panel.
+  await panel.getByLabel('Status filter').selectOption('open')
+  await expect(row).toHaveCount(0)
+  await panel.getByLabel('Status filter').selectOption('closed')
+  await expect(row).toHaveCount(1)
+  await panel.getByRole('button', { name: 'mine' }).click()
+  await expect(row).toHaveCount(1)
+  await row.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Remove the assignee (admin)' }).click()
+  await expect(list).toContainText('No incident matches the filters.')
+  await panel.getByRole('button', { name: 'mine' }).click()
+  await panel.getByLabel('Status filter').selectOption('all')
+  await row.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Mark as open' }).click()
+  await expect(row).not.toContainText('closed')
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()
