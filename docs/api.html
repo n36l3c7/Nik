@@ -240,9 +240,13 @@
               <td><code>POST /api/browser/sessions</code> · <code>…/{id}/action</code> · <code>DELETE …/{id}</code></td>
               <td>
                 The isolated browser: open an HTML attachment or a link (<code>network</code> true or false,
-                <code>incident</code> to keep the network log, audited), replay clicks, typing, keys, scrolling and
-                navigation, send or hold submissions (<code>policy</code>, audited), get a screenshot back; close the
-                session. <code>GET …/{id}/network</code> lists its requests.
+                <code>incident</code> to keep the network log, <code>width</code> and <code>height</code> of the page,
+                audited), replay clicks, typing, keys, scrolling and navigation, send or hold submissions
+                (<code>policy</code>, audited), get a screenshot back; close the session. The answer lists the session's
+                <code>tabs</code> (<code>{ id, title, url, active }</code>): the windows the page opened. The actions
+                <code>tab</code> and <code>closeTab</code> (with the tab's <code>id</code>) show or close one, and
+                <code>resize</code> (<code>width</code>, <code>height</code>, kept between 640×400 and 2560×1600) draws
+                the pages at another size. <code>GET …/{id}/network</code> lists the session's requests.
               </td>
             </tr>
             <tr>

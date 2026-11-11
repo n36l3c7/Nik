@@ -120,8 +120,17 @@ def _browser(method: str, path: str, body: Any = None) -> Any:
     return _call(settings.BROWSER_URL, "X-Browser-Token", settings.BROWSER_TOKEN, method, path, body, BROWSER_TIMEOUT)
 
 
-def open_session(owner: str, network: bool, html: bytes | None = None, url: str | None = None) -> dict[str, Any]:
+def open_session(
+    owner: str,
+    network: bool,
+    html: bytes | None = None,
+    url: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> dict[str, Any]:
     body: dict[str, Any] = {"owner": owner, "network": network}
+    if width and height:
+        body.update(width=width, height=height)
     if html is not None:
         if len(html) > HTML_MAX_BYTES:
             raise WorkerError("The page is too large to open (10 MB at most)", 413)

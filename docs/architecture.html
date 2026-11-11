@@ -156,8 +156,9 @@
 │   ├── docview/                    # document viewer: Dockerfile (LibreOffice, pdfium),
 │   │                               #   nik_docview.py (Office → PDF → page PNGs), server.py, tests/
 │   ├── browser/                    # isolated browser: Dockerfile (Playwright Chromium),
-│   │                               #   nik_browser.py (sessions, network rules), netlog.py (the
-│   │                               #   DevTools-like request log), server.py, tests/
+│   │                               #   nik_browser.py (sessions, tabs, viewport), egress.py (the
+│   │                               #   filtering proxy that is Chromium's only route), netlog.py
+│   │                               #   (the DevTools-like request log), server.py, tests/
 │   └── pcap/                       # packet capture: Dockerfile (tshark, sharkd),
 │                                   #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
 ├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, upgrade-postgres.sh,
@@ -1298,9 +1299,32 @@
           is audited (<code>browser.open</code>), with or without network.
         </li>
         <li>
+          <strong>The rule is enforced where the connections are made.</strong> Chromium is started with one route, the
+          worker's own proxy (<code>egress.py</code>, on loopback): every connection a page causes goes through it, the
+          hops of a redirect and the sub-resources included, which the request interception alone never sees. For each
+          connection the proxy resolves the name itself, refuses unless every address is public, and connects to the
+          address it just checked, so a name that changes its answer between the check and the connection (DNS
+          rebinding) gains nothing. WebRTC and QUIC, which would send UDP around a proxy, are off. The proxy also tells
+          the network log where each request really went.
+        </li>
+        <li>
+          <strong>Networks.</strong> The backend reaches the worker on <code>browser-control</code>, an internal network
+          the two share with nobody: the one container that runs hostile pages has no route to the other workers or to
+          the database.
+        </li>
+        <li>
+          <strong>Tabs and size.</strong> A window the page opens (<code>window.open</code>, a
+          <code>target=_blank</code> link) becomes a tab of the session, shown at once, with at most eight open; when a
+          tab closes itself the one that opened it is shown again. The state returned by every action lists the tabs,
+          and the <code>tab</code> / <code>closeTab</code> actions switch and close them. The pages are drawn at the
+          size the analyst's window has for them (<code>resize</code>, between 640×400 and 2560×1600; a pop-up that asks
+          for its own little window gets the session's size). <code>RemoteBrowser.jsx</code> measures that space, asks
+          for it, and offers a full-screen mode.
+        </li>
+        <li>
           Downloads are refused and reported, alert / confirm / prompt dialogs are dismissed and reported, permission
-          prompts denied, a new tab replaces the current one. A session belongs to the analyst who opened it, closes
-          after 5 minutes without an action (30 minutes at most) and when the window is closed; at most
+          prompts denied. A session belongs to the analyst who opened it, closes after 5 minutes without an action (30
+          minutes at most) and when the window is closed; at most
           <code>BROWSER_MAX_SESSIONS</code> are open at once.
         </li>
         <li>

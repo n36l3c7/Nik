@@ -399,6 +399,29 @@
         <strong>Re-scan</strong> visits the address again; <strong>Open in the isolated browser</strong> lets you look
         by hand. An address already scanned is recognised and not visited twice.
       </p>
+      <h3 id="isolated-browser">The isolated browser window</h3>
+      <p>
+        The page runs in a browser on the server; what you see is a picture of it, and your clicks, typing and scrolling
+        are replayed there. Nothing of the page reaches your workstation.
+      </p>
+      <ul>
+        <li>
+          <strong>Size</strong>: the window takes most of the screen and the page is drawn at the size of the space it
+          has, so a large monitor shows a large page. The button at the right of the toolbar switches to
+          <strong>full screen</strong>; <kbd>Esc</kbd> leaves it.
+        </li>
+        <li>
+          <strong>Tabs</strong>: when the page opens another window (the pop-up of a sign-in with Google or Microsoft, a
+          link that opens in a new tab) it appears as a tab above the page and is shown at once. The first page stays
+          open: click a tab to go back to it, the cross to close one. When a pop-up closes itself, as a sign-in window
+          does when it is done, you are back on the page that opened it.
+        </li>
+        <li>
+          <strong>Network</strong>: none unless you allow it when opening. With network the page reaches the internet
+          through the server, never an internal address, whatever redirect it follows; what it submits is held until you
+          choose to send it. <strong>Network</strong> lists every request.
+        </li>
+      </ul>
       <figure class="shot">
         <img src="img/url.png" alt="A scanned address in URL Analysis" width="1600" height="1000" loading="lazy" />
         <figcaption>

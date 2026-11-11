@@ -96,7 +96,7 @@ services:
       PCAP_MAX_MB: ${PCAP_MAX_MB:-500}
     volumes:
       - sample-store:/app/samples
-    networks: [default, analysis]
+    networks: [default, analysis, browser-control]
     depends_on:
       db:
         condition: service_healthy
@@ -217,15 +217,19 @@ services:
   # Isolated browser: opens HTML attachments and links in Chromium and sends
   # back screenshots; the analyst's clicks and typing are replayed here. The
   # only worker with a route to the internet (browser-egress), used only by
-  # sessions the analyst opens with network; the worker itself refuses
-  # requests to private addresses and internal names. Read-only filesystem,
-  # no capabilities, memory / CPU limits, no published port.
+  # sessions the analyst opens with network. Chromium's sole route is the
+  # worker's own filtering proxy, which resolves each name itself and refuses
+  # private addresses and internal names for every connection, redirects
+  # included. The backend reaches it on a network of its own
+  # (browser-control): it shares none with the other workers, so the one
+  # container that runs hostile pages cannot talk to them. Read-only
+  # filesystem, no capabilities, memory / CPU limits, no published port.
   browser:
     build: ./workers/browser
     environment:
       BROWSER_TOKEN: ${BROWSER_TOKEN:?BROWSER_TOKEN is not set, run deploy/init-env.sh}
       BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-3}
-    networks: [analysis, browser-egress]
+    networks: [browser-control, browser-egress]
     read_only: true
     tmpfs: [/tmp]
     shm_size: 256m
@@ -283,6 +287,9 @@ networks:
   default:
   # Backend ↔ analysis workers only; `internal` gives them no route outside.
   analysis:
+    internal: true
+  # Backend ↔ isolated browser only, no route outside.
+  browser-control:
     internal: true
   # The isolated browser's way out (no other service is on it).
   browser-egress:

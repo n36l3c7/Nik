@@ -7,13 +7,16 @@ import {
   Globe,
   Hand,
   Lock,
+  Maximize2,
+  Minimize2,
   RotateCw,
   Send,
   WifiOff,
+  X,
 } from 'lucide-react'
 import { AsciiSkull, Badge, Button, Modal } from '../../ui/index.js'
 import { api } from '../../../services/api.js'
-import { BROWSER_KEYS, toPagePoint } from '../../../domain/mail.js'
+import { BROWSER_KEYS, browserViewport, fitInside, toPagePoint } from '../../../domain/mail.js'
 import RequestLog from '../network/RequestLog.jsx'
 
 /*
@@ -29,6 +32,14 @@ import RequestLog from '../network/RequestLog.jsx'
  * Network panel lists every request (DevTools-like); opened from an incident,
  * the log is kept there and becomes a capture in Network Analysis when the
  * window closes. Escape closes the window.
+ *
+ * Tabs: a window the page opens (a sign-in pop-up, a target=_blank link) is a
+ * tab of the session, shown at once; the tab bar appears with the second one
+ * and switches between them. A tab that closes itself returns to its opener.
+ *
+ * Size: the page is drawn at the size of the space this window gives it, so a
+ * large monitor shows a large page, at one screenshot pixel per screen pixel.
+ * The window fills most of the screen, and the Full screen button all of it.
  */
 
 export function OpenBrowserDialog({ target, onCancel, onOpen }) {
@@ -101,6 +112,11 @@ export function OpenBrowserDialog({ target, onCancel, onOpen }) {
 }
 
 const REFRESH_MS = 4000
+// The page follows the window a moment after it stops changing size.
+const RESIZE_SETTLE_MS = 300
+
+/** The space the dialog will give the page, guessed from the window before the dialog is drawn. */
+const guessViewport = () => browserViewport(window.innerWidth * 0.98 - 44, window.innerHeight * 0.96 - 190)
 
 export default function RemoteBrowser({ request, onClose }) {
   const [state, setState] = useState(null)
@@ -108,13 +124,28 @@ export default function RemoteBrowser({ request, onClose }) {
   const [busy, setBusy] = useState(false)
   const [confirmRelease, setConfirmRelease] = useState(false)
   const [address, setAddress] = useState('')
+  const [fullscreen, setFullscreen] = useState(false)
+  // The space available to the page, in CSS pixels.
+  const [box, setBox] = useState(null)
   const sessionRef = useRef(null)
+  const activeTabRef = useRef(null)
   const queue = useRef(Promise.resolve())
   const typed = useRef('')
   const typeTimer = useRef(null)
   const wheel = useRef(0)
   const wheelTimer = useRef(null)
   const imageRef = useRef(null)
+  const frameRef = useRef(null)
+  const viewRef = useRef(null)
+
+  /** Keep the state, and follow the address when the session moved to another tab by itself. */
+  const accept = useCallback((res, { followAddress = true } = {}) => {
+    const active = res.tabs?.find((tab) => tab.active)?.id ?? null
+    const moved = active !== activeTabRef.current
+    activeTabRef.current = active
+    setState((prev) => ({ ...res, captureId: res.captureId ?? prev?.captureId }))
+    if (followAddress || moved) setAddress(res.url)
+  }, [])
 
   // Open the session; close it when the window goes away.
   useEffect(() => {
@@ -122,8 +153,14 @@ export default function RemoteBrowser({ request, onClose }) {
     let cancelled = false
     setState(null)
     setError(null)
+    activeTabRef.current = null
     const source = request.url ? { url: request.url } : { mail: request.sha256, path: request.path }
-    const body = { ...source, network: request.network, ...(request.incident ? { incident: request.incident } : {}) }
+    const body = {
+      ...source,
+      network: request.network,
+      ...(request.incident ? { incident: request.incident } : {}),
+      ...guessViewport(),
+    }
     api
       .post('/browser/sessions', body)
       .then((res) => {
@@ -132,8 +169,7 @@ export default function RemoteBrowser({ request, onClose }) {
           return
         }
         sessionRef.current = res.id
-        setState(res)
-        setAddress(res.url)
+        accept(res)
       })
       .catch((err) => !cancelled && setError(err.message))
     return () => {
@@ -142,26 +178,29 @@ export default function RemoteBrowser({ request, onClose }) {
       sessionRef.current = null
       if (id) api.del(`/browser/sessions/${id}`).catch(() => {})
     }
-  }, [request])
+  }, [request, accept])
 
-  const send = useCallback((action) => {
-    queue.current = queue.current.then(async () => {
-      const id = sessionRef.current
-      if (!id) return
-      setBusy(true)
-      try {
-        const res = await api.post(`/browser/sessions/${id}/action`, action)
-        setState((prev) => ({ ...res, captureId: res.captureId ?? prev?.captureId }))
-        if (action.type !== 'refresh') setAddress(res.url)
-        setError(null)
-      } catch (err) {
-        setError(err.message)
-      } finally {
-        setBusy(false)
-      }
-    })
-    return queue.current
-  }, [])
+  const send = useCallback(
+    (action) => {
+      queue.current = queue.current.then(async () => {
+        const id = sessionRef.current
+        if (!id) return
+        setBusy(true)
+        try {
+          const res = await api.post(`/browser/sessions/${id}/action`, action)
+          // A refresh must not overwrite an address being typed.
+          accept(res, { followAddress: action.type !== 'refresh' && action.type !== 'resize' })
+          setError(null)
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setBusy(false)
+        }
+      })
+      return queue.current
+    },
+    [accept],
+  )
 
   // The Network panel: the session's requests, refreshed while it is open.
   const [showNetwork, setShowNetwork] = useState(false)
@@ -190,7 +229,7 @@ export default function RemoteBrowser({ request, onClose }) {
     [state?.captureId],
   )
 
-  // Pages change by themselves (redirects, timers): refresh the screenshot.
+  // Pages change by themselves (redirects, timers, a pop-up): refresh the screenshot.
   useEffect(() => {
     if (!state) return undefined
     const timer = setInterval(() => {
@@ -198,6 +237,43 @@ export default function RemoteBrowser({ request, onClose }) {
     }, REFRESH_MS)
     return () => clearInterval(timer)
   }, [state, busy, send])
+
+  // The space the page has: measured, and measured again whenever it changes.
+  const hasState = Boolean(state)
+  useEffect(() => {
+    const element = viewRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setBox({ width, height })
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [hasState])
+
+  // Ask the worker to draw the pages at that size, once the window has settled.
+  const wanted = box ? browserViewport(box.width, box.height) : null
+  const wantedWidth = wanted?.width
+  const wantedHeight = wanted?.height
+  const drawnWidth = state?.width
+  const drawnHeight = state?.height
+  useEffect(() => {
+    if (!wantedWidth || !drawnWidth) return undefined
+    if (wantedWidth === drawnWidth && wantedHeight === drawnHeight) return undefined
+    const timer = setTimeout(() => send({ type: 'resize', width: wantedWidth, height: wantedHeight }), RESIZE_SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [wantedWidth, wantedHeight, drawnWidth, drawnHeight, send])
+
+  // Full screen: the whole window (toolbar, tabs, page) fills the monitor.
+  useEffect(() => {
+    const onChange = () => setFullscreen(document.fullscreenElement === frameRef.current)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.()
+    else frameRef.current?.requestFullscreen?.().catch(() => setError('This browser refused the full screen.'))
+  }
 
   const flushTyping = useCallback(() => {
     clearTimeout(typeTimer.current)
@@ -248,11 +324,27 @@ export default function RemoteBrowser({ request, onClose }) {
 
   if (!request) return null
   const title = state?.title || request.label
+  const tabs = state?.tabs ?? []
+  // The picture at its own size when it fits, scaled down (never up) when the space is smaller.
+  const drawn = state && box ? fitInside(state.width, state.height, box.width, box.height) : null
 
   return (
-    <Modal open onClose={onClose} title={`Isolated browser · ${title}`} maxWidth="max-w-6xl">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-1.5">
+    <Modal
+      open
+      // Escape leaves the full screen first; only then does it close the window.
+      onClose={() => !document.fullscreenElement && onClose()}
+      title={`Isolated browser · ${title}`}
+      maxWidth="max-w-[98vw]"
+      tall
+    >
+      <div
+        ref={frameRef}
+        className={[
+          'flex flex-col gap-2 bg-panel',
+          fullscreen ? 'h-screen w-screen p-3' : 'h-[calc(96vh-7.5rem)] min-h-[24rem]',
+        ].join(' ')}
+      >
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           <Button
             variant="ghost"
             size="xs"
@@ -327,8 +419,55 @@ export default function RemoteBrowser({ request, onClose }) {
               Network · {state.log?.requests ?? 0}
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="xs"
+            icon={fullscreen ? Minimize2 : Maximize2}
+            onClick={toggleFullscreen}
+            aria-pressed={fullscreen}
+            aria-label={fullscreen ? 'Leave full screen' : 'Full screen'}
+            title={fullscreen ? 'Leave full screen (Esc)' : 'Full screen'}
+          />
           {busy && <span className="font-mono text-[11px] text-fg-muted">…</span>}
         </div>
+
+        {tabs.length > 1 && (
+          <div role="tablist" aria-label="Tabs of the session" className="flex shrink-0 gap-1 overflow-x-auto">
+            {tabs.map((tab) => {
+              const name = tab.title || tab.url || 'new tab'
+              return (
+                <span
+                  key={tab.id}
+                  className={[
+                    'flex min-w-0 max-w-[18rem] shrink-0 items-center border font-mono text-xs',
+                    tab.active ? 'border-accent-strong bg-accent-soft text-fg' : 'border-line text-fg-muted',
+                  ].join(' ')}
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab.active}
+                    title={tab.url || name}
+                    onClick={() => !tab.active && send({ type: 'tab', id: tab.id })}
+                    className="min-w-0 truncate px-2 py-1 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    {name}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Close the tab ${name}`}
+                    title="Close this tab"
+                    onClick={() => send({ type: 'closeTab', id: tab.id })}
+                    className="shrink-0 px-1 py-1 text-fg-muted hover:text-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </span>
+              )
+            })}
+          </div>
+        )}
+
         <Modal
           open={confirmRelease}
           onClose={() => setConfirmRelease(false)}
@@ -357,12 +496,12 @@ export default function RemoteBrowser({ request, onClose }) {
         </Modal>
 
         {error && (
-          <p role="alert" className="font-mono text-xs text-high">
+          <p role="alert" className="shrink-0 font-mono text-xs text-high">
             {error}
           </p>
         )}
         {!state && !error && (
-          <div aria-busy="true" className="flex flex-col items-center gap-3 py-10 font-mono">
+          <div aria-busy="true" className="flex flex-1 flex-col items-center justify-center gap-3 font-mono">
             <AsciiSkull preset="medium" />
             <p role="status" className="text-sm text-fg-muted">
               Opening the page in the isolated browser…
@@ -370,30 +509,40 @@ export default function RemoteBrowser({ request, onClose }) {
           </div>
         )}
         {state && (
-          <div
-            role="application"
-            aria-label="Remote page: click, type and scroll here"
-            tabIndex={0}
-            onKeyDown={onKeyDown}
-            onWheel={onWheel}
-            onClick={onClick}
-            className="relative max-h-[72vh] cursor-crosshair overflow-hidden border border-line bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <img
-              ref={imageRef}
-              src={`data:image/jpeg;base64,${state.screenshot}`}
-              alt={`Screenshot of ${title}`}
-              draggable={false}
-              className="block w-full select-none"
-            />
+          // The space left for the page: what the worker is asked to draw it at.
+          <div ref={viewRef} className="flex min-h-0 flex-1 items-start justify-center overflow-hidden">
+            <div
+              role="application"
+              aria-label="Remote page: click, type and scroll here"
+              tabIndex={0}
+              onKeyDown={onKeyDown}
+              onWheel={onWheel}
+              onClick={onClick}
+              className="cursor-crosshair border border-line bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <img
+                ref={imageRef}
+                src={`data:image/jpeg;base64,${state.screenshot}`}
+                alt={`Screenshot of ${title}`}
+                draggable={false}
+                width={drawn?.width}
+                height={drawn?.height}
+                className="block select-none"
+              />
+            </div>
           </div>
         )}
-        {state && showNetwork && <RequestLog entries={entries} loadEntry={loadEntry} live />}
+        {state && showNetwork && (
+          <div className="max-h-[40%] shrink-0 overflow-y-auto">
+            <RequestLog entries={entries} loadEntry={loadEntry} live />
+          </div>
+        )}
         {state && (
-          <div className="flex flex-wrap items-start justify-between gap-2 font-mono text-[11px] text-fg-muted">
+          <div className="flex shrink-0 flex-wrap items-start justify-between gap-2 font-mono text-[11px] text-fg-muted">
             <span className="flex items-center gap-1">
               <Lock className="h-3 w-3" aria-hidden="true" />
-              Runs in the worker; you see a picture. {state.blocked} request{state.blocked === 1 ? '' : 's'} refused
+              Runs in the worker; you see a picture ({state.width}×{state.height}). {state.blocked} request
+              {state.blocked === 1 ? '' : 's'} refused
               {state.log?.held ? `, ${state.log.held} submission${state.log.held === 1 ? '' : 's'} held` : ''}.
               {state.captureId ? ' The log is kept in the incident (Network Analysis).' : ''}
             </span>
