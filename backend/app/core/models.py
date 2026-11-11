@@ -176,12 +176,41 @@ class NetworkCapture(Base):
     keylog: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
-class Artifact(Base):
-    """Something analysed on its own: a file, an e-mail or a packet capture.
+class UrlScan(Base):
+    """A URL visited by the isolated browser on the analyst's behalf.
 
-    The registry over ``samples``, ``mails`` and ``network_captures``: one row
-    per analysed object, whether or not an incident references it. ``id`` is
-    ``<kind>-<ref>`` (``file-<sha256>``, ``mail-<sha256>``, ``pcap-<capture id>``).
+    One row per distinct address (``id`` is the first 32 hex characters of the
+    SHA-256 of the normalised URL); scanning it again replaces the result.
+    ``result`` holds what the visit found: the final address, the redirect
+    chain, the page's forms, the findings behind the verdict. The screenshot
+    sits in ``SAMPLE_STORE/_urls/<id>.jpg``; ``capture_id`` is the network
+    capture of the visit (an isolated browser session).
+    """
+
+    __tablename__ = "url_scans"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    host: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # queued | running | done | error
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    verdict: Mapped[str] = mapped_column(String, nullable=False, default="")
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    scanned_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    capture_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class Artifact(Base):
+    """Something analysed on its own: a file, an e-mail, a packet capture or a URL.
+
+    The registry over ``samples``, ``mails``, ``network_captures`` and
+    ``url_scans``: one row per analysed object, whether or not an incident
+    references it. ``id`` is ``<kind>-<ref>`` (``file-<sha256>``,
+    ``mail-<sha256>``, ``pcap-<capture id>``, ``url-<scan id>``).
     ``verdict``, ``score`` and ``detail`` are a copy of what the list shows,
     refreshed when the object is analysed again.
     """
@@ -189,7 +218,7 @@ class Artifact(Base):
     __tablename__ = "artifacts"
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    kind: Mapped[str] = mapped_column(String, nullable=False, index=True)  # file | mail | pcap
+    kind: Mapped[str] = mapped_column(String, nullable=False, index=True)  # file | mail | pcap | url
     ref: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False, default="")
     verdict: Mapped[str] = mapped_column(String, nullable=False, default="")

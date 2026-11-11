@@ -1,7 +1,8 @@
-"""Artifacts: files, e-mails and packet captures analysed on their own.
+"""Artifacts: files, e-mails, packet captures and URLs analysed on their own.
 
 An artifact is the registry entry of something Nik analysed: a sample
-(``file``), an e-mail (``mail``) or a capture (``pcap``). It exists whether or
+(``file``), an e-mail (``mail``), a capture (``pcap``) or a scanned address
+(``url``). It exists whether or
 not an incident references it, so an analyst can study a file first and decide
 later whether it belongs to a case.
 
@@ -25,15 +26,24 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .core.models import Artifact, ArtifactLink, ArtifactRelation, Incident, Mail, NetworkCapture, Sample
+from .core.models import (
+    Artifact,
+    ArtifactLink,
+    ArtifactRelation,
+    Incident,
+    Mail,
+    NetworkCapture,
+    Sample,
+    UrlScan,
+)
 from .core.security import now_iso
 
 logger = logging.getLogger("nik.artifacts")
 
-KINDS = ("file", "mail", "pcap")
+KINDS = ("file", "mail", "pcap", "url")
 TAG_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,39}")
 TAGS_MAX = 12
-_ID_RE = re.compile(r"(file|mail)-[0-9a-f]{64}|pcap-[0-9a-f]{32}")
+_ID_RE = re.compile(r"(file|mail)-[0-9a-f]{64}|(pcap|url)-[0-9a-f]{32}")
 
 
 def artifact_id(kind: str, ref: str) -> str:
@@ -70,6 +80,7 @@ def _upsert(db: OrmSession, kind: str, ref: str, name: str, actor: str, created_
             created_by=actor,
         )
         db.add(row)
+        db.flush()  # a second registration in the same request must find it
     elif name and not row.name:
         row.name = name[:255]
     for key, value in fields.items():
@@ -124,6 +135,24 @@ def register_capture(db: OrmSession, capture: NetworkCapture) -> Artifact:
     )
 
 
+def register_url(db: OrmSession, scan: UrlScan) -> Artifact:
+    parts = scan.url.split("://", 1)[-1].split("?", 1)[0].rstrip("/")
+    final = (scan.result or {}).get("finalUrl") or ""
+    detail = scan.status if scan.status != "done" else (final.split("://", 1)[-1].split("/", 1)[0] or scan.host)
+    return _upsert(
+        db,
+        "url",
+        scan.id,
+        parts[:160],
+        scan.created_by,
+        scan.created_at,
+        verdict=scan.verdict if scan.status == "done" else "",
+        score=scan.score if scan.status == "done" else None,
+        detail=detail,
+        size=0,
+    )
+
+
 def relate(db: OrmSession, parent_id: str, child_id: str, relation: str) -> None:
     """Record that ``child`` was taken out of ``parent`` (kept once)."""
     if parent_id == child_id or db.get(ArtifactRelation, (parent_id, child_id)) is not None:
@@ -147,6 +176,7 @@ def sync_links(
     mails: dict[str, Mail],
     captures: dict[str, NetworkCapture],
     names: dict[str, str],
+    urls: dict[str, UrlScan] | None = None,
 ) -> None:
     """Make ``artifact_links`` match what the incident's document references.
 
@@ -160,6 +190,8 @@ def sync_links(
         wanted.add(register_mail(db, mail, names.get(mail.sha256, "")).id)
     for capture in captures.values():
         wanted.add(register_capture(db, capture).id)
+    for scan in (urls or {}).values():
+        wanted.add(register_url(db, scan).id)
     db.flush()
     current = set(db.scalars(select(ArtifactLink.artifact_id).where(ArtifactLink.incident_id == incident.id)))
     gone = current - wanted
@@ -204,6 +236,8 @@ def backfill(session_factory) -> int:
             register_mail(db, mail)
         for capture in db.scalars(select(NetworkCapture)).all():
             register_capture(db, capture)
+        for scan in db.scalars(select(UrlScan)).all():
+            register_url(db, scan)
         db.commit()
         count = len(db.scalars(select(Artifact.id)).all())
         logger.info("Registered %d artifact(s) stored by earlier releases", count)

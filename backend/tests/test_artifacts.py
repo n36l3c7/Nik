@@ -41,7 +41,7 @@ def test_file_analysed_on_its_own_then_linked(admin: TestClient):
 
     listed = admin.get("/api/artifacts", headers=key).json()
     assert [a["id"] for a in listed["artifacts"]] == [artifact["id"]]
-    assert listed["counts"] == {"file": 1, "mail": 0, "pcap": 0} and listed["total"] == 1
+    assert listed["counts"] == {"file": 1, "mail": 0, "pcap": 0, "url": 0} and listed["total"] == 1
     assert admin.get("/api/artifacts", headers=key, params={"q": "invoice"}).json()["total"] == 1
     assert admin.get("/api/artifacts", headers=key, params={"q": sha[:20]}).json()["total"] == 1
     assert admin.get("/api/artifacts", headers=key, params={"q": "nothing-like-it"}).json()["total"] == 0

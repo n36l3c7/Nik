@@ -45,6 +45,8 @@ export function sourceLabel(source) {
       return `Mail · ${id}`
     case 'network':
       return `Network · ${id}`
+    case 'url':
+      return `URL scan · ${id}`
     default:
       return String(source ?? '')
   }

@@ -1,7 +1,9 @@
 """Isolated browser sessions: Chromium (Playwright) driven by screenshots.
 
 The analyst never runs the page: this worker does, and sends back a JPEG of
-the viewport after every action (click, typing, a key, scroll, navigation).
+the viewport after every action (click, typing, a key, scroll, navigation). The
+``inspect`` action also returns what the page asks for (its forms), for the
+automatic URL scan.
 
 **Network**, chosen per session:
 
@@ -56,6 +58,20 @@ SETTLE = 0.8
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 )
+# Evaluated in the page by the ``inspect`` action (see Browser._facts).
+PAGE_FACTS = """() => ({
+  forms: Array.from(document.forms).slice(0, 20).map((form) => ({
+    action: form.action || location.href,
+    method: (form.getAttribute('method') || 'get').toLowerCase(),
+    password: Boolean(form.querySelector('input[type=password]')),
+    inputs: Array.from(form.elements).slice(0, 40).map((el) => (el.type || el.tagName || '').toLowerCase()),
+  })),
+  passwordFields: document.querySelectorAll('input[type=password]').length,
+  links: document.links.length,
+  scripts: document.scripts.length,
+  frames: document.querySelectorAll('iframe, frame').length,
+  text: ((document.body && document.body.innerText) || '').slice(0, 2000),
+})"""
 INTERNAL_SUFFIXES = (".local", ".lan", ".internal", ".intranet", ".corp", ".home", ".home.arpa", ".localdomain")
 
 
@@ -411,9 +427,22 @@ class Browser:
                 raise BrowserError("A session without network sends nothing: there is nothing to release")
             session.hold = not bool(action.get("releasePosts"))
             session.note("policy", "submissions are now " + ("held" if session.hold else "SENT"))
+        elif kind == "inspect":
+            state = await self._state(session)
+            state["page"] = await self._facts(page)
+            return state
         elif kind != "refresh":
             raise BrowserError("Unknown action")
         return await self._state(session)
+
+    async def _facts(self, page) -> dict[str, Any]:
+        """What the page asks for, read from its DOM: forms (where they post,
+        whether they ask for a password), counts of links, scripts and frames,
+        and the first visible text. Nothing is clicked or submitted."""
+        try:
+            return await page.evaluate(PAGE_FACTS)
+        except Exception as exc:  # noqa: BLE001 - a page that cannot be read still has a screenshot
+            return {"error": str(exc).splitlines()[0][:200]}
 
     def act(self, session_id: str, owner: str, action: dict[str, Any]) -> dict[str, Any]:
         session = self._get(session_id, owner)

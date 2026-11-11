@@ -1,6 +1,6 @@
 /*
  * ============================================================================
- * ARTIFACTS — files, e-mails and captures analysed on their own
+ * ARTIFACTS — files, e-mails, captures and URLs analysed on their own
  * ============================================================================
  *
  * Pure helpers over the artifact summaries of GET /api/artifacts
@@ -13,6 +13,8 @@ export const ARTIFACT_KINDS = [
   { id: 'file', label: 'file', plural: 'files', tab: 'malware', uploadPath: '/artifacts/files' },
   { id: 'mail', label: 'mail', plural: 'e-mails', tab: 'mail', uploadPath: '/artifacts/mails' },
   { id: 'pcap', label: 'pcap', plural: 'captures', tab: 'network', uploadPath: '/artifacts/captures' },
+  // A URL is not uploaded: it is scanned (POST /artifacts/urls).
+  { id: 'url', label: 'url', plural: 'addresses', tab: 'urls', uploadPath: null },
 ]
 
 const BY_ID = Object.fromEntries(ARTIFACT_KINDS.map((kind) => [kind.id, kind]))
@@ -21,7 +23,7 @@ const BY_TAB = Object.fromEntries(ARTIFACT_KINDS.map((kind) => [kind.tab, kind])
 export const artifactKind = (id) => BY_ID[id] ?? null
 
 /** The artifact kind a dropped file becomes, from its analysis tab; null for host evidence. */
-export const kindForTab = (tab) => BY_TAB[tab]?.id ?? null
+export const kindForTab = (tab) => (BY_TAB[tab]?.uploadPath ? BY_TAB[tab].id : null)
 
 /** Where the artifact's analysis is read from. */
 export function artifactId(kind, ref) {
@@ -67,7 +69,7 @@ export function parseTags(text) {
 
 /* ---- Permalink (/artifact/<id>) ---- */
 
-const PATH_RE = /^\/artifact\/((?:file|mail)-[0-9a-f]{64}|pcap-[0-9a-f]{32})$/
+const PATH_RE = /^\/artifact\/((?:file|mail)-[0-9a-f]{64}|(?:pcap|url)-[0-9a-f]{32})$/
 
 export const artifactPath = (id) => `/artifact/${id}`
 
@@ -97,6 +99,19 @@ export function artifactReference(artifact) {
       score: artifact.score ?? 0,
     }
   }
+  if (artifact.kind === 'url') {
+    // The summary's name is the address without its scheme; the scan itself has the exact one.
+    const scanned = Boolean(artifact.verdict)
+    return {
+      id: artifact.ref,
+      url: `https://${artifact.name}`,
+      status: scanned ? 'done' : ['queued', 'running', 'error'].includes(artifact.detail) ? artifact.detail : 'done',
+      verdict: artifact.verdict,
+      score: artifact.score ?? 0,
+      createdAt: artifact.createdAt,
+      createdBy: artifact.createdBy,
+    }
+  }
   return { id: artifact.ref, kind: 'pcap', fileName: artifact.name, size: artifact.size, status: 'indexing' }
 }
 
@@ -111,6 +126,7 @@ export function standaloneIncident(artifact, reference = null) {
     malware: { samples: artifact.kind === 'file' ? [ref] : [] },
     mail: { messages: artifact.kind === 'mail' ? [ref] : [] },
     network: { captures: artifact.kind === 'pcap' ? [ref] : [] },
+    urls: { scans: artifact.kind === 'url' ? [ref] : [] },
   }
   return { id: null, standalone: true, name: artifact.name, flags: {}, data }
 }

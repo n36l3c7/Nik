@@ -11,7 +11,8 @@ import { buildSamplePe, phishingEml } from '../helpers.js'
  * fresh install like the smoke test, with the evidence of e2e/fixtures/ and
  * the generated sample and e-mail, then captures each screen. Start the packet
  * capture worker and set E2E_PCAP_URL / E2E_PCAP_TOKEN for the Network
- * screenshots; without it they are skipped.
+ * screenshots, the isolated browser (E2E_BROWSER_URL / E2E_BROWSER_TOKEN) and
+ * DOCS_SCAN_URL for the URL Analysis one; without them they are skipped.
  */
 
 const ADMIN = { username: 'admin', password: 'supersecret' }
@@ -147,6 +148,19 @@ test('artifacts on their own', async () => {
   await shot('artifact')
   await artifact.getByRole('button', { name: '[INC-2041] Invoice phishing, finance', exact: true }).click()
   await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+})
+
+test('an address scanned by the isolated browser', async () => {
+  // DOCS_SCAN_URL: an address the isolated browser worker can reach that serves
+  // e2e/fixtures/signin.html (the worker refuses private addresses).
+  test.skip(!process.env.E2E_BROWSER_URL || !process.env.DOCS_SCAN_URL, 'no isolated browser or no page to scan')
+  await tabs().getByText('URL Analysis').click()
+  await page.getByLabel('Address to scan').fill(process.env.DOCS_SCAN_URL)
+  await page.getByRole('button', { name: 'Scan', exact: true }).click()
+  await expect(page.getByText('WHY THIS VERDICT')).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByRole('img', { name: /^Screenshot of/ })).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  await shot('url')
 })
 
 test('a packet capture', async () => {

@@ -49,6 +49,7 @@
             <a href="#attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</a>
           </li>
           <li><a href="#network-analysis">Network analysis</a></li>
+          <li><a href="#url-analysis">URL analysis</a></li>
         </ol>
       </nav>
       <h2 id="high-level-design">High-level design</h2>
@@ -198,7 +199,8 @@
 ├── parsing/                        # malware.py (hashes, type, entropy, strings, IOC), executables.py
 │                                   #   (PE, ELF, Mach-O), eventlog.py (.evtx), browser/shell/artifact ports
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
-├── artifacts.py                    # Artifact registry: files, e-mails and captures analysed on their own,
+├── urlscan.py                      # URL scans: the isolated browser's visit, the findings and the verdict
+├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
 ├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&amp;CK) and PDF (WeasyPrint)
 ├── browser_profiles.py             # browser profiles: legacy conversion, upload routing
@@ -288,6 +290,7 @@
 │   ├── search.js                   # searchIncident (open incident), matchActions
 │   ├── incidentName.js             # deriveIncidentName ([ticket] title | host - user), severities
 │   ├── artifactRegistry.js         # artifact kinds, verdict badge, tags, the stand-in incident of one artifact
+│   ├── urlscan.js                  # scan state and verdict, an address in pasted text, timeline events
 │   └── fileRouting.js              # detectFileRoute: which tab a dropped file belongs to
 │
 └── components/
@@ -326,6 +329,7 @@
         │                           #   frame), MailLinks, MailAttachments, HexView, RemoteBrowser
         ├── network/                # NetworkAnalysisTab, CaptureDetail, PacketView (list, tree, bytes),
         │                           #   FollowStream, RequestLog (DevTools-like Network panel)
+        ├── urls/                   # UrlAnalysisTab (scanned addresses: screenshot, verdict, redirects, forms)
         └── timeline/               # TimelineTab (the super-timeline)
 </code></pre>
       <p>
@@ -1281,6 +1285,31 @@
         upload. It also exports as <strong>HAR 1.2</strong> (<code>network/har.py</code>).
       </p>
       <hr />
+      <h2 id="url-analysis">URL analysis</h2>
+      <p>
+        An address is scanned by the <strong>isolated browser</strong> worker, the same that opens HTML attachments:
+        <code>urlscan.run_scan</code> (a background task of the API) opens a session with network access (private and
+        internal hosts are refused, submissions are held), calls the worker's <code>inspect</code> action, which returns
+        a screenshot and what the page asks for (its forms, read from the DOM), copies the session's network log and
+        closes the session. Nothing is typed, clicked or submitted.
+      </p>
+      <p>
+        <code>urlscan.assess</code> weighs the facts into findings with points, as Mail Analysis does: the address
+        itself (lookalike of a brand, punycode, <code>@</code> in the authority, an IP address as host, a throwaway
+        top-level domain, a shortener, a cloud-hosted page: the link rules of <code>mail/links.py</code>), a page that
+        asks for a password outside the brand's own domains (and over plain http, or under a brand's name in its title),
+        a form that posts to another registrable domain, a chain through three or more domains, a certificate issued
+        less than seven days ago, a download the page started. A score of 70 or more is <code>phishing</code>, 40 to 69
+        <code>suspicious</code>, less <code>clean</code>.
+      </p>
+      <p>
+        One row per distinct address (<code>url_scans</code>, id = the first 32 hex characters of the SHA-256 of the
+        normalised URL): scanning it again replaces the result. The screenshot sits in
+        <code>SAMPLE_STORE/_urls/</code>; the visit's network log becomes a capture (an isolated browser session),
+        related to the address as its child. An incident keeps a light reference under <code>data.urls.scans</code>; the
+        address, the hosts it led to and the server's IP join the incident's indicators, the scan its timeline and
+        report.
+      </p>
     </main>
 
     <footer class="site-footer">

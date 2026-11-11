@@ -19,7 +19,7 @@ import { useAuth } from './AuthContext.jsx'
 
 const ArtifactContext = createContext(null)
 const EMPTY_FILTERS = { kind: '', q: '', mine: false }
-const NO_COUNTS = { file: 0, mail: 0, pcap: 0 }
+const NO_COUNTS = { file: 0, mail: 0, pcap: 0, url: 0 }
 
 const idFromUrl = () => (typeof window === 'undefined' ? null : artifactIdFromPath(window.location.pathname))
 
@@ -116,6 +116,19 @@ export function ArtifactProvider({ children }) {
     [refresh],
   )
 
+  /**
+   * Scan an address with the isolated browser, optionally in an incident.
+   * Resolves with the scan ({ artifactId, known, status, … }).
+   */
+  const scanUrl = useCallback(
+    async (url, { incidentId = null } = {}) => {
+      const scan = await api.post('/artifacts/urls', { url, ...(incidentId ? { incident: incidentId } : {}) })
+      refresh()
+      return scan
+    },
+    [refresh],
+  )
+
   /** The artifacts with that digest (a file already analysed), or []. */
   const lookup = useCallback(async (sha256) => {
     if (!sha256) return []
@@ -176,6 +189,7 @@ export function ArtifactProvider({ children }) {
       openArtifact,
       closeArtifact,
       startAnalysis,
+      scanUrl,
       lookup,
       link,
       unlink,
@@ -195,6 +209,7 @@ export function ArtifactProvider({ children }) {
       openArtifact,
       closeArtifact,
       startAnalysis,
+      scanUrl,
       lookup,
       link,
       unlink,

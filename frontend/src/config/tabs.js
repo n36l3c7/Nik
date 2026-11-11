@@ -6,6 +6,7 @@ import {
   Mail,
   Globe,
   HardDrive,
+  Link2,
   ListTree,
   Network,
   ScrollText,
@@ -25,7 +26,7 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
  *  - label:       label shown in the tab bar
  *  - icon:        Lucide icon shown next to the label
  *  - group:       tab bar group, in this order: 'overview' (what the incident
- *                 adds up to), 'threats' (mail, samples, network) and 'host'
+ *                 adds up to), 'threats' (mail, samples, network, URLs) and 'host'
  *                 (what was collected on the machine); a thin rule separates
  *                 the groups
  *  - component:   React component (lazy-loaded => automatic code-splitting).
@@ -47,6 +48,7 @@ const MailAnalysisTab = lazy(() => import('../components/tabs/mail/MailAnalysisT
 const IocsTab = lazy(() => import('../components/tabs/iocs/IocsTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkAnalysisTab = lazy(() => import('../components/tabs/network/NetworkAnalysisTab.jsx'))
+const UrlAnalysisTab = lazy(() => import('../components/tabs/urls/UrlAnalysisTab.jsx'))
 
 export const ANALYSIS_TABS = [
   {
@@ -123,6 +125,20 @@ export const ANALYSIS_TABS = [
     // and bytes come from POST /api/captures/{id}/rpc (Wireshark's engine).
     defaultData: {
       captures: [],
+    },
+  },
+  {
+    id: 'urls',
+    label: 'URL Analysis',
+    group: 'threats',
+    icon: Link2,
+    component: UrlAnalysisTab,
+    dataKey: 'urls',
+    // Scans live on the server (`url_scans`); the incident keeps light
+    // references: [{ id, url, host, status, verdict, score, scannedAt }].
+    // The result is fetched per address from GET /api/urls/{id}.
+    defaultData: {
+      scans: [],
     },
   },
   {

@@ -1,9 +1,10 @@
-"""Artifacts: analyse a file, an e-mail or a packet capture on its own.
+"""Artifacts: analyse a file, an e-mail, a packet capture or a URL on its own.
 
 An artifact exists without an incident; it can be linked to incidents later
 (files and e-mails to several, a capture to one), tagged, and related to the
 artifact it was taken out of. The analyses themselves stay where they are:
-``/api/samples``, ``/api/mails`` and ``/api/captures``.
+``/api/samples``, ``/api/mails``, ``/api/captures`` and ``/api/urls``
+(URL scans start in ``routers/urls.py``).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifacts
+from .. import artifacts, urlscan
 from ..core.db import get_db
 from ..core.models import (
     Artifact,
@@ -29,6 +30,7 @@ from ..core.models import (
     Mail,
     NetworkCapture,
     Sample,
+    UrlScan,
 )
 from ..core.security import Principal, now_iso, principal, writer_principal
 from ..network import service as captures
@@ -132,7 +134,7 @@ def _related(db: OrmSession, row: Artifact) -> dict[str, list[dict[str, Any]]]:
 # --------------------------------------------------------------------------- #
 @router.get("/artifacts")
 def list_artifacts(
-    kind: Optional[Literal["file", "mail", "pcap"]] = None,
+    kind: Optional[Literal["file", "mail", "pcap", "url"]] = None,
     q: str = Query("", max_length=200, description="Text in the name, hash, detail or tags."),
     tag: str = Query("", max_length=40),
     mine: bool = Query(False, description="Only the artifacts the caller created."),
@@ -343,6 +345,8 @@ def link_artifact(
         sample_routes.attach_sample(db, incident, db.get(Sample, row.ref), row.name, caller.actor)
     elif row.kind == "mail":
         mail_routes.attach_mail(db, incident, db.get(Mail, row.ref), row.name, caller.actor)
+    elif row.kind == "url":
+        urlscan.attach(db, incident, db.get(UrlScan, row.ref), caller.actor)
     else:
         capture = db.get(NetworkCapture, row.ref)
         if capture.incident_id and capture.incident_id != incident.id:
@@ -371,6 +375,8 @@ def unlink_artifact(
         found = sample_routes.detach_sample(db, incident, row.ref)
     elif row.kind == "mail":
         found = mail_routes.detach_mail(db, incident, row.ref)
+    elif row.kind == "url":
+        found = urlscan.detach(db, incident, row.ref)
     else:
         capture = db.get(NetworkCapture, row.ref)
         found = capture.incident_id == incident.id
@@ -408,6 +414,8 @@ def delete_artifact_data(db: OrmSession, row: Artifact) -> None:
         sample_routes.delete_sample_data(db, db.get(Sample, row.ref))
     elif row.kind == "mail":
         mail_routes.delete_mail_data(db, db.get(Mail, row.ref))
+    elif row.kind == "url":
+        urlscan.delete(db, db.get(UrlScan, row.ref))
     else:
         captures.remove_capture(db, db.get(NetworkCapture, row.ref))
 
@@ -440,5 +448,7 @@ def remove_incident_artifacts(db: OrmSession, incident_id: str) -> None:
             captures.remove_capture(db, db.get(NetworkCapture, row.ref), update_incident=False)
         elif row.kind == "file":
             sample_routes.delete_sample_data(db, db.get(Sample, row.ref))
+        elif row.kind == "url":
+            urlscan.delete(db, db.get(UrlScan, row.ref))
         else:
             mail_routes.delete_mail_data(db, db.get(Mail, row.ref))

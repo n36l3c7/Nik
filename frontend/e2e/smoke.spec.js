@@ -507,6 +507,46 @@ test('a file is analysed on its own, tagged, then linked to the incident', async
   await page.getByRole('button', { name: 'Incidents', exact: true }).click()
 })
 
+test('an address is scanned on its own, then linked to the incident', async () => {
+  if (process.env.E2E_BROWSER_URL) test.setTimeout(180_000)
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel.getByRole('button', { name: 'New analysis' }).click()
+  const dialog = page.getByRole('dialog', { name: 'New analysis' })
+  // Addresses on the organisation's network are refused before anything is opened.
+  await dialog.getByLabel('or an address to scan').fill('http://192.168.1.10/admin')
+  await dialog.getByRole('button', { name: 'Scan address' }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Not scanned')
+  // Defanged text is understood.
+  await dialog.getByLabel('or an address to scan').fill('hxxps://nik-e2e-scan[.]invalid/login')
+  await dialog.getByRole('button', { name: 'Scan address' }).click()
+
+  const artifact = page.getByRole('region', { name: 'Artifact' })
+  await expect(artifact.getByRole('heading', { name: 'nik-e2e-scan.invalid/login' })).toBeVisible({ timeout: 30_000 })
+  await expect(panel.getByRole('navigation', { name: 'Artifacts' })).toContainText('nik-e2e-scan.invalid/login')
+  if (process.env.E2E_BROWSER_URL) {
+    // The isolated browser visited it: a verdict with its reasons, and the visit's capture.
+    await expect(page.getByText('WHY THIS VERDICT')).toBeVisible({ timeout: 120_000 })
+    await expect(page.getByText('HOW THE BROWSER GOT THERE')).toBeVisible()
+    await expect(artifact).toContainText('browser session')
+  } else {
+    await expect(page.getByText('The address was not visited.', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/isolated browser is not configured/)).toBeVisible()
+  }
+
+  await artifact.getByRole('button', { name: 'Link to incident' }).click()
+  await page
+    .getByRole('dialog', { name: 'Link to incident' })
+    .getByRole('button', { name: 'Link', exact: true })
+    .click()
+  await artifact.getByRole('button', { name: 'WKS-FINANCE-01 - m.rossi', exact: true }).click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByText('URL Analysis').click()
+  await expect(page.getByRole('list', { name: 'Addresses' })).toContainText('nik-e2e-scan.invalid/login', {
+    timeout: 20_000,
+  })
+  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

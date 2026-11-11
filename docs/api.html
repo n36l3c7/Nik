@@ -275,10 +275,10 @@
               <td>
                 The files, e-mails and captures analysed on their own or in incidents, newest first, each with the
                 incidents that reference it. Query: <code>kind</code> (<code>file</code>, <code>mail</code>,
-                <code>pcap</code>), <code>q</code>, <code>tag</code>, <code>mine</code>, <code>linked</code>,
-                <code>limit</code> / <code>offset</code>. One artifact also lists its <code>parents</code> and
-                <code>children</code> (the e-mail an attachment came from, the objects taken out of a capture). Ids are
-                <code>file-&lt;sha256&gt;</code>, <code>mail-&lt;sha256&gt;</code>,
+                <code>pcap</code>, <code>url</code>), <code>q</code>, <code>tag</code>, <code>mine</code>,
+                <code>linked</code>, <code>limit</code> / <code>offset</code>. One artifact also lists its
+                <code>parents</code> and <code>children</code> (the e-mail an attachment came from, the objects taken
+                out of a capture). Ids are <code>file-&lt;sha256&gt;</code>, <code>mail-&lt;sha256&gt;</code>,
                 <code>pcap-&lt;capture id&gt;</code>.
               </td>
             </tr>
@@ -292,6 +292,22 @@
                 Analyse a file, an e-mail or a capture <strong>without an incident</strong> (multipart
                 <code>file</code>; optional form field <code>incident</code> to link it at once; <code>keylog</code>
                 for a capture). The analysis is then read from the samples, mails and captures endpoints.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/artifacts/urls</code></td>
+              <td>
+                Scan an address with the isolated browser (<code>{"url", "incident"?}</code>; defanged text accepted,
+                private and internal hosts refused). Returns the scan and its <code>artifactId</code>
+                (<code>url-&lt;id&gt;</code>); an address already scanned is returned as it is (<code>known</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/urls/{id}</code> · <code>POST …/rescan</code> · <code>GET …/screenshot</code></td>
+              <td>
+                The scan's state (<code>queued</code>, <code>running</code>, <code>done</code>, <code>error</code>),
+                verdict, score and result: final address, navigation chain, forms, findings with points, the capture of
+                the visit. Visit it again; the screenshot as JPEG.
               </td>
             </tr>
             <tr>

@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import aliased
 
 from . import artifacts
-from .core.models import Incident, IocEntry, Mail, NetworkCapture, Sample
+from .core.models import Incident, IocEntry, Mail, NetworkCapture, Sample, UrlScan
 from .parsing.malware import _FALSE_POSITIVE_DOMAINS, _IOC_PATTERNS
 
 TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
@@ -215,6 +215,7 @@ def extract(
     samples: dict[str, Sample] | None = None,
     mails: dict[str, Mail] | None = None,
     captures: dict[str, NetworkCapture] | None = None,
+    urls: dict[str, UrlScan] | None = None,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """Every indicator of an incident document (see the module docstring)."""
     data = doc.get("data") if isinstance(doc.get("data"), dict) else {}
@@ -297,6 +298,17 @@ def extract(
             for kind, value, when in capture_iocs(capture.summary or {}):
                 out.add(kind, value, f"network:{ref.get('fileName') or ref.get('id')}", when)
 
+    for ref in (data.get("urls") or {}).get("scans") or [] if isinstance(data.get("urls"), dict) else []:
+        if not isinstance(ref, dict):
+            continue
+        scan = (urls or {}).get(ref.get("id"))
+        if scan is not None:
+            from .urlscan import url_iocs
+
+            when = _iso_ms(scan.scanned_at or ref.get("importedAt"))
+            for kind, value in url_iocs(scan):
+                out.add(kind, value, f"url:{scan.host or scan.id}", when)
+
     return out.items
 
 
@@ -357,8 +369,13 @@ def reindex_incident(db: OrmSession, row: Incident) -> int:
         for r in [*refs, *mail_refs]
         if isinstance(r, dict) and r.get("sha256")
     }
-    artifacts.sync_links(db, row, samples, mails, captures, names)
-    items = extract(doc, samples, mails, captures)
+    scans = (doc.get("data") or {}).get("urls")
+    scan_ids = [
+        r.get("id") for r in (scans.get("scans") or [] if isinstance(scans, dict) else []) if isinstance(r, dict)
+    ]
+    urls = {u.id: u for u in db.scalars(select(UrlScan).where(UrlScan.id.in_(scan_ids)))} if scan_ids else {}
+    artifacts.sync_links(db, row, samples, mails, captures, names, urls)
+    items = extract(doc, samples, mails, captures, urls)
     db.execute(delete(IocEntry).where(IocEntry.incident_id == row.id))
     db.add_all(
         IocEntry(
