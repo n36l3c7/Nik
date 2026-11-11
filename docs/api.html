@@ -21,8 +21,10 @@
           <a href="guide.html">User guide</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
+          <a href="security.html">Security</a>
           <a href="api.html" aria-current="page">API</a>
           <a href="architecture.html">Architecture</a>
+          <a href="internals.html">Internals</a>
           <a href="developer.html">Developers</a>
           <a href="changelog.html">Changelog</a>
           <a href="https://github.com/n36l3c7/Nik">GitHub</a>
@@ -37,6 +39,16 @@
         create, edit and delete incidents, add notes, upload raw artifact files (parsed server-side) — is available
         programmatically under <code>/api</code>.
       </p>
+
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#docs">Interactive documentation</a></li>
+          <li><a href="#auth">Authentication</a></li>
+          <li><a href="#endpoints">Endpoints</a></li>
+          <li><a href="#uploads">Uploading files</a></li>
+          <li><a href="#automation">Automation features</a></li>
+        </ol>
+      </nav>
 
       <h2 id="docs">Interactive documentation</h2>
       <p>
@@ -410,7 +422,10 @@
               </td>
             </tr>
             <tr>
-              <td><code>GET/POST/PUT/DELETE /api/yara-rules</code> · <code>POST …/validate</code></td>
+              <td>
+                <code>GET/POST /api/yara-rules</code> · <code>PUT/DELETE …/{id}</code> ·
+                <code>POST …/validate</code>
+              </td>
               <td>
                 Admin-managed YARA rule sets, compiled with the built-in ones (<strong>admin</strong> to change; any
                 caller may list). A source must compile before it is saved.
@@ -505,7 +520,11 @@
             </tr>
             <tr>
               <td><code>GET /api/health</code> · <code>/api/ready</code> · <code>/api/metrics</code></td>
-              <td>Liveness · readiness (database) · Prometheus metrics.</td>
+              <td>
+                Liveness · readiness (database) · Prometheus metrics. None needs authentication, so the bundled nginx
+                does not publish <code>/api/metrics</code>: scrape <code>http://api:8000/api/metrics</code> on the
+                compose network, with <code>Authorization: Bearer …</code> when <code>METRICS_TOKEN</code> is set.
+              </td>
             </tr>
           </tbody>
         </table>
@@ -597,8 +616,9 @@
           <code>upload.completed</code>; each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>).
         </li>
         <li>
-          <strong>Operations</strong>: per-IP rate limiting, Prometheus metrics at <code>/api/metrics</code>, an
-          <code>X-Request-ID</code> on every response.
+          <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered
+          <code>429</code> beyond; Prometheus metrics at <code>/api/metrics</code> (not published by the bundled nginx);
+          an <code>X-Request-ID</code> on every response.
         </li>
         <li>
           <strong>Versioning</strong>: the current API is v1 under <code>/api</code>; breaking changes would ship under

@@ -21,8 +21,10 @@
           <a href="guide.html">User guide</a>
           <a href="deployment.html" aria-current="page">Deployment</a>
           <a href="configuration.html">Configuration</a>
+          <a href="security.html">Security</a>
           <a href="api.html">API</a>
           <a href="architecture.html">Architecture</a>
+          <a href="internals.html">Internals</a>
           <a href="developer.html">Developers</a>
           <a href="changelog.html">Changelog</a>
           <a href="https://github.com/n36l3c7/Nik">GitHub</a>
@@ -39,7 +41,11 @@
         <ol>
           <li><a href="#quick-start-with-docker-podman">Quick start with Docker / Podman</a></li>
           <li><a href="#production-deployment">Production deployment</a></li>
-          <li><a href="#full-platform-backup">Full platform backup</a></li>
+          <li><a href="#docker-podman-in-production">Docker / Podman in production: TLS, start on boot, backups</a></li>
+          <li><a href="#upgrading-to-30">Upgrading to 3.0</a></li>
+          <li><a href="#upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18</a></li>
+          <li><a href="#manual-deployment-on-rhel">Manual deployment on RHEL</a></li>
+          <li><a href="#full-platform-backup">The in-app full backup</a></li>
         </ol>
       </nav>
       <h2 id="quick-start-with-docker-podman">Quick start with Docker / Podman</h2>
@@ -198,8 +204,9 @@ podman-compose up -d --build  # or: podman compose up -d --build
         <code>KEEP_DAYS</code> in the environment). It reaches the <code>db</code> and <code>api</code> containers with
         <code>podman exec</code> / <code>docker exec</code>, found by their Compose labels, never through
         <code>compose exec</code>: <code>podman-compose</code> prints diagnostics on stdout, which would corrupt the
-        dump. To restore on a running stack (<code>B</code> = the backup directory; container names as in
-        <code>podman ps</code>):
+        dump. To restore on a running stack (<code>B</code> = the backup directory; take the container names from
+        <code>podman ps</code> or <code>docker ps</code>: podman-compose calls them <code>nik_db_1</code>, Docker
+        Compose <code>nik-db-1</code>):
       </p>
       <pre><code class="language-bash">cd &quot;$B&quot; &amp;&amp; sha256sum -c SHA256SUMS
 podman exec -i nik_db_1 pg_restore -U nik -d nik --clean --if-exists &lt; &quot;$B/db.dump&quot;
@@ -269,11 +276,11 @@ sudo podman compose up -d --build
           the old one:
         </li>
       </ol>
-      <p><code>bash cd /opt/Nik &amp;&amp; git pull</code></p>
+      <p><code>cd /opt/Nik &amp;&amp; git pull</code></p>
       <ol start="2">
         <li>Run the upgrade as root:</li>
       </ol>
-      <p><code>bash sudo deploy/upgrade-postgres.sh</code></p>
+      <p><code>sudo deploy/upgrade-postgres.sh</code></p>
       <p>
         It takes a full backup with <code>deploy/backup.sh</code> (under <code>/var/backups/nik</code>, or
         <code>BACKUP_DIR</code>), counts the rows of every table, stops the stack, starts PostgreSQL 18 on the new
@@ -284,7 +291,7 @@ sudo podman compose up -d --build
       <ol start="3">
         <li>Check the app (sign in, open an incident), then the database version:</li>
       </ol>
-      <p><code>bash podman exec nik_db_1 psql -U nik -d nik -Atc 'SHOW server_version'</code></p>
+      <p><code>podman exec nik_db_1 psql -U nik -d nik -Atc 'SHOW server_version'</code></p>
       <p>
         <strong>If <code>compose up</code> already ran</strong> on 2.12.2 before the script, the <code>db</code>
         container restarts in a loop and its log says
@@ -315,6 +322,15 @@ podman compose up -d --build
         reverse-proxies <code>/api/</code> to the backend, so the browser talks to a single origin — no CORS, and the
         session cookie just works. All commands assume a <code>sudo</code>-capable user.
       </p>
+      <div class="note">
+        <strong>This install has no analysis workers.</strong> The Code and Capabilities views, document previews, the
+        isolated browser, Network Analysis and URL scans are containers (<code>workers/</code>) and report
+        <em>not configured</em> here; samples and e-mails are still analysed statically, and every other tab works.
+        Unless you have a reason to avoid containers on the host, use the
+        <a href="#docker-podman-in-production">Compose stack</a>: it is the supported way and the one that isolates
+        hostile files (see <a href="security.html">Security</a>). The workers can also be run with the Compose file next
+        to a manual backend, with their <code>*_URL</code> and <code>*_TOKEN</code> in <code>nik.env</code>.
+      </div>
       <p>
         Because incidents, users and the audit log live in <strong>PostgreSQL on the server</strong>, back up the
         <strong>database</strong> (<code>pg_dump</code>) or use the in-app <strong>Full backup</strong> (<a
@@ -329,7 +345,7 @@ podman compose up -d --build
         Build on the RHEL host or on any machine with Node 22+ and copy <code>frontend/dist/</code> over. To install
         Node on RHEL (NodeSource, works on 8 and 9):
       </p>
-      <pre><code class="language-bash">curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+      <pre><code class="language-bash">curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
 sudo dnf install -y nodejs
 </code></pre>
       <p>Then, from the project's <code>frontend/</code> directory:</p>
@@ -337,7 +353,7 @@ sudo dnf install -y nodejs
 npm run build     # outputs the static site into dist/
 </code></pre>
       <h4 id="step-2-install-and-configure-postgresql">Step 2 — Install and configure PostgreSQL</h4>
-      <p>Any PostgreSQL from 14 on works (CI tests 16 and 18); use the version your RHEL release ships.</p>
+      <p>Any PostgreSQL from 14 on works (CI tests 18); use the version your RHEL release ships.</p>
       <pre><code class="language-bash">sudo dnf install -y postgresql-server postgresql-contrib
 sudo postgresql-setup --initdb
 sudo systemctl enable --now postgresql
@@ -359,32 +375,39 @@ host    nik      nik  ::1/128         scram-sha-256
       <pre><code>postgresql+psycopg://nik:STRONG_PASSWORD@localhost/nik
 </code></pre>
       <p>
-        Tables (<code>users</code>, <code>sessions</code>, <code>incidents</code>, <code>audit_log</code>,
-        <code>settings</code>) are created automatically on the API's first startup — no migration step.
+        The tables are created, and upgraded at every update, by the service itself when it starts (Step 3): there is
+        nothing to create by hand.
       </p>
       <h4 id="step-3-deploy-the-fastapi-backend-systemd">Step 3 — Deploy the FastAPI backend (systemd)</h4>
       <p>
-        The backend needs <strong>Python 3.11+</strong> (RHEL 9 ships it; on RHEL 8 install <code>python3.11</code>).
-        Copy <code>backend/</code> to <code>/opt/nik/backend</code> and build a virtualenv:
+        The backend needs <strong>Python 3.11 or later</strong>. The default <code>python3</code> of RHEL 8 and 9 is
+        older: install <code>python3.11</code> and call it by that name. Copy <code>backend/</code> to
+        <code>/opt/nik/backend</code> and build a virtualenv:
       </p>
-      <pre><code class="language-bash">sudo dnf install -y python3 python3-pip
+      <pre><code class="language-bash">sudo dnf install -y python3.11 python3.11-pip pango
 sudo useradd --system --home /opt/nik --shell /sbin/nologin nik
 
 sudo mkdir -p /opt/nik
 sudo cp -r backend /opt/nik/backend
 cd /opt/nik/backend
 
-sudo python3 -m venv .venv
+sudo python3.11 -m venv .venv
 sudo .venv/bin/pip install --upgrade pip
 sudo .venv/bin/pip install -r requirements.txt
-sudo chown -R nik:nik /opt/nik
+sudo mkdir -p /var/lib/nik/samples      # the sample store: exclude it from the antivirus
+sudo chown -R nik:nik /opt/nik /var/lib/nik
 </code></pre>
-      <p>Keep the secrets in <code>/etc/nik/nik.env</code> (readable only by root and the service account):</p>
+      <p>
+        Keep the secrets in <code>/etc/nik/nik.env</code> (readable only by root and the service account). One setting
+        per line, with no comment after a value: systemd would take it as part of the value.
+      </p>
       <pre><code class="language-bash">sudo mkdir -p /etc/nik
-sudo tee /etc/nik/nik.env &gt;/dev/null &lt;&lt;'EOF'
+sudo tee /etc/nik/nik.env &gt;/dev/null &lt;&lt;EOF
 DATABASE_URL=postgresql+psycopg://nik:STRONG_PASSWORD@localhost/nik
-SECRET_KEY=replace-with-a-long-random-string   # e.g. `openssl rand -hex 32`
-COOKIE_SECURE=true                             # requires HTTPS
+SECRET_KEY=$(openssl rand -hex 32)
+COOKIE_SECURE=true
+SAMPLE_STORE=/var/lib/nik/samples
+RUN_CREATE_ALL=false
 EOF
 sudo chmod 640 /etc/nik/nik.env
 sudo chown root:nik /etc/nik/nik.env
@@ -404,6 +427,8 @@ User=nik
 Group=nik
 WorkingDirectory=/opt/nik/backend
 EnvironmentFile=/etc/nik/nik.env
+# Creates the schema on the first start and upgrades it after every update.
+ExecStartPre=/opt/nik/backend/.venv/bin/alembic upgrade head
 ExecStart=/opt/nik/backend/.venv/bin/gunicorn \
     -k uvicorn.workers.UvicornWorker \
     app.main:app \
@@ -483,6 +508,7 @@ server {
 
     root  /var/www/nik;
     index index.html;
+    include /etc/nginx/snippets/nik-headers.conf;
 
     # Reverse-proxy the REST API to the gunicorn/uvicorn backend.
     location /api/ {
@@ -492,7 +518,8 @@ server {
         proxy_send_timeout 330s;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        # The client's address as nginx saw it: the API limits sign-ins by it.
+        proxy_set_header X-Forwarded-For   $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
@@ -500,11 +527,13 @@ server {
     location /assets/ {
         expires 1y;
         add_header Cache-Control &quot;public, immutable&quot;;
+        include /etc/nginx/snippets/nik-headers.conf;
     }
 
     # …but never cache the HTML entry point, so updates are picked up.
     location = /index.html {
         add_header Cache-Control &quot;no-cache&quot;;
+        include /etc/nginx/snippets/nik-headers.conf;
     }
 
     # Serve static files; fall back to index.html
@@ -521,6 +550,21 @@ server {
           >).
         </p>
       </blockquote>
+      <p>
+        Put the security headers in a file of their own, <code>/etc/nginx/snippets/nik-headers.conf</code>, so the
+        server block and the two locations that set a header of their own can include it (nginx drops the inherited ones
+        there):
+      </p>
+      <pre><code class="language-nginx">add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "no-referrer" always;
+add_header X-Frame-Options "DENY" always;
+add_header Strict-Transport-Security "max-age=31536000" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
+</code></pre>
+      <p>
+        That policy is the one the Compose image sends (<code>frontend/security-headers.js</code>): copy it again from
+        there after an update.
+      </p>
       <h4 id="step-9-open-the-firewall-and-reload">Step 9 — Open the firewall and reload</h4>
       <p>Only <strong>80/443</strong> are exposed; the backend stays on <code>127.0.0.1:8000</code>:</p>
       <pre><code class="language-bash">sudo firewall-cmd --permanent --add-service=http --add-service=https
@@ -544,9 +588,9 @@ sudo chown -R nik:nik /opt/nik
 sudo systemctl restart nik-api.service
 </code></pre>
       <p>
-        Upgrades do <strong>not</strong> wipe data: everything persists in PostgreSQL, and new tables are created on
-        startup. Take a <code>pg_dump</code> (or an in-app full backup,
-        <a href="deployment.html#full-platform-backup">full platform backup</a>) before upgrading if you want a rollback
+        Upgrades do <strong>not</strong> wipe data: everything persists in PostgreSQL and in the sample store, and the
+        service upgrades the database schema when it starts (<code>alembic upgrade head</code>, in the unit). Take a
+        <code>pg_dump</code> and a copy of <code>/var/lib/nik/samples</code> before upgrading: that is the rollback
         point.
       </p>
       <hr />
@@ -564,9 +608,12 @@ sudo systemctl restart nik-api.service
           <code>pg_dump</code>.
         </p>
         <p>
-          The backup envelope holds the <strong>analysis</strong> of every malware sample, not the raw files: those live
-          in the sample store (<code>SAMPLE_STORE</code>, the <code>sample-store</code> volume in Compose). Copy that
-          directory alongside the backup if the samples themselves must survive.
+          <strong>What it does not contain.</strong> The envelope holds the incident documents, the users, the audit log
+          and the settings. It does not hold the files of the sample store (samples, e-mails, captures), their analyses,
+          the registry of artifacts, the rule sets, the API keys, the webhooks or the threat-intelligence keys. An
+          incident restored from it on another server shows its evidence tabs, flags and notes, and references to
+          samples, e-mails and captures that are not there. For a backup of a server, use
+          <code>deploy/backup.sh</code> (the database, the sample store and <code>.env</code>).
         </p>
       </blockquote>
       <h3 id="export">Export</h3>

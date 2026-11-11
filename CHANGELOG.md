@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-11-12
+
+Documentation only.
+
+### Added
+
+- A **Security** page: what Nik defends against, how each kind of hostile
+  content is contained, what leaves the server and when, a hardening
+  checklist, the known limits, and how to report a vulnerability.
+- `SECURITY.md` and `CONTRIBUTING.md`.
+- An **Analysis internals** page, split from the architecture page, which
+  now covers the design, what is parsed where, the data model and
+  authentication.
+- The tuning and worker variables in the configuration reference, with their
+  real defaults; a table of contents on the API page; comparison links for
+  every release in this file.
+
+### Fixed
+
+- The user guide said the in-app full backup includes the sample store. It
+  does not: it holds incidents, users, the audit log and the settings. The
+  guide, the deployment page and the configuration page now say what it
+  leaves out and that `deploy/backup.sh` is the backup of a server.
+- The architecture page said no evidence file reaches the server except
+  malware samples. E-mails, captures and event logs are uploaded too, and
+  addresses are visited from the server: the page now has a table of what is
+  uploaded, what is kept and what analyses it.
+- The manual RHEL install never ran the database migrations, so an install
+  upgraded by its instructions lacked the columns of newer releases; the
+  service unit now runs `alembic upgrade head` when it starts. The same page
+  called `python3` where RHEL's is too old (it now uses `python3.11`),
+  installed Node 20 while asking for 22, put comments after values in a
+  systemd environment file (they became part of the value), sent no security
+  headers, and did not say that a manual install has no analysis workers.
+- Three commands of the PostgreSQL 18 upgrade were printed with a stray
+  `bash` in front.
+- Nine file paths and component names that no longer exist, the list of
+  routers, the storage table (four tables of twenty-seven), where Settings
+  opens from and which sections it has, the default of `RATE_LIMIT_DEFAULT`,
+  and the indicator types of the IOCs tab.
+
 ## [3.3.0] - 2026-11-12
 
 ### Added
@@ -1424,7 +1465,28 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v2.17.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/n36l3c7/Nik/compare/v3.3.0...v3.3.1
+[3.3.0]: https://github.com/n36l3c7/Nik/compare/v3.2.0...v3.3.0
+[3.2.0]: https://github.com/n36l3c7/Nik/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/n36l3c7/Nik/compare/v3.0.0...v3.1.0
+[3.0.0]: https://github.com/n36l3c7/Nik/compare/v2.28.0...v3.0.0
+[2.28.0]: https://github.com/n36l3c7/Nik/compare/v2.27.0...v2.28.0
+[2.27.0]: https://github.com/n36l3c7/Nik/compare/v2.26.0...v2.27.0
+[2.26.0]: https://github.com/n36l3c7/Nik/compare/v2.25.0...v2.26.0
+[2.25.0]: https://github.com/n36l3c7/Nik/compare/v2.24.0...v2.25.0
+[2.24.0]: https://github.com/n36l3c7/Nik/compare/v2.23.0...v2.24.0
+[2.23.0]: https://github.com/n36l3c7/Nik/compare/v2.22.1...v2.23.0
+[2.22.1]: https://github.com/n36l3c7/Nik/compare/v2.22.0...v2.22.1
+[2.22.0]: https://github.com/n36l3c7/Nik/compare/v2.21.0...v2.22.0
+[2.21.0]: https://github.com/n36l3c7/Nik/compare/v2.20.0...v2.21.0
+[2.20.0]: https://github.com/n36l3c7/Nik/compare/v2.19.0...v2.20.0
+[2.19.0]: https://github.com/n36l3c7/Nik/compare/v2.18.3...v2.19.0
+[2.18.3]: https://github.com/n36l3c7/Nik/compare/v2.18.2...v2.18.3
+[2.18.2]: https://github.com/n36l3c7/Nik/compare/v2.18.1...v2.18.2
+[2.18.1]: https://github.com/n36l3c7/Nik/compare/v2.18.0...v2.18.1
+[2.18.0]: https://github.com/n36l3c7/Nik/compare/v2.17.1...v2.18.0
+[2.17.1]: https://github.com/n36l3c7/Nik/compare/v2.17.0...v2.17.1
 [2.17.0]: https://github.com/n36l3c7/Nik/compare/v2.16.0...v2.17.0
 [2.16.0]: https://github.com/n36l3c7/Nik/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/n36l3c7/Nik/compare/v2.14.0...v2.15.0

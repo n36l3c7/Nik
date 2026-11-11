@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="dark" />
     <meta
       name="description"
-      content="Nik architecture: design, folder structure, data model, authentication, samples, mail, network."
+      content="Nik architecture: design, what is parsed where, folder structure, data model, authentication."
     />
     <title>Nik — Architecture</title>
     <link rel="stylesheet" href="styles.css" />
@@ -21,8 +21,10 @@
           <a href="guide.html">User guide</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
+          <a href="security.html">Security</a>
           <a href="api.html">API</a>
           <a href="architecture.html" aria-current="page">Architecture</a>
+          <a href="internals.html">Internals</a>
           <a href="developer.html">Developers</a>
           <a href="changelog.html">Changelog</a>
           <a href="https://github.com/n36l3c7/Nik">GitHub</a>
@@ -33,7 +35,9 @@
     <main>
       <h1>Architecture</h1>
       <p class="lead">
-        How Nik is built: the design choices, the folder structure, the data model and how each analysis works.
+        How Nik is built: the design choices, the folder structure, the data model and the authentication. How each
+        analysis works is on <a href="internals.html">Analysis internals</a>; how the pieces are kept apart is on
+        <a href="security.html">Security</a>.
       </p>
       <nav class="toc" aria-label="On this page">
         <ol>
@@ -43,60 +47,69 @@
           <li><a href="#state-and-the-data-model">State and the data model</a></li>
           <li><a href="#authentication-sessions-and-the-audit-log">Authentication, sessions and the audit log</a></li>
           <li><a href="#large-data-sets">Large data sets</a></li>
-          <li><a href="#malware-samples">Malware samples</a></li>
-          <li><a href="#mail-analysis">Mail analysis</a></li>
-          <li><a href="#threat-intelligence">Threat intelligence</a></li>
-          <li>
-            <a href="#attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</a>
-          </li>
-          <li><a href="#network-analysis">Network analysis</a></li>
-          <li><a href="#url-analysis">URL analysis</a></li>
+          <li><a href="internals.html">Analysis internals</a> (a page of its own)</li>
         </ol>
       </nav>
       <h2 id="high-level-design">High-level design</h2>
-      <pre><code>        Analyst's browser                         Server
-┌──────────────────────────────┐     ┌────────────────────────────────┐
-│  React SPA (Vite build)      │     │  nginx                         │
-│  ├─ artifact parsing (WASM)  │────▶│  ├─ static files (dist/)       │
-│  ├─ SOC detection engine     │ TLS │  └─ /api/ ──▶ FastAPI (:8000)  │
-│  └─ REST client (/api)       │     │              └─▶ PostgreSQL    │
-└──────────────────────────────┘     └────────────────────────────────┘
+      <pre><code>   Analyst's browser                      Server (the Compose stack)
+┌───────────────────────────┐     ┌─────────────────────────────────────────────┐
+│  React SPA (Vite build)   │     │  web: nginx                                 │
+│  ├─ parses small evidence │────▶│  ├─ static files, security headers          │
+│  │   (text, SQLite: WASM) │ TLS │  └─ /api/ ──▶ api: FastAPI                  │
+│  ├─ detection engine      │     │        ├─▶ db: PostgreSQL                   │
+│  └─ REST client (/api)    │     │        ├─▶ sample store (a volume)          │
+└───────────────────────────┘     │        ├─▶ analyzer, capa, docview, pcap    │
+                                  │        │     (workers with no route outside)│
+                                  │        └─▶ browser ──▶ internet, filtered   │
+                                  └─────────────────────────────────────────────┘
 </code></pre>
       <p>The split is deliberate:</p>
       <ul>
         <li>
-          <strong>Parsing stays in the browser.</strong> Raw artifact files (SQLite databases, JSON, CSV) are read and
-          normalized client-side; only the resulting entries are sent to the API as part of the incident document.
+          <strong>Small evidence is parsed in the browser.</strong> Browser databases, shell histories and the output of
+          collection scripts and DFIR tools (SQLite, JSON, CSV, property lists) are read and normalized client-side;
+          only the resulting entries are sent to the API as part of the incident document.
+        </li>
+        <li>
+          <strong>Evidence that is a file to study goes to the server.</strong> Malware samples, e-mails, packet
+          captures and Windows event logs are uploaded: the server stores them (the sample store) and analyses them,
+          itself or through a worker. Addresses are visited by the isolated browser worker.
         </li>
         <li>
           <strong>State lives on the server.</strong> Incidents, users, settings and the audit log are stored in the
-          database and shared by all analysts; nothing is kept in the browser's storage.
+          database and shared by all analysts; the browser keeps only view preferences (a panel's width, a switch).
         </li>
         <li>
           <strong>Single origin.</strong> nginx serves the SPA and proxies <code>/api/</code> to the backend, so no CORS
           configuration is needed and the httpOnly session cookie flows transparently. In development, the Vite proxy
           plays nginx's role.
         </li>
+        <li>
+          <strong>Hostile content is handled by the least privileged part.</strong> Each worker does one job in a
+          container with no network, a read-only filesystem and resource limits; the backend itself runs unprivileged.
+          See <a href="security.html">Security</a>.
+        </li>
       </ul>
       <p>
-        The REST API (<code>/api</code>) exposes: <code>auth</code> (bootstrap/login/logout/me), <code>users</code>,
-        <code>incidents</code>, <code>audit</code>, <code>settings</code> and <code>backup</code> routers, plus
-        <code>GET /api/health</code> as a liveness probe.
+        The REST API is one FastAPI application with a router per area (<code>backend/app/routers/</code>, 23 of them),
+        all under <code>/api</code>. The <a href="api.html">API page</a> lists the endpoints; Swagger UI at
+        <code>/api/docs</code> has every request and response shape.
       </p>
-      <h2 id="why-parsing-is-client-side">Why parsing is client-side</h2>
+      <h2 id="why-parsing-is-client-side">What is parsed where</h2>
       <p>
-        All artifact parsing — including Chromium's <code>History</code>, a binary <strong>SQLite</strong> database —
-        happens in the browser via <code>sql.js</code> (SQLite compiled to WebAssembly). Rationale:
+        Browser artifacts, shell histories and tool output are parsed in the analyst's browser. That includes Chromium's
+        <code>History</code>, a binary <strong>SQLite</strong> database, read with <code>sql.js</code>
+        (SQLite compiled to WebAssembly). Rationale:
       </p>
       <ol>
         <li>
-          <strong>Privacy / chain of custody</strong> — forensic artifacts can hold personal and sensitive data (a
-          subject's browsing history, credentials in URLs…). The raw files never leave the analyst's machine; only
-          normalized entries are stored.
+          <strong>Privacy / chain of custody</strong> — these files hold a subject's whole browsing history, credentials
+          in URLs and more. The raw file of one of these kinds never leaves the analyst's machine: only the normalized
+          entries are stored.
         </li>
         <li>
-          <strong>No upload pipeline</strong> — no file-size limits, no multipart handling, no temporary storage of
-          evidence on the server.
+          <strong>Less to protect on the server</strong> — no copy of somebody's browser profile sits in a store that
+          has to be secured, backed up and eventually deleted.
         </li>
         <li>
           <strong>Works in the field</strong> — the parsing layer needs no connectivity beyond the API calls that
@@ -105,8 +118,10 @@
       </ol>
       <p>
         The sql.js WASM module (~1 MB) is loaded <strong>lazily</strong> on the first SQLite import (see
-        <code>frontend/src/services/sqliteParser.js</code>): analysts who only work with JSON/CSV exports never download
-        it.
+        <code>frontend/src/parsers/sqliteParser.js</code>): analysts who only work with JSON/CSV exports never download
+        it. The same files can be sent through the API instead (<code>POST /api/incidents/{id}/upload</code>): the
+        server then parses them with a Python port of the same parsers (<code>backend/app/parsing/</code>), within the
+        limits described on <a href="security.html#hostile-input">Security</a>.
       </p>
       <p>
         <strong>File schema per engine.</strong> Chromium browsers (Chrome/Edge/Brave/Opera) share Chrome's SQLite
@@ -118,18 +133,50 @@
         <code>Downloads.plist</code> and <code>Bookmarks.plist</code>, usually binary. Timestamps differ too — see
         <a href="developer.html#browsers-parsers-and-formats">browsers, parsers and formats</a>.
       </p>
+      <p><strong>What is uploaded, and where it goes:</strong></p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Evidence</th>
+              <th>Kept on the server as</th>
+              <th>Analysed by</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Malware sample</td>
+              <td>the file, in the sample store (named by its SHA-256, never executed)</td>
+              <td>the backend (hashes, strings, YARA, structure), the analyzer and capa workers</td>
+            </tr>
+            <tr>
+              <td>E-mail (<code>.eml</code>, <code>.msg</code>)</td>
+              <td>the file, in the sample store</td>
+              <td>the backend; attachments previewed by the document and browser workers</td>
+            </tr>
+            <tr>
+              <td>Packet capture</td>
+              <td>the file, in the sample store; an optional TLS key log, encrypted in the database</td>
+              <td>the capture worker (Wireshark's engine)</td>
+            </tr>
+            <tr>
+              <td>Windows event log (<code>.evtx</code>)</td>
+              <td>the curated events only, in the incident document; the file is not kept</td>
+              <td>the backend, in a background job</td>
+            </tr>
+            <tr>
+              <td>Address to scan</td>
+              <td>a screenshot and the requests of the visit, as a capture</td>
+              <td>the isolated browser worker</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p>
-        <strong>Heavy binary formats</strong> are parsed on the server instead. Windows event logs (<code>.evtx</code>,
-        chunks of binary XML) are the first: the Event Logs tab uploads the file,
-        <code>backend/app/parsing/eventlog.py</code> parses it with the <code>evtx</code> package (a Rust parser) in a
-        background job and merges the curated events into the incident, in the same shape the browser produces from the
-        collection script's JSON. PCAP and disk images would follow the same path.
-      </p>
-      <p>
-        <strong>The one exception: malware samples.</strong> The Malware Analysis tab sends the file itself to the
-        server, because the sample <em>is</em> the evidence under study (not a container of entries to normalize) and
-        the later analysis stages (disassembly, decompilation) can only run server-side. See
-        <a href="architecture.html#malware-samples">malware samples</a>.
+        These are uploaded because the file <em>is</em> the evidence under study, not a container of entries to
+        normalize, and because their analysis (disassembly, protocol dissection, rendering a hostile document) must not
+        happen on an analyst's workstation. How each analysis works is on
+        <a href="internals.html">Analysis internals</a>.
       </p>
       <h2 id="folder-structure">Folder structure</h2>
       <pre><code>├── frontend/                       # The single-page app (React 19, Vite, Tailwind v4)
@@ -171,7 +218,8 @@
 </code></pre>
       <p>The backend package, <code>backend/app/</code>:</p>
       <pre><code>app/
-├── main.py                         # FastAPI app: create_all on startup, /api routers
+├── main.py                         # FastAPI app and its /api routers (the schema is Alembic's:
+│                                   #   the image runs `alembic upgrade head` at every start)
 ├── core/                           # Infrastructure shared by every feature
 │   ├── config.py                   # Env-based settings (DATABASE_URL, SECRET_KEY, …)
 │   ├── db.py                       # SQLAlchemy engine / session factory
@@ -427,7 +475,7 @@
         <li>
           <strong>file</strong> — the data already lives in a plain text / XML / log / SQLite file, so the analyst
           uploads that existing file and it is parsed in-browser (custom parsers in
-          <code>frontend/src/services/artifactParsers.js</code>: <code>recently-used.xbel</code>,
+          <code>frontend/src/parsers/artifactParsers.js</code>: <code>recently-used.xbel</code>,
           <code>authorized_keys</code> / cron / rc files, LaunchAgent <code>.plist</code>,
           <code>setupapi.dev.log</code>, and <code>knowledgeC.db</code> via sql.js).
         </li>
@@ -479,9 +527,10 @@
       </p>
       <p>
         The <strong>Timeline</strong> tab is the super-timeline: it merges every <em>timestamped</em> event from the
-        Browser, Command History, Endpoint Artifacts and Event Logs tabs into a single chronological, filterable table
-        (by source, detection and time window). Entries without a reliable timestamp (e.g. PSReadLine commands) are
-        intentionally left out. Any row can be flagged straight from the timeline.
+        Browser, Command History, Endpoint Artifacts and Event Logs tabs, and from the samples, e-mails, captures and
+        scanned addresses of the incident, into a single chronological, filterable table (by source, detection and time
+        window). Entries without a reliable timestamp (e.g. PSReadLine commands) are intentionally left out. Any row can
+        be flagged straight from the timeline.
       </p>
       <p>
         The <strong>sidebar is resizable</strong>: drag its right edge to widen the incident list up to a quarter of the
@@ -572,8 +621,10 @@
       </p>
       <p>
         Platform configuration lives in one sectioned <strong>Settings</strong> panel (opened from the rail's gear, or
-        deep-linked from the rail's Users and Audit log buttons): detection rules (with the built-in rulesets shown for
-        reference), business hours, account management and the audit log.
+        deep-linked from the rail's Users and Audit log buttons). Everyone has detection rules (with the built-in
+        rulesets shown for reference), business hours, the IOC allowlist, My account and the audit log; admins also have
+        the report header, mail analysis, threat intelligence, accounts, API keys and the YARA, FLIRT and capa rule
+        sets.
       </p>
       <h2 id="state-and-the-data-model">State and the data model</h2>
       <h3 id="incidentcontext">IncidentContext</h3>
@@ -779,24 +830,68 @@
           </thead>
           <tbody>
             <tr>
-              <td>Database <code>incidents</code></td>
-              <td>all incidents, imported artifacts included</td>
+              <td><code>incidents</code></td>
+              <td>
+                the incident documents (parsed evidence, flags, notes, references to samples, e-mails, captures and
+                scans), with a few fields mirrored into columns for the list and a revision counter
+              </td>
             </tr>
             <tr>
-              <td>Database <code>users</code> / <code>sessions</code></td>
-              <td>accounts (bcrypt hash) and server-side sessions</td>
+              <td><code>ioc_index</code></td>
+              <td>the indicators of every incident, rebuilt when its evidence changes</td>
             </tr>
             <tr>
-              <td>Database <code>audit_log</code></td>
+              <td>
+                <code>samples</code>, <code>sample_code</code>, <code>sample_functions</code>, <code>sample_capa</code>,
+                <code>function_annotations</code>
+              </td>
+              <td>the analysis of each sample: static analysis, disassembly, capabilities, the analysts' renames</td>
+            </tr>
+            <tr>
+              <td><code>mails</code>, <code>network_captures</code>, <code>url_scans</code></td>
+              <td>the analysis of each e-mail, capture (and isolated browser session) and scanned address</td>
+            </tr>
+            <tr>
+              <td><code>artifacts</code>, <code>artifact_links</code>, <code>artifact_relations</code></td>
+              <td>the registry of everything analysed, which incidents reference it, and what came out of what</td>
+            </tr>
+            <tr>
+              <td><code>yara_rules</code>, <code>flirt_signatures</code>, <code>capa_rules</code></td>
+              <td>the rule sets added by admins</td>
+            </tr>
+            <tr>
+              <td><code>integration_keys</code>, <code>ioc_enrichment</code>, <code>leases</code></td>
+              <td>threat-intelligence API keys (encrypted), cached answers, and the lock of the lookup worker</td>
+            </tr>
+            <tr>
+              <td><code>users</code>, <code>sessions</code>, <code>api_keys</code></td>
+              <td>accounts (bcrypt hash), server-side sessions, API keys (SHA-256 digest only)</td>
+            </tr>
+            <tr>
+              <td><code>audit_log</code></td>
               <td>the global audit trail</td>
             </tr>
             <tr>
-              <td>Database <code>settings</code></td>
-              <td>detection keywords + business hours (shared by all analysts)</td>
+              <td><code>settings</code>, <code>webhooks</code>, <code>jobs</code>, <code>idempotency_keys</code></td>
+              <td>the shared settings, event subscriptions, background uploads, replay protection</td>
+            </tr>
+            <tr>
+              <td>The sample store (a volume)</td>
+              <td>
+                the files themselves: samples and e-mails named by SHA-256, captures (<code>_captures/</code>),
+                screenshots of scanned addresses (<code>_urls/</code>), FLIRT and capa rule files
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
+      <p>
+        A backup is therefore two things: a dump of the database and a copy of the sample store (<code
+          >deploy/backup.sh</code
+        >
+        takes both, with <code>.env</code>). The in-app full backup covers the first four tables' worth of work only;
+        see <a href="deployment.html#full-platform-backup">Full platform backup</a>.
+      </p>
       <h2 id="authentication-sessions-and-the-audit-log">Authentication, sessions and the audit log</h2>
       <h3 id="authentication">Authentication</h3>
       <p>
@@ -875,7 +970,7 @@
       <ul>
         <li>
           <code>buildEvents()</code> parses each URL <strong>once</strong> (<code>analyzeUrl</code> in
-          <code>utils/url.js</code>) and stores <code>domain</code> and <code>searchQuery</code> on the event; the stat
+          <code>lib/url.js</code>) and stores <code>domain</code> and <code>searchQuery</code> on the event; the stat
           cards, the ranking widgets and the table cells read those fields instead of parsing again (<code
             >entryDomain()</code
           >
@@ -895,517 +990,6 @@
         Tables stay paginated (25 rows by default), so the DOM never holds more than one page; the cost of a large
         incident is in these data passes, not in rendering. When you add a per-row computation, do it once in the
         <code>build*</code> helper, not in a cell renderer.
-      </p>
-      <h2 id="malware-samples">Malware samples</h2>
-      <p>The <strong>Malware Analysis</strong> tab is the one place where a raw file reaches the server. The flow:</p>
-      <ol>
-        <li>
-          The analyst drops a file; the frontend posts it as is to <code>POST /api/incidents/{id}/samples</code> (<code
-            >services/api.js</code
-          >
-          → <code>upload()</code>, with progress).
-        </li>
-        <li>
-          The server (<code>routers/samples.py</code>) computes the SHA-256 and writes the bytes
-          <strong>once</strong> to the sample store (<code>app/malware/samples.py</code>:
-          <code>SAMPLE_STORE/&lt;sha256&gt;.bin</code>, read-only, no execute bit), runs the static analysis
-          (<code>parsing/malware.py</code>: hashes, magic-byte type, entropy overall and per 64 KB block, ASCII/UTF-16
-          strings, indicators) and stores the result in the <code>samples</code> table. The incident document gets only
-          a light reference under <code>data.malware.samples</code> (<code>sha256</code>, <code>fileName</code>, type,
-          size, who and when).
-        </li>
-        <li>
-          The tab fetches <code>GET /api/samples/{sha256}</code> when a sample is selected and runs the SOC engine on
-          the indicators client-side (<code>utils/malware.js</code>), with the built-in malware ruleset
-          (<code>DEFAULT_MALWARE_KEYWORDS</code>) on top of the shared keywords, exactly like the other tabs.
-        </li>
-        <li>
-          Downloads go through <code>GET /api/samples/{sha256}/download</code>, which wraps the file in an AES-256 zip
-          (<code>pyzipper</code>) protected by <code>infected</code> or a password the analyst types; the plain bytes
-          never leave the server. Uploads, downloads and removals are written to the audit log by the server.
-        </li>
-      </ol>
-      <p>
-        Design points: the same file in two incidents is stored and analysed once and deleted only when the last
-        reference goes; the first 5,000 strings are stored with the analysis and the rest is recomputed from the file on
-        demand (<code>/strings</code>); nothing ever opens the sample with a library that interprets its format. On the
-        host, <strong>exclude the sample store from the antivirus</strong> (it would quarantine the evidence) and
-        include it in backups (see the full platform backup).
-      </p>
-      <p>
-        <strong>Structure and YARA.</strong> For executables the analysis also parses the format
-        (<code>parsing/executables.py</code>): PE through <code>pefile</code> (machine, subsystem, compile time,
-        sections with entropy and flags, imports by library, exports, resources, imphash, Authenticode presence, rich
-        header, PDB path), ELF and Mach-O with Nik's own header parsers (segments, sections, needed libraries or dylibs,
-        interpreter, code signature). Malformed headers, the norm in malware, become <code>warnings</code> instead of
-        failures. Every sample is then scanned with YARA (<code>yara_rules.py</code>): the built-in rule files under
-        <code>app/malware/yara/</code> (<code>YARA_RULES</code>) plus the rule sets admins add in
-        <strong>Settings → YARA rules</strong>, which are compiled on their own before being saved and recompiled
-        together on change. A match's <code>meta.severity</code> (<code>high</code> / <code>medium</code>) and
-        <code>meta.description</code> drive the badges; YARA severity counts towards the sample's severity. The analysis
-        records its <code>analysisVersion</code>; <strong>Re-analyse</strong> (<code
-          >POST /api/samples/{sha256}/reanalyse</code
-        >) runs the current engine on the stored file, so older samples catch up after an upgrade or a rule change.
-      </p>
-      <p>
-        <strong>Code view (disassembly and decompilation).</strong> Both run in a separate worker,
-        <code>workers/analyzer/</code>, built on the official <code>rizin/rizin</code> image, which ships
-        <strong>rz-ghidra</strong> (Ghidra's decompiler, Apache-2.0, as a rizin plugin, LGPL-3.0): no Java and no extra
-        build step. The backend never runs rizin itself:
-      </p>
-      <ol>
-        <li>
-          After an upload (and on Re-analyse, or the <strong>Disassemble</strong> button) the backend queues a job
-          (<code>sample_code</code> table) and calls the worker's <code>POST /analyze</code> with the sample's SHA-256
-          and the shared <code>X-Analyzer-Token</code>.
-        </li>
-        <li>
-          The worker opens <code>&lt;store&gt;/&lt;sha256&gt;.bin</code> from its <strong>read-only</strong> mount in
-          rizin's pipe mode (<code>rizin -q0</code>, driven by <code>nik_analyzer.py</code>, standard library only),
-          runs <code>aaa</code> and returns functions (<code>aflj</code>), their calls (from the
-          <code>call</code> instructions), and for each function its basic blocks (<code>afbj</code>) with their
-          instructions (<code>pdfj</code>). A timer kills rizin after <code>ANALYZER_TIMEOUT</code>; at most
-          <code>ANALYZER_MAX_JOBS</code> requests run at once. Every function is listed: a 5,000-function Rust binary
-          takes about 75 s; <code>ANALYZER_MAX_FUNCTIONS</code> (20,000) is only a safety cap.
-        </li>
-        <li>
-          In the same session the worker decompiles functions with <code>pdgj</code> for up to
-          <code>ANALYZER_DECOMPILE_SECONDS</code> (entry point and <code>main</code> first, then the functions the
-          worker does not recognise as library code — no FLIRT match, no Rust crate, not a thunk — then the rest,
-          smallest first within each group). rz-ghidra's annotations are reduced to highlight spans and call targets,
-          about a tenth of their size. A function that takes over 30 s is skipped. Functions left out are decompiled
-          when first opened (<code>POST /decompile</code> on the worker) and kept.
-        </li>
-        <li>
-          The worker then keeps the analysed rizin session open (<code>ANALYZER_WARM_SESSIONS</code>, default 1, for
-          <code>ANALYZER_WARM_IDLE</code> seconds), so a decompilation on demand takes seconds instead of a new
-          <code>aaa</code> (on the 5,000-function sample: 0.1–3 s instead of 13 s and more). A session is lent to one
-          request at a time; if rizin died in the meantime the request falls back to a fresh analysis. Each kept session
-          holds rizin's memory for that file (about 1 GB on a large binary), hence the 4 GB default limit.
-        </li>
-        <li>
-          The backend stores the function list with the job (<code>sample_code</code>) and each function's CFG and
-          pseudo-C as a row of <code>sample_functions</code>, which the UI fetches one function at a time (<code
-            >GET /api/samples/{sha256}/code/functions/{addr}</code
-          >
-          and <code>…/decompiled</code>): the graphs of a large binary add up to tens of megabytes, and opening a
-          function reads only its own.
-        </li>
-      </ol>
-      <p>
-        rizin 0.9 can crash (segfault) after thousands of commands in one session, on a function it handles fine in a
-        fresh one. The worker survives it: it reopens the sample and retries that function once; a second crash skips
-        the function (it is listed, marked, without CFG). After three restarts in one request it gives up with an error.
-      </p>
-      <p>
-        In Compose the worker runs as the image's non-root user, with a read-only filesystem, no capabilities, memory
-        and CPU limits, no published port and no route outside the internal <code>analysis</code> network: the sample is
-        read and disassembled, never executed. Without a worker (<code>ANALYZER_URL</code> unset) the Code view says so
-        and everything else keeps working.
-      </p>
-      <p>
-        The UI (<code>components/tabs/malware/code/</code>) lists the functions with the severity of the APIs they reach
-        (the SOC malware ruleset applied to callee names, propagated through the call graph by
-        <code>utils/code.js</code>) and draws the <strong>call graph</strong> around the selected function and its
-        <strong>control-flow graph</strong> with <code>elkjs</code>: ELK's layered algorithm places the blocks (main
-        path in a column, branches on the sides), routes edges orthogonally in their own lanes and sends loops back
-        along the side, as a disassembler's graph view does. Nik draws the result as SVG with its own tokens, with pan,
-        zoom, a minimap and click to select. <code>elkjs</code> (~1.4 MB) is imported only when the Code view opens; it
-        is licensed EPL-2.0 / GPL-3.0 and used unmodified. The <strong>Decompiled</strong> panel shows the pseudo-C with
-        the decompiler's own highlighting (font ligatures off, so <code>!=</code> reads as written); a call to another
-        function of the sample is a link that opens it, and calls to suspicious APIs are red.
-      </p>
-      <p>
-        <strong>Function triage.</strong> A real binary has thousands of functions, most of them library code. The
-        worker reports, per function, what it can tell about its origin, and the UI (<code>utils/triage.js</code>) sorts
-        the list with it:
-      </p>
-      <ul>
-        <li>
-          <em>Library</em>: functions matched by a FLIRT signature (rizin's bundled set plus the <code>.sig</code> /
-          <code>.pat</code> files admins upload in <strong>Settings → FLIRT signatures</strong>, stored under
-          <code>SAMPLE_STORE/_flirt/</code> and passed to the worker, which applies them with <code>Fs</code> after
-          <code>aaa</code>), and, in Rust binaries, functions whose panic locations point at a crate's sources
-          (<code>…\.cargo\registry\src\…\&lt;crate&gt;-x.y.z\src\…rs</code>, or
-          <code>/rustc/&lt;hash&gt;/library/std/…</code> for the standard library). The worker finds those paths among
-          the strings, follows the <code>Location</code> structs that point at them, and credits each function with the
-          crates its instructions reference. The crates found are listed above the table.
-        </li>
-        <li>
-          <em>Runtime</em> (compiler start-up and C runtime support, by name), <em>thunk</em> (jumps to imports, switch
-          fragments) and <em>import</em>.
-        </li>
-        <li>
-          <em>Not recognised</em>: everything else. Release builds leave much library code without a signature or a
-          path, so this is "not recognised", not "the author's code".
-        </li>
-      </ul>
-      <p>
-        <strong>Hide recognised library code</strong> (on by default) keeps only the unrecognised functions in the list.
-        <strong>Start here</strong> ranks those that call suspicious APIs directly, use an indicator of compromise,
-        reach a suspicious API through their callees or are complex. The worker also reports the file offsets of the
-        strings each function references; matched against the analysis strings, they give each function's
-        <strong>strings used</strong> and, in the IOC table, a <strong>Used by</strong> column that opens the function
-        in the Code view. Analysts <strong>rename</strong> and <strong>comment</strong> functions (<code
-          >function_annotations</code
-        >
-        table): names replace rizin's in the list, the graphs and the pseudo-C for everyone opening the same sample.
-      </p>
-      <p>
-        <strong>Capabilities (capa).</strong> <a href="https://github.com/mandiant/capa">Mandiant capa</a> matches a
-        community rule set against the program's code and reports what it can do (send data on a socket, create a
-        process, encrypt with RC4, resolve APIs at runtime…), mapped to MITRE ATT&amp;CK and the Malware Behavior
-        Catalog. It runs in a third worker, <code>workers/capa/</code>, built on <code>python:3.12-slim</code> with
-        <code>flare-capa</code>, its rules and its library signatures at a pinned version (the rules and signatures are
-        checked against their SHA-256 at build time); capa uses its pure-Python vivisect backend, so no Java or IDA is
-        needed. capa, capa-rules and vivisect are Apache-2.0.
-      </p>
-      <ol>
-        <li>
-          After an upload and on Re-analyse (or the <strong>Run capa</strong> button) the backend queues a job (<code
-            >sample_capa</code
-          >
-          table) for x86 / x64 PE and ELF files; other types are marked <code>unsupported</code> without calling the
-          worker.
-        </li>
-        <li>
-          The worker (<code>server.py</code>, standard library) runs <code>capa -j</code> on
-          <code>&lt;store&gt;/&lt;sha256&gt;.bin</code> from its read-only mount, kills it after
-          <code>CAPA_TIMEOUT</code>, and reduces the report (megabytes on a large binary) to the capabilities with their
-          namespace, scope, ATT&amp;CK / MBC mappings and up to 200 addresses each, a few kilobytes. Rules capa marks as
-          library helpers are dropped, as capa's own report does.
-        </li>
-        <li>
-          capa is CPU-bound — seconds on a small file, ten minutes or more on a large one — so the worker runs one
-          analysis at a time and the backend sends its jobs one after the other, waiting while the worker is busy.
-        </li>
-      </ol>
-      <p>
-        The <strong>Capabilities</strong> view lists them by namespace with ATT&amp;CK and MBC badges. capa and rizin
-        split a binary into functions differently, so each address capa reports is credited to the rizin function
-        containing it (<code>placeCapabilities</code> in <code>utils/triage.js</code>): the view links each capability
-        to those functions, the Code view shows the capabilities of each function, and
-        <strong>Start here</strong> counts them — only for functions not recognised as library code, since crypto and
-        TLS crates match many rules. Capabilities do not change the sample's severity. The <code>capa</code> service has
-        the same isolation as <code>analyzer</code> (read-only store and filesystem, internal network only, no
-        capabilities, memory / CPU / time limits).
-      </p>
-      <p>
-        <strong>capa rules of your own.</strong> Admins add capa rules in <strong>Settings → capa rules</strong> (<code
-          >capa_rules</code
-        >
-        table, one YAML rule each). Since only the worker has capa, the backend asks it to check a rule (<code
-          >POST /validate</code
-        >: parsed by capa and loaded together with the bundled rules and the other enabled admin rules, so syntax
-        errors, unknown features, duplicate names and missing <code>match:</code>
-        dependencies are caught) before saving it. Saved rules are written to
-        <code>SAMPLE_STORE/_capa_rules/&lt;id&gt;.yml</code> and the enabled ones are passed to the worker with each
-        analysis, as extra <code>-r</code> rule paths next to the bundled set. A rule another enabled rule matches
-        cannot be renamed, disabled or deleted. Their matches carry a <strong>custom</strong> badge in the Capabilities
-        view; new or changed rules apply from the next analysis (Re-analyse).
-      </p>
-      <h2 id="mail-analysis">Mail analysis</h2>
-      <p>
-        The <strong>Mail Analysis</strong> tab triages reported messages. Like samples, the file goes to the server
-        once: <code>POST /api/incidents/{id}/mails</code> stores it in the sample store as
-        <code>&lt;sha256&gt;.mail</code> (read-only), analyses it (<code>app/mail/analyze.py</code>) and keeps the
-        result in the <code>mails</code> table; the incident gets a light reference under
-        <code>data.mail.messages</code> and the <code>incidents.has_mail</code> column (mirrored, for the mail icon in
-        the sidebar). Nothing in an attachment is opened by the program it is meant for.
-      </p>
-      <ul>
-        <li>
-          <strong>Parsing</strong> (<code>mail/parse.py</code>): <code>.eml</code> with the standard library;
-          <code>.msg</code> (an OLE compound file of MAPI properties) with <code>olefile</code>: the original Internet
-          headers when Outlook kept them, the bodies (Outlook's compressed RTF is decompressed, MS-OXRTFCP), the
-          attachments and attached messages (parsed in turn, three levels deep).
-        </li>
-        <li>
-          <strong>Headers</strong> (<code>mail/headers.py</code>): the <code>Received</code> chain in travel order with
-          the delay of each hop and clocks going back; the sending server is the first public IP that is not one of your
-          servers. Authentication-Results (and ARC, Received-SPF) are read as written, but only those of your own
-          servers (<strong>Settings → Mail analysis</strong>) are believed: anyone can put such a header in a message. A
-          header without an authserv-id (Exchange Online) is credited to the server that received the message last.
-        </li>
-        <li>
-          <strong>Authentication</strong> (<code>mail/verify.py</code>): DKIM signatures verified with
-          <code>dkimpy</code>, SPF of the sending IP with <code>pyspf</code>, DMARC policy and alignment
-          (relaxed/strict, organisational domain from the bundled Public Suffix List) with <code>dnspython</code>. The
-          server needs DNS; each lookup times out after 3 s and a failure reads <code>temperror</code>, never a pass.
-          These say what the DNS says <em>now</em> (a rotated DKIM key fails), so the servers' verdicts are shown next
-          to them. A <code>.msg</code> keeps no original body: its DKIM cannot be checked.
-        </li>
-        <li>
-          <strong>Links</strong> (<code>mail/links.py</code>): anchors, forms and URLs in the text, unwrapped from Safe
-          Links, Proofpoint (v1–v3), Google, Facebook and Barracuda redirects; look-alikes of well-known brands (Italian
-          banks and public services included) and of your own domains are found by folding confusable characters and
-          comparing edit distance, so punycode and <code>rn</code>→<code>m</code> tricks show.
-        </li>
-        <li>
-          <strong>Body</strong> (<code>mail/content.py</code>): the HTML is cleaned with <code>nh3</code> (no scripts,
-          handlers, frames, objects or forms), inline <code>cid:</code> images become <code>data:</code>
-          URIs, hidden text is revealed. The browser shows it in an
-          <code>&lt;iframe sandbox=""&gt;</code> (no scripts, no same-origin, no navigation of the app) whose
-          Content-Security-Policy refuses every request; links lose their target (shown as a tooltip) and remote images
-          load only after a warning, tracking pixels never. Urgency, payment, credential and secrecy phrases are listed
-          (English and Italian).
-        </li>
-        <li>
-          <strong>Attachments</strong> (<code>mail/attachments.py</code>): type from the magic bytes against the
-          extension, double extensions and right-to-left tricks, VBA/XLM macros (<code>oletools</code>), zip listings
-          (the password is looked for in the text and tried; the archive is never extracted to disk), PDF actions, QR
-          codes in images (<code>zxing-cpp</code>), calendar invitations.
-        </li>
-        <li>
-          <strong>Verdict</strong>: each finding weighs a fixed number of points (e.g. a look-alike sender domain 40,
-          DMARC failing 30, a password-protected archive 35, urgency 8); the score is capped at 100. It is an aid to
-          triage, not a proof: a clean score means nothing stood out.
-        </li>
-      </ul>
-      <p>
-        The message's indicators (sender addresses and domain, sending IP, link targets and hosts, attachment hashes, QR
-        and invitation links) go into the IOC index as <code>mail:&lt;file name&gt;</code>; the timeline shows each
-        message at the time it was sent, high when the verdict is phishing; the report has an
-        <strong>E-mails</strong> section.
-      </p>
-      <h2 id="threat-intelligence">Threat intelligence</h2>
-      <p>
-        Indicators get a reputation from external services (<code>app/enrichment/</code>). Each provider is one function
-        in <code>providers.py</code> that turns the service's answer into <code>{ verdict, summary, link, data }</code>;
-        <code>verdict</code> is <code>malicious</code>, <code>suspicious</code>, <code>harmless</code> or
-        <code>unknown</code> (not known, or nothing conclusive).
-      </p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Provider</th>
-              <th>Types</th>
-              <th>Key</th>
-              <th>Free tier (as Nik paces it)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>VirusTotal</td>
-              <td>IP, domain, URL, hash</td>
-              <td>required</td>
-              <td>1 request / 15 s, 500 a day</td>
-            </tr>
-            <tr>
-              <td>AbuseIPDB</td>
-              <td>IP</td>
-              <td>required</td>
-              <td>1,000 a day</td>
-            </tr>
-            <tr>
-              <td>abuse.ch: ThreatFox, URLhaus, MalwareBazaar</td>
-              <td>IP, domain, URL, hash</td>
-              <td>required (one Auth-Key)</td>
-              <td>—</td>
-            </tr>
-            <tr>
-              <td>AlienVault OTX</td>
-              <td>IP, domain, URL, hash</td>
-              <td>required</td>
-              <td>—</td>
-            </tr>
-            <tr>
-              <td>urlscan.io (search of public scans, nothing submitted)</td>
-              <td>domain, URL</td>
-              <td>optional</td>
-              <td>1,000 a day</td>
-            </tr>
-            <tr>
-              <td>GreyNoise Community</td>
-              <td>IP</td>
-              <td>optional</td>
-              <td>50 a day</td>
-            </tr>
-            <tr>
-              <td>Shodan InternetDB</td>
-              <td>IP</td>
-              <td>none</td>
-              <td>—</td>
-            </tr>
-            <tr>
-              <td>Google Safe Browsing</td>
-              <td>domain, URL</td>
-              <td>required</td>
-              <td>10,000 a day</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p>
-        <strong>What is never sent</strong> (<code>service.blocked</code>), whoever asks: private, loopback and other
-        non-public addresses, internal names (no dot, <code>.local</code>, <code>.lan</code>, <code>.internal</code>,
-        <code>.corp</code>, <code>.home.arpa</code>…) and URLs on them; values on the IOC allowlist; values seen in an
-        incident whose report is classified <strong>TLP:RED</strong>; e-mail addresses. MD5 and SHA-1 of stored samples
-        and mail attachments are not looked up automatically: their SHA-256 is.
-      </p>
-      <p>
-        <strong>Automatic lookups</strong> are off until an analyst turns them on in
-        <strong>Settings → Threat intelligence</strong>, per type: IP addresses, URLs and domains, file hashes. Every
-        API process starts a worker thread (<code>worker.py</code>); a lease row (<code>leases</code>) lets only one of
-        them work at a time, so several gunicorn workers do not multiply the requests. Every 30 seconds it checks the
-        indexed indicators not in the cache (newest incidents first) with every enabled provider that takes their type,
-        pacing each provider to its free tier. An answer is kept for the cache period (24 h by default, up to 30 days),
-        an error is retried after an hour; a provider that answers 429 waits an hour, one that refuses its key six
-        hours.
-      </p>
-      <p>
-        <strong>Check now</strong> in Where seen asks every usable provider at once (fresh answers are reused unless
-        "Check again"). The IOCs tab's <strong>Reputation</strong> column shows the worst cached verdict and how many
-        providers flag the value.
-      </p>
-      <p>
-        <strong>Keys</strong> are entered by admins and stored in <code>integration_keys</code>, encrypted with Fernet
-        under a key derived from <code>SECRET_KEY</code> (HKDF, <code>vault.py</code>): the API returns only whether a
-        key is set and its last four characters. Changing <code>SECRET_KEY</code> without
-        <code>SECRET_KEY_PREVIOUS</code> makes the stored keys unreadable (Settings says so): enter them again. Requests
-        use the standard library (<code>urllib</code>), so <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> apply; a
-        transparent proxy needs nothing.
-      </p>
-      <h2 id="attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</h2>
-      <p>
-        Two more workers show what an attachment looks like without opening it on the analyst's machine. Like
-        <code>analyzer</code> and <code>capa</code> they run as unprivileged users with a read-only filesystem, no
-        capabilities, memory and CPU limits, no published port, and answer only the backend's shared token.
-      </p>
-      <p>
-        <strong>Documents</strong> (<code>workers/docview/</code>, internal network only). The Mail Analysis tab's
-        <strong>Preview</strong> sends the attachment to
-        <code>POST /api/mails/{sha256}/attachments/{path}/preview</code>; the backend forwards it to the worker, which
-        converts Word, Excel, PowerPoint, OpenDocument and RTF to PDF with LibreOffice (a fresh profile per conversion:
-        macro security "very high", macros disabled, links to other files or the network never updated, killed after 90
-        s) and renders the first 20 pages of the PDF with pdfium; images are re-encoded with Pillow. The browser
-        receives PNG images only. The pages are kept under <code>SAMPLE_STORE/_previews/&lt;sha256&gt;.json</code> and
-        removed with the last message that holds the attachment.
-      </p>
-      <p>
-        <strong>Isolated browser</strong> (<code>workers/browser/</code>). HTML attachments (<strong
-          >Open in isolated browser</strong
-        >) and links (Links view) open in Chromium, run by Playwright inside the worker's container. The analyst sees a
-        JPEG of the viewport; clicks, double-clicks, typing, Enter / Tab / arrows and the wheel are sent to
-        <code>POST /api/browser/sessions/{id}/action</code> and replayed there, with back, forward, reload and an
-        address bar. Scripts of the page run in the worker, never in the analyst's browser.
-      </p>
-      <ul>
-        <li>
-          <strong>Network, chosen for each session.</strong> Without network (the default) the page is the attachment
-          itself: every other request (images, scripts, frames, form posts, links) is refused, and a navigation shows a
-          "blocked by Nik" page. With network, http and https go out through the server's connection (the
-          <code>browser-egress</code> network, the only one with a route outside), except to private, loopback or
-          link-local addresses and internal names, so a page cannot reach the organisation's own network. Every session
-          is audited (<code>browser.open</code>), with or without network.
-        </li>
-        <li>
-          <strong>The rule is enforced where the connections are made.</strong> Chromium is started with one route, the
-          worker's own proxy (<code>egress.py</code>, on loopback): every connection a page causes goes through it, the
-          hops of a redirect and the sub-resources included, which the request interception alone never sees. For each
-          connection the proxy resolves the name itself, refuses unless every address is public, and connects to the
-          address it just checked, so a name that changes its answer between the check and the connection (DNS
-          rebinding) gains nothing. WebRTC and QUIC, which would send UDP around a proxy, are off. The proxy also tells
-          the network log where each request really went.
-        </li>
-        <li>
-          <strong>Networks.</strong> The backend reaches the worker on <code>browser-control</code>, an internal network
-          the two share with nobody: the one container that runs hostile pages has no route to the other workers or to
-          the database.
-        </li>
-        <li>
-          <strong>Tabs and size.</strong> A window the page opens (<code>window.open</code>, a
-          <code>target=_blank</code> link) becomes a tab of the session, shown at once, with at most eight open; when a
-          tab closes itself the one that opened it is shown again. The state returned by every action lists the tabs,
-          and the <code>tab</code> / <code>closeTab</code> actions switch and close them. The pages are drawn at the
-          size the analyst's window has for them (<code>resize</code>, between 640×400 and 2560×1600; a pop-up that asks
-          for its own little window gets the session's size). <code>RemoteBrowser.jsx</code> measures that space, asks
-          for it, and offers a full-screen mode.
-        </li>
-        <li>
-          Downloads are refused and reported, alert / confirm / prompt dialogs are dismissed and reported, permission
-          prompts denied. A session belongs to the analyst who opened it, closes after 5 minutes without an action (30
-          minutes at most) and when the window is closed; at most
-          <code>BROWSER_MAX_SESSIONS</code> are open at once.
-        </li>
-        <li>
-          Chromium's own sandbox needs privileges the container does not give, so it runs with
-          <code>--no-sandbox</code>: the container is the sandbox.
-        </li>
-      </ul>
-      <h2 id="network-analysis">Network analysis</h2>
-      <p>
-        The <strong>Network Analysis</strong> tab reads packet captures with Wireshark's own engine, in the
-        <code>pcap</code> worker (<code>workers/pcap/</code>): Debian's <code>tshark</code> and <code>sharkd</code>, run
-        as an unprivileged user in a container with a read-only filesystem and the sample store mounted read-only, no
-        capabilities (nothing is ever captured) and the internal network only.
-      </p>
-      <ul>
-        <li>
-          <strong>Upload</strong> (<code>POST /api/incidents/{id}/captures</code>): pcap or pcapng, gzip too, up to
-          <code>PCAP_MAX_MB</code> (500), checked by its magic bytes, written to
-          <code>SAMPLE_STORE/_captures/&lt;id&gt;/</code> (read-only) and recorded in the
-          <code>network_captures</code> table. The worker then reads it once with tshark for the
-          <strong>summary</strong>: hosts by bytes, DNS names and answers, HTTP requests, TLS server names, POST / PUT /
-          PATCH requests, <strong>beacons</strong> (six or more connections to the same address and port, at least 5 s
-          apart, intervals within 15 %), the exported objects with their SHA-256 and the Expert Info counts. These feed
-          the IOC index (<code>network:&lt;file&gt;</code>), the timeline and the report's
-          <strong>Network</strong> section.
-        </li>
-        <li>
-          <strong>Viewing</strong> goes through <code>sharkd</code>, Wireshark's daemon for web front ends, one process
-          per open capture (two at most, closed after 15 minutes unused): the packet list with Wireshark's colouring
-          rules, paged; the protocol tree with the byte range of every field; Follow Stream; Export Objects. The backend
-          forwards a fixed set of read-only calls (<code>POST /api/captures/{id}/rpc</code>); columns are never taken
-          from the caller, since some custom column definitions crash sharkd.
-        </li>
-        <li>
-          <strong>TLS</strong> is decrypted with a key log (<code>SSLKEYLOGFILE</code>, NSS format) added at upload or
-          later. It is stored encrypted like the API keys and written to the worker's <code>/tmp</code> only while a
-          capture is open.
-        </li>
-        <li>Packets can be flagged into the incident timeline (<code>pcap:&lt;capture&gt;:&lt;n&gt;</code>).</li>
-      </ul>
-      <p>
-        <strong>Isolated browser sessions.</strong> The browser worker records every request of a session
-        (<code>netlog.py</code>): method, URL, type, headers, bodies in clear (the browser sees HTTPS decrypted, 2 MB
-        per body and 50 MB per session, past that size and SHA-256 only), response, server address, certificate, timings
-        and WebSocket messages; refused requests (no network, private address) and held submissions included. In a
-        session with network, POST / PUT / PATCH / DELETE requests are <strong>held</strong> by default: recorded, not
-        sent, the page shows "Submission held by Nik"; the analyst may send them for the session (audited). Opened from
-        an incident, the session's log is copied after every action (<code>network/service.py</code>) and shown live in
-        the window's <strong>Network panel</strong>, DevTools-like. When the window closes (or the session expires) the
-        log is rebuilt as <strong>pcapng</strong> (<code>network/pcapng.py</code>): a DNS answer per host, a TCP
-        handshake and HTTP/1.1 in clear per request, a comment saying it is a reconstruction and marking held and
-        refused requests, so Wireshark's filters, Follow Stream and Export Objects work on it, then analysed like an
-        upload. It also exports as <strong>HAR 1.2</strong> (<code>network/har.py</code>).
-      </p>
-      <hr />
-      <h2 id="url-analysis">URL analysis</h2>
-      <p>
-        An address is scanned by the <strong>isolated browser</strong> worker, the same that opens HTML attachments:
-        <code>urlscan.run_scan</code> (a background task of the API) opens a session with network access (private and
-        internal hosts are refused, submissions are held), calls the worker's <code>inspect</code> action, which returns
-        a screenshot and what the page asks for (its forms, read from the DOM), copies the session's network log and
-        closes the session. Nothing is typed, clicked or submitted.
-      </p>
-      <p>
-        <code>urlscan.assess</code> weighs the facts into findings with points, as Mail Analysis does: the address
-        itself (lookalike of a brand, punycode, <code>@</code> in the authority, an IP address as host, a throwaway
-        top-level domain, a shortener, a cloud-hosted page: the link rules of <code>mail/links.py</code>), a page that
-        asks for a password outside the brand's own domains (and over plain http, or under a brand's name in its title),
-        a form that posts to another registrable domain, a chain through three or more domains, a certificate issued
-        less than seven days ago, a download the page started. A score of 70 or more is <code>phishing</code>, 40 to 69
-        <code>suspicious</code>, less <code>clean</code>.
-      </p>
-      <p>
-        One row per distinct address (<code>url_scans</code>, id = the first 32 hex characters of the SHA-256 of the
-        normalised URL): scanning it again replaces the result. The screenshot sits in
-        <code>SAMPLE_STORE/_urls/</code>; the visit's network log becomes a capture (an isolated browser session),
-        related to the address as its child. An incident keeps a light reference under <code>data.urls.scans</code>; the
-        address, the hosts it led to and the server's IP join the incident's indicators, the scan its timeline and
-        report.
       </p>
     </main>
 

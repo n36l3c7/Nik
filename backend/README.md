@@ -54,8 +54,10 @@ uvicorn app.main:app --reload --port 8000
 
 The API is served under `/api`. Health check: `GET http://localhost:8000/api/health`.
 
-Tables are created automatically on startup via
-`Base.metadata.create_all` — no migrations needed for v1.
+In development the tables are created at start-up (`RUN_CREATE_ALL`, on by
+default). In the image and in production the schema is Alembic's: `alembic
+upgrade head` creates it and brings it up to date (the container's entrypoint
+runs it at every start).
 
 ## First run
 
@@ -70,8 +72,9 @@ requires an admin session.
 user (password hashes included), incident, audit entry and the shared settings.
 `POST /api/backup/import` (admin only) restores such an envelope, atomically
 replacing all current data; the importing admin's session survives the restore
-and their account is preserved even when absent from the backup. See the root
-`README.md` § Full platform backup for the envelope shape and semantics.
+and their account is preserved even when absent from the backup. The envelope
+holds no files (samples, e-mails, captures) nor their analyses: see "The in-app
+full backup" in the deployment guide (`docs/deployment.html`).
 
 ## Configuration
 
@@ -94,7 +97,7 @@ gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 127.0.0.1:8000
 ```
 
 Set `DATABASE_URL` to your PostgreSQL instance and `COOKIE_SECURE=true` (served
-over HTTPS). See the root `README.md` for the full RHEL deployment guide
+over HTTPS). See `docs/deployment.html` for the full RHEL deployment guide
 (PostgreSQL setup, systemd unit, SELinux, nginx).
 
 ## Migrations, tests and ops

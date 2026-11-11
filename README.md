@@ -129,9 +129,15 @@ the incident JSON format.
 
 ## Contributing
 
-Issues and pull requests are welcome. Keep a change to one concern, with its
-tests, and update the documentation in `docs/` in the same pull request. CI
-must be green before review.
+Changes are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) says what one needs
+to be merged (tests, documentation in the same change, Conventional Commits).
+
+## Security
+
+Nik handles hostile files; how it contains them, what leaves the server and a
+hardening checklist are on the
+[Security page](https://n36l3c7.github.io/Nik/security.html). Report a
+vulnerability privately: see [SECURITY.md](SECURITY.md).
 
 ## Licence
 
