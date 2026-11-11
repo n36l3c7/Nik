@@ -37,16 +37,20 @@ export function reportSettings(incident) {
     tlp: TLP_OPTIONS.some((o) => o.value === saved.tlp) ? saved.tlp : 'amber',
     sections: Array.isArray(saved.sections) ? saved.sections : REPORT_SECTIONS.map((s) => s.id),
     executiveSummary: typeof saved.executiveSummary === 'string' ? saved.executiveSummary : '',
+    // 'flagged': only what the analysts flagged (the default); 'all': everything in the incident.
+    scope: saved.scope === 'all' ? 'all' : 'flagged',
   }
 }
 
 /**
  * The SOC rule hits of an incident, from buildTimelineEvents() output:
- * `[{ id, label, severity, count, attack }]`, most frequent first.
+ * `[{ id, label, severity, count, attack }]`, most frequent first. With
+ * `flags` (the incident's flags), only the hits on flagged events count.
  */
-export function reportDetections(events) {
+export function reportDetections(events, flags = null) {
   const byRule = new Map()
   for (const event of events) {
+    if (flags && !flags[event.flaggable?.key ?? event.id]) continue
     for (const rule of event.soc?.keywordMatches ?? []) {
       const known = byRule.get(rule.id)
       if (known) known.count += 1

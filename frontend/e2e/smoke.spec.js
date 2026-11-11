@@ -210,6 +210,16 @@ test('the incident report is built by the server and previewed', async () => {
   const frame = page.frameLocator('iframe[title="Report preview"]')
   await expect(frame.getByRole('heading', { name: 'Incident report' })).toBeVisible({ timeout: 20_000 })
   await expect(frame.getByText('Phishing e-mail, then a remote shell.')).toBeVisible()
+  // By default the report lists only what was flagged: nothing yet.
+  await expect(frame.getByText('what the analysts flagged')).toBeVisible()
+  await expect(frame.getByText('Nothing was flagged here.').first()).toBeVisible()
+  await expect(frame.getByText('185.220.101.47').first()).toBeHidden()
+  // "Include everything" brings back the whole incident.
+  await dialog.getByRole('checkbox', { name: /^Include everything/ }).check()
+  await dialog.getByRole('button', { name: 'Preview' }).click()
+  await expect(frame.getByText('everything in the incident')).toBeVisible({ timeout: 20_000 })
+  await expect(frame.getByText('185.220.101.47').first()).toBeVisible()
+  await dialog.getByRole('checkbox', { name: /^Include everything/ }).uncheck()
   await page.keyboard.press('Escape')
 })
 

@@ -131,7 +131,8 @@ test('the threat tabs', async () => {
   await page.getByRole('list', { name: 'Samples' }).getByText('invoice_0423.pdf.exe').click({ button: 'right' })
   await expect(page.getByRole('menu')).toBeVisible()
   await page.screenshot({ path: fileURLToPath(new URL('context-menu.png', OUT)) })
-  await page.keyboard.press('Escape')
+  // Flagged: it goes into the report previewed further down.
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Flag the sample' }).click()
 })
 
 test('artifacts on their own', async () => {

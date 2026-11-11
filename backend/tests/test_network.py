@@ -318,7 +318,9 @@ def test_isolated_browser_session_becomes_a_capture(admin: TestClient, workers):
         assert b"HELD by Nik" in handle.read()
     document = json.loads(admin.get(f"/api/captures/{session}/har", headers=key).content)
     assert [e["_nikState"] for e in document["log"]["entries"]] == ["done", "held"]
-    report = admin.post("/api/incidents/web1/report", headers=key, json={"format": "html", "sections": ["network"]})
+    report = admin.post(
+        "/api/incidents/web1/report", headers=key, json={"format": "html", "sections": ["network"], "scope": "all"}
+    )
     assert "submissions held, not sent" in report.text and "post.php" in report.text
 
 

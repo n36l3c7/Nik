@@ -144,6 +144,10 @@ T = {
         "verdicts": {"phishing": "phishing", "suspicious": "suspicious", "clean": "no strong signs"},
         "network": "Network",
         "url_scans": "Scanned addresses",
+        "scope": "Content",
+        "scope_flagged": "what the analysts flagged",
+        "scope_all": "everything in the incident",
+        "nothing_flagged": "Nothing was flagged here.",
         "address": "Address",
         "capture": "Capture",
         "packets": "Packets",
@@ -227,6 +231,10 @@ T = {
         "verdicts": {"phishing": "phishing", "suspicious": "sospetta", "clean": "nessun segnale forte"},
         "network": "Rete",
         "url_scans": "Indirizzi analizzati",
+        "scope": "Contenuto",
+        "scope_flagged": "ciò che gli analisti hanno segnalato",
+        "scope_all": "tutto il contenuto dell'incidente",
+        "nothing_flagged": "Nessun elemento segnalato in questa sezione.",
         "address": "Indirizzo",
         "capture": "Cattura",
         "packets": "Pacchetti",
@@ -381,10 +389,76 @@ def _capture_row(capture: dict[str, Any], t: dict[str, Any]) -> list[str]:
     ]
 
 
-def evidence(doc: dict) -> list[dict[str, Any]]:
-    """Every imported file: tab, source, file name, format, rows, time, SHA-256."""
+SCOPES = ("flagged", "all")
+# Sections of a flag that belong to a browser profile's data.
+_BROWSER_SECTIONS = {"events", "bookmarks", "shortcuts"}
+
+
+def flagged_scope(doc: dict) -> dict[str, set]:
+    """What the analysts flagged, by kind, read from the flag keys.
+
+    A sample, an e-mail, a capture or a scanned address counts when it was
+    flagged itself or when something inside it was (an indicator or a
+    function of a sample, a packet, a held submission or a beacon of a
+    capture). ``iocs`` are the indicators flagged by hand, ``(type, value)``.
+    The other sets name the sources that hold a flagged event, for the
+    evidence appendix.
+    """
+    scope: dict[str, set] = {
+        name: set()
+        for name in ("samples", "mails", "captures", "urls", "iocs", "browsers", "shells", "categories", "channels")
+    }
+    for key, flag in (doc.get("flags") or {}).items():
+        if not isinstance(flag, dict):
+            continue
+        parts = str(key).split(":")
+        head = parts[0]
+        if head == "sample" and len(parts) >= 2:
+            scope["samples"].add(parts[1])
+            if len(parts) >= 5 and parts[2] == "ioc":
+                scope["iocs"].add((parts[3], ":".join(parts[4:])))
+        elif head == "mail" and len(parts) >= 2:
+            scope["mails"].add(parts[1])
+        elif head in ("capture", "pcap", "held", "beacon") and len(parts) >= 2:
+            scope["captures"].add(parts[1])
+        elif head == "url" and len(parts) >= 2:
+            scope["urls"].add(parts[1])
+        elif head == "ioc" and len(parts) >= 3:
+            scope["iocs"].add((parts[1], ":".join(parts[2:])))
+        elif head == "evt" and len(parts) >= 2:
+            scope["channels"].add(parts[1])
+        section = str(flag.get("section") or "")
+        source = str(flag.get("browserId") or "")
+        if section in _BROWSER_SECTIONS and source:
+            scope["browsers"].add(source)
+        elif section == "commands" and source:
+            scope["shells"].add(source)
+        elif section.startswith("endpoint:"):
+            scope["categories"].add(section.split(":", 1)[1])
+    return scope
+
+
+def _flagged_iocs(iocs: list[dict[str, Any]], wanted: set) -> list[dict[str, Any]]:
+    """The indicators flagged by hand: their index rows, or a bare row for one the index does not hold."""
+    rows = [i for i in iocs if (i.get("type"), i.get("value")) in wanted]
+    known = {(i.get("type"), i.get("value")) for i in rows}
+    rows += [
+        {"type": kind, "value": value, "sources": [], "otherIncidents": 0} for kind, value in sorted(wanted - known)
+    ]
+    return rows
+
+
+def evidence(doc: dict, scope: dict[str, set] | None = None) -> list[dict[str, Any]]:
+    """Every imported file: tab, source, file name, format, rows, time, SHA-256.
+
+    With ``scope`` (see ``flagged_scope``), only the sources that hold
+    something flagged.
+    """
     data = doc.get("data") or {}
     rows: list[dict[str, Any]] = []
+
+    def keep(kind: str, value: Any) -> bool:
+        return scope is None or value in scope[kind]
 
     def add(tab: str, source: str, meta: Any) -> None:
         if isinstance(meta, dict) and meta.get("fileName") and meta.get("format") != "demo":
@@ -401,19 +475,26 @@ def evidence(doc: dict) -> list[dict[str, Any]]:
             )
 
     for browser_id, slot in ((data.get("browser") or {}).get("browsers") or {}).items():
+        if not keep("browsers", browser_id):
+            continue
         for profile in ((slot or {}).get("profiles") or {}).values():
             for source, meta in ((profile or {}).get("meta") or {}).items():
                 add("Browser", f"{browser_id} · {profile.get('name', '')} · {source}", meta)
     for shell_id, slot in ((data.get("commands") or {}).get("shells") or {}).items():
+        if not keep("shells", shell_id):
+            continue
         for source, meta in ((slot or {}).get("meta") or {}).items():
             add("Commands", f"{shell_id} · {source}", meta)
     for category_id, category in ((data.get("endpoint") or {}).get("categories") or {}).items():
+        if not keep("categories", category_id):
+            continue
         for source, slot in ((category or {}).get("sources") or {}).items():
             add("Endpoint", f"{category_id} · {source}", (slot or {}).get("meta"))
     for channel, slot in ((data.get("eventlogs") or {}).get("channels") or {}).items():
-        add("Event logs", channel, (slot or {}).get("meta"))
+        if keep("channels", channel):
+            add("Event logs", channel, (slot or {}).get("meta"))
     for ref in ((data.get("network") or {}).get("captures") or []) if isinstance(data.get("network"), dict) else []:
-        if isinstance(ref, dict) and ref.get("sha256"):
+        if isinstance(ref, dict) and ref.get("sha256") and keep("captures", ref.get("id")):
             rows.append(
                 {
                     "tab": "Network",
@@ -426,7 +507,7 @@ def evidence(doc: dict) -> list[dict[str, Any]]:
                 }
             )
     for ref in (data.get("mail") or {}).get("messages") or []:
-        if isinstance(ref, dict):
+        if isinstance(ref, dict) and keep("mails", ref.get("sha256")):
             rows.append(
                 {
                     "tab": "Mail",
@@ -439,7 +520,7 @@ def evidence(doc: dict) -> list[dict[str, Any]]:
                 }
             )
     for ref in (data.get("malware") or {}).get("samples") or []:
-        if isinstance(ref, dict):
+        if isinstance(ref, dict) and keep("samples", ref.get("sha256")):
             rows.append(
                 {
                     "tab": "Malware",
@@ -517,8 +598,14 @@ def build_html(
     branding: dict[str, Any] | None = None,
     generated_by: str = "",
     generated_at: str = "",
+    scope: str = "flagged",
 ) -> str:
-    """The report as one HTML page (see the module docstring)."""
+    """The report as one HTML page (see the module docstring).
+
+    ``scope`` ``flagged`` (the default) keeps, in every section, what the
+    analysts flagged: see ``flagged_scope``. ``all`` lists everything the
+    incident holds.
+    """
     t = T.get(lang, T["en"])
     wanted = [s for s in (sections or SECTIONS) if s in SECTIONS]
     tlp = tlp if tlp in TLP_LEVELS else "amber"
@@ -526,7 +613,14 @@ def build_html(
     detections = detections or []
     iocs = [i for i in (iocs or []) if not i.get("allowlisted")]
     samples = samples or []
+    mails = mails or []
     data = doc.get("data") or {}
+    only = flagged_scope(doc) if scope != "all" else None
+    empty = "nothing_flagged" if only is not None else None
+    if only is not None:
+        samples = [s for s in samples if s.get("sha256") in only["samples"]]
+        mails = [m for m in mails if m.get("sha256") in only["mails"]]
+        iocs = _flagged_iocs(iocs, only["iocs"])
     flags = sorted(
         (f for f in (doc.get("flags") or {}).values() if isinstance(f, dict)),
         key=lambda f: f.get("time") or 0,
@@ -561,6 +655,7 @@ def build_html(
         (t["created_by"], doc.get("createdBy") or "—"),
         (t["window"], window),
         (t["generated"], f"{_iso(generated_at)} {t['by']} {generated_by}"),
+        (t["scope"], t["scope_flagged"] if only is not None else t["scope_all"]),
     ]
     out.append('<dl class="meta">' + "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in meta) + "</dl>")
 
@@ -638,7 +733,7 @@ def build_html(
             if len(ordered) > MAX_IOCS:
                 out.append(f'<p class="muted">{esc(t["more_iocs"].format(n=len(ordered) - MAX_IOCS))}</p>')
         else:
-            out.append(f'<p class="muted">{esc(t["no_iocs"])}</p>')
+            out.append(f'<p class="muted">{esc(t[empty or "no_iocs"])}</p>')
 
     if "samples" in wanted:
         out.append(f"<h2>{esc(t['samples'])}</h2>")
@@ -660,7 +755,7 @@ def build_html(
                 _table([t["file"], t["sha256"], t["yara"], t["capabilities"]], rows, ["24%", "46%", "18%", "12%"])
             )
         else:
-            out.append(f'<p class="muted">{esc(t["no_samples"])}</p>')
+            out.append(f'<p class="muted">{esc(t[empty or "no_samples"])}</p>')
 
     if "mails" in wanted:
         out.append(f"<h2>{esc(t['mails'])}</h2>")
@@ -681,11 +776,13 @@ def build_html(
                 )
             out.append(_table([t["message"], t["verdict"], t["findings"]], rows, ["38%", "14%", "48%"]))
         else:
-            out.append(f'<p class="muted">{esc(t["no_mails"])}</p>')
+            out.append(f'<p class="muted">{esc(t[empty or "no_mails"])}</p>')
 
     if "network" in wanted:
         out.append(f"<h2>{esc(t['network'])}</h2>")
         captures = [c for c in ((data.get("network") or {}).get("captures") or []) if isinstance(c, dict)]
+        if only is not None:
+            captures = [c for c in captures if c.get("id") in only["captures"]]
         if captures:
             out.append(
                 _table(
@@ -695,9 +792,11 @@ def build_html(
                 )
             )
         else:
-            out.append(f'<p class="muted">{esc(t["no_network"])}</p>')
+            out.append(f'<p class="muted">{esc(t[empty or "no_network"])}</p>')
         urls = data.get("urls") if isinstance(data.get("urls"), dict) else {}
         scans = [u for u in urls.get("scans") or [] if isinstance(u, dict)]
+        if only is not None:
+            scans = [u for u in scans if u.get("id") in only["urls"]]
         if scans:
             out.append(f"<h3>{esc(t['url_scans'])}</h3>")
             rows = [
@@ -713,8 +812,11 @@ def build_html(
     if "eventlogs" in wanted:
         out.append(f"<h2>{esc(t['eventlogs'])}</h2>")
         channels = (data.get("eventlogs") or {}).get("channels") or {}
+        # Clears are computed on every channel (a System event can name another log).
+        cleared = _cleared_channels(channels) if channels else {}
+        if only is not None:
+            channels = {name: slot for name, slot in channels.items() if name in only["channels"]}
         if channels:
-            cleared = _cleared_channels(channels)
             rows = []
             for channel, slot in sorted(channels.items()):
                 meta = (slot or {}).get("meta") or {}
@@ -732,7 +834,7 @@ def build_html(
                 _table([t["channel"], t["covers"], t["records"], t["cleared"]], rows, ["34%", "36%", "12%", "18%"])
             )
         else:
-            out.append(f'<p class="muted">{esc(t["no_eventlogs"])}</p>')
+            out.append(f'<p class="muted">{esc(t[empty or "no_eventlogs"])}</p>')
 
     if "notes" in wanted:
         out.append(f"<h2>{esc(t['notes'])}</h2>")
@@ -748,7 +850,7 @@ def build_html(
 
     if "evidence" in wanted:
         out.append(f"<h2>{esc(t['evidence'])}</h2>")
-        items = evidence(doc)
+        items = evidence(doc, only)
         if items:
             out.append(f'<p class="muted">{esc(t["evidence_intro"])}</p>')
             rows = [
@@ -764,7 +866,7 @@ def build_html(
             ]
             out.append(_table([t["source"], t["file"], t["imported"], t["sha256"]], rows, ["20%", "26%", "16%", "38%"]))
         else:
-            out.append(f'<p class="muted">{esc(t["no_evidence"])}</p>')
+            out.append(f'<p class="muted">{esc(t[empty or "no_evidence"])}</p>')
 
     title = f"{t['title']} — {name}"
     return (

@@ -16,7 +16,7 @@ from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, Mail, Sample, SampleCapa
 from ..core.security import Principal, now_iso, principal
 from ..iocs import Allowlist, incident_iocs
-from ..report import LANGS, SECTIONS, TLP_LEVELS, build_html, to_pdf
+from ..report import LANGS, SCOPES, SECTIONS, TLP_LEVELS, build_html, to_pdf
 from .settings import read_settings
 
 router = APIRouter(tags=["report"])
@@ -42,6 +42,8 @@ class ReportIn(BaseModel):
     sections: Optional[list[str]] = None
     executiveSummary: Optional[str] = Field(default=None, max_length=20_000)
     detections: list[Detection] = Field(default_factory=list, max_length=500)
+    # flagged (default): only what the analysts flagged; all: everything in the incident.
+    scope: Optional[Literal["flagged", "all"]] = None
 
 
 def _samples(db: OrmSession, doc: dict) -> list[dict[str, Any]]:
@@ -108,6 +110,11 @@ def incident_report(
 ):
     """The incident report, as a PDF (default) or HTML.
 
+    By default every section lists only what the analysts flagged: flagged
+    events, the indicators flagged by hand, the samples, e-mails, captures
+    and scanned addresses that were flagged or hold something flagged, and
+    the evidence files they come from. ``scope: "all"`` lists everything.
+
     Sections: summary, timeline (flagged events), attack, iocs, samples,
     mails, network, eventlogs, notes, evidence. ``detections`` lists the SOC rule hits with
     their ATT&CK ids; the app sends them, API clients may leave them out.
@@ -122,6 +129,7 @@ def incident_report(
     tlp = body.tlp or (saved.get("tlp") if saved.get("tlp") in TLP_LEVELS else "amber")
     sections = body.sections if body.sections is not None else saved.get("sections") or list(SECTIONS)
     summary = body.executiveSummary if body.executiveSummary is not None else str(saved.get("executiveSummary") or "")
+    scope = body.scope or (saved.get("scope") if saved.get("scope") in SCOPES else "flagged")
     now = now_iso()
 
     document = build_html(
@@ -137,6 +145,7 @@ def incident_report(
         branding=settings.get("report") or {},
         generated_by=caller.actor,
         generated_at=now,
+        scope=scope,
     )
     db.add(
         AuditEntry(

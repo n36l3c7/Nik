@@ -508,9 +508,27 @@
       <p>
         The report button in the header opens the report: write the executive summary, choose the sections, the TLP
         classification and the language (English or Italian), then <strong>Preview</strong> and download it as PDF or
-        HTML. It holds the incident details, the timeline of flagged and detected events, indicators, samples, e-mails,
-        network captures, event-log coverage, notes and an evidence appendix with the SHA-256 of every imported file.
-        The organisation's name and logo come from Settings → Report header.
+        HTML. The organisation's name and logo come from Settings → Report header.
+      </p>
+      <p>
+        The report holds <strong>what you flagged</strong>, so it stays about the incident and not about everything that
+        was imported:
+      </p>
+      <ul>
+        <li>the flagged events, in order, with their comments;</li>
+        <li>the indicators flagged by hand;</li>
+        <li>
+          the samples, e-mails, captures and scanned addresses that are flagged, or that hold something flagged (an
+          indicator or a function of a sample, a packet of a capture);
+        </li>
+        <li>the MITRE ATT&amp;CK techniques of those samples and of the detections on flagged events;</li>
+        <li>the event logs that hold a flagged event;</li>
+        <li>every note;</li>
+        <li>an evidence appendix with the SHA-256 of the imported files that hold something flagged.</li>
+      </ul>
+      <p>
+        Tick <strong>Include everything</strong> in the dialog for the full inventory instead: every indicator, sample,
+        e-mail, capture and imported file of the incident. The choice is kept per incident.
       </p>
       <figure class="shot">
         <img src="img/report.png" alt="The incident report preview" width="1600" height="1000" loading="lazy" />
