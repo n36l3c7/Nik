@@ -13,6 +13,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from sqlalchemy import String, cast, delete, select
 from sqlalchemy.orm import Session as OrmSession
@@ -20,7 +21,8 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
 from ..core.config import settings
-from ..core.db import get_db
+from ..core.db import after_commit, get_db
+from ..core.files import attachment_headers, read_upload, safe_name
 from ..core.locking import relock
 from ..core.models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
 from ..core.security import Principal, now_iso, principal, writer_principal
@@ -242,7 +244,8 @@ def delete_sample_data(db: OrmSession, row: Sample) -> None:
     sha256 = row.sha256
     for incident in _incidents_referencing(db, sha256):
         detach_sample(db, incident, sha256)
-    delete_sample(sha256)
+    # The file goes once the rows are gone for good: a failed commit keeps both.
+    after_commit(db, lambda: delete_sample(sha256))
     code = db.get(SampleCode, sha256)
     if code is not None:
         db.delete(code)
@@ -347,8 +350,9 @@ async def upload_sample(
     file that is already in the store reuses its analysis.
     """
     incident = _incident_or_404(db, incident_id)
-    data = await file.read()
-    row, ref = store_sample(db, incident, data, file.filename or "", caller, background_tasks)
+    data = await read_upload(file, settings.SAMPLE_MAX_MB, "sample")
+    # Hashing, strings and YARA take seconds on a large file: off the event loop.
+    row, ref = await run_in_threadpool(store_sample, db, incident, data, file.filename or "", caller, background_tasks)
     return {"sample": ref, "iocs": len(row.analysis.get("iocs", [])), "strings": row.analysis.get("stringsTotal", 0)}
 
 
@@ -544,15 +548,11 @@ def download_sample(
 ):
     """The sample inside an AES-256 zip protected by `password` (default `infected`)."""
     row = _sample_or_404(db, sha256)
-    inner = (name or f"{sha256}.bin").replace("/", "_").replace("\\", "_")
+    inner = safe_name(name, f"{sha256}.bin")
     archive = zip_sample(read_sample(sha256), inner, password)
     _audit(db, caller, "sample.download", f"Downloaded sample {inner} ({sha256[:12]}…, {row.type_label})", None)
     db.commit()
-    return Response(
-        archive,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{inner}.zip"'},
-    )
+    return Response(archive, media_type="application/zip", headers=attachment_headers(f"{inner}.zip"))
 
 
 @router.delete("/incidents/{incident_id}/samples/{sha256}", status_code=status.HTTP_204_NO_CONTENT)

@@ -23,6 +23,9 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
+# DKIM signatures verified per message (each is a DNS lookup on a domain the sender chose).
+MAX_DKIM_SIGNATURES = 5
+
 TIMEOUT = 3.0
 
 TxtLookup = Callable[[str], list[str]]
@@ -81,7 +84,9 @@ def verify_dkim(raw: bytes, lookup: TxtLookup) -> list[dict[str, Any]]:
     except Exception:  # noqa: BLE001 - unparsable message
         return results
     signatures = [value for name, value in message.headers if name.lower() == b"dkim-signature"]
-    for index, value in enumerate(signatures):
+    # Each signature costs a DNS lookup on a domain the sender chose: a message
+    # with hundreds of them would keep a worker busy for minutes.
+    for index, value in enumerate(signatures[:MAX_DKIM_SIGNATURES]):
         tags = dict(
             (k.strip(), v.strip())
             for k, _, v in (
@@ -101,6 +106,16 @@ def verify_dkim(raw: bytes, lookup: TxtLookup) -> list[dict[str, Any]]:
         except Exception as exc:  # noqa: BLE001 - dkimpy raises its own errors for bad keys/signatures
             result, detail = "permerror", str(exc)[:200]
         results.append({"domain": domain, "selector": selector, "result": result, "detail": detail})
+    skipped = len(signatures) - MAX_DKIM_SIGNATURES
+    if skipped > 0:
+        results.append(
+            {
+                "domain": "",
+                "selector": "",
+                "result": "none",
+                "detail": f"{skipped} more signatures not checked (only the first {MAX_DKIM_SIGNATURES} are)",
+            }
+        )
     return results
 
 

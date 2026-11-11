@@ -75,6 +75,8 @@ services:
       # their analysis). Exclude it from any antivirus on the host.
       SAMPLE_STORE: /app/samples
       SAMPLE_MAX_MB: ${SAMPLE_MAX_MB:-100}
+      # Largest evidence file (browser database, event log, tool output).
+      ARTIFACT_MAX_MB: ${ARTIFACT_MAX_MB:-500}
       # Disassembly worker (rizin), reachable only on the internal network.
       ANALYZER_URL: http://analyzer:8700
       ANALYZER_TOKEN: ${ANALYZER_TOKEN:?ANALYZER_TOKEN is not set, run deploy/init-env.sh}

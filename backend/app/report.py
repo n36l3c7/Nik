@@ -285,7 +285,11 @@ def esc(value: Any) -> str:
 def _ms(value: Any) -> str:
     if not isinstance(value, (int, float)) or value <= 0:
         return "—"
-    return datetime.fromtimestamp(value / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    try:
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    except (ValueError, OverflowError, OSError):
+        # A timestamp no calendar holds (a poisoned row): one cell, not the whole report.
+        return "—"
 
 
 def _iso(value: Any) -> str:
@@ -907,7 +911,14 @@ def _cleared_channels(channels: dict) -> dict[str, list[int]]:
 
 
 def to_pdf(document: str) -> bytes:
-    """Render the report HTML to PDF (WeasyPrint, imported on first use)."""
-    import weasyprint
+    """Render the report HTML to PDF (WeasyPrint, imported on first use).
 
-    return weasyprint.HTML(string=document).write_pdf()
+    The report embeds everything it shows (``data:`` images), so the renderer
+    may fetch nothing: a logo or a value that points at a URL or a file is
+    not followed from the server.
+    """
+    import weasyprint
+    from weasyprint.urls import URLFetcher
+
+    fetcher = URLFetcher(allowed_protocols=("data",), allow_redirects=False)
+    return weasyprint.HTML(string=document, url_fetcher=fetcher).write_pdf()

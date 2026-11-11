@@ -201,9 +201,11 @@ def qr_codes(data: bytes) -> list[str]:
         return []
     try:
         with Image.open(io.BytesIO(data)) as image:
-            image.load()
+            # The size is in the header: checked before the pixels are decoded,
+            # which is what a small file declaring a huge image is built to make costly.
             if image.width * image.height > 40_000_000:
                 return []
+            image.load()
             results = zxingcpp.read_barcodes(image.convert("RGB"))
     except Exception:  # noqa: BLE001 - not an image Pillow can read
         return []

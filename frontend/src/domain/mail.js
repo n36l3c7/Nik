@@ -1,4 +1,5 @@
 import { anyToMs } from '../lib/time.js'
+import { sameAddress, stripRemoteCss } from './links.js'
 
 /*
  * Mail Analysis helpers (pure, unit-tested): verdict and result colours, the
@@ -63,21 +64,33 @@ export function frameDocument(body, { loadImages = false } = {}) {
 }
 
 /**
- * Links in the frame go nowhere: the target moves to a tooltip, so a click
- * cannot open the page (a sandboxed frame may still navigate itself). Remote
- * images are marked as blocked, or removed when they are tracking pixels and
- * the analyst chose to load the others. Uses the browser's DOMParser, which
- * runs nothing.
+ * Nothing in the frame leads anywhere or calls out. A sandboxed frame may
+ * still navigate itself, so every way to do it is removed: a link's target
+ * moves to a tooltip, forms lose their action, `<base>` and `<meta
+ * http-equiv>` (a refresh is a redirect) go. Remote images are marked as
+ * blocked, or removed when they are tracking pixels and the analyst chose to
+ * load the others; remote references in CSS are always removed, since a
+ * background image is a tracking pixel by another name. Uses the browser's
+ * DOMParser, which runs nothing.
  */
 export function neutraliseLinks(html, { loadImages = false, tracking = [] } = {}) {
   const doc = new DOMParser().parseFromString(`<body>${html ?? ''}</body>`, 'text/html')
-  for (const anchor of doc.querySelectorAll('a[href]')) {
+  for (const anchor of doc.querySelectorAll('a[href], area[href]')) {
     const href = anchor.getAttribute('href')
     anchor.removeAttribute('href')
+    anchor.removeAttribute('target')
     anchor.setAttribute('data-nik-href', href)
     anchor.setAttribute('title', `Link to ${href} (not followed)`)
   }
-  const pixels = new Set(tracking)
+  for (const form of doc.querySelectorAll('form')) form.removeAttribute('action')
+  for (const button of doc.querySelectorAll('[formaction]')) button.removeAttribute('formaction')
+  for (const element of doc.querySelectorAll('base, meta[http-equiv], link')) element.remove()
+  for (const element of doc.querySelectorAll('[style]')) {
+    element.setAttribute('style', stripRemoteCss(element.getAttribute('style')))
+  }
+  for (const sheet of doc.querySelectorAll('style')) sheet.textContent = stripRemoteCss(sheet.textContent)
+  for (const element of doc.querySelectorAll('[background]')) element.removeAttribute('background')
+  const pixels = [...tracking]
   for (const image of doc.querySelectorAll('img[src]')) {
     const src = image.getAttribute('src')
     if (/^data:/i.test(src)) continue
@@ -87,7 +100,7 @@ export function neutraliseLinks(html, { loadImages = false, tracking = [] } = {}
       image.setAttribute('data-nik-blocked', '')
       image.setAttribute('title', src)
       image.setAttribute('alt', image.getAttribute('alt') || 'remote image (not loaded)')
-    } else if (pixels.has(src.startsWith('//') ? `https:${src}` : src)) {
+    } else if (pixels.some((pixel) => sameAddress(src, pixel))) {
       image.remove()
     }
   }

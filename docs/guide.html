@@ -305,7 +305,11 @@
       </p>
       <ul>
         <li><strong>Headers</strong>: the delivery route, the sender, SPF, DKIM and DMARC checked again by Nik.</li>
-        <li><strong>Body</strong>: drawn in a sandboxed frame that runs no script and follows no link.</li>
+        <li>
+          <strong>Body</strong>: drawn in a sandboxed frame that runs no script, follows no link and submits no form.
+          Remote images stay blocked until you choose <strong>Load images</strong>; tracking pixels and images hidden in
+          the styles are never loaded.
+        </li>
         <li><strong>Links</strong>: each link with its real target; a text that differs from the target is flagged.</li>
         <li>
           <strong>Attachments</strong>: type, hashes, hex view, a preview of documents, and
@@ -350,7 +354,8 @@
       </ul>
       <p>
         Add a TLS key log (<code>SSLKEYLOGFILE</code>) to read HTTPS in clear. Sessions of the isolated browser appear
-        here too, with a <strong>Requests</strong> view like the browser's developer tools.
+        here too, with a <strong>Requests</strong> view like the browser's developer tools. The preview of a captured
+        page is a picture of it: its links, forms and redirects are disarmed.
       </p>
       <figure class="shot">
         <img
@@ -446,6 +451,14 @@
         <figcaption>Command History: a bash history with a download from the attacker's address.</figcaption>
       </figure>
 
+      <h3 id="evidence-links">Addresses from the evidence</h3>
+      <p>
+        An address found in the evidence (a visited page, a bookmark, a download source) is never a live link. The arrow
+        next to it asks first, shows the address defanged, and offers to copy it that way; only
+        <code>http</code> and <code>https</code> addresses can be opened at all, and doing so contacts the site from
+        your workstation. To look at a page without that, scan it from <strong>URL Analysis</strong>, which opens it in
+        the isolated browser.
+      </p>
       <h2 id="flags">Flags, comments and the right-click menu</h2>
       <p>
         Right-click works on every row and item of the app, and the menu is always built the same way, with the parts

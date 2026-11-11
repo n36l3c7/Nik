@@ -21,7 +21,8 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
 from ..core.config import settings
-from ..core.db import get_db
+from ..core.db import after_commit, get_db
+from ..core.files import attachment_headers, read_upload, safe_name
 from ..core.locking import relock
 from ..core.models import AuditEntry, Incident, Mail
 from ..core.security import Principal, now_iso, principal, writer_principal
@@ -238,9 +239,10 @@ def delete_mail_data(db: OrmSession, row: Mail) -> None:
     """Delete the message everywhere: every incident's reference, the file, its previews."""
     for incident in _incidents_referencing(db, row.sha256):
         detach_mail(db, incident, row.sha256)
-    _forget_previews(row.sha256)
-    delete_mail(row.sha256)
-    artifacts.forget(db, "mail", row.sha256)
+    sha256 = row.sha256
+    # The files go once the rows are gone for good: a failed commit keeps both.
+    after_commit(db, lambda: (_forget_previews(sha256), delete_mail(sha256)))
+    artifacts.forget(db, "mail", sha256)
     db.delete(row)
 
 
@@ -264,7 +266,8 @@ async def upload_mail(
     same message again reuses its analysis.
     """
     incident = _incident_or_404(db, incident_id)
-    _row, ref = await store_mail(db, incident, await file.read(), file.filename or "", caller, background_tasks)
+    data = await read_upload(file, settings.SAMPLE_MAX_MB, "message")
+    _row, ref = await store_mail(db, incident, data, file.filename or "", caller, background_tasks)
     return {"message": ref}
 
 
@@ -350,15 +353,11 @@ def attachment_download(
     """The attachment inside an AES-256 zip protected by `password` (default `infected`)."""
     _mail_or_404(db, sha256)
     item = _attachment(_parsed(sha256), path)
-    inner = str(item.get("name") or "attachment").replace("/", "_").replace("\\", "_")
+    inner = safe_name(item.get("name"), "attachment")
     archive = zip_sample(item.get("data") or b"", inner, password)
     _audit(db, caller, "mail.attachment.download", f"Downloaded attachment {inner} of e-mail {sha256[:12]}…", None)
     db.commit()
-    return Response(
-        archive,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{inner}.zip"'},
-    )
+    return Response(archive, media_type="application/zip", headers=attachment_headers(f"{inner}.zip"))
 
 
 @router.post("/incidents/{incident_id}/mails/{sha256}/attachments/{path}/sample", status_code=status.HTTP_201_CREATED)

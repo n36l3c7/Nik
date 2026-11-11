@@ -117,7 +117,16 @@
             <tr>
               <td><code>SAMPLE_MAX_MB</code></td>
               <td><code>100</code></td>
-              <td>Per-file size limit for sample uploads.</td>
+              <td>Per-file size limit for sample and e-mail uploads.</td>
+            </tr>
+            <tr>
+              <td><code>ARTIFACT_MAX_MB</code></td>
+              <td><code>500</code></td>
+              <td>
+                Per-file size limit for the evidence files the server parses (<code
+                  >POST /api/incidents/{id}/upload</code
+                >). A larger file is refused with <code>413</code> while it is being read.
+              </td>
             </tr>
             <tr>
               <td><code>YARA_RULES</code></td>

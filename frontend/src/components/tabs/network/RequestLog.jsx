@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { useIocLookup } from '../../../context/IocLookupContext.jsx'
 import { Badge } from '../../ui/index.js'
-import { hexRows, formatOffset } from '../../../domain/mail.js'
+import { hexRows, formatOffset, neutraliseLinks } from '../../../domain/mail.js'
 import {
   REQUEST_TYPES,
   base64Text,
@@ -25,13 +25,15 @@ import { formatDateTime } from '../../../lib/time.js'
  * filterable list with a waterfall, and the selected request's Headers,
  * Payload, Preview, Response, Timing and (WebSocket) Messages. Refused and
  * held requests stay in the list, in red, with the reason. HTML previews are
- * drawn in a frame that runs nothing and loads nothing.
+ * drawn in a frame that runs nothing, loads nothing and leads nowhere: a click
+ * on a captured phishing page must not open the real one.
  *
  * @param {{ entries: object[], loadEntry: (id: number) => Promise<object>, live?: boolean }} props
  */
 
 const TONES = { high: 'text-high', med: 'text-med', ok: 'text-fg', muted: 'text-fg-muted' }
-const PREVIEW_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+// Nothing is fetched, submitted or re-based; the links are disarmed too (neutraliseLinks).
+const PREVIEW_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'"
 // Control characters below TAB in the first bytes: shown as hex, not text.
 const looksBinary = (text) => [...text.slice(0, 200)].some((c) => c.charCodeAt(0) < 9)
 
@@ -143,7 +145,7 @@ function Body({ part, preview }) {
       <iframe
         title="Response preview (sandboxed)"
         sandbox=""
-        srcDoc={`<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">${base64Text(part.body)}`}
+        srcDoc={`<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">${neutraliseLinks(base64Text(part.body))}`}
         className="h-80 w-full border border-line bg-white"
       />
     )

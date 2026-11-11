@@ -542,7 +542,10 @@ def _ms_iso(ms: int | None, fallback: str) -> str:
 
     if not ms:
         return fallback
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    try:
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    except (ValueError, OverflowError, OSError):
+        return fallback
 
 
 def stix_bundle(incident: dict, iocs: list[dict], now: str) -> dict:

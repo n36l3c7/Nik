@@ -13,6 +13,15 @@ WEBKIT_EPOCH_OFFSET_MS = 11644473600000
 MAC_EPOCH_OFFSET_S = 978307200
 
 
+# Unix ms of 9999-12-31: beyond it no calendar (and no report) can print the date.
+MAX_MS = 253402300799000
+
+
+def _plausible(ms):
+    """``ms`` when a date can be made of it, else None (a poisoned row has no time)."""
+    return ms if ms is not None and -MAX_MS <= ms <= MAX_MS else None
+
+
 def _num(value):
     try:
         n = float(value)
@@ -26,7 +35,7 @@ def webkit_to_ms(us):
     n = _num(us)
     if n is None or n <= 0:
         return None
-    return round(n / 1000) - WEBKIT_EPOCH_OFFSET_MS
+    return _plausible(round(n / 1000) - WEBKIT_EPOCH_OFFSET_MS)
 
 
 def firefox_to_ms(us):
@@ -34,7 +43,7 @@ def firefox_to_ms(us):
     n = _num(us)
     if n is None or n <= 0:
         return None
-    return round(n / 1000)
+    return _plausible(round(n / 1000))
 
 
 def mac_to_ms(seconds):
@@ -42,7 +51,7 @@ def mac_to_ms(seconds):
     n = _num(seconds)
     if n is None:
         return None
-    return round((n + MAC_EPOCH_OFFSET_S) * 1000)
+    return _plausible(round((n + MAC_EPOCH_OFFSET_S) * 1000))
 
 
 def any_to_ms(value):
@@ -58,9 +67,9 @@ def any_to_ms(value):
         if n > 1e14:
             return webkit_to_ms(n)
         if n > 1e11:
-            return round(n)
+            return _plausible(round(n))
         if n > 1e8:
-            return round(n * 1000)
+            return _plausible(round(n * 1000))
         return None
     s = str(value).strip().replace(" ", "T").replace("Z", "+00:00")
     try:

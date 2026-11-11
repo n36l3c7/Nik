@@ -126,6 +126,9 @@ class Settings:
         # quarantine the evidence.
         self.SAMPLE_STORE: str = os.getenv("SAMPLE_STORE", "./samples")
         self.SAMPLE_MAX_MB: int = _get_int("SAMPLE_MAX_MB", 100)
+        # Largest evidence file (browser database, event log, shell history,
+        # tool output) accepted by POST /incidents/{id}/upload.
+        self.ARTIFACT_MAX_MB: int = _get_int("ARTIFACT_MAX_MB", 500)
         # Directory of the built-in YARA rule files (*.yar); admin rules live in
         # the database and are compiled together with these.
         self.YARA_RULES: str = os.getenv(
