@@ -293,7 +293,11 @@ export function useIocLookup() {
 }
 
 /** An indicator value that opens "Where seen" when clicked. */
-export function IocValue({ type, value, className = '' }) {
+/**
+ * `ownMenu={false}` inside a row that has a menu of its own: the right-click
+ * (and F, C) then act on the row, wherever in it the pointer is.
+ */
+export function IocValue({ type, value, className = '', ownMenu = true }) {
   const { openIoc, iocMenu } = useIocLookup()
   if (!type) return <span className={className}>{value}</span>
   return (
@@ -303,7 +307,7 @@ export function IocValue({ type, value, className = '' }) {
         event.stopPropagation()
         openIoc(type, value)
       }}
-      onContextMenu={(event) => iocMenu(event, type, value)}
+      onContextMenu={ownMenu ? (event) => iocMenu(event, type, value) : undefined}
       title="Where else was this seen? (right-click for more)"
       className={[
         'group inline-flex max-w-full items-center gap-1 text-left underline decoration-dotted decoration-fg-subtle underline-offset-2',

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Button, Modal } from '../components/ui/index.js'
+import { useLayer } from '../lib/layers.js'
 import { useToast } from './ToastContext.jsx'
 
 /*
@@ -19,7 +20,9 @@ import { useToast } from './ToastContext.jsx'
  * `shortcut` ('flag', 'comment') of the menu `element` would open on right-click:
  * a key acts on a row exactly as its menu does. It resolves to { label, title,
  * result } of the item that ran (`result` is what its onSelect returned), or
- * null when the element offers none.
+ * null when the element offers none. It asks the element the way a right-click
+ * would, with a `contextmenu` event of its own making: an onContextMenu that
+ * does anything else than open a menu must ignore it (isShortcutProbe).
  *
  * askText({ title, label, placeholder, confirm }) asks for a line of text in a
  * small dialog (e.g. a flag comment) and resolves to the text or null.
@@ -28,6 +31,15 @@ import { useToast } from './ToastContext.jsx'
 const ContextMenuContext = createContext(null)
 
 const MENU_WIDTH = 260
+
+/**
+ * True for the `contextmenu` event runShortcut dispatches to find a row's menu
+ * (a key press, not a right-click). A handler with an effect of its own, such
+ * as applying a filter, returns at once on it.
+ */
+export function isShortcutProbe(event) {
+  return (event?.nativeEvent ?? event)?.isTrusted === false
+}
 
 /** True when the browser's own menu should open instead of ours. */
 export function wantsNativeMenu(event) {
@@ -46,6 +58,8 @@ function Menu({ menu, onClose, onResult }) {
     .map((item, i) => (item !== 'separator' && !item.disabled ? i : -1))
     .filter((i) => i >= 0)
   const [cursor, setCursor] = useState(actionable[0] ?? -1)
+  // Escape closes the menu and nothing under it; the focus returns to the row.
+  useLayer(ref, { open: true, onClose, trap: false })
 
   useLayoutEffect(() => {
     const box = ref.current?.getBoundingClientRect()
@@ -73,7 +87,7 @@ function Menu({ menu, onClose, onResult }) {
     } else if (event.key === 'Enter' && cursor >= 0) {
       event.preventDefault()
       run(menu.items[cursor])
-    } else if (event.key === 'Escape' || event.key === 'Tab') {
+    } else if (event.key === 'Tab') {
       event.preventDefault()
       onClose()
     }
@@ -85,6 +99,7 @@ function Menu({ menu, onClose, onResult }) {
       role="menu"
       tabIndex={-1}
       aria-label={menu.title || 'Actions'}
+      aria-activedescendant={cursor >= 0 ? `nik-menu-item-${cursor}` : undefined}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
       style={{ left: position.left, top: position.top, width: MENU_WIDTH }}
@@ -103,7 +118,8 @@ function Menu({ menu, onClose, onResult }) {
         const Icon = item.icon
         return (
           <div
-            key={item.label}
+            key={`${i}-${item.label}`}
+            id={`nik-menu-item-${i}`}
             role="menuitem"
             aria-disabled={item.disabled || undefined}
             onMouseEnter={() => !item.disabled && setCursor(i)}

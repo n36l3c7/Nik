@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import statistics
 import subprocess
 import tempfile
@@ -93,6 +94,18 @@ def _public(address: str) -> bool:
         return False
 
 
+def kill_group(process: subprocess.Popen) -> None:
+    """Kill a tool started with ``start_new_session`` and whatever it started."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass  # already gone
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 # --------------------------------------------------------------------------- #
 # Summary (tshark, one pass)                                                  #
 # --------------------------------------------------------------------------- #
@@ -103,24 +116,41 @@ def _tshark_rows(path: str, keys: str | None):
         command += ["-o", f"tls.keylog_file:{keys}"]
     for name in FIELDS:
         command += ["-e", name]
-    process = subprocess.Popen(  # noqa: S603 - fixed binary and arguments
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace"
-    )
-    deadline = time.monotonic() + TIMEOUT
-    try:
-        for line in process.stdout:
-            if time.monotonic() > deadline:
-                process.kill()
-                raise CaptureError(f"tshark took more than {int(TIMEOUT)} s", 504)
-            values = line.rstrip("\n").split("\t")
-            yield dict(zip(FIELDS, values + [""] * (len(FIELDS) - len(values)), strict=False))
-        process.wait(timeout=30)
-    finally:
-        if process.poll() is None:
-            process.kill()
-    if process.returncode not in (0, None):
-        error = (process.stderr.read() or "").strip().splitlines()
-        raise CaptureError(error[-1][:300] if error else "tshark cannot read the capture")
+    # The time limit is a clock of its own: a dissector that stalls prints no
+    # line to check a deadline on. Warnings go to a file: a pipe nobody reads
+    # fills up after 64 KB and blocks tshark for good.
+    with tempfile.TemporaryFile() as warnings:
+        process = subprocess.Popen(  # noqa: S603 - fixed binary and arguments
+            command,
+            stdout=subprocess.PIPE,
+            stderr=warnings,
+            text=True,
+            errors="replace",
+            start_new_session=True,
+        )
+        timed_out = threading.Event()
+
+        def stop() -> None:
+            timed_out.set()
+            kill_group(process)
+
+        watchdog = threading.Timer(TIMEOUT, stop)
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            for line in process.stdout:
+                values = line.rstrip("\n").split("\t")
+                yield dict(zip(FIELDS, values + [""] * (len(FIELDS) - len(values)), strict=False))
+            process.wait()
+        finally:
+            watchdog.cancel()
+            kill_group(process)
+        if timed_out.is_set():
+            raise CaptureError(f"tshark took more than {int(TIMEOUT)} s", 504)
+        if process.returncode not in (0, None):
+            warnings.seek(0)
+            error = warnings.read().decode("utf-8", "replace").strip().splitlines()
+            raise CaptureError(error[-1][:300] if error else "tshark cannot read the capture")
 
 
 def beacons(starts: dict[tuple[str, str, str], list[float]]) -> list[dict[str, Any]]:

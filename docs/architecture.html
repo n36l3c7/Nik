@@ -275,6 +275,8 @@
 │   ├── path.js                     # fileNameFromPath (Windows/POSIX paths, file:// URIs)
 │   ├── mergePatch.js               # createMergePatch(prev, next), applyMergePatch — RFC 7396 (+ .test.js)
 │   ├── rebase.js                   # rebase(base, local, remote): three-way merge of documents (+ .test.js)
+│   ├── layers.js                   # useLayer(): the stack of open dialogs and menus. Escape closes the
+│   │                               #   top one, Tab stays inside, focus returns on close (+ .test.js)
 │   ├── asciiSkull.js               # renderSkull(): the loading/error/empty skull (+ .test.js)
 │   ├── hash.js                     # sha256Hex: digest of an imported file, in the browser
 │   ├── time.js                     # webkitToMs, firefoxToMs, macToMs, anyToMs, formatDateTime…

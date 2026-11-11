@@ -205,9 +205,9 @@ test('pasted text', async () => {
     data.setData('text/plain', 'hxxps://login-paypa1[.]top/signin?id=8841')
     document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
   })
-  await expect(page.getByRole('dialog', { name: 'Pasted text' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Pasted text' })).toBeVisible()
   await shot('paste')
-  await page.getByRole('dialog', { name: 'Pasted text' }).getByRole('button', { name: 'Dismiss' }).click()
+  await page.getByRole('region', { name: 'Pasted text' }).getByRole('button', { name: 'Dismiss' }).click()
 })
 
 test('search, report and settings', async () => {

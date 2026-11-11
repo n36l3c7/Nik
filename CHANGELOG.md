@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-11-12
+
+### Added
+
+- **Dialogs that own the keyboard.** A dialog takes the focus when it
+  opens, keeps Tab inside, and gives the focus back to what had it when it
+  closes. Escape closes the dialog (or the menu) on top and leaves the one
+  under it open.
+- Rows that have a right-click menu are Tab stops, so the menu
+  (Shift + F10) and the `F` / `C` shortcuts are reachable without a mouse.
+  The menu tells a screen reader which item the arrows are on.
+- A switch for the **single-key shortcuts** (`F`, `C`, `?`), at the bottom
+  of the shortcut list, for those who dictate or whose assistive tool uses
+  the same keys. Kept per browser.
+
+### Changed
+
+- The document worker makes every preview in a process of its own and kills
+  it, with everything it started, at the time limit.
+- `deploy/upgrade-postgres.sh` stops the app before the backup and the row
+  count, so nothing is written while the data moves.
+
+### Fixed
+
+- Escape in a confirmation inside Settings closed Settings too; Tab walked
+  out of a dialog into the page behind it.
+- `F` or `C` with the pointer over a field of the packet tree applied a
+  display filter instead of saying there was nothing to flag.
+- The notice shown after pasting text silently disabled `F` and `C` until it
+  was dismissed.
+- In a sample's indicator table, `F` flagged a different thing depending on
+  whether the pointer was on the value or beside it. The row has one menu.
+- After scrolling with the arrow keys, `F` acted on the last focused element
+  instead of the row under the pointer.
+- A LibreOffice conversion past its time limit killed only the launcher and
+  left `soffice.bin` running; a PDF or an image that stalled the renderer
+  held one of the worker's two slots for ever.
+- A capture that made tshark print more than 64 KB of warnings, or stall
+  without printing, blocked its analysis for ever: the time limit is now a
+  clock, and warnings no longer fill a pipe nobody reads.
+- `deploy/upgrade-postgres.sh` run again after a failed row-count check
+  reported success. It now refuses until the mismatch is looked at.
+
 ## [3.2.0] - 2026-11-11
 
 ### Added

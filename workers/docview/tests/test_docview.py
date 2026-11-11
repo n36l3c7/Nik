@@ -66,7 +66,8 @@ def test_unknown_or_hostile_names_never_reach_the_command(monkeypatch):
         return real_run(command, **kwargs)
 
     monkeypatch.setattr(nik_docview.subprocess, "run", run)
-    nik_docview.render("../../etc/passwd --infilter=x.rtf\\x", RTF)
+    # In this process, where the command can be watched (render() runs it in a child).
+    nik_docview.render_here("../../etc/passwd --infilter=x.rtf\\x", RTF)
     assert seen[0].endswith(".rtf") and "passwd" not in seen[0] and "infilter" not in seen[0]
 
 
@@ -110,3 +111,33 @@ def test_server(worker, monkeypatch):
     assert status == 200 and result["total"] == 1
     assert _post(f"{worker}/render", {"name": "x.exe", "data": base64.b64encode(b"MZ").decode()})[0] == 422
     assert _post(f"{worker}/render", {"data": "not base64!"})[0] == 400
+
+
+def test_a_preview_that_stalls_is_killed_with_everything_it_started(monkeypatch, tmp_path):
+    """The time limit ends the preview process AND what it started (soffice.bin outlives its launcher)."""
+    import os
+    import time
+
+    grandchild = tmp_path / "pid"
+    # In place of the preview process: starts a child of its own, then never answers.
+    monkeypatch.setattr(nik_docview, "_RENDERER", ["sh", "-c", f"sleep 300 & echo $! > {grandchild}; sleep 300"])
+    monkeypatch.setattr(nik_docview, "TIMEOUT", 1.0)
+    started = time.monotonic()
+    with pytest.raises(nik_docview.PreviewError, match="took more than 1 s"):
+        nik_docview.render("a.pdf", b"%PDF-1.4")
+    assert time.monotonic() - started < 15
+    pid = int(grandchild.read_text())
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("the process started by the preview is still running")
+
+
+def test_a_preview_process_that_dies_is_an_error_not_a_hang(monkeypatch):
+    monkeypatch.setattr(nik_docview, "_RENDERER", ["sh", "-c", "exit 137"])
+    with pytest.raises(nik_docview.PreviewError, match="stopped before finishing"):
+        nik_docview.render("a.pdf", b"%PDF-1.4")

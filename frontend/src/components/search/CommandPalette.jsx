@@ -9,6 +9,7 @@ import { IOC_TYPES } from '../../domain/iocs.js'
 import { matchActions, searchIncident, tabForSource } from '../../domain/search.js'
 import { buildTimelineEvents, TIMELINE_SOURCE_META } from '../../domain/timeline.js'
 import { formatDateTime } from '../../lib/time.js'
+import { useLayer } from '../../lib/layers.js'
 
 /*
  * Global search palette (Ctrl/Cmd+K or "/"): a `nik>` prompt that searches
@@ -186,13 +187,14 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
     listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [cursor])
 
+  // Escape closes it, Tab stays in it, and the focus returns to where it was.
+  const dialogRef = useRef(null)
+  useLayer(dialogRef, { open, onClose })
+
   if (!open) return null
 
   const onKeyDown = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onClose()
-    } else if (event.key === 'ArrowDown') {
+    if (event.key === 'ArrowDown') {
       event.preventDefault()
       setCursor((c) => (flat.length ? (c + 1) % flat.length : 0))
     } else if (event.key === 'ArrowUp') {
@@ -208,6 +210,7 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
   const searching = !isAction && text.length >= 2
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="Search"

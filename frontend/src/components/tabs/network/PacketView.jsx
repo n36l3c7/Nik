@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Flag, Filter, MessagesSquare, X } from 'lucide-react'
 import { Button } from '../../ui/index.js'
+import { isShortcutProbe } from '../../../context/ContextMenuContext.jsx'
 import FollowStream from './FollowStream.jsx'
 import { api } from '../../../services/api.js'
 import { formatOffset, hexRows } from '../../../domain/mail.js'
@@ -104,7 +105,8 @@ function TreeNode({ node, depth, open, toggle, selected, onSelect, onFilter }) {
         onClick={() => onSelect(node)}
         onDoubleClick={() => hasChildren && toggle(node.path)}
         onContextMenu={(event) => {
-          if (!node.filter) return
+          // F and C look for a menu here; this is not one.
+          if (!node.filter || isShortcutProbe(event)) return
           event.preventDefault()
           onFilter(node.filter)
         }}
