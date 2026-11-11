@@ -9,7 +9,11 @@
  *
  * On any non-2xx response the wrapper throws `Error(payload.detail)` so callers
  * can surface the server's message directly (the backend returns
- * `{ "detail": "<message>" }` on errors — FastAPI's default shape).
+ * `{ "detail": "<message>" }` on errors — FastAPI's default shape). The error
+ * carries the HTTP `status`; a network failure has none.
+ *
+ * A 401 outside `/auth/*` means the session ended while the app was open: the
+ * handler registered with `onUnauthorized` (AuthContext) asks to sign in again.
  *
  * 204 (No Content) resolves to `null`; 304 (Not Modified, after a conditional
  * request with `If-None-Match`) resolves to the `NOT_MODIFIED` sentinel.
@@ -23,6 +27,17 @@ const BASE = '/api'
 /** Returned instead of a payload when the server answers 304 Not Modified. */
 export const NOT_MODIFIED = Symbol('NOT_MODIFIED')
 
+let unauthorizedHandler = null
+
+/** Register what happens when the server answers 401 to a signed-in client. */
+export function onUnauthorized(handler) {
+  unauthorizedHandler = handler
+}
+
+function reportUnauthorized(status, path) {
+  if (status === 401 && !path.startsWith('/auth/')) unauthorizedHandler?.()
+}
+
 /**
  * Perform an API request.
  * @param {string} method  HTTP verb.
@@ -32,6 +47,7 @@ export const NOT_MODIFIED = Symbol('NOT_MODIFIED')
  * @param {object} [opts.headers]      Extra request headers (e.g. If-None-Match).
  * @param {AbortSignal} [opts.signal]  Cancels the request when aborted.
  * @param {string} [opts.contentType]  Body media type (default application/json).
+ * @param {(headers: Headers) => void} [opts.onHeaders]  Receives the response headers (ETag).
  * @param {(p: {received: number, total: number|null}) => void} [opts.onProgress]
  *        Download progress while the response body streams in; `total` is
  *        null when the size is unknown (no Content-Length, or compressed).
@@ -40,7 +56,7 @@ export const NOT_MODIFIED = Symbol('NOT_MODIFIED')
  * @throws {Error} With the server's `detail` message on non-2xx; an aborted
  *                 request rejects with the fetch AbortError.
  */
-async function request(method, path, body, { headers = {}, signal, contentType, onProgress } = {}) {
+async function request(method, path, body, { headers = {}, signal, contentType, onProgress, onHeaders } = {}) {
   const options = {
     method,
     credentials: 'include', // send/receive the httpOnly session cookie
@@ -62,6 +78,7 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
     throw new Error(networkError?.message || 'Cannot reach the server.', { cause: networkError })
   }
 
+  onHeaders?.(response.headers)
   // 204 No Content — nothing to parse; 304 — the caller's copy is current.
   if (response.status === 204) return null
   if (response.status === 304) return NOT_MODIFIED
@@ -80,7 +97,8 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
   if (!response.ok) {
     const detail =
       (payload && typeof payload.detail === 'string' && payload.detail) || `Request failed (${response.status})`
-    throw new Error(detail)
+    reportUnauthorized(response.status, path)
+    throw Object.assign(new Error(detail), { status: response.status })
   }
 
   return payload
@@ -141,8 +159,12 @@ export function upload(path, file, { onProgress, signal, fields = {}, method = '
     xhr.onerror = () => reject(new Error('Cannot reach the server.'))
     xhr.onabort = () => reject(Object.assign(new Error('Upload cancelled.'), { name: 'AbortError' }))
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
-      else reject(new Error(xhr.response?.detail || `Request failed (${xhr.status})`))
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response)
+        return
+      }
+      reportUnauthorized(xhr.status, path)
+      reject(Object.assign(new Error(xhr.response?.detail || `Request failed (${xhr.status})`), { status: xhr.status }))
     }
     signal?.addEventListener('abort', () => xhr.abort())
     const form = new FormData()
@@ -178,7 +200,8 @@ export async function postForBlob(path, body, { signal } = {}) {
     } catch {
       /* not JSON */
     }
-    throw new Error(detail)
+    reportUnauthorized(response.status, path)
+    throw Object.assign(new Error(detail), { status: response.status })
   }
   return response.blob()
 }

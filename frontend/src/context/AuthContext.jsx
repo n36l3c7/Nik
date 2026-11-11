@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { api } from '../services/api.js'
+import { api, onUnauthorized } from '../services/api.js'
 import { useAudit } from './AuditContext.jsx'
 
 /*
@@ -24,6 +24,9 @@ import { useAudit } from './AuditContext.jsx'
  * Flows:
  *  - no users at all    → first-run: create the first (admin) user
  *  - users but no login → login screen
+ *  - session ended while working (a 401 from any request) → `sessionExpired`:
+ *    the app stays on screen with its unsaved changes and asks for the
+ *    password again; signing in clears the flag and the saves resume.
  */
 
 const AuthContext = createContext(null)
@@ -39,11 +42,20 @@ export function AuthProvider({ children }) {
   const [authReady, setAuthReady] = useState(false)
   // Set only when the boot probe cannot REACH the server (distinct from a 401).
   const [serverError, setServerError] = useState(null)
+  // The server answered 401 to a signed-in client: the session is over.
+  const [sessionExpired, setSessionExpired] = useState(false)
 
   // Live snapshot of the current user so callbacks can branch on auth state
   // without being re-created on every change.
   const currentUserRef = useRef(currentUser)
   currentUserRef.current = currentUser
+
+  useEffect(() => {
+    onUnauthorized(() => {
+      if (currentUserRef.current) setSessionExpired(true)
+    })
+    return () => onUnauthorized(null)
+  }, [])
 
   /** Reload the user list (auth required). Called after login / on demand. */
   const refreshUsers = useCallback(async () => {
@@ -130,6 +142,7 @@ export function AuthProvider({ children }) {
           password: password ?? '',
         })
         setCurrentUser(user)
+        setSessionExpired(false)
         await refreshUsers()
         refreshAudit()
         // Logged after the cookie is set, so the server attributes it correctly.
@@ -152,6 +165,7 @@ export function AuthProvider({ children }) {
       /* even if the request fails, drop the local session */
     }
     setCurrentUser(null)
+    setSessionExpired(false)
     setUsers([])
     // Reload the audit log — now unauthenticated, so it clears locally.
     refreshAudit()
@@ -176,6 +190,7 @@ export function AuthProvider({ children }) {
     currentUser,
     hasUsers,
     isAuthenticated: currentUser !== null,
+    sessionExpired,
     createUser,
     login,
     logout,

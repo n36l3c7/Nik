@@ -184,3 +184,26 @@ def test_migration_0019_mirrors_status_and_assignee(tmp_path, monkeypatch):
     command.downgrade(cfg, "0018_url_scans")
     with engine.connect() as conn:
         assert "status" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}
+
+
+def test_migration_0020_adds_the_revision(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO incidents VALUES ('a', '{}')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0019_incident_status_assignee")
+    command.upgrade(cfg, "0020_incident_rev")
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT rev FROM incidents")).scalar() == 0
+    # Running it on a schema that already has the column changes nothing.
+    command.stamp(cfg, "0019_incident_status_assignee")
+    command.upgrade(cfg, "0020_incident_rev")
+    command.downgrade(cfg, "0019_incident_status_assignee")
+    with engine.connect() as conn:
+        assert "rev" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}

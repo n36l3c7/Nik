@@ -50,7 +50,9 @@ export default function KeyboardShortcuts({ open, onOpenChange }) {
       }
       event.preventDefault()
       const message = shortcutMessage(kind, ran.label, ran.title)
-      if (message) showToast({ message })
+      // A flag removed takes its comments with it: one key brings it back.
+      const undo = typeof ran.result?.undo === 'function' ? ran.result.undo : null
+      if (message) showToast({ message, action: undo ? { label: 'Undo', run: undo } : undefined })
     }
     window.addEventListener('mousemove', onMove, { passive: true })
     window.addEventListener('keydown', onKeyDown)

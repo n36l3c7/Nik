@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text, false
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text, event, false
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -68,7 +69,17 @@ class Incident(Base):
     has_mail: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # Version of the document: one more at every write, whoever makes it. It is
+    # the incident's ETag, so a client that edits a stale copy is told (412).
+    rev: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+@event.listens_for(Incident, "before_update")
+def _bump_incident_revision(_mapper, _connection, target: Incident) -> None:
+    """Every write of the document is a new revision, wherever it comes from."""
+    if sa_inspect(target).attrs.doc.history.has_changes():
+        target.rev = (target.rev or 0) + 1
 
 
 class IocEntry(Base):

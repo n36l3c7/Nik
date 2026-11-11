@@ -39,6 +39,7 @@ import { sha256Hex } from './lib/hash.js'
 import { useNavigation } from './context/NavigationContext.jsx'
 import { detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
+import SessionExpiredDialog from './components/auth/SessionExpiredDialog.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 
 /*
@@ -155,6 +156,8 @@ export default function App() {
     activeLoadError,
     retryActiveIncident,
     storageError,
+    unsavedChanges,
+    retrySave,
     createIncident,
     whenSaved,
     exportIncident,
@@ -547,7 +550,14 @@ export default function App() {
             className="flex shrink-0 items-center gap-2 border-b border-high-line bg-high-soft px-6 py-2.5 text-sm text-high-fg"
           >
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>{storageError}</span>
+            <span className="min-w-0 flex-1">
+              {unsavedChanges ? `Changes not saved yet: ${storageError}` : storageError}
+            </span>
+            {unsavedChanges && (
+              <Button size="xs" variant="secondary" onClick={retrySave}>
+                Retry now
+              </Button>
+            )}
           </div>
         )}
 
@@ -663,6 +673,7 @@ export default function App() {
       />
 
       <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <SessionExpiredDialog unsavedChanges={unsavedChanges} />
       <PastePrompt
         pasted={pasted}
         busy={pastedBusy}

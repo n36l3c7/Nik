@@ -28,6 +28,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..core import vault
 from ..core.config import settings
 from ..core.db import SessionLocal
+from ..core.locking import lock_incident
 from ..core.models import Incident, NetworkCapture
 from ..core.security import now_iso
 from ..workers import previews
@@ -126,7 +127,7 @@ def save_reference(db: OrmSession, row: NetworkCapture, remove: bool = False) ->
     db.flush()
     if not remove:
         artifacts.register_capture(db, row)
-    incident = db.get(Incident, row.incident_id) if row.incident_id else None
+    incident = lock_incident(db, row.incident_id)
     if incident is None:
         return
     doc = dict(incident.doc or {})

@@ -31,6 +31,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from . import artifacts
 from .core.config import settings
 from .core.db import SessionLocal
+from .core.locking import relock
 from .core.models import Incident, NetworkCapture, UrlScan
 from .core.security import now_iso
 from .enrichment.service import internal_host
@@ -412,7 +413,7 @@ def _save(db: OrmSession, incident: Incident, doc: dict[str, Any]) -> None:
 
 
 def attach(db: OrmSession, incident: Incident, row: UrlScan, actor: str) -> dict[str, Any]:
-    doc = dict(incident.doc or {})
+    doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     ref = next((item for item in refs if item.get("id") == row.id), None)
     if ref is None:
@@ -423,7 +424,7 @@ def attach(db: OrmSession, incident: Incident, row: UrlScan, actor: str) -> dict
 
 
 def detach(db: OrmSession, incident: Incident, scan: str) -> bool:
-    doc = dict(incident.doc or {})
+    doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     kept = [ref for ref in refs if ref.get("id") != scan]
     if len(kept) == len(refs):
@@ -447,7 +448,7 @@ def incidents_referencing(db: OrmSession, scan: str) -> list[Incident]:
 def refresh_references(db: OrmSession, row: UrlScan) -> None:
     """Copy the scan's new state into the incidents that reference it."""
     for incident in incidents_referencing(db, row.id):
-        doc = dict(incident.doc or {})
+        doc = dict(relock(db, incident).doc or {})
         refs = _refs(doc)
         for index, ref in enumerate(refs):
             if ref.get("id") == row.id:

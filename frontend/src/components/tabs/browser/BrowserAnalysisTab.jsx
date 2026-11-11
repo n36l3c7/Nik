@@ -121,7 +121,6 @@ export default function BrowserAnalysisTab({ incident }) {
       const rows = source.produces.reduce((sum, k) => sum + (produced[k]?.length ?? 0), 0)
       const patch = {
         meta: {
-          ...current.meta,
           [source.key]: {
             fileName: file.name,
             format,

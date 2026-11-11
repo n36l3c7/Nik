@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.0] - 2026-11-11
+
+### Added
+
+- **Saves that cannot be lost.** Changes to an incident go through a save
+  queue: one request at a time, in order; a save that fails is retried on
+  its own and reported by a bar with **Retry now** until it goes through,
+  and closing the window with unsaved changes asks first.
+- **Working on the same incident.** When a colleague saved meanwhile, their
+  version is read and merged with the local changes instead of being
+  overwritten: notes, comments and flags added by two analysts all survive.
+  A window that regains the focus checks the open incident again.
+- **Session expired** dialog: when the session ends while working, the app
+  stays on screen, asks for the password again and then saves what was
+  waiting.
+- **Undo** after removing a flag (from the menu or with `F`), since its
+  comments go with it.
+- `ETag` on `POST /api/incidents`; every `PATCH` answers with the new one.
+
+### Changed
+
+- An incident's `ETag` is now a revision counter kept by the server
+  (`incidents.rev`, migration `0020`), one more at every write of the
+  document, instead of the client-supplied `updatedAt`. Clients that treat
+  it as opaque are unaffected.
+- Deleting an incident removes it from the list once the server has deleted
+  it, instead of before.
+
+### Fixed
+
+- Two analysts saving the same incident could erase each other's notes,
+  comments or references: every writer of an incident document (patches,
+  notes, sample, e-mail, capture and URL scan references, background
+  uploads) now takes the row lock before reading it, and `If-Match` is
+  checked under that lock.
+- A failed save was dropped, and its error message disappeared at the next
+  successful one.
+- A comment added to a row that was not flagged sent two requests that could
+  overtake each other.
+- Two browser files parsed at the same time could leave one of them marked
+  as not loaded.
+- Removing a sample, an e-mail or a capture could undo a change made while
+  the server was answering.
+- In the report dialog, a section toggled right after typing the executive
+  summary discarded the summary.
+
 ## [2.26.0] - 2026-11-11
 
 ### Added

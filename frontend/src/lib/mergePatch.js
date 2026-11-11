@@ -1,5 +1,5 @@
 /*
- * RFC 7396 JSON Merge Patch generation.
+ * RFC 7396 JSON Merge Patch: generation, and application to a local copy.
  *
  * `createMergePatch(prev, next)` returns the smallest merge patch that turns
  * `prev` into `next`: changed members are listed, removed members are `null`,
@@ -38,4 +38,18 @@ export function createMergePatch(prev, next) {
     }
   }
   return patch
+}
+
+/**
+ * Apply a merge patch: objects are merged member by member, `null` removes a
+ * member, anything else replaces the value. `target` is not modified.
+ */
+export function applyMergePatch(target, patch) {
+  if (!isPlainObject(patch)) return patch
+  const result = isPlainObject(target) ? { ...target } : {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete result[key]
+    else result[key] = applyMergePatch(result[key], value)
+  }
+  return result
 }

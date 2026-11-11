@@ -21,6 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from .. import artifacts
 from ..core.config import settings
 from ..core.db import get_db
+from ..core.locking import relock
 from ..core.models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
 from ..core.security import Principal, now_iso, principal, writer_principal
 from ..events import emit
@@ -208,7 +209,7 @@ def attach_sample(
     db: OrmSession, incident: Incident, row: Sample, file_name: str, actor: str, origin: str = ""
 ) -> dict[str, Any]:
     """Reference the sample from the incident (kept once); returns the reference."""
-    doc = dict(incident.doc or {})
+    doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     ref = next((item for item in refs if item.get("sha256") == row.sha256), None)
     if ref is None:
@@ -226,7 +227,7 @@ def attach_sample(
 
 def detach_sample(db: OrmSession, incident: Incident, sha256: str) -> bool:
     """Drop the incident's reference; False when it had none. The sample stays."""
-    doc = dict(incident.doc or {})
+    doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     kept = [ref for ref in refs if ref.get("sha256") != sha256]
     if len(kept) == len(refs):

@@ -113,6 +113,7 @@ export default function Sidebar({
 
   /** Confirm permanent deletion of the incident. */
   const handleDeleteConfirm = () => {
+    // The row leaves the list once the server has deleted it; a failure is reported.
     deleteIncident(deleteTarget.id)
     setDeleteTarget(null)
   }

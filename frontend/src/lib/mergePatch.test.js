@@ -1,17 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createMergePatch } from './mergePatch.js'
-
-/** Reference RFC 7396 apply, used to check that a generated patch round-trips. */
-function applyMergePatch(target, patch) {
-  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return patch
-  const result = target !== null && typeof target === 'object' && !Array.isArray(target) ? { ...target } : {}
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === null) delete result[key]
-    else result[key] = applyMergePatch(result[key], value)
-  }
-  return result
-}
+import { applyMergePatch, createMergePatch } from './mergePatch.js'
 
 test('returns an empty patch when nothing changed', () => {
   const doc = { a: 1, b: { c: [1, 2] } }
