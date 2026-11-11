@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import { useAudit } from '../../../context/AuditContext.jsx'
-import { useAuth } from '../../../context/AuthContext.jsx'
 import { formatRelative } from '../../../lib/time.js'
 import { Badge, Button, MicroSkull } from '../../ui/index.js'
 
@@ -48,9 +46,6 @@ function CreatedKey({ value, onDismiss }) {
 }
 
 export default function ApiKeysSection() {
-  const { log } = useAudit()
-  const { currentUser } = useAuth()
-
   const [keys, setKeys] = useState([])
   const [label, setLabel] = useState('')
   const [role, setRole] = useState('analyst')
@@ -92,7 +87,6 @@ export default function ApiKeysSection() {
       setReadOnly(false)
       setExpiresDays('')
       await reload()
-      log({ actor: currentUser?.username, action: 'apikey.create', details: `Created ${role} API key "${name}"` })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -105,7 +99,6 @@ export default function ApiKeysSection() {
     try {
       await api.del(`/keys/${key.id}`)
       await reload()
-      log({ actor: currentUser?.username, action: 'apikey.revoke', details: `Revoked API key "${key.label}"` })
     } catch (err) {
       setError(err.message)
     }

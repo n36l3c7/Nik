@@ -148,11 +148,7 @@ export default function EventLogsTab({ incident }) {
       const [text, sha256] = await Promise.all([file.text(), sha256Hex(file)])
       const parsed = parseEventLogJson(text, file.name)
       for (const slot of Object.values(parsed)) slot.meta.sha256 = sha256
-      const kept = Object.values(parsed).reduce((n, slot) => n + slot.events.length, 0)
-      setEventLogChannels(incident.id, parsed, {
-        action: 'eventlog.upload',
-        details: `Imported ${file.name} → ${Object.keys(parsed).join(', ')} (${kept} events)`,
-      })
+      setEventLogChannels(incident.id, parsed)
     } catch (err) {
       setJsonError(err?.message ?? 'Unexpected error while parsing the file.')
     } finally {

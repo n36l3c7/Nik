@@ -178,6 +178,8 @@
 │   ├── schemas.py                  # Pydantic request/response models
 │   ├── security.py                 # bcrypt hashing, session-auth dependencies
 │   ├── locking.py                  # Row lock every writer of an incident document takes first
+│   ├── audit.py                    # record(): the audit trail, written by the handlers;
+│   │                               #   describe_patch(): what a merge patch means (flag, note, status…)
 │   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY)
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
@@ -235,7 +237,7 @@
 │                                   #   hours (keywords managed at runtime from Settings).
 │
 ├── context/
-│   ├── AuditContext.jsx            # useAudit(): global audit log via the API
+│   ├── AuditContext.jsx            # useAudit(): the audit log, read on demand (the server writes it)
 │   ├── AuthContext.jsx             # useAuth(): session auth (login/logout/me), users
 │   ├── SettingsContext.jsx         # useSettings(): keywords, business hours, IOC allowlist;
 │   │                               #   useSocEngine(): memoized detection engine
@@ -590,7 +592,7 @@
   updateTabData,          // (id, dataKey, patch) =&gt; void — shallow-merge into data[dataKey]
   clearTabData,           // (id, dataKey) =&gt; void — reset to the registry defaultData
 
-  updateBrowserData,      // (id, browserId, profileId, patch, auditInfo?) =&gt; void — per-profile merge
+  updateBrowserData,      // (id, browserId, profileId, patch) =&gt; void — per-profile merge
   setActiveBrowser,       // (id, browserId) =&gt; void — switch browser sub-tab (local only)
   setActiveProfile,       // (id, browserId, profileId) =&gt; void — switch profile (local only)
   addBrowserProfile,      // (id, browserId, name) =&gt; profileId | null — create AND activate
@@ -599,15 +601,15 @@
   clearBrowserData,       // (id, browserId, profileId) =&gt; void — clear ONE profile
   removeBrowserSource,    // (id, browserId, profileId, sourceKey, producedKeys) =&gt; void — ONE file
 
-  updateShellData,        // (id, shellId, patch, auditInfo?) =&gt; void — per-shell merge
+  updateShellData,        // (id, shellId, patch) =&gt; void — per-shell merge
   setActiveShell,         // (id, shellId) =&gt; void — switch shell sub-tab (local only)
   clearShellData,         // (id, shellId) =&gt; void — clear ONE shell's commands
 
-  updateArtifactSource,   // (id, categoryId, sourceKey, patch, auditInfo?) =&gt; void — per-source
+  updateArtifactSource,   // (id, categoryId, sourceKey, patch) =&gt; void — per-source
   clearArtifactSource,    // (id, categoryId, sourceKey) =&gt; void — clear ONE source
   clearArtifactCategory,  // (id, categoryId) =&gt; void — clear ALL sources of a category
 
-  setEventLogChannels,    // (id, { [channel]: { events, meta } }, auditInfo?) =&gt; void — the script's JSON
+  setEventLogChannels,    // (id, { [channel]: { events, meta } }) =&gt; void — the script's JSON
   clearEventLogs,         // (id, channel?) =&gt; void — one channel, or all of them
   retryActiveIncident,    // () =&gt; void — refetch the open incident (after a server-side .evtx parse)
 
@@ -796,8 +798,11 @@
         expire after <code>SESSION_TTL_HOURS</code>.
       </p>
       <p>
-        User shape: <code>{ id, username, role: 'admin' | 'analyst', createdAt, createdBy }</code> — the password hash
-        never leaves the backend.
+        User shape: <code>{ id, username, role: 'admin' | 'analyst', createdAt, createdBy, disabled }</code> — the
+        password hash never leaves the backend. A sign-in that names an unknown account does the same hashing work as a
+        wrong password, ten wrong passwords in a row lock the account for five minutes
+        (<code>users.failed_logins</code>, <code>users.locked_until</code>), and expired sessions are purged at each
+        sign-in.
       </p>
       <p>
         The App shell (<code>App.jsx</code>) implements a three-state <strong>auth gate</strong>, driven by
@@ -816,29 +821,42 @@
         </li>
       </ul>
       <p>
-        Admins manage accounts from the <strong>User management</strong> modal: add a user (username + password + role)
-        or delete one — never the last remaining user, and never your own account. All other user operations require an
-        admin session, enforced server-side.
+        Admins manage accounts in <strong>Settings → Accounts</strong> (<code>AccountsSection.jsx</code>): add a user,
+        change its name, role or password, disable it, or delete it (<code>PATCH</code> /
+        <code>DELETE /api/users/{id}</code>). The server keeps at least one admin able to sign in and refuses a change
+        to the caller's own role. A rename is carried to the incidents assigned to the account, under their row lock; a
+        new password or disabling ends the account's sessions. Every user changes their own password in
+        <strong>My account</strong> (<code>PUT /api/users/me/password</code>).
       </p>
       <h3 id="audit-log">Audit log</h3>
       <p>
-        <code>frontend/src/context/AuditContext.jsx</code> records every meaningful action through the API:
-        <strong>who</strong> (actor), <strong>when</strong> (<code>at</code>),
+        The log is <strong>written by the server</strong>: each handler records what it does through
+        <code>backend/app/core/audit.py</code>, for a session and for an API key alike, so a request sent by hand leaves
+        the same entry as the app. An entry says <strong>who</strong> (actor), <strong>when</strong> (<code>at</code>),
         <strong>what</strong> (<code>action</code>), the <strong>details</strong>, and which
         <strong>incident</strong> it belonged to. Entries are returned newest-first, capped at 5000.
       </p>
+      <p>
+        A merge patch says what changed, not what it means, so <code>describe_patch()</code> compares the document
+        before and after and names the changes: a flag added or removed, a comment, a note, the attributes that changed,
+        the evidence tabs touched and the files imported into them. The browser reports only what happens in it alone:
+        <code>POST /api/audit</code> accepts <code>incident.export</code> and refuses anything else.
+      </p>
       <p>Entry shape: <code>{ id, at, actor, action, target, details, incidentId, incidentName }</code>.</p>
       <p>
-        Action strings emitted include: <code>user.create</code>, <code>user.delete</code>, <code>auth.login</code>,
-        <code>auth.logout</code>, <code>incident.create</code> / <code>.update</code> / <code>.delete</code> /
-        <code>.export</code> / <code>.import</code>, <code>browser.upload</code> / <code>.clear</code> /
-        <code>.removeFile</code>, <code>flag.add</code> / <code>.remove</code> / <code>.comment</code>,
-        <code>note.add</code>, and <code>backup.export</code> / <code>backup.import</code>.
+        Action strings include: <code>auth.login</code> / <code>.logout</code> / <code>.locked</code>,
+        <code>user.create</code> / <code>.update</code> / <code>.delete</code> / <code>.password</code>,
+        <code>apikey.create</code> / <code>.revoke</code>, <code>settings.update</code>, <code>incident.create</code> /
+        <code>.update</code> / <code>.delete</code> / <code>.export</code>, <code>evidence.update</code>,
+        <code>flag.add</code> / <code>.remove</code> / <code>.comment</code>, <code>note.add</code> /
+        <code>.update</code> / <code>.remove</code>, the sample, e-mail, capture and URL actions,
+        <code>backup.export</code> / <code>backup.import</code> and <code>audit.clear</code>.
       </p>
       <p>
-        The read-only <strong>Audit log</strong> modal (<code>AuditLogView.jsx</code>, opened from the rail) surfaces
-        the trail in a searchable table; an <strong>admin</strong> can clear the whole log behind an inline confirmation
-        step.
+        The <strong>Audit log</strong> section of Settings (<code>AuditLogSection.jsx</code>, also opened from the rail)
+        reads the trail each time it opens and shows it in a searchable table; an <strong>admin</strong> can clear the
+        whole log behind an inline confirmation step, and the new log starts with an <code>audit.clear</code> entry
+        naming them.
       </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>

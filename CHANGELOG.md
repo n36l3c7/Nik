@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.0] - 2026-11-11
+
+### Added
+
+- **Account management for admins**: the pencil on an account changes its
+  username, role and password, or disables it (`PATCH /api/users/{id}`). A
+  renamed account keeps the incidents assigned to it; a disabled one keeps
+  its history, cannot sign in and is signed out at once. The server always
+  keeps one admin able to sign in.
+- **My account** section for every user, to change one's own password
+  (`PUT /api/users/me/password`); the account's other sessions end.
+- An account is **locked for five minutes** after ten wrong passwords in a
+  row (`429`); an admin's password reset unlocks it.
+- New audit entries: `auth.login`, `auth.logout`, `auth.locked`,
+  `user.create`, `user.update`, `user.delete`, `user.password`,
+  `apikey.create`, `apikey.revoke`, `settings.update`, `evidence.update`,
+  `audit.clear`.
+- Migration `0021`: `users.disabled`, `users.failed_logins`,
+  `users.locked_until`.
+
+### Changed
+
+- **The audit log is written by the server.** Every change is recorded by
+  the handler that makes it, for a browser session as for an API key, and a
+  merge patch is described by what it means (a flag, a comment, a note, the
+  status, an evidence file). The app no longer reports what it did, and the
+  log is read when its section opens instead of at every sign-in.
+- `POST /api/audit` accepts only `incident.export` (an action that happens
+  in the browser alone) and answers `400` to anything else.
+- `PUT /api/settings` accepts a key with the write scope, as documented. The
+  report header, the mail settings and the threat-intelligence options are
+  changed by admins only (their Settings sections are shown to admins only);
+  sent by anyone else they are left as they are.
+- `GET /api/users/names` leaves disabled accounts out.
+
+### Fixed
+
+- A request sent outside the app with a session cookie (deleting an
+  incident, for instance) left no audit entry.
+- Any signed-in user could write arbitrary entries to the audit log, and
+  change the threat-intelligence and report settings.
+- Clearing the audit log left no trace of who did it.
+- A failed sign-in with an unknown username answered faster than one with a
+  wrong password; expired sessions were never purged.
+
+### Security
+
+- Sessions end when the account's password is changed or the account is
+  disabled.
+
 ## [2.27.0] - 2026-11-11
 
 ### Added

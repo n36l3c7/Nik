@@ -30,6 +30,11 @@ class User(Base):
     role: Mapped[str] = mapped_column(String, nullable=False, default="analyst")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # A disabled account keeps its history but cannot sign in.
+    disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # Wrong passwords in a row, and until when the account is locked because of them.
+    failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    locked_until: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class Session(Base):
