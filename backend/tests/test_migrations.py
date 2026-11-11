@@ -160,3 +160,27 @@ def test_migration_0016_adds_network_captures(tmp_path, monkeypatch):
     command.downgrade(cfg, "0015_ioc_enrichment")
     with engine.connect() as conn:
         assert "network_captures" not in sa.inspect(conn).get_table_names()
+
+
+def test_migration_0019_mirrors_status_and_assignee(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(
+            sa.text("INSERT INTO incidents VALUES ('a', :a), ('b', '{}'), ('c', :c)"),
+            {"a": json.dumps({"status": "closed", "assignee": "anna"}), "c": json.dumps({"status": "archived"})},
+        )
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0018_url_scans")
+    command.upgrade(cfg, "0019_incident_status_assignee")
+    with engine.connect() as conn:
+        rows = conn.execute(sa.text("SELECT id, status, assignee FROM incidents ORDER BY id")).all()
+    assert [tuple(r) for r in rows] == [("a", "closed", "anna"), ("b", "open", ""), ("c", "open", "")]
+    command.downgrade(cfg, "0018_url_scans")
+    with engine.connect() as conn:
+        assert "status" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}

@@ -60,6 +60,9 @@ class Incident(Base):
     # analysts' severity tag (low/medium/high/critical, or empty).
     ticket_id: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     severity: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    # Where the work stands (open / in_progress / closed) and the analyst who has it.
+    status: Mapped[str] = mapped_column(String, nullable=False, default="open", server_default="open")
+    assignee: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     # The incident holds analysed e-mails (data.mail.messages): the sidebar
     # shows a mail icon without reading documents.
     has_mail: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())

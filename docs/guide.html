@@ -86,6 +86,13 @@
         <code>host - user</code> when there is no title, for example <code>[INC-2041] Invoice phishing, finance</code>.
         Everything stays editable from the Summary tab.
       </p>
+      <p>
+        Every incident has a <strong>status</strong> (open, in progress or closed) and can be
+        <strong>assigned</strong> to an analyst. Set them from the Summary tab, or right-click an incident in the panel:
+        <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>. The panel
+        shows the status and the assignee under the name, and filters the list by status or to the incidents that are
+        <strong>mine</strong>. Both are stated in the report.
+      </p>
       <figure class="shot">
         <img src="img/new-incident.png" alt="The New incident dialog" width="1600" height="1000" loading="lazy" />
         <figcaption>A new incident: ticket, title, host and user.</figcaption>
@@ -238,7 +245,7 @@
       <h2 id="overview-tabs">Summary, Timeline, IOCs</h2>
       <h3>Summary</h3>
       <p>
-        The incident's details (ticket, title, severity, host, user, operating system), the
+        The incident's details (ticket, title, severity, status, assignee, host, user, operating system), the
         <strong>suspicious window</strong> (start and end of the malicious activity, used to highlight events in every
         tab), counters per source, the flagged events and the analysts' <strong>notes</strong>.
       </p>

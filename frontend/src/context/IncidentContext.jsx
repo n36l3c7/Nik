@@ -20,7 +20,7 @@ import {
 } from '../config/artifacts.js'
 import { normalizeOs } from '../config/os.js'
 import { generateId } from '../lib/id.js'
-import { deriveIncidentName, hasIdentity, normalizeSeverity } from '../domain/incidentName.js'
+import { deriveIncidentName, hasIdentity, normalizeSeverity, normalizeStatus } from '../domain/incidentName.js'
 import { useAuth } from './AuthContext.jsx'
 import { useAudit } from './AuditContext.jsx'
 
@@ -36,6 +36,8 @@ import { useAudit } from './AuditContext.jsx'
  *   ticketId, title,      // ticket of the tracker, short title (both optional)
  *   host, username,       // identity (NOT unique; the id is the DB key)
  *   severity,             // 'low' | 'medium' | 'high' | 'critical' | null — a tag
+ *   status,               // 'open' | 'in_progress' | 'closed' — where the work stands
+ *   assignee,             // username of the analyst who has it, or ''
  *   os,                   // 'windows' | 'macos' | 'linux' — the host OS
  *   name,                 // derived: "[ticket] title" | "[ticket] host - username" …
  *   suspiciousStart,      // Unix ms | null — start of suspicious activity
@@ -201,6 +203,8 @@ function normalizeIncident(raw) {
     id: typeof raw.id === 'string' && raw.id ? raw.id : generateId(),
     ...identity,
     severity: normalizeSeverity(raw.severity),
+    status: normalizeStatus(raw.status),
+    assignee: typeof raw.assignee === 'string' ? raw.assignee.trim() : '',
     os: normalizeOs(raw.os),
     name,
     suspiciousStart: Number.isFinite(raw.suspiciousStart) ? raw.suspiciousStart : null,
@@ -259,6 +263,8 @@ function toSummary(incident) {
     os: incident.os,
     ticketId: incident.ticketId ?? '',
     severity: incident.severity ?? null,
+    status: normalizeStatus(incident.status),
+    assignee: incident.assignee ?? '',
     hasMail: (incident.data?.mail?.messages?.length ?? 0) > 0,
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt,
@@ -279,6 +285,8 @@ function normalizeSummary(raw) {
     os: normalizeOs(raw.os),
     ticketId: typeof raw.ticketId === 'string' ? raw.ticketId : '',
     severity: normalizeSeverity(raw.severity),
+    status: normalizeStatus(raw.status),
+    assignee: typeof raw.assignee === 'string' ? raw.assignee : '',
     hasMail: raw.hasMail === true,
     createdAt: raw.createdAt ?? '',
     updatedAt: raw.updatedAt ?? '',
@@ -308,6 +316,24 @@ export function IncidentProvider({ children }) {
   // Bumped by retryActiveIncident() to re-run the on-demand fetch after an error.
   const [reloadToken, setReloadToken] = useState(0)
   const [storageError, setStorageError] = useState(null)
+  // Usernames an incident can be assigned to.
+  const [assignees, setAssignees] = useState([])
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+    let cancelled = false
+    api
+      .get('/users/names')
+      .then((res) => {
+        if (!cancelled) setAssignees(Array.isArray(res?.names) ? res.names : [])
+      })
+      // The fields still work without the list: the assignee is typed by hand.
+      .catch(() => {
+        if (!cancelled) setAssignees([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated])
 
   // Always-current snapshots so event handlers read the latest state without
   // stale-closure issues and without side effects inside a setState updater.
@@ -517,6 +543,8 @@ export function IncidentProvider({ children }) {
         ...identity,
         os: normalizeOs(os),
         severity: normalizeSeverity(severity),
+        status: 'open',
+        assignee: '',
         name: deriveIncidentName(identity),
         suspiciousStart: null,
         suspiciousEnd: null,
@@ -574,6 +602,8 @@ export function IncidentProvider({ children }) {
         ...identity,
         os,
         severity: patch.severity !== undefined ? normalizeSeverity(patch.severity) : (prev.severity ?? null),
+        status: normalizeStatus(patch.status !== undefined ? patch.status : prev.status),
+        assignee: patch.assignee !== undefined ? String(patch.assignee ?? '').trim() : (prev.assignee ?? ''),
         name: hasIdentity(identity) ? deriveIncidentName(identity) : prev.name,
         suspiciousStart: patch.suspiciousStart !== undefined ? patch.suspiciousStart : prev.suspiciousStart,
         suspiciousEnd: patch.suspiciousEnd !== undefined ? patch.suspiciousEnd : prev.suspiciousEnd,
@@ -583,6 +613,33 @@ export function IncidentProvider({ children }) {
       audit('incident.update', `Updated attributes of "${next.name}"`, next)
     },
     [audit, commit],
+  )
+
+  /**
+   * Set the status and/or the assignee of any incident of the list, loaded
+   * or not (the panel's menu works on rows whose document was never opened).
+   */
+  const setIncidentTriage = useCallback(
+    (incidentId, patch) => {
+      if (documentsRef.current[incidentId]) {
+        updateIncidentMeta(incidentId, patch)
+        return
+      }
+      const row = incidentsRef.current.find((incident) => incident.id === incidentId)
+      if (!row) return
+      const change = {
+        status: normalizeStatus(patch.status !== undefined ? patch.status : row.status),
+        assignee: patch.assignee !== undefined ? String(patch.assignee ?? '').trim() : (row.assignee ?? ''),
+        updatedAt: nowIso(),
+      }
+      setIncidents((list) => list.map((item) => (item.id === incidentId ? { ...item, ...change } : item)))
+      audit('incident.update', `Updated attributes of "${row.name}"`, row)
+      api
+        .patch(`/incidents/${encodeURIComponent(incidentId)}`, change, { contentType: MERGE_PATCH_CONTENT_TYPE })
+        .then(() => setStorageError(null))
+        .catch((err) => setStorageError(err?.message || 'Unable to save changes to the server.'))
+    },
+    [audit, updateIncidentMeta],
   )
 
   const deleteIncident = useCallback(
@@ -1261,6 +1318,8 @@ export function IncidentProvider({ children }) {
     storageError,
     createIncident,
     updateIncidentMeta,
+    setIncidentTriage,
+    assignees,
     deleteIncident,
     selectIncident,
     updateTabData,

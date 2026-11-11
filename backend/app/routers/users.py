@@ -22,6 +22,7 @@ from ..core.security import (
     hash_password,
     now_iso,
     optional_principal,
+    principal,
     user_to_dict,
 )
 
@@ -86,6 +87,13 @@ def list_users(_admin: Principal = Depends(admin_principal), db: OrmSession = De
     """List all users (admin session or admin key)."""
     users = db.scalars(select(User).order_by(User.created_at.asc())).all()
     return {"users": [user_to_dict(u) for u in users]}
+
+
+@router.get("/names")
+def list_user_names(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+    """The usernames an incident can be assigned to (any signed-in user or key)."""
+    names = db.scalars(select(User.username).order_by(func.lower(User.username))).all()
+    return {"names": list(names)}
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

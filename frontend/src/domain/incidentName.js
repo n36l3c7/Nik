@@ -1,5 +1,5 @@
 /*
- * Incident identity: the display name and the severity tag.
+ * Incident identity: the display name, the severity tag, the status and the assignee.
  *
  * Name: `[TICKET] ` first when there is a ticket ID, then the short title when
  * set (it replaces host and user), else `host - user`, `host` or `user`:
@@ -7,6 +7,8 @@
  *   [INC-2039] WKS-042 - m.rossi
  *   SRV-FILE-01
  * Severity is a tag the analysts set; it is never part of the name.
+ * Status says where the work stands (an incident with none is open); the
+ * assignee is the username of the analyst who has it, or ''.
  */
 
 export const SEVERITIES = [
@@ -14,6 +16,12 @@ export const SEVERITIES = [
   { value: 'medium', label: 'medium' },
   { value: 'high', label: 'high' },
   { value: 'critical', label: 'critical' },
+]
+
+export const STATUSES = [
+  { value: 'open', label: 'open' },
+  { value: 'in_progress', label: 'in progress' },
+  { value: 'closed', label: 'closed' },
 ]
 
 const clean = (value) => (typeof value === 'string' ? value.trim() : '')
@@ -36,4 +44,28 @@ export function hasIdentity({ ticketId, title, host, username } = {}) {
 /** A known severity value, or null. */
 export function normalizeSeverity(value) {
   return SEVERITIES.some((s) => s.value === value) ? value : null
+}
+
+/** A known status value; anything else is 'open'. */
+export function normalizeStatus(value) {
+  return STATUSES.some((s) => s.value === value) ? value : 'open'
+}
+
+/** The label of a status ('in progress' for 'in_progress'). */
+export function statusLabel(value) {
+  return STATUSES.find((s) => s.value === normalizeStatus(value)).label
+}
+
+/**
+ * The incidents of a list that pass the panel's filters: `status` is a status
+ * value or 'all'; `assignee` is a username (compared without case) or '' for
+ * everyone.
+ */
+export function filterIncidents(incidents, { status = 'all', assignee = '' } = {}) {
+  const who = clean(assignee).toLowerCase()
+  return incidents.filter(
+    (incident) =>
+      (status === 'all' || normalizeStatus(incident.status) === status) &&
+      (!who || clean(incident.assignee).toLowerCase() === who),
+  )
 }

@@ -263,3 +263,12 @@ def test_report_lists_only_what_was_flagged_unless_asked_for_everything():
         "flagged.pcapng",
         "bash_history",
     }
+
+
+def test_report_states_the_status_and_the_assignee():
+    html = build_html({**DOC, "status": "in_progress", "assignee": "anna"})
+    assert "<dt>Status</dt><dd>in progress</dd>" in html
+    assert "<dt>Assigned to</dt><dd>anna</dd>" in html
+    plain = build_html(DOC, lang="it")
+    assert "<dt>Stato</dt><dd>aperto</dd>" in plain
+    assert "Assegnato a" not in plain

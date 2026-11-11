@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.0] - 2026-11-11
+
+### Added
+
+- **Incident status and assignee.** An incident is open, in progress or
+  closed, and can be assigned to an analyst.
+  - Set from the Summary tab, or from the right-click menu of the incidents
+    panel (Mark as in progress / closed / open, Assign to me, Remove the
+    assignee), also on incidents that were never opened.
+  - The panel shows both under the name and filters the list by status and
+    to the incidents assigned to the analyst ("mine"); the header shows them
+    for the open incident.
+  - The report states the status and the assignee.
+- API: `status` and `assignee` in the rows of `GET /api/incidents?view=summary`,
+  the `status` and `assignee` filters of `GET /api/incidents`, and
+  `GET /api/users/names` (the usernames an incident can be assigned to).
+
+### Changed
+
+- Database migration `0019`: `incidents.status` and `incidents.assignee`.
+  Existing incidents are open and unassigned. Applied on start-up.
+
 ## [2.24.0] - 2026-11-11
 
 ### Changed

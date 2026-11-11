@@ -32,6 +32,8 @@ def test_summary_view_includes_os_without_document_body(admin: TestClient):
             "os": "macos",
             "ticketId": "",
             "severity": None,
+            "status": "open",
+            "assignee": "",
             "hasMail": False,
             "createdAt": "",
             "updatedAt": "",
@@ -154,3 +156,37 @@ def test_conditional_get_returns_304_while_unchanged(admin: TestClient):
     miss = admin.get("/api/incidents/c1", headers={"If-None-Match": etag})
     assert miss.status_code == 200 and miss.json()["updatedAt"] == "2026-11-04T09:05:00.000Z"
     assert admin.get("/api/incidents/nope", headers={"If-None-Match": etag}).status_code == 404
+
+
+def test_status_and_assignee_are_listed_and_filtered(admin: TestClient):
+    _create(admin, id="t1", name="one")
+    _create(admin, id="t2", name="two", status="in_progress", assignee="Anna")
+    _create(admin, id="t3", name="three", status="closed", assignee="anna")
+    _create(admin, id="t4", name="four", status="archived")
+
+    def ids(query: str) -> list[str]:
+        return sorted(r["id"] for r in admin.get(f"/api/incidents?view=summary&{query}").json()["incidents"])
+
+    rows = {r["id"]: r for r in admin.get("/api/incidents?view=summary").json()["incidents"]}
+    assert (rows["t2"]["status"], rows["t2"]["assignee"]) == ("in_progress", "Anna")
+    assert rows["t4"]["status"] == "open"  # an unknown status reads as open
+    assert ids("status=open") == ["t1", "t4"]
+    assert ids("status=closed") == ["t3"]
+    assert ids("assignee=ANNA") == ["t2", "t3"]
+    assert ids("assignee=") == ["t1", "t4"]
+    assert ids("assignee=anna&status=in_progress") == ["t2"]
+    assert admin.get("/api/incidents?status=done").status_code == 422
+
+    admin.patch("/api/incidents/t1", json={"status": "closed", "assignee": " anna "})
+    assert ids("status=closed") == ["t1", "t3"]
+    assert ids("assignee=anna") == ["t1", "t2", "t3"]
+
+
+def test_user_names_are_listed_for_any_signed_in_caller(admin: TestClient):
+    names = admin.get("/api/users/names").json()["names"]
+    assert names and all(isinstance(name, str) for name in names)
+    assert names == sorted(names, key=str.lower)
+
+    from app.main import app
+
+    assert TestClient(app).get("/api/users/names").status_code == 401

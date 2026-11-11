@@ -46,6 +46,8 @@ from ..parsing.registry import apply_upload
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
 SEVERITIES = ("low", "medium", "high", "critical")
+# Where the work on an incident stands; an incident with no status is open.
+STATUSES = ("open", "in_progress", "closed")
 
 
 def _sync_columns(incident: Incident) -> None:
@@ -58,6 +60,9 @@ def _sync_columns(incident: Incident) -> None:
     incident.ticket_id = str(doc.get("ticketId") or "")
     severity = str(doc.get("severity") or "")
     incident.severity = severity if severity in SEVERITIES else ""
+    state = str(doc.get("status") or "")
+    incident.status = state if state in STATUSES else "open"
+    incident.assignee = str(doc.get("assignee") or "").strip()
     mail = (doc.get("data") or {}).get("mail") if isinstance(doc.get("data"), dict) else None
     incident.has_mail = bool(isinstance(mail, dict) and mail.get("messages"))
     incident.updated_at = str(doc.get("updatedAt") or "")
@@ -135,6 +140,10 @@ def list_incidents(
     q: str | None = Query(None, description="Match name/host/username."),
     host: str | None = Query(None),
     username: str | None = Query(None),
+    state: str | None = Query(
+        None, alias="status", pattern="^(open|in_progress|closed)$", description="Only incidents in this status."
+    ),
+    assignee: str | None = Query(None, description="Only incidents assigned to this user; empty = unassigned."),
     view: str = Query(
         "full", pattern="^(full|summary)$", description="full = whole documents; summary = light rows (no data)."
     ),
@@ -142,7 +151,7 @@ def list_incidents(
     """List incidents newest-updated first, filterable and paginated.
 
     ``view=summary`` returns light rows (id/name/host/username/os/ticketId/severity/
-    hasMail/timestamps) WITHOUT
+    status/assignee/hasMail/timestamps) WITHOUT
     the heavy document body — use it for lists at scale, then fetch a single
     incident's full document from ``GET /incidents/{id}``. Backward compatible:
     with no params it returns every full document. Total count is also in the
@@ -163,6 +172,10 @@ def list_incidents(
         conditions.append(Incident.host.ilike(f"%{host}%"))
     if username:
         conditions.append(Incident.username.ilike(f"%{username}%"))
+    if state:
+        conditions.append(Incident.status == state)
+    if assignee is not None:
+        conditions.append(func.lower(Incident.assignee) == assignee.strip().lower())
 
     total = db.scalar(select(func.count()).select_from(Incident).where(*conditions)) or 0
     response.headers["X-Total-Count"] = str(total)
@@ -178,6 +191,8 @@ def list_incidents(
                 Incident.os,
                 Incident.ticket_id,
                 Incident.severity,
+                Incident.status,
+                Incident.assignee,
                 Incident.has_mail,
                 Incident.created_at,
                 Incident.updated_at,
@@ -195,6 +210,8 @@ def list_incidents(
                 "os": r.os,
                 "ticketId": r.ticket_id,
                 "severity": r.severity or None,
+                "status": r.status or "open",
+                "assignee": r.assignee,
                 "hasMail": bool(r.has_mail),
                 "createdAt": r.created_at,
                 "updatedAt": r.updated_at,
