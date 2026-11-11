@@ -6,14 +6,21 @@ import { BROWSERS } from '../../config/browsers.js'
 import { SHELLS } from '../../config/shells.js'
 import { ARTIFACT_CATEGORIES, artifactSourcesFor, getArtifactCategoryById } from '../../config/artifacts.js'
 import { DEFAULT_OS } from '../../config/os.js'
+import { kindForTab } from '../../domain/artifactRegistry.js'
+import { formatRelative } from '../../lib/time.js'
 
 /*
  * A file dropped anywhere in the app: where it goes. Nik proposes a tab (see
  * domain/fileRouting.js); the analyst confirms or changes it, picks the source
  * when needed (browser, shell, artifact category) and chooses, every time,
- * the open incident or a new one (with its identity fields).
+ * where it goes: an analysis on its own (e-mails, suspicious files and
+ * captures only: host evidence always belongs to an incident), the open
+ * incident, or a new one (with its identity fields).
  *
- * onConfirm({ target: 'current' | 'new', fields, tab, params })
+ * `drop.known` lists the artifacts with the same SHA-256, when the file was
+ * analysed before; `drop.preferAnalysis` is set by "New analysis".
+ *
+ * onConfirm({ target: 'analysis' | 'current' | 'new', fields, tab, params })
  */
 
 const TABS = [
@@ -46,7 +53,7 @@ function Select({ id, label, value, onChange, options }) {
   )
 }
 
-export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm }) {
+export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm, onOpenKnown }) {
   const route = drop?.route ?? null
   const [target, setTarget] = useState('current')
   const [fields, setFields] = useState(EMPTY_INCIDENT_FIELDS)
@@ -55,7 +62,10 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
 
   useEffect(() => {
     if (!drop) return
-    setTarget(activeIncident ? 'current' : 'new')
+    const analysable = Boolean(kindForTab(route?.tab ?? 'malware'))
+    setTarget(
+      drop.preferAnalysis && analysable ? 'analysis' : activeIncident ? 'current' : analysable ? 'analysis' : 'new',
+    )
     setFields(EMPTY_INCIDENT_FIELDS)
     setTab(route?.tab ?? 'malware')
     setParams(route?.params ?? {})
@@ -72,6 +82,10 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
   const categorySources = useMemo(() => artifactSourcesFor(category, os), [category, os])
 
   if (!drop) return null
+
+  // Only e-mails, files and captures can be analysed without an incident.
+  const analysable = Boolean(kindForTab(tab))
+  const known = drop.known ?? []
 
   const resolved = (() => {
     switch (tab) {
@@ -94,7 +108,7 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
   })()
 
   const ready =
-    (target === 'current' ? Boolean(activeIncident) : canCreateIncident(fields)) &&
+    (target === 'analysis' ? analysable : target === 'current' ? Boolean(activeIncident) : canCreateIncident(fields)) &&
     (tab !== 'endpoint' || Boolean(resolved.source))
 
   const submit = (event) => {
@@ -115,7 +129,7 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
             Cancel
           </Button>
           <Button type="submit" form="form-add-file" disabled={!ready}>
-            {target === 'new' ? 'Create incident and import' : 'Import'}
+            {target === 'analysis' ? 'Start analysis' : target === 'new' ? 'Create incident and import' : 'Import'}
           </Button>
         </>
       }
@@ -138,8 +152,37 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
           </div>
         </div>
 
+        {known.length > 0 && (
+          <div className="space-y-1.5 border border-info-line bg-info-soft/40 p-3 text-sm text-fg">
+            <p className="font-semibold">This file was already analysed.</p>
+            {known.map((item) => (
+              <p key={item.id} className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+                <span>
+                  {item.name} · {item.createdBy || 'unknown'} · {formatRelative(item.createdAt)}
+                  {item.incidents.length > 0 ? ` · in ${item.incidents.map((i) => i.name).join(', ')}` : ''}
+                </span>
+                <Button type="button" variant="secondary" size="xs" onClick={() => onOpenKnown(item)}>
+                  Open the existing analysis
+                </Button>
+              </p>
+            ))}
+          </div>
+        )}
+
         <fieldset className="space-y-2">
-          <legend className="mb-1 font-mono text-xs text-fg-muted">Incident</legend>
+          <legend className="mb-1 font-mono text-xs text-fg-muted">Where</legend>
+          {analysable && (
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-fg">
+              <input
+                type="radio"
+                name="add-file-target"
+                checked={target === 'analysis'}
+                onChange={() => setTarget('analysis')}
+                className="accent-accent"
+              />
+              Start analysis <span className="text-fg-muted">on its own, no incident (link it later)</span>
+            </label>
+          )}
           {activeIncident && (
             <label className="flex cursor-pointer items-center gap-2 text-sm text-fg">
               <input
@@ -177,6 +220,7 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
             value={tab}
             onChange={(next) => {
               setTab(next)
+              if (target === 'analysis' && !kindForTab(next)) setTarget(activeIncident ? 'current' : 'new')
               setParams(next === route?.tab ? route.params : {})
             }}
             options={TABS.map((t) => ({ value: t.id, label: t.label }))}

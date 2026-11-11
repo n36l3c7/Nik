@@ -5,6 +5,7 @@ import { AuditProvider } from './context/AuditContext.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { SettingsProvider } from './context/SettingsContext.jsx'
 import { IncidentProvider } from './context/IncidentContext.jsx'
+import { ArtifactProvider } from './context/ArtifactContext.jsx'
 import { IocLookupProvider } from './context/IocLookupContext.jsx'
 import { ContextMenuProvider } from './context/ContextMenuContext.jsx'
 import { NavigationProvider } from './context/NavigationContext.jsx'
@@ -13,6 +14,7 @@ import './index.css'
 
 // Application entry point.
 // Global providers: audit log, authentication, settings, incidents; then the
+// artifact registry (files, e-mails and captures analysed on their own) and the
 // app-wide helpers any component can use: navigation requests (tab, search,
 // import), toasts, the right-click menu and the indicator lookup/allowlist.
 // Audit sits above Auth so it can receive the actor explicitly (no cycle) and
@@ -28,7 +30,9 @@ createRoot(document.getElementById('root')).render(
               <ToastProvider>
                 <ContextMenuProvider>
                   <IocLookupProvider>
-                    <App />
+                    <ArtifactProvider>
+                      <App />
+                    </ArtifactProvider>
                   </IocLookupProvider>
                 </ContextMenuProvider>
               </ToastProvider>

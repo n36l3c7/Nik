@@ -6,6 +6,7 @@ import DownloadDialog from '../malware/DownloadDialog.jsx'
 import MailDetail from './MailDetail.jsx'
 import DocumentPreview from './DocumentPreview.jsx'
 import RemoteBrowser, { OpenBrowserDialog } from './RemoteBrowser.jsx'
+import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
@@ -62,6 +63,10 @@ function MessageList({ messages, selected, onSelect }) {
 
 export default function MailAnalysisTab({ incident }) {
   const { attachMail, detachMail, attachSample } = useIncidents()
+  const { openArtifact, refresh: refreshArtifacts } = useArtifacts()
+  // An artifact opened on its own (ArtifactPage): `incident` is a stand-in
+  // holding only that artifact, so there is no list, no upload and no Remove.
+  const standalone = Boolean(incident.standalone)
   const { showToast } = useToast()
   const { requests, take, goTo } = useNavigation()
   const messages = incident.data.mail?.messages ?? NO_MESSAGES
@@ -130,7 +135,7 @@ export default function MailAnalysisTab({ incident }) {
 
   // A file dropped anywhere in the app for this tab (see NavigationContext).
   useEffect(() => {
-    if (!requests.mail) return
+    if (standalone || !requests.mail) return
     const request = take('mail')
     if (request?.file) handleFiles([request.file])
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,6 +167,16 @@ export default function MailAnalysisTab({ incident }) {
   const handleSend = async (message, item) => {
     setSending(item.path)
     try {
+      if (standalone) {
+        // On its own, the attachment becomes a file artifact related to this e-mail.
+        const artifact = await api.post(`/artifacts/mail-${message.sha256}/attachments/${item.path}/sample`)
+        refreshArtifacts()
+        showToast({
+          message: `${item.name} is now a file artifact.`,
+          action: { label: 'Open', run: () => openArtifact(artifact.id) },
+        })
+        return
+      }
       const result = await api.post(
         `/incidents/${encodeURIComponent(incident.id)}/mails/${message.sha256}/attachments/${item.path}/sample`,
       )
@@ -213,9 +228,13 @@ export default function MailAnalysisTab({ incident }) {
 
   return (
     <div
-      className={`grid gap-4 ${listOpen ? 'lg:grid-cols-[280px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`}
+      className={
+        standalone
+          ? 'grid gap-4'
+          : `grid gap-4 ${listOpen ? 'lg:grid-cols-[280px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`
+      }
     >
-      {listOpen ? (
+      {standalone ? null : listOpen ? (
         <Card
           title={`E-mails · ${messages.length}`}
           icon={Mail}
@@ -258,7 +277,7 @@ export default function MailAnalysisTab({ incident }) {
           message={current}
           detail={details[current.sha256] ?? null}
           error={detailErrors[current.sha256] ?? null}
-          onRemove={() => handleRemove(current)}
+          onRemove={standalone ? undefined : () => handleRemove(current)}
           removing={removing}
           onReanalyse={() => handleReanalyse(current)}
           reanalysing={reanalysing}
@@ -288,7 +307,7 @@ export default function MailAnalysisTab({ incident }) {
         onCancel={() => setBrowserChoice(null)}
         onOpen={(request) => {
           setBrowserChoice(null)
-          setBrowserRequest({ ...request, incident: incident.id })
+          setBrowserRequest(incident.id ? { ...request, incident: incident.id } : request)
         }}
       />
       <RemoteBrowser request={browserRequest} onClose={() => setBrowserRequest(null)} />

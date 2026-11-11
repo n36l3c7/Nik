@@ -277,16 +277,18 @@ export default function PacketView({ capture, flags, onFlag }) {
         >
           Follow {target?.kind ?? ''} stream
         </Button>
-        <Button
-          size="xs"
-          variant="ghost"
-          icon={Flag}
-          disabled={!selectedRow}
-          onClick={() => onFlag(selectedRow, Number.isFinite(epoch) ? Math.round(epoch * 1000) : null)}
-          aria-pressed={Boolean(selectedRow && flags[`pcap:${capture.id}:${selectedRow.num}`])}
-        >
-          {selectedRow && flags[`pcap:${capture.id}:${selectedRow.num}`] ? 'Flagged' : 'Flag packet'}
-        </Button>
+        {onFlag && (
+          <Button
+            size="xs"
+            variant="ghost"
+            icon={Flag}
+            disabled={!selectedRow}
+            onClick={() => onFlag(selectedRow, Number.isFinite(epoch) ? Math.round(epoch * 1000) : null)}
+            aria-pressed={Boolean(selectedRow && flags[`pcap:${capture.id}:${selectedRow.num}`])}
+          >
+            {selectedRow && flags[`pcap:${capture.id}:${selectedRow.num}`] ? 'Flagged' : 'Flag packet'}
+          </Button>
+        )}
       </div>
       {error && (
         <p role="alert" className="font-mono text-xs text-high">

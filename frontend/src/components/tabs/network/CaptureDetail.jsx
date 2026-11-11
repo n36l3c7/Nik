@@ -290,9 +290,11 @@ export default function CaptureDetail({
           >
             Re-analyse
           </Button>
-          <Button variant="ghost" size="xs" icon={Trash2} onClick={onRemove} disabled={removing}>
-            Remove
-          </Button>
+          {onRemove && (
+            <Button variant="ghost" size="xs" icon={Trash2} onClick={onRemove} disabled={removing}>
+              Remove
+            </Button>
+          )}
         </>
       }
     >
@@ -373,7 +375,7 @@ export default function CaptureDetail({
             ))}
           </div>
         )}
-        {current === 'packets' && <PacketView capture={capture} flags={incident.flags ?? {}} onFlag={onFlag} />}
+        {current === 'packets' && <PacketView capture={capture} flags={incident?.flags ?? {}} onFlag={onFlag} />}
         {current === 'requests' && (
           <RequestLog entries={requests} loadEntry={loadEntry} live={capture.status === 'live'} />
         )}

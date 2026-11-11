@@ -4,6 +4,7 @@ import { AsciiSkull, Badge, Button, Card, EmptyState } from '../../ui/index.js'
 import SampleDropZone from '../malware/SampleDropZone.jsx'
 import DownloadDialog from '../malware/DownloadDialog.jsx'
 import CaptureDetail from './CaptureDetail.jsx'
+import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
@@ -61,8 +62,23 @@ function CaptureList({ captures, selected, onSelect }) {
   )
 }
 
-export default function NetworkAnalysisTab({ incident }) {
-  const { putCapture, syncCaptures, removeCapture, attachSample, toggleFlag } = useIncidents()
+/**
+ * @param {{ incident: object, onReference?: (ref: object) => void }} props
+ *   `onReference` receives the capture's fresh reference when the tab shows
+ *   one artifact on its own (there is no incident to keep it).
+ */
+export default function NetworkAnalysisTab({ incident, onReference }) {
+  const incidents = useIncidents()
+  const { syncCaptures, removeCapture, attachSample, toggleFlag } = incidents
+  const { openArtifact, refresh: refreshArtifacts } = useArtifacts()
+  // An artifact opened on its own (ArtifactPage): `incident` is a stand-in
+  // holding only that artifact, so there is no list, no upload and no Remove.
+  const standalone = Boolean(incident.standalone)
+  const putCapture = useCallback(
+    (incidentId, ref) => (standalone ? onReference?.(ref) : incidents.putCapture(incidentId, ref)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [standalone, onReference, incidents.putCapture],
+  )
   const { showToast } = useToast()
   const { requests, take, goTo } = useNavigation()
   const captures = incident.data.network?.captures ?? NO_CAPTURES
@@ -96,6 +112,7 @@ export default function NetworkAnalysisTab({ incident }) {
 
   // The server's list: isolated browser sessions are added there, by any analyst.
   useEffect(() => {
+    if (standalone) return undefined
     let cancelled = false
     api
       .get(`/incidents/${encodeURIComponent(incident.id)}/captures`)
@@ -104,7 +121,7 @@ export default function NetworkAnalysisTab({ incident }) {
     return () => {
       cancelled = true
     }
-  }, [incident.id, syncCaptures])
+  }, [standalone, incident.id, syncCaptures])
 
   const current = captures.find((c) => c.id === selected) ?? null
   const busy = current && ['indexing', 'live'].includes(current.status)
@@ -140,7 +157,7 @@ export default function NetworkAnalysisTab({ incident }) {
 
   // A file dropped anywhere in the app for this tab (see NavigationContext).
   useEffect(() => {
-    if (!requests.network) return
+    if (standalone || !requests.network) return
     const request = take('network')
     if (request?.file) handleFiles([request.file])
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,6 +180,16 @@ export default function NetworkAnalysisTab({ incident }) {
   const handleSend = async (object) => {
     setSending(object.token)
     try {
+      if (standalone) {
+        // On its own, the object becomes a file artifact related to this capture.
+        const artifact = await api.post(`/artifacts/pcap-${current.id}/objects/sample`, { token: object.token })
+        refreshArtifacts()
+        showToast({
+          message: `${object.name || 'The object'} is now a file artifact.`,
+          action: { label: 'Open', run: () => openArtifact(artifact.id) },
+        })
+        return
+      }
       const result = await api.post(
         `/incidents/${encodeURIComponent(incident.id)}/captures/${current.id}/objects/sample`,
         { token: object.token },
@@ -214,9 +241,13 @@ export default function NetworkAnalysisTab({ incident }) {
 
   return (
     <div
-      className={`grid gap-4 ${listOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`}
+      className={
+        standalone
+          ? 'grid gap-4'
+          : `grid gap-4 ${listOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`
+      }
     >
-      {listOpen ? (
+      {standalone ? null : listOpen ? (
         <Card
           title={`Captures · ${captures.length}`}
           icon={Network}
@@ -261,16 +292,20 @@ export default function NetworkAnalysisTab({ incident }) {
           detail={details[current.id] ?? null}
           error={errors[current.id] ?? null}
           removing={removing}
-          onRemove={async () => {
-            setRemoving(true)
-            try {
-              await removeCapture(incident.id, current.id)
-            } catch (err) {
-              showToast({ message: `${current.fileName}: ${err.message}` })
-            } finally {
-              setRemoving(false)
-            }
-          }}
+          onRemove={
+            standalone
+              ? undefined
+              : async () => {
+                  setRemoving(true)
+                  try {
+                    await removeCapture(incident.id, current.id)
+                  } catch (err) {
+                    showToast({ message: `${current.fileName}: ${err.message}` })
+                  } finally {
+                    setRemoving(false)
+                  }
+                }
+          }
           onReanalyse={() => act(() => api.post(`/captures/${current.id}/reanalyse`), 'Re-analyse')}
           onKeylog={() => keylogInput.current?.click()}
           onRemoveKeylog={() => act(() => api.del(`/captures/${current.id}/keylog`), 'TLS keys')}
@@ -283,16 +318,19 @@ export default function NetworkAnalysisTab({ incident }) {
           }
           onSendObject={handleSend}
           sending={sending}
-          onFlag={(packet, time) =>
-            toggleFlag(incident.id, {
-              key: `pcap:${current.id}:${packet.num}`,
-              browserId: 'network',
-              section: 'network',
-              eventType: 'network',
-              title: `${packet.c[4]} ${packet.c[6]}`.slice(0, 300),
-              url: `${packet.c[2]} → ${packet.c[3]} · ${current.fileName} #${packet.num}`,
-              time,
-            })
+          onFlag={
+            standalone
+              ? undefined
+              : (packet, time) =>
+                  toggleFlag(incident.id, {
+                    key: `pcap:${current.id}:${packet.num}`,
+                    browserId: 'network',
+                    section: 'network',
+                    eventType: 'network',
+                    title: `${packet.c[4]} ${packet.c[6]}`.slice(0, 300),
+                    url: `${packet.c[2]} → ${packet.c[3]} · ${current.fileName} #${packet.num}`,
+                    time,
+                  })
           }
         />
       )}

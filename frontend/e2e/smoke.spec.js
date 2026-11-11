@@ -449,6 +449,64 @@ test('a packet capture opens as in Wireshark', async () => {
   await expect(page.getByText('6 connections every 30 s')).toBeVisible()
 })
 
+test('a file is analysed on its own, tagged, then linked to the incident', async () => {
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel.getByRole('button', { name: 'New analysis' }).click()
+  await page
+    .getByRole('dialog', { name: 'New analysis' })
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'dropper.bin',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('MZ analysed on its own http://198.51.100.9/stage.bin'),
+    })
+  // Nik asks where it goes, with "Start analysis" chosen.
+  const place = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(place.getByRole('radio', { name: /^Start analysis/ })).toBeChecked()
+  await place.getByRole('button', { name: 'Start analysis' }).click()
+
+  const artifact = page.getByRole('region', { name: 'Artifact' })
+  await expect(artifact.getByRole('heading', { name: 'dropper.bin' })).toBeVisible({ timeout: 30_000 })
+  await expect(artifact).toContainText('Not linked to an incident.')
+  await expect(panel.getByRole('navigation', { name: 'Artifacts' })).toContainText('dropper.bin')
+  // The same analysis views as in an incident, without the incident-only actions.
+  await expect(page.getByRole('button', { name: 'Download zip' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0)
+
+  await artifact.getByRole('button', { name: 'Add tags' }).click()
+  await artifact.getByLabel('Tags').fill('Emotet campaign:q4')
+  await artifact.getByRole('button', { name: 'Save' }).click()
+  await expect(artifact).toContainText('#emotet')
+  await panel.getByLabel('Filter artifacts').fill('campaign')
+  await expect(panel.getByRole('navigation', { name: 'Artifacts' })).toContainText('dropper.bin')
+  await panel.getByLabel('Filter artifacts').fill('')
+
+  await artifact.getByRole('button', { name: 'Link to incident' }).click()
+  await page
+    .getByRole('dialog', { name: 'Link to incident' })
+    .getByRole('button', { name: 'Link', exact: true })
+    .click()
+  const linked = artifact.getByRole('button', { name: 'WKS-FINANCE-01 - m.rossi', exact: true })
+  await expect(linked).toBeVisible()
+  // The incident now holds the sample.
+  await linked.click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
+  await expect(page.getByRole('list', { name: 'Samples' })).toContainText('dropper.bin', { timeout: 20_000 })
+
+  // Dropped again, the file is recognised as already analysed.
+  const transfer = await page.evaluateHandle(() => {
+    const data = new DataTransfer()
+    data.items.add(new File(['MZ analysed on its own http://198.51.100.9/stage.bin'], 'again.bin'))
+    return data
+  })
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  await expect(page.getByRole('dialog', { name: 'Add a file' })).toContainText('This file was already analysed.')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

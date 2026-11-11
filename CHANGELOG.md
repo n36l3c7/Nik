@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.0] - 2026-11-11
+
+### Added
+
+- **Analyse without an incident**, in the interface.
+  - **New analysis** (artifacts panel, empty screen and the search palette):
+    drop or choose an e-mail, a suspicious file or a packet capture; Nik
+    recognises it and analyses it on its own.
+  - A file dropped anywhere now offers **Start analysis** next to the open
+    incident and a new incident.
+  - The **artifact page** (`/artifact/<id>`): the same analysis views as in
+    an incident, plus the incidents that reference the artifact, **Link to
+    incident**, **New incident from this**, tags, related artifacts (the
+    e-mail an attachment came from, the objects taken out of a capture) and
+    Delete.
+  - A file already analysed is recognised before the upload: who added it,
+    in which incidents, and a button to open the existing analysis.
+- **Rail and side panel**: a narrow column of icons chooses what the side
+  panel lists, incidents or artifacts (for the whole team, with a text
+  filter, kind chips and "mine"). Clicking the active icon closes the panel.
+  The rail also opens the search, the audit log, the users, the full backup
+  and the settings.
+
+### Changed
+
+- The sidebar's brand block, its footer buttons and the header's settings
+  gear moved to the rail.
+- "Remove" on a sample, an e-mail or a capture says that it stays as an
+  artifact.
+
 ## [2.19.0] - 2026-11-11
 
 ### Added

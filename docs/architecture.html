@@ -198,6 +198,8 @@
 ├── parsing/                        # malware.py (hashes, type, entropy, strings, IOC), executables.py
 │                                   #   (PE, ELF, Mach-O), eventlog.py (.evtx), browser/shell/artifact ports
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
+├── artifacts.py                    # Artifact registry: files, e-mails and captures analysed on their own,
+│                                   #   links to incidents, relations, tags
 ├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&amp;CK) and PDF (WeasyPrint)
 ├── browser_profiles.py             # browser profiles: legacy conversion, upload routing
 ├── defaults.py                     # Factory defaults for detection settings
@@ -212,7 +214,8 @@
 ├── index.css                       # Tailwind v4, design tokens (@theme), bundled fonts,
 │                                   #   base + scrollbar
 ├── assets/fonts/                   # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
-├── App.jsx                         # Shell + auth gate: Sidebar | Header + TabBar + tab content
+├── App.jsx                         # Shell + auth gate: Rail | side panel | Header + TabBar + tab content,
+│                                   #   or the artifact opened on its own
 │
 ├── config/                         # ★ DECLARATIVE EXTENSION POINTS ★
 │   ├── tabs.js                     # ANALYSIS_TABS registry: the ONLY file to touch
@@ -237,6 +240,7 @@
 │   ├── IocLookupContext.jsx        # useIocLookup(): &quot;Where seen&quot;, allowlist dialog, IOC menu; &lt;IocValue&gt;
 │   ├── ContextMenuContext.jsx      # useContextMenu(): the app's right-click menu, askText()
 │   ├── NavigationContext.jsx       # useNavigation(): go to a tab, open the search, import a file
+│   ├── ArtifactContext.jsx         # useArtifacts(): the artifact list, the open artifact, link/tag/delete
 │   └── ToastContext.jsx            # useToast(): short notices with an optional Undo
 │
 ├── services/
@@ -283,6 +287,7 @@
 │   ├── report.js                   # report options, reportDetections (SOC hits + ATT&amp;CK)
 │   ├── search.js                   # searchIncident (open incident), matchActions
 │   ├── incidentName.js             # deriveIncidentName ([ticket] title | host - user), severities
+│   ├── artifactRegistry.js         # artifact kinds, verdict badge, tags, the stand-in incident of one artifact
 │   └── fileRouting.js              # detectFileRoute: which tab a dropped file belongs to
 │
 └── components/
@@ -298,8 +303,10 @@
     ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog
     ├── menu/                       # useRowMenu (flag, comment, copy, timeline on any event row)
     ├── report/                     # ReportDialog (options, preview, PDF/HTML download)
-    ├── layout/                     # Sidebar, Header, TabBar (grouped tabs), OsPicker,
-    │                               #   IncidentLoadingState
+    ├── layout/                     # Rail (icons), Sidebar (incidents panel), Header, TabBar (grouped tabs),
+    │                               #   OsPicker, IncidentLoadingState
+    ├── artifacts/                  # ArtifactsPanel (list, filters), ArtifactPage (links, tags, related),
+    │                               #   NewAnalysisDialog
     └── tabs/
         ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
         ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
@@ -535,8 +542,8 @@
         migration <code>0012</code>; when the extension cannot be created the search works without them.
       </p>
       <p>
-        Platform configuration lives in one sectioned <strong>Settings</strong> panel (opened from the header, or
-        deep-linked from the sidebar's Accounts / Audit buttons): detection rules (with the built-in rulesets shown for
+        Platform configuration lives in one sectioned <strong>Settings</strong> panel (opened from the rail's gear, or
+        deep-linked from the rail's Users and Audit log buttons): detection rules (with the built-in rulesets shown for
         reference), business hours, account management and the audit log.
       </p>
       <h2 id="state-and-the-data-model">State and the data model</h2>
@@ -779,7 +786,7 @@
         <code>note.add</code>, and <code>backup.export</code> / <code>backup.import</code>.
       </p>
       <p>
-        The read-only <strong>Audit log</strong> modal (<code>AuditLogView.jsx</code>, opened from the sidebar) surfaces
+        The read-only <strong>Audit log</strong> modal (<code>AuditLogView.jsx</code>, opened from the rail) surfaces
         the trail in a searchable table; an <strong>admin</strong> can clear the whole log behind an inline confirmation
         step.
       </p>
