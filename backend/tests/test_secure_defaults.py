@@ -25,11 +25,14 @@ def test_preflight_accepts_generated_secrets():
 
 @pytest.mark.parametrize(
     "secret",
-    ["", "dev-insecure-change-me", "please-change-this-secret", "change-this-to-a-long-random-string", "short"],
+    ["", "dev-insecure-change-me", "please-change-this-secret", "change-this-to-a-long-random-string", "tiny-key"],
 )
 def test_preflight_refuses_missing_public_and_short_secret_keys(secret):
     found = preflight.problems({"SECRET_KEY": secret})
-    assert len(found) == 1 and found[0].startswith("SECRET_KEY")
+    assert [name for name, _reason in found] == ["SECRET_KEY"]
+    # The message names the variable and the reason, never the value.
+    line = preflight.describe(*found[0])
+    assert line.startswith("SECRET_KEY ") and (not secret or secret not in line)
 
 
 def test_preflight_refuses_example_worker_tokens_and_says_which():
@@ -39,9 +42,9 @@ def test_preflight_refuses_example_worker_tokens_and_says_which():
         "ANALYZER_TOKEN": "please-change-this-analyzer-token",
         "PCAP_URL": "http://pcap:8740",
     }
-    found = preflight.problems(env)
-    assert [line.split(" ")[0] for line in found] == ["ANALYZER_TOKEN", "PCAP_TOKEN"]
-    assert "still the example value" in found[0] and "not set" in found[1]
+    assert preflight.problems(env) == [("ANALYZER_TOKEN", preflight.EXAMPLE), ("PCAP_TOKEN", preflight.MISSING)]
+    assert "example file" in preflight.describe("ANALYZER_TOKEN", preflight.EXAMPLE)
+    assert preflight.describe("PCAP_TOKEN", preflight.MISSING).startswith("PCAP_TOKEN is not set.")
 
 
 def test_preflight_main_exits_with_the_list(monkeypatch, capsys):
