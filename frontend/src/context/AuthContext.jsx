@@ -11,7 +11,7 @@ import { useAudit } from './AuditContext.jsx'
  * issues an httpOnly session cookie (`nik_session`). The client NEVER hashes
  * passwords and never sees the hash — the old crypto.subtle code is gone.
  *
- * User shape (as returned by the API): { id, username, role, createdAt, createdBy }.
+ * User shape (as returned by the API): { id, username, role, createdAt, createdBy, disabled }.
  *
  * Boot sequence (on mount):
  *   1. GET /auth/bootstrap → { hasUsers }. This also doubles as the
@@ -34,7 +34,7 @@ const AuthContext = createContext(null)
 const normalizeUsername = (u) => String(u ?? '').trim()
 
 export function AuthProvider({ children }) {
-  const { log, refresh: refreshAudit } = useAudit()
+  const { clear: clearAudit } = useAudit()
 
   const [users, setUsers] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
@@ -96,12 +96,11 @@ export function AuthProvider({ children }) {
       const { user } = await api.get('/auth/me')
       setCurrentUser(user)
       await refreshUsers()
-      refreshAudit()
     } catch {
       setCurrentUser(null)
     }
     setAuthReady(true)
-  }, [refreshBootstrap, refreshUsers, refreshAudit])
+  }, [refreshBootstrap, refreshUsers])
 
   useEffect(() => {
     boot()
@@ -109,13 +108,11 @@ export function AuthProvider({ children }) {
 
   /**
    * Create a user account. Used for first-run (no auth, forced admin server
-   * side) and for admin-driven user management. The `actor` second argument is
-   * accepted for backward compatibility but ignored — the server attributes the
-   * action to the session user.
+   * side) and for admin-driven user management.
    * @returns {Promise<{ ok: boolean, error: string|null }>}
    */
   const createUser = useCallback(
-    async ({ username, password, role = 'analyst' }, _actor) => {
+    async ({ username, password, role = 'analyst' }) => {
       try {
         await api.post('/users', {
           username: normalizeUsername(username),
@@ -144,21 +141,15 @@ export function AuthProvider({ children }) {
         setCurrentUser(user)
         setSessionExpired(false)
         await refreshUsers()
-        refreshAudit()
-        // Logged after the cookie is set, so the server attributes it correctly.
-        log({ actor: user.username, action: 'auth.login', details: 'Signed in' })
         return { ok: true, error: null }
       } catch (err) {
         return { ok: false, error: err?.message || 'Invalid username or password.' }
       }
     },
-    [refreshUsers, refreshAudit, log],
+    [refreshUsers],
   )
 
   const logout = useCallback(async () => {
-    const user = currentUserRef.current
-    // Log while the session cookie is still valid.
-    if (user) log({ actor: user.username, action: 'auth.logout', details: 'Signed out' })
     try {
       await api.post('/auth/logout')
     } catch {
@@ -167,23 +158,53 @@ export function AuthProvider({ children }) {
     setCurrentUser(null)
     setSessionExpired(false)
     setUsers([])
-    // Reload the audit log — now unauthenticated, so it clears locally.
-    refreshAudit()
-  }, [log, refreshAudit])
+    clearAudit()
+  }, [clearAudit])
 
-  /** Remove a user (admin action), then reload the list. */
+  /** Remove a user (admin action), then reload the list. @returns {Promise<{ok, error}>} */
   const deleteUser = useCallback(
-    async (userId, _actor) => {
+    async (userId) => {
       try {
-        await api.del(`/users/${userId}`)
+        await api.del(`/users/${encodeURIComponent(userId)}`)
         await refreshUsers()
-      } catch {
-        // Server enforces the rules (last user / self); reload to stay in sync.
+        return { ok: true, error: null }
+      } catch (err) {
+        // The server enforces the rules (last admin, own account); reload to stay in sync.
         await refreshUsers()
+        return { ok: false, error: err?.message || 'Unable to delete the user.' }
       }
     },
     [refreshUsers],
   )
+
+  /**
+   * Change an account (admin action): any of `{ username, role, password,
+   * disabled }`. A change to one's own account updates the signed-in user.
+   * @returns {Promise<{ok, error}>}
+   */
+  const updateUser = useCallback(
+    async (userId, changes) => {
+      try {
+        const { user } = await api.patch(`/users/${encodeURIComponent(userId)}`, changes)
+        if (user.id === currentUserRef.current?.id) setCurrentUser(user)
+        await refreshUsers()
+        return { ok: true, error: null }
+      } catch (err) {
+        return { ok: false, error: err?.message || 'Unable to change the account.' }
+      }
+    },
+    [refreshUsers],
+  )
+
+  /** Change the signed-in user's own password. @returns {Promise<{ok, error}>} */
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    try {
+      await api.put('/users/me/password', { currentPassword, newPassword })
+      return { ok: true, error: null }
+    } catch (err) {
+      return { ok: false, error: err?.message || 'Unable to change the password.' }
+    }
+  }, [])
 
   const value = {
     users,
@@ -195,6 +216,8 @@ export function AuthProvider({ children }) {
     login,
     logout,
     deleteUser,
+    updateUser,
+    changePassword,
     refreshUsers,
     authReady,
     // Extra fields (beyond the historical shape) used by App.jsx for the boot

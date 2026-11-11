@@ -1,18 +1,21 @@
 """Audit-log routes.
 
-Entries are append-only from the client's perspective. The server stamps the
-id, timestamp, and actor (from the session), ignoring any client-supplied actor.
+The log is written by the server: each handler records what it does (see
+``core/audit.py``). The only entries a browser may add are the actions that
+happen in the browser alone, with no request the server could record
+(``CLIENT_ACTIONS``); the id, timestamp and actor are always the server's.
 """
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
+from ..core import audit
 from ..core.db import get_db
 from ..core.models import AuditEntry, User
 from ..core.schemas import AuditEnvelope, AuditIn, AuditOut
@@ -22,6 +25,8 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 # Maximum number of entries returned by the list endpoint.
 MAX_ENTRIES = 5000
+# Done in the browser only (a file built and downloaded there): reported by it.
+CLIENT_ACTIONS = {"incident.export"}
 
 
 def _entry_to_dict(entry: AuditEntry) -> dict:
@@ -85,7 +90,13 @@ def create_audit(
     user: User = Depends(current_user),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    """Create an audit entry with server-stamped id/at/actor."""
+    """Record an action that happened in the browser only (``incident.export``).
+
+    Everything else is recorded by the server when it happens, so any other
+    action is refused: the log cannot be written by hand.
+    """
+    if body.action not in CLIENT_ACTIONS:
+        raise HTTPException(status_code=400, detail="This action is recorded by the server")
     entry = AuditEntry(
         id=str(uuid.uuid4()),
         at=now_iso(),
@@ -102,8 +113,11 @@ def create_audit(
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
-def clear_audit(_admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)):
-    """Clear the entire audit log (admin session or admin key)."""
+def clear_audit(admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)):
+    """Clear the audit log (admin session or admin key). The new log starts
+    with an entry saying who cleared it and how many entries went."""
+    removed = db.scalar(select(func.count()).select_from(AuditEntry)) or 0
     db.execute(sa_delete(AuditEntry))
+    audit.record(db, admin.actor, "audit.clear", f"Cleared the audit log ({removed} entries)")
     db.commit()
     # 204 No Content

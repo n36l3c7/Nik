@@ -54,6 +54,7 @@
           <li><a href="#report">The incident report</a></li>
           <li><a href="#share">Export, import and backup</a></li>
           <li><a href="#settings">Settings</a></li>
+          <li><a href="#accounts">Accounts</a></li>
         </ol>
       </nav>
 
@@ -614,7 +615,11 @@
           <strong>Full backup</strong> (admins, on the rail): the whole platform in one file (incidents, users,
           settings, audit log and the sample store), restored from the same dialog.
         </li>
-        <li><strong>Audit log</strong> (on the rail): who did what, when, on which incident.</li>
+        <li>
+          <strong>Audit log</strong> (on the rail): who did what, when, on which incident. It is written by the server
+          as things happen, so it cannot be edited from the app; an admin can clear it, and the new log starts by saying
+          who did.
+        </li>
       </ul>
 
       <h2 id="settings">Settings</h2>
@@ -644,18 +649,22 @@
             </tr>
             <tr>
               <td>Report header</td>
-              <td>The organisation's name and logo on the report.</td>
+              <td>The organisation's name and logo on the report (admins).</td>
             </tr>
             <tr>
               <td>Mail analysis</td>
               <td>
                 Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
-                results are trusted.
+                results are trusted (admins).
               </td>
             </tr>
             <tr>
               <td>Threat intelligence</td>
-              <td>Providers, API keys (never shown again) and which indicator types may be sent out.</td>
+              <td>Providers, API keys (never shown again) and which indicator types may be sent out (admins).</td>
+            </tr>
+            <tr>
+              <td>My account</td>
+              <td>Who you are signed in as, and a form to change your password.</td>
             </tr>
             <tr>
               <td>Accounts · API keys</td>
@@ -676,6 +685,26 @@
         <img src="img/settings.png" alt="The Settings dialog" width="1600" height="1000" loading="lazy" />
         <figcaption>Settings: detection rules.</figcaption>
       </figure>
+      <h3 id="accounts">Accounts</h3>
+      <p>An admin adds an account under <strong>Accounts</strong> and changes it with the pencil on its row:</p>
+      <ul>
+        <li>
+          <strong>Username</strong>: the incidents assigned to the account follow the new name. What it already wrote
+          (notes, flags, audit entries) keeps the name it had.
+        </li>
+        <li><strong>Role</strong>: analyst or admin.</li>
+        <li><strong>New password</strong>: for someone who forgot theirs. It signs the account out everywhere.</li>
+        <li>
+          <strong>Disabled</strong>: the account cannot sign in and is signed out at once; everything it did stays. Use
+          it instead of deleting when somebody leaves the team.
+        </li>
+      </ul>
+      <p>
+        There is always at least one admin that can sign in: you cannot demote, disable or delete yourself, nor the last
+        admin. Everyone changes their own password under <strong>My account</strong>, which ends the account's other
+        sessions. After ten wrong passwords in a row an account is locked for five minutes; an admin's password reset
+        unlocks it.
+      </p>
     </main>
 
     <footer class="site-footer">

@@ -64,7 +64,17 @@
         </li>
         <li><strong>expiry</strong> — optional; an expired key is rejected.</li>
       </ul>
-      <p>Actions performed with a key are recorded in the audit log as <code>api:&lt;label&gt;</code>.</p>
+      <p>
+        Every change is recorded in the audit log by the server, whoever makes it: a key appears as
+        <code>api:&lt;label&gt;</code>, a session as its username.
+      </p>
+      <p>
+        A browser session is opened with <code>POST /api/auth/login</code> (<code>{ username, password }</code>, at most
+        10 attempts a minute per address) and closed with <code>POST /api/auth/logout</code>;
+        <code>GET /api/auth/me</code> returns the signed-in user and <code>GET /api/auth/bootstrap</code> says whether
+        any account exists. After ten wrong passwords in a row an account answers <code>429</code> for five minutes; a
+        disabled account answers <code>403</code>.
+      </p>
 
       <h2 id="endpoints">Endpoints</h2>
       <div class="table-wrap">
@@ -422,7 +432,9 @@
               <td>
                 Read the shared detection rules, business hours, IOC allowlist, report header and Mail Analysis settings
                 (<code>mail: { orgDomains, trustedAuthServers }</code>) and threat-intelligence options
-                (<code>enrichment</code>, never the keys); <code>PUT</code> replaces them.
+                (<code>enrichment</code>, never the keys). <code>PUT</code> replaces them (a session, or a key with the
+                write scope): the report header, the mail settings and the threat-intelligence options change only for
+                an <strong>admin</strong>, and are left as they are for anyone else.
               </td>
             </tr>
             <tr>
@@ -430,8 +442,32 @@
               <td>Manage event subscriptions (<strong>admin</strong>).</td>
             </tr>
             <tr>
-              <td><code>GET/POST/DELETE /api/users</code></td>
-              <td>User management (<strong>admin</strong>).</td>
+              <td><code>GET/POST /api/users</code></td>
+              <td>
+                List and create accounts (<strong>admin</strong>): <code>{ username, password, role }</code>, the
+                password at least 8 characters. While no account exists the first <code>POST</code> needs no
+                authentication and creates an admin.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PATCH /api/users/{id}</code></td>
+              <td>
+                Change an account (<strong>admin</strong>): any of
+                <code>{ username, role, password, disabled }</code>. A new name is carried to the incidents assigned to
+                the account; a new password or <code>disabled: true</code> ends its sessions. <code>400</code> when it
+                would leave no admin able to sign in, or change the caller's own role.
+              </td>
+            </tr>
+            <tr>
+              <td><code>DELETE /api/users/{id}</code></td>
+              <td>Delete an account (<strong>admin</strong>); never the caller's own nor the last admin.</td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/users/me/password</code></td>
+              <td>
+                The signed-in user changes their own password (<code>{ currentPassword, newPassword }</code>, session
+                only); the account's other sessions end.
+              </td>
             </tr>
             <tr>
               <td><code>GET /api/users/names</code></td>
@@ -447,7 +483,21 @@
             </tr>
             <tr>
               <td><code>GET /api/audit</code></td>
-              <td>Audit log, paginated and filterable.</td>
+              <td>
+                Audit log, newest first: <code>limit</code>, <code>offset</code>, <code>q</code>, <code>actor</code>,
+                <code>incidentId</code>. The log is written by the server.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/audit</code></td>
+              <td>
+                Record an action done in the browser alone (session only). Only <code>incident.export</code> is
+                accepted; anything else is <code>400</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>DELETE /api/audit</code></td>
+              <td>Clear the log (<strong>admin</strong>); the new log starts with an entry saying who did.</td>
             </tr>
             <tr>
               <td><code>GET /api/health</code> · <code>/api/ready</code> · <code>/api/metrics</code></td>

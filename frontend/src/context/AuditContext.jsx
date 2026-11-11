@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { api } from '../services/api.js'
 
 /*
@@ -6,14 +6,15 @@ import { api } from '../services/api.js'
  * AUDIT LOG (global, cross-incident) — backed by the API
  * ============================================================================
  *
- * Records every meaningful action: who did it, when, exactly what, and on which
- * incident. Entries now live in the backend (`/api/audit`).
+ * Who did what, when, and on which incident. The log is WRITTEN BY THE SERVER:
+ * each request that changes something is recorded where it is handled, so
+ * nothing here reports what the app did. The one exception is `log()` for an
+ * action that happens in the browser alone (exporting an incident to a file),
+ * which the server would never see.
  *
- * This provider sits ABOVE the auth provider (so `log()` can receive the actor
- * explicitly, avoiding a circular dependency). Because it cannot read the auth
- * state directly, the auth provider drives it:
- *   - calls `refresh()` after a successful login / on boot with a live session,
- *   - calls `refresh()` again on logout (the request 401s and clears entries).
+ * The entries are read when the Audit log section opens (`refresh()`), not at
+ * sign-in: the log can be thousands of rows and most sessions never look at it.
+ * This provider sits ABOVE the auth provider, which calls `clear()` at sign-out.
  *
  * Entry shape (mirrors the server):
  *   { id, at (ISO), actor, action, target, details, incidentId, incidentName }
@@ -30,29 +31,30 @@ function newId() {
 
 export function AuditProvider({ children }) {
   const [entries, setEntries] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
-  /**
-   * Load the audit log from the server. Used on login/boot and, indirectly, on
-   * logout (where the request fails auth and the catch clears local entries).
-   */
+  /** Load the audit log from the server (when the Audit log section opens). */
   const refresh = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await api.get('/audit')
       setEntries(Array.isArray(res?.entries) ? res.entries : [])
-    } catch {
-      // Not authenticated / server unreachable → show an empty local log.
-      setEntries([])
+    } catch (err) {
+      setError(err?.message || 'Unable to load the audit log.')
     } finally {
       setLoading(false)
     }
   }, [])
 
+  /** Forget the entries (at sign-out). */
+  const clear = useCallback(() => setEntries([]), [])
+
   /**
-   * Append an audit entry. Optimistically prepends a temporary entry, then
-   * fires POST /audit (fire-and-forget) and swaps in the server's canonical
-   * entry once it returns. The server sets `id`, `at` and the real `actor`.
+   * Record an action done in the browser alone (`incident.export`; the server
+   * refuses any other). Optimistically prepends a temporary entry, then swaps
+   * in the server's once it returns. The server sets `id`, `at` and `actor`.
    *
    * @param {{ actor?, action, target?, details?, incidentId?, incidentName? }} e
    */
@@ -87,23 +89,30 @@ export function AuditProvider({ children }) {
         if (saved) setEntries((prev) => prev.map((x) => (x.id === temp.id ? saved : x)))
       })
       .catch(() => {
-        /* keep the optimistic entry; a later refresh() reconciles the log */
+        // Not recorded: the entry must not stay on screen as if it were.
+        setEntries((prev) => prev.filter((x) => x.id !== temp.id))
       })
   }, [])
 
-  /** Clear the whole audit log (admin action): DELETE on the server, then locally. */
+  /**
+   * Clear the whole audit log (admin action), then read it again: the server
+   * leaves one entry saying who cleared it. A failure leaves the log as it is.
+   */
   const clearAudit = useCallback(async () => {
     try {
       await api.del('/audit')
-    } catch {
-      /* surfaced elsewhere; still clear locally for immediate feedback */
+    } catch (err) {
+      setError(err?.message || 'Unable to clear the audit log.')
+      return
     }
-    setEntries([])
-  }, [])
+    await refresh()
+  }, [refresh])
 
-  return (
-    <AuditContext.Provider value={{ entries, loading, log, clearAudit, refresh }}>{children}</AuditContext.Provider>
+  const value = useMemo(
+    () => ({ entries, loading, error, log, clearAudit, refresh, clear }),
+    [entries, loading, error, log, clearAudit, refresh, clear],
   )
+  return <AuditContext.Provider value={value}>{children}</AuditContext.Provider>
 }
 
 export function useAudit() {

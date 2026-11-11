@@ -73,6 +73,13 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(_password_bytes(password), password_hash.encode("ascii"))
 
 
+# Checked when a sign-in names an account that does not exist, so that answer
+# takes as long as a wrong password for one that does.
+DUMMY_PASSWORD_HASH = hash_password(secrets.token_hex(16))
+
+parse_iso = _parse_iso
+
+
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
@@ -154,7 +161,7 @@ def current_user(
         raise _unauthorized()
 
     user = db.get(User, session.user_id)
-    if user is None:
+    if user is None or user.disabled:
         raise _unauthorized()
 
     return user
@@ -262,7 +269,7 @@ def principal(
         session = db.get(SessionModel, nik_session)
         if session is not None and _parse_iso(session.expires_at) > datetime.now(timezone.utc):
             user = db.get(User, session.user_id)
-            if user is not None:
+            if user is not None and not user.disabled:
                 scopes = [SCOPE_READ, SCOPE_WRITE] + ([SCOPE_ADMIN] if user.role == "admin" else [])
                 return Principal(kind="user", actor=user.username, role=user.role, scopes=scopes, user=user)
 
@@ -292,7 +299,7 @@ def optional_principal(request: Request, db: OrmSession) -> Principal | None:
         session = db.get(SessionModel, token)
         if session is not None and _parse_iso(session.expires_at) > datetime.now(timezone.utc):
             user = db.get(User, session.user_id)
-            if user is not None:
+            if user is not None and not user.disabled:
                 scopes = [SCOPE_READ, SCOPE_WRITE] + ([SCOPE_ADMIN] if user.role == "admin" else [])
                 return Principal(kind="user", actor=user.username, role=user.role, scopes=scopes, user=user)
     return None
@@ -325,4 +332,5 @@ def user_to_dict(user: User) -> dict:
         "role": user.role,
         "createdAt": user.created_at,
         "createdBy": user.created_by,
+        "disabled": bool(user.disabled),
     }

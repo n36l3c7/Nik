@@ -73,9 +73,12 @@ import { useAudit } from './AuditContext.jsx'
  *   - every other mutation        → PATCH  /incidents/{id}   (merge patch)
  *   - setActiveBrowser/Shell      → LOCAL ONLY (a view preference; never sent)
  *
- * IMPORTANT: audit() (which triggers a state update in AuditProvider) and
- * commit() are always called from event-handler scope, NEVER inside a
- * state updater — React state updaters must be pure, and StrictMode
+ * The audit trail is written by the server, from the requests it receives:
+ * nothing here reports what it did, except an export (a file built in the
+ * browser, which the server never sees).
+ *
+ * IMPORTANT: commit() is always called from event-handler scope, NEVER inside
+ * a state updater — React state updaters must be pure, and StrictMode
  * double-invokes them in dev.
  */
 
@@ -353,6 +356,8 @@ export function IncidentProvider({ children }) {
   const [saveState, setSaveState] = useState({ pending: false, error: null })
   // Usernames an incident can be assigned to.
   const [assignees, setAssignees] = useState([])
+  // Bumped by refreshIncidents(): the accounts changed (a rename moves the assigned incidents).
+  const [accountsToken, setAccountsToken] = useState(0)
   useEffect(() => {
     if (!isAuthenticated) return undefined
     let cancelled = false
@@ -368,7 +373,7 @@ export function IncidentProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, accountsToken])
 
   // Always-current snapshots so event handlers read the latest state without
   // stale-closure issues and without side effects inside a setState updater.
@@ -572,6 +577,22 @@ export function IncidentProvider({ children }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [queue])
 
+  /**
+   * Read the incident list and the assignable accounts again, and check the
+   * open incident: an account was renamed, disabled or deleted.
+   */
+  const refreshIncidents = useCallback(() => {
+    setAccountsToken((token) => token + 1)
+    api
+      .get('/incidents?view=summary')
+      .then((res) => {
+        const list = Array.isArray(res?.incidents) ? res.incidents : []
+        setIncidents(list.filter((row) => row && row.id).map(normalizeSummary))
+      })
+      .catch((err) => setStorageError(err?.message || 'Unable to load incidents.'))
+    if (activeIncidentIdRef.current) queue.refresh(activeIncidentIdRef.current)
+  }, [queue])
+
   const retryActiveIncident = useCallback(() => {
     setActiveLoadError(null)
     setReloadToken((token) => token + 1)
@@ -586,7 +607,7 @@ export function IncidentProvider({ children }) {
 
   const actor = currentUser?.username ?? 'system'
 
-  /** Record an audit entry. Call ONLY from event-handler scope. */
+  /** Record an action done in the browser alone (an export). Call ONLY from event-handler scope. */
   const audit = useCallback(
     (action, details, incident) =>
       log({
@@ -682,12 +703,11 @@ export function IncidentProvider({ children }) {
       storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
       syncUrl(incident.id)
-      audit('incident.create', `Created incident "${incident.name}"`, incident)
       // Persist the full document; the server stamps its own createdBy.
       saveNew(incident, 'Unable to create the incident on the server.')
       return incident
     },
-    [actor, audit, saveNew, storeDocument],
+    [actor, saveNew, storeDocument],
   )
 
   /**
@@ -724,9 +744,8 @@ export function IncidentProvider({ children }) {
         updatedAt,
       }
       commit(incidentId, () => next)
-      audit('incident.update', `Updated attributes of "${next.name}"`, next)
     },
-    [audit, commit],
+    [commit],
   )
 
   /**
@@ -747,19 +766,17 @@ export function IncidentProvider({ children }) {
         updatedAt: nowIso(),
       }
       setIncidents((list) => list.map((item) => (item.id === incidentId ? { ...item, ...change } : item)))
-      audit('incident.update', `Updated attributes of "${row.name}"`, row)
       api
         .patch(incidentPath(incidentId), change, { contentType: MERGE_PATCH_CONTENT_TYPE })
         .then(() => setStorageError(null))
         .catch((err) => setStorageError(err?.message || 'Unable to save changes to the server.'))
     },
-    [audit, updateIncidentMeta],
+    [updateIncidentMeta],
   )
 
   /** Delete an incident: it leaves the list once the server has deleted it. */
   const deleteIncident = useCallback(
     async (incidentId) => {
-      const target = incidentsRef.current.find((i) => i.id === incidentId) ?? null
       try {
         await api.del(incidentPath(incidentId))
       } catch (err) {
@@ -778,10 +795,9 @@ export function IncidentProvider({ children }) {
         setActiveIncidentId(next)
         syncUrl(next, { replace: true })
       }
-      if (target) audit('incident.delete', `Deleted incident "${target.name}"`, target)
       return true
     },
-    [audit, forgetDocument, queue],
+    [forgetDocument, queue],
   )
 
   const selectIncident = useCallback((incidentId) => {
@@ -825,7 +841,7 @@ export function IncidentProvider({ children }) {
    * profile as it is now, so two files parsed at once do not drop each other.
    */
   const updateBrowserData = useCallback(
-    (incidentId, browserId, profileId, patch, auditInfo) => {
+    (incidentId, browserId, profileId, patch) => {
       const prev = find(incidentId)
       if (!prev) return
       const updatedAt = nowIso()
@@ -835,9 +851,8 @@ export function IncidentProvider({ children }) {
         meta: patch.meta ? { ...profile.meta, ...patch.meta } : profile.meta,
       }))
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   // View preference only: update the active browser locally and DO NOT call the
@@ -881,10 +896,9 @@ export function IncidentProvider({ children }) {
         profiles: { ...current.profiles, [profile.id]: profile },
       }))
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('browser.profile.add', `Added ${browserId} profile "${profile.name}"`, { ...prev, updatedAt, data })
       return profile.id
     },
-    [audit, commit],
+    [commit],
   )
 
   const renameBrowserProfile = useCallback(
@@ -903,13 +917,8 @@ export function IncidentProvider({ children }) {
         }
       }
       commit(incidentId, (i) => ({ ...i, updatedAt, data, flags }))
-      audit('browser.profile.rename', `Renamed ${browserId} profile "${profile.name}" to "${newName}"`, {
-        ...prev,
-        updatedAt,
-        data,
-      })
     },
-    [audit, commit],
+    [commit],
   )
 
   /**
@@ -933,13 +942,8 @@ export function IncidentProvider({ children }) {
         }
       })
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('browser.profile.delete', `Deleted ${browserId} profile "${profile.name}" and its data`, {
-        ...prev,
-        updatedAt,
-        data,
-      })
     },
-    [audit, commit],
+    [commit],
   )
 
   /** Clear ALL data of one profile (the profile itself stays). */
@@ -953,9 +957,8 @@ export function IncidentProvider({ children }) {
         buildDefaultProfileData(browser, { id: p.id, name: p.name, createdAt: p.createdAt }),
       )
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('browser.clear', `Cleared ${browserId} profile "${profile.name}" data`, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   const removeBrowserSource = useCallback(
@@ -970,19 +973,14 @@ export function IncidentProvider({ children }) {
         return cleared
       })
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('browser.removeFile', `Removed ${browserId} profile "${profile.name}" file (${sourceKey})`, {
-        ...prev,
-        updatedAt,
-        data,
-      })
     },
-    [audit, commit],
+    [commit],
   )
 
   /* ---- per-shell command data (Command History tab) ---- */
 
   const updateShellData = useCallback(
-    (incidentId, shellId, patch, auditInfo) => {
+    (incidentId, shellId, patch) => {
       const prev = find(incidentId)
       if (!prev) return
       const commands = prev.data.commands
@@ -996,9 +994,8 @@ export function IncidentProvider({ children }) {
         },
       }
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   // View preference only (like setActiveBrowser): never re-sends the data blob.
@@ -1027,16 +1024,15 @@ export function IncidentProvider({ children }) {
         },
       }
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('command.clear', `Cleared ${shellId} command history`, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   /* ---- per-source endpoint artifact data (Endpoint Artifacts tab) ---- */
 
   /** Replace ONE source's records+meta within a category. */
   const updateArtifactSource = useCallback(
-    (incidentId, categoryId, sourceKey, patch, auditInfo) => {
+    (incidentId, categoryId, sourceKey, patch) => {
       const prev = find(incidentId)
       if (!prev) return
       const endpoint = prev.data.endpoint
@@ -1057,9 +1053,8 @@ export function IncidentProvider({ children }) {
         },
       }
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   /** Clear ONE source within a category. */
@@ -1084,9 +1079,8 @@ export function IncidentProvider({ children }) {
         },
       }
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('endpoint.clearSource', `Cleared ${categoryId}/${sourceKey}`, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   /** Clear ALL sources of a category. */
@@ -1107,9 +1101,8 @@ export function IncidentProvider({ children }) {
         },
       }
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('endpoint.clear', `Cleared ${categoryId} artifacts`, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   /** Save the incident's report options (a top-level `report` key). */
@@ -1130,16 +1123,15 @@ export function IncidentProvider({ children }) {
    * server, which writes the incident itself; see reloadActiveIncident.
    */
   const setEventLogChannels = useCallback(
-    (incidentId, channels, auditInfo) => {
+    (incidentId, channels) => {
       const prev = find(incidentId)
       if (!prev) return
       const updatedAt = nowIso()
       const current = prev.data.eventlogs?.channels ?? {}
       const data = { ...prev.data, eventlogs: { ...prev.data.eventlogs, channels: { ...current, ...channels } } }
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
     },
-    [audit, commit],
+    [commit],
   )
 
   /** Remove one channel, or every channel when `channel` is null. */
@@ -1151,13 +1143,8 @@ export function IncidentProvider({ children }) {
       const { [channel]: _removed, ...rest } = prev.data.eventlogs?.channels ?? {}
       const data = { ...prev.data, eventlogs: { ...prev.data.eventlogs, channels: channel ? rest : {} } }
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      audit('eventlog.clear', channel ? `Cleared event log ${channel}` : 'Cleared all event logs', {
-        ...prev,
-        updatedAt,
-        data,
-      })
     },
-    [audit, commit],
+    [commit],
   )
 
   /* ---- flagging (mark entries as part of malicious activity) ---- */
@@ -1308,7 +1295,6 @@ export function IncidentProvider({ children }) {
       const incident = find(incidentId)
       if (!incident) return null
       const removed = incident.flags[flaggable.key] ?? null
-      const wasFlagged = Boolean(removed)
       const flags = { ...incident.flags }
       if (flags[flaggable.key]) {
         delete flags[flaggable.key]
@@ -1322,8 +1308,6 @@ export function IncidentProvider({ children }) {
       }
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
-      const label = flaggable.title || flaggable.url || flaggable.key
-      audit(wasFlagged ? 'flag.remove' : 'flag.add', `${wasFlagged ? 'Unflagged' : 'Flagged'}: ${label}`, incident)
       if (!removed) return null
       const comments = removed.comments?.length ?? 0
       return {
@@ -1336,7 +1320,7 @@ export function IncidentProvider({ children }) {
           ),
       }
     },
-    [actor, audit, commit],
+    [actor, commit],
   )
 
   const addFlagComment = useCallback(
@@ -1353,9 +1337,8 @@ export function IncidentProvider({ children }) {
       }
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
-      audit('flag.comment', 'Commented a flagged entry', incident)
     },
-    [actor, audit, commit],
+    [actor, commit],
   )
 
   const removeFlagComment = useCallback(
@@ -1369,9 +1352,8 @@ export function IncidentProvider({ children }) {
       }
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
-      audit('flag.comment.remove', 'Removed a comment from a flagged entry', incident)
     },
-    [audit, commit],
+    [commit],
   )
 
   /* ---- free-form note blocks (shown on the Summary timeline) ---- */
@@ -1386,9 +1368,8 @@ export function IncidentProvider({ children }) {
       const notes = [...incident.notes, note]
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, notes }))
-      audit('note.add', 'Added a note', incident)
     },
-    [actor, audit, commit],
+    [actor, commit],
   )
 
   const updateNote = useCallback(
@@ -1400,9 +1381,8 @@ export function IncidentProvider({ children }) {
       const notes = incident.notes.map((n) => (n.id === noteId ? { ...n, text: body, updatedAt: nowIso() } : n))
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, notes }))
-      audit('note.update', 'Edited a note', incident)
     },
-    [audit, commit],
+    [commit],
   )
 
   const removeNote = useCallback(
@@ -1412,9 +1392,8 @@ export function IncidentProvider({ children }) {
       const notes = incident.notes.filter((n) => n.id !== noteId)
       const updatedAt = nowIso()
       commit(incidentId, (i) => ({ ...i, updatedAt, notes }))
-      audit('note.remove', 'Removed a note', incident)
     },
-    [audit, commit],
+    [commit],
   )
 
   /* ---- export / import ---- */
@@ -1473,12 +1452,11 @@ export function IncidentProvider({ children }) {
       storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
       syncUrl(incident.id)
-      audit('incident.import', `Imported incident "${incident.name}"`, incident)
       // Persist the imported incident as a new document on the server.
       saveNew(incident, 'Unable to save the imported incident.')
       return incident
     },
-    [audit, saveNew, storeDocument],
+    [saveNew, storeDocument],
   )
 
   const value = {
@@ -1490,6 +1468,7 @@ export function IncidentProvider({ children }) {
     activeLoadError,
     activeLoadProgress,
     retryActiveIncident,
+    refreshIncidents,
     setEventLogChannels,
     clearEventLogs,
     updateReportSettings,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, ScrollText, Trash2 } from 'lucide-react'
 import { useItemMenu } from '../../menu/useRowMenu.js'
 import { Badge, Button, DataTable, EmptyState } from '../../ui/index.js'
@@ -7,9 +7,10 @@ import { useAuth } from '../../../context/AuthContext.jsx'
 import { formatDateTime } from '../../../lib/time.js'
 
 /*
- * Audit-log settings section: the global, cross-incident audit trail. Ported
- * from the old standalone AuditLogView modal. The whole log can be wiped, but
- * only by an admin and behind an inline confirmation.
+ * Audit-log settings section: the global, cross-incident audit trail, written
+ * by the server and read each time the section opens. The whole log can be
+ * wiped, but only by an admin and behind an inline confirmation; the server
+ * then leaves one entry saying who did it.
  */
 
 function actionBadgeColor(action) {
@@ -70,10 +71,14 @@ const SEARCH_KEYS = ['actor', 'action', 'details', 'incidentName']
 
 export default function AuditLogSection() {
   const menu = useItemMenu(null)
-  const { entries, clearAudit } = useAudit()
+  const { entries, loading, error, clearAudit, refresh } = useAudit()
   const { currentUser } = useAuth()
   const isAdmin = currentUser?.role === 'admin'
   const [confirming, setConfirming] = useState(false)
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const handleClear = () => {
     clearAudit()
@@ -93,8 +98,15 @@ export default function AuditLogSection() {
           <p className="mt-1 text-sm text-fg-muted">
             {hasEntries
               ? `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} recorded across all incidents.`
-              : 'No entries recorded yet.'}
+              : loading
+                ? 'Loading…'
+                : 'No entries recorded yet.'}
           </p>
+          {error && (
+            <p role="alert" className="mt-1 text-sm text-high">
+              {error}
+            </p>
+          )}
         </div>
         {isAdmin && hasEntries && !confirming && (
           <Button

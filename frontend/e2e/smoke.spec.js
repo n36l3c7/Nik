@@ -822,6 +822,80 @@ test("saves are retried, merged with a colleague's, resumed after the session ex
   await expect.poll(storedFlags).toBe(flagsBefore)
 })
 
+test('an admin manages accounts; the audit log is written by the server', async ({ browser }) => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Accounts').click()
+
+  // A new analyst, then renamed, promoted and given another password from the pencil.
+  await settings.locator('#add-username').fill('anna')
+  await settings.locator('#add-password').fill('first-secret')
+  await settings.getByRole('button', { name: 'Add user' }).click()
+  const accounts = settings.getByRole('list', { name: 'Accounts' })
+  const anna = accounts.getByRole('listitem').filter({ hasText: 'anna' })
+  await expect(anna).toContainText('Analyst')
+  await anna.getByRole('button', { name: 'Edit user anna' }).click()
+  const edit = page.getByRole('dialog', { name: 'Account: anna' })
+  await edit.locator('#edit-username').fill('anna.b')
+  await edit.getByRole('combobox').selectOption('admin')
+  await edit.locator('#edit-password').fill('second-secret')
+  await edit.getByRole('button', { name: 'Save changes' }).click()
+  await expect(edit).toHaveCount(0)
+  const renamed = accounts.getByRole('listitem').filter({ hasText: 'anna.b' })
+  await expect(renamed).toContainText('Admin')
+
+  // The account signs in with its new name and password, and changes its own password.
+  const other = await browser.newPage()
+  await other.goto('/')
+  await other.fill('#login-username', 'anna.b')
+  await other.fill('#login-password', 'second-secret')
+  await other.click('button[type=submit]')
+  await other.getByRole('button', { name: 'Open platform settings' }).click()
+  const theirs = other.getByRole('dialog', { name: 'Settings' })
+  await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('My account').click()
+  await theirs.locator('#own-current-password').fill('second-secret')
+  await theirs.locator('#own-new-password').fill('third-secret')
+  await theirs.locator('#own-confirm-password').fill('third-secret')
+  await theirs.getByRole('button', { name: 'Change password' }).click()
+  await expect(theirs.getByRole('status')).toContainText('Password changed')
+
+  // Disabled by the admin: the open session is over at its next request.
+  await renamed.getByRole('button', { name: 'Edit user anna.b' }).click()
+  const again = page.getByRole('dialog', { name: 'Account: anna.b' })
+  await again.getByRole('checkbox').check()
+  await again.getByRole('button', { name: 'Save changes' }).click()
+  await expect(renamed).toContainText('Disabled')
+  await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('Audit log').click()
+  await expect(other.getByRole('dialog', { name: 'Session expired' })).toBeVisible()
+  await other.close()
+
+  // The admin cannot lock themselves out.
+  await accounts
+    .getByRole('listitem')
+    .filter({ hasText: 'You' })
+    .getByRole('button', { name: /^Edit user/ })
+    .click()
+  const own = page.getByRole('dialog', { name: `Account: ${ADMIN.username}` })
+  await expect(own.getByRole('combobox')).toBeDisabled()
+  await expect(own.getByRole('checkbox')).toBeDisabled()
+  await own.getByRole('button', { name: 'Cancel' }).click()
+
+  // Everything above is in the audit log, recorded by the server.
+  await sections.getByText('Audit log').click()
+  for (const text of ['user.create', 'renamed from "anna"', 'password reset', 'user.password', 'disabled']) {
+    await expect(settings.getByText(text).first()).toBeVisible()
+  }
+  // It cannot be written from the browser.
+  const forged = await page.request.post('/api/audit', { data: { action: 'incident.delete', details: 'not me' } })
+  expect(forged.status()).toBe(400)
+
+  await sections.getByText('Accounts').click()
+  await renamed.getByRole('button', { name: 'Delete user anna.b' }).click()
+  await expect(renamed).toHaveCount(0)
+  await settings.getByRole('button', { name: 'Close' }).click()
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

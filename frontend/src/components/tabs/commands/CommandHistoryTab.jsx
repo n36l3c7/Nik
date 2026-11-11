@@ -67,26 +67,18 @@ export default function CommandHistoryTab({ incident }) {
     setLoading(true)
     try {
       const [{ commands, format }, sha256] = await Promise.all([parseShellHistory(file, target), sha256Hex(file)])
-      updateShellData(
-        incident.id,
-        target.id,
-        {
-          commands,
-          meta: {
-            [target.source.key]: {
-              fileName: file.name,
-              format,
-              rows: commands.length,
-              importedAt: new Date().toISOString(),
-              sha256,
-            },
+      updateShellData(incident.id, target.id, {
+        commands,
+        meta: {
+          [target.source.key]: {
+            fileName: file.name,
+            format,
+            rows: commands.length,
+            importedAt: new Date().toISOString(),
+            sha256,
           },
         },
-        {
-          action: 'command.upload',
-          details: `Imported ${target.label} history (${commands.length} commands)`,
-        },
-      )
+      })
       if (target.id !== activeShellId) setActiveShell(incident.id, target.id)
     } catch (err) {
       setError(err?.message ?? 'Unexpected error while parsing the file.')

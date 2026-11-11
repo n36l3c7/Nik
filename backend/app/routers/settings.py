@@ -13,10 +13,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from ..core import audit
 from ..core.db import get_db
-from ..core.models import Setting, User
+from ..core.models import Setting
 from ..core.schemas import SettingsIn, SettingsOut
-from ..core.security import Principal, current_user, principal
+from ..core.security import Principal, principal, writer_principal
 from ..defaults import default_settings_doc
 from ..enrichment.providers import BY_ID as _PROVIDERS
 from ..enrichment.service import config as enrichment_config
@@ -27,6 +28,8 @@ PROVIDER_IDS = set(_PROVIDERS)
 
 # Fixed primary key for the single shared settings row.
 SETTINGS_ID = 1
+# What decides where data goes and what a report says: admins only.
+ADMIN_KEYS = ("report", "mail", "enrichment")
 
 
 def read_settings(db: OrmSession) -> dict:
@@ -52,11 +55,20 @@ def get_settings(_caller: Principal = Depends(principal), db: OrmSession = Depen
 @router.put("", response_model=SettingsOut)
 def put_settings(
     body: SettingsIn,
-    _user: User = Depends(current_user),
+    caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    """Store the shared settings and return them."""
+    """Store the shared settings and return them (a session, or a key with the write scope).
+
+    Detection keywords, business hours and the indicator allowlist are the
+    analysts' working tools. The report header, the mail settings and the
+    threat-intelligence settings (which decide what leaves the server) are
+    changed by admins only: sent by anyone else they are left as they are.
+    """
     current = read_settings(db)
+    is_admin = caller.role == "admin" and caller.has_scope("admin")
+    if not is_admin:
+        body = body.model_copy(update={key: None for key in ADMIN_KEYS})
     doc = {
         "keywords": body.keywords,
         "businessHours": body.businessHours,
@@ -90,5 +102,8 @@ def put_settings(
     else:
         row.doc = doc
         flag_modified(row, "doc")
+    changed = sorted(key for key, value in doc.items() if value != current.get(key))
+    if changed:
+        audit.record(db, caller.actor, "settings.update", f"Changed the settings: {', '.join(changed)}")
     db.commit()
     return _out(doc)

@@ -67,16 +67,10 @@ export default function EndpointArtifactsTab({ incident }) {
         parseArtifactImport(file, category, source),
         sha256Hex(file),
       ])
-      updateArtifactSource(
-        incident.id,
-        category.id,
-        source.key,
-        {
-          records,
-          meta: { fileName: file.name, format, rows: records.length, importedAt: new Date().toISOString(), sha256 },
-        },
-        { action: 'endpoint.upload', details: `Imported ${category.label} / ${source.name} (${records.length})` },
-      )
+      updateArtifactSource(incident.id, category.id, source.key, {
+        records,
+        meta: { fileName: file.name, format, rows: records.length, importedAt: new Date().toISOString(), sha256 },
+      })
     } catch (err) {
       setErrors((p) => ({ ...p, [source.key]: err?.message ?? 'Unexpected error while parsing the file.' }))
     } finally {

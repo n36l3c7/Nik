@@ -6,8 +6,7 @@ document; ``PATCH`` shallow-merges only the changed top-level keys.
 
 These endpoints accept EITHER a browser session or an ``X-API-Key`` header (the
 ``principal`` dependency), so the same operations are available to external API
-clients. Actions performed with an API key are recorded in the audit log
-server-side (browser actions are logged by the frontend).
+clients. Every change is recorded in the audit log here, whoever makes it.
 """
 
 from __future__ import annotations
@@ -35,6 +34,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..browser_profiles import normalize_browser_data
+from ..core import audit
 from ..core.db import SessionLocal, get_db
 from ..core.locking import lock_incident
 from ..core.models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
@@ -70,36 +70,9 @@ def _sync_columns(incident: Incident) -> None:
     incident.created_at = str(doc.get("createdAt") or "")
 
 
-def _audit(
-    db: OrmSession,
-    caller: Principal,
-    action: str,
-    details: str,
-    incident: Incident | None = None,
-    *,
-    always: bool = False,
-) -> None:
-    """Record an audit entry.
-
-    By default only API-key callers are logged here (browser actions are logged
-    by the frontend, to avoid double entries); pass ``always=True`` for the
-    API-only endpoints (notes, upload) the frontend never calls.
-    """
-    if caller.kind != "apikey" and not always:
-        return
-    doc = (incident.doc if incident is not None else {}) or {}
-    db.add(
-        AuditEntry(
-            id=str(uuid.uuid4()),
-            at=now_iso(),
-            actor=caller.actor,
-            action=action,
-            target=doc.get("name"),
-            details=details,
-            incident_id=incident.id if incident is not None else None,
-            incident_name=doc.get("name"),
-        )
-    )
+def _audit(db: OrmSession, caller: Principal, action: str, details: str, incident: Incident | None = None) -> None:
+    """Record an audit entry for the caller, a session or a key alike."""
+    audit.record(db, caller.actor, action, details, incident)
 
 
 def _get_or_404(db: OrmSession, incident_id: str, *, lock: bool = False) -> Incident:
@@ -356,6 +329,7 @@ def patch_incident(
     response carries the new ``ETag``.
     """
     row = _get_or_404(db, incident_id, lock=True)
+    previous = row.doc or {}
     if if_match is not None and if_match.strip() != _etag(row.rev):
         raise HTTPException(status_code=412, detail="Incident was modified by someone else (ETag mismatch)")
     media_type = (content_type or "").split(";")[0].strip().lower()
@@ -373,7 +347,9 @@ def patch_incident(
     # Flags, notes and the suspicious window leave the indicators unchanged.
     if "data" in partial:
         reindex_incident(db, row)
-    _audit(db, caller, "incident.update", f'Updated attributes of "{merged.get("name") or incident_id}"', row)
+    # What the patch means (a flag, a note, the status, an evidence file), one entry each.
+    for action, details in audit.describe_patch(previous, merged, partial):
+        _audit(db, caller, action, details, row)
     db.commit()
     emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": merged.get("name")})
     response.headers["ETag"] = _etag(row.rev)
@@ -545,7 +521,6 @@ async def upload_artifact(
         _UPLOAD_ACTIONS.get(tab, "upload"),
         f"Uploaded {file.filename} → {summary['target']} ({summary['rows']} rows)",
         row,
-        always=True,
     )
     db.commit()
     emit(db, background_tasks, "upload.completed", {"incidentId": incident_id, **summary})
@@ -594,7 +569,7 @@ def add_note(
     note = {"id": str(uuid.uuid4()), "text": text, "createdAt": now, "updatedAt": now, "author": caller.actor}
     doc["notes"] = [*_notes(doc), note]
     _save_doc(db, row, doc)
-    _audit(db, caller, "note.add", "Added a note", row, always=True)
+    _audit(db, caller, "note.add", "Added a note", row)
     db.commit()
     emit(db, background_tasks, "note.added", {"incidentId": incident_id, "noteId": note["id"]})
     _idempotent_save(db, idempotency_key, 201, note)
@@ -621,7 +596,7 @@ def edit_note(
         raise HTTPException(status_code=404, detail="Note not found")
     doc["notes"] = [{**n, "text": text, "updatedAt": now_iso()} if n.get("id") == note_id else n for n in notes]
     _save_doc(db, row, doc)
-    _audit(db, caller, "note.update", "Edited a note", row, always=True)
+    _audit(db, caller, "note.update", "Edited a note", row)
     db.commit()
     return next(n for n in doc["notes"] if n.get("id") == note_id)
 
@@ -641,6 +616,6 @@ def delete_note(
         raise HTTPException(status_code=404, detail="Note not found")
     doc["notes"] = [n for n in notes if n.get("id") != note_id]
     _save_doc(db, row, doc)
-    _audit(db, caller, "note.remove", "Removed a note", row, always=True)
+    _audit(db, caller, "note.remove", "Removed a note", row)
     db.commit()
     # 204 No Content

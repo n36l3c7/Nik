@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from ..core import audit
 from ..core.db import get_db
 from ..core.models import ApiKey
 from ..core.schemas import ApiKeyCreate, ApiKeyCreated, ApiKeysEnvelope
@@ -94,6 +95,9 @@ def create_key(
         expires_at=expires_at,
     )
     db.add(row)
+    audit.record(
+        db, admin.actor, "apikey.create", f'Created the {role} API key "{label}" ({", ".join(scopes)})', target=label
+    )
     db.commit()
     return {"key": token, "apiKey": _to_dict(row)}
 
@@ -101,7 +105,7 @@ def create_key(
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_key(
     key_id: str,
-    _admin: Principal = Depends(admin_principal),
+    admin: Principal = Depends(admin_principal),
     db: OrmSession = Depends(get_db),
 ):
     """Revoke an API key (admin only). Idempotent-ish: 404 only if unknown."""
@@ -109,5 +113,6 @@ def revoke_key(
     if row is None or row.revoked_at is not None:
         raise HTTPException(status_code=404, detail="API key not found")
     row.revoked_at = now_iso()
+    audit.record(db, admin.actor, "apikey.revoke", f'Revoked the API key "{row.label}"', target=row.label)
     db.commit()
     # 204 No Content

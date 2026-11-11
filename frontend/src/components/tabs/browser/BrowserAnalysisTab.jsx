@@ -84,7 +84,6 @@ export default function BrowserAnalysisTab({ incident }) {
   const slot = browserData.browsers[activeBrowserId] ?? buildDefaultBrowserData(browser)
   const current = activeProfileOf(slot)
   const profileId = current.id
-  const profileLabel = `${activeBrowserId}/${current.name}`
 
   const sections = useMemo(() => sectionsFor(browser), [browser])
 
@@ -132,10 +131,7 @@ export default function BrowserAnalysisTab({ incident }) {
       }
       // A source owns all of its artifacts: it replaces (or clears) them.
       for (const key of source.produces) patch[key] = produced[key] ?? []
-      updateBrowserData(incident.id, activeBrowserId, profileId, patch, {
-        action: 'browser.upload',
-        details: `Imported ${source.label} into ${profileLabel} (${rows} rows)`,
-      })
+      updateBrowserData(incident.id, activeBrowserId, profileId, patch)
     } catch (err) {
       setErrors((prev) => ({
         ...prev,

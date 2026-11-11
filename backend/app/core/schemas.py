@@ -30,6 +30,22 @@ class UserCreate(BaseModel):
     role: Optional[str] = None
 
 
+class UserUpdate(BaseModel):
+    """Changes to an account, made by an admin. A field left out is kept."""
+
+    username: Optional[str] = None
+    role: Optional[str] = None
+    password: Optional[str] = None
+    disabled: Optional[bool] = None
+
+
+class PasswordChange(BaseModel):
+    """A user changing their own password."""
+
+    currentPassword: str
+    newPassword: str
+
+
 class UserOut(BaseModel):
     """Public user representation. Never includes the password hash."""
 
@@ -38,6 +54,7 @@ class UserOut(BaseModel):
     role: str
     createdAt: str
     createdBy: Optional[str] = None
+    disabled: bool = False
 
 
 class BootstrapOut(BaseModel):

@@ -10,6 +10,7 @@ import {
   ScrollText,
   ShieldAlert,
   ShieldCheck,
+  UserCog,
   Users,
   X,
 } from 'lucide-react'
@@ -21,6 +22,7 @@ import ReportBrandingSection from './sections/ReportBrandingSection.jsx'
 import MailSettingsSection from './sections/MailSettingsSection.jsx'
 import ThreatIntelSection from './sections/ThreatIntelSection.jsx'
 import AccountsSection from './sections/AccountsSection.jsx'
+import MyAccountSection from './sections/MyAccountSection.jsx'
 import ApiKeysSection from './sections/ApiKeysSection.jsx'
 import AuditLogSection from './sections/AuditLogSection.jsx'
 import YaraRulesSection from './sections/YaraRulesSection.jsx'
@@ -33,19 +35,22 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
  * ============================================================================
  *
  * A large, sectioned dialog replacing the old cramped settings/users/audit
- * modals. Sections (left nav): Detection rules, Business hours, IOC allowlist,
- * Report header, Mail analysis, Threat intelligence, Accounts
- * (admin only), Audit log. The active section is owned by App so the header
- * and sidebar buttons can deep-link into a specific section.
+ * modals. Sections (left nav): the analysts' working settings (Detection
+ * rules, Business hours, IOC allowlist), My account and the Audit log for
+ * everyone; Report header, Mail analysis, Threat intelligence, Accounts, API
+ * keys and the rule sets for admins only (the server enforces the same split).
+ * The active section is owned by App so the header and sidebar buttons can
+ * deep-link into a specific section.
  */
 
 const SECTIONS = [
   { id: 'detection', label: 'Detection rules', icon: ShieldAlert, Component: DetectionRulesSection },
   { id: 'hours', label: 'Business hours', icon: Clock, Component: BusinessHoursSection },
   { id: 'allowlist', label: 'IOC allowlist', icon: ShieldCheck, Component: IocAllowlistSection },
-  { id: 'report', label: 'Report header', icon: FileText, Component: ReportBrandingSection },
-  { id: 'mail', label: 'Mail analysis', icon: Mail, Component: MailSettingsSection },
-  { id: 'intel', label: 'Threat intelligence', icon: Radar, Component: ThreatIntelSection },
+  { id: 'report', label: 'Report header', icon: FileText, Component: ReportBrandingSection, adminOnly: true },
+  { id: 'mail', label: 'Mail analysis', icon: Mail, Component: MailSettingsSection, adminOnly: true },
+  { id: 'intel', label: 'Threat intelligence', icon: Radar, Component: ThreatIntelSection, adminOnly: true },
+  { id: 'account', label: 'My account', icon: UserCog, Component: MyAccountSection },
   { id: 'accounts', label: 'Accounts', icon: Users, Component: AccountsSection, adminOnly: true },
   { id: 'apikeys', label: 'API keys', icon: KeyRound, Component: ApiKeysSection, adminOnly: true },
   { id: 'yara', label: 'YARA rules', icon: FileSearch, Component: YaraRulesSection, adminOnly: true },
