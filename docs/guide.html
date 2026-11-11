@@ -170,6 +170,33 @@
         <figcaption>An artifact: its incident, its tags and the same analysis as in the incident's tab.</figcaption>
       </figure>
 
+      <h3 id="paste">Paste or drag text</h3>
+      <p>
+        Press <kbd>Ctrl</kbd>+<kbd>V</kbd> anywhere outside a text field, or drag selected text onto the app. When the
+        text is something Nik can act on, a small panel offers what to do; nothing is opened until you choose.
+      </p>
+      <ul>
+        <li>
+          An <strong>address</strong> (with <code>http://</code>, <code>https://</code> or a path):
+          <strong>Analyse URL</strong> scans it with the isolated browser.
+        </li>
+        <li>
+          A <strong>hash</strong>, an <strong>IP address</strong>, a <strong>domain</strong> or an
+          <strong>e-mail address</strong>: <strong>Search in Nik</strong> opens the search on it,
+          <strong>Where seen</strong> lists the incidents that hold it and its reputation. A domain can also be visited
+          (<em>Analyse as URL</em>); a SHA-256 of a file already analysed opens that analysis.
+        </li>
+      </ul>
+      <p>
+        Defanged text is read as it was meant: <code>hxxps://evil[.]top/x</code>, <code>185.220.101[.]47</code>,
+        <code>user[at]evil.top</code>. A file copied to the clipboard is handled like a dropped file. Sentences and
+        longer text are ignored.
+      </p>
+      <figure class="shot">
+        <img src="img/paste.png" alt="The panel shown for a pasted address" width="1600" height="1000" loading="lazy" />
+        <figcaption>A defanged address pasted on the app: read as it was meant, opened only if you choose.</figcaption>
+      </figure>
+
       <h2 id="tabs">The analysis tabs</h2>
       <p>The tab bar groups the tabs in the order of an investigation, separated by a thin rule:</p>
       <div class="table-wrap">

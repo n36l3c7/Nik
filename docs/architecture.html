@@ -291,6 +291,7 @@
 │   ├── incidentName.js             # deriveIncidentName ([ticket] title | host - user), severities
 │   ├── artifactRegistry.js         # artifact kinds, verdict badge, tags, the stand-in incident of one artifact
 │   ├── urlscan.js                  # scan state and verdict, an address in pasted text, timeline events
+│   ├── pasted.js                   # recognise(): an address or an indicator in pasted or dragged text
 │   └── fileRouting.js              # detectFileRoute: which tab a dropped file belongs to
 │
 └── components/
@@ -309,7 +310,7 @@
     ├── layout/                     # Rail (icons), Sidebar (incidents panel), Header, TabBar (grouped tabs),
     │                               #   OsPicker, IncidentLoadingState
     ├── artifacts/                  # ArtifactsPanel (list, filters), ArtifactPage (links, tags, related),
-    │                               #   NewAnalysisDialog
+    │                               #   NewAnalysisDialog, PastePrompt (pasted or dragged text)
     └── tabs/
         ├── summary/                # SummaryTab, IncidentTimeline, NoteBlock
         ├── browser/                # BrowserAnalysisTab, ProfileBar, FileUploadZone, EventsSection,
