@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { Boxes, Bug, Link2, Mail, Network, Plus } from 'lucide-react'
+import { Boxes, Bug, FolderOpen, Link2, Mail, Network, Plus, Tag } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
-import { ARTIFACT_KINDS, artifactMeta, verdictBadge } from '../../domain/artifactRegistry.js'
+import { ARTIFACT_KINDS, artifactMeta, artifactPath, verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatRelative } from '../../lib/time.js'
 import { Badge, Button, MicroSkull } from '../ui/index.js'
+import { useItemMenu } from '../menu/useRowMenu.js'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
@@ -34,6 +35,25 @@ function Chip({ active, onClick, children }) {
  */
 export default function ArtifactsPanel({ width, onNewAnalysis }) {
   const { artifacts, counts, filters, setFilters, loading, error, currentId, openArtifact, refresh } = useArtifacts()
+  // No incident here: the menu offers what an artifact offers on its own.
+  const menu = useItemMenu(null)
+  const artifactMenu = (event, artifact) =>
+    menu(event, {
+      title: artifact.name,
+      ...(artifact.kind === 'file' || artifact.kind === 'mail' ? { ioc: { type: 'sha256', value: artifact.ref } } : {}),
+      copy: [
+        { label: 'name', text: artifact.name },
+        { label: 'link', text: `${window.location.origin}${artifactPath(artifact.id)}` },
+      ],
+      actions: [
+        { label: 'Open', icon: FolderOpen, onSelect: () => openArtifact(artifact.id) },
+        ...artifact.tags.slice(0, 5).map((tag) => ({
+          label: `Filter by #${tag}`,
+          icon: Tag,
+          onSelect: () => setFilters({ ...filters, q: tag }),
+        })),
+      ],
+    })
   // Uploads made inside an incident add artifacts too: reload when the panel opens.
   useEffect(() => refresh(), [refresh])
   const total = ARTIFACT_KINDS.reduce((sum, kind) => sum + (counts[kind.id] ?? 0), 0)
@@ -108,7 +128,11 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
               const badge = verdictBadge(artifact)
               const active = artifact.id === currentId
               return (
-                <li key={artifact.id} className="border-b border-line-soft">
+                <li
+                  key={artifact.id}
+                  className="border-b border-line-soft"
+                  onContextMenu={(event) => artifactMenu(event, artifact)}
+                >
                   <button
                     type="button"
                     onClick={() => openArtifact(artifact.id)}

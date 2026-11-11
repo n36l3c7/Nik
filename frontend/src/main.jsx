@@ -26,17 +26,17 @@ createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <SettingsProvider>
           <IncidentProvider>
-            <NavigationProvider>
-              <ToastProvider>
-                <ContextMenuProvider>
-                  <IocLookupProvider>
-                    <ArtifactProvider>
+            <ArtifactProvider>
+              <NavigationProvider>
+                <ToastProvider>
+                  <ContextMenuProvider>
+                    <IocLookupProvider>
                       <App />
-                    </ArtifactProvider>
-                  </IocLookupProvider>
-                </ContextMenuProvider>
-              </ToastProvider>
-            </NavigationProvider>
+                    </IocLookupProvider>
+                  </ContextMenuProvider>
+                </ToastProvider>
+              </NavigationProvider>
+            </ArtifactProvider>
           </IncidentProvider>
         </SettingsProvider>
       </AuthProvider>

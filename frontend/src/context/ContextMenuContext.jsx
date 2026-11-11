@@ -182,14 +182,19 @@ export function ContextMenuProvider({ children }) {
     const onPointer = (event) => {
       if (!event.target.closest?.('[role="menu"]')) close()
     }
+    // The analyst scrolling closes the menu (it would no longer point at its
+    // row). A `scroll` event is not used: the browser also fires it when a list
+    // above reloads and the page re-anchors, which would close the menu at once.
     window.addEventListener('pointerdown', onPointer, true)
+    window.addEventListener('wheel', onPointer, { capture: true, passive: true })
+    window.addEventListener('touchmove', onPointer, { capture: true, passive: true })
     window.addEventListener('resize', close)
-    window.addEventListener('scroll', close, true)
     window.addEventListener('blur', close)
     return () => {
       window.removeEventListener('pointerdown', onPointer, true)
+      window.removeEventListener('wheel', onPointer, true)
+      window.removeEventListener('touchmove', onPointer, true)
       window.removeEventListener('resize', close)
-      window.removeEventListener('scroll', close, true)
       window.removeEventListener('blur', close)
     }
   }, [menu, close])

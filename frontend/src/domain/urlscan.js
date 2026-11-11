@@ -63,6 +63,20 @@ export function urlFromText(text) {
   return parsed.href
 }
 
+/** What toggleFlag() expects for a scanned address (the timeline and the address list flag the same key). */
+export function scanFlaggable(scan) {
+  const time = Date.parse(scan.scannedAt ?? scan.importedAt ?? scan.createdAt ?? '')
+  return {
+    key: `url:${scan.id}`,
+    browserId: 'network',
+    section: 'urls',
+    eventType: 'network',
+    title: displayUrl(scan.url),
+    url: scan.url,
+    time: Number.isFinite(time) ? time : null,
+  }
+}
+
 /** Timeline events of the incident's scanned addresses: one per finished scan, at its scan time. */
 export function urlEvents(scans = [], engine) {
   const out = []
@@ -81,15 +95,7 @@ export function urlEvents(scans = [], engine) {
       label,
       detail: `address scanned · ${scanBadge(scan).label}`,
       soc: { ...soc, severity, isFlagged: Boolean(severity) },
-      flaggable: {
-        key: `url:${scan.id}`,
-        browserId: 'network',
-        section: 'urls',
-        eventType: 'network',
-        title: label,
-        url: scan.url,
-        time,
-      },
+      flaggable: scanFlaggable(scan),
     })
   }
   return out

@@ -27,6 +27,7 @@ import { EVENTLOG_COLLECTION_SCRIPT, EVENT_CHANNELS, LOGON_TYPES, getChannel } f
 import { sha256Hex } from '../../../lib/hash.js'
 import { buildEventLogEvents, coverage, logonSessions, parseEventLogJson } from '../../../domain/eventLogs.js'
 import { guessIocType } from '../../../domain/iocs.js'
+import { useItemMenu } from '../../menu/useRowMenu.js'
 import { computeSocStats } from '../../../domain/soc.js'
 import { formatDateTime } from '../../../lib/time.js'
 
@@ -118,6 +119,7 @@ const SESSION_COLUMNS = [
 ]
 
 export default function EventLogsTab({ incident }) {
+  const menu = useItemMenu(incident)
   const engine = useSocEngine()
   const { setEventLogChannels, clearEventLogs, retryActiveIncident } = useIncidents()
   const [jsonLoading, setJsonLoading] = useState(false)
@@ -341,6 +343,17 @@ export default function EventLogsTab({ incident }) {
               <DataTable
                 columns={SESSION_COLUMNS}
                 data={sessions}
+                onRowContextMenu={(event, row) =>
+                  menu(event, {
+                    title: `${row.user ?? 'session'} ${row.logonId ?? ''}`.trim(),
+                    ...(guessIocType(row.source) === 'ip' ? { ioc: { type: 'ip', value: row.source } } : {}),
+                    copy: [
+                      { label: 'user', text: row.user },
+                      { label: 'logon id', text: row.logonId },
+                    ],
+                    record: row,
+                  })
+                }
                 searchKeys={['user', 'source', 'logonId']}
                 searchPlaceholder="Search users, sources…"
                 defaultSort={{ key: 'start', dir: 'desc' }}

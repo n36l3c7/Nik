@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Bookmark, Check, Copy, ExternalLink, Flag, Folder } from 'lucide-react'
+import { useRowMenu } from '../../menu/useRowMenu.js'
 import { Badge, Card, DataTable, EmptyState } from '../../ui/index.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { formatDateTime } from '../../../lib/time.js'
@@ -68,6 +69,22 @@ export default function BookmarksSection({ incident, browserId, profile = null, 
 
   // Columns depend on the current flags/incident, so build them per render
   // (memoized on the pieces that actually influence the flag column).
+  const rowMenu = useRowMenu(incident)
+  /** What a row passes to toggleFlag() (the flag button and the right-click menu). */
+  const flaggable = useCallback(
+    (row) => ({
+      key: row.id,
+      browserId,
+      profileId: profile?.id ?? null,
+      profileName: profile?.name ?? null,
+      section: 'bookmarks',
+      eventType: 'bookmark',
+      title: row.name || '',
+      url: row.url || '',
+      time: row.dateAdded ?? null,
+    }),
+    [browserId, profile?.id, profile?.name],
+  )
   const columns = useMemo(
     () => [
       {
@@ -75,22 +92,7 @@ export default function BookmarksSection({ incident, browserId, profile = null, 
         label: '',
         headerClassName: 'w-10',
         render: (row) => (
-          <FlagButton
-            flagged={!!flags[row.id]}
-            onToggle={() =>
-              toggleFlag(incident.id, {
-                key: row.id,
-                browserId,
-                profileId: profile?.id ?? null,
-                profileName: profile?.name ?? null,
-                section: 'bookmarks',
-                eventType: 'bookmark',
-                title: row.name || '',
-                url: row.url || '',
-                time: row.dateAdded ?? null,
-              })
-            }
-          />
+          <FlagButton flagged={!!flags[row.id]} onToggle={() => toggleFlag(incident.id, flaggable(row))} />
         ),
       },
       {
@@ -163,7 +165,7 @@ export default function BookmarksSection({ incident, browserId, profile = null, 
         render: (row) => formatDateTime(row.dateAdded),
       },
     ],
-    [flags, incident.id, browserId, profile?.id, profile?.name, toggleFlag],
+    [flags, incident.id, flaggable, toggleFlag],
   )
 
   // Cyan highlight for flagged rows (distinct from severity colors).
@@ -194,6 +196,7 @@ export default function BookmarksSection({ incident, browserId, profile = null, 
     >
       <DataTable
         columns={columns}
+        onRowContextMenu={(event, row) => rowMenu(event, { flaggable: flaggable(row), record: row })}
         data={bookmarks}
         searchKeys={['name', 'url', 'folder']}
         searchPlaceholder="Search by name, URL or folder…"

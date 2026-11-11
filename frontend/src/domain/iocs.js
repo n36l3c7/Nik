@@ -26,6 +26,25 @@ export const IOC_TYPES = {
 
 const label = (list, id) => list.find((item) => item.id === id)?.label ?? id
 
+/** The flag key of an indicator, whatever tab shows it. */
+export const indicatorFlagKey = (type, value) => `ioc:${type}:${value}`
+
+/**
+ * What toggleFlag() expects for an indicator flagged by hand: no time of its
+ * own (the report lists it among the indicators, not on the timeline).
+ */
+export function indicatorFlaggable(type, value) {
+  return {
+    key: indicatorFlagKey(type, value),
+    browserId: 'ioc',
+    section: 'iocs',
+    eventType: type,
+    title: String(value),
+    url: type === 'url' ? String(value) : '',
+    time: null,
+  }
+}
+
 /** "browser:chrome" → "Browser · Chrome", "eventlog:Security" → "Event log · Security"… */
 export function sourceLabel(source) {
   const [kind, ...rest] = String(source ?? '').split(':')

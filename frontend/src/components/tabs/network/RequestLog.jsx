@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
+import { useIocLookup } from '../../../context/IocLookupContext.jsx'
 import { Badge } from '../../ui/index.js'
 import { hexRows, formatOffset } from '../../../domain/mail.js'
 import {
@@ -309,6 +310,8 @@ function Detail({ entry, onClose }) {
 }
 
 export default function RequestLog({ entries, loadEntry, live = false }) {
+  // A request is its address: flag it, see where else it was seen, copy it.
+  const { iocMenu } = useIocLookup()
   const [filter, setFilter] = useState({ type: 'all', text: '', refused: false, posts: false })
   const [selected, setSelected] = useState(null)
   const [detail, setDetail] = useState(null)
@@ -358,6 +361,7 @@ export default function RequestLog({ entries, loadEntry, live = false }) {
                   <tr
                     key={entry.id}
                     onClick={() => setSelected(entry.id)}
+                    onContextMenu={(event) => iocMenu(event, 'url', entry.url)}
                     aria-selected={entry.id === selected}
                     className={[
                       'cursor-pointer border-b border-line-soft',

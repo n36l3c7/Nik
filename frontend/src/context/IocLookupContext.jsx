@@ -3,7 +3,9 @@ import { Copy, Crosshair, ExternalLink, Search, ShieldCheck } from 'lucide-react
 import { Badge, Button, Modal } from '../components/ui/index.js'
 import IocReputation from '../components/tabs/iocs/IocReputation.jsx'
 import { api } from '../services/api.js'
-import { IOC_TYPES, allowlistOptions, defang, sourceLabel } from '../domain/iocs.js'
+import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable, sourceLabel } from '../domain/iocs.js'
+import { flagItems } from '../components/menu/flagItems.js'
+import { useArtifacts } from './ArtifactContext.jsx'
 import { formatDateTime } from '../lib/time.js'
 import { useAuth } from './AuthContext.jsx'
 import { useContextMenu } from './ContextMenuContext.jsx'
@@ -227,9 +229,13 @@ async function copyText(text) {
 export function IocLookupProvider({ children }) {
   const [lookup, setLookup] = useState(null)
   const [allowlistTarget, setAllowlistTarget] = useState(null)
-  const { openMenu } = useContextMenu()
+  const { openMenu, askText } = useContextMenu()
   const { openSearch } = useNavigation()
   const { showToast } = useToast()
+  // An indicator is flagged in the incident on screen (none while an artifact is open on its own).
+  const { activeIncident, toggleFlag, addFlagComment } = useIncidents()
+  const { currentId: artifactOpen } = useArtifacts()
+  const flagIncident = artifactOpen ? null : activeIncident
 
   const openIoc = useCallback((type, value) => setLookup({ type, value: String(value) }), [])
   const openAllowlist = useCallback((type, value) => setAllowlistTarget({ type, value: String(value) }), [])
@@ -243,6 +249,19 @@ export function IocLookupProvider({ children }) {
       return openMenu(event, {
         title: `${IOC_TYPES[type]?.label ?? type} · ${text}`,
         items: [
+          ...(flagIncident
+            ? [
+                ...flagItems({
+                  incident: flagIncident,
+                  flaggable: indicatorFlaggable(type, text),
+                  toggleFlag,
+                  addFlagComment,
+                  askText,
+                  what: 'indicator',
+                }),
+                'separator',
+              ]
+            : []),
           { label: 'Where else was this seen?', icon: Crosshair, onSelect: () => openIoc(type, text) },
           { label: 'Search for it', icon: Search, hint: 'ctrl k', onSelect: () => openSearch(text) },
           'separator',
@@ -253,7 +272,7 @@ export function IocLookupProvider({ children }) {
         ],
       })
     },
-    [openMenu, openIoc, openSearch, openAllowlist, showToast],
+    [openMenu, openIoc, openSearch, openAllowlist, showToast, flagIncident, toggleFlag, addFlagComment, askText],
   )
 
   const value = useMemo(() => ({ openIoc, openAllowlist, iocMenu }), [openIoc, openAllowlist, iocMenu])

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  Boxes,
   ExternalLink,
+  Flag,
   Globe,
   Link2,
   Network,
@@ -16,7 +18,8 @@ import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../services/api.js'
-import { displayUrl, isScanning, scanBadge, urlFromText } from '../../../domain/urlscan.js'
+import { displayUrl, isScanning, scanBadge, scanFlaggable, urlFromText } from '../../../domain/urlscan.js'
+import { useItemMenu } from '../../menu/useRowMenu.js'
 import { formatDateTime, anyToMs } from '../../../lib/time.js'
 import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import RemoteBrowser from '../mail/RemoteBrowser.jsx'
@@ -62,7 +65,8 @@ function Heading({ children }) {
   return <h3 className="mb-2 font-mono text-[11px] tracking-wider text-fg-muted">{children}</h3>
 }
 
-function Overview({ scan }) {
+function Overview({ scan, incident }) {
+  const menu = useItemMenu(incident)
   const result = scan.result ?? {}
   const certificate = result.certificate
   const issued = certificate?.validFrom ? formatDateTime(certificate.validFrom * 1000) : null
@@ -102,6 +106,12 @@ function Overview({ scan }) {
               {result.findings.map((finding) => (
                 <li
                   key={`${finding.id}:${finding.text}`}
+                  onContextMenu={(event) =>
+                    menu(event, {
+                      title: finding.text,
+                      text: `${finding.points ? `+${finding.points} ` : ''}${finding.severity}: ${finding.text}`,
+                    })
+                  }
                   className="grid grid-cols-[40px_70px_minmax(0,1fr)] items-baseline gap-2 font-mono text-xs"
                 >
                   <span className="text-right text-fg-muted">{finding.points ? `+${finding.points}` : ''}</span>
@@ -121,7 +131,7 @@ function Overview({ scan }) {
             {(result.chain ?? []).map((step, index) => (
               <li key={`${index}:${step.url}`} className="flex gap-2">
                 <span className="w-10 shrink-0 text-right text-fg-muted">{step.status ?? step.state ?? '—'}</span>
-                <span className="min-w-0 break-all text-fg">{step.url}</span>
+                <IocValue type="url" value={step.url} className="min-w-0 break-all text-left text-fg" />
               </li>
             ))}
             {!result.chain?.length && <li className="text-fg-muted">No navigation was recorded.</li>}
@@ -135,7 +145,7 @@ function Overview({ scan }) {
               {result.forms.map((form, index) => (
                 <li key={`${index}:${form.action}`} className="flex flex-wrap items-baseline gap-2">
                   <span className="uppercase text-fg-muted">{form.method}</span>
-                  <span className="min-w-0 break-all text-fg">{form.action}</span>
+                  <IocValue type="url" value={form.action} className="min-w-0 break-all text-left text-fg" />
                   {form.password && <Badge color="red">asks for a password</Badge>}
                 </li>
               ))}
@@ -166,7 +176,7 @@ function Requests({ captureId }) {
   return <RequestLog entries={entries} loadEntry={loadEntry} />
 }
 
-function UrlDetail({ scan, error, onRescan, onRemove, onBrowse, busy }) {
+function UrlDetail({ scan, incident, error, onRescan, onRemove, onBrowse, busy }) {
   const [view, setView] = useState('overview')
   const { openArtifact } = useArtifacts()
   const badge = scanBadge(scan)
@@ -249,7 +259,7 @@ function UrlDetail({ scan, error, onRescan, onRemove, onBrowse, busy }) {
               </button>
             )}
           </div>
-          {view === 'overview' && <Overview scan={scan} />}
+          {view === 'overview' && <Overview scan={scan} incident={incident} />}
           {view === 'requests' && scan.captureId && <Requests captureId={scan.captureId} />}
         </div>
       ) : (
@@ -261,7 +271,8 @@ function UrlDetail({ scan, error, onRescan, onRemove, onBrowse, busy }) {
 
 export default function UrlAnalysisTab({ incident }) {
   const { retryActiveIncident } = useIncidents()
-  const { unlink, refresh: refreshArtifacts } = useArtifacts()
+  const { unlink, refresh: refreshArtifacts, openArtifact } = useArtifacts()
+  const menu = useItemMenu(incident)
   const { showToast } = useToast()
   // An address opened on its own (ArtifactPage): no list, no form, no Remove.
   const standalone = Boolean(incident.standalone)
@@ -419,15 +430,39 @@ export default function UrlAnalysisTab({ incident }) {
             {scans.map((scan) => {
               const badge = scanBadge(details[scan.id] ?? scan)
               return (
-                <li key={scan.id} className="border-b border-line-soft">
+                <li
+                  key={scan.id}
+                  className="border-b border-line-soft"
+                  onContextMenu={(event) =>
+                    menu(event, {
+                      title: displayUrl(scan.url),
+                      what: 'address',
+                      flaggable: scanFlaggable(scan),
+                      ioc: { type: 'url', value: scan.url },
+                      timeline: true,
+                      actions: [
+                        {
+                          label: 'Open as an artifact',
+                          icon: Boxes,
+                          onSelect: () => openArtifact(`url-${scan.id}`),
+                        },
+                        { label: 'Scan again', icon: RefreshCw, onSelect: () => handleRescan(scan) },
+                      ],
+                      danger: [{ label: 'Remove from the incident', icon: Trash2, onSelect: () => handleRemove(scan) }],
+                    })
+                  }
+                >
                   <button
                     type="button"
                     onClick={() => setSelected(scan.id)}
                     aria-current={scan.id === selected ? 'true' : undefined}
                     className={`w-full px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${scan.id === selected ? 'bg-panel shadow-[inset_2px_0_0_var(--color-accent)]' : 'hover:bg-panel/60'}`}
                   >
-                    <span className="block truncate font-mono text-[13px] font-semibold text-fg">
-                      {displayUrl(scan.url)}
+                    <span className="flex items-center gap-1.5 font-mono text-[13px] font-semibold text-fg">
+                      {incident.flags?.[`url:${scan.id}`] && (
+                        <Flag className="h-3 w-3 shrink-0 text-accent" fill="currentColor" aria-label="Flagged" />
+                      )}
+                      <span className="truncate">{displayUrl(scan.url)}</span>
                     </span>
                     <span className="mt-1 block">
                       <Badge color={badge.color}>{badge.label}</Badge>
@@ -455,6 +490,7 @@ export default function UrlAnalysisTab({ incident }) {
         <UrlDetail
           key={shown.id}
           scan={shown}
+          incident={incident}
           error={errors[shown.id] ?? null}
           busy={busy}
           onRescan={() => handleRescan(shown)}

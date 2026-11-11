@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Flag, ListTree, Plus, StickyNote, X } from 'lucide-react'
+import { Flag, ListTree, Plus, StickyNote, Trash2, X } from 'lucide-react'
+import { useItemMenu, useRowMenu } from '../../menu/useRowMenu.js'
 import { Badge, Button } from '../../ui/index.js'
 import EventTypeIcon from '../browser/EventTypeIcon.jsx'
 import NoteBlock from './NoteBlock.jsx'
@@ -36,6 +37,9 @@ function itemMs(item) {
 export default function IncidentTimeline({ incident }) {
   const { addFlagComment, removeFlagComment, addNote, updateNote, removeNote } = useIncidents()
   const [noteDraft, setNoteDraft] = useState('')
+
+  const rowMenu = useRowMenu(incident)
+  const menu = useItemMenu(incident)
 
   // Merge flags + notes into one chronologically ordered stream (oldest first).
   const items = useMemo(() => {
@@ -107,9 +111,28 @@ export default function IncidentTimeline({ incident }) {
                   profile={flagProfile(incident.data?.browser?.browsers, item.data)}
                   onAddComment={(text) => addFlagComment(incident.id, item.data.key, text)}
                   onRemoveComment={(commentId) => removeFlagComment(incident.id, item.data.key, commentId)}
+                  onMenu={(event) => rowMenu(event, { flaggable: item.data, record: item.data })}
                 />
               ) : (
-                <TimelineRow key={item.key} icon={StickyNote} tone="note">
+                <TimelineRow
+                  key={item.key}
+                  icon={StickyNote}
+                  tone="note"
+                  onMenu={(event) =>
+                    menu(event, {
+                      title: 'Note',
+                      text: item.data.text,
+                      record: item.data,
+                      danger: [
+                        {
+                          label: 'Delete the note',
+                          icon: Trash2,
+                          onSelect: () => removeNote(incident.id, item.data.id),
+                        },
+                      ],
+                    })
+                  }
+                >
                   <NoteBlock
                     note={item.data}
                     onSave={(text) => updateNote(incident.id, item.data.id, text)}
@@ -135,9 +158,9 @@ const DOT_TONES = {
   note: 'bg-med-soft text-med',
 }
 
-function TimelineRow({ icon: Icon, tone, children }) {
+function TimelineRow({ icon: Icon, tone, children, onMenu }) {
   return (
-    <li className="relative pl-9">
+    <li className="relative pl-9" onContextMenu={onMenu}>
       {/* The ring matches the Card body background so the rail visually breaks. */}
       <span
         className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white ${
@@ -155,7 +178,7 @@ function TimelineRow({ icon: Icon, tone, children }) {
 /* Flag item: event summary + per-flag comments (add / remove).               */
 /* -------------------------------------------------------------------------- */
 
-function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
+function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment, onMenu }) {
   const [comment, setComment] = useState('')
   const comments = flag.comments ?? []
 
@@ -167,7 +190,7 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment }) {
   }
 
   return (
-    <TimelineRow icon={Flag} tone="flag">
+    <TimelineRow icon={Flag} tone="flag" onMenu={onMenu}>
       <div className="border border-line border-l-2 border-l-accent-strong bg-accent-soft p-3">
         {/* Header: event type icon + title */}
         <div className="flex items-start gap-2">

@@ -193,6 +193,21 @@ export function highlight(node) {
   return node?.range ? { start: node.range[0], end: node.range[1] } : null
 }
 
+const captureName = (capture) => (capture.kind === 'browser' ? capture.label || capture.fileName : capture.fileName)
+
+/** What toggleFlag() expects for a capture as a whole (the timeline and the capture list flag the same key). */
+export function captureFlaggable(capture) {
+  return {
+    key: `capture:${capture.id}`,
+    browserId: 'network',
+    section: 'network',
+    eventType: 'network',
+    title: captureName(capture),
+    url: '',
+    time: capture.first ?? Date.parse(capture.createdAt),
+  }
+}
+
 /**
  * Timeline events of the network captures: each capture at its first packet
  * (its upload when unknown), each held submission (high) and each periodic
@@ -201,7 +216,7 @@ export function highlight(node) {
 export function networkEvents(captures = [], engine) {
   const out = []
   for (const capture of captures) {
-    const name = capture.kind === 'browser' ? capture.label || capture.fileName : capture.fileName
+    const name = captureName(capture)
     const time = capture.first ?? Date.parse(capture.createdAt)
     const base = { sourceType: 'network', sourceLabel: 'Network', eventType: 'network' }
     const flaggable = (key, title, url, at) => ({
@@ -220,7 +235,7 @@ export function networkEvents(captures = [], engine) {
       label: name,
       detail: `${capture.kind === 'browser' ? 'isolated browser session' : 'capture'} · ${capture.packets ?? 0} packets`,
       soc: engine.analyze({ kind: 'network', title: name, time }),
-      flaggable: flaggable(`capture:${capture.id}`, name, '', time),
+      flaggable: captureFlaggable(capture),
     })
     for (const held of capture.held ?? []) {
       const title = `${held.method} ${held.url} (held, not sent)`
