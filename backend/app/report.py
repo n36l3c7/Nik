@@ -143,6 +143,8 @@ T = {
         "no_mails": "No e-mail was analysed.",
         "verdicts": {"phishing": "phishing", "suspicious": "suspicious", "clean": "no strong signs"},
         "network": "Network",
+        "url_scans": "Scanned addresses",
+        "address": "Address",
         "capture": "Capture",
         "packets": "Packets",
         "network_findings": "Findings",
@@ -224,6 +226,8 @@ T = {
         "no_mails": "Nessuna e-mail analizzata.",
         "verdicts": {"phishing": "phishing", "suspicious": "sospetta", "clean": "nessun segnale forte"},
         "network": "Rete",
+        "url_scans": "Indirizzi analizzati",
+        "address": "Indirizzo",
         "capture": "Cattura",
         "packets": "Pacchetti",
         "network_findings": "Elementi",
@@ -692,6 +696,19 @@ def build_html(
             )
         else:
             out.append(f'<p class="muted">{esc(t["no_network"])}</p>')
+        urls = data.get("urls") if isinstance(data.get("urls"), dict) else {}
+        scans = [u for u in urls.get("scans") or [] if isinstance(u, dict)]
+        if scans:
+            out.append(f"<h3>{esc(t['url_scans'])}</h3>")
+            rows = [
+                [
+                    f'<span class="mono">{esc(u.get("url"))}</span>',
+                    f"{esc(u.get('verdict') or u.get('status'))}"
+                    + (f" ({esc(u.get('score'))})" if u.get("verdict") else ""),
+                ]
+                for u in scans
+            ]
+            out.append(_table([t["address"], t["verdict"]], rows, ["76%", "24%"]))
 
     if "eventlogs" in wanted:
         out.append(f"<h2>{esc(t['eventlogs'])}</h2>")

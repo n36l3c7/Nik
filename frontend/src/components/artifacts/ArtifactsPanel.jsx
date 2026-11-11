@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Boxes, Bug, Mail, Network, Plus } from 'lucide-react'
+import { Boxes, Bug, Link2, Mail, Network, Plus } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { ARTIFACT_KINDS, artifactMeta, verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatRelative } from '../../lib/time.js'
@@ -7,11 +7,11 @@ import { Badge, Button, MicroSkull } from '../ui/index.js'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
- * their own or in incidents, for the whole team, newest first. The text
+ * their own or in incidents, and scanned addresses, for the whole team, newest first. The text
  * filter and the kind chips are applied by the server.
  */
 
-export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network }
+export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network, url: Link2 }
 
 const CHIP =
   'h-7 px-2.5 border font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
@@ -36,7 +36,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
   const { artifacts, counts, filters, setFilters, loading, error, currentId, openArtifact, refresh } = useArtifacts()
   // Uploads made inside an incident add artifacts too: reload when the panel opens.
   useEffect(() => refresh(), [refresh])
-  const total = counts.file + counts.mail + counts.pcap
+  const total = ARTIFACT_KINDS.reduce((sum, kind) => sum + (counts[kind.id] ?? 0), 0)
 
   return (
     <aside
@@ -72,7 +72,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
               active={filters.kind === kind.id}
               onClick={() => setFilters({ ...filters, kind: filters.kind === kind.id ? '' : kind.id })}
             >
-              {kind.label} {counts[kind.id]}
+              {kind.label} {counts[kind.id] ?? 0}
             </Chip>
           ))}
           <Chip active={filters.mine} onClick={() => setFilters({ ...filters, mine: !filters.mine })}>

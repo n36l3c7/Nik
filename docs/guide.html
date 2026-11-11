@@ -44,7 +44,7 @@
           <li><a href="#artifacts">Analyse without an incident</a></li>
           <li><a href="#tabs">The analysis tabs</a></li>
           <li><a href="#overview-tabs">Summary, Timeline, IOCs</a></li>
-          <li><a href="#threat-tabs">Mail, Malware, Network</a></li>
+          <li><a href="#threat-tabs">Mail, Malware, Network, URL</a></li>
           <li><a href="#host-tabs">Endpoint, Event Logs, Browser, Commands</a></li>
           <li><a href="#flags">Flags, comments and the right-click menu</a></li>
           <li><a href="#search">Search</a></li>
@@ -133,7 +133,7 @@
 
       <h2 id="artifacts">Analyse without an incident</h2>
       <p>
-        Not everything starts as a case. To check a reported e-mail, a suspicious file or a capture, click
+        Not everything starts as a case. To check a reported e-mail, a suspicious file, a capture or a link, click
         <strong>New analysis</strong> in the artifacts panel (or drop the file anywhere and choose
         <strong>Start analysis</strong>). The result is an <strong>artifact</strong>: it has the same analysis views as
         in an incident and the whole team sees it in the artifacts panel, with who added it and its verdict. Host
@@ -189,7 +189,7 @@
             </tr>
             <tr>
               <td>Threats</td>
-              <td>Mail · Malware · Network</td>
+              <td>Mail · Malware · Network · URL</td>
               <td>The attack itself: the reported e-mail, the samples, the traffic.</td>
             </tr>
             <tr>
@@ -235,7 +235,7 @@
         <figcaption>IOCs: every indicator, with where it was seen.</figcaption>
       </figure>
 
-      <h2 id="threat-tabs">Mail, Malware, Network</h2>
+      <h2 id="threat-tabs">Mail, Malware, Network, URL</h2>
       <h3>Mail Analysis</h3>
       <p>
         Drop the reported e-mail (<code>.eml</code> or Outlook <code>.msg</code>). Nik gives a
@@ -309,6 +309,34 @@
           loading="lazy"
         />
         <figcaption>The capture's summary: hosts, DNS, HTTP, submissions and beacons.</figcaption>
+      </figure>
+      <h3>URL Analysis</h3>
+      <p>
+        Give Nik a link from an e-mail or a chat (defanged text such as <code>hxxps://evil[.]top</code> works): the
+        <strong>isolated browser</strong> visits it for you, with network access but never your own network, and types,
+        clicks and submits nothing. You get:
+      </p>
+      <ul>
+        <li>a <strong>screenshot</strong> of the page, its final address, title, server and certificate;</li>
+        <li>
+          a <strong>verdict</strong> with its reasons and points: a domain that imitates a brand, a page that asks for a
+          password, a form that sends what is typed elsewhere, a throwaway top-level domain, a certificate issued days
+          ago, a download the page started;
+        </li>
+        <li><strong>how the browser got there</strong>: every redirect, shorteners included;</li>
+        <li>
+          the <strong>requests</strong> of the visit, and its capture in Network Analysis (<em>Open the capture</em>).
+        </li>
+      </ul>
+      <p>
+        <strong>Re-scan</strong> visits the address again; <strong>Open in the isolated browser</strong> lets you look
+        by hand. An address already scanned is recognised and not visited twice.
+      </p>
+      <figure class="shot">
+        <img src="img/url.png" alt="A scanned address in URL Analysis" width="1600" height="1000" loading="lazy" />
+        <figcaption>
+          URL Analysis: a credential page on a lookalike domain, with the reasons for the verdict.
+        </figcaption>
       </figure>
 
       <h2 id="host-tabs">Endpoint, Event Logs, Browser, Commands</h2>

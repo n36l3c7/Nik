@@ -27,6 +27,7 @@ import { profileLabel } from './browserProfiles.js'
 import { sampleEvents } from './malware.js'
 import { mailEvents } from './mail.js'
 import { networkEvents } from './network.js'
+import { urlEvents } from './urlscan.js'
 import { buildEventLogEvents } from './eventLogs.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
@@ -198,6 +199,11 @@ export function buildTimelineEvents(data = {}, engine) {
   }
 
   for (const event of mailEvents(data.mail?.messages ?? [], engine)) {
+    if (hasTime(event)) out.push(event)
+  }
+
+  /* ---- Scanned addresses (URL Analysis), at their scan time ---- */
+  for (const event of urlEvents(data.urls?.scans ?? [], engine)) {
     if (hasTime(event)) out.push(event)
   }
 

@@ -180,7 +180,11 @@ npm run docs:screenshots   # writes docs/img/*.png
       <p>
         It needs the same backend environment as the end-to-end test. Start the packet capture worker and set
         <code>E2E_PCAP_URL</code> / <code>E2E_PCAP_TOKEN</code> for the Network Analysis screenshots; without it they
-        are skipped and the previous images stay.
+        are skipped and the previous images stay. The URL Analysis screenshot also needs the isolated browser (<code
+          >E2E_BROWSER_URL</code
+        >
+        / <code>E2E_BROWSER_TOKEN</code>) and <code>DOCS_SCAN_URL</code>, an address that worker can reach serving
+        <code>frontend/e2e/fixtures/signin.html</code> (it refuses private addresses).
       </p>
       <h2 id="add-a-new-analysis-tab">Add a new analysis tab</h2>
       <p>

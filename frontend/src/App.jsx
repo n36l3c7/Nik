@@ -461,7 +461,7 @@ export default function App() {
         onPanel={setPanel}
         counts={{
           incidents: incidents.length,
-          artifacts: artifacts.counts.file + artifacts.counts.mail + artifacts.counts.pcap,
+          artifacts: Object.values(artifacts.counts).reduce((sum, n) => sum + n, 0),
         }}
         isAdmin={currentUser?.role === 'admin'}
         onSearch={() => setPaletteOpen(true)}
@@ -604,6 +604,13 @@ export default function App() {
         onFile={(file) => {
           setAnalysisOpen(false)
           placeFile(file, { preferAnalysis: true })
+        }}
+        onUrl={async (url) => {
+          // Throws on a refused address: the dialog shows why and stays open.
+          const scan = await artifacts.scanUrl(url)
+          setAnalysisOpen(false)
+          setPanel('artifacts')
+          artifacts.openArtifact(scan.artifactId)
         }}
       />
 

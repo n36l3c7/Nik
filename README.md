@@ -27,6 +27,8 @@ every action is attributed to a named analyst in the audit log.
   Samples are stored read-only and never executed.
 - **Network analysis** — pcap and pcapng read by Wireshark's engine: display
   filters, Follow Stream, Export Objects, TLS decryption, beacons.
+- **URL analysis** — the isolated browser visits a link for you: screenshot,
+  redirects, the page's forms and a phishing verdict with its reasons.
 - **Host evidence** — browser and shell history, endpoint artifacts and
   Windows event logs, parsed in the analyst's browser where possible.
 - **Reporting and automation** — a PDF/HTML incident report, a REST API with

@@ -32,6 +32,8 @@ test('only e-mails, files and captures become artifacts', () => {
   assert.equal(kindForTab('mail'), 'mail')
   assert.equal(kindForTab('network'), 'pcap')
   assert.equal(kindForTab('commands'), null)
+  // An address is scanned, not uploaded.
+  assert.equal(kindForTab('urls'), null)
 })
 
 test('the verdict badge never calls an undetected file clean', () => {
@@ -53,6 +55,7 @@ test('tags are lower case, valid, distinct and capped', () => {
 test('the permalink accepts only well-formed ids', () => {
   assert.equal(artifactIdFromPath(artifactPath(file.id)), file.id)
   assert.equal(artifactIdFromPath(`/artifact/pcap-${'b'.repeat(32)}`), `pcap-${'b'.repeat(32)}`)
+  assert.equal(artifactIdFromPath(`/artifact/url-${'d'.repeat(32)}`), `url-${'d'.repeat(32)}`)
   assert.equal(artifactIdFromPath('/artifact/file-xyz'), null)
   assert.equal(artifactIdFromPath(`/artifact/file-${SHA}/../x`), null)
   assert.equal(artifactIdFromPath('/incident/abc'), null)

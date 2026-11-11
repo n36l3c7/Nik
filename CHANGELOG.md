@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-11-11
+
+### Added
+
+- **URL Analysis**: give Nik a link and the isolated browser visits it for
+  you, with network access (never private or internal hosts) and without
+  typing, clicking or submitting anything.
+  - A screenshot, the final address, title, server and certificate; every
+    navigation that led there; the page's forms; the requests of the visit,
+    kept as a capture.
+  - A **verdict** with its reasons and points: a lookalike domain, a page
+    that asks for a password (worse over http, or under a brand's name), a
+    form that sends what is typed elsewhere, a throwaway top-level domain, a
+    shortener, a chain through several domains, a certificate issued days
+    ago, a download the page started. 70 or more is phishing, 40 to 69
+    suspicious.
+  - A new **URL Analysis** tab in incidents (threats group) and a `url`
+    artifact kind: scan an address on its own from **New analysis**, link it
+    to incidents later. Defanged text (`hxxps://evil[.]top`) is understood;
+    an address already scanned is recognised.
+  - Scanned addresses join the incident's indicators, timeline and report.
+  - API: `POST /api/artifacts/urls`, `GET /api/urls/{id}`, `…/rescan`,
+    `…/screenshot`. Migration `0018` (`url_scans`).
+- Isolated browser worker: the `inspect` action returns what a page asks for
+  (its forms), read from the DOM.
+
 ## [2.20.0] - 2026-11-11
 
 ### Added

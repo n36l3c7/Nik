@@ -177,3 +177,27 @@ def test_bodies_are_kept_within_the_limits(monkeypatch):
     assert big["bodyTruncated"] and "body" not in big and big["bodySize"] == 11 and len(big["bodySha256"]) == 64
     assert log.body(b"123456")["bodyTruncated"]  # the session budget (15) is spent
     assert netlog.timing({"requestStart": 1, "responseStart": 21, "responseEnd": 30})["wait"] == 20
+
+
+def test_inspect_reports_what_the_page_asks_for(chromium):
+    page = (
+        b"<title>Sign in</title><form action='https://collect.example/c' method='POST'>"
+        b"<input name='user'><input type='password' name='pass'><button>Go</button></form>"
+        b"<a href='https://example.com/'>help</a>"
+    )
+    state = chromium.open("alice", network=False, html=page)
+    try:
+        inspected = chromium.act(state["id"], "alice", {"type": "inspect"})
+        facts = inspected["page"]
+        assert inspected["title"] == "Sign in" and inspected["screenshot"]
+        assert facts["passwordFields"] == 1 and facts["links"] == 1
+        assert facts["forms"] == [
+            {
+                "action": "https://collect.example/c",
+                "method": "post",
+                "password": True,
+                "inputs": ["text", "password", "submit"],
+            }
+        ]
+    finally:
+        chromium.close(state["id"], "alice")
