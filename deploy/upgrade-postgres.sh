@@ -73,6 +73,14 @@ wait_ready() {
 cd "$NIK_DIR"
 grep -q 'postgres:18' docker-compose.yml || die "docker-compose.yml is not the 2.12.2 one: run git pull first"
 backup_dir=${BACKUP_DIR:-/var/backups/nik}
+# Left by a run whose restore did not match the original: the next run must
+# not mistake the restored database for a finished upgrade.
+unverified="$backup_dir/.pg18-restore-unverified"
+if [ -e "$unverified" ]; then
+  die "the last run restored the data but the row counts did not match (see $unverified).
+Nothing was deleted. Either compare the two databases yourself and remove that file, or start over:
+  $COMPOSE down && remove the *_db-data-18 volume && rm $unverified, then run this script again."
+fi
 
 # A db container that answers: the previous release still running (16), or
 # PostgreSQL 18 — upgraded already, or left empty by an interrupted run. One
@@ -95,6 +103,11 @@ if [ -n "$version" ]; then
   # backup with backup.sh, from the running PostgreSQL 16.
   old_volume=$(mounted_volume "$db" /var/lib/postgresql/data)
   log "PostgreSQL $(sql "$db" 'SHOW server_version') on volume ${old_volume:-?}"
+  # Nothing may be written between the backup, the row count and the
+  # shutdown: a change made in that window would be missing from the new
+  # database without any sign of it. The app stops first; the database stays.
+  log "stopping the app (the database stays up for the backup)"
+  $COMPOSE stop web api
   log "step 1/5: full backup"
   "$NIK_DIR/deploy/backup.sh"
   dump=$(find "$backup_dir" -maxdepth 1 -type d -name 'nik-*' ! -name '*.partial' | sort | tail -n 1)/db.dump
@@ -145,7 +158,9 @@ $ENGINE exec -i "$new_db" pg_restore -U nik -d nik --no-owner --exit-on-error <"
 after=$(row_counts "$new_db")
 if [ "$before" != "$after" ]; then
   diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") >&2 || true
-  die "row counts differ after the restore. Nothing was deleted: see README § 2.1 to roll back"
+  (umask 077 && mkdir -p "$backup_dir" && date '+%Y-%m-%d %H:%M:%S row counts differ after the restore' >"$unverified")
+  die "row counts differ after the restore. Nothing was deleted: the PostgreSQL 16 data is intact on
+volume ${old_volume:-db-data}. See \"Upgrading to PostgreSQL 18\" in the deployment guide to roll back."
 fi
 log "row counts match ($(printf '%s\n' "$after" | wc -l) tables)"
 

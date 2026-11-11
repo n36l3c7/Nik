@@ -1,10 +1,14 @@
-import { useEffect } from 'react'
+import { useRef } from 'react'
 import { X } from 'lucide-react'
+import { useLayer } from '../../lib/layers.js'
 
 /**
  * Modal — dialog window with a blurred backdrop.
  *
- * - Closes on the Escape key and on a backdrop click.
+ * - Closes on the Escape key (when it is the top dialog: Escape never closes
+ *   the one under it) and on a backdrop click.
+ * - Takes the focus when it opens, keeps Tab inside, and gives the focus
+ *   back to what had it when it closes (lib/layers.js).
  * - Optional `footer` (typically Cancel/Confirm buttons).
  * - `maxWidth` is a Tailwind class (default 'max-w-lg').
  * - `tall` lets the dialog use nearly the whole height of the window (the
@@ -12,25 +16,20 @@ import { X } from 'lucide-react'
  * - No portal: the fixed layer + z-50 is enough for this SPA.
  */
 export default function Modal({ open, onClose, title, children, footer = null, maxWidth = 'max-w-lg', tall = false }) {
-  // Close with the Escape key (listener active only when the modal is open)
-  useEffect(() => {
-    if (!open) return undefined
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') onClose?.()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
+  const ref = useRef(null)
+  useLayer(ref, { open, onClose })
 
   if (!open) return null
 
   return (
     <div
+      ref={ref}
       role="dialog"
       aria-modal="true"
+      tabIndex={-1}
       aria-label={typeof title === 'string' ? title : undefined}
       className={[
-        'fixed inset-0 z-50 flex items-center justify-center bg-sunken/70 backdrop-blur-sm',
+        'fixed inset-0 z-50 flex items-center justify-center bg-sunken/70 backdrop-blur-sm focus:outline-none',
         tall ? 'p-2' : 'p-4',
       ].join(' ')}
       // Close only if the mousedown happens directly on the backdrop

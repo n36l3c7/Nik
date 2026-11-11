@@ -6,16 +6,25 @@ with the first ``MAX_PAGES`` pages as base64 PNG.
 LibreOffice runs headless with a fresh profile per conversion that sets the
 macro security to "very high" (no macro runs, signed or not) and never
 updates links to other files or the network; the container has no route
-outside anyway. Each conversion is killed after ``TIMEOUT`` seconds.
+outside anyway.
+
+Every preview is made in a process of its own (this file run as a script),
+and that process is killed with everything it started after ``TIMEOUT``
+seconds. A document built to stall LibreOffice, pdfium or the image decoder
+costs one preview, not a slot of the worker for ever: ``soffice`` is only a
+launcher, and killing it alone would leave ``soffice.bin`` running.
 """
 
 from __future__ import annotations
 
 import base64
 import io
+import json
 import os
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import uuid
 
@@ -157,7 +166,8 @@ def image_page(data: bytes) -> dict:
     return _png(frame)
 
 
-def render(name: str, data: bytes, max_pages: int = MAX_PAGES) -> dict:
+def render_here(name: str, data: bytes, max_pages: int = MAX_PAGES) -> dict:
+    """Make the preview in this process (what the child of ``render`` runs)."""
     kind = kind_of(name, data)
     if kind is None:
         raise PreviewError("not a document Nik can preview (PDF, Office, OpenDocument, RTF, image)")
@@ -166,3 +176,54 @@ def render(name: str, data: bytes, max_pages: int = MAX_PAGES) -> dict:
     pdf = office_to_pdf(name, data) if kind == "office" else data
     total, pages = pdf_pages(pdf, max_pages)
     return {"format": kind, "converted": kind == "office", "total": total, "pages": pages}
+
+
+# The preview process: this file, run as a script (see ``_main``).
+_RENDERER = [sys.executable, os.path.abspath(__file__)]
+
+
+def _kill_group(process: subprocess.Popen) -> None:
+    """Kill the preview process and whatever it started (``soffice.bin`` outlives its launcher)."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass  # already gone
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def render(name: str, data: bytes, max_pages: int = MAX_PAGES) -> dict:
+    """The preview of a document, made in a process of its own within ``TIMEOUT`` seconds."""
+    request = json.dumps({"name": name, "data": base64.b64encode(data).decode(), "max_pages": max_pages}).encode()
+    process = subprocess.Popen(  # noqa: S603 - this interpreter, this file
+        _RENDERER, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True
+    )
+    try:
+        output, _ = process.communicate(request, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        raise PreviewError(f"the preview took more than {int(TIMEOUT)} s") from exc
+    finally:
+        _kill_group(process)
+    try:
+        answer = json.loads(output)
+    except ValueError as exc:
+        raise PreviewError("the preview stopped before finishing (the document may need too much memory)") from exc
+    if "error" in answer:
+        raise PreviewError(answer["error"])
+    return answer["preview"]
+
+
+def _main() -> None:
+    """The preview process: a request on stdin, the preview (or the error) on stdout."""
+    request = json.load(sys.stdin.buffer)
+    try:
+        answer = {"preview": render_here(request["name"], base64.b64decode(request["data"]), int(request["max_pages"]))}
+    except PreviewError as exc:
+        answer = {"error": str(exc)}
+    json.dump(answer, sys.stdout)
+
+
+if __name__ == "__main__":
+    _main()

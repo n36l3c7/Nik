@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useRef } from 'react'
 import {
   Clock,
   FileSearch,
@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useLayer } from '../../lib/layers.js'
 import DetectionRulesSection from './sections/DetectionRulesSection.jsx'
 import BusinessHoursSection from './sections/BusinessHoursSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
@@ -77,22 +78,19 @@ export default function SettingsPanel({ open, onClose, section = 'detection', on
   const active = visibleSections.find((s) => s.id === activeId) ?? visibleSections[0]
   const ActiveComponent = active.Component
 
-  useEffect(() => {
-    if (!open) return undefined
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose?.()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  // Escape closes Settings only when nothing is open over it (a confirmation, a menu).
+  const ref = useRef(null)
+  useLayer(ref, { open, onClose })
 
   if (!open) return null
 
   return (
     <div
+      ref={ref}
       role="dialog"
       aria-modal="true"
       aria-label="Settings"
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center bg-panel p-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.()

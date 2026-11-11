@@ -2,9 +2,10 @@
  * Keyboard shortcuts.
  *
  * F and C act on "the row": the one under the pointer, or the focused one when
- * the analyst last moved with the keyboard. They run the item of the row's
- * right-click menu that carries the same `shortcut`, so every list that has
- * the menu has the shortcuts.
+ * the analyst last moved with Tab. They run the item of the row's right-click
+ * menu that carries the same `shortcut`, so every list that has the menu has
+ * the shortcuts. Single-key shortcuts can be turned off (in the "?" list), for
+ * those who dictate or use a screen reader's own keys.
  */
 
 /** The shortcuts listed by "?", in order. `keys` are alternatives. */

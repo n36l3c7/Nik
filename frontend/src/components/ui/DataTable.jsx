@@ -203,7 +203,8 @@ export default function DataTable({
                       : undefined
                   }
                   onContextMenu={onRowContextMenu ? (event) => onRowContextMenu(event, row) : undefined}
-                  tabIndex={onRowClick ? 0 : undefined}
+                  // A row that can be opened or has a menu is a Tab stop: the keyboard reaches what the mouse does.
+                  tabIndex={onRowClick || onRowContextMenu ? 0 : undefined}
                 >
                   {columns.map((column) => (
                     <td

@@ -15,7 +15,7 @@ OLD=/var/lib/postgresql-16
 
 if [ ! -s "$PGDATA/PG_VERSION" ] && [ -s "$OLD/PG_VERSION" ] && [ "${NIK_PG_UPGRADE:-}" != "1" ]; then
   echo "nik: PostgreSQL $(cat "$OLD/PG_VERSION") data found on the old volume, none for PostgreSQL 18." >&2
-  echo "nik: run deploy/upgrade-postgres.sh to move it (README § 2.1, \"Upgrading to PostgreSQL 18\")." >&2
+  echo "nik: run deploy/upgrade-postgres.sh to move it (the deployment guide (Upgrading to PostgreSQL 18), \"Upgrading to PostgreSQL 18\")." >&2
   exit 1
 fi
 

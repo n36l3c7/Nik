@@ -43,8 +43,9 @@ export default function PastePrompt({
   if (!pasted) return null
   const label = PASTED_LABELS[pasted.kind] ?? pasted.kind
   return (
+    // A notice in a corner: the page behind stays usable, so it is not a dialog.
     <section
-      role="dialog"
+      role="region"
       aria-label="Pasted text"
       className="fixed bottom-4 right-4 z-[70] w-[min(28rem,calc(100vw-2rem))] border border-accent-strong bg-panel shadow-lg"
     >

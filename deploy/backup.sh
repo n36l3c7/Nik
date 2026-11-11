@@ -13,7 +13,7 @@
 # Each run writes BACKUP_DIR/nik-YYYYMMDD-HHMMSS/ with db.dump (pg_dump custom
 # format), samples.tar (the raw malware samples: live malware, keep the
 # directory private), env (the .env secrets) and SHA256SUMS. The directory is
-# readable by root only. Restore steps: README § 2.1 "Backups & restore".
+# readable by root only. Restore steps: the deployment guide (Upgrading to PostgreSQL 18) "Backups & restore".
 #
 # The containers are found by the labels both `docker compose` and
 # `podman-compose` set (service name + project directory) and reached with

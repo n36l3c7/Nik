@@ -669,7 +669,7 @@ test('pasted text is recognised: an address to scan, an indicator to look up', a
       data.setData('text/plain', value)
       document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
     }, text)
-  const prompt = page.getByRole('dialog', { name: 'Pasted text' })
+  const prompt = page.getByRole('region', { name: 'Pasted text' })
 
   // Ordinary text is left alone.
   await paste('just some words')
@@ -924,6 +924,61 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await renamed.getByRole('button', { name: 'Delete user anna.b' }).click()
   await expect(renamed).toHaveCount(0)
   await settings.getByRole('button', { name: 'Close' }).click()
+})
+
+test('dialogs own the keyboard: Escape closes the top one, Tab stays inside, focus comes back', async () => {
+  const gear = page.getByRole('button', { name: 'Open platform settings' })
+  await gear.click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Accounts').click()
+  await settings.getByRole('button', { name: `Edit user ${ADMIN.username}` }).click()
+  const edit = page.getByRole('dialog', { name: `Account: ${ADMIN.username}` })
+  await expect(edit).toBeVisible()
+
+  // Tab never leaves the dialog on top, however many times it is pressed.
+  for (let i = 0; i < 12; i += 1) {
+    await page.keyboard.press('Tab')
+    expect(await edit.evaluate((node) => node.contains(document.activeElement))).toBe(true)
+  }
+  // Escape closes that dialog only; Settings, under it, stays.
+  await page.keyboard.press('Escape')
+  await expect(edit).toHaveCount(0)
+  await expect(settings).toBeVisible()
+  // The focus is back on the button that opened the dialog.
+  await expect(settings.getByRole('button', { name: `Edit user ${ADMIN.username}` })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(settings).toHaveCount(0)
+  await expect(gear).toBeFocused()
+})
+
+test('single-key shortcuts can be turned off and on again', async () => {
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
+  const flag = sample.getByLabel('Flagged')
+  const before = await flag.count()
+
+  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+  const toggle = help.getByRole('checkbox', { name: /Single-key shortcuts/ })
+  await expect(toggle).toBeChecked()
+  await toggle.uncheck()
+  await page.keyboard.press('Escape')
+  await sample.hover()
+  await page.keyboard.press('f')
+  await page.keyboard.press('?')
+  await expect(flag).toHaveCount(before)
+  await expect(help).toHaveCount(0)
+
+  // Back on: the choice is kept, and F works again.
+  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+  await help.getByRole('checkbox', { name: /Single-key shortcuts/ }).check()
+  await page.keyboard.press('Escape')
+  await sample.hover()
+  await page.keyboard.press('f')
+  await expect(flag).toHaveCount(before ? 0 : 1)
+  await page.keyboard.press('f')
+  await expect(flag).toHaveCount(before)
 })
 
 test('an address from the evidence is opened only after asking', async () => {

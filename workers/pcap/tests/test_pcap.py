@@ -126,3 +126,37 @@ def test_server(worker):
     status, item = _post(f"{worker}/rpc", {**body, "method": "download", "params": {"token": exe["token"]}})
     assert status == 200 and base64.b64decode(item["data"]).startswith(b"MZ")
     assert _post(f"{worker}/close", {"id": CAPTURE_ID})[0] == 200
+
+
+def _fake_tshark(tmp_path, monkeypatch, script: str):
+    """Put a shell script in tshark's place."""
+    path = tmp_path / "tshark"
+    path.write_text("#!/bin/sh\n" + script)
+    path.chmod(0o755)
+    monkeypatch.setattr(nik_pcap.shutil, "which", lambda name: str(path))
+
+
+def test_tshark_is_stopped_by_the_clock_even_when_it_prints_nothing(tmp_path, monkeypatch):
+    """A dissector that stalls prints no line: the limit cannot wait for one."""
+    import time
+
+    _fake_tshark(tmp_path, monkeypatch, "sleep 300 & sleep 300\n")
+    monkeypatch.setattr(nik_pcap, "TIMEOUT", 1.0)
+    started = time.monotonic()
+    with pytest.raises(nik_pcap.CaptureError, match="took more than 1 s"):
+        list(nik_pcap._tshark_rows("capture.pcap", None))
+    assert time.monotonic() - started < 15
+
+
+def test_a_flood_of_warnings_does_not_block_tshark(tmp_path, monkeypatch):
+    """More warnings than a pipe holds, then a row, then a failure: all three are seen."""
+    script = (
+        "i=0; while [ $i -lt 4000 ]; do echo 'tshark: a very long warning about a malformed packet ...........' >&2; "
+        "i=$((i+1)); done\nprintf 'a\\tb\\n'\necho 'tshark: the last line' >&2\nexit 2\n"
+    )
+    _fake_tshark(tmp_path, monkeypatch, script)
+    rows = []
+    with pytest.raises(nik_pcap.CaptureError, match="the last line"):
+        for row in nik_pcap._tshark_rows("capture.pcap", None):
+            rows.append(row)
+    assert len(rows) == 1
