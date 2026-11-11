@@ -101,29 +101,29 @@ test('evidence dropped on the app', async () => {
 })
 
 test('the host tabs', async () => {
-  await tabs().getByText('Event Logs').click()
+  await tabs().getByRole('button', { name: 'Event Logs', exact: true }).click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('event-logs')
-  await tabs().getByText('Endpoint Artifacts').click()
+  await tabs().getByRole('button', { name: 'Endpoint Artifacts', exact: true }).click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('endpoint')
-  await tabs().getByText('Browser Forensics').click()
+  await tabs().getByRole('button', { name: 'Browser Forensics', exact: true }).click()
   await page
     .getByRole('navigation', { name: 'Browser analysis sections' })
     .getByRole('button', { name: /^Bookmarks/ })
     .click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('browser')
-  await tabs().getByText('Command History').click()
+  await tabs().getByRole('button', { name: 'Command History', exact: true }).click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('commands')
 })
 
 test('the threat tabs', async () => {
-  await tabs().getByText('Mail Analysis').click()
+  await tabs().getByRole('button', { name: 'Mail Analysis', exact: true }).click()
   await expect(page.getByText(/^phishing · \d+$/)).toBeVisible({ timeout: 30_000 })
   await shot('mail')
-  await tabs().getByText('Malware Analysis').click()
+  await tabs().getByRole('button', { name: 'Malware Analysis', exact: true }).click()
   await page.getByRole('list', { name: 'Samples' }).getByText('invoice_0423.pdf.exe').click()
   await expect(page.getByText('PE32 executable').first()).toBeVisible({ timeout: 30_000 })
   await shot('malware')
@@ -154,7 +154,7 @@ test('an address scanned by the isolated browser', async () => {
   // DOCS_SCAN_URL: an address the isolated browser worker can reach that serves
   // e2e/fixtures/signin.html (the worker refuses private addresses).
   test.skip(!process.env.E2E_BROWSER_URL || !process.env.DOCS_SCAN_URL, 'no isolated browser or no page to scan')
-  await tabs().getByText('URL Analysis').click()
+  await tabs().getByRole('button', { name: 'URL Analysis', exact: true }).click()
   await page.getByLabel('Address to scan').fill(process.env.DOCS_SCAN_URL)
   await page.getByRole('button', { name: 'Scan', exact: true }).click()
   await expect(page.getByText('WHY THIS VERDICT')).toBeVisible({ timeout: 120_000 })
@@ -165,7 +165,7 @@ test('an address scanned by the isolated browser', async () => {
 
 test('a packet capture', async () => {
   test.skip(!process.env.E2E_PCAP_URL, 'the packet capture worker is not running')
-  await tabs().getByText('Network Analysis').click()
+  await tabs().getByRole('button', { name: 'Network Analysis', exact: true }).click()
   await page
     .getByRole('button', { name: 'Upload packet captures' })
     .locator('input[type=file]')
@@ -182,13 +182,13 @@ test('a packet capture', async () => {
 })
 
 test('the overview tabs', async () => {
-  await tabs().getByText('Timeline').click()
+  await tabs().getByRole('button', { name: 'Timeline', exact: true }).click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('timeline')
-  await tabs().getByText('IOCs').click()
+  await tabs().getByRole('button', { name: 'IOCs', exact: true }).click()
   await expect(page.getByRole('button', { name: '185.220.101.47', exact: true })).toBeVisible({ timeout: 20_000 })
   await shot('iocs')
-  await tabs().getByText('Summary').click()
+  await tabs().getByRole('button', { name: 'Summary', exact: true }).click()
   await expect(page.getByText('Incident details')).toBeVisible()
   await shot('summary')
 })

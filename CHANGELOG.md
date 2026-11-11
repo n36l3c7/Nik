@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.1] - 2026-11-11
+
+### Changed
+
+- **Tab bar**: when the full labels do not fit it switches to one-word
+  labels, then to icons only, instead of scrolling sideways. The open tab
+  keeps its full label; every tab keeps its full name as a tooltip and for
+  assistive technology.
+- **Controls line up**: buttons have a fixed height per size (36, 32 and
+  28 px) and icon-only buttons are square; the header's search, report, user
+  and sign-out controls share one height.
+- The lists of the Mail, Malware and Network tabs remember whether they were
+  closed; the URL tab's list can be closed too.
+
+### Added
+
+- A real favicon for the app (SVG, with PNG versions for older browsers and
+  home screens) and for the documentation site.
+
 ## [2.22.0] - 2026-11-11
 
 ### Added

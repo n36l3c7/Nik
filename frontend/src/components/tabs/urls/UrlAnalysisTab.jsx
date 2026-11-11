@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink, Globe, Link2, Network, RefreshCw, Search, Trash2 } from 'lucide-react'
+import {
+  ExternalLink,
+  Globe,
+  Link2,
+  Network,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import { AsciiSkull, Badge, Button, Card, EmptyState, MicroSkull } from '../../ui/index.js'
 import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
@@ -8,6 +18,7 @@ import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../services/api.js'
 import { displayUrl, isScanning, scanBadge, urlFromText } from '../../../domain/urlscan.js'
 import { formatDateTime, anyToMs } from '../../../lib/time.js'
+import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import RemoteBrowser from '../mail/RemoteBrowser.jsx'
 import RequestLog from '../network/RequestLog.jsx'
 
@@ -263,6 +274,7 @@ export default function UrlAnalysisTab({ incident }) {
   const [formError, setFormError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [browsing, setBrowsing] = useState(null)
+  const [listOpen, setListOpen] = useStoredBoolean('nik.list.urls', true)
 
   useEffect(() => {
     if (!scans.some((s) => s.id === selected)) setSelected(scans[0]?.id ?? null)
@@ -381,9 +393,28 @@ export default function UrlAnalysisTab({ incident }) {
 
   const shown = current ? { ...current, ...(detail ?? {}) } : null
   return (
-    <div className={standalone ? 'grid gap-4' : 'grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]'}>
-      {!standalone && (
-        <Card title={`Addresses · ${scans.length}`} icon={Link2} bodyClassName="p-0">
+    <div
+      className={
+        standalone
+          ? 'grid gap-4'
+          : `grid gap-4 ${listOpen ? 'lg:grid-cols-[280px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`
+      }
+    >
+      {standalone ? null : listOpen ? (
+        <Card
+          title={`Addresses · ${scans.length}`}
+          icon={Link2}
+          actions={
+            <Button
+              variant="ghost"
+              size="xs"
+              icon={PanelLeftClose}
+              aria-label="Hide the address list"
+              onClick={() => setListOpen(false)}
+            />
+          }
+          bodyClassName="p-0"
+        >
           <ul aria-label="Addresses">
             {scans.map((scan) => {
               const badge = scanBadge(details[scan.id] ?? scan)
@@ -408,6 +439,16 @@ export default function UrlAnalysisTab({ incident }) {
           </ul>
           <div className="border-t border-line p-3">{form}</div>
         </Card>
+      ) : (
+        <div>
+          <Button
+            variant="ghost"
+            size="xs"
+            icon={PanelLeftOpen}
+            aria-label="Show the address list"
+            onClick={() => setListOpen(true)}
+          />
+        </div>
       )}
 
       {shown && (

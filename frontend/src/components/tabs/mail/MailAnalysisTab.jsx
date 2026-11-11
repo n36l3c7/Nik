@@ -9,6 +9,7 @@ import RemoteBrowser, { OpenBrowserDialog } from './RemoteBrowser.jsx'
 import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
+import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api, upload } from '../../../services/api.js'
 import { formatDateTime } from '../../../lib/time.js'
@@ -76,7 +77,7 @@ export default function MailAnalysisTab({ incident }) {
   const [detailErrors, setDetailErrors] = useState({})
   const [progress, setProgress] = useState(null)
   const [uploadError, setUploadError] = useState(null)
-  const [listOpen, setListOpen] = useState(true)
+  const [listOpen, setListOpen] = useStoredBoolean('nik.list.mail', true)
   const [removing, setRemoving] = useState(false)
   const [reanalysing, setReanalysing] = useState(false)
   const [downloading, setDownloading] = useState(null)

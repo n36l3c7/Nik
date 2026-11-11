@@ -24,6 +24,7 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
  * Each entry describes a tab:
  *  - id:          unique identifier (used to select the tab)
  *  - label:       label shown in the tab bar
+ *  - short:       one-word label the tab bar uses when the full ones do not fit
  *  - icon:        Lucide icon shown next to the label
  *  - group:       tab bar group, in this order: 'overview' (what the incident
  *                 adds up to), 'threats' (mail, samples, network, URLs) and 'host'
@@ -54,6 +55,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'summary',
     label: 'Summary',
+    short: 'Summary',
     group: 'overview',
     icon: LayoutDashboard,
     component: SummaryTab,
@@ -63,6 +65,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'timeline',
     label: 'Timeline',
+    short: 'Timeline',
     group: 'overview',
     icon: ListTree,
     component: TimelineTab,
@@ -74,6 +77,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'iocs',
     label: 'IOCs',
+    short: 'IOCs',
     group: 'overview',
     icon: Crosshair,
     component: IocsTab,
@@ -85,6 +89,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'mail',
     label: 'Mail Analysis',
+    short: 'Mail',
     group: 'threats',
     icon: Mail,
     component: MailAnalysisTab,
@@ -100,6 +105,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'malware',
     label: 'Malware Analysis',
+    short: 'Malware',
     group: 'threats',
     icon: Bug,
     component: MalwareAnalysisTab,
@@ -115,6 +121,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'network',
     label: 'Network Analysis',
+    short: 'Network',
     group: 'threats',
     icon: Network,
     component: NetworkAnalysisTab,
@@ -130,6 +137,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'urls',
     label: 'URL Analysis',
+    short: 'URL',
     group: 'threats',
     icon: Link2,
     component: UrlAnalysisTab,
@@ -144,6 +152,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'endpoint',
     label: 'Endpoint Artifacts',
+    short: 'Endpoint',
     group: 'host',
     icon: HardDrive,
     component: EndpointArtifactsTab,
@@ -158,6 +167,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'eventlogs',
     label: 'Event Logs',
+    short: 'Events',
     group: 'host',
     icon: ScrollText,
     component: EventLogsTab,
@@ -172,6 +182,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'browser',
     label: 'Browser Forensics',
+    short: 'Browser',
     group: 'host',
     icon: Globe,
     component: BrowserAnalysisTab,
@@ -187,6 +198,7 @@ export const ANALYSIS_TABS = [
   {
     id: 'commands',
     label: 'Command History',
+    short: 'Commands',
     group: 'host',
     icon: TerminalSquare,
     component: CommandHistoryTab,

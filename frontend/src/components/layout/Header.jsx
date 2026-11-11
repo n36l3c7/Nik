@@ -26,10 +26,10 @@ export default function Header({ onOpenSearch, onOpenReport, artifactView = fals
   const os = activeIncident ? getOsById(activeIncident.os) : null
   const OsIcon = os?.icon
 
-  // Shared styling for the square icon buttons on the right.
+  // Every control on the right is 36 px tall, so they line up.
   const iconButton =
-    'border border-line p-2 text-fg-muted transition-colors hover:bg-raised hover:text-fg ' +
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+    'flex h-9 w-9 shrink-0 items-center justify-center border border-line text-fg-muted transition-colors ' +
+    'hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
   return (
     <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-canvas px-6 py-3">
@@ -70,7 +70,7 @@ export default function Header({ onOpenSearch, onOpenReport, artifactView = fals
           onClick={onOpenSearch}
           aria-label="Search"
           title="Search incidents, indicators, samples and events (Ctrl/Cmd+K or /)"
-          className="hidden items-center gap-2 border border-line px-2.5 py-1.5 font-mono text-xs text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:inline-flex"
+          className="hidden h-9 items-center gap-2 border border-line px-2.5 font-mono text-xs text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:inline-flex"
         >
           <Search className="h-3.5 w-3.5" />
           <span>search…</span>
@@ -89,12 +89,14 @@ export default function Header({ onOpenSearch, onOpenReport, artifactView = fals
         )}
 
         {currentUser && (
-          <div className="hidden items-center gap-2 border border-line px-2.5 py-1.5 sm:flex">
-            <UserCircle className="h-5 w-5 shrink-0 text-fg-muted" aria-hidden="true" />
-            <div className="min-w-0 leading-tight">
-              <p className="truncate font-mono text-xs text-fg">{currentUser.username}</p>
-              <p className="truncate text-[11px] capitalize text-fg-muted">{currentUser.role}</p>
-            </div>
+          <div
+            className="hidden h-9 items-center gap-2 border border-line px-2.5 sm:flex"
+            title={`Signed in as ${currentUser.username} (${currentUser.role})`}
+          >
+            <UserCircle className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
+            <p className="max-w-40 truncate font-mono text-xs text-fg">
+              {currentUser.username} <span className="capitalize text-fg-muted">· {currentUser.role}</span>
+            </p>
           </div>
         )}
 
