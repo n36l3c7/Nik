@@ -24,6 +24,16 @@ COPY alembic.ini ./alembic.ini
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x entrypoint.sh
 
+# The server runs as this user. The container still starts as root, only so
+# the entrypoint can hand a sample store created by an older release to it
+# (see entrypoint.sh), and steps down before anything else runs. The
+# filesystem is read-only in the stack: caches go to /tmp.
+RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin nik \
+    && mkdir -p /app/samples \
+    && chown nik:nik /app/samples
+ENV HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache
+
 EXPOSE 8000
 
 # Alembic owns the schema in the container (the entrypoint runs migrations),
@@ -33,4 +43,4 @@ ENV WEB_CONCURRENCY=2 \
     RUN_CREATE_ALL=false
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", \
-     "--bind", "0.0.0.0:8000"]
+     "--bind", "0.0.0.0:8000", "--worker-tmp-dir", "/dev/shm"]

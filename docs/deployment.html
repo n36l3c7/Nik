@@ -47,28 +47,34 @@
         The fastest way to run the whole stack — nginx (static SPA + <code>/api</code> reverse proxy), the FastAPI
         backend and PostgreSQL — is the bundled Compose file:
       </p>
-      <pre><code class="language-bash">cp .env.example .env          # then edit DB_PASSWORD and SECRET_KEY
+      <pre><code class="language-bash">deploy/init-env.sh            # writes .env with fresh random secrets
 docker compose up -d --build  # build the images and start the whole stack
 </code></pre>
       <p>
         Open <strong>https://localhost:8443</strong> and create the first user — that account becomes the
-        <strong>admin</strong>. Database tables are created automatically on the API's first start, so there is nothing
-        to migrate.
+        <strong>admin</strong>, so do it before anyone else can reach the port. The database schema is created and
+        migrated by the <code>api</code> container at every start.
+      </p>
+      <p>
+        The stack does not start without its secrets (<code>DB_PASSWORD</code>, <code>SECRET_KEY</code> and one token
+        per analysis worker) and refuses the values printed in <code>.env.example</code>, which are public.
+        <code>deploy/init-env.sh</code> generates them; it is safe to run again.
       </p>
       <blockquote>
         <p>
           On first start the <code>web</code> container self-signs a TLS certificate, so the browser shows a one-time
           "connection not private" warning — accept it to proceed (or mount a real certificate, see Docker / Podman in
-          production). Plain HTTP stays available on <strong>http://localhost:8080</strong>.
+          production). Nothing is served over plain HTTP: <strong>http://localhost:8080</strong> redirects to the HTTPS
+          address.
         </p>
       </blockquote>
       <pre><code class="language-bash">docker compose logs -f api    # follow backend logs
 docker compose ps             # container status
 docker compose down           # stop (keeps the database volume)
-docker compose down -v        # stop AND delete the database volume (wipes data)
+docker compose down -v        # stop AND delete every volume: database, samples, certificate
 </code></pre>
       <p>Podman is a drop-in replacement (rootless is fine for ports 8080/8443):</p>
-      <pre><code class="language-bash">cp .env.example .env
+      <pre><code class="language-bash">deploy/init-env.sh
 podman-compose up -d --build  # or: podman compose up -d --build
 </code></pre>
       <p>
@@ -93,11 +99,11 @@ podman-compose up -d --build  # or: podman compose up -d --build
       </blockquote>
       <h3 id="docker-podman-in-production">Docker / Podman in production</h3>
       <p>
-        The Compose stack publishes plain HTTP on <code>:8080</code> and HTTPS on <code>:8443</code>. On first start the
-        <code>web</code> container <strong>self-signs a certificate</strong> (for <code>TLS_HOSTNAME</code>, default
-        <code>localhost</code>) into the <code>web-certs</code> volume, so HTTPS works out of the box — browsers show
-        the usual warning until the certificate is trusted or replaced. For a real deployment set
-        <code>COOKIE_SECURE=true</code> and pick one of:
+        The Compose stack serves the app over HTTPS on <code>:8443</code>; <code>:8080</code> only redirects there. On
+        first start the <code>web</code> container <strong>self-signs a certificate</strong> (for
+        <code>TLS_HOSTNAME</code>, default <code>localhost</code>) into the <code>web-certs</code> volume, so HTTPS
+        works out of the box — browsers show the usual warning until the certificate is trusted or replaced. Set
+        <code>TLS_HOSTNAME</code> to the name users type, and for a real deployment pick one of:
       </p>
       <ul>
         <li>
@@ -108,7 +114,8 @@ podman-compose up -d --build  # or: podman compose up -d --build
         </li>
         <li>
           <strong>Option B:</strong> front the stack with a host reverse proxy that terminates TLS (nginx, Caddy,
-          Traefik) proxying to <code>127.0.0.1:8080</code>, and remove the <code>8443</code> port mapping.
+          Traefik) proxying to <code>https://127.0.0.1:8443</code> (the upstream certificate is the self-signed one:
+          tell the proxy to accept it), and bind the two port mappings to <code>127.0.0.1</code>.
         </li>
       </ul>
       <p>
@@ -210,7 +217,44 @@ podman restart nik_api_1    # also gives the restored samples their permissions
       <pre><code class="language-bash">git pull
 podman compose up -d --build    # rebuild images, recreate containers, keep data
 </code></pre>
-      <p>Release notes say when an update needs more than this, as the move to PostgreSQL 18 below does.</p>
+      <p>Release notes say when an update needs more than this, as 3.0 and the move to PostgreSQL 18 below do.</p>
+      <h4 id="upgrading-to-30">Upgrading to 3.0</h4>
+      <p>
+        Release 3.0 makes the safe configuration the only one: the stack no longer starts with secrets that are missing
+        or still at their example values, plain HTTP only redirects to HTTPS, and the backend runs unprivileged. Coming
+        from 2.x, on the server:
+      </p>
+      <pre><code class="language-bash">cd /opt/Nik &amp;&amp; git pull
+sudo deploy/backup.sh /var/backups/nik    # as before every upgrade
+sudo deploy/init-env.sh                   # completes .env, changes nothing that is already good
+sudo podman compose up -d --build
+</code></pre>
+      <ul>
+        <li>
+          <code>deploy/init-env.sh</code> generates what <code>.env</code> lacks. If <code>SECRET_KEY</code> was never
+          set (or is an example value), it writes a new one and keeps the old as <code>SECRET_KEY_PREVIOUS</code>: at
+          the next start the provider API keys and TLS key logs already stored are re-encrypted with the new key, and
+          the line can then be removed. If <code>DB_PASSWORD</code> was never set, it writes the old default, which is
+          what the existing database uses.
+        </li>
+        <li>
+          Everyone now uses <strong>https://&lt;host&gt;:8443</strong>; <code>http://&lt;host&gt;:8080</code> answers
+          with a redirect to it. The session cookie is <code>Secure</code>, so everyone signs in once more. A line
+          <code>COOKIE_SECURE=false</code> left in <code>.env</code> should be removed.
+        </li>
+        <li>
+          The sample store volume is handed to the unprivileged user on the first start (one
+          <code>chown</code>, logged by the <code>api</code> container).
+        </li>
+        <li>
+          <code>/api/metrics</code> is no longer reachable through the web port: scrape
+          <code>http://api:8000/api/metrics</code> on the compose network, optionally with <code>METRICS_TOKEN</code>.
+        </li>
+      </ul>
+      <p>
+        If the stack refuses to start, the <code>api</code> container's log says which secret is missing or public and
+        how to set it.
+      </p>
       <h4 id="upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18 (2.12.2)</h4>
       <p>
         Releases up to 2.12.1 run PostgreSQL 16 on the <code>db-data</code> volume. From 2.12.2 the Compose file runs

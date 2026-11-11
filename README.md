@@ -45,27 +45,33 @@ every action is attributed to a named analyst in the audit log.
 
 ```bash
 git clone https://github.com/n36l3c7/Nik.git && cd Nik
-cp .env.example .env              # set DB_PASSWORD, SECRET_KEY and the *_TOKEN values
+deploy/init-env.sh                # writes .env with fresh random secrets
 docker compose up -d --build      # or: podman compose up -d --build
 ```
 
 Open **https://localhost:8443** (the certificate is self-signed on first
-start) and create the first account: it becomes the admin.
+start) and create the first account: it becomes the admin. Plain HTTP on
+port 8080 only redirects there.
+
+The stack does not start without its secrets and refuses the example
+values, which are public. Upgrading from 2.x: see
+[Upgrading to 3.0](https://n36l3c7.github.io/Nik/deployment.html#upgrading-to-30).
 
 Production, TLS certificates, start on boot, nightly backups and a manual
 install on RHEL: see [Deployment](https://n36l3c7.github.io/Nik/deployment.html).
 
 ## Configuration
 
-Compose reads `.env`. The values to set before the first start:
+Compose reads `.env`, which `deploy/init-env.sh` creates. The values that
+matter before the first start:
 
 | Variable | Purpose |
 | --- | --- |
-| `DB_PASSWORD` | PostgreSQL password. |
-| `SECRET_KEY` | Signs the sessions and encrypts stored API keys; a long random string (`openssl rand -hex 32`). |
-| `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN` | Shared secrets between the API and each analysis worker; one random value each. |
+| `DB_PASSWORD` | PostgreSQL password (generated). |
+| `SECRET_KEY` | Encrypts the provider API keys and TLS key logs stored in the database (generated). Keep it with the backups; change it only together with `SECRET_KEY_PREVIOUS`. |
+| `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN` | Shared secrets between the API and each analysis worker (generated). |
 | `TLS_HOSTNAME` | Name users type in the browser, written into the self-signed certificate. |
-| `WEB_PORT`, `WEB_TLS_PORT` | Published HTTP and HTTPS ports (8080, 8443). |
+| `WEB_TLS_PORT`, `WEB_PORT` | Published HTTPS port (8443) and the HTTP port that redirects to it (8080). |
 
 Every other variable and the in-app settings are in the
 [configuration reference](https://n36l3c7.github.io/Nik/configuration.html).

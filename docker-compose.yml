@@ -1,24 +1,34 @@
-# Nik — full stack (nginx static + FastAPI + PostgreSQL) in three containers.
+# Nik — the full stack: nginx (static app + reverse proxy), the FastAPI
+# backend, PostgreSQL and the five analysis workers.
 #
 # Works with both `docker compose` and `podman-compose` (and `podman compose`).
-# Copy .env.example to .env and adjust the secrets before running in production.
 #
+#   deploy/init-env.sh                # writes .env with fresh random secrets
 #   docker compose up -d --build      # or: podman-compose up -d --build
 #
-# The app is then reachable on https://localhost:8443 (self-signed certificate
-# generated on first start — the browser warning is expected) and on plain
-# http://localhost:8080. See the README for using a real certificate.
+# The stack does not start without its secrets (the variables marked `:?`
+# below) and refuses the example values. The app is then reachable on
+# https://localhost:8443 (self-signed certificate generated on first start —
+# the browser warning is expected); http://localhost:8080 only redirects
+# there. See the README for using a real certificate.
+
+# Container logs are rotated: an unbounded log fills the disk of a server that
+# stays up for months.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
 
 services:
   db:
     image: docker.io/library/postgres:18-alpine
     # Refuses to create an empty cluster while unmigrated PostgreSQL 16 data
-    # sits on the old volume (see deploy/db-entrypoint.sh and README § 2.1).
+    # sits on the old volume (see deploy/db-entrypoint.sh and the deployment guide).
     entrypoint: ["/usr/local/bin/nik-db-entrypoint.sh"]
     command: ["postgres"]
     environment:
       POSTGRES_USER: nik
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-nik}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set, run deploy/init-env.sh}
       POSTGRES_DB: nik
       NIK_PG_UPGRADE: ${NIK_PG_UPGRADE:-}
     volumes:
@@ -33,19 +43,33 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    pids_limit: 512
+    logging: *logging
     restart: unless-stopped
 
+  # The backend. It parses evidence that may be hostile, so it runs as an
+  # unprivileged user on a read-only filesystem, with no capabilities beyond
+  # the three its entrypoint needs to hand an old sample store to that user
+  # and step down from root, and with memory, CPU and process limits.
   api:
     build: ./backend
     environment:
       # Passed as separate parts: the backend assembles the URL itself with
       # proper escaping, so DB_PASSWORD may contain %, @, : and friends.
       DB_HOST: db
-      DB_PASSWORD: ${DB_PASSWORD:-nik}
-      SECRET_KEY: ${SECRET_KEY:-please-change-this-secret}
-      # HTTP quick-start on :8080 → cookie cannot be Secure. Set to true once you
-      # put the app behind HTTPS (see the README).
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set, run deploy/init-env.sh}
+      # Encrypts the provider API keys and TLS key logs stored in the database:
+      # keep it with the backups. SECRET_KEY_PREVIOUS (the old value, for one
+      # start) lets it be changed without losing them.
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set, run deploy/init-env.sh}
+      SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
+      # The app is served over HTTPS only, so the session cookie is Secure.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # The client address comes from nginx (X-Forwarded-For), the only thing
+      # that reaches this port: rate limits and lock-outs are per client.
+      FORWARDED_ALLOW_IPS: "*"
+      # Optional bearer token for /api/metrics (never published by nginx).
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
       # Malware samples: raw files on a named volume (the database holds only
       # their analysis). Exclude it from any antivirus on the host.
@@ -53,20 +77,20 @@ services:
       SAMPLE_MAX_MB: ${SAMPLE_MAX_MB:-100}
       # Disassembly worker (rizin), reachable only on the internal network.
       ANALYZER_URL: http://analyzer:8700
-      ANALYZER_TOKEN: ${ANALYZER_TOKEN:-please-change-this-analyzer-token}
+      ANALYZER_TOKEN: ${ANALYZER_TOKEN:?ANALYZER_TOKEN is not set, run deploy/init-env.sh}
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
       # capa worker (capabilities, ATT&CK / MBC), same internal network.
       CAPA_URL: http://capa:8710
-      CAPA_TOKEN: ${CAPA_TOKEN:-please-change-this-capa-token}
+      CAPA_TOKEN: ${CAPA_TOKEN:?CAPA_TOKEN is not set, run deploy/init-env.sh}
       CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
       # Mail attachment previews (documents) and the isolated browser.
       DOCVIEW_URL: http://docview:8720
-      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:-please-change-this-docview-token}
+      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
       BROWSER_URL: http://browser:8730
-      BROWSER_TOKEN: ${BROWSER_TOKEN:-please-change-this-browser-token}
+      BROWSER_TOKEN: ${BROWSER_TOKEN:?BROWSER_TOKEN is not set, run deploy/init-env.sh}
       # Packet captures (Network Analysis), read with Wireshark's engine.
       PCAP_URL: http://pcap:8740
-      PCAP_TOKEN: ${PCAP_TOKEN:-please-change-this-pcap-token}
+      PCAP_TOKEN: ${PCAP_TOKEN:?PCAP_TOKEN is not set, run deploy/init-env.sh}
       PCAP_MAX_MB: ${PCAP_MAX_MB:-500}
     volumes:
       - sample-store:/app/samples
@@ -74,6 +98,26 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${API_MEMORY:-4g}
+    cpus: ${API_CPUS:-4}
+    pids_limit: 512
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # Migrations run before the server answers.
+      start_period: 120s
+    logging: *logging
     restart: unless-stopped
 
   # Disassembles samples with rizin for the Code view. It reads the sample store
@@ -83,7 +127,7 @@ services:
   analyzer:
     build: ./workers/analyzer
     environment:
-      ANALYZER_TOKEN: ${ANALYZER_TOKEN:-please-change-this-analyzer-token}
+      ANALYZER_TOKEN: ${ANALYZER_TOKEN:?ANALYZER_TOKEN is not set, run deploy/init-env.sh}
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
       ANALYZER_DECOMPILE_SECONDS: ${ANALYZER_DECOMPILE_SECONDS:-300}
       ANALYZER_MAX_JOBS: ${ANALYZER_MAX_JOBS:-2}
@@ -101,6 +145,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${ANALYZER_MEMORY:-4g}
     cpus: ${ANALYZER_CPUS:-2}
+    pids_limit: 512
+    logging: *logging
     restart: unless-stopped
 
   # Runs Mandiant capa on samples for the Capabilities view, one at a time
@@ -110,7 +156,7 @@ services:
   capa:
     build: ./workers/capa
     environment:
-      CAPA_TOKEN: ${CAPA_TOKEN:-please-change-this-capa-token}
+      CAPA_TOKEN: ${CAPA_TOKEN:?CAPA_TOKEN is not set, run deploy/init-env.sh}
       CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
     volumes:
       - sample-store:/samples:ro
@@ -121,6 +167,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${CAPA_MEMORY:-4g}
     cpus: ${CAPA_CPUS:-2}
+    pids_limit: 512
+    logging: *logging
     restart: unless-stopped
 
   # Turns mail attachments (PDF, Office, OpenDocument, RTF, images) into page
@@ -130,7 +178,7 @@ services:
   docview:
     build: ./workers/docview
     environment:
-      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:-please-change-this-docview-token}
+      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
     networks: [analysis]
     read_only: true
     tmpfs: [/tmp]
@@ -138,6 +186,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${DOCVIEW_MEMORY:-2g}
     cpus: ${DOCVIEW_CPUS:-1}
+    pids_limit: 512
+    logging: *logging
     restart: unless-stopped
 
   # Reads packet captures with Wireshark's engine (tshark for the summary,
@@ -148,7 +198,7 @@ services:
   pcap:
     build: ./workers/pcap
     environment:
-      PCAP_TOKEN: ${PCAP_TOKEN:-please-change-this-pcap-token}
+      PCAP_TOKEN: ${PCAP_TOKEN:?PCAP_TOKEN is not set, run deploy/init-env.sh}
     volumes:
       - sample-store:/samples:ro
     networks: [analysis]
@@ -158,6 +208,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${PCAP_MEMORY:-4g}
     cpus: ${PCAP_CPUS:-2}
+    pids_limit: 512
+    logging: *logging
     restart: unless-stopped
 
   # Isolated browser: opens HTML attachments and links in Chromium and sends
@@ -169,7 +221,7 @@ services:
   browser:
     build: ./workers/browser
     environment:
-      BROWSER_TOKEN: ${BROWSER_TOKEN:-please-change-this-browser-token}
+      BROWSER_TOKEN: ${BROWSER_TOKEN:?BROWSER_TOKEN is not set, run deploy/init-env.sh}
       BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-3}
     networks: [analysis, browser-egress]
     read_only: true
@@ -179,6 +231,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${BROWSER_MEMORY:-2g}
     cpus: ${BROWSER_CPUS:-2}
+    pids_limit: 512
+    logging: *logging
     restart: unless-stopped
 
   web:
@@ -186,7 +240,10 @@ services:
     environment:
       # Name users type in the browser; goes into the self-signed certificate.
       TLS_HOSTNAME: ${TLS_HOSTNAME:-localhost}
+      # The HTTPS port as published below: plain HTTP redirects to it.
+      TLS_PORT: ${WEB_TLS_PORT:-8443}
     ports:
+      # Plain HTTP: answers only with a redirect to HTTPS.
       - "${WEB_PORT:-8080}:80"
       - "${WEB_TLS_PORT:-8443}:443"
     volumes:
@@ -194,7 +251,22 @@ services:
       # Mount your own nik.crt / nik.key here to use a real certificate.
       - web-certs:/etc/nginx/certs
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    cap_drop: [ALL]
+    # nginx binds 80/443 and steps down to its own user.
+    cap_add: [CHOWN, SETUID, SETGID, NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${WEB_MEMORY:-512m}
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --no-check-certificate -O /dev/null https://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+    logging: *logging
     restart: unless-stopped
 
 volumes:

@@ -180,7 +180,8 @@
 │   ├── locking.py                  # Row lock every writer of an incident document takes first
 │   ├── audit.py                    # record(): the audit trail, written by the handlers;
 │   │                               #   describe_patch(): what a merge patch means (flag, note, status…)
-│   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY)
+│   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY);
+│   │                               #   re-encryption after SECRET_KEY changes (SECRET_KEY_PREVIOUS)
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
 ├── workers/                        # Clients of the analysis workers
@@ -794,8 +795,8 @@
         Passwords are hashed with <strong>bcrypt on the server</strong> (<code>backend/app/core/security.py</code>). A
         successful <code>POST /api/auth/login</code> creates a server-side session row and sets the
         <strong>httpOnly</strong> <code>nik_session</code> cookie (with the <code>Secure</code> flag when
-        <code>COOKIE_SECURE=true</code>); <code>credentials: 'include'</code> on every fetch keeps it flowing. Sessions
-        expire after <code>SESSION_TTL_HOURS</code>.
+        <code>COOKIE_SECURE=true</code>, the default); <code>credentials: 'include'</code> on every fetch keeps it
+        flowing. Sessions expire after <code>SESSION_TTL_HOURS</code>.
       </p>
       <p>
         User shape: <code>{ id, username, role: 'admin' | 'analyst', createdAt, createdBy, disabled }</code> — the
@@ -1253,9 +1254,10 @@
       <p>
         <strong>Keys</strong> are entered by admins and stored in <code>integration_keys</code>, encrypted with Fernet
         under a key derived from <code>SECRET_KEY</code> (HKDF, <code>vault.py</code>): the API returns only whether a
-        key is set and its last four characters. Changing <code>SECRET_KEY</code> makes the stored keys unreadable
-        (Settings says so): enter them again. Requests use the standard library (<code>urllib</code>), so
-        <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> apply; a transparent proxy needs nothing.
+        key is set and its last four characters. Changing <code>SECRET_KEY</code> without
+        <code>SECRET_KEY_PREVIOUS</code> makes the stored keys unreadable (Settings says so): enter them again. Requests
+        use the standard library (<code>urllib</code>), so <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> apply; a
+        transparent proxy needs nothing.
       </p>
       <h2 id="attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</h2>
       <p>

@@ -84,9 +84,17 @@ class Settings:
         # password gets escaped automatically) — see _database_url().
         self.DATABASE_URL: str = _database_url()
 
-        # Secret key. Reserved for signing/entropy purposes. Session tokens are
-        # random hex, but a stable secret is still good practice in production.
+        # Secret key: the provider API keys and TLS key logs stored in the
+        # database are encrypted under it (core/vault.py), so it must be kept
+        # with the backups. Session tokens are random and do not depend on it.
+        # The default is for development only: the container refuses it
+        # (app/preflight.py).
         self.SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-insecure-change-me")
+        # Old values of SECRET_KEY (comma-separated), set for one start after
+        # changing it: what they encrypted is re-encrypted with the new key.
+        self.SECRET_KEY_PREVIOUS: list[str] = [
+            value.strip() for value in os.getenv("SECRET_KEY_PREVIOUS", "").split(",") if value.strip()
+        ]
 
         # Whether the session cookie carries the Secure attribute (HTTPS only).
         # Default True for safety; set COOKIE_SECURE=false for plain-HTTP local dev.
@@ -100,6 +108,8 @@ class Settings:
 
         # Observability / ops.
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+        # When set, /api/metrics answers only to `Authorization: Bearer <token>`.
+        self.METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
         # When false, startup does NOT create tables (Alembic owns the schema).
         self.RUN_CREATE_ALL: bool = _get_bool("RUN_CREATE_ALL", True)
 

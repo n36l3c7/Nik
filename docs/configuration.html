@@ -71,7 +71,26 @@
             <tr>
               <td><code>SECRET_KEY</code></td>
               <td><code>dev-insecure-change-me</code></td>
-              <td>Signing / entropy secret. Set a long random value in production.</td>
+              <td>
+                Encrypts the secrets stored in the database (threat-intelligence API keys, TLS key logs of captures).
+                Without it they cannot be read again, so keep it with the backups. The default is for development: the
+                container refuses it, and any value shorter than 16 characters.
+              </td>
+            </tr>
+            <tr>
+              <td><code>SECRET_KEY_PREVIOUS</code></td>
+              <td>—</td>
+              <td>
+                Old values of <code>SECRET_KEY</code>, comma-separated, set for one start after changing it: what they
+                encrypted is still read and is re-encrypted with the new key.
+              </td>
+            </tr>
+            <tr>
+              <td><code>METRICS_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                When set, <code>/api/metrics</code> answers only to <code>Authorization: Bearer &lt;token&gt;</code>.
+              </td>
             </tr>
             <tr>
               <td><code>COOKIE_SECURE</code></td>
@@ -201,8 +220,10 @@
 
       <h2 id="compose">Compose</h2>
       <p>
-        Variables of the root <code>.env</code> (see <code>.env.example</code>), read by
-        <code>docker-compose.yml</code>.
+        Variables of the root <code>.env</code>, read by <code>docker-compose.yml</code>. Create the file with
+        <code>deploy/init-env.sh</code>: it copies <code>.env.example</code> and replaces every placeholder secret with
+        a random value. The variables marked <em>required</em> have no default: Compose stops without them, and the
+        containers refuse the example values.
       </p>
       <div class="table-wrap">
         <table>
@@ -216,26 +237,42 @@
           <tbody>
             <tr>
               <td><code>DB_PASSWORD</code></td>
-              <td><code>nik</code></td>
-              <td>PostgreSQL password, shared by the <code>db</code> and <code>api</code> services.</td>
+              <td><em>required</em></td>
+              <td>
+                PostgreSQL password, shared by the <code>db</code> and <code>api</code> services. It is set when the
+                database is first created; to change it later, change it in PostgreSQL too.
+              </td>
             </tr>
             <tr>
               <td><code>SECRET_KEY</code></td>
-              <td>—</td>
-              <td>Backend secret. Use a long random value, e.g. <code>openssl rand -hex 32</code>.</td>
+              <td><em>required</em></td>
+              <td>
+                Encrypts the provider API keys and TLS key logs stored in the database. Keep it with the backups. To
+                change it, put the old value in <code>SECRET_KEY_PREVIOUS</code> for one start.
+              </td>
             </tr>
             <tr>
               <td><code>COOKIE_SECURE</code></td>
-              <td><code>false</code></td>
-              <td>
-                Keep <code>false</code> while anyone still uses plain HTTP on <code>:8080</code>; set
-                <code>true</code> once everyone is on HTTPS.
-              </td>
+              <td><code>true</code></td>
+              <td>The app is served over HTTPS only, so the session cookie is <code>Secure</code>. Leave it.</td>
             </tr>
             <tr>
               <td><code>WEB_PORT</code></td>
               <td><code>8080</code></td>
-              <td>Host port the UI is published on (plain HTTP).</td>
+              <td>Host port for plain HTTP. It serves nothing: every request is redirected to HTTPS.</td>
+            </tr>
+            <tr>
+              <td><code>API_MEMORY</code>, <code>API_CPUS</code></td>
+              <td><code>4g</code>, <code>4</code></td>
+              <td>Limits of the backend container, which parses the evidence.</td>
+            </tr>
+            <tr>
+              <td><code>METRICS_TOKEN</code></td>
+              <td>—</td>
+              <td>
+                Bearer token for <code>/api/metrics</code>. nginx never publishes the endpoint: scrape
+                <code>http://api:8000/api/metrics</code> from the compose network.
+              </td>
             </tr>
             <tr>
               <td><code>WEB_TLS_PORT</code></td>
@@ -322,9 +359,11 @@
         </table>
       </div>
       <div class="note">
-        <strong>Two things that bite over plain HTTP:</strong> a session cookie with <code>COOKIE_SECURE=true</code>
-        is never stored by the browser, and the in-browser parsers need a secure context for some APIs (the clipboard,
-        for one). Use HTTPS as soon as you can.
+        <strong>What the stack enforces.</strong> The backend runs as an unprivileged user on a read-only filesystem
+        with memory, CPU and process limits, like the workers. nginx serves HTTPS only and sends a
+        Content-Security-Policy, <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>,
+        <code>Referrer-Policy</code> and HSTS with every page. Rate limits and account lock-outs are counted per client
+        address, as nginx sees it. Container logs are rotated at 20 MB.
       </div>
 
       <h2 id="settings">In-app settings</h2>

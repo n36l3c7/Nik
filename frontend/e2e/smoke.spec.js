@@ -16,6 +16,8 @@ const ADMIN = { username: 'admin', password: 'supersecret' }
 test.describe.configure({ mode: 'serial', retries: 0 })
 
 let page
+// What the Content-Security-Policy blocked, if anything: the suite ends by checking it is empty.
+const blocked = []
 
 /** Drop a fixture file on the app, as from the file manager, and import it where Nik proposes. */
 async function dropFixture(name) {
@@ -40,6 +42,9 @@ test.beforeAll(async ({ browser }) => {
   page = await browser.newPage()
   page.on('pageerror', (error) => {
     throw new Error(`Uncaught error in the page: ${error.message}`)
+  })
+  page.on('console', (message) => {
+    if (/Content Security Policy|Content-Security-Policy/i.test(message.text())) blocked.push(message.text())
   })
 })
 
@@ -894,6 +899,15 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await renamed.getByRole('button', { name: 'Delete user anna.b' }).click()
   await expect(renamed).toHaveCount(0)
   await settings.getByRole('button', { name: 'Close' }).click()
+})
+
+test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {
+  const headers = (await request.get('/')).headers()
+  expect(headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'")
+  expect(headers['content-security-policy']).toContain("frame-ancestors 'none'")
+  expect(headers['x-content-type-options']).toBe('nosniff')
+  expect(headers['x-frame-options']).toBe('DENY')
+  expect(blocked).toEqual([])
 })
 
 test('the API is reachable through the same origin', async ({ request }) => {

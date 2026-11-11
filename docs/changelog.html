@@ -37,6 +37,30 @@
       </p>
 
       <section class="release">
+        <h3>3.0.0 <span class="date">2026-11-11</span></h3>
+        <ul>
+          <li>
+            <span class="tag breaking">breaking</span> Secrets are required and the example values are refused;
+            <code>deploy/init-env.sh</code> writes them. See
+            <a href="deployment.html#upgrading-to-30">Upgrading to 3.0</a>.
+          </li>
+          <li>
+            <span class="tag breaking">breaking</span> HTTPS only: port 8080 redirects, the session cookie is Secure,
+            <code>/api/metrics</code> is no longer published.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The backend runs unprivileged on a read-only filesystem with
+            resource limits.
+          </li>
+          <li>
+            <span class="tag added">added</span> Security headers with a Content-Security-Policy;
+            <code>SECRET_KEY_PREVIOUS</code> to change the secret key without losing stored keys.
+          </li>
+          <li><span class="tag fixed">fixed</span> Rate limits and lock-outs are counted per client.</li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>2.28.0 <span class="date">2026-11-11</span></h3>
         <ul>
           <li>

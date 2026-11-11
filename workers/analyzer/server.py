@@ -124,8 +124,9 @@ def _expire_warm_sessions() -> None:
 
 
 if __name__ == "__main__":
-    if not TOKEN:
-        raise SystemExit("ANALYZER_TOKEN is not set: refusing to start without authentication.")
+    if not TOKEN or TOKEN.startswith("please-change-this"):
+        # An empty token, or the public one of the example file, protects nothing.
+        raise SystemExit("ANALYZER_TOKEN is not set (or is the example value): refusing to start.")
     print(f"nik-analyzer listening on :{PORT} (rizin {rizin_version()}, samples in {SAMPLE_DIR})", flush=True)
     threading.Thread(target=_expire_warm_sessions, name="warm-sessions", daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

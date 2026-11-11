@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-11
+
+The safe configuration is now the only one. Upgrading from 2.x needs one
+extra command (`deploy/init-env.sh`): see "Upgrading to 3.0" in the
+deployment guide.
+
+### Changed
+
+- **BREAKING: secrets are required.** `docker-compose.yml` has no default
+  for `DB_PASSWORD`, `SECRET_KEY` and the five worker tokens, and the
+  backend and the workers refuse the values of `.env.example`, which are
+  public. `deploy/init-env.sh` creates or completes `.env` with random
+  values and is safe to run again.
+- **BREAKING: HTTPS only.** Port 8080 answers every request with a redirect
+  to the HTTPS port, and the session cookie is `Secure` by default
+  (`COOKIE_SECURE=true`). The self-signed certificate is still generated on
+  first start when none is mounted.
+- **BREAKING: `/api/metrics` is not published by nginx** any more. Scrape
+  `http://api:8000/api/metrics` on the compose network; `METRICS_TOKEN`
+  optionally requires a bearer token.
+- The backend container runs as an unprivileged user on a read-only
+  filesystem, with no capabilities left after start-up and with memory, CPU
+  and process limits (`API_MEMORY`, `API_CPUS`). A sample store created by
+  an older release is handed to that user on the first start.
+- The web container is read-only, with the capabilities nginx needs and
+  nothing else; nginx is pinned to 1.30.
+- `web` waits for `api` to be healthy, so the app does not answer 502 while
+  migrations run. Every container has a process limit and rotated logs.
+
+### Added
+
+- `deploy/init-env.sh`.
+- `SECRET_KEY_PREVIOUS`: change `SECRET_KEY` without losing the provider API
+  keys and TLS key logs stored in the database. They are re-encrypted with
+  the new key at the next start.
+- Security headers on every page: a Content-Security-Policy that lets only
+  the app's own scripts run, `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy` and HSTS. The end-to-end tests
+  run under the same policy.
+
+### Fixed
+
+- Rate limits and account lock-outs counted every user as one client (the
+  address of the nginx container): ten failed sign-ins by anyone locked the
+  sign-in for everyone. They are counted per client address now, as nginx
+  sees it; a forwarded address sent by the client is ignored.
+- A scanner requesting random paths created one Prometheus time series per
+  path; unknown paths are counted under one label.
+
+### Security
+
+- A stack started without editing `.env` ran with a public `SECRET_KEY` (so
+  the "encrypted" API keys in a database dump were readable) and public
+  worker tokens. It no longer starts.
+
 ## [2.28.0] - 2026-11-11
 
 ### Added
