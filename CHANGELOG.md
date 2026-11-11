@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.26.0] - 2026-11-11
+
+### Added
+
+- **Keyboard shortcuts** on the row under the pointer (or the focused row):
+  `F` flags it or removes its flag, `C` asks for a comment. They run the
+  same items as the row's right-click menu, so they work in every list
+  that has one (events, samples, e-mails, captures, addresses, indicators,
+  functions, packets), and are off while typing or while a dialog is open.
+- `?`, or the keyboard button in the header, lists every shortcut. The
+  right-click menu shows the key next to Flag and Comment.
+
 ## [2.25.0] - 2026-11-11
 
 ### Added

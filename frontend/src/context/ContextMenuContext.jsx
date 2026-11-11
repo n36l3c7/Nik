@@ -8,10 +8,15 @@ import { Button, Modal } from '../components/ui/index.js'
  *
  * A component opts in with
  *   onContextMenu={(event) => openMenu(event, { title, items })}
- * where items are { label, icon?, hint?, onSelect, disabled?, indent? } or
+ * where items are { label, icon?, hint?, shortcut?, onSelect, disabled?, indent? } or
  * 'separator'. Everything else keeps the browser's own menu, and so do text
  * fields, selected text and Shift + right-click, so copy/paste still works.
  * Arrow keys move, Enter runs, Esc closes.
+ *
+ * runShortcut(kind, element) runs, without showing the menu, the item with that
+ * `shortcut` ('flag', 'comment') of the menu `element` would open on right-click:
+ * a key acts on a row exactly as its menu does. It resolves to { label, title }
+ * of the item that ran, or null when the element offers none.
  *
  * askText({ title, label, placeholder, confirm }) asks for a line of text in a
  * small dialog (e.g. a flag comment) and resolves to the text or null.
@@ -164,8 +169,21 @@ export function ContextMenuProvider({ children }) {
   const [menu, setMenu] = useState(null)
   const [prompt, setPrompt] = useState(null)
   const close = useCallback(() => setMenu(null), [])
+  // Set while runShortcut dispatches its event: openMenu then runs an item instead of showing the menu.
+  const shortcutRef = useRef(null)
 
   const openMenu = useCallback((event, { title = '', items = [] }) => {
+    const pending = shortcutRef.current
+    if (pending) {
+      const item = items.find((entry) => entry?.shortcut === pending.kind && !entry.disabled)
+      // None here: the event goes on to the elements around, as a right-click would.
+      if (!item) return false
+      event.preventDefault()
+      event.stopPropagation()
+      pending.ran = { label: item.label, title }
+      item.onSelect?.()
+      return true
+    }
     if (wantsNativeMenu(event)) return false
     const visible = items.filter(Boolean)
     if (visible.length === 0) return false
@@ -173,6 +191,26 @@ export function ContextMenuProvider({ children }) {
     event.stopPropagation()
     setMenu({ x: event.clientX, y: event.clientY, title, items: visible })
     return true
+  }, [])
+
+  const runShortcut = useCallback((kind, element) => {
+    if (!element?.isConnected) return null
+    const box = element.getBoundingClientRect()
+    const pending = { kind, ran: null }
+    shortcutRef.current = pending
+    try {
+      element.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: box.left + box.width / 2,
+          clientY: box.top + box.height / 2,
+        }),
+      )
+    } finally {
+      shortcutRef.current = null
+    }
+    return pending.ran
   }, [])
 
   const askText = useCallback((options) => new Promise((resolve) => setPrompt({ ...options, resolve })), [])
@@ -199,7 +237,7 @@ export function ContextMenuProvider({ children }) {
     }
   }, [menu, close])
 
-  const value = useMemo(() => ({ openMenu, askText }), [openMenu, askText])
+  const value = useMemo(() => ({ openMenu, askText, runShortcut }), [openMenu, askText, runShortcut])
   return (
     <ContextMenuContext.Provider value={value}>
       {children}
@@ -217,7 +255,7 @@ export function ContextMenuProvider({ children }) {
   )
 }
 
-/** `{ openMenu(event, { title, items }), askText(options) }` */
+/** `{ openMenu(event, { title, items }), askText(options), runShortcut(kind, element) }` */
 export function useContextMenu() {
   const ctx = useContext(ContextMenuContext)
   if (!ctx) throw new Error('useContextMenu must be used inside <ContextMenuProvider>')

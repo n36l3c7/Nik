@@ -1,4 +1,4 @@
-import { FileText, LogOut, Search, UserCircle } from 'lucide-react'
+import { FileText, Keyboard, LogOut, Search, UserCircle } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
@@ -13,11 +13,12 @@ import { SeverityTag, StatusTag } from '../ui/index.js'
  *
  * @param {{
  *   onOpenSearch: () => void,
+ *   onOpenShortcuts: () => void,
  *   onOpenReport: (() => void) | null,
  *   artifactView?: boolean,   // the main area shows an artifact, not the active incident
  * }} props
  */
-export default function Header({ onOpenSearch, onOpenReport, artifactView = false }) {
+export default function Header({ onOpenSearch, onOpenShortcuts, onOpenReport, artifactView = false }) {
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
@@ -77,6 +78,15 @@ export default function Header({ onOpenSearch, onOpenReport, artifactView = fals
           <Search className="h-3.5 w-3.5" />
           <span>search…</span>
           <kbd className="border border-line px-1 text-[10px] text-fg-subtle">ctrl k</kbd>
+        </button>
+        <button
+          type="button"
+          onClick={onOpenShortcuts}
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (?)"
+          className={`hidden lg:flex ${iconButton}`}
+        >
+          <Keyboard className="h-4 w-4" />
         </button>
         {onOpenReport && (
           <button
