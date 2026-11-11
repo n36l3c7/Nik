@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.23.0] - 2026-11-11
+
+### Added
+
+- **Right-click everywhere**: one menu, built from the parts that apply, on
+  every row and item.
+  - The lists of samples, e-mails, captures and scanned addresses: flag,
+    comment, open as an artifact, copy, show in the Timeline, remove from
+    the incident.
+  - The artifacts panel and the artifact page (incident, tag and related
+    chips).
+  - The tables that had no menu: bookmarks and omnibox shortcuts, a
+    sample's indicators, strings, sections, capabilities and functions,
+    logon sessions, the audit log.
+  - URL Analysis (findings, redirects, forms), the request log of a
+    capture, the flagged items and the notes of the Summary.
+- **Flag a sample, an e-mail, a capture or an address** from its list (a
+  small flag marks it), not only from the Timeline.
+- **Flag an indicator by hand** from its menu, wherever it is shown (IOCs
+  tab, samples, e-mails, captures, scans).
+
+### Fixed
+
+- The right-click menu no longer closes by itself when the list under it
+  reloads: it closes when the analyst scrolls, clicks elsewhere or resizes
+  the window.
+
 ## [2.22.1] - 2026-11-11
 
 ### Changed

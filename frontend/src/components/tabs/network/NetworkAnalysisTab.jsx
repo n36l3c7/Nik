@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Network, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Boxes, Flag, Network, PanelLeftClose, PanelLeftOpen, Trash2 } from 'lucide-react'
+import { useItemMenu } from '../../menu/useRowMenu.js'
+import { captureFlaggable } from '../../../domain/network.js'
 import { AsciiSkull, Badge, Button, Card, EmptyState } from '../../ui/index.js'
 import SampleDropZone from '../malware/SampleDropZone.jsx'
 import DownloadDialog from '../malware/DownloadDialog.jsx'
@@ -32,11 +34,11 @@ const captureRef = (doc) =>
 
 const STATUS_COLOR = { live: 'cyan', indexing: 'amber', ready: 'emerald', error: 'red', stored: 'slate' }
 
-function CaptureList({ captures, selected, onSelect }) {
+function CaptureList({ captures, selected, onSelect, flags = {}, onMenu }) {
   return (
     <ul aria-label="Captures" className="divide-y divide-line-soft font-mono text-xs">
       {captures.map((c) => (
-        <li key={c.id}>
+        <li key={c.id} onContextMenu={onMenu ? (event) => onMenu(event, c) : undefined}>
           <button
             type="button"
             onClick={() => onSelect(c.id)}
@@ -47,8 +49,11 @@ function CaptureList({ captures, selected, onSelect }) {
               c.id === selected ? 'border-l-accent bg-raised' : 'border-l-transparent hover:bg-raised',
             ].join(' ')}
           >
-            <span className="truncate font-semibold text-fg" title={c.fileName}>
-              {c.kind === 'browser' ? c.label || c.fileName : c.fileName}
+            <span className="flex min-w-0 items-center gap-1.5 font-semibold text-fg" title={c.fileName}>
+              {flags[`capture:${c.id}`] && (
+                <Flag className="h-3 w-3 shrink-0 text-accent" fill="currentColor" aria-label="Flagged" />
+              )}
+              <span className="truncate">{c.kind === 'browser' ? c.label || c.fileName : c.fileName}</span>
             </span>
             <Badge color={STATUS_COLOR[c.status] ?? 'slate'}>{c.status === 'ready' ? c.packets : c.status}</Badge>
             <span className="col-span-2 truncate text-[11px] text-fg-subtle">
@@ -207,6 +212,30 @@ export default function NetworkAnalysisTab({ incident, onReference }) {
     }
   }
 
+  const menu = useItemMenu(incident)
+  const captureMenu = (event, capture) =>
+    menu(event, {
+      title: capture.kind === 'browser' ? capture.label || capture.fileName : capture.fileName,
+      what: 'capture',
+      flaggable: captureFlaggable(capture),
+      copy: [
+        { label: 'file name', text: capture.fileName },
+        { label: 'SHA-256', text: capture.sha256 },
+      ],
+      timeline: true,
+      actions: [{ label: 'Open as an artifact', icon: Boxes, onSelect: () => openArtifact(`pcap-${capture.id}`) }],
+      danger: [
+        {
+          label: 'Remove from the incident',
+          icon: Trash2,
+          onSelect: () =>
+            removeCapture(incident.id, capture.id).catch((err) =>
+              showToast({ message: `${capture.fileName}: ${err.message}` }),
+            ),
+        },
+      ],
+    })
+
   const dropZone = (compact) => (
     <SampleDropZone
       compact={compact}
@@ -263,7 +292,13 @@ export default function NetworkAnalysisTab({ incident, onReference }) {
           }
           bodyClassName="p-0"
         >
-          <CaptureList captures={captures} selected={selected} onSelect={setSelected} />
+          <CaptureList
+            captures={captures}
+            selected={selected}
+            onSelect={setSelected}
+            flags={incident.flags}
+            onMenu={captureMenu}
+          />
           <div className="border-t border-line p-3">
             {dropZone(true)}
             {uploadError && (

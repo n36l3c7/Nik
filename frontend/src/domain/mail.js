@@ -120,6 +120,19 @@ export function formatDelay(ms) {
   return `${sign}${(abs / 3_600_000).toFixed(1)} h`
 }
 
+/** What toggleFlag() expects for a message as a whole (the timeline and the message list flag the same key). */
+export function mailFlaggable(message) {
+  return {
+    key: `mail:${message.sha256}`,
+    browserId: 'mail',
+    section: 'mail',
+    eventType: 'mail',
+    title: message.subject || message.fileName || message.sha256,
+    url: message.from ?? '',
+    time: message.date ?? anyToMs(message.importedAt),
+  }
+}
+
 /**
  * Timeline events of the analysed e-mails: one per message, at the time it was
  * sent (its import time when the Date header is missing). A phishing verdict
@@ -145,15 +158,7 @@ export function mailEvents(messages = [], engine) {
       label,
       detail: `${message.from ?? '?'} · ${verdictMeta(message.verdict).label} (${message.score ?? 0})`,
       soc: { ...soc, severity, isFlagged: severity !== null },
-      flaggable: {
-        key: `mail:${message.sha256}`,
-        browserId: 'mail',
-        section: 'mail',
-        eventType: 'mail',
-        title: label,
-        url: message.from ?? '',
-        time,
-      },
+      flaggable: mailFlaggable(message),
     }
   })
 }

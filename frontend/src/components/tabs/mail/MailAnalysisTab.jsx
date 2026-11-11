@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Mail, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Boxes, Flag, Mail, PanelLeftClose, PanelLeftOpen, Trash2 } from 'lucide-react'
+import { useItemMenu } from '../../menu/useRowMenu.js'
 import { AsciiSkull, Badge, Button, Card, EmptyState } from '../../ui/index.js'
 import SampleDropZone from '../malware/SampleDropZone.jsx'
 import DownloadDialog from '../malware/DownloadDialog.jsx'
@@ -13,7 +14,7 @@ import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api, upload } from '../../../services/api.js'
 import { formatDateTime } from '../../../lib/time.js'
-import { verdictMeta } from '../../../domain/mail.js'
+import { mailFlaggable, verdictMeta } from '../../../domain/mail.js'
 
 /*
  * ============================================================================
@@ -29,14 +30,15 @@ import { verdictMeta } from '../../../domain/mail.js'
 const MAIL_MAX_MB = 100
 const NO_MESSAGES = []
 
-function MessageList({ messages, selected, onSelect }) {
+function MessageList({ messages, selected, onSelect, flags = {}, onMenu }) {
   return (
     <ul aria-label="Messages" className="divide-y divide-line-soft font-mono text-xs">
       {messages.map((m) => {
         const active = m.sha256 === selected
         const verdict = verdictMeta(m.verdict)
+        const flagged = Boolean(flags[`mail:${m.sha256}`])
         return (
-          <li key={m.sha256}>
+          <li key={m.sha256} onContextMenu={onMenu ? (event) => onMenu(event, m) : undefined}>
             <button
               type="button"
               onClick={() => onSelect(m.sha256)}
@@ -47,8 +49,9 @@ function MessageList({ messages, selected, onSelect }) {
                 active ? 'border-l-accent bg-raised' : 'border-l-transparent hover:bg-raised',
               ].join(' ')}
             >
-              <span className="truncate font-semibold text-fg" title={m.subject}>
-                {m.subject || m.fileName}
+              <span className="flex min-w-0 items-center gap-1.5 font-semibold text-fg" title={m.subject}>
+                {flagged && <Flag className="h-3 w-3 shrink-0 text-accent" fill="currentColor" aria-label="Flagged" />}
+                <span className="truncate">{m.subject || m.fileName}</span>
               </span>
               <Badge color={verdict.color}>{m.score}</Badge>
               <span className="col-span-2 truncate text-[11px] text-fg-subtle">
@@ -194,6 +197,22 @@ export default function MailAnalysisTab({ incident }) {
   }
 
   const current = messages.find((m) => m.sha256 === selected) ?? null
+
+  const menu = useItemMenu(incident)
+  const messageMenu = (event, message) =>
+    menu(event, {
+      title: message.subject || message.fileName,
+      what: 'e-mail',
+      flaggable: mailFlaggable(message),
+      ioc: { type: 'sha256', value: message.sha256 },
+      copy: [
+        { label: 'subject', text: message.subject },
+        { label: 'sender', text: message.from },
+      ],
+      timeline: true,
+      actions: [{ label: 'Open as an artifact', icon: Boxes, onSelect: () => openArtifact(`mail-${message.sha256}`) }],
+      danger: [{ label: 'Remove from the incident', icon: Trash2, onSelect: () => handleRemove(message) }],
+    })
   const dropZone = (compact) => (
     <SampleDropZone
       compact={compact}
@@ -250,7 +269,13 @@ export default function MailAnalysisTab({ incident }) {
           }
           bodyClassName="p-0"
         >
-          <MessageList messages={messages} selected={selected} onSelect={setSelected} />
+          <MessageList
+            messages={messages}
+            selected={selected}
+            onSelect={setSelected}
+            flags={incident.flags}
+            onMenu={messageMenu}
+          />
           <div className="border-t border-line p-3">
             {dropZone(true)}
             {uploadError && (

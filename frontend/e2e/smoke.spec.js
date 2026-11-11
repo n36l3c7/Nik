@@ -583,6 +583,45 @@ test('an address is scanned on its own, then linked to the incident', async () =
   await page.getByRole('button', { name: 'Incidents', exact: true }).click()
 })
 
+test('right-click works on lists, indicators and artifacts', async () => {
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  const menu = page.getByRole('menu')
+
+  // A sample in the incident's list: its own actions, and the flag.
+  await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  const samples = page.getByRole('list', { name: 'Samples' })
+  await samples.getByText('dropper.bin').click({ button: 'right' })
+  await expect(menu).toContainText('Open as an artifact')
+  await expect(menu).toContainText('Remove from the incident')
+  await menu.getByRole('menuitem', { name: 'Flag the sample' }).click()
+  await expect(samples.getByLabel('Flagged')).toHaveCount(1)
+
+  // An indicator is flagged by hand from its menu, wherever it is shown.
+  await tabs.getByRole('button', { name: 'IOCs', exact: true }).click()
+  const address = page.getByRole('button', { name: '185.220.101.47', exact: true })
+  await expect(address).toBeVisible({ timeout: 20_000 })
+  // The list reloads after the flag above: a menu closes when the page moves under it.
+  await page.waitForLoadState('networkidle')
+  await address.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Flag the indicator' }).click()
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.locator('ol li', { hasText: '185.220.101.47' }).first()).toBeVisible()
+  await expect(page.locator('ol li', { hasText: 'dropper.bin' }).first()).toBeVisible()
+  // A flagged item on the Summary has the menu too.
+  await page.locator('ol li', { hasText: 'dropper.bin' }).first().click({ button: 'right' })
+  await expect(menu).toContainText('Remove the flag')
+  await page.keyboard.press('Escape')
+
+  // An artifact in the panel.
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel.getByRole('navigation', { name: 'Artifacts' }).getByText('dropper.bin').click({ button: 'right' })
+  await expect(menu).toContainText('Copy link')
+  await expect(menu).toContainText('Where else was this seen?')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+})
+
 test('pasted text is recognised: an address to scan, an indicator to look up', async () => {
   const paste = (text) =>
     page.evaluate((value) => {

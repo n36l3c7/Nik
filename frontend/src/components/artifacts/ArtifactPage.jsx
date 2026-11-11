@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, FolderPlus, Link2, Plus, Tag, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Boxes, FolderOpen, FolderPlus, Link2, Plus, Tag, Trash2, X } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -8,6 +8,7 @@ import { artifactKind, parseTags, standaloneIncident, verdictBadge } from '../..
 import { formatDateTime, anyToMs } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
+import { useItemMenu } from '../menu/useRowMenu.js'
 
 /*
  * ============================================================================
@@ -23,9 +24,12 @@ import { KIND_ICONS } from './ArtifactsPanel.jsx'
 
 const RELATION_LABELS = { attachment: 'attachment', extracted: 'extracted object', session: 'browser session' }
 
-function Chip({ children, onRemove, removeLabel, onClick }) {
+function Chip({ children, onRemove, removeLabel, onClick, onMenu }) {
   return (
-    <span className="inline-flex items-center border border-line bg-canvas font-mono text-xs text-fg">
+    <span
+      onContextMenu={onMenu}
+      className="inline-flex items-center border border-line bg-canvas font-mono text-xs text-fg"
+    >
       {onClick ? (
         <button
           type="button"
@@ -72,6 +76,8 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
     useArtifacts()
   const { incidents, activeIncidentId, retryActiveIncident } = useIncidents()
   const { showToast } = useToast()
+  const { setFilters, filters } = useArtifacts()
+  const menu = useItemMenu(null)
 
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkTarget, setLinkTarget] = useState('')
@@ -130,6 +136,13 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
       setBusy(false)
     }
   }
+
+  const relatedMenu = (event, item) =>
+    menu(event, {
+      title: item.name,
+      copy: [{ label: 'name', text: item.name }],
+      actions: [{ label: 'Open', icon: FolderOpen, onSelect: () => openArtifact(item.id) }],
+    })
 
   const handleLink = () =>
     run(async () => {
@@ -215,6 +228,18 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
                   onClick={() => onOpenIncident(item.id)}
                   onRemove={busy ? undefined : () => handleUnlink(item)}
                   removeLabel={`Remove from ${item.name}`}
+                  onMenu={(event) =>
+                    menu(event, {
+                      title: item.name,
+                      copy: [{ label: 'name', text: item.name }],
+                      actions: [
+                        { label: 'Open the incident', icon: FolderOpen, onSelect: () => onOpenIncident(item.id) },
+                      ],
+                      danger: [
+                        { label: 'Remove from this incident', icon: Trash2, onSelect: () => handleUnlink(item) },
+                      ],
+                    })
+                  }
                 >
                   {item.name}
                 </Chip>
@@ -226,7 +251,39 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
             {tagsDraft === null ? (
               <>
                 {artifact.tags.map((tag) => (
-                  <Chip key={tag}>#{tag}</Chip>
+                  <Chip
+                    key={tag}
+                    onMenu={(event) =>
+                      menu(event, {
+                        title: `#${tag}`,
+                        copy: [{ label: 'tag', text: tag }],
+                        actions: [
+                          {
+                            label: 'Show the artifacts with this tag',
+                            icon: Tag,
+                            onSelect: () => setFilters({ ...filters, q: tag }),
+                          },
+                        ],
+                        danger: [
+                          {
+                            label: 'Remove the tag',
+                            icon: Trash2,
+                            onSelect: () =>
+                              run(
+                                () =>
+                                  setTags(
+                                    artifact.id,
+                                    artifact.tags.filter((item) => item !== tag),
+                                  ),
+                                'Tags',
+                              ),
+                          },
+                        ],
+                      })
+                    }
+                  >
+                    #{tag}
+                  </Chip>
                 ))}
                 <Button variant="ghost" size="xs" icon={Tag} onClick={() => setTagsDraft(artifact.tags.join(' '))}>
                   {artifact.tags.length ? 'Edit tags' : 'Add tags'}
@@ -255,12 +312,12 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           {(artifact.parents.length > 0 || artifact.children.length > 0) && (
             <Row label="RELATED">
               {artifact.parents.map((item) => (
-                <Chip key={`p-${item.id}`} onClick={() => openArtifact(item.id)}>
+                <Chip key={`p-${item.id}`} onClick={() => openArtifact(item.id)} onMenu={(e) => relatedMenu(e, item)}>
                   {RELATION_LABELS[item.relation] ?? item.relation} of {item.kind} “{item.name}”
                 </Chip>
               ))}
               {artifact.children.map((item) => (
-                <Chip key={`c-${item.id}`} onClick={() => openArtifact(item.id)}>
+                <Chip key={`c-${item.id}`} onClick={() => openArtifact(item.id)} onMenu={(e) => relatedMenu(e, item)}>
                   {RELATION_LABELS[item.relation] ?? item.relation}: {item.name}
                 </Chip>
               ))}

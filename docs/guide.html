@@ -420,12 +420,78 @@
 
       <h2 id="flags">Flags, comments and the right-click menu</h2>
       <p>
-        Right-click any event row, in any tab, for the same menu: <strong>Flag as malicious</strong>,
-        <strong>Add a comment</strong>, <strong>Copy as text</strong> or <strong>JSON</strong>, and
-        <strong>Show in the Timeline</strong>. Flagged events are listed on the Summary tab and go into the report.
-        Right-click an indicator for <strong>Where else was this seen?</strong> and
-        <strong>Add to the allowlist</strong> (with Undo).
+        Right-click works on every row and item of the app, and the menu is always built the same way, with the parts
+        that apply:
       </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Part</th>
+              <th>What it offers</th>
+              <th>Where</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>The item's own actions</td>
+              <td>Open, Open as an artifact, Download zip, Scan again…</td>
+              <td>Samples, e-mails, captures, addresses, artifacts.</td>
+            </tr>
+            <tr>
+              <td>Flag and comment</td>
+              <td>
+                <strong>Flag</strong> (or remove the flag) and <strong>Add a comment</strong>, which flags the item too.
+              </td>
+              <td>
+                Events of every table, samples, e-mails, captures, addresses, functions of a sample, packets,
+                indicators. Only inside an incident.
+              </td>
+            </tr>
+            <tr>
+              <td>Indicator</td>
+              <td>
+                <strong>Where else was this seen?</strong>, <strong>Search for it</strong>, Copy and Copy defanged, and
+                <strong>Add to the allowlist</strong>.
+              </td>
+              <td>
+                Any address, domain, IP, hash or e-mail address: the IOCs tab, a sample's indicators and strings, an
+                e-mail's links, a capture's requests, a scan's redirects.
+              </td>
+            </tr>
+            <tr>
+              <td>Copy</td>
+              <td>As text, as JSON (the row's fields), or one field: a hash, a name, an address in memory.</td>
+              <td>Everywhere.</td>
+            </tr>
+            <tr>
+              <td>Show in the Timeline</td>
+              <td>Opens the Timeline filtered on the item.</td>
+              <td>Flaggable items.</td>
+            </tr>
+            <tr>
+              <td>Remove or delete</td>
+              <td>Last, after a rule: remove from the incident, delete a note, remove a tag.</td>
+              <td>Lists, notes, an artifact's chips.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A flagged sample, e-mail, capture or address shows a small flag in its list. Everything flagged is listed on the
+        Summary tab, where the same menu removes the flag or adds a comment, and goes into the report. The browser's own
+        menu still opens on text fields, on selected text and with <kbd>Shift</kbd> + right-click.
+      </p>
+      <figure class="shot">
+        <img
+          src="img/context-menu.png"
+          alt="The right-click menu on a sample"
+          width="1600"
+          height="1000"
+          loading="lazy"
+        />
+        <figcaption>The right-click menu on a sample: its actions, the flag, the indicator, copy, remove.</figcaption>
+      </figure>
 
       <h2 id="search">Search</h2>
       <p>

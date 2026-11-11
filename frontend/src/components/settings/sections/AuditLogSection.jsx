@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, ScrollText, Trash2 } from 'lucide-react'
+import { useItemMenu } from '../../menu/useRowMenu.js'
 import { Badge, Button, DataTable, EmptyState } from '../../ui/index.js'
 import { useAudit } from '../../../context/AuditContext.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
@@ -68,6 +69,7 @@ const COLUMNS = [
 const SEARCH_KEYS = ['actor', 'action', 'details', 'incidentName']
 
 export default function AuditLogSection() {
+  const menu = useItemMenu(null)
   const { entries, clearAudit } = useAudit()
   const { currentUser } = useAuth()
   const isAdmin = currentUser?.role === 'admin'
@@ -131,6 +133,14 @@ export default function AuditLogSection() {
         <DataTable
           columns={COLUMNS}
           data={entries}
+          onRowContextMenu={(event, row) =>
+            menu(event, {
+              title: row.action,
+              text: [row.at, row.actor, row.action, row.details].filter(Boolean).join('  '),
+              copy: [{ label: 'details', text: row.details }],
+              record: row,
+            })
+          }
           searchKeys={SEARCH_KEYS}
           searchPlaceholder="Search audit log…"
           defaultSort={{ key: 'time', dir: 'desc' }}

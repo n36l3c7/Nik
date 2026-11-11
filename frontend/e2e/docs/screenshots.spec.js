@@ -127,6 +127,11 @@ test('the threat tabs', async () => {
   await page.getByRole('list', { name: 'Samples' }).getByText('invoice_0423.pdf.exe').click()
   await expect(page.getByText('PE32 executable').first()).toBeVisible({ timeout: 30_000 })
   await shot('malware')
+  // The right-click menu, the same everywhere: here on a sample of the list.
+  await page.getByRole('list', { name: 'Samples' }).getByText('invoice_0423.pdf.exe').click({ button: 'right' })
+  await expect(page.getByRole('menu')).toBeVisible()
+  await page.screenshot({ path: fileURLToPath(new URL('context-menu.png', OUT)) })
+  await page.keyboard.press('Escape')
 })
 
 test('artifacts on their own', async () => {
