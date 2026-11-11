@@ -201,6 +201,33 @@ export function toPagePoint(clientX, clientY, rect, width, height) {
   return { x: Math.min(width, Math.max(0, x)), y: Math.min(height, Math.max(0, y)) }
 }
 
+// What the worker accepts for the size of a page (see workers/browser/nik_browser.py).
+const VIEWPORT = { minWidth: 640, minHeight: 400, maxWidth: 2560, maxHeight: 1600 }
+
+/**
+ * The page size to ask the isolated browser for, given the space the window
+ * has for it: that space, within the worker's limits, in steps of 8 pixels so
+ * a window being dragged does not ask for a new size at every pixel.
+ */
+export function browserViewport(spaceWidth, spaceHeight) {
+  const step = (value) => Math.floor((Number(value) || 0) / 8) * 8
+  return {
+    width: Math.min(VIEWPORT.maxWidth, Math.max(VIEWPORT.minWidth, step(spaceWidth))),
+    height: Math.min(VIEWPORT.maxHeight, Math.max(VIEWPORT.minHeight, step(spaceHeight))),
+  }
+}
+
+/**
+ * The size to draw a `width` x `height` picture at inside a space: its own
+ * size when it fits, scaled down (never up, never distorted) when it does not.
+ */
+export function fitInside(width, height, spaceWidth, spaceHeight) {
+  // Two pixels for the frame's border.
+  const scale = Math.min(1, (spaceWidth - 2) / width, (spaceHeight - 2) / height)
+  if (!(scale > 0)) return { width, height }
+  return { width: Math.floor(width * scale), height: Math.floor(height * scale) }
+}
+
 // Keys replayed as key presses (the worker accepts these); the rest is typed text.
 export const BROWSER_KEYS = new Set([
   'Enter',

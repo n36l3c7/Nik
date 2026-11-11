@@ -7,9 +7,11 @@ import { X } from 'lucide-react'
  * - Closes on the Escape key and on a backdrop click.
  * - Optional `footer` (typically Cancel/Confirm buttons).
  * - `maxWidth` is a Tailwind class (default 'max-w-lg').
+ * - `tall` lets the dialog use nearly the whole height of the window (the
+ *   isolated browser), instead of 85% of it.
  * - No portal: the fixed layer + z-50 is enough for this SPA.
  */
-export default function Modal({ open, onClose, title, children, footer = null, maxWidth = 'max-w-lg' }) {
+export default function Modal({ open, onClose, title, children, footer = null, maxWidth = 'max-w-lg', tall = false }) {
   // Close with the Escape key (listener active only when the modal is open)
   useEffect(() => {
     if (!open) return undefined
@@ -27,7 +29,10 @@ export default function Modal({ open, onClose, title, children, footer = null, m
       role="dialog"
       aria-modal="true"
       aria-label={typeof title === 'string' ? title : undefined}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-sunken/70 p-4 backdrop-blur-sm"
+      className={[
+        'fixed inset-0 z-50 flex items-center justify-center bg-sunken/70 backdrop-blur-sm',
+        tall ? 'p-2' : 'p-4',
+      ].join(' ')}
       // Close only if the mousedown happens directly on the backdrop
       // (avoids accidental closes when dragging from the content outward)
       onMouseDown={(event) => {
@@ -38,7 +43,8 @@ export default function Modal({ open, onClose, title, children, footer = null, m
         className={[
           'w-full',
           maxWidth,
-          'flex max-h-[85vh] flex-col overflow-hidden border border-line bg-panel shadow-2xl',
+          tall ? 'max-h-[96vh]' : 'max-h-[85vh]',
+          'flex flex-col overflow-hidden border border-line bg-panel shadow-2xl',
         ].join(' ')}
       >
         {/* Header: title + close button */}

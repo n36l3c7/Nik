@@ -38,14 +38,6 @@ def chromium():
         instance.close(session_id, instance.sessions[session_id].owner)
 
 
-def test_public_host_check():
-    assert not nik_browser._public_host("10.0.0.1")
-    assert not nik_browser._public_host("127.0.0.1")
-    assert not nik_browser._public_host("fileserver.corp")
-    assert not nik_browser._public_host("intranet")
-    assert nik_browser._public_host("185.220.101.47")
-
-
 def test_offline_session_runs_the_page_but_sends_nothing(chromium):
     state = chromium.open("alice", network=False, html=PAGE)
     assert state["attachment"] and state["title"] == "Sign in - script ran"
@@ -201,3 +193,163 @@ def test_inspect_reports_what_the_page_asks_for(chromium):
         ]
     finally:
         chromium.close(state["id"], "alice")
+
+
+# --------------------------------------------------------------------------- #
+# Tabs, viewport, and the way out
+# --------------------------------------------------------------------------- #
+# Served for every address of the attachment: the opener, and (with ?popup) the window it opens.
+POPUP_PAGE = b"""<!doctype html><html><head><title>Opener</title></head><body>
+<button id="go" style="display:block;width:300px;height:60px"
+  onclick="window.open('https://attachment.nik.invalid/?popup=' + Date.now(), '_blank', 'width=400,height=500')">
+Sign in</button>
+<script>if (location.search.includes('popup')) { document.title = 'Pop-up';
+document.getElementById('go').setAttribute('onclick', 'window.close()'); }</script>
+</body></html>"""
+
+
+def _until(chromium, session_id, done, tries=20):
+    """Refresh until ``done(state)``: a window opening or closing reaches the worker a moment later."""
+    state = chromium.act(session_id, "alice", {"type": "refresh"})
+    for _ in range(tries):
+        if done(state):
+            return state
+        state = chromium.act(session_id, "alice", {"type": "refresh"})
+    raise AssertionError(f"never happened; tabs: {state['tabs']}, events: {state['events']}")
+
+
+def test_a_window_the_page_opens_is_a_tab_and_closing_it_shows_the_opener_again(chromium):
+    state = chromium.open("alice", network=False, html=POPUP_PAGE)
+    sid = state["id"]
+    assert [tab["title"] for tab in state["tabs"]] == ["Opener"] and state["tabs"][0]["active"]
+
+    chromium.act(sid, "alice", {"type": "click", "x": 50, "y": 30})
+    opened = _until(chromium, sid, lambda s: len(s["tabs"]) == 2)
+    # The new window is shown, at the session's size (not the 400x500 it asked for); the opener stays.
+    assert opened["title"] == "Pop-up" and (opened["width"], opened["height"]) == (1280, 800)
+    assert [(tab["title"], tab["active"]) for tab in opened["tabs"]] == [("Opener", False), ("Pop-up", True)]
+    assert any(e["kind"] == "popup" and "new tab" in e["text"] for e in opened["events"])
+    first, second = (tab["id"] for tab in opened["tabs"])
+
+    # The analyst looks at the opener while the pop-up is open, then goes back to it.
+    assert chromium.act(sid, "alice", {"type": "tab", "id": first})["title"] == "Opener"
+    assert chromium.act(sid, "alice", {"type": "tab", "id": second})["title"] == "Pop-up"
+    with pytest.raises(nik_browser.BrowserError):
+        chromium.act(sid, "alice", {"type": "tab", "id": "nope"})
+
+    # The pop-up closes itself (a sign-in window that is done): the opener is shown again.
+    chromium.act(sid, "alice", {"type": "click", "x": 50, "y": 30})
+    closed = _until(chromium, sid, lambda s: len(s["tabs"]) == 1)
+    assert closed["title"] == "Opener" and closed["tabs"][0]["active"]
+    assert any("back to the one that opened it" in e["text"] for e in closed["events"])
+    chromium.close(sid, "alice")
+
+
+def test_tabs_are_closed_by_the_analyst_and_cannot_pile_up(chromium, monkeypatch):
+    monkeypatch.setattr(nik_browser, "MAX_TABS", 2)
+    state = chromium.open("alice", network=False, html=POPUP_PAGE)
+    sid = state["id"]
+    opener = state["tabs"][0]["id"]
+    chromium.act(sid, "alice", {"type": "click", "x": 50, "y": 30})
+    two = _until(chromium, sid, lambda s: len(s["tabs"]) == 2)
+
+    # A third window is refused, and said.
+    chromium.act(sid, "alice", {"type": "tab", "id": opener})
+    chromium.act(sid, "alice", {"type": "click", "x": 50, "y": 30})
+    full = _until(chromium, sid, lambda s: any("more than 2 tabs" in e["text"] for e in s["events"]))
+    assert len(full["tabs"]) == 2
+
+    after = chromium.act(sid, "alice", {"type": "closeTab", "id": two["tabs"][1]["id"]})
+    assert [tab["title"] for tab in after["tabs"]] == ["Opener"] and after["title"] == "Opener"
+    with pytest.raises(nik_browser.BrowserError, match="last tab"):
+        chromium.act(sid, "alice", {"type": "closeTab", "id": opener})
+    chromium.close(sid, "alice")
+
+
+def test_the_viewport_follows_the_analysts_window(chromium):
+    state = chromium.open("alice", network=False, html=PAGE, width=1600, height=900)
+    sid = state["id"]
+    assert (state["width"], state["height"]) == (1600, 900)
+    with pytest.raises(nik_browser.BrowserError):
+        chromium.act(sid, "alice", {"type": "click", "x": 1900, "y": 60})  # outside the page
+
+    wide = chromium.act(sid, "alice", {"type": "resize", "width": 1920, "height": 1080})
+    assert (wide["width"], wide["height"]) == (1920, 1080)
+    # The picture is the page at that size: a JPEG whose frame header says so.
+    picture = base64.b64decode(wide["screenshot"])
+    marker = picture.index(b"\xff\xc0")
+    assert int.from_bytes(picture[marker + 5 : marker + 7], "big") == 1080
+    assert int.from_bytes(picture[marker + 7 : marker + 9], "big") == 1920
+    chromium.act(sid, "alice", {"type": "click", "x": 1900, "y": 60})
+
+    # Whatever is asked, the size stays within what the worker accepts.
+    huge = chromium.act(sid, "alice", {"type": "resize", "width": 99999, "height": 1})
+    assert (huge["width"], huge["height"]) == (nik_browser.MAX_WIDTH, nik_browser.MIN_HEIGHT)
+    same = chromium.act(sid, "alice", {"type": "resize", "width": "wide", "height": None})
+    assert (same["width"], same["height"]) == (nik_browser.MAX_WIDTH, nik_browser.MIN_HEIGHT)
+    chromium.close(sid, "alice")
+
+
+def _site(host, routes):
+    """A web server on ``host`` answering ``routes`` ({path: (status, headers, body)}); returns (server, hits)."""
+    from http.server import BaseHTTPRequestHandler
+
+    hits = []
+
+    class Site(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - http.server naming
+            hits.append(self.path)
+            status, headers, body = routes.get(self.path, (404, {}, b"not found"))
+            self.send_response(status)
+            for name, value in {"Content-Type": "text/html", "Content-Length": str(len(body)), **headers}.items():
+                self.send_header(name, value)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    httpd = ThreadingHTTPServer((host, 0), Site)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, hits
+
+
+def test_a_redirect_to_a_private_address_goes_nowhere():
+    """The hop of a redirect never passes the request check: the proxy is what stops it.
+
+    127.0.0.1 plays the internet (the only address allowed out) and 127.0.0.2
+    the internal network.
+    """
+    internal, internal_hits = _site("127.0.0.2", {"/admin": (200, {}, b"<title>Internal admin</title>secret")})
+    secret = f"http://127.0.0.2:{internal.server_address[1]}/admin"
+    public, public_hits = _site(
+        "127.0.0.1",
+        {
+            "/": (200, {}, b"<title>Public page</title><img src='" + secret.encode() + b"'>hello"),
+            "/redirect": (302, {"Location": secret}, b""),
+        },
+    )
+    base = f"http://127.0.0.1:{public.server_address[1]}"
+    instance = nik_browser.Browser(allow=lambda address: address == "127.0.0.1")
+    try:
+        state = instance.open("alice", network=True, url=f"{base}/")
+        sid = state["id"]
+        assert state["title"] == "Public page"
+        # The page's own request to the internal address was refused before leaving.
+        assert state["blocked"] >= 1
+
+        after = instance.act(sid, "alice", {"type": "navigate", "url": f"{base}/redirect"})
+        assert "/redirect" in public_hits
+        assert internal_hits == []
+        assert after["title"] == "Blocked by Nik"
+        assert instance.egress.refused >= 1
+
+        # The log says where each request really went, not the proxy's address.
+        log = instance.network(sid, "alice", bodies=False)
+        first = next(entry for entry in log["entries"] if entry["url"] == f"{base}/")
+        assert first["response"]["serverIp"] == "127.0.0.1"
+        assert first["response"]["serverPort"] == public.server_address[1]
+        instance.close(sid, "alice")
+    finally:
+        public.shutdown()
+        internal.shutdown()

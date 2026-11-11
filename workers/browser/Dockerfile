@@ -13,7 +13,7 @@ RUN apt-get update \
     && useradd --create-home --uid 1000 browser
 
 WORKDIR /opt/nik-browser
-COPY netlog.py nik_browser.py server.py ./
+COPY egress.py netlog.py nik_browser.py server.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

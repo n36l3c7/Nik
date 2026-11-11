@@ -110,6 +110,17 @@ def test_browser_sessions(admin: TestClient, workers):
         f"/api/browser/sessions/{session}/action", headers=key, json={"type": "navigate", "url": "http://intranet/"}
     )
     assert bad.status_code == 422
+    # Tabs and the size of the page are actions like the others; a tab id is the worker's.
+    url = f"/api/browser/sessions/{session}/action"
+    assert admin.post(url, headers=key, json={"type": "tab", "id": "0a1b2c3d"}).status_code == 200
+    assert admin.post(url, headers=key, json={"type": "closeTab", "id": "0a1b2c3d"}).status_code == 200
+    assert admin.post(url, headers=key, json={"type": "resize", "width": 1920, "height": 1080}).status_code == 200
+    assert admin.post(url, headers=key, json={"type": "tab", "id": "../etc"}).status_code == 422
+    assert admin.post(url, headers=key, json={"type": "resize", "width": -5, "height": 10}).status_code == 422
+    sized = admin.post(
+        "/api/browser/sessions", headers=key, json={"url": "https://example.org/", "width": 1920, "height": 1080}
+    )
+    assert sized.status_code == 201
     assert admin.delete(f"/api/browser/sessions/{session}", headers=key).status_code == 204
 
     audit = admin.get("/api/audit?q=isolated").json()

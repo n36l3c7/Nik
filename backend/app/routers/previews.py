@@ -74,6 +74,10 @@ class SessionIn(BaseModel):
     network: bool = False
     # Keep the session's network log in this incident (Network Analysis).
     incident: Optional[str] = Field(default=None, max_length=200)
+    # The size of the analyst's window, so the page is drawn to fit it (the
+    # worker keeps it within its own limits; 1280x800 when left out).
+    width: Optional[int] = Field(default=None, ge=1, le=10000)
+    height: Optional[int] = Field(default=None, ge=1, le=10000)
 
     @model_validator(mode="after")
     def _one_source(self):
@@ -128,7 +132,9 @@ async def open_session(
         target = f"attachment {name} of e-mail {body.mail[:12]}…"
         source = {"mail": body.mail, "path": body.path, "name": name}
     try:
-        state = await run_in_threadpool(previews.open_session, caller.actor, body.network, html, url)
+        state = await run_in_threadpool(
+            previews.open_session, caller.actor, body.network, html, url, body.width, body.height
+        )
     except previews.WorkerError as exc:
         raise _worker_error(exc) from exc
     _audit(
@@ -186,6 +192,11 @@ class ActionIn(BaseModel):
         "reload",
         "refresh",
         "policy",
+        # The windows a page opened are tabs of the session: show one, close one.
+        "tab",
+        "closeTab",
+        # Draw the pages at the size of the analyst's window.
+        "resize",
     ]
     x: Optional[float] = None
     y: Optional[float] = None
@@ -194,6 +205,9 @@ class ActionIn(BaseModel):
     dy: Optional[float] = None
     url: Optional[str] = Field(default=None, max_length=4096)
     releasePosts: Optional[bool] = None
+    id: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{8}$")
+    width: Optional[int] = Field(default=None, ge=1, le=10000)
+    height: Optional[int] = Field(default=None, ge=1, le=10000)
 
 
 @router.post("/browser/sessions/{session_id}/action")
@@ -203,9 +217,11 @@ async def session_action(
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    """Replay a click, typing, a key, a scroll or a navigation, or change the
-    session's policy (``releasePosts``: send the page's submissions instead of
-    holding them; audited); returns the new screenshot."""
+    """Replay a click, typing, a key, a scroll or a navigation; show or close
+    one of the session's tabs (``tab`` / ``closeTab`` with its ``id``); draw
+    the pages at another size (``resize``); or change the session's policy
+    (``releasePosts``: send the page's submissions instead of holding them;
+    audited). Returns the new screenshot, with the session's ``tabs``."""
     if not _SESSION_ID.match(session_id):
         raise HTTPException(status_code=404, detail="No such session")
     action = body.model_dump(exclude_none=True)

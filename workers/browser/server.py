@@ -110,7 +110,14 @@ class Handler(BaseHTTPRequestHandler):
                 url = body.get("url")
                 if (html is None) == (url is None):
                     raise BrowserError("Send either html or url", 400)
-                return 201, browser().open(str(body["owner"]), bool(body.get("network")), html=html, url=url)
+                return 201, browser().open(
+                    str(body["owner"]),
+                    bool(body.get("network")),
+                    html=html,
+                    url=url,
+                    width=body.get("width"),
+                    height=body.get("height"),
+                )
 
             return self._run(work)
         match = _SESSION_PATH.match(path)

@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   authResult,
+  browserViewport,
+  fitInside,
   formatDelay,
   frameCsp,
   frameDocument,
@@ -79,4 +81,22 @@ test('attachment previews and screenshot coordinates', () => {
   const rect = { left: 100, top: 50, width: 640, height: 400 }
   assert.deepEqual(toPagePoint(420, 250, rect, 1280, 800), { x: 640, y: 400 })
   assert.deepEqual(toPagePoint(0, 0, rect, 1280, 800), { x: 0, y: 0 })
+})
+
+test('the isolated browser is asked for the size of the space it has, within limits', () => {
+  assert.deepEqual(browserViewport(1883, 1011), { width: 1880, height: 1008 })
+  // A small panel and a wall of monitors both stay within what the worker draws.
+  assert.deepEqual(browserViewport(300, 200), { width: 640, height: 400 })
+  assert.deepEqual(browserViewport(5000, 3000), { width: 2560, height: 1600 })
+  assert.deepEqual(browserViewport(undefined, NaN), { width: 640, height: 400 })
+  // Dragging the window a few pixels asks for nothing new.
+  assert.deepEqual(browserViewport(1284, 804), browserViewport(1280, 800))
+})
+
+test('a screenshot is drawn at its own size when it fits, scaled down when it does not', () => {
+  assert.deepEqual(fitInside(1280, 800, 1920, 1080), { width: 1280, height: 800 })
+  assert.deepEqual(fitInside(1280, 800, 642, 1000), { width: 640, height: 400 })
+  assert.deepEqual(fitInside(1280, 800, 2000, 402), { width: 640, height: 400 })
+  // No space measured yet: the picture's own size.
+  assert.deepEqual(fitInside(1280, 800, 0, 0), { width: 1280, height: 800 })
 })

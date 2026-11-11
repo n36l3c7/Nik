@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-11
+
+### Added
+
+- **Tabs in the isolated browser.** A window the page opens (the pop-up of
+  a sign-in with Google or Microsoft, a `target=_blank` link) is a tab of
+  the session, shown at once: the first page stays open, a tab bar switches
+  between them and closes them, and when a pop-up closes itself the page
+  that opened it is shown again. Up to eight tabs per session.
+- **A page as large as the screen.** The isolated browser window takes most
+  of the screen and the page is drawn at the size of the space it has (up to
+  2560×1600), one picture pixel per screen pixel, instead of a fixed
+  1280×800 scaled into a narrow dialog. A button switches to full screen.
+- API: `tabs` in the session state, the `tab`, `closeTab` and `resize`
+  actions, `width` / `height` when opening a session.
+
+### Changed
+
+- The isolated browser no longer shares a network with the other workers:
+  the backend reaches it on `browser-control`, a network of their own.
+
+### Fixed
+
+- A page that opened a second window replaced the first one, which could
+  not be seen again; when the second window closed itself, as a sign-in
+  pop-up does, the session was left on a closed page.
+
+### Security
+
+- **The "never a private address" rule of the isolated browser is enforced
+  for every connection.** It was checked on the URL of each request, which
+  a redirect hop never passes through: a public page answering
+  `302 Location: http://10.0.0.1/` was followed, and a name could resolve
+  to a public address when checked and to a private one when connected (DNS
+  rebinding). Chromium's only route is now a filtering proxy inside the
+  worker, which resolves each name itself, refuses unless every address is
+  public and connects to the address it checked. WebRTC and QUIC are off.
+
 ## [3.1.0] - 2026-11-11
 
 Evidence comes from hosts that may be compromised, and from attackers

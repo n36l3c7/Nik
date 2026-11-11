@@ -13,7 +13,9 @@ automatic URL scan.
 - ``network=True``: http and https requests go out, except to private,
   loopback, link-local or otherwise non-public addresses and internal names,
   so a page cannot reach the organisation's own network. Other schemes are
-  refused.
+  refused. The rule is enforced where the connections are made: Chromium's
+  only route is the filtering proxy of ``egress.py``, which every hop of a
+  redirect and every sub-resource goes through.
 
 **Submissions** (POST, PUT, PATCH, DELETE) of a session with network are
 held by default: recorded, not sent, and the page shows "Submission held by
@@ -25,18 +27,25 @@ timings, WebSocket messages, refused and held requests included. The log of
 a closed or expired session stays readable for ``FINISHED_KEEP`` seconds.
 
 Downloads are refused (and reported), dialogs (alert, confirm, prompt) are
-dismissed and reported, permission prompts are denied, a page opened in a new
-tab replaces the current one. Sessions end after ``IDLE`` seconds without an
-action, or ``LIFETIME`` seconds in all.
+dismissed and reported, permission prompts are denied.
+
+**Tabs**: a page that opens a window (a sign-in pop-up, a ``target=_blank``
+link) gets a tab of the session, shown at once; the others stay open and the
+analyst switches between them. When a tab closes itself, as a sign-in pop-up
+does once it is done, the one that opened it is shown again.
+
+**Viewport**: 1280×800 unless the analyst's window asks for another size
+(``resize``), so the page fills the screen it is looked at on.
+
+Sessions end after ``IDLE`` seconds without an action, or ``LIFETIME``
+seconds in all.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import ipaddress
 import os
-import socket
 import threading
 import time
 import uuid
@@ -44,10 +53,16 @@ from html import escape as html_escape
 from typing import Any
 from urllib.parse import urlsplit
 
+from egress import EgressProxy, is_public
 from netlog import NetworkLog, timing
 
 ATTACHMENT_URL = "https://attachment.nik.invalid/"
 WIDTH, HEIGHT = 1280, 800
+# What a window may ask for: from a small laptop panel to a 4K monitor's.
+MIN_WIDTH, MIN_HEIGHT = 640, 400
+MAX_WIDTH, MAX_HEIGHT = 2560, 1600
+# A page cannot fill the worker's memory with windows.
+MAX_TABS = 8
 IDLE = float(os.environ.get("BROWSER_IDLE", "300"))
 LIFETIME = float(os.environ.get("BROWSER_LIFETIME", "1800"))
 MAX_SESSIONS = int(os.environ.get("BROWSER_MAX_SESSIONS", "3"))
@@ -72,7 +87,6 @@ PAGE_FACTS = """() => ({
   frames: document.querySelectorAll('iframe, frame').length,
   text: ((document.body && document.body.innerText) || '').slice(0, 2000),
 })"""
-INTERNAL_SUFFIXES = (".local", ".lan", ".internal", ".intranet", ".corp", ".home", ".home.arpa", ".localdomain")
 
 
 class BrowserError(Exception):
@@ -83,21 +97,12 @@ class BrowserError(Exception):
         self.status = status
 
 
-def _public_host(host: str) -> bool:
-    """True when every address the host resolves to is public."""
-    host = (host or "").lower().strip("[]").rstrip(".")
-    if not host or "." not in host and ":" not in host or host.endswith(INTERNAL_SUFFIXES):
-        return False
+def _size(value: Any, low: int, high: int, default: int) -> int:
+    """A viewport dimension within what the worker accepts."""
     try:
-        return ipaddress.ip_address(host).is_global
-    except ValueError:
-        pass
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
-        return False
-    addresses = {info[4][0].split("%")[0] for info in infos}
-    return bool(addresses) and all(ipaddress.ip_address(a).is_global for a in addresses)
+        return max(low, min(high, int(value)))
+    except (TypeError, ValueError):
+        return default
 
 
 def _blocked_page(url: str, reason: str) -> str:
@@ -129,7 +134,12 @@ class Session:
         self.created = self.used = time.monotonic()
         self.closed_at: float | None = None
         self.context = None
+        # The open tabs in the order they appeared, and the one shown.
+        self.pages: list[Any] = []
         self.page = None
+        self.tab_ids: dict[Any, str] = {}
+        self.openers: dict[Any, Any] = {}
+        self.width, self.height = WIDTH, HEIGHT
         self.events: list[dict[str, Any]] = []
         self.blocked = 0
         self.log = NetworkLog()
@@ -140,10 +150,16 @@ class Session:
 
 
 class Browser:
-    """One Chromium, many contexts; every call runs on the worker's event loop."""
+    """One Chromium, many contexts; every call runs on the worker's event loop.
 
-    def __init__(self, executable: str | None = None) -> None:
+    ``allow`` says which addresses a session with network may reach: the
+    public ones. It is a parameter so the tests can stand a site up on
+    loopback.
+    """
+
+    def __init__(self, executable: str | None = None, allow=is_public) -> None:
         self.executable = executable or os.environ.get("BROWSER_EXECUTABLE") or None
+        self.egress = EgressProxy(allow)
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, name="browser-loop", daemon=True)
         self.thread.start()
@@ -162,9 +178,19 @@ class Browser:
 
             if self._playwright is None:
                 self._playwright = await async_playwright().start()
+            port = await self.egress.start()
             self._browser = await self._playwright.chromium.launch(
                 executable_path=self.executable,
-                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-background-networking"],
+                # The filtering proxy is the only route, loopback included.
+                proxy={"server": f"http://127.0.0.1:{port}", "bypass": "<-loopback>"},
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-background-networking",
+                    # No way around the proxy: WebRTC would send UDP by itself, QUIC too.
+                    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                    "--disable-quic",
+                ],
             )
         return self._browser
 
@@ -180,10 +206,7 @@ class Browser:
         existing = session.log.get(request)
         if existing is not None:
             return existing
-        try:
-            main = request.frame == session.page.main_frame
-        except Exception:  # noqa: BLE001 - a detached frame
-            main = False
+        main = self._main_frame(request)
         previous = request.redirected_from
         entry = session.log.entry(
             request,
@@ -201,6 +224,26 @@ class Browser:
             }
         return entry
 
+    @staticmethod
+    def _main_frame(request) -> bool:
+        """True for a request of the top document of its tab (whichever tab)."""
+        try:
+            return request.frame == request.frame.page.main_frame
+        except Exception:  # noqa: BLE001 - a detached frame, a service request
+            return False
+
+    def _server_address(self, url: str, reported: dict | None) -> tuple[str | None, int | None]:
+        """Where the request really went: the proxy knows, the browser only saw the proxy."""
+        parts = urlsplit(url)
+        try:
+            port = parts.port or (443 if parts.scheme in ("https", "wss") else 80)
+        except ValueError:
+            port = None
+        address = self.egress.address_of(parts.hostname or "", port) if port else None
+        if address:
+            return address, port
+        return (reported or {}).get("ipAddress"), (reported or {}).get("port")
+
     async def _finished(self, session: Session, request) -> None:
         entry = self._record(session, request)
         if entry is None or entry["state"] in ("blocked", "held"):
@@ -216,15 +259,15 @@ class Browser:
                 body = await response.body()
             except Exception:  # noqa: BLE001 - redirects and some responses have no body
                 body = None
-            server = await response.server_addr()
+            server_ip, server_port = self._server_address(request.url, await response.server_addr())
             tls = await response.security_details()
             reply = {
                 "status": response.status,
                 "statusText": response.status_text,
                 "headers": [[h["name"], h["value"]] for h in await response.headers_array()],
                 "mimeType": (response.headers.get("content-type") or "").split(";")[0].strip(),
-                "serverIp": (server or {}).get("ipAddress"),
-                "serverPort": (server or {}).get("port"),
+                "serverIp": server_ip,
+                "serverPort": server_port,
                 "tls": tls or None,
                 **session.log.body(body),
             }
@@ -249,8 +292,10 @@ class Browser:
         parts = urlsplit(url)
         if parts.scheme not in schemes:
             return f"{parts.scheme or 'this'} scheme not allowed"
-        public = await asyncio.get_running_loop().run_in_executor(None, _public_host, parts.hostname or "")
-        return None if public else "not a public address"
+        # The same rule the proxy applies to every connection; asked here too so
+        # the refusal is recorded against the request and shown as a page.
+        address = await self.egress.vetted(parts.hostname or "")
+        return None if address else "not a public address"
 
     async def _route(self, session: Session, html: bytes | None, route) -> None:
         request = route.request
@@ -260,7 +305,7 @@ class Browser:
             await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
             return
         reason = await self._allowed(session, url, ("http", "https"))
-        main_navigation = request.is_navigation_request() and request.frame == session.page.main_frame
+        main_navigation = request.is_navigation_request() and self._main_frame(request)
         if reason is None and session.hold and request.method not in SAFE_METHODS:
             session.log.update(request, state="held", reason="submission held by Nik", endedAt=time.time() * 1000)
             session.note("held", f"{request.method} to {url[:200]} held (not sent)")
@@ -304,25 +349,78 @@ class Browser:
         server.on_message(incoming)
         log.update(socket_route, state="done", response={"status": 101, "statusText": "Switching Protocols"})
 
-    def _watch(self, session: Session, page) -> None:
+    def _adopt(self, session: Session, page, opener=None) -> None:
+        """Make ``page`` a tab of the session: the first one, or one a page opened."""
+        session.pages.append(page)
+        session.tab_ids[page] = uuid.uuid4().hex[:8]
+        session.openers[page] = opener
         page.on("dialog", lambda dialog: self._dialog(session, dialog))
         page.on(
             "download", lambda download: session.note("download", f"download refused: {download.suggested_filename}")
         )
-        page.on("popup", lambda popup: self._popup(session, popup))
+        page.on("close", lambda _closed=None: self._gone(session, page))
 
     def _dialog(self, session: Session, dialog) -> None:
         session.note("dialog", f"{dialog.type}: {dialog.message}")
         asyncio.ensure_future(dialog.dismiss())
 
-    def _popup(self, session: Session, popup) -> None:
-        session.note("popup", "a new tab opened: shown here instead")
-        session.page = popup
-        self._watch(session, popup)
+    async def _opened(self, session: Session, page) -> None:
+        """A window the page opened (a sign-in pop-up, a ``target=_blank`` link): a new tab, shown now."""
+        if page in session.tab_ids or session.closed_at is not None:
+            return
+        if len(session.pages) >= MAX_TABS:
+            session.note("popup", f"the page tried to open more than {MAX_TABS} tabs: refused")
+            await page.close()
+            return
+        try:
+            opener = await page.opener()
+        except Exception:  # noqa: BLE001 - the opener is already gone
+            opener = None
+        self._adopt(session, page, opener)
+        try:
+            # A pop-up asks for its own little window: it gets the session's size like any tab.
+            await page.set_viewport_size({"width": session.width, "height": session.height})
+        except Exception:  # noqa: BLE001 - closed again already
+            pass
+        if page in session.tab_ids:
+            session.page = page
+            session.note("popup", "the page opened a new tab: shown now, the others stay open")
+
+    def _gone(self, session: Session, page) -> None:
+        """A tab closed (by the page itself, or by the analyst): show the one that opened it."""
+        if page not in session.tab_ids:
+            return
+        session.pages.remove(page)
+        session.tab_ids.pop(page, None)
+        opener = session.openers.pop(page, None)
+        if session.page is not page:
+            return
+        session.page = opener if opener in session.pages else (session.pages[-1] if session.pages else None)
+        if session.page is not None and session.closed_at is None:
+            session.note("popup", "the tab closed: back to the one that opened it")
+
+    async def _tabs(self, session: Session) -> list[dict[str, Any]]:
+        tabs = []
+        for page in list(session.pages):
+            try:
+                title = (await page.title())[:120]
+            except Exception:  # noqa: BLE001 - navigating, or closing
+                title = ""
+            tabs.append(
+                {
+                    "id": session.tab_ids.get(page, ""),
+                    "title": title,
+                    "url": "" if page.url.startswith(ATTACHMENT_URL) else page.url[:300],
+                    "active": page is session.page,
+                }
+            )
+        return tabs
 
     async def _state(self, session: Session) -> dict[str, Any]:
         await asyncio.sleep(SETTLE)
         page = session.page
+        if page is None:
+            raise BrowserError("Every tab of the session is closed", 410)
         try:
             await page.wait_for_load_state("load", timeout=3000)
         except Exception:  # noqa: BLE001 - a page still loading is shown as it is
@@ -338,8 +436,9 @@ class Browser:
             "attachment": page.url.startswith(ATTACHMENT_URL),
             "title": title[:300],
             "network": session.network,
-            "width": WIDTH,
-            "height": HEIGHT,
+            "width": session.width,
+            "height": session.height,
+            "tabs": await self._tabs(session),
             "screenshot": base64.b64encode(shot).decode(),
             "blocked": session.blocked,
             "releasePosts": session.network and not session.hold,
@@ -351,7 +450,7 @@ class Browser:
     async def _open(self, session: Session, html: bytes | None, url: str | None) -> dict[str, Any]:
         browser = await self._chromium()
         context = await browser.new_context(
-            viewport={"width": WIDTH, "height": HEIGHT},
+            viewport={"width": session.width, "height": session.height},
             user_agent=USER_AGENT,
             accept_downloads=False,
             service_workers="block",
@@ -365,7 +464,9 @@ class Browser:
         await context.route("**/*", lambda route: self._route(session, html, route))
         await context.route_web_socket("**/*", lambda socket_route: self._websocket(session, socket_route))
         session.page = await context.new_page()
-        self._watch(session, session.page)
+        self._adopt(session, session.page)
+        # From now on, every window a page opens is a tab of the session.
+        context.on("page", lambda page: asyncio.ensure_future(self._opened(session, page)))
         target = ATTACHMENT_URL if html is not None else url
         try:
             await session.page.goto(target, timeout=NAV_TIMEOUT, wait_until="load")
@@ -373,13 +474,23 @@ class Browser:
             session.note("error", f"loading stopped: {str(exc).splitlines()[0][:200]}")
         return await self._state(session)
 
-    def open(self, owner: str, network: bool, html: bytes | None = None, url: str | None = None) -> dict[str, Any]:
+    def open(
+        self,
+        owner: str,
+        network: bool,
+        html: bytes | None = None,
+        url: str | None = None,
+        width: Any = None,
+        height: Any = None,
+    ) -> dict[str, Any]:
         self.expire()
         if len(self.sessions) >= MAX_SESSIONS:
             raise BrowserError("Too many open browser sessions; close one first", 503)
         if url is not None and urlsplit(url).scheme not in ("http", "https"):
             raise BrowserError("Only http and https addresses can be opened")
         session = Session(owner, network)
+        session.width = _size(width, MIN_WIDTH, MAX_WIDTH, WIDTH)
+        session.height = _size(height, MIN_HEIGHT, MAX_HEIGHT, HEIGHT)
         self.sessions[session.id] = session
         try:
             return self.call(self._open(session, html, url))
@@ -387,12 +498,40 @@ class Browser:
             self.close(session.id, owner)
             raise
 
+    def _tab(self, session: Session, tab_id: Any):
+        for page in session.pages:
+            if session.tab_ids.get(page) == tab_id:
+                return page
+        raise BrowserError("No such tab (it may have closed)", 404)
+
     async def _act(self, session: Session, action: dict[str, Any]) -> dict[str, Any]:
-        page = session.page
         kind = action.get("type")
+        if kind == "tab":
+            session.page = self._tab(session, action.get("id"))
+            await session.page.bring_to_front()
+            return await self._state(session)
+        if kind == "closeTab":
+            target = self._tab(session, action.get("id"))
+            if len(session.pages) < 2:
+                raise BrowserError("The last tab stays open: close the window instead")
+            await target.close()
+            self._gone(session, target)
+            return await self._state(session)
+        if kind == "resize":
+            session.width = _size(action.get("width"), MIN_WIDTH, MAX_WIDTH, session.width)
+            session.height = _size(action.get("height"), MIN_HEIGHT, MAX_HEIGHT, session.height)
+            for open_page in list(session.pages):
+                try:
+                    await open_page.set_viewport_size({"width": session.width, "height": session.height})
+                except Exception:  # noqa: BLE001 - a tab closing meanwhile
+                    pass
+            return await self._state(session)
+        page = session.page
+        if page is None:
+            raise BrowserError("Every tab of the session is closed", 410)
         if kind in ("click", "dblclick", "move"):
             x, y = float(action.get("x", 0)), float(action.get("y", 0))
-            if not (0 <= x <= WIDTH and 0 <= y <= HEIGHT):
+            if not (0 <= x <= session.width and 0 <= y <= session.height):
                 raise BrowserError("The point is outside the page")
             if kind == "move":
                 await page.mouse.move(x, y)
