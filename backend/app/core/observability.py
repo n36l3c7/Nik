@@ -52,9 +52,13 @@ def setup_logging(level: str = "INFO") -> None:
 
 
 def _route_template(request: Request) -> str:
-    """Low-cardinality path label (the matched route, not the concrete URL)."""
+    """Low-cardinality path label: the matched route, never the concrete URL.
+
+    A request that matches no route is counted under one label, so a scanner
+    asking for random paths cannot grow the metrics without bound.
+    """
     route = request.scope.get("route")
-    return getattr(route, "path", request.url.path)
+    return getattr(route, "path", "unmatched")
 
 
 async def observability_middleware(request: Request, call_next):

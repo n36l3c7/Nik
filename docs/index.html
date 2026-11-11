@@ -104,7 +104,7 @@
 
       <h2 id="quick-start">Quick start</h2>
       <pre><code><span class="prompt"></span>git clone https://github.com/n36l3c7/Nik.git &amp;&amp; cd Nik
-<span class="prompt"></span>cp .env.example .env          # set DB_PASSWORD, SECRET_KEY and the worker tokens
+<span class="prompt"></span>deploy/init-env.sh            # writes .env with fresh random secrets
 <span class="prompt"></span>docker compose up -d --build  # or: podman compose up -d --build</code></pre>
       <p>
         Open <strong>https://localhost:8443</strong> and create the first account: it becomes the admin.

@@ -121,8 +121,9 @@ def _expire() -> None:
 
 
 if __name__ == "__main__":
-    if not TOKEN:
-        raise SystemExit("PCAP_TOKEN is not set: refusing to start without authentication.")
+    if not TOKEN or TOKEN.startswith("please-change-this"):
+        # An empty token, or the public one of the example file, protects nothing.
+        raise SystemExit("PCAP_TOKEN is not set (or is the example value): refusing to start.")
     print(f"nik-pcap listening on :{PORT}, captures in {SAMPLE_DIR}", flush=True)
     threading.Thread(target=_expire, name="expire", daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

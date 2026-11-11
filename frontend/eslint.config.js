@@ -29,7 +29,14 @@ export default [
   },
   {
     // Node-side files: tests, build config, fixture scripts.
-    files: ['**/*.test.js', 'e2e/**/*.js', 'vite.config.js', 'eslint.config.js', 'playwright*.config.js'],
+    files: [
+      '**/*.test.js',
+      'e2e/**/*.js',
+      'vite.config.js',
+      'eslint.config.js',
+      'playwright*.config.js',
+      'security-headers.js',
+    ],
     languageOptions: { globals: { ...globals.node } },
   },
 ]

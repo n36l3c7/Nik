@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { PAGE_HEADERS } from './security-headers.js'
 
 // Vite configuration for Nik.
 // - React plugin (JSX + fast refresh)
@@ -21,7 +22,9 @@ const apiProxy = {
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: { proxy: apiProxy },
-  preview: { proxy: apiProxy },
+  // The production headers (Content-Security-Policy included), so the end-to-end
+  // tests run under the policy nginx sends.
+  preview: { proxy: apiProxy, headers: PAGE_HEADERS },
   build: {
     // sql.js (WASM) is lazy-loaded: raise the warning limit for the chunks
     // produced by the tabs' code-splitting.

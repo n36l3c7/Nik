@@ -12,7 +12,9 @@ public to view; calling the write endpoints requires an ``X-API-Key`` header
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI
+import hmac
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -24,7 +26,10 @@ from .artifacts import backfill as backfill_artifacts
 # Import models so their tables are registered on the shared metadata before
 # create_all runs. (The routers already import the models, but importing here
 # makes the dependency explicit and order-independent.)
-from .core import models  # noqa: F401
+from .core import (
+    models,  # noqa: F401
+    vault,
+)
 from .core.config import settings as app_settings
 from .core.db import Base, SessionLocal, engine, get_db
 from .core.observability import metrics_response, observability_middleware, setup_logging
@@ -110,7 +115,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="2.28.0",
+    version="3.0.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -137,6 +142,8 @@ def on_startup() -> None:
     """
     if app_settings.RUN_CREATE_ALL:
         Base.metadata.create_all(bind=engine)
+    # SECRET_KEY was changed: move what the old one encrypted to the new one.
+    vault.reencrypt(SessionLocal)
     # Samples stored by releases before 2.7.0 are 0o440: the workers could not read them.
     repair_store_permissions()
     # Incidents saved before 2.12.0 have no indicator index yet.
@@ -162,8 +169,12 @@ def ready(db: OrmSession = Depends(get_db)) -> dict:
 
 
 @app.get("/api/metrics", tags=["health"], include_in_schema=False)
-def metrics():
-    """Prometheus metrics exposition."""
+def metrics(request: Request):
+    """Prometheus metrics exposition (with ``METRICS_TOKEN`` set, for its bearer only)."""
+    token = app_settings.METRICS_TOKEN
+    sent = request.headers.get("Authorization", "")
+    if token and not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return metrics_response()
 
 
