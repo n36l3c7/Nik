@@ -547,6 +547,40 @@ test('an address is scanned on its own, then linked to the incident', async () =
   await page.getByRole('button', { name: 'Incidents', exact: true }).click()
 })
 
+test('pasted text is recognised: an address to scan, an indicator to look up', async () => {
+  const paste = (text) =>
+    page.evaluate((value) => {
+      const data = new DataTransfer()
+      data.setData('text/plain', value)
+      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+    }, text)
+  const prompt = page.getByRole('dialog', { name: 'Pasted text' })
+
+  // Ordinary text is left alone.
+  await paste('just some words')
+  await expect(prompt).toHaveCount(0)
+
+  // A defanged address: read as it was meant, opened only if the analyst chooses.
+  await paste('hxxps://nik-e2e-scan[.]invalid/login')
+  await expect(prompt).toContainText('URL')
+  await expect(prompt).toContainText('https://nik-e2e-scan.invalid/login')
+  await expect(prompt.getByRole('button', { name: 'Analyse URL' })).toBeVisible()
+  await prompt.getByRole('button', { name: 'Dismiss' }).click()
+  await expect(prompt).toHaveCount(0)
+
+  // An indicator: search it, or see where it was seen.
+  await paste('185.220.101[.]47')
+  await expect(prompt).toContainText('IP address')
+  await prompt.getByRole('button', { name: 'Search in Nik' }).click()
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  await expect(palette.getByRole('textbox', { name: 'Search' })).toHaveValue('185.220.101.47')
+  await page.keyboard.press('Escape')
+  await paste('185.220.101.47')
+  await prompt.getByRole('button', { name: 'Where seen' }).click()
+  await expect(page.getByRole('dialog', { name: 'Where seen' })).toContainText('WKS-FINANCE-01')
+  await page.keyboard.press('Escape')
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

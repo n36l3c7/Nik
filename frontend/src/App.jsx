@@ -29,8 +29,11 @@ import IncidentFields, { EMPTY_INCIDENT_FIELDS, canCreateIncident } from './comp
 import AddFileDialog from './components/incident/AddFileDialog.jsx'
 import ArtifactPage from './components/artifacts/ArtifactPage.jsx'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
+import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import BackupModal from './components/backup/BackupModal.jsx'
 import { kindForTab } from './domain/artifactRegistry.js'
+import { recognise } from './domain/pasted.js'
+import { useIocLookup } from './context/IocLookupContext.jsx'
 import { sha256Hex } from './lib/hash.js'
 import { useNavigation } from './context/NavigationContext.jsx'
 import { detectFileRoute, readHead } from './domain/fileRouting.js'
@@ -162,6 +165,7 @@ export default function App() {
   } = useIncidents()
   const artifacts = useArtifacts()
   const { showToast } = useToast()
+  const { openIoc } = useIocLookup()
   // The main area shows an artifact on its own instead of the active incident.
   const artifactOpen = Boolean(artifacts.currentId)
 
@@ -229,6 +233,35 @@ export default function App() {
     [lookup],
   )
 
+  // Text pasted or dragged onto the app: an address or an indicator Nik can act on.
+  const [pasted, setPasted] = useState(null) // recognise() result + { raw, known }
+  const [pastedBusy, setPastedBusy] = useState(false)
+  const [pastedError, setPastedError] = useState(null)
+  const offerText = useCallback(
+    async (text) => {
+      const match = recognise(text)
+      if (!match) return
+      // A SHA-256 may be a file or an e-mail that was analysed already.
+      const known = match.kind === 'sha256' ? ((await lookup(match.value))[0] ?? null) : null
+      setPastedError(null)
+      setPasted({ ...match, raw: String(text).trim(), known })
+    },
+    [lookup],
+  )
+  const dismissPasted = useCallback(() => setPasted(null), [])
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+    const onPaste = (event) => {
+      // In a text field, pasting is just pasting.
+      if (isTypingTarget(event.target)) return
+      const file = event.clipboardData?.files?.[0]
+      if (file) placeFile(file)
+      else offerText(event.clipboardData?.getData('text') ?? '')
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [isAuthenticated, placeFile, offerText])
+
   // A file dropped anywhere: the overlay while dragging, then the dialog.
   const [dragging, setDragging] = useState(false)
   const [drop, setDrop] = useState(null) // { file, route }
@@ -236,6 +269,11 @@ export default function App() {
     if (!isAuthenticated) return undefined
     let depth = 0
     const hasFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
+    // Selected text dragged onto the app (not into a text field, where it is just text).
+    const hasText = (event) =>
+      !hasFiles(event) &&
+      Array.from(event.dataTransfer?.types ?? []).includes('text/plain') &&
+      !isTypingTarget(event.target)
     const onEnter = (event) => {
       if (!hasFiles(event)) return
       depth += 1
@@ -247,9 +285,14 @@ export default function App() {
       if (depth === 0) setDragging(false)
     }
     const onOver = (event) => {
-      if (hasFiles(event)) event.preventDefault()
+      if (hasFiles(event) || hasText(event)) event.preventDefault()
     }
     const onDrop = (event) => {
+      if (hasText(event) && !event.defaultPrevented) {
+        event.preventDefault()
+        offerText(event.dataTransfer.getData('text/plain'))
+        return
+      }
       if (!hasFiles(event)) return
       depth = 0
       setDragging(false)
@@ -269,7 +312,7 @@ export default function App() {
       window.removeEventListener('dragover', onOver)
       window.removeEventListener('drop', onDrop)
     }
-  }, [isAuthenticated, placeFile])
+  }, [isAuthenticated, placeFile, offerText])
 
   // Unified settings panel: a single dialog with sections. `settingsSection`
   // lets the header/sidebar deep-link into Detection rules / Accounts / Audit.
@@ -611,6 +654,41 @@ export default function App() {
           setAnalysisOpen(false)
           setPanel('artifacts')
           artifacts.openArtifact(scan.artifactId)
+        }}
+      />
+
+      <PastePrompt
+        pasted={pasted}
+        busy={pastedBusy}
+        error={pastedError}
+        onDismiss={dismissPasted}
+        onScan={async (url) => {
+          setPastedBusy(true)
+          setPastedError(null)
+          try {
+            const scan = await artifacts.scanUrl(url)
+            setPasted(null)
+            setPanel('artifacts')
+            artifacts.openArtifact(scan.artifactId)
+          } catch (err) {
+            setPastedError(err.message)
+          } finally {
+            setPastedBusy(false)
+          }
+        }}
+        onSearch={(value) => {
+          setPasted(null)
+          setPaletteQuery(value)
+          setPaletteOpen(true)
+        }}
+        onLookup={(kind, value) => {
+          setPasted(null)
+          openIoc(kind, value)
+        }}
+        onOpenKnown={(artifact) => {
+          setPasted(null)
+          setPanel('artifacts')
+          artifacts.openArtifact(artifact.id)
         }}
       />
 

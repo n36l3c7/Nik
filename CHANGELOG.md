@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-11-11
+
+### Added
+
+- **Paste or drag text**: Ctrl+V outside a text field, or selected text
+  dragged onto the app, is checked for something Nik can act on. A small
+  panel then offers what to do; nothing is opened until the analyst chooses.
+  - An address: **Analyse URL** (the isolated browser scans it).
+  - A hash, an IP address, a domain or an e-mail address: **Search in Nik**
+    and **Where seen** (incidents and reputation). A domain can also be
+    visited; a SHA-256 of a file already analysed opens that analysis.
+  - Defanged text is read as it was meant (`hxxps://evil[.]top`,
+    `1.2.3[.]4`, `user[at]evil.top`). Sentences and longer text are ignored.
+- A file copied to the clipboard and pasted on the app is handled like a
+  dropped file.
+
 ## [2.21.0] - 2026-11-11
 
 ### Added
