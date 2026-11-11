@@ -21,8 +21,10 @@
           <a href="guide.html">User guide</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html" aria-current="page">Configuration</a>
+          <a href="security.html">Security</a>
           <a href="api.html">API</a>
           <a href="architecture.html">Architecture</a>
+          <a href="internals.html">Internals</a>
           <a href="developer.html">Developers</a>
           <a href="changelog.html">Changelog</a>
           <a href="https://github.com/n36l3c7/Nik">GitHub</a>
@@ -218,9 +220,10 @@
             </tr>
             <tr>
               <td><code>RATE_LIMIT_DEFAULT</code></td>
-              <td>per-IP limit</td>
+              <td><code>600/minute</code></td>
               <td>
-                Request rate limit applied to the API, in <code>slowapi</code> notation (e.g. <code>60/minute</code>).
+                Requests each client address may make, in <code>slowapi</code> notation. Signing in has a limit of its
+                own, 10 a minute.
               </td>
             </tr>
           </tbody>
@@ -375,8 +378,110 @@
         address, as nginx sees it. Container logs are rotated at 20 MB.
       </div>
 
+      <h2 id="more-variables">Tuning and worker variables</h2>
+      <p>Rarely needed; the defaults suit a single server.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>Default</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>LOG_LEVEL</code></td>
+              <td><code>INFO</code></td>
+              <td>Verbosity of the backend log.</td>
+            </tr>
+            <tr>
+              <td><code>WEB_CONCURRENCY</code></td>
+              <td><code>2</code></td>
+              <td>Backend worker processes (gunicorn).</td>
+            </tr>
+            <tr>
+              <td><code>DB_USER</code>, <code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_NAME</code></td>
+              <td><code>nik</code>, <code>localhost</code>, <code>5432</code>, <code>nik</code></td>
+              <td>The other parts of the PostgreSQL address, with <code>DB_PASSWORD</code>.</td>
+            </tr>
+            <tr>
+              <td><code>DB_POOL_SIZE</code>, <code>DB_MAX_OVERFLOW</code>, <code>DB_POOL_RECYCLE</code></td>
+              <td><code>5</code>, <code>10</code>, <code>1800</code></td>
+              <td>
+                Database connections kept per backend process, extra ones under load, and their lifetime in seconds.
+              </td>
+            </tr>
+            <tr>
+              <td><code>DB_STATEMENT_TIMEOUT_MS</code></td>
+              <td><code>30000</code></td>
+              <td>A query that runs longer is cancelled (PostgreSQL only).</td>
+            </tr>
+            <tr>
+              <td><code>RATE_LIMIT_STORAGE_URI</code></td>
+              <td><code>memory://</code></td>
+              <td>Where rate-limit counters are kept; a Redis URL shares them between processes and hosts.</td>
+            </tr>
+            <tr>
+              <td><code>FORWARDED_ALLOW_IPS</code></td>
+              <td><code>127.0.0.1</code> (<code>*</code> in Compose)</td>
+              <td>
+                Which proxies the backend believes about the client's address. In Compose only nginx reaches the
+                backend, so every address is accepted.
+              </td>
+            </tr>
+            <tr>
+              <td><code>RUN_CREATE_ALL</code></td>
+              <td><code>true</code> (<code>false</code> in the image)</td>
+              <td>Create the tables at start-up without Alembic: for development on SQLite only.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>ANALYZER_MAX_JOBS</code>, <code>CAPA_MAX_JOBS</code>, <code>DOCVIEW_MAX_JOBS</code>,
+                <code>PCAP_MAX_JOBS</code>
+              </td>
+              <td><code>2</code>, <code>1</code>, <code>2</code>, <code>2</code></td>
+              <td>Analyses each worker runs at once; more are answered "busy".</td>
+            </tr>
+            <tr>
+              <td><code>DOCVIEW_TIMEOUT</code>, <code>DOCVIEW_MAX_PAGES</code>, <code>DOCVIEW_MAX_MB</code></td>
+              <td><code>90</code>, <code>20</code>, <code>50</code></td>
+              <td>Seconds a preview may take, pages rendered, largest document.</td>
+            </tr>
+            <tr>
+              <td><code>BROWSER_IDLE</code>, <code>BROWSER_LIFETIME</code></td>
+              <td><code>300</code>, <code>1800</code></td>
+              <td>Seconds an isolated browser session lasts without an action, and in all.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>PCAP_TIMEOUT</code>, <code>PCAP_RPC_TIMEOUT</code>, <code>PCAP_MAX_SESSIONS</code>,
+                <code>PCAP_SESSION_IDLE</code>
+              </td>
+              <td><code>900</code>, <code>300</code>, <code>2</code>, <code>900</code></td>
+              <td>
+                Seconds to summarise a capture and to answer one question about it; captures kept open at once, and how
+                long an unused one stays open.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_PG_UPGRADE</code></td>
+              <td>—</td>
+              <td>Set by <code>deploy/upgrade-postgres.sh</code> while it moves the data; never by hand.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The worker variables are read by the worker containers: to change one that
+        <code>docker-compose.yml</code> does not pass, add it to that service's <code>environment</code>.
+      </p>
+
       <h2 id="settings">In-app settings</h2>
-      <p>Opened from the header (gear icon); shared by every analyst and stored on the server.</p>
+      <p>
+        Opened from the gear at the bottom of the rail; shared by every analyst and stored on the server. Detection
+        rules, business hours and the IOC allowlist are the analysts' working settings; the rest is for admins.
+      </p>
       <div class="grid">
         <div class="card">
           <h3>Detection rules</h3>
@@ -412,20 +517,36 @@
           </p>
         </div>
         <div class="card">
-          <h3>Backup</h3>
+          <h3>IOC allowlist</h3>
           <p>
-            Full platform export and import (users, incidents, audit log, settings) for admins. Take one before every
-            upgrade.
+            Known-good indicators (addresses, networks, domains) left out of the IOCs tab and never sent to a
+            threat-intelligence provider.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Report header, mail analysis, threat intelligence</h3>
+          <p>
+            Admins set the organisation's name and logo on reports, the organisation's own mail domains and the mail
+            servers whose authentication results are trusted, and the threat-intelligence providers: their keys (never
+            shown again) and which indicator types may be looked up automatically.
+          </p>
+        </div>
+        <div class="card">
+          <h3>My account, audit log</h3>
+          <p>
+            Everyone changes their own password under My account and reads the audit log, which the server writes. The
+            full backup is not a setting: it is a button on the rail, for admins, and holds incidents, users, the audit
+            log and the settings, not the files.
           </p>
         </div>
       </div>
 
       <h2 id="upgrades">Upgrades</h2>
       <p>
-        Pull the new release and rebuild (<code>docker compose up -d --build</code>). Data persists in PostgreSQL; new
-        tables are created on startup, and releases that add a migration run <code>alembic upgrade head</code> in the
-        Docker image. Upgrading to <strong>2.0.0</strong> rewrites every incident once (browser data moves into a
-        "Default" profile): on large databases the first start takes longer, so take a backup first.
+        Pull the new release and rebuild (<code>docker compose up -d --build</code>). Data persists in PostgreSQL and in
+        the sample store; the image runs <code>alembic upgrade head</code> at every start, which brings the schema up to
+        date. Upgrading to <strong>2.0.0</strong> rewrites every incident once (browser data moves into a "Default"
+        profile): on large databases the first start takes longer, so take a backup first.
       </p>
     </main>
 

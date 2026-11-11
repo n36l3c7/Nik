@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="How Nik contains hostile evidence, what leaves the server, a hardening checklist and how to report a vulnerability."
+    />
+    <title>Nik — Security</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="guide.html">User guide</a>
+          <a href="deployment.html">Deployment</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="security.html" aria-current="page">Security</a>
+          <a href="api.html">API</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="internals.html">Internals</a>
+          <a href="developer.html">Developers</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Security</h1>
+      <p class="lead">
+        Nik is where a team puts the worst files it has: live malware, phishing mail, captures of an attack, the
+        addresses of the attacker's own servers. This page says how those are kept from doing harm, what leaves the
+        server and when, what an administrator should check, and where the limits are.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#threat-model">What Nik defends against</a></li>
+          <li><a href="#containment">How hostile content is contained</a></li>
+          <li><a href="#hostile-input">Limits on what a file can make the server do</a></li>
+          <li><a href="#analyst-browser">What reaches the analyst's browser</a></li>
+          <li><a href="#outbound">What leaves the server</a></li>
+          <li><a href="#accounts">Accounts, sessions and the audit log</a></li>
+          <li><a href="#secrets">Secrets and backups</a></li>
+          <li><a href="#checklist">Hardening checklist</a></li>
+          <li><a href="#limits">Known limits</a></li>
+          <li><a href="#reporting">Reporting a vulnerability</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="threat-model">What Nik defends against</h2>
+      <p>The content is the adversary. Nik assumes that:</p>
+      <ul>
+        <li>
+          every <strong>evidence file</strong> may be built to attack whatever opens it: a sample, a document with an
+          exploit, a database with a hostile schema, a capture that crashes a dissector, a file name that is a path or a
+          header;
+        </li>
+        <li>
+          every <strong>string</strong> taken from evidence (a URL, a subject, a host name, a string of a binary) may be
+          markup, a script, or a lure for a click;
+        </li>
+        <li>
+          every <strong>page</strong> the isolated browser visits is run by the attacker, and will try to reach the
+          organisation's own network through the server;
+        </li>
+        <li>
+          the <strong>analysts</strong> are trusted colleagues with accounts, not administrators: what each of them does
+          is recorded, and what decides where data goes is an admin's to set.
+        </li>
+      </ul>
+      <p>
+        It does not defend against an attacker who already controls the server's host, nor against an administrator.
+      </p>
+
+      <h2 id="containment">How hostile content is contained</h2>
+      <p>
+        Samples are <strong>never executed</strong>: there is no sandbox that detonates them. They are read,
+        disassembled and matched against rules. Each kind of content is handled by the part with the least access that
+        can do the job:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Container</th>
+              <th>Handles</th>
+              <th>Network</th>
+              <th>Can read</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>analyzer</code> (rizin)</td>
+              <td>disassembly and decompilation of samples</td>
+              <td>internal only, no route outside</td>
+              <td>the sample store, read-only</td>
+            </tr>
+            <tr>
+              <td><code>capa</code></td>
+              <td>capabilities of samples</td>
+              <td>internal only</td>
+              <td>the sample store, read-only</td>
+            </tr>
+            <tr>
+              <td><code>docview</code> (LibreOffice, pdfium)</td>
+              <td>previews of documents: macros disabled, links never updated</td>
+              <td>internal only</td>
+              <td>only the document it is sent</td>
+            </tr>
+            <tr>
+              <td><code>pcap</code> (tshark, sharkd)</td>
+              <td>packet captures</td>
+              <td>internal only</td>
+              <td>the sample store, read-only</td>
+            </tr>
+            <tr>
+              <td><code>browser</code> (Chromium)</td>
+              <td>HTML attachments and addresses</td>
+              <td>
+                its own network to the backend, and a route to the internet through a filtering proxy; no network shared
+                with the other workers
+              </td>
+              <td>only the page it is sent</td>
+            </tr>
+            <tr>
+              <td><code>api</code></td>
+              <td>everything else: e-mails, event logs, static analysis of samples, the report</td>
+              <td>the database, the workers, the internet for threat-intelligence lookups</td>
+              <td>the sample store, read-write</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Every one of them runs as an <strong>unprivileged user</strong> on a <strong>read-only filesystem</strong>, with
+        all capabilities dropped, <code>no-new-privileges</code>, and memory, CPU and process limits. A worker is
+        reached with a token of its own, compared in constant time; none of them can reach the database. The database is
+        on a network the workers are not on.
+      </p>
+      <p>
+        <strong>The isolated browser</strong> is the one part that runs attacker code on purpose. Without network (the
+        default) only the attachment loads and every request is refused. With network, Chromium's only route is a proxy
+        inside the worker that resolves each name itself, refuses unless every address is public, and connects to the
+        address it checked: a redirect to <code>10.0.0.1</code>, a name that changes its answer between the check and
+        the connection, a cloud metadata address, all go nowhere. What a page submits is held until the analyst releases
+        it. Downloads are refused, dialogs dismissed, permissions denied.
+      </p>
+
+      <h2 id="hostile-input">Limits on what a file can make the server do</h2>
+      <ul>
+        <li>
+          <strong>Size</strong>: every upload has a limit, enforced while the file is read (<code>SAMPLE_MAX_MB</code>,
+          <code>ARTIFACT_MAX_MB</code>, <code>PCAP_MAX_MB</code>).
+        </li>
+        <li>
+          <strong>Time</strong>: an analysis has a time limit that ends the work for real: a tool that stalls is killed
+          with everything it started, and a preview is made in a process of its own.
+        </li>
+        <li>
+          <strong>SQLite files</strong> (browser databases) are opened read-only, with their schema untrusted, a time
+          budget and a row limit: a view over an endless query in place of a table costs twenty seconds, not the server.
+        </li>
+        <li>
+          <strong>Names</strong> from evidence never become paths or commands: files are stored under their SHA-256 or
+          an identifier, tools are given neutral names, and a download is offered under a name with separators, control
+          characters and text-direction marks replaced.
+        </li>
+        <li>
+          <strong>E-mail</strong>: the HTML is sanitised on the server; only the first five DKIM signatures are
+          verified; an image that declares a huge size is refused before it is decoded.
+        </li>
+        <li>
+          <strong>Reports</strong>: every value is escaped, and the PDF renderer fetches nothing, so a logo or a value
+          that points at a URL or a local file is not followed.
+        </li>
+      </ul>
+
+      <h2 id="analyst-browser">What reaches the analyst's browser</h2>
+      <ul>
+        <li>
+          A <strong>picture</strong>, not the page: the isolated browser sends screenshots, documents are shown as page
+          images.
+        </li>
+        <li>
+          <strong>Hostile HTML</strong> (an e-mail body, a captured page, the report preview) is drawn in a frame that
+          runs no script and loads nothing, with its links, forms and redirects disarmed and remote references removed
+          from its styles. Remote images of an e-mail load only when the analyst asks, and tracking pixels never.
+        </li>
+        <li>
+          <strong>Addresses</strong> from evidence are not links: opening one asks first, shows it defanged, and only
+          <code>http(s)</code> can be opened.
+        </li>
+        <li>
+          <strong>Samples</strong> are downloaded only inside a password-protected zip (<code>infected</code> by
+          default), so nothing on the way, nor the workstation's antivirus, runs or deletes them by accident.
+        </li>
+        <li>
+          The app's pages carry a <strong>Content-Security-Policy</strong> that lets only its own scripts run and lets
+          it talk to its own origin only, with <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>,
+          <code>Referrer-Policy</code> and HSTS. The session cookie is <code>HttpOnly</code>, <code>Secure</code> and
+          <code>SameSite=Lax</code>; nothing sensitive is kept in the browser's storage.
+        </li>
+      </ul>
+
+      <h2 id="outbound">What leaves the server</h2>
+      <p>Nothing, unless one of these is turned on or asked for:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>What</th>
+              <th>When</th>
+              <th>What is sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Threat-intelligence lookups</td>
+              <td>
+                when an admin has entered a provider's key; automatic lookups only for the indicator types an admin
+                switched on
+              </td>
+              <td>
+                the indicator (a hash, a domain, an address), to that provider. Never a private or internal value, one
+                on the allowlist, or one of an incident marked TLP:RED
+              </td>
+            </tr>
+            <tr>
+              <td>The isolated browser, with network</td>
+              <td>when an analyst opens a session with network, or scans an address</td>
+              <td>ordinary web requests from the server's address; what the page submits only if released</td>
+            </tr>
+            <tr>
+              <td>Mail authentication checks</td>
+              <td>when an e-mail is uploaded or re-analysed</td>
+              <td>DNS queries for the sender's SPF, DKIM and DMARC records (the sender's DNS sees them)</td>
+            </tr>
+            <tr>
+              <td>Webhooks</td>
+              <td>when an admin subscribed a URL through the API</td>
+              <td>the event (an incident created, an upload finished), signed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The app's own pages load nothing from outside: no CDN, no fonts, no telemetry.</p>
+
+      <h2 id="accounts">Accounts, sessions and the audit log</h2>
+      <ul>
+        <li>Passwords are hashed with bcrypt; sessions are random tokens kept on the server, 12 hours by default.</li>
+        <li>
+          Sign-in is limited per client address, and an account is locked for five minutes after ten wrong passwords in
+          a row. A password change or disabling an account ends its sessions.
+        </li>
+        <li>
+          There is always one admin that can sign in. API keys are stored as digests, carry a role, scopes and an
+          optional expiry, and are shown once.
+        </li>
+        <li>
+          The <strong>audit log is written by the server</strong> for every change, whoever makes it and however: the
+          app, a script with a key, a request sent by hand. It cannot be written from the browser, and clearing it
+          leaves an entry naming who did.
+        </li>
+        <li>Changes by two people to the same incident are merged or refused, never silently overwritten.</li>
+      </ul>
+
+      <h2 id="secrets">Secrets and backups</h2>
+      <ul>
+        <li>
+          The stack does not start without <code>DB_PASSWORD</code>, <code>SECRET_KEY</code> and a token per worker, and
+          refuses the example values. <code>deploy/init-env.sh</code> generates them.
+        </li>
+        <li>
+          <code>SECRET_KEY</code> encrypts the threat-intelligence API keys and the TLS key logs stored in the database.
+          It lives in <code>.env</code>, which <code>deploy/backup.sh</code> copies with each backup: a backup directory
+          holds the data, the samples and the key that decrypts the secrets.
+        </li>
+        <li>
+          Treat a backup as you treat the server: it contains live malware and password hashes. Keep a copy off the
+          host, encrypted.
+        </li>
+      </ul>
+
+      <h2 id="checklist">Hardening checklist</h2>
+      <ol>
+        <li>Create the first account yourself, at once: whoever reaches a new install first becomes its admin.</li>
+        <li>
+          Publish the HTTPS port only where analysts are (a management network, a VPN), and replace the self-signed
+          certificate with one your browsers trust; set <code>TLS_HOSTNAME</code>.
+        </li>
+        <li>
+          Decide whether the server may reach the internet at all. Without it, threat-intelligence lookups, sessions
+          with network and address scans do not work; everything else does.
+        </li>
+        <li>
+          On the host firewall, keep the <code>browser-egress</code> network away from your internal ranges and the
+          cloud metadata address. The worker already refuses them; a second lock costs nothing.
+        </li>
+        <li>
+          Exclude the sample store volume from the host's antivirus, or it will quarantine the evidence; do not exclude
+          anything else.
+        </li>
+        <li>
+          Install the nightly backup (<code>deploy/install-systemd.sh</code>), copy the backups off the host, encrypted,
+          and try a restore once.
+        </li>
+        <li>Give each person an account; disable, do not delete, the account of someone who leaves.</li>
+        <li>Give an API key the narrowest role and scopes that work, and an expiry.</li>
+        <li>
+          Update: <code>git pull</code> and <code>compose up -d --build</code> rebuild the images with the current fixes
+          of LibreOffice, Wireshark and Chromium, which is where the next vulnerability will be.
+        </li>
+      </ol>
+
+      <h2 id="limits">Known limits</h2>
+      <ul>
+        <li>
+          Chromium runs with <code>--no-sandbox</code>: its own sandbox needs privileges the container does not give, so
+          the container is the sandbox. A browser exploit gets an unprivileged process in a container with no
+          capabilities, a read-only filesystem and no network but the backend's and the filtered way out.
+        </li>
+        <li>
+          The backend parses some formats itself (e-mails, event logs, PE headers, YARA, QR codes), in a hardened but
+          not disposable container that holds the database password.
+        </li>
+        <li>
+          In a session <em>without</em> network every request is refused by the interception, not by the proxy; the
+          proxy would still keep anything that slipped through away from private addresses.
+        </li>
+        <li>
+          The in-app full backup does not contain samples, e-mails, captures or rule sets:
+          <code>deploy/backup.sh</code> is the backup. Backups are not encrypted by Nik.
+        </li>
+        <li>Analysts can read every incident: there is no per-incident access control.</li>
+      </ul>
+
+      <h2 id="reporting">Reporting a vulnerability</h2>
+      <p>
+        Please report it privately, through
+        <a href="https://github.com/n36l3c7/Nik/security/advisories/new">a GitHub security advisory</a>, not in a public
+        issue. Say what you did, what happened and what you expected; a sample that triggers it helps, shared the way
+        you would share any malware. <code>SECURITY.md</code> in the repository has the details.
+      </p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>
