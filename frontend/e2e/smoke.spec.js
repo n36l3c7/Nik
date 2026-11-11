@@ -901,6 +901,30 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await settings.getByRole('button', { name: 'Close' }).click()
 })
 
+test('an address from the evidence is opened only after asking', async () => {
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'Browser Forensics', exact: true }).click()
+  await page
+    .getByRole('navigation', { name: 'Browser analysis sections' })
+    .getByRole('button', { name: /^Bookmarks/ })
+    .click()
+  const open = page.getByRole('button', { name: 'Open the address' }).first()
+  await expect(open).toBeVisible()
+  // No link to the suspect's address is left in the page for a stray click.
+  await expect(page.locator('main a[target="_blank"]')).toHaveCount(0)
+
+  const popups = []
+  page.context().on('page', (popup) => popups.push(popup))
+  await open.click()
+  const ask = page.getByRole('dialog', { name: 'Open an address from the evidence?' })
+  await expect(ask).toContainText('from your workstation')
+  await expect(ask).toContainText(/hxxps?\[:\]\/\//)
+  await ask.getByRole('button', { name: 'Copy defanged' }).click()
+  await ask.getByRole('button', { name: 'Cancel' }).click()
+  await expect(ask).toHaveCount(0)
+  expect(popups).toEqual([])
+})
+
 test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {
   const headers = (await request.get('/')).headers()
   expect(headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'")

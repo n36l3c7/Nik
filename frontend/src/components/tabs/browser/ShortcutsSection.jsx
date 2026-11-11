@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Check, Copy, ExternalLink, Flag, Zap } from 'lucide-react'
 import { useRowMenu } from '../../menu/useRowMenu.js'
-import { Card, DataTable, EmptyState } from '../../ui/index.js'
+import { Card, DataTable, EmptyState, EvidenceLink } from '../../ui/index.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { formatDateTime } from '../../../lib/time.js'
 import { truncate } from '../../../lib/url.js'
@@ -131,16 +131,14 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
             </span>
             {row.url && (
               <>
-                <a
-                  href={row.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open the URL in a new tab"
-                  aria-label="Open the URL in a new tab"
+                <EvidenceLink
+                  url={row.url}
+                  title="Open the address… (asks first)"
+                  aria-label="Open the address"
                   className="shrink-0 text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <ExternalLink size={13} />
-                </a>
+                </EvidenceLink>
                 <CopyButton text={row.url} />
               </>
             )}

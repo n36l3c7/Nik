@@ -29,7 +29,7 @@ import {
   History,
   RotateCcw,
 } from 'lucide-react'
-import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
+import { Badge, Button, Card, DataTable, EmptyState, EvidenceLink, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useRowMenu } from '../../menu/useRowMenu.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
@@ -90,19 +90,18 @@ function TimeCell({ event }) {
   )
 }
 
+// The address is the suspect's: it is opened only after asking (see EvidenceLink).
 function ExternalLinkIcon({ href }) {
   if (!href) return null
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Open in a new tab"
-      aria-label="Open in a new tab"
+    <EvidenceLink
+      url={href}
+      title="Open the address… (asks first)"
+      aria-label="Open the address"
       className="shrink-0 text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <ExternalLink className="h-3.5 w-3.5" />
-    </a>
+    </EvidenceLink>
   )
 }
 
@@ -560,15 +559,13 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
             // Link to the redirect destination page
             <span className="mt-0.5 flex items-center gap-1 text-xs text-med">
               <span aria-hidden="true">→</span>
-              <a
-                href={target.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate font-mono hover:underline"
+              <EvidenceLink
+                url={target.url}
+                className="truncate font-mono hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 title={`Redirect to ${target.url}`}
               >
                 {entryDomain(target) || truncate(target.url, 40)}
-              </a>
+              </EvidenceLink>
             </span>
           )}
         </div>

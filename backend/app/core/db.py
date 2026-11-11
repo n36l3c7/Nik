@@ -66,6 +66,15 @@ SessionLocal = sessionmaker(
 )
 
 
+def after_commit(db: Session, action) -> None:
+    """Run ``action()`` once this session's transaction is committed.
+
+    For what cannot be rolled back (deleting a file): done only when the
+    rows that pointed at it are gone for good.
+    """
+    event.listen(db, "after_commit", lambda _session: action(), once=True)
+
+
 def get_db() -> Generator[Session, None, None]:
     """FastAPI dependency that yields a DB session and always closes it."""
     db = SessionLocal()

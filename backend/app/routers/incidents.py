@@ -28,6 +28,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session as OrmSession
@@ -35,7 +36,9 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
+from ..core.config import settings
 from ..core.db import SessionLocal, get_db
+from ..core.files import read_upload
 from ..core.locking import lock_incident
 from ..core.models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
 from ..core.schemas import NoteIn
@@ -134,13 +137,14 @@ def list_incidents(
     """
     conditions = []
     if q:
-        like = f"%{q}%"
+        # The wildcards of the text are searched for, not interpreted.
+        like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         conditions.append(
             or_(
-                Incident.name.ilike(like),
-                Incident.host.ilike(like),
-                Incident.username.ilike(like),
-                Incident.ticket_id.ilike(like),
+                Incident.name.ilike(like, escape="\\"),
+                Incident.host.ilike(like, escape="\\"),
+                Incident.username.ilike(like, escape="\\"),
+                Incident.ticket_id.ilike(like, escape="\\"),
             )
         )
     if host:
@@ -483,7 +487,7 @@ async def upload_artifact(
     if replay is not None:
         return replay
     _get_or_404(db, incident_id)
-    data = await file.read()
+    data = await read_upload(file, settings.ARTIFACT_MAX_MB, "file")
     params = {"browser": browser, "profile": profile, "shell": shell, "category": category, "source": source}
 
     if async_:
@@ -506,7 +510,8 @@ async def upload_artifact(
     row = _get_or_404(db, incident_id, lock=True)
     doc = dict(row.doc or {})
     try:
-        summary = apply_upload(doc, tab, params, data, file.filename or "upload")
+        # Parsing a database or an event log takes a while: off the event loop.
+        summary = await run_in_threadpool(apply_upload, doc, tab, params, data, file.filename or "upload")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

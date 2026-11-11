@@ -27,6 +27,7 @@ from .. import artifacts
 from ..core import vault
 from ..core.config import settings
 from ..core.db import get_db
+from ..core.files import attachment_headers, safe_name
 from ..core.models import AuditEntry, Incident, NetworkCapture
 from ..core.security import Principal, now_iso, principal, writer_principal
 from ..malware.samples import DEFAULT_ZIP_PASSWORD, zip_sample
@@ -247,13 +248,11 @@ async def download_object(
         item = await run_in_threadpool(service.rpc, row, "download", {"token": token})
     except previews.WorkerError as exc:
         raise _worker_error(exc) from exc
-    inner = re.sub(r"[\\/\x00-\x1f]", "_", str(item.get("name") or "object"))[:200] or "object"
+    inner = safe_name(item.get("name"), "object")
     archive = zip_sample(base64.b64decode(item.get("data") or ""), inner, password)
     _audit(db, caller, "capture.object.download", f"Downloaded {inner} from capture {row.file_name}", None)
     db.commit()
-    return Response(
-        archive, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{inner}.zip"'}
-    )
+    return Response(archive, media_type="application/zip", headers=attachment_headers(f"{inner}.zip"))
 
 
 class ObjectIn(BaseModel):
@@ -320,7 +319,7 @@ def download_har(
     return Response(
         json.dumps(document),
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        headers=attachment_headers(name),
     )
 
 

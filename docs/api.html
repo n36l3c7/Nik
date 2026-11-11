@@ -517,6 +517,13 @@
         route it to the right parser, mirroring the app's tabs. The server parses the raw file and merges the normalized
         result into the incident.
       </p>
+      <p>
+        Evidence comes from hosts that may be compromised, so parsing is bounded: a file larger than
+        <code>ARTIFACT_MAX_MB</code> (500 MB) is refused with <code>413</code>; a browser database is opened read-only
+        with its schema untrusted and a time budget, and one that exceeds it is refused with <code>400</code> and the
+        reason. Downloads carry the file's own name in any script (<code>filename*</code>, RFC 5987), with path
+        separators, control characters and text-direction marks replaced.
+      </p>
       <pre><code># Browser history (Chromium History SQLite → data.browser.browsers.chrome)
 <span class="prompt"></span>curl -H "X-API-Key: $KEY" -F file=@History \
   "https://localhost:8443/api/incidents/$ID/upload?tab=browser&amp;browser=chrome&amp;source=history"

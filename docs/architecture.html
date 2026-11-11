@@ -178,6 +178,8 @@
 │   ├── schemas.py                  # Pydantic request/response models
 │   ├── security.py                 # bcrypt hashing, session-auth dependencies
 │   ├── locking.py                  # Row lock every writer of an incident document takes first
+│   ├── files.py                    # read_upload (size limit while reading), safe_name,
+│   │                               #   attachment_headers (RFC 5987 download names)
 │   ├── audit.py                    # record(): the audit trail, written by the handlers;
 │   │                               #   describe_patch(): what a merge patch means (flag, note, status…)
 │   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY);
@@ -287,7 +289,9 @@
 │   ├── malware.js                  # IOC detection, sample severity, timeline events
 │   ├── code.js                     # Code view: API reach, call graph, CFG, pseudo-C lines
 │   ├── triage.js                   # Function origin, strings/IOC links, Start here
-│   ├── mail.js                     # Mail Analysis verdicts and colours
+│   ├── mail.js                     # Mail Analysis verdicts and colours; neutraliseLinks for the
+│   │                               #   sandboxed previews (links, forms, redirects, remote CSS)
+│   ├── links.js                    # evidenceAddress (what may be opened), stripRemoteCss
 │   ├── network.js                  # Network Analysis: request log, packet tree, follow stream
 │   ├── enrichment.js               # Threat-intelligence answers
 │   ├── iocs.js                     # IOC types, source labels, guessIocType
@@ -305,7 +309,8 @@
 └── components/
     ├── ui/                         # Reusable UI kit (Button, Card, Badge, Modal, DataTable,
     │                               #   EmptyState, SearchInput, Select, StatCard, AsciiSkull,
-    │                               #   ErrorBoundary)
+    │                               #   ErrorBoundary, EvidenceLink: an address from the evidence,
+    │                               #   opened only after asking)
     ├── auth/                       # AuthLayout (banner + live status), FirstRunSetup, LoginScreen,
     │                               #   SessionExpiredDialog (sign in again over the app)
     ├── backup/                     # BackupModal (full export/restore, admin only)

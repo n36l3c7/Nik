@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-11
+
+Evidence comes from hosts that may be compromised, and from attackers
+directly: this release bounds what a hostile file can make the server and
+the analyst's browser do.
+
+### Added
+
+- `ARTIFACT_MAX_MB` (500): size limit of the evidence files parsed by the
+  server (`POST /api/incidents/{id}/upload`), enforced while reading.
+- **Addresses from the evidence ask before opening.** The arrow next to a
+  visited URL, a bookmark or a redirect target no longer is a link: it shows
+  the address defanged, offers to copy it, and opens only `http(s)`
+  addresses, after a warning.
+
+### Changed
+
+- Uploaded samples and e-mails are refused with `413` as soon as they pass
+  their limit, instead of after being read whole.
+- Analysing a sample and parsing an evidence file no longer block the other
+  requests of the server while they run.
+- A browser database that cannot be read within 20 seconds is refused with
+  `400` and the reason, instead of hanging.
+- Only the first five DKIM signatures of a message are verified; the result
+  says how many were left out.
+
+### Fixed
+
+- A download whose name is not Latin (a Cyrillic or Chinese attachment)
+  answered `500`. Names now travel as `filename*` (RFC 5987).
+- One flagged row with a timestamp no calendar holds made the whole report
+  and the STIX export fail; such timestamps are now discarded on import and
+  printed as "—" where already stored.
+- The files of a deleted sample or e-mail were removed before the database
+  change was committed, so a failed commit left rows without their file.
+- The incident search treated `%` and `_` in the text as wildcards.
+
+### Security
+
+- **SQLite files are opened read-only with an untrusted schema, a time
+  budget and a row limit.** A browser database crafted with a view over an
+  endless query in place of a table froze the server process.
+- File names from the evidence can no longer inject a response header
+  (CR/LF) or disguise an extension with a text-direction mark in a download.
+- The PDF report renderer fetches nothing: a logo or value pointing at a
+  URL or a local file is not followed from the server.
+- The preview of a captured web page left its links, forms and redirects
+  live: clicking "Sign in" on a captured phishing page opened the real one
+  from the analyst's browser. They are disarmed, as in the e-mail view.
+- With "Load images" on, an e-mail could still call home through a CSS
+  background image or an `@import`. Remote references in styles are always
+  removed.
+- An image declaring a huge size is rejected before it is decoded.
+
 ## [3.0.0] - 2026-11-11
 
 The safe configuration is now the only one. Upgrading from 2.x needs one

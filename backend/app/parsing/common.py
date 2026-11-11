@@ -8,8 +8,10 @@ import os
 import re
 import sqlite3
 import tempfile
+import time
 import uuid
 from contextlib import contextmanager
+from pathlib import Path
 
 _KEY_RE = re.compile(r"[\s_-]+")
 
@@ -79,15 +81,30 @@ def is_sqlite(data: bytes) -> bool:
     return len(data) >= 16 and data[:16] == SQLITE_MAGIC
 
 
+# A browser database comes from a host that may be compromised, so the file
+# itself can be built to hurt whoever opens it: a view over an endless
+# recursive query in place of a table, a schema that calls functions with side
+# effects. It is opened read-only, its schema is not trusted, and all the
+# queries of one file share a time budget and each a row limit.
+SQLITE_BUDGET_SECONDS = 20.0
+SQLITE_MAX_ROWS = 2_000_000
+
+
 @contextmanager
 def open_sqlite(data: bytes):
-    """Open raw bytes as a read-only in-memory-ish SQLite DB (via a temp file)."""
+    """Open raw bytes as a read-only SQLite database (via a temp file), within limits."""
     fd, path = tempfile.mkstemp(suffix=".sqlite")
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
-        conn = sqlite3.connect(path)
+        # immutable: no journal or lock file is looked for, nothing is written.
+        conn = sqlite3.connect(f"{Path(path).as_uri()}?mode=ro&immutable=1", uri=True)
         conn.row_factory = sqlite3.Row
+        # Views and triggers of the file cannot call functions with side effects.
+        conn.execute("PRAGMA trusted_schema = OFF")
+        deadline = time.monotonic() + SQLITE_BUDGET_SECONDS
+        # A non-zero return interrupts the running query.
+        conn.set_progress_handler(lambda: int(time.monotonic() > deadline), 20_000)
         try:
             yield conn
         finally:
@@ -100,8 +117,20 @@ def open_sqlite(data: bytes):
 
 
 def query_rows(conn, sql: str):
+    """The rows of a query as dicts; [] when the file lacks the table.
+
+    A query stopped by the time budget is an error the analyst must see, not
+    an empty result: it raises ``ValueError``.
+    """
     try:
-        return [dict(r) for r in conn.execute(sql).fetchall()]
+        return [dict(r) for r in conn.execute(sql).fetchmany(SQLITE_MAX_ROWS)]
+    except sqlite3.OperationalError as exc:
+        if "interrupted" in str(exc).lower():
+            raise ValueError(
+                f"The database took more than {SQLITE_BUDGET_SECONDS:.0f} seconds to read: "
+                "it is damaged, or built to stall whoever opens it."
+            ) from exc
+        return []
     except sqlite3.Error:
         return []
 
