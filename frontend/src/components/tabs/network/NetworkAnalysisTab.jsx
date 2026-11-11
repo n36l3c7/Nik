@@ -7,6 +7,7 @@ import CaptureDetail from './CaptureDetail.jsx'
 import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
+import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api, upload } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
@@ -88,7 +89,7 @@ export default function NetworkAnalysisTab({ incident, onReference }) {
   const [errors, setErrors] = useState({})
   const [progress, setProgress] = useState(null)
   const [uploadError, setUploadError] = useState(null)
-  const [listOpen, setListOpen] = useState(true)
+  const [listOpen, setListOpen] = useStoredBoolean('nik.list.network', true)
   const [removing, setRemoving] = useState(false)
   const [downloading, setDownloading] = useState(null)
   const [sending, setSending] = useState(null)

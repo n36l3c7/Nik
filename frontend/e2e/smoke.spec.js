@@ -73,6 +73,24 @@ test('a new incident opens on its summary', async () => {
   await expect(page.locator('aside nav[aria-label="Incidents"]')).toContainText('WKS-FINANCE-01')
 })
 
+test('the tab bar fits the window and every tab keeps its name', async () => {
+  const nav = page.locator('nav[aria-label="Analysis tabs"]')
+  const fits = () => nav.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
+  const original = page.viewportSize()
+  for (const width of [original.width, 1000]) {
+    await page.setViewportSize({ width, height: original.height })
+    // Shorter labels, then icons only: the bar never needs to scroll sideways.
+    await expect.poll(fits).toBe(true)
+    await expect(nav.getByRole('button', { name: 'Command History', exact: true })).toBeVisible()
+  }
+  await page.setViewportSize(original)
+  // Controls side by side share one height.
+  const heights = await page
+    .locator('header button, header div.border')
+    .evaluateAll((elements) => [...new Set(elements.filter((e) => e.offsetHeight).map((e) => e.offsetHeight))])
+  expect(heights).toEqual([36])
+})
+
 test('evidence files dropped on the app fill the analysis tabs', async () => {
   const current = page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')
   const files = [
@@ -95,7 +113,7 @@ test('evidence files dropped on the app fill the analysis tabs', async () => {
 })
 
 test('the timeline merges the events of every tab', async () => {
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Timeline').click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Timeline', exact: true }).click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   const counter = page.getByText(/of \d+ results/)
   await expect(counter).toBeVisible()
@@ -106,7 +124,7 @@ test('the timeline merges the events of every tab', async () => {
 })
 
 test('the IOCs tab gathers the indicators and shows where they were seen', async () => {
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('IOCs').click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'IOCs', exact: true }).click()
   const attacker = page.getByRole('button', { name: '185.220.101.47', exact: true })
   await expect(attacker).toBeVisible({ timeout: 20_000 })
   await attacker.click()
@@ -140,7 +158,7 @@ test('threat intelligence is configured in Settings, keys never shown', async ()
 })
 
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('IOCs').click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'IOCs', exact: true }).click()
   const value = page.getByRole('button', { name: '185.220.101.47', exact: true })
   await expect(value).toBeVisible({ timeout: 20_000 })
   await value.click({ button: 'right' })
@@ -199,7 +217,10 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   // With the real workers this test waits for rizin, two capa rule checks
   // (~10 s each) and a second capa run: more than the 60 s default.
   if (process.env.E2E_ANALYZER_URL || process.env.E2E_CAPA_URL) test.setTimeout(300_000)
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
+  await page
+    .locator('nav[aria-label="Analysis tabs"]')
+    .getByRole('button', { name: 'Malware Analysis', exact: true })
+    .click()
   await expect(page.getByText('No samples yet')).toBeVisible()
   await page.getByRole('button', { name: 'Upload malware samples' }).locator('input[type=file]').setInputFiles({
     name: 'invoice_0423.pdf.exe',
@@ -375,7 +396,10 @@ test('attachments are previewed by the isolated workers', async () => {
     '--b2--',
     '',
   ].join('\r\n')
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Mail Analysis').click()
+  await page
+    .locator('nav[aria-label="Analysis tabs"]')
+    .getByRole('button', { name: 'Mail Analysis', exact: true })
+    .click()
   await page
     .getByRole('button', { name: 'Upload e-mails' })
     .locator('input[type=file]')
@@ -406,7 +430,10 @@ test('attachments are previewed by the isolated workers', async () => {
     await expect(remote.locator('tbody tr', { hasText: 'logo.png' })).toContainText('blocked')
     await remote.getByRole('button', { name: 'Close' }).click()
     // The session becomes a capture of the incident.
-    await page.locator('nav[aria-label="Analysis tabs"]').getByText('Network Analysis').click()
+    await page
+      .locator('nav[aria-label="Analysis tabs"]')
+      .getByRole('button', { name: 'Network Analysis', exact: true })
+      .click()
     await expect(page.getByRole('list', { name: 'Captures' })).toContainText('attachment secure.html', {
       timeout: 30_000,
     })
@@ -416,7 +443,10 @@ test('attachments are previewed by the isolated workers', async () => {
 })
 
 test('a packet capture opens as in Wireshark', async () => {
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Network Analysis').click()
+  await page
+    .locator('nav[aria-label="Analysis tabs"]')
+    .getByRole('button', { name: 'Network Analysis', exact: true })
+    .click()
   await page
     .getByRole('button', { name: 'Upload packet captures' })
     .locator('input[type=file]')
@@ -491,7 +521,10 @@ test('a file is analysed on its own, tagged, then linked to the incident', async
   await expect(linked).toBeVisible()
   // The incident now holds the sample.
   await linked.click()
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('Malware Analysis').click()
+  await page
+    .locator('nav[aria-label="Analysis tabs"]')
+    .getByRole('button', { name: 'Malware Analysis', exact: true })
+    .click()
   await expect(page.getByRole('list', { name: 'Samples' })).toContainText('dropper.bin', { timeout: 20_000 })
 
   // Dropped again, the file is recognised as already analysed.
@@ -540,7 +573,10 @@ test('an address is scanned on its own, then linked to the incident', async () =
     .getByRole('button', { name: 'Link', exact: true })
     .click()
   await artifact.getByRole('button', { name: 'WKS-FINANCE-01 - m.rossi', exact: true }).click()
-  await page.locator('nav[aria-label="Analysis tabs"]').getByText('URL Analysis').click()
+  await page
+    .locator('nav[aria-label="Analysis tabs"]')
+    .getByRole('button', { name: 'URL Analysis', exact: true })
+    .click()
   await expect(page.getByRole('list', { name: 'Addresses' })).toContainText('nik-e2e-scan.invalid/login', {
     timeout: 20_000,
   })
