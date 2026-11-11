@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Button, Modal } from '../components/ui/index.js'
+import { useToast } from './ToastContext.jsx'
 
 /*
  * ============================================================================
@@ -11,12 +12,14 @@ import { Button, Modal } from '../components/ui/index.js'
  * where items are { label, icon?, hint?, shortcut?, onSelect, disabled?, indent? } or
  * 'separator'. Everything else keeps the browser's own menu, and so do text
  * fields, selected text and Shift + right-click, so copy/paste still works.
- * Arrow keys move, Enter runs, Esc closes.
+ * Arrow keys move, Enter runs, Esc closes. An item whose onSelect returns
+ * `{ message, undo }` (a flag removed with its comments) gets a toast with Undo.
  *
  * runShortcut(kind, element) runs, without showing the menu, the item with that
  * `shortcut` ('flag', 'comment') of the menu `element` would open on right-click:
- * a key acts on a row exactly as its menu does. It resolves to { label, title }
- * of the item that ran, or null when the element offers none.
+ * a key acts on a row exactly as its menu does. It resolves to { label, title,
+ * result } of the item that ran (`result` is what its onSelect returned), or
+ * null when the element offers none.
  *
  * askText({ title, label, placeholder, confirm }) asks for a line of text in a
  * small dialog (e.g. a flag comment) and resolves to the text or null.
@@ -36,7 +39,7 @@ export function wantsNativeMenu(event) {
   return Boolean(selection && !selection.isCollapsed && selection.toString().trim())
 }
 
-function Menu({ menu, onClose }) {
+function Menu({ menu, onClose, onResult }) {
   const ref = useRef(null)
   const [position, setPosition] = useState({ left: menu.x, top: menu.y })
   const actionable = menu.items
@@ -56,7 +59,7 @@ function Menu({ menu, onClose }) {
 
   const run = (item) => {
     onClose()
-    item.onSelect?.()
+    onResult(item.onSelect?.())
   }
 
   const onKeyDown = (event) => {
@@ -169,6 +172,15 @@ export function ContextMenuProvider({ children }) {
   const [menu, setMenu] = useState(null)
   const [prompt, setPrompt] = useState(null)
   const close = useCallback(() => setMenu(null), [])
+  const { showToast } = useToast()
+  /** What an item returned: when it can be undone, say so and offer it. */
+  const offerUndo = useCallback(
+    (result) => {
+      if (typeof result?.undo !== 'function') return
+      showToast({ message: result.message || 'Done.', action: { label: 'Undo', run: result.undo } })
+    },
+    [showToast],
+  )
   // Set while runShortcut dispatches its event: openMenu then runs an item instead of showing the menu.
   const shortcutRef = useRef(null)
 
@@ -180,8 +192,7 @@ export function ContextMenuProvider({ children }) {
       if (!item) return false
       event.preventDefault()
       event.stopPropagation()
-      pending.ran = { label: item.label, title }
-      item.onSelect?.()
+      pending.ran = { label: item.label, title, result: item.onSelect?.() }
       return true
     }
     if (wantsNativeMenu(event)) return false
@@ -241,7 +252,7 @@ export function ContextMenuProvider({ children }) {
   return (
     <ContextMenuContext.Provider value={value}>
       {children}
-      {menu && <Menu menu={menu} onClose={close} />}
+      {menu && <Menu menu={menu} onClose={close} onResult={offerUndo} />}
       {prompt && (
         <TextPrompt
           prompt={prompt}

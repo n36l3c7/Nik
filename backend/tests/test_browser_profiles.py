@@ -134,7 +134,8 @@ def test_get_and_patch_convert_legacy_documents(admin: TestClient):
     chrome = stored.json()["data"]["browser"]["browsers"]["chrome"]
     assert set(chrome) == {"activeProfile", "profiles"}
     assert chrome["profiles"]["default"]["history"] == LEGACY_SLOT["history"]
-    assert stored.headers["ETag"] == '"t1"'
+    # One write since the incident was created: revision 1.
+    assert stored.headers["ETag"] == '"1"'
 
 
 def test_get_saves_a_converted_legacy_document_once(admin: TestClient):

@@ -752,6 +752,76 @@ test('keyboard shortcuts: F flags the row under the pointer, C comments, ? lists
   await expect(page.getByText('Nothing to flag under the pointer.')).toBeVisible()
 })
 
+test("saves are retried, merged with a colleague's, resumed after the session expires; a removed flag comes back", async () => {
+  const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/incident/')[1] ?? '')
+  expect(incidentId).not.toBe('')
+  const stored = async () => (await page.request.get(`/api/incidents/${incidentId}`)).json()
+  const storedFlags = async () => Object.keys((await stored()).flags ?? {}).length
+  const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
+  const flag = sample.getByLabel('Flagged')
+  const toggle = async () => {
+    await sample.hover()
+    await page.keyboard.press('f')
+  }
+  const failSaves = (route) => (route.request().method() === 'PATCH' ? route.abort() : route.fallback())
+  const unsaved = page.getByRole('alert').filter({ hasText: 'Changes not saved yet' })
+  const before = await flag.count()
+  const flagsBefore = await storedFlags()
+  const other = before ? flagsBefore - 1 : flagsBefore + 1
+
+  // A save that fails is said, kept, and sent when asked again.
+  await page.route('**/api/incidents/*', failSaves)
+  await toggle()
+  await expect(flag).toHaveCount(before ? 0 : 1)
+  await expect(unsaved).toBeVisible()
+  expect(await storedFlags()).toBe(flagsBefore)
+  await page.unroute('**/api/incidents/*', failSaves)
+  await unsaved.getByRole('button', { name: 'Retry now' }).click()
+  await expect(unsaved).toHaveCount(0)
+  await expect.poll(storedFlags).toBe(other)
+
+  // A colleague writes to the same incident meanwhile: both changes are kept.
+  const note = await page.request.post(`/api/incidents/${incidentId}/notes`, {
+    data: { text: 'note from a colleague' },
+  })
+  expect(note.status()).toBe(201)
+  await toggle()
+  await expect(flag).toHaveCount(before)
+  await expect.poll(storedFlags).toBe(flagsBefore)
+  expect((await stored()).notes.map((item) => item.text)).toContain('note from a colleague')
+
+  // The session ends with a change still to save: signing in again saves it.
+  await page.route('**/api/incidents/*', failSaves)
+  await toggle()
+  await expect(unsaved).toBeVisible()
+  await page.request.post('/api/auth/logout')
+  await page.unroute('**/api/incidents/*', failSaves)
+  await unsaved
+    .getByRole('button', { name: 'Retry now' })
+    .click({ timeout: 2000 })
+    .catch(() => {})
+  const expired = page.getByRole('dialog', { name: 'Session expired' })
+  await expect(expired).toContainText('not saved yet')
+  await expired.getByLabel('Password of admin').fill(ADMIN.password)
+  await expired.getByRole('button', { name: 'Sign in again' }).click()
+  await expect(expired).toHaveCount(0)
+  await expect.poll(storedFlags).toBe(other)
+  await expect(unsaved).toHaveCount(0)
+
+  // Removing a flag can be undone.
+  if (!(await flag.count())) await toggle()
+  await expect(flag).toHaveCount(1)
+  await toggle()
+  await expect(flag).toHaveCount(0)
+  await page.getByRole('button', { name: 'Undo' }).last().click()
+  await expect(flag).toHaveCount(1)
+  if (!before) {
+    await toggle()
+    await expect(flag).toHaveCount(0)
+  }
+  await expect.poll(storedFlags).toBe(flagsBefore)
+})
+
 test('the API is reachable through the same origin', async ({ request }) => {
   const health = await request.get('/api/health')
   expect(health.ok()).toBeTruthy()

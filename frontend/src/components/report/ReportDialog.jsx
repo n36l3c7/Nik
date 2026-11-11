@@ -44,6 +44,8 @@ export default function ReportDialog({ open, onClose, incident }) {
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
   const summaryTimer = useRef(null)
+  // Options changed but not saved yet (the summary is saved after a pause).
+  const unsaved = useRef({})
 
   useEffect(() => {
     if (!open) return
@@ -72,8 +74,15 @@ export default function ReportDialog({ open, onClose, incident }) {
   const update = (patch, { debounce = false } = {}) => {
     setOptions((prev) => ({ ...prev, ...patch }))
     clearTimeout(summaryTimer.current)
-    if (debounce) summaryTimer.current = setTimeout(() => updateReportSettings(incident.id, patch), 600)
-    else updateReportSettings(incident.id, patch)
+    // A change made while the summary waits to be saved takes it along.
+    unsaved.current = { ...unsaved.current, ...patch }
+    const save = () => {
+      const changes = unsaved.current
+      unsaved.current = {}
+      updateReportSettings(incident.id, changes)
+    }
+    if (debounce) summaryTimer.current = setTimeout(save, 600)
+    else save()
   }
 
   const toggleSection = (id) =>

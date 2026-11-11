@@ -22,6 +22,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from .. import artifacts
 from ..core.config import settings
 from ..core.db import get_db
+from ..core.locking import relock
 from ..core.models import AuditEntry, Incident, Mail
 from ..core.security import Principal, now_iso, principal, writer_principal
 from ..events import emit
@@ -206,7 +207,7 @@ async def store_mail(
 
 def attach_mail(db: OrmSession, incident: Incident, row: Mail, file_name: str, actor: str) -> dict[str, Any]:
     """Reference the message from the incident (kept once); returns the reference."""
-    doc = dict(incident.doc or {})
+    doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     ref = next((item for item in refs if item.get("sha256") == row.sha256), None)
     if ref is None:
@@ -223,7 +224,7 @@ def attach_mail(db: OrmSession, incident: Incident, row: Mail, file_name: str, a
 
 def detach_mail(db: OrmSession, incident: Incident, sha256: str) -> bool:
     """Drop the incident's reference; False when it had none. The message stays."""
-    doc = dict(incident.doc or {})
+    doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     kept = [ref for ref in refs if ref.get("sha256") != sha256]
     if len(kept) == len(refs):
@@ -296,7 +297,7 @@ async def reanalyse_mail(
     _apply(row, result)
     artifacts.register_mail(db, row)
     for incident in _incidents_referencing(db, sha256):
-        doc = dict(incident.doc or {})
+        doc = dict(relock(db, incident).doc or {})
         for ref in _refs(doc):
             if ref.get("sha256") == sha256:
                 ref.update(_summary(row))

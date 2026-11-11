@@ -36,6 +36,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..browser_profiles import normalize_browser_data
 from ..core.db import SessionLocal, get_db
+from ..core.locking import lock_incident
 from ..core.models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
 from ..core.schemas import NoteIn
 from ..core.security import Principal, now_iso, principal, writer_principal
@@ -101,16 +102,17 @@ def _audit(
     )
 
 
-def _get_or_404(db: OrmSession, incident_id: str) -> Incident:
-    row = db.get(Incident, incident_id)
+def _get_or_404(db: OrmSession, incident_id: str, *, lock: bool = False) -> Incident:
+    """The incident; with ``lock`` it is locked for writing and read fresh."""
+    row = lock_incident(db, incident_id) if lock else db.get(Incident, incident_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     return row
 
 
-def _etag(doc: dict | None) -> str:
-    """Weak version tag for an incident (changes on every write via updatedAt)."""
-    return '"' + str((doc or {}).get("updatedAt") or "") + '"'
+def _etag(rev: int | None) -> str:
+    """Version tag of an incident: its revision, one more at every write."""
+    return f'"{rev or 0}"'
 
 
 def _idempotent_replay(db: OrmSession, key: str | None):
@@ -242,27 +244,31 @@ def get_incident(
     304 check reads only the version column, never the document body.
     """
     if if_none_match is not None:
-        updated_at = db.scalar(select(Incident.updated_at).where(Incident.id == incident_id))
-        if updated_at is None:
+        rev = db.scalar(select(Incident.rev).where(Incident.id == incident_id))
+        if rev is None:
             raise HTTPException(status_code=404, detail="Incident not found")
-        etag = '"' + updated_at + '"'
+        etag = _etag(rev)
         if etag in {tag.strip() for tag in if_none_match.split(",")}:
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
     row = _get_or_404(db, incident_id)
     # A document still in the pre-2.0.0 browser shape (e.g. a database that was
     # not migrated) is converted and saved once, so clients always diff their
-    # merge patches against the current shape. The version (ETag) is unchanged.
+    # merge patches against the current shape.
     doc = dict(row.doc or {})
     if normalize_browser_data(doc):
+        row = _get_or_404(db, incident_id, lock=True)
+        doc = dict(row.doc or {})
+        normalize_browser_data(doc)
         row.doc = doc
         flag_modified(row, "doc")
         db.commit()
-    response.headers["ETag"] = _etag(row.doc)
+    response.headers["ETag"] = _etag(row.rev)
     return row.doc
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_incident(
+    response: Response,
     doc: dict[str, Any] = Body(...),
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
@@ -271,6 +277,7 @@ def create_incident(
     """Create (or upsert) an incident from a full client-built document.
 
     The server stamps ``createdBy`` from the caller (username, or ``api:<label>``).
+    The response carries the new incident's ``ETag``.
     """
     doc = dict(doc)
     # Accept pre-2.0.0 documents (e.g. old exports): one profile per browser.
@@ -280,7 +287,7 @@ def create_incident(
     doc["id"] = incident_id
     doc["createdBy"] = caller.actor
 
-    existing = db.get(Incident, incident_id)
+    existing = lock_incident(db, str(incident_id))
     if existing is None:
         incident = Incident(id=str(incident_id), doc=doc)
         _sync_columns(incident)
@@ -295,6 +302,7 @@ def create_incident(
     _audit(db, caller, "incident.create", f'Created incident "{doc.get("name") or incident_id}"', incident)
     db.commit()
     emit(db, background_tasks, "incident.created", {"id": incident_id, "name": doc.get("name")})
+    response.headers["ETag"] = _etag(incident.rev)
     return incident.doc
 
 
@@ -341,11 +349,14 @@ def patch_incident(
     ``suspiciousStart``/``suspiciousEnd``, ``notes``, ``flags``, ``data``, …
 
     Optimistic concurrency: if an ``If-Match`` header is sent it must equal the
-    incident's current ``ETag`` (from GET), else ``412 Precondition Failed`` —
-    so a stale writer can't silently clobber a newer version.
+    incident's current ``ETag`` (from GET, or from the last write), else
+    ``412 Precondition Failed`` — so a stale writer can't silently clobber a
+    newer version: it reads the incident again, merges and retries. The
+    check and the write happen under the incident's row lock, and the
+    response carries the new ``ETag``.
     """
-    row = _get_or_404(db, incident_id)
-    if if_match is not None and if_match.strip() != _etag(row.doc):
+    row = _get_or_404(db, incident_id, lock=True)
+    if if_match is not None and if_match.strip() != _etag(row.rev):
         raise HTTPException(status_code=412, detail="Incident was modified by someone else (ETag mismatch)")
     media_type = (content_type or "").split(";")[0].strip().lower()
     if media_type == MERGE_PATCH_MEDIA_TYPE:
@@ -365,7 +376,7 @@ def patch_incident(
     _audit(db, caller, "incident.update", f'Updated attributes of "{merged.get("name") or incident_id}"', row)
     db.commit()
     emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": merged.get("name")})
-    response.headers["ETag"] = _etag(row.doc)
+    response.headers["ETag"] = _etag(row.rev)
     return row.doc
 
 
@@ -377,7 +388,7 @@ def delete_incident(
     background_tasks: BackgroundTasks = None,
 ):
     """Delete an incident (idempotent-ish; 204 regardless if it existed)."""
-    row = db.get(Incident, incident_id)
+    row = lock_incident(db, incident_id)
     if row is not None:
         name = (row.doc or {}).get("name") or incident_id
         _audit(db, caller, "incident.delete", f'Deleted incident "{name}"', row)
@@ -418,7 +429,9 @@ def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor)
             job.status = "running"
             job.updated_at = now_iso()
             db.commit()
-        row = db.get(Incident, incident_id)
+        # Locked while the file is parsed into the document: nothing saved
+        # meanwhile can be lost, it waits for this write and merges after it.
+        row = lock_incident(db, incident_id)
         if row is None:
             raise ValueError("Incident not found")
         doc = dict(row.doc or {})
@@ -493,7 +506,7 @@ async def upload_artifact(
     replay = _idempotent_replay(db, idempotency_key)
     if replay is not None:
         return replay
-    row = _get_or_404(db, incident_id)
+    _get_or_404(db, incident_id)
     data = await file.read()
     params = {"browser": browser, "profile": profile, "shell": shell, "category": category, "source": source}
 
@@ -514,6 +527,7 @@ async def upload_artifact(
         )
         return JSONResponse({"jobId": job.id, "status": "queued"}, status_code=202)
 
+    row = _get_or_404(db, incident_id, lock=True)
     doc = dict(row.doc or {})
     try:
         summary = apply_upload(doc, tab, params, data, file.filename or "upload")
@@ -574,7 +588,7 @@ def add_note(
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Note text is required")
-    row = _get_or_404(db, incident_id)
+    row = _get_or_404(db, incident_id, lock=True)
     doc = dict(row.doc or {})
     now = now_iso()
     note = {"id": str(uuid.uuid4()), "text": text, "createdAt": now, "updatedAt": now, "author": caller.actor}
@@ -599,7 +613,7 @@ def edit_note(
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Note text is required")
-    row = _get_or_404(db, incident_id)
+    row = _get_or_404(db, incident_id, lock=True)
     doc = dict(row.doc or {})
     notes = _notes(doc)
     target = next((n for n in notes if n.get("id") == note_id), None)
@@ -620,7 +634,7 @@ def delete_note(
     db: OrmSession = Depends(get_db),
 ):
     """Remove a note from the incident."""
-    row = _get_or_404(db, incident_id)
+    row = _get_or_404(db, incident_id, lock=True)
     doc = dict(row.doc or {})
     notes = _notes(doc)
     if not any(n.get("id") == note_id for n in notes):

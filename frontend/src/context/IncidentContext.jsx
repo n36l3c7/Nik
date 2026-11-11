@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, NOT_MODIFIED } from '../services/api.js'
-import { createMergePatch, MERGE_PATCH_CONTENT_TYPE } from '../lib/mergePatch.js'
+import { MERGE_PATCH_CONTENT_TYPE } from '../lib/mergePatch.js'
+import { createSaveQueue } from '../services/saveQueue.js'
 import { buildDefaultIncidentData } from '../config/tabs.js'
 import {
   BROWSERS,
@@ -60,9 +61,13 @@ import { useAudit } from './AuditContext.jsx'
  *     `If-None-Match` (304 when unchanged, refreshed when someone else edited it).
  *
  * Every mutation goes through commit(): it updates local state immediately and
- * persists ONLY what changed, as an RFC 7396 JSON Merge Patch computed by
- * diffing the previous and next document (unchanged subtrees share references,
- * so toggling a flag sends the flag, not the artifact arrays):
+ * hands the incident to the save queue (services/saveQueue.js), which persists
+ * ONLY what changed, as an RFC 7396 JSON Merge Patch computed by diffing the
+ * document against the last version the server holds (unchanged subtrees share
+ * references, so toggling a flag sends the flag, not the artifact arrays). The
+ * queue sends one save at a time with `If-Match`, retries what fails and, when
+ * somebody else saved meanwhile (412), merges their version with the local
+ * changes instead of overwriting it:
  *   - createIncident / import     → POST   /incidents        (full doc)
  *   - deleteIncident              → DELETE /incidents/{id}
  *   - every other mutation        → PATCH  /incidents/{id}   (merge patch)
@@ -293,11 +298,38 @@ function normalizeSummary(raw) {
   }
 }
 
-/** ETag the server derives from an incident version (see the backend `_etag`). */
-const etagOf = (incident) => `"${incident.updatedAt ?? ''}"`
+/**
+ * A version read from the server, with this client's view preferences (the
+ * open browser, profile and shell) kept as they are here: they are never
+ * saved, so the server's copy must not move them.
+ */
+function keepViewPreferences(remote, local) {
+  const browser = remote.data.browser
+  const mine = local.data?.browser
+  const browsers = {}
+  for (const [id, slot] of Object.entries(browser.browsers)) {
+    const wanted = mine?.browsers?.[id]?.activeProfile
+    browsers[id] = wanted && slot.profiles?.[wanted] ? { ...slot, activeProfile: wanted } : slot
+  }
+  return {
+    ...remote,
+    data: {
+      ...remote.data,
+      browser: { ...browser, activeBrowser: mine?.activeBrowser ?? browser.activeBrowser, browsers },
+      commands: {
+        ...remote.data.commands,
+        activeShell: local.data?.commands?.activeShell ?? remote.data.commands.activeShell,
+      },
+    },
+  }
+}
+
+const incidentPath = (incidentId) => `/incidents/${encodeURIComponent(incidentId)}`
+// A window that regains the focus checks the open incident again, at most this often.
+const REVALIDATE_EVERY_MS = 15000
 
 export function IncidentProvider({ children }) {
-  const { currentUser, isAuthenticated } = useAuth()
+  const { currentUser, isAuthenticated, sessionExpired } = useAuth()
   const { log } = useAudit()
 
   // Light listing rows (no artifacts): what the sidebar renders.
@@ -315,7 +347,10 @@ export function IncidentProvider({ children }) {
   const [activeLoadProgress, setActiveLoadProgress] = useState(null)
   // Bumped by retryActiveIncident() to re-run the on-demand fetch after an error.
   const [reloadToken, setReloadToken] = useState(0)
-  const [storageError, setStorageError] = useState(null)
+  // A request outside the save queue that failed (create, delete, list).
+  const [requestError, setStorageError] = useState(null)
+  // What the save queue reports: changes not on the server yet, and why.
+  const [saveState, setSaveState] = useState({ pending: false, error: null })
   // Usernames an incident can be assigned to.
   const [assignees, setAssignees] = useState([])
   useEffect(() => {
@@ -367,6 +402,60 @@ export function IncidentProvider({ children }) {
     setDocuments(rest)
   }, [])
 
+  // The save queue: created once, it reads and writes the live snapshot.
+  const queueRef = useRef(null)
+  if (queueRef.current === null) {
+    queueRef.current = createSaveQueue({
+      send: async (incidentId, patch, etag) => {
+        let next = null
+        await api.patch(incidentPath(incidentId), patch, {
+          contentType: MERGE_PATCH_CONTENT_TYPE,
+          headers: etag ? { 'If-Match': etag } : {},
+          onHeaders: (headers) => {
+            next = headers.get('ETag')
+          },
+        })
+        return { etag: next }
+      },
+      load: async (incidentId, etag) => {
+        let next = null
+        const res = await api.get(incidentPath(incidentId), {
+          headers: etag ? { 'If-None-Match': etag } : {},
+          onHeaders: (headers) => {
+            next = headers.get('ETag')
+          },
+        })
+        return res === NOT_MODIFIED || !res ? null : { doc: normalizeIncident(res), etag: next }
+      },
+      getLocal: (incidentId) => documentsRef.current[incidentId] ?? null,
+      setLocal: (_incidentId, incident) => storeDocument(incident),
+      prepare: keepViewPreferences,
+      onChange: () => {
+        const { pending, error } = queueRef.current.status()
+        setSaveState((state) => (state.pending === pending && state.error === error ? state : { pending, error }))
+      },
+    })
+  }
+  const queue = queueRef.current
+
+  // Signed in again after the session ended: send what was waiting.
+  const wasExpiredRef = useRef(false)
+  useEffect(() => {
+    if (wasExpiredRef.current && !sessionExpired && isAuthenticated) queue.retry()
+    wasExpiredRef.current = sessionExpired
+  }, [sessionExpired, isAuthenticated, queue])
+
+  // Closing the tab with changes that are not on the server yet asks first.
+  useEffect(() => {
+    if (!saveState.pending) return undefined
+    const warn = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [saveState.pending])
+
   // Browser back/forward: follow the URL to the corresponding incident.
   useEffect(() => {
     // An artifact's permalink (/artifact/<id>) keeps the active incident as it is.
@@ -386,6 +475,7 @@ export function IncidentProvider({ children }) {
       setIncidents([])
       documentsRef.current = {}
       setDocuments({})
+      queue.clear()
       setLoading(true)
       return
     }
@@ -417,51 +507,70 @@ export function IncidentProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, queue])
 
-  // Fetch the active incident's full document on demand. A cached copy is shown
-  // immediately and revalidated in the background with `If-None-Match`, so an
-  // unchanged incident costs a tiny 304 and a changed one is refreshed. Switching
-  // to another incident aborts the pending request.
+  // Fetch the active incident's full document on demand. A copy already in the
+  // cache is shown immediately and checked in the background by the save queue
+  // (`If-None-Match`: an unchanged incident costs a tiny 304, a changed one is
+  // merged with what was edited here). Switching to another incident aborts a
+  // pending first download.
+  const lastCheckRef = useRef(0)
   useEffect(() => {
-    if (loading || !activeIncidentId) return
-    const cached = documentsRef.current[activeIncidentId]
-    const controller = new AbortController()
+    if (loading || !activeIncidentId) return undefined
     setActiveLoadError(null)
     setActiveLoadProgress(null)
-    // Progress only matters for a first download (a revalidation is invisible);
-    // updates are throttled to every 64 KB to avoid a render per chunk.
+    lastCheckRef.current = Date.now()
+    if (documentsRef.current[activeIncidentId] && queue.isTracked(activeIncidentId)) {
+      queue.refresh(activeIncidentId)
+      return undefined
+    }
+    // A document still being created on the server has nothing to download.
+    if (documentsRef.current[activeIncidentId]) return undefined
+    const controller = new AbortController()
+    // Updates are throttled to every 64 KB to avoid a render per chunk.
     let lastReported = -Infinity
-    const onProgress = cached
-      ? undefined
-      : ({ received, total }) => {
-          if (controller.signal.aborted) return
-          if (received - lastReported < 65536 && received !== total) return
-          lastReported = received
-          setActiveLoadProgress({ received, total })
-        }
+    const onProgress = ({ received, total }) => {
+      if (controller.signal.aborted) return
+      if (received - lastReported < 65536 && received !== total) return
+      lastReported = received
+      setActiveLoadProgress({ received, total })
+    }
+    let etag = null
     api
-      .get(`/incidents/${encodeURIComponent(activeIncidentId)}`, {
+      .get(incidentPath(activeIncidentId), {
         signal: controller.signal,
-        headers: cached ? { 'If-None-Match': etagOf(cached) } : {},
         onProgress,
+        onHeaders: (headers) => {
+          etag = headers.get('ETag')
+        },
       })
       .then((res) => {
-        if (res === NOT_MODIFIED || !res) return
-        // Never overwrite a copy that was edited locally while the request ran.
-        const current = documentsRef.current[activeIncidentId]
-        if (current && cached && current !== cached) return
-        storeDocument(normalizeIncident(res))
+        if (!res || documentsRef.current[activeIncidentId]) return
+        const incident = normalizeIncident(res)
+        storeDocument(incident)
+        queue.track(incident.id, incident, etag)
       })
       .catch((err) => {
         if (controller.signal.aborted) return
-        if (!cached) setActiveLoadError(err?.message || 'Unable to load the incident.')
+        setActiveLoadError(err?.message || 'Unable to load the incident.')
       })
       .finally(() => {
         if (!controller.signal.aborted) setActiveLoadProgress(null)
       })
     return () => controller.abort()
-  }, [activeIncidentId, loading, reloadToken, storeDocument])
+  }, [activeIncidentId, loading, reloadToken, storeDocument, queue])
+
+  // Coming back to the window: somebody may have worked on the incident meanwhile.
+  useEffect(() => {
+    const onFocus = () => {
+      const active = activeIncidentIdRef.current
+      if (!active || Date.now() - lastCheckRef.current < REVALIDATE_EVERY_MS) return
+      lastCheckRef.current = Date.now()
+      queue.refresh(active)
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [queue])
 
   const retryActiveIncident = useCallback(() => {
     setActiveLoadError(null)
@@ -495,25 +604,10 @@ export function IncidentProvider({ children }) {
   const find = (id) => documentsRef.current[id] ?? null
 
   /**
-   * Persist the difference between two versions of an incident as an RFC 7396
-   * JSON Merge Patch: only the changed subtrees reach the server, never the
-   * whole artifact blob. Fire-and-forget: local state is already updated; API
-   * errors are surfaced via `storageError`.
-   */
-  const persist = useCallback((incidentId, prev, next) => {
-    const patch = createMergePatch(prev, next)
-    if (Object.keys(patch).length === 0) return
-    api
-      .patch(`/incidents/${encodeURIComponent(incidentId)}`, patch, {
-        contentType: MERGE_PATCH_CONTENT_TYPE,
-      })
-      .then(() => setStorageError(null))
-      .catch((err) => setStorageError(err?.message || 'Unable to save changes to the server.'))
-  }, [])
-
-  /**
    * Apply `updater` to a loaded incident, update local state immediately and
-   * (unless `local`) persist the change. Call ONLY from event-handler scope.
+   * hand it to the save queue. With `local` the change is not sent: it is a
+   * view preference, or something the server already wrote itself. Call ONLY
+   * from event-handler scope.
    */
   const commit = useCallback(
     (incidentId, updater, { local = false } = {}) => {
@@ -521,10 +615,40 @@ export function IncidentProvider({ children }) {
       if (!prev) return null
       const next = updater(prev)
       storeDocument(next)
-      if (!local) persist(incidentId, prev, next)
+      if (local) queue.adopt(incidentId, prev, next)
+      else queue.touch(incidentId)
       return next
     },
-    [persist, storeDocument],
+    [queue, storeDocument],
+  )
+
+  /**
+   * Save a new document (created or imported here) and start tracking it:
+   * what was edited while the POST travelled is sent right after it.
+   */
+  const saveNew = useCallback(
+    (incident, failure) => {
+      let etag = null
+      const saved = api
+        .post('/incidents', incident, {
+          onHeaders: (headers) => {
+            etag = headers.get('ETag')
+          },
+        })
+        .then(() => {
+          setStorageError(null)
+          queue.track(incident.id, incident, etag)
+          queue.touch(incident.id)
+          return true
+        })
+        .catch((err) => {
+          setStorageError(err?.message || failure)
+          return false
+        })
+      savedRef.current.set(incident.id, saved)
+      return saved
+    },
+    [queue],
   )
 
   /* ---- incident CRUD ---- */
@@ -560,20 +684,10 @@ export function IncidentProvider({ children }) {
       syncUrl(incident.id)
       audit('incident.create', `Created incident "${incident.name}"`, incident)
       // Persist the full document; the server stamps its own createdBy.
-      const saved = api
-        .post('/incidents', incident)
-        .then(() => {
-          setStorageError(null)
-          return true
-        })
-        .catch((err) => {
-          setStorageError(err?.message || 'Unable to create the incident on the server.')
-          return false
-        })
-      savedRef.current.set(incident.id, saved)
+      saveNew(incident, 'Unable to create the incident on the server.')
       return incident
     },
-    [actor, audit, storeDocument],
+    [actor, audit, saveNew, storeDocument],
   )
 
   /**
@@ -635,16 +749,25 @@ export function IncidentProvider({ children }) {
       setIncidents((list) => list.map((item) => (item.id === incidentId ? { ...item, ...change } : item)))
       audit('incident.update', `Updated attributes of "${row.name}"`, row)
       api
-        .patch(`/incidents/${encodeURIComponent(incidentId)}`, change, { contentType: MERGE_PATCH_CONTENT_TYPE })
+        .patch(incidentPath(incidentId), change, { contentType: MERGE_PATCH_CONTENT_TYPE })
         .then(() => setStorageError(null))
         .catch((err) => setStorageError(err?.message || 'Unable to save changes to the server.'))
     },
     [audit, updateIncidentMeta],
   )
 
+  /** Delete an incident: it leaves the list once the server has deleted it. */
   const deleteIncident = useCallback(
-    (incidentId) => {
+    async (incidentId) => {
       const target = incidentsRef.current.find((i) => i.id === incidentId) ?? null
+      try {
+        await api.del(incidentPath(incidentId))
+      } catch (err) {
+        setStorageError(err?.message || 'Unable to delete the incident on the server.')
+        return false
+      }
+      setStorageError(null)
+      queue.forget(incidentId)
       const remaining = incidentsRef.current.filter((i) => i.id !== incidentId)
       setIncidents(remaining)
       forgetDocument(incidentId)
@@ -656,12 +779,9 @@ export function IncidentProvider({ children }) {
         syncUrl(next, { replace: true })
       }
       if (target) audit('incident.delete', `Deleted incident "${target.name}"`, target)
-      api
-        .del(`/incidents/${incidentId}`)
-        .then(() => setStorageError(null))
-        .catch((err) => setStorageError(err?.message || 'Unable to delete the incident on the server.'))
+      return true
     },
-    [audit, forgetDocument],
+    [audit, forgetDocument, queue],
   )
 
   const selectIncident = useCallback((incidentId) => {
@@ -699,7 +819,11 @@ export function IncidentProvider({ children }) {
 
   /* ---- per-browser, per-profile data ---- */
 
-  /** Shallow-merge `patch` into ONE profile of a browser (e.g. after an upload). */
+  /**
+   * Shallow-merge `patch` into ONE profile of a browser (e.g. after an upload).
+   * `patch.meta` lists only the sources it changes: it is merged into the
+   * profile as it is now, so two files parsed at once do not drop each other.
+   */
   const updateBrowserData = useCallback(
     (incidentId, browserId, profileId, patch, auditInfo) => {
       const prev = find(incidentId)
@@ -708,6 +832,7 @@ export function IncidentProvider({ children }) {
       const data = withBrowserProfile(prev.data, browserId, profileId, (profile) => ({
         ...profile,
         ...patch,
+        meta: patch.meta ? { ...profile.meta, ...patch.meta } : profile.meta,
       }))
       commit(incidentId, (i) => ({ ...i, updatedAt, data }))
       if (auditInfo) audit(auditInfo.action, auditInfo.details, { ...prev, updatedAt, data })
@@ -1063,12 +1188,24 @@ export function IncidentProvider({ children }) {
   /** Detach a sample: the server removes the reference (and the file, when unused). */
   const detachSample = useCallback(
     async (incidentId, sha256) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      await api.del(`/incidents/${encodeURIComponent(incidentId)}/samples/${sha256}`)
-      const samples = (prev.data.malware?.samples ?? []).filter((s) => s.sha256 !== sha256)
-      const data = { ...prev.data, malware: { ...(prev.data.malware ?? {}), samples } }
-      commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), data }), { local: true })
+      if (!find(incidentId)) return
+      await api.del(`${incidentPath(incidentId)}/samples/${sha256}`)
+      // Built on the document as it is now: it may have changed while the server answered.
+      commit(
+        incidentId,
+        (i) => ({
+          ...i,
+          updatedAt: nowIso(),
+          data: {
+            ...i.data,
+            malware: {
+              ...(i.data.malware ?? {}),
+              samples: (i.data.malware?.samples ?? []).filter((s) => s.sha256 !== sha256),
+            },
+          },
+        }),
+        { local: true },
+      )
     },
     [commit],
   )
@@ -1089,12 +1226,23 @@ export function IncidentProvider({ children }) {
   /** Detach an e-mail: the server removes the reference (and the file, when unused). */
   const detachMail = useCallback(
     async (incidentId, sha256) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      await api.del(`/incidents/${encodeURIComponent(incidentId)}/mails/${sha256}`)
-      const messages = (prev.data.mail?.messages ?? []).filter((m) => m.sha256 !== sha256)
-      const data = { ...prev.data, mail: { ...(prev.data.mail ?? {}), messages } }
-      commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), data }), { local: true })
+      if (!find(incidentId)) return
+      await api.del(`${incidentPath(incidentId)}/mails/${sha256}`)
+      commit(
+        incidentId,
+        (i) => ({
+          ...i,
+          updatedAt: nowIso(),
+          data: {
+            ...i.data,
+            mail: {
+              ...(i.data.mail ?? {}),
+              messages: (i.data.mail?.messages ?? []).filter((m) => m.sha256 !== sha256),
+            },
+          },
+        }),
+        { local: true },
+      )
     },
     [commit],
   )
@@ -1130,21 +1278,37 @@ export function IncidentProvider({ children }) {
   /** Remove a network capture: the server deletes its files and analysis. */
   const removeCapture = useCallback(
     async (incidentId, captureId) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      await api.del(`/incidents/${encodeURIComponent(incidentId)}/captures/${captureId}`)
-      const captures = (prev.data.network?.captures ?? []).filter((c) => c.id !== captureId)
-      const data = { ...prev.data, network: { ...(prev.data.network ?? {}), captures } }
-      commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), data }), { local: true })
+      if (!find(incidentId)) return
+      await api.del(`${incidentPath(incidentId)}/captures/${captureId}`)
+      commit(
+        incidentId,
+        (i) => ({
+          ...i,
+          updatedAt: nowIso(),
+          data: {
+            ...i.data,
+            network: {
+              ...(i.data.network ?? {}),
+              captures: (i.data.network?.captures ?? []).filter((c) => c.id !== captureId),
+            },
+          },
+        }),
+        { local: true },
+      )
     },
     [commit],
   )
 
+  /**
+   * Flag an entry, or remove its flag. Removing drops the flag's comments
+   * with it, so that case returns `{ message, undo }` for the caller to offer.
+   */
   const toggleFlag = useCallback(
     (incidentId, flaggable) => {
       const incident = find(incidentId)
-      if (!incident) return
-      const wasFlagged = Boolean(incident.flags[flaggable.key])
+      if (!incident) return null
+      const removed = incident.flags[flaggable.key] ?? null
+      const wasFlagged = Boolean(removed)
       const flags = { ...incident.flags }
       if (flags[flaggable.key]) {
         delete flags[flaggable.key]
@@ -1160,6 +1324,17 @@ export function IncidentProvider({ children }) {
       commit(incidentId, (i) => ({ ...i, updatedAt, flags }))
       const label = flaggable.title || flaggable.url || flaggable.key
       audit(wasFlagged ? 'flag.remove' : 'flag.add', `${wasFlagged ? 'Unflagged' : 'Flagged'}: ${label}`, incident)
+      if (!removed) return null
+      const comments = removed.comments?.length ?? 0
+      return {
+        message: comments
+          ? `Flag removed, with its ${comments === 1 ? 'comment' : `${comments} comments`}.`
+          : 'Flag removed.',
+        undo: () =>
+          commit(incidentId, (i) =>
+            i.flags[removed.key] ? i : { ...i, updatedAt: nowIso(), flags: { ...i.flags, [removed.key]: removed } },
+          ),
+      }
     },
     [actor, audit, commit],
   )
@@ -1249,13 +1424,21 @@ export function IncidentProvider({ children }) {
       let incident = find(incidentId)
       if (!incident) {
         // Not opened yet in this session: fetch the full document first.
+        let etag = null
         try {
-          incident = normalizeIncident(await api.get(`/incidents/${encodeURIComponent(incidentId)}`))
+          incident = normalizeIncident(
+            await api.get(incidentPath(incidentId), {
+              onHeaders: (headers) => {
+                etag = headers.get('ETag')
+              },
+            }),
+          )
         } catch (err) {
           setStorageError(err?.message || 'Unable to load the incident to export it.')
           return
         }
         storeDocument(incident)
+        queue.track(incident.id, incident, etag)
       }
       const safeName = incident.name
         .toLowerCase()
@@ -1269,7 +1452,7 @@ export function IncidentProvider({ children }) {
       })
       audit('incident.export', `Exported incident "${incident.name}"`, incident)
     },
-    [audit, storeDocument],
+    [audit, queue, storeDocument],
   )
 
   const importIncidentFromFile = useCallback(
@@ -1292,13 +1475,10 @@ export function IncidentProvider({ children }) {
       syncUrl(incident.id)
       audit('incident.import', `Imported incident "${incident.name}"`, incident)
       // Persist the imported incident as a new document on the server.
-      api
-        .post('/incidents', incident)
-        .then(() => setStorageError(null))
-        .catch((err) => setStorageError(err?.message || 'Unable to save the imported incident.'))
+      saveNew(incident, 'Unable to save the imported incident.')
       return incident
     },
-    [audit, storeDocument],
+    [audit, saveNew, storeDocument],
   )
 
   const value = {
@@ -1315,7 +1495,10 @@ export function IncidentProvider({ children }) {
     updateReportSettings,
     whenSaved,
     loading,
-    storageError,
+    // Why the last save or request failed, and whether changes still wait to be saved.
+    storageError: saveState.error ?? requestError,
+    unsavedChanges: saveState.pending,
+    retrySave: queue.retry,
     createIncident,
     updateIncidentMeta,
     setIncidentTriage,

@@ -40,6 +40,7 @@
         <ol>
           <li><a href="#sign-in">Sign in</a></li>
           <li><a href="#incidents">Incidents</a></li>
+          <li><a href="#saving">Saving, and working together</a></li>
           <li><a href="#layout">The screen</a></li>
           <li><a href="#evidence">Add evidence</a></li>
           <li><a href="#artifacts">Analyse without an incident</a></li>
@@ -94,6 +95,24 @@
         shows the status and the assignee under the name, and filters the list by status or to the incidents that are
         <strong>mine</strong>. Both are stated in the report.
       </p>
+      <h3 id="saving">Saving, and working on the same incident</h3>
+      <p>
+        There is no Save button: every change is saved as you make it. Several analysts can work on one incident at the
+        same time. When a colleague saved something meanwhile, Nik reads their version and puts your change on top of
+        it, so a note or a flag added by one never erases the other's; their changes appear in your window when you
+        save, and when you come back to it.
+      </p>
+      <ul>
+        <li>
+          If a change cannot be saved (the server is unreachable), a red bar says <em>Changes not saved yet</em>. Nik
+          keeps trying on its own; <strong>Retry now</strong> tries at once. Nothing is lost while the window stays
+          open, and closing it with unsaved changes asks first.
+        </li>
+        <li>
+          If your <strong>session expires</strong> while you work, a dialog asks for your password again. The screen
+          stays as it is, and what was not saved yet is saved as soon as you sign in.
+        </li>
+      </ul>
       <figure class="shot">
         <img src="img/new-incident.png" alt="The New incident dialog" width="1600" height="1000" loading="lazy" />
         <figcaption>A new incident: ticket, title, host and user.</figcaption>
@@ -518,7 +537,10 @@
           <tbody>
             <tr>
               <td><kbd>F</kbd></td>
-              <td>Flags the row, or removes its flag.</td>
+              <td>
+                Flags the row, or removes its flag. Removing a flag removes its comments too: the notice that follows
+                has an <strong>Undo</strong>.
+              </td>
             </tr>
             <tr>
               <td><kbd>C</kbd></td>

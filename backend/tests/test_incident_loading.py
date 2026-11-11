@@ -149,13 +149,67 @@ def test_migration_adds_and_backfills_the_os_column(tmp_path, monkeypatch):
 def test_conditional_get_returns_304_while_unchanged(admin: TestClient):
     _create(admin, id="c1", updatedAt="2026-11-04T09:00:00.000Z")
     etag = admin.get("/api/incidents/c1").headers["ETag"]
-    assert etag == '"2026-11-04T09:00:00.000Z"'
+    assert etag == '"0"'
     hit = admin.get("/api/incidents/c1", headers={"If-None-Match": etag})
     assert hit.status_code == 304 and hit.content == b"" and hit.headers["ETag"] == etag
     admin.patch("/api/incidents/c1", headers=MERGE, content=json.dumps({"updatedAt": "2026-11-04T09:05:00.000Z"}))
     miss = admin.get("/api/incidents/c1", headers={"If-None-Match": etag})
     assert miss.status_code == 200 and miss.json()["updatedAt"] == "2026-11-04T09:05:00.000Z"
     assert admin.get("/api/incidents/nope", headers={"If-None-Match": etag}).status_code == 404
+
+
+def test_every_write_is_a_new_revision_whoever_makes_it(admin: TestClient):
+    """The ETag is the document's revision: it does not depend on what the client sends."""
+    created = admin.post("/api/incidents", json={"id": "r1", "data": {}, "updatedAt": "same"})
+    assert created.headers["ETag"] == '"0"'
+    # A patch that leaves updatedAt alone is still a new version.
+    first = admin.patch("/api/incidents/r1", headers=MERGE, content=json.dumps({"host": "a"}))
+    assert first.headers["ETag"] == '"1"'
+    # A write that does not come from a PATCH (a note through its own endpoint) counts too.
+    assert admin.post("/api/incidents/r1/notes", json={"text": "seen"}).status_code == 201
+    assert admin.get("/api/incidents/r1").headers["ETag"] == '"2"'
+
+
+def test_a_stale_writer_is_refused_and_loses_nothing(admin: TestClient):
+    """Two analysts on one incident: the second to save is told, instead of erasing the first."""
+    _create(admin, id="r2", notes=[])
+    etag = admin.get("/api/incidents/r2").headers["ETag"]
+    note_a = {"id": "a", "text": "from A"}
+    saved = admin.patch(
+        "/api/incidents/r2", headers={**MERGE, "If-Match": etag}, content=json.dumps({"notes": [note_a]})
+    )
+    assert saved.status_code == 200
+    # B still holds the first version: its whole-array patch would drop A's note.
+    stale = admin.patch(
+        "/api/incidents/r2",
+        headers={**MERGE, "If-Match": etag},
+        content=json.dumps({"notes": [{"id": "b", "text": "from B"}]}),
+    )
+    assert stale.status_code == 412
+    assert admin.get("/api/incidents/r2").json()["notes"] == [note_a]
+    # With the current version it goes through.
+    retried = admin.patch(
+        "/api/incidents/r2",
+        headers={**MERGE, "If-Match": saved.headers["ETag"]},
+        content=json.dumps({"notes": [note_a, {"id": "b", "text": "from B"}]}),
+    )
+    assert retried.status_code == 200 and len(retried.json()["notes"]) == 2
+
+
+def test_writers_read_the_document_under_the_lock(admin: TestClient):
+    """A writer that loaded the incident earlier works on what is stored now, not on its old copy."""
+    from app.core.db import SessionLocal
+    from app.core.locking import lock_incident, relock
+    from app.core.models import Incident
+
+    _create(admin, id="r3", host="before")
+    with SessionLocal() as db:
+        early = db.get(Incident, "r3")
+        assert early.doc["host"] == "before"
+        admin.patch("/api/incidents/r3", headers=MERGE, content=json.dumps({"host": "after"}))
+        assert relock(db, early).doc["host"] == "after"
+        assert lock_incident(db, "r3").rev == 1
+        assert lock_incident(db, "missing") is None and lock_incident(db, None) is None
 
 
 def test_status_and_assignee_are_listed_and_filtered(admin: TestClient):

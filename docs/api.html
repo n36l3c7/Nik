@@ -89,20 +89,21 @@
             <tr>
               <td><code>GET /api/incidents/{id}</code></td>
               <td>
-                One incident, with an <code>ETag</code>. Send <code>If-None-Match</code> to get <code>304</code> while
-                your copy is current.
+                One incident, with an <code>ETag</code>: its revision, which changes at every write, whoever makes it.
+                Send <code>If-None-Match</code> to get <code>304</code> while your copy is current.
               </td>
             </tr>
             <tr>
               <td><code>POST /api/incidents</code></td>
-              <td>Create / upsert (id generated if omitted).</td>
+              <td>Create / upsert (id generated if omitted). The response carries the <code>ETag</code>.</td>
             </tr>
             <tr>
               <td><code>PATCH /api/incidents/{id}</code></td>
               <td>
                 <code>application/json</code>: replace the given top-level fields.
                 <code>application/merge-patch+json</code>: apply an RFC 7396 merge patch (nested merge,
-                <code>null</code> deletes). Honors <code>If-Match</code> (<code>412</code> on a stale version).
+                <code>null</code> deletes). Honors <code>If-Match</code> (<code>412</code> on a stale version) and
+                answers with the new <code>ETag</code>.
               </td>
             </tr>
             <tr>
@@ -508,7 +509,11 @@
         </li>
         <li>
           <strong>Optimistic concurrency</strong>: send the <code>ETag</code> back as <code>If-Match</code> on
-          <code>PATCH</code>; a stale write gets <code>412</code>.
+          <code>PATCH</code>; a stale write gets <code>412</code>. Read the incident again, apply your change to it and
+          retry with the new <code>ETag</code> (each <code>PATCH</code> returns it). A whole-array value such as
+          <code>notes</code> replaces what is stored, so an <code>If-Match</code> is what keeps two writers from
+          dropping each other's items. Without the header the patch is applied to whatever is stored. Every write of an
+          incident is serialised by a row lock.
         </li>
         <li>
           <strong>Conditional GET</strong>: <code>If-None-Match</code> returns <code>304 Not Modified</code> while
