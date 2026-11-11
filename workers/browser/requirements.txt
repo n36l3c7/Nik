@@ -1,0 +1,3 @@
+# The isolated browser worker. Playwright's version fixes the Chromium build
+# the image downloads: updating it updates the browser that runs hostile pages.
+playwright==1.65.0

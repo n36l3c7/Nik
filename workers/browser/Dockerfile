@@ -5,9 +5,12 @@ FROM docker.io/library/python:3.12-slim
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
 # libatomic1: needed by the Node.js driver bundled with Playwright.
+# The Python packages are pinned in requirements.txt, where Dependabot and
+# pip-audit see them.
+COPY requirements.txt /tmp/requirements.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libatomic1 \
-    && pip install --no-cache-dir "playwright==1.65.0" \
+    && pip install --no-cache-dir -r /tmp/requirements.txt \
     && playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 browser

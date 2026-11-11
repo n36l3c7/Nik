@@ -3,6 +3,8 @@
 # - Security updates (a dependency with a known CVE) come as soon as GitHub
 #   learns about them; enable them in Settings → Code security → Dependabot
 #   security updates.
+# - GitHub Actions are pinned to a commit; the pull requests of that ecosystem
+#   move the commit and the version in the comment next to it.
 # - Version updates come once a month, one grouped pull request per ecosystem
 #   (npm, pip, Docker, Compose, GitHub Actions): at most five a month. They
 #   carry minor and patch releases only: a major release (a new PostgreSQL
@@ -25,7 +27,11 @@ updates:
       prefix: "chore(deps)"
 
   - package-ecosystem: pip
-    directory: /backend
+    directories:
+      - /backend
+      # The packages of the workers that decode hostile files.
+      - /workers/browser
+      - /workers/docview
     schedule:
       interval: monthly
     open-pull-requests-limit: 1

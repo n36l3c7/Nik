@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-11-12
+
+### Fixed
+
+- `deploy/init-env.sh`, added in 3.0.0, was not executable: run as the
+  documentation says, it answered "Permission denied" (`sh
+  deploy/init-env.sh` worked). CI now checks that every script an operator
+  runs is executable.
+
+### Changed
+
+- CI starts the Compose stack (database, backend, web server) the way an
+  operator does and checks what only the running stack shows: the redirect
+  to HTTPS, the security headers, that `/api/metrics` is not published, the
+  `Secure` cookie, the sign-in limit per client, the unprivileged read-only
+  backend, and the refusal of the example secrets.
+- Steps that download from the network (system packages, base images, the
+  test browser) are retried: a mirror that does not resolve for a few
+  seconds no longer fails a build. Lint runs in a job of its own that needs
+  none of them.
+- GitHub Actions are pinned to a commit; a newer push cancels the run of the
+  previous one; pip downloads are cached.
+- The Python packages of the isolated browser and document viewer workers
+  moved from their Dockerfiles to `requirements.txt` files, so Dependabot
+  updates them and `pip-audit` checks them like the backend's.
+- A weekly job builds every image from scratch and scans it: it fails on a
+  critical vulnerability that has a fix and lists the high ones.
+
 ## [3.3.1] - 2026-11-12
 
 Documentation only.
@@ -1465,7 +1493,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.3.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.3.2...HEAD
+[3.3.2]: https://github.com/n36l3c7/Nik/compare/v3.3.1...v3.3.2
 [3.3.1]: https://github.com/n36l3c7/Nik/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/n36l3c7/Nik/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/n36l3c7/Nik/compare/v3.1.0...v3.2.0

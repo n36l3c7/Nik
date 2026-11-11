@@ -1,0 +1,4 @@
+# The document viewer worker: pdfium renders PDF pages, Pillow reads images.
+# Both decode files an attacker wrote.
+pypdfium2==5.15.2
+pillow==13.0.0
