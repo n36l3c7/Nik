@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-11-12
+
+### Fixed
+
+- `deploy/init-env.sh` treated a stack that had run without any `.env` (on
+  the built-in defaults of releases before 3.0.0) as a new install: it
+  generated a random `DB_PASSWORD`, which the existing database does not
+  have, so the backend failed to start with "password authentication
+  failed", and a new `SECRET_KEY` with no `SECRET_KEY_PREVIOUS`, which left
+  the stored provider keys unreadable. The script now recognises an existing
+  install by the database volume of the Compose project (or
+  `NIK_EXISTING_INSTALL=1`), keeps the old database password and keeps the
+  old key for re-encryption. No data was at risk: only the `.env` was wrong.
+  The deployment guide says how to recover a stack already in that state.
+
 ## [3.3.2] - 2026-11-12
 
 ### Fixed
@@ -1493,7 +1508,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.3.2...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.3.3...HEAD
+[3.3.3]: https://github.com/n36l3c7/Nik/compare/v3.3.2...v3.3.3
 [3.3.2]: https://github.com/n36l3c7/Nik/compare/v3.3.1...v3.3.2
 [3.3.1]: https://github.com/n36l3c7/Nik/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/n36l3c7/Nik/compare/v3.2.0...v3.3.0
