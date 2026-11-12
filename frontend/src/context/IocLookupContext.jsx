@@ -1,12 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { Copy, Crosshair, ExternalLink, Search, ShieldCheck } from 'lucide-react'
-import { Badge, Button, Modal } from '../components/ui/index.js'
-import IocReputation from '../components/tabs/iocs/IocReputation.jsx'
-import { api } from '../services/api.js'
-import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable, sourceLabel } from '../domain/iocs.js'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { Copy, Crosshair, Link2, Maximize2, Minimize2, Search, ShieldCheck } from 'lucide-react'
+import { Button, Modal } from '../components/ui/index.js'
+import IocDetail from '../components/ioc/IocDetail.jsx'
+import { iocFromLocation, iocPath } from '../domain/enrichment.js'
+import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable } from '../domain/iocs.js'
 import { flagItems } from '../components/menu/flagItems.js'
 import { useArtifacts } from './ArtifactContext.jsx'
-import { formatDateTime } from '../lib/time.js'
 import { useAuth } from './AuthContext.jsx'
 import { useContextMenu } from './ContextMenuContext.jsx'
 import { useIncidents } from './IncidentContext.jsx'
@@ -16,8 +15,9 @@ import { useToast } from './ToastContext.jsx'
 
 /*
  * Indicators anywhere in the app:
- *   - openIoc(type, value): "Where seen", every incident the indicator appears
- *     in (all analysts'), from GET /api/iocs/lookup, with a link to each;
+ *   - openIoc(type, value): the indicator's window: its verdict, every source's
+ *     answer and every incident it appears in (all analysts'); it can become
+ *     a page with its own address (/ioc/<type>?v=<value>);
  *   - openAllowlist(type, value): add it, or a wider entry (its domain, its
  *     /24), to the shared IOC allowlist, with Undo;
  *   - iocMenu(event, type, value): the right-click menu of an indicator.
@@ -26,99 +26,61 @@ import { useToast } from './ToastContext.jsx'
 
 const IocLookupContext = createContext(null)
 
-function WhereSeen({ lookup, onClose }) {
+/*
+ * The indicator's window. It opens over the page; "Open as a page" makes it
+ * fill the window and gives it its own address (/ioc/<type>?v=<value>), which
+ * can be copied, bookmarked and opened in another tab. Closing the page goes
+ * back to where the analyst was.
+ */
+function IocWindow({ lookup, onClose, onExpand, onShrink, onAllowlist }) {
   const { activeIncidentId, selectIncident } = useIncidents()
-  const [state, setState] = useState({ loading: true, data: null, error: null })
-
-  useEffect(() => {
-    if (!lookup) return undefined
-    const controller = new AbortController()
-    setState({ loading: true, data: null, error: null })
-    const query = new URLSearchParams({ type: lookup.type, value: lookup.value })
-    api
-      .get(`/iocs/lookup?${query}`, { signal: controller.signal })
-      .then((data) => setState({ loading: false, data, error: null }))
-      .catch((err) => {
-        if (!controller.signal.aborted)
-          setState({ loading: false, data: null, error: err?.message ?? 'Lookup failed.' })
-      })
-    return () => controller.abort()
-  }, [lookup])
-
-  const meta = IOC_TYPES[lookup?.type] ?? { label: lookup?.type }
-  const incidents = state.data?.incidents ?? []
-
+  const { showToast } = useToast()
+  if (!lookup) return null
+  const copyLink = async () => {
+    const link = `${window.location.origin}${iocPath(lookup.type, lookup.value)}`
+    showToast({ message: (await copyText(link)) ? 'Link copied.' : 'The browser refused to copy.' })
+  }
+  const headerButton =
+    'inline-flex items-center gap-1 px-1.5 py-1 font-mono text-xs text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
   return (
-    <Modal open={Boolean(lookup)} onClose={onClose} title="Where seen" maxWidth="max-w-2xl">
-      {lookup && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge color={meta.color}>{meta.label}</Badge>
-            <code className="break-all font-mono text-sm text-fg">{lookup.value}</code>
-            {state.data?.allowlisted && (
-              <Badge color="slate" title="On the IOC allowlist (Settings)">
-                <ShieldCheck className="h-3 w-3" /> allowlisted
-              </Badge>
+    <Modal
+      open
+      onClose={onClose}
+      title="Indicator"
+      maxWidth="max-w-6xl"
+      tall
+      full={lookup.full}
+      actions={
+        <>
+          <button type="button" onClick={copyLink} className={headerButton}>
+            <Link2 className="h-3.5 w-3.5" aria-hidden="true" /> Copy link
+          </button>
+          <button type="button" onClick={lookup.full ? onShrink : onExpand} className={headerButton}>
+            {lookup.full ? (
+              <>
+                <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" /> Back to a window
+              </>
+            ) : (
+              <>
+                <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" /> Open as a page
+              </>
             )}
-          </div>
-          {state.loading && <p className="font-mono text-xs text-fg-muted">Searching every incident…</p>}
-          {state.error && <p className="text-xs text-high">{state.error}</p>}
-          {!state.loading && !state.error && incidents.length === 0 && (
-            <p className="text-sm text-fg-muted">
-              Not in any saved incident yet (changes made in the last seconds are indexed when they are saved).
-            </p>
-          )}
-          {incidents.length > 0 && (
-            <>
-              <p className="text-xs text-fg-muted">
-                Seen in <strong className="text-fg">{incidents.length}</strong>{' '}
-                {incidents.length === 1 ? 'incident' : 'incidents'}.
-              </p>
-              <ul className="divide-y divide-line-soft border border-line">
-                {incidents.map((incident) => {
-                  const current = incident.id === activeIncidentId
-                  return (
-                    <li key={incident.id} className="flex flex-wrap items-start gap-3 px-3 py-2">
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="flex items-center gap-2 text-sm font-medium text-fg">
-                          {incident.name || incident.id}
-                          {current && <Badge color="emerald">this incident</Badge>}
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {incident.sources.map((source) => (
-                            <Badge key={source} color="slate">
-                              {sourceLabel(source)}
-                            </Badge>
-                          ))}
-                        </div>
-                        <p className="font-mono text-[11px] text-fg-muted">
-                          {incident.count}× ·{' '}
-                          {incident.firstSeen
-                            ? `${formatDateTime(incident.firstSeen)} → ${formatDateTime(incident.lastSeen)}`
-                            : 'no timestamp'}
-                        </p>
-                      </div>
-                      {!current && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            selectIncident(incident.id)
-                            onClose()
-                          }}
-                          className="inline-flex items-center gap-1 text-xs text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" /> Open
-                        </button>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            </>
-          )}
-          <IocReputation type={lookup.type} value={state.data?.value ?? lookup.value} />
-        </div>
-      )}
+          </button>
+        </>
+      }
+    >
+      <IocDetail
+        key={`${lookup.type}:${lookup.value}`}
+        type={lookup.type}
+        value={lookup.value}
+        activeIncidentId={activeIncidentId}
+        onOpenIncident={(id) => {
+          onClose({ keepUrl: true })
+          selectIncident(id)
+        }}
+        onAllowlist={() => onAllowlist(lookup.type, lookup.value)}
+        onNotice={(message) => showToast({ message })}
+      />
     </Modal>
   )
 }
@@ -226,20 +188,69 @@ async function copyText(text) {
   }
 }
 
+const iocInUrl = () => (typeof window === 'undefined' ? null : iocFromLocation(window.location))
+
 export function IocLookupProvider({ children }) {
-  const [lookup, setLookup] = useState(null)
+  const { isAuthenticated } = useAuth()
+  // An indicator opened from its link starts as a page.
+  const [lookup, setLookup] = useState(() => {
+    const linked = iocInUrl()
+    return linked ? { ...linked, full: true } : null
+  })
   const [allowlistTarget, setAllowlistTarget] = useState(null)
   const { openMenu, askText } = useContextMenu()
   const { openSearch } = useNavigation()
   const { showToast } = useToast()
   // An indicator is flagged in the incident on screen (none while an artifact is open on its own).
-  const { activeIncident, toggleFlag, addFlagComment } = useIncidents()
+  const { activeIncident, activeIncidentId, toggleFlag, addFlagComment } = useIncidents()
   const { currentId: artifactOpen } = useArtifacts()
   const flagIncident = artifactOpen ? null : activeIncident
+  // Where to go back to when the page is closed.
+  const returnTo = useRef(null)
 
-  const openIoc = useCallback((type, value) => setLookup({ type, value: String(value) }), [])
+  const openIoc = useCallback((type, value) => setLookup({ type, value: String(value), full: false }), [])
   const openAllowlist = useCallback((type, value) => setAllowlistTarget({ type, value: String(value) }), [])
-  const close = useCallback(() => setLookup(null), [])
+
+  /** The address the app shows without an indicator page: the open incident, or the start. */
+  const basePath = useCallback(
+    () => returnTo.current ?? (activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'),
+    [activeIncidentId],
+  )
+  const leaveUrl = useCallback(() => {
+    if (iocInUrl()) window.history.replaceState({}, '', basePath())
+    returnTo.current = null
+  }, [basePath])
+
+  const close = useCallback(
+    ({ keepUrl = false } = {}) => {
+      if (!keepUrl) leaveUrl()
+      setLookup(null)
+    },
+    [leaveUrl],
+  )
+  const lookupRef = useRef(lookup)
+  lookupRef.current = lookup
+  const expand = useCallback(() => {
+    const current = lookupRef.current
+    if (!current) return
+    if (!iocInUrl()) returnTo.current = window.location.pathname + window.location.search
+    window.history.pushState({ ioc: true }, '', iocPath(current.type, current.value))
+    setLookup({ ...current, full: true })
+  }, [])
+  const shrink = useCallback(() => {
+    leaveUrl()
+    setLookup((current) => (current ? { ...current, full: false } : current))
+  }, [leaveUrl])
+
+  // Back and forward: the address decides whether an indicator page is open.
+  useEffect(() => {
+    const onPopState = () => {
+      const linked = iocInUrl()
+      setLookup((current) => (linked ? { ...linked, full: true } : current?.full ? null : current))
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   const iocMenu = useCallback(
     (event, type, value) => {
@@ -279,7 +290,9 @@ export function IocLookupProvider({ children }) {
   return (
     <IocLookupContext.Provider value={value}>
       {children}
-      <WhereSeen lookup={lookup} onClose={close} />
+      {isAuthenticated && (
+        <IocWindow lookup={lookup} onClose={close} onExpand={expand} onShrink={shrink} onAllowlist={openAllowlist} />
+      )}
       <AllowlistDialog target={allowlistTarget} onClose={() => setAllowlistTarget(null)} />
     </IocLookupContext.Provider>
   )

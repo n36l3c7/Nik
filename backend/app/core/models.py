@@ -279,20 +279,33 @@ class ArtifactRelation(Base):
 
 
 class IntegrationKey(Base):
-    """A threat-intelligence provider's API key, encrypted (``vault.py``)."""
+    """One API key of a threat-intelligence provider, encrypted (``vault.py``).
+
+    A provider can have several: lookups rotate over them, each with its own
+    rate limit and daily quota. A key the provider refuses several times in a
+    row (``failures``) is marked ``rejected``, with what it answered, and
+    skipped until an admin replaces it.
+    """
 
     __tablename__ = "integration_keys"
 
-    provider: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False, index=True)
     secret: Mapped[str] = mapped_column(Text, nullable=False)
     hint: Mapped[str] = mapped_column(String, nullable=False, default="")  # last 4 characters
+    label: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # ok | rejected
+    status: Mapped[str] = mapped_column(String, nullable=False, default="ok")
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
 class Enrichment(Base):
-    """One provider's answer about one indicator (``enrichment/``), kept for
-    the cache period of Settings -> Threat intelligence."""
+    """One provider's latest answer about one indicator (``enrichment/``),
+    valid for the retention of its type (Settings -> Threat intelligence).
+    ``raw`` is the provider's own answer, for the JSON download."""
 
     __tablename__ = "ioc_enrichment"
 
@@ -308,8 +321,26 @@ class Enrichment(Base):
     data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     checked_at: Mapped[str] = mapped_column(String, nullable=False)
+    raw: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (Index("ix_ioc_enrichment_value", "value"),)
+
+
+class EnrichmentHistory(Base):
+    """A provider's earlier answers about an indicator: verdict and summary
+    of each check, the last few kept, to see a reputation change over time."""
+
+    __tablename__ = "ioc_enrichment_history"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    verdict: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    summary: Mapped[str] = mapped_column(String, nullable=False, default="")
+    checked_at: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (Index("ix_ioc_enrichment_history_value", "value", "type"),)
 
 
 class Lease(Base):

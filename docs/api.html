@@ -432,28 +432,48 @@
               </td>
             </tr>
             <tr>
-              <td><code>GET /api/enrichment/providers</code> · <code>PUT/DELETE …/{id}/key</code></td>
               <td>
-                Threat-intelligence providers and whether each has a key (last four characters only); store an encrypted
-                key or remove it (<strong>admin</strong>, audited).
+                <code>GET /api/enrichment/providers</code> · <code>POST …/{id}/keys</code> ·
+                <code>DELETE …/{id}/keys/{keyId}</code>
+              </td>
+              <td>
+                Threat-intelligence providers with the state of each of their keys (<code>keys</code>: id, last four
+                characters, label, <code>ok</code> / <code>rejected</code> / <code>unreadable</code>; never the key).
+                Add a key (<code>{ key, label }</code>, at most 10 per provider, <code>409</code> for one already
+                stored) or remove one (<strong>admin</strong>, audited). Lookups rotate over a provider's keys.
+                <code>PUT/DELETE …/{id}/key</code> still replace or remove all of a provider's keys.
               </td>
             </tr>
             <tr>
               <td><code>GET /api/enrichment?type=&amp;value=</code> · <code>POST /api/enrichment/check</code></td>
               <td>
-                The cached answers about an indicator (verdict, summary, link) and why it is never sent, if so; ask
-                every usable provider now (<code>{ type, value, force }</code>, <code>422</code> for a private,
-                internal, allowlisted or TLP:RED value, audited).
+                What is known about an indicator: <code>summary</code> (<code>verdict</code>, weighted
+                <code>score</code> 0–100, <code>flagged</code>, <code>checked</code>, <code>counts</code>),
+                <code>results</code> (per provider: verdict, summary, link, <code>data</code> with the details,
+                <code>history</code> of the last ten answers, <code>expired</code>, <code>hasRaw</code>),
+                <code>notAsked</code>, <code>retentionDays</code>, <code>refresh</code> (providers whose answer has
+                expired and should be asked again) and why the value is never sent, if so. <code>POST</code> asks every
+                usable provider now (<code>{ type, value, force }</code>, <code>422</code> for a private, internal,
+                allowlisted or TLP:RED value, audited).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/enrichment/raw?type=&amp;value=&amp;provider=</code></td>
+              <td>
+                The provider's whole answer as a JSON download (<code>404</code> when none is stored). The same
+                indicator opens in the app at <code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>.
               </td>
             </tr>
             <tr>
               <td><code>GET /api/settings</code></td>
               <td>
                 Read the shared detection rules, business hours, IOC allowlist, report header and Mail Analysis settings
-                (<code>mail: { orgDomains, trustedAuthServers }</code>) and threat-intelligence options
-                (<code>enrichment</code>, never the keys). <code>PUT</code> replaces them (a session, or a key with the
-                write scope): the report header, the mail settings and the threat-intelligence options change only for
-                an <strong>admin</strong>, and are left as they are for anyone else.
+                (<code>mail: { orgDomains, trustedAuthServers }</code>) and threat-intelligence options (<code
+                  >enrichment: { auto, retentionDays: { ip, url, hash }, refreshExpired, virustotal: { engines,
+                  relations, comments }, providers }</code
+                >, never the keys). <code>PUT</code> replaces them (a session, or a key with the write scope): the
+                report header, the mail settings and the threat-intelligence options change only for an
+                <strong>admin</strong>, and are left as they are for anyone else.
               </td>
             </tr>
             <tr>

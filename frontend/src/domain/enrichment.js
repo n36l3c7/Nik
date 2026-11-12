@@ -19,7 +19,7 @@ export const LOOKUP_TYPES = new Set(['ip', 'domain', 'url', 'md5', 'sha1', 'sha2
 export function reputationRank(reputation) {
   if (!reputation) return 0
   const order = { malicious: 4, suspicious: 3, harmless: 1, unknown: 2 }
-  return (order[reputation.verdict] ?? 0) * 100 + (reputation.flagged ?? 0)
+  return (order[reputation.verdict] ?? 0) * 1000 + (reputation.score ?? 0) * 5 + (reputation.flagged ?? 0)
 }
 
 /** "VirusTotal, AbuseIPDB" for the types a provider takes. */
@@ -30,4 +30,56 @@ export function typeGroups(types = []) {
   if (types.includes('url')) groups.push('URL')
   if (types.some((t) => ['md5', 'sha1', 'sha256'].includes(t))) groups.push('hash')
   return groups.join(' · ')
+}
+
+/*
+ * The indicator's page: its address, the weighted score, expiry.
+ */
+
+/** The permalink of an indicator: /ioc/<type>?v=<value>. */
+export function iocPath(type, value) {
+  return `/ioc/${encodeURIComponent(type)}?v=${encodeURIComponent(value)}`
+}
+
+const IOC_PATH_TYPES = new Set(['ip', 'domain', 'url', 'email', 'md5', 'sha1', 'sha256'])
+
+/** `{ type, value }` from a location shaped like iocPath(), or null. */
+export function iocFromLocation({ pathname = '', search = '' } = {}) {
+  const match = pathname.match(/^\/ioc\/([a-z0-9]+)\/?$/)
+  if (!match || !IOC_PATH_TYPES.has(match[1])) return null
+  const value = new URLSearchParams(search).get('v')
+  return value ? { type: match[1], value: value.slice(0, 1024) } : null
+}
+
+/** Shares of the verdicts for the bar under the score: [{ verdict, share, count }]. */
+export function verdictShares(counts = {}) {
+  const order = ['malicious', 'suspicious', 'harmless', 'unknown']
+  const total = order.reduce((sum, v) => sum + (counts[v] ?? 0), 0)
+  if (!total) return []
+  return order
+    .filter((v) => counts[v] > 0)
+    .map((verdict) => ({ verdict, count: counts[verdict], share: (counts[verdict] / total) * 100 }))
+}
+
+/** "3 malicious · 2 suspicious · 1 unknown". */
+export function countsLine(counts = {}) {
+  return verdictShares(counts)
+    .map((s) => `${s.count} ${s.verdict}`)
+    .join(' · ')
+}
+
+/** "30 days", "6 months", "1 year": a retention in days, as people say it. */
+export function retentionLabel(days) {
+  if (days % 365 === 0) return `${days / 365} year${days === 365 ? '' : 's'}`
+  if (days >= 60 && days % 30 === 0) return `${days / 30} months`
+  return `${days} day${days === 1 ? '' : 's'}`
+}
+
+/** A provider's verdicts over time, oldest first, without repeats: what changed. */
+export function verdictChanges(history = []) {
+  const out = []
+  for (const entry of [...history].reverse()) {
+    if (!out.length || out[out.length - 1].verdict !== entry.verdict) out.push(entry)
+  }
+  return out
 }

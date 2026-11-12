@@ -100,10 +100,10 @@ const BASE_COLUMNS = [
       return (
         <Badge
           color={meta.color}
-          title={`${row.reputation.flagged} of ${row.reputation.checked} providers flag it: click the value for details`}
+          title={`Score ${row.reputation.score ?? 0}/100: ${row.reputation.flagged} of ${row.reputation.checked} sources flag it. Click the value for details`}
         >
           {meta.label}
-          {row.reputation.flagged > 0 && ` ${row.reputation.flagged}/${row.reputation.checked}`}
+          {row.reputation.flagged > 0 && ` ${row.reputation.score ?? 0}`}
         </Badge>
       )
     },

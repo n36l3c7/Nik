@@ -28,7 +28,8 @@ import { useAuth } from './AuthContext.jsx'
  *  - mail:          { orgDomains, trustedAuthServers } for Mail Analysis
  *                   (your own domains; servers whose Authentication-Results
  *                   can be believed); null until loaded.
- *  - enrichment:    { auto: { ip, url, hash }, ttlHours, providers: { id: bool } }
+ *  - enrichment:    { auto: { ip, url, hash }, retentionDays: { ip, url, hash }, refreshExpired,
+ *                   virustotal: { engines, relations, comments }, providers: { id: bool } }
  *                   threat-intelligence lookups (the API keys never come here);
  *                   null until loaded.
  *
@@ -40,6 +41,15 @@ import { useAuth } from './AuthContext.jsx'
  */
 
 const SettingsContext = createContext(null)
+
+// Threat intelligence as the server fills it in when nothing was saved.
+const DEFAULT_ENRICHMENT = {
+  auto: { ip: false, url: false, hash: false },
+  retentionDays: { ip: 30, url: 30, hash: 180 },
+  refreshExpired: true,
+  virustotal: { engines: 'flagged', relations: false, comments: false },
+  providers: {},
+}
 
 /** Generates a unique id for keyword rules created by the user. */
 function newId() {
@@ -88,7 +98,9 @@ function normalizeSettings(doc) {
       doc?.enrichment && typeof doc.enrichment === 'object'
         ? {
             auto: { ip: false, url: false, hash: false, ...(doc.enrichment.auto ?? {}) },
-            ttlHours: doc.enrichment.ttlHours ?? 24,
+            retentionDays: { ...DEFAULT_ENRICHMENT.retentionDays, ...(doc.enrichment.retentionDays ?? {}) },
+            refreshExpired: doc.enrichment.refreshExpired ?? true,
+            virustotal: { ...DEFAULT_ENRICHMENT.virustotal, ...(doc.enrichment.virustotal ?? {}) },
             providers: { ...(doc.enrichment.providers ?? {}) },
           }
         : null,
@@ -216,13 +228,15 @@ export function SettingsProvider({ children }) {
   /** Updates the threat-intelligence settings (partial merge). */
   const setEnrichment = useCallback((patch) => {
     setSettings((prev) => {
-      const current = prev.enrichment ?? { auto: { ip: false, url: false, hash: false }, ttlHours: 24, providers: {} }
+      const current = prev.enrichment ?? structuredClone(DEFAULT_ENRICHMENT)
       return {
         ...prev,
         enrichment: {
           ...current,
           ...patch,
           auto: { ...current.auto, ...(patch.auto ?? {}) },
+          retentionDays: { ...current.retentionDays, ...(patch.retentionDays ?? {}) },
+          virustotal: { ...current.virustotal, ...(patch.virustotal ?? {}) },
           providers: { ...current.providers, ...(patch.providers ?? {}) },
         },
       }

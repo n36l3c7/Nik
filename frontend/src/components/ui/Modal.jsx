@@ -13,9 +13,21 @@ import { useLayer } from '../../lib/layers.js'
  * - `maxWidth` is a Tailwind class (default 'max-w-lg').
  * - `tall` lets the dialog use nearly the whole height of the window (the
  *   isolated browser), instead of 85% of it.
+ * - `full` makes it fill the window (an indicator opened as a page).
+ * - `actions` are extra controls in the header, before the close button.
  * - No portal: the fixed layer + z-50 is enough for this SPA.
  */
-export default function Modal({ open, onClose, title, children, footer = null, maxWidth = 'max-w-lg', tall = false }) {
+export default function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer = null,
+  maxWidth = 'max-w-lg',
+  tall = false,
+  full = false,
+  actions = null,
+}) {
   const ref = useRef(null)
   useLayer(ref, { open, onClose })
 
@@ -30,7 +42,7 @@ export default function Modal({ open, onClose, title, children, footer = null, m
       aria-label={typeof title === 'string' ? title : undefined}
       className={[
         'fixed inset-0 z-50 flex items-center justify-center bg-sunken/70 backdrop-blur-sm focus:outline-none',
-        tall ? 'p-2' : 'p-4',
+        full ? 'p-0' : tall ? 'p-2' : 'p-4',
       ].join(' ')}
       // Close only if the mousedown happens directly on the backdrop
       // (avoids accidental closes when dragging from the content outward)
@@ -41,14 +53,15 @@ export default function Modal({ open, onClose, title, children, footer = null, m
       <div
         className={[
           'w-full',
-          maxWidth,
-          tall ? 'max-h-[96vh]' : 'max-h-[85vh]',
+          full ? 'h-full max-w-none' : maxWidth,
+          full ? 'max-h-none' : tall ? 'max-h-[96vh]' : 'max-h-[85vh]',
           'flex flex-col overflow-hidden border border-line bg-panel shadow-2xl',
         ].join(' ')}
       >
         {/* Header: title + close button */}
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
-          <h2 className="truncate font-mono text-sm font-semibold text-fg">{title}</h2>
+          <h2 className="min-w-0 flex-1 truncate font-mono text-sm font-semibold text-fg">{title}</h2>
+          {actions}
           <button
             type="button"
             onClick={onClose}
@@ -60,7 +73,7 @@ export default function Modal({ open, onClose, title, children, footer = null, m
         </header>
 
         {/* Scrollable body for long content */}
-        <div className="overflow-y-auto p-5 text-sm text-fg">{children}</div>
+        <div className={`overflow-y-auto p-5 text-sm text-fg ${full ? 'flex-1' : ''}`}>{children}</div>
 
         {/* Optional footer with the actions */}
         {footer && (
