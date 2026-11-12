@@ -4,6 +4,7 @@ import { Button } from '../../ui/index.js'
 import { isShortcutProbe } from '../../../context/ContextMenuContext.jsx'
 import FollowStream from './FollowStream.jsx'
 import SortHeader from './SortHeader.jsx'
+import IocText from '../../ioc/IocText.jsx'
 import { api } from '../../../services/api.js'
 import { formatOffset, hexRows } from '../../../domain/mail.js'
 import {
@@ -95,6 +96,13 @@ function FilterBar({ captureId, applied, onApply }) {
   )
 }
 
+/** What a protocol field holds, from its display filter (`http.host == "…"`): a hint for IocText. */
+function fieldHint(filter) {
+  const field = String(filter ?? '').split(/[\s=]/)[0]
+  if (/(^|\.)(host|name|server_name|qry\.name|resp\.name|cname|ns|sni)$/.test(field)) return 'domain'
+  return null
+}
+
 function TreeNode({ node, depth, open, toggle, selected, onSelect, onFilter }) {
   const expanded = open.has(node.path)
   const hasChildren = node.children.length > 0
@@ -136,7 +144,8 @@ function TreeNode({ node, depth, open, toggle, selected, onSelect, onFilter }) {
         ) : (
           <span className="w-3 shrink-0" />
         )}
-        <span>{node.label}</span>
+        {/* Addresses, host names and URLs of the field open the indicator's window. */}
+        <IocText text={node.label} hint={fieldHint(node.filter)} />
       </div>
       {hasChildren && expanded && (
         <ul role="group">
@@ -327,7 +336,7 @@ export default function PacketView({ capture, flags, onFlag }) {
                     {row.c.map((value, i) => (
                       <td key={i} className="truncate px-1.5 py-px">
                         {i === 0 && flags[`pcap:${capture.id}:${row.num}`] ? '⚑ ' : ''}
-                        {value}
+                        {i === 0 || active ? value : <IocText text={String(value ?? '')} />}
                       </td>
                     ))}
                   </tr>

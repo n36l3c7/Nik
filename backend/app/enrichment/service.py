@@ -410,8 +410,13 @@ def overall(answers: Iterable[tuple[str, str]]) -> dict[str, Any] | None:
         return None
     counts = {v: 0 for v in VERDICT_ORDER}
     weight = points = 0.0
+    counted = 0
     for provider_id, verdict in answers:
         provider = BY_ID.get(provider_id)
+        # Facts, not a judgement: counted only when they flag the value.
+        if provider is not None and provider.informational and verdict not in ("malicious", "suspicious"):
+            continue
+        counted += 1
         w = provider.weight if provider else 1
         weight += w
         points += w * VERDICT_VALUE.get(verdict, 0.0)
@@ -426,7 +431,9 @@ def overall(answers: Iterable[tuple[str, str]]) -> dict[str, Any] | None:
         verdict = "harmless"
     else:
         verdict = "unknown"
-    return {"verdict": verdict, "score": score, "flagged": flagged, "checked": len(answers), "counts": counts}
+    if not counted:
+        return None
+    return {"verdict": verdict, "score": score, "flagged": flagged, "checked": counted, "counts": counts}
 
 
 def summaries(db: OrmSession, pairs: Iterable[tuple[str, str]]) -> dict[tuple[str, str], dict[str, Any]]:

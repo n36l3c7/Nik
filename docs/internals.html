@@ -385,6 +385,12 @@
               <td>—</td>
             </tr>
             <tr>
+              <td>Registration (RDAP / WHOIS)</td>
+              <td>domain, IP</td>
+              <td>none</td>
+              <td>—</td>
+            </tr>
+            <tr>
               <td>Google Safe Browsing</td>
               <td>domain, URL</td>
               <td>required</td>
@@ -410,6 +416,17 @@
         pacing each provider to its free tier. An answer stands for the retention of its type
         (<code>retentionDays</code>: 30 days for IP addresses, 30 for URLs and domains, 180 for hashes; 1 to 730), an
         error is retried after an hour.
+      </p>
+      <p>
+        <strong>Registration</strong> (<code>enrichment/registration.py</code>) asks the registries themselves. IANA
+        publishes which RDAP server answers for each top-level domain and address block (the bootstrap files, kept in
+        memory for a day); a host is asked by its registered domain, tried from the shortest suffix. A top-level domain
+        with no RDAP server is asked over WHOIS on port 43 (<code>whois.iana.org</code> names the registry's server) and
+        the text is read for the lines every registry writes; port 43 does not go through <code>HTTPS_PROXY</code>, so
+        behind a proxy that fallback may be unreachable and the source then shows an error. This provider is
+        <em>informational</em>: it counts in the weighted score only when it flags the value (a domain registered less
+        than 30 days ago is <code>suspicious</code>, weight 2), never by staying silent, so an old domain or an
+        address's network leaves the score as it was.
       </p>
       <p>
         <strong>The IoC library</strong> (<code>app/ioc_library.py</code>) is one row per
@@ -599,6 +616,18 @@
         a form that posts to another registrable domain, a chain through three or more domains, a certificate issued
         less than seven days ago, a download the page started. A score of 70 or more is <code>phishing</code>, 40 to 69
         <code>suspicious</code>, less <code>clean</code>.
+      </p>
+      <p>
+        <strong>Scripts</strong> (<code>app/jsanalysis.py</code>): the bodies of the scripts the page loaded come from
+        the visit's network log, and the <code>inspect</code> action also returns the text of the scripts written in the
+        page. Each is read as text, never run: size, SHA-256, entropy, the share of escaped text and generated names
+        (obfuscation), a banner or a host that names a well-known library, the indicators in the code, and the built-in
+        <strong>signatures</strong>. A signature is a regular expression with a severity and points; some need a second
+        expression to match too (a key listener is a keylogger only if the script also sends something out; a password
+        field read is a grabber only then). The findings add to the scan's score once per signature
+        (<code>urlscan.with_scripts</code>), and the addresses a script talks to become indicators of the incidents that
+        reference the scan, except those of a recognised library. The code is kept beside the screenshot
+        (<code>_urls/&lt;id&gt;.scripts.json</code>, 300 000 characters a script, 3 MB a scan) and served as text.
       </p>
       <p>
         One row per distinct address (<code>url_scans</code>, id = the first 32 hex characters of the SHA-256 of the

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Copy, Crosshair, Link2, Maximize2, Minimize2, Search, ShieldCheck } from 'lucide-react'
 import { Button, Modal } from '../components/ui/index.js'
 import IocDetail from '../components/ioc/IocDetail.jsx'
+import { onLocationChange, setPath } from '../lib/location.js'
 import { iocFromLocation, iocPath } from '../domain/enrichment.js'
 import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable } from '../domain/iocs.js'
 import { flagItems } from '../components/menu/flagItems.js'
@@ -32,8 +33,11 @@ const IocLookupContext = createContext(null)
  * can be copied, bookmarked and opened in another tab. Closing the page goes
  * back to where the analyst was.
  */
-function IocWindow({ lookup, onClose, onExpand, onShrink, onAllowlist }) {
-  const { activeIncidentId, selectIncident } = useIncidents()
+function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist }) {
+  const { activeIncidentId: loadedIncidentId, selectIncident } = useIncidents()
+  // "This incident" is the one on screen: with an artifact or the IoC library in the
+  // main area no incident is, and the one it was seen in can be opened.
+  const activeIncidentId = /^\/incident\//.test(underPath) ? loadedIncidentId : null
   const { showToast } = useToast()
   if (!lookup) return null
   const copyLink = async () => {
@@ -217,7 +221,7 @@ export function IocLookupProvider({ children }) {
     [activeIncidentId],
   )
   const leaveUrl = useCallback(() => {
-    if (iocInUrl()) window.history.replaceState({}, '', basePath())
+    if (iocInUrl()) setPath(basePath(), { replace: true })
     returnTo.current = null
   }, [basePath])
 
@@ -234,12 +238,14 @@ export function IocLookupProvider({ children }) {
     const current = lookupRef.current
     if (!current) return
     if (!iocInUrl()) returnTo.current = window.location.pathname + window.location.search
-    window.history.pushState({ ioc: true }, '', iocPath(current.type, current.value))
+    setPath(iocPath(current.type, current.value), { state: { ioc: true } })
     setLookup({ ...current, full: true })
   }, [])
   const shrink = useCallback(() => {
+    // Read before the address changes: leaving it closes a page that is still marked full.
+    const current = lookupRef.current
     leaveUrl()
-    setLookup((current) => (current ? { ...current, full: false } : current))
+    setLookup(current ? { ...current, full: false } : null)
   }, [leaveUrl])
 
   // Back and forward: the address decides whether an indicator page is open.
@@ -248,8 +254,7 @@ export function IocLookupProvider({ children }) {
       const linked = iocInUrl()
       setLookup((current) => (linked ? { ...linked, full: true } : current?.full ? null : current))
     }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    return onLocationChange(onPopState)
   }, [])
 
   const iocMenu = useCallback(
@@ -291,7 +296,14 @@ export function IocLookupProvider({ children }) {
     <IocLookupContext.Provider value={value}>
       {children}
       {isAuthenticated && (
-        <IocWindow lookup={lookup} onClose={close} onExpand={expand} onShrink={shrink} onAllowlist={openAllowlist} />
+        <IocWindow
+          lookup={lookup}
+          underPath={lookup?.full ? (returnTo.current ?? '') : window.location.pathname}
+          onClose={close}
+          onExpand={expand}
+          onShrink={shrink}
+          onAllowlist={openAllowlist}
+        />
       )}
       <AllowlistDialog target={allowlistTarget} onClose={() => setAllowlistTarget(null)} />
     </IocLookupContext.Provider>

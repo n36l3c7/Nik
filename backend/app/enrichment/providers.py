@@ -690,6 +690,12 @@ def safebrowsing(kind: str, value: str, key: str | None, options: dict | None = 
     return _result("unknown", "not on Google Safe Browsing lists", link, raw=answer or {}, checked=urls)
 
 
+def _registration(kind: str, value: str, key: str | None, options: dict | None = None) -> dict[str, Any]:
+    from . import registration
+
+    return registration.lookup(kind, value, key, options)
+
+
 @dataclass(frozen=True)
 class Provider:
     id: str
@@ -703,6 +709,9 @@ class Provider:
     note: str = ""
     # How much its verdict counts in the indicator's overall score (1 to 3).
     weight: int = 1
+    # Gives facts rather than a judgement: it counts in the score only when it
+    # flags the value (a domain registered days ago), never by staying silent.
+    informational: bool = False
 
     def supports(self, kind: str) -> bool:
         return kind in self.types
@@ -743,6 +752,11 @@ PROVIDERS: tuple[Provider, ...] = (
     Provider(
         "safebrowsing", "Google Safe Browsing", ("domain", "url"), "required", safebrowsing, 1.0, 10000,
         "https://developers.google.com/safe-browsing/v4/get-started", "Free key from Google Cloud.", weight=3,
+    ),
+    Provider(
+        "registration", "Registration (RDAP / WHOIS)", ("domain", "ip"), "none", _registration, 1.0, 0,
+        "https://about.rdap.org/", "Who registered a domain or holds an address, read from the registries; no key.",
+        weight=2, informational=True,
     ),
 )  # fmt: skip
 BY_ID = {p.id: p for p in PROVIDERS}

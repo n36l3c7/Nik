@@ -401,7 +401,13 @@
               <td>
                 The scan's state (<code>queued</code>, <code>running</code>, <code>done</code>, <code>error</code>),
                 verdict, score and result: final address, navigation chain, forms, findings with points, the capture of
-                the visit. Visit it again; the screenshot as JPEG.
+                the visit, and <code>scripts</code>: per script its kind (<code>external</code> or <code>inline</code>),
+                address, size, SHA-256, entropy, share of obfuscated text, recognised library,
+                <code>findings</code> (<code>id</code>, <code>severity</code>, <code>points</code>, <code>title</code>,
+                <code>line</code>, <code>start</code>, <code>end</code>, <code>excerpt</code>) and <code>iocs</code>.
+                Visit it again; the screenshot as JPEG. <code>GET …/scripts/{n}</code> adds the script's
+                <code>code</code> (text, never run); <code>…/scripts/{n}/download</code> is the script in a zip,
+                password <code>infected</code>.
               </td>
             </tr>
             <tr>

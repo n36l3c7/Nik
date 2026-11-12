@@ -16,8 +16,11 @@ SHA = "a" * 64
 
 
 @pytest.fixture(autouse=True)
-def fresh_limits():
+def fresh_limits(monkeypatch):
     service.limiter.reset()
+    # The registries (RDAP / WHOIS) are a provider of their own, tested in
+    # test_registration.py: left out here so these tests count the others.
+    monkeypatch.setattr(service, "PROVIDERS", tuple(p for p in service.PROVIDERS if p.id != "registration"))
     yield
     service.limiter.reset()
 

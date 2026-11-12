@@ -257,6 +257,7 @@
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
 ├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
 │                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
+├── jsanalysis.py                   # Scripts of a scanned page read as text: signatures, obfuscation, libraries
 ├── ioc_library.py                  # The IoC library: one row per indicator, reading pastes and files,
 │                                   #   lists, export with chosen fields, alerts of watched lists
 ├── urlscan.py                      # URL scans: the isolated browser's visit, the findings and the verdict
@@ -329,6 +330,8 @@
 │   ├── path.js                     # fileNameFromPath (Windows/POSIX paths, file:// URIs)
 │   ├── mergePatch.js               # createMergePatch(prev, next), applyMergePatch — RFC 7396 (+ .test.js)
 │   ├── rebase.js                   # rebase(base, local, remote): three-way merge of documents (+ .test.js)
+│   ├── location.js                 # setPath() / onLocationChange(): the address is the one source of truth
+│                                   #   for what the main area shows; every context announces and follows it
 │   ├── layers.js                   # useLayer(): the stack of open dialogs and menus. Escape closes the
 │   │                               #   top one, Tab stays inside, focus returns on close (+ .test.js)
 │   ├── asciiSkull.js               # renderSkull(): the loading/error/empty skull (+ .test.js)

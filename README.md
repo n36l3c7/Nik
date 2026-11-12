@@ -127,6 +127,19 @@ The [developer guide](https://n36l3c7.github.io/Nik/developer.html) covers the
 analysis workers in development, adding a tab, detection rules, parsers and
 the incident JSON format.
 
+## Roadmap
+
+Planned, not built yet:
+
+- **Editable script signatures.** The signatures the Scripts tab of URL
+  Analysis checks are built in (`backend/app/jsanalysis.py`); adding, changing
+  and disabling them from Settings, as YARA and capa rules are managed.
+- **Scheduled re-check of a list** of indicators (for example every week),
+  within the sources' quotas.
+- **History of a list**: how many of its indicators changed verdict since the
+  last check.
+- **Tags on a selection** of indicators at once.
+
 ## Contributing
 
 Changes are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) says what one needs

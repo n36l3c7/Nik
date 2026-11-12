@@ -344,8 +344,11 @@
         from everything in the incident. Click an indicator to open its window: the overall verdict (a score weighted by
         source), one line per threat-intelligence source and, on the right, the tabs and the other incidents that hold
         it. A source expands to what it returned (engines, reports, pulses, open ports…), with its whole answer to copy
-        or download as JSON and how its verdict changed over time. <strong>Check now</strong> asks the providers
-        configured in Settings; an answer older than the retention set there is asked again by itself.
+        or download as JSON and how its verdict changed over time. <strong>Registration</strong> is the source that
+        needs no key: for a domain, its registrar, dates, name servers and age, read from the registry (RDAP, or WHOIS
+        where there is none); for an address, its network and holder. A domain registered in the last 30 days is flagged
+        next to the verdict and counts in the score. <strong>Check now</strong> asks the providers configured in
+        Settings; an answer older than the retention set there is asked again by itself.
         <strong>Open as a page</strong> gives the indicator a full page, and <strong>Copy link</strong> its address
         (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a colleague. <strong>Check all</strong> asks the
         sources about every indicator of the incident, and <strong>Save as a list</strong> makes a list of them in the
@@ -403,7 +406,9 @@
           column header to sort the packets loaded so far (again for the reverse, a third time for the capture's order);
           the Requests and Objects lists sort the same way. Type a <strong>display filter</strong> in Wireshark's
           syntax; right-click a field to filter on it; <strong>Follow</strong> a TCP, UDP, HTTP or TLS stream;
-          <strong>Flag packet</strong> adds it to the incident's flagged events.
+          <strong>Flag packet</strong> adds it to the incident's flagged events. Public addresses, host names, URLs and
+          hashes in the list, in the protocol tree and in a request's details are indicators: click one for its window,
+          right-click for its menu. Private addresses stay plain text.
         </li>
         <li>
           <strong>Objects</strong>: files carried by HTTP, SMB, FTP and others, with their SHA-256, to download in a
@@ -454,7 +459,16 @@
         </li>
         <li><strong>how the browser got there</strong>: every redirect, shorteners included;</li>
         <li>
-          the <strong>requests</strong> of the visit, and its capture in Network Analysis (<em>Open the capture</em>).
+          the <strong>requests</strong> of the visit, and its capture in Network Analysis (<em>Open the capture</em>);
+        </li>
+        <li>
+          the <strong>scripts</strong> of the page (the <em>Scripts</em> tab): those it loaded and those written in it,
+          read as text and never run, each checked against Nik's signatures. The list is sorted worst first; a script
+          shows what was found (credentials sent to a Telegram bot, a password field read and sent out, a keylogger,
+          obfuscation, a miner…) with the matching code marked, the indicators in its code, and whether it is a
+          well-known library. What the scripts do counts in the verdict, and the addresses they talk to join the
+          incident's indicators. <em>Beautified</em> lays minified code out a line per statement (only white space
+          changes); <em>Download</em> gives the script in a zip, password <code>infected</code>.
         </li>
       </ul>
       <p>

@@ -84,6 +84,19 @@ PAGE_FACTS = """() => ({
   passwordFields: document.querySelectorAll('input[type=password]').length,
   links: document.links.length,
   scripts: document.scripts.length,
+  // Scripts written in the page itself, as text (the ones it loads are in the network log).
+  inlineScripts: (() => {
+    let room = 600000
+    return Array.from(document.scripts)
+      .filter((script) => !script.src && (script.textContent || '').trim())
+      .slice(0, 40)
+      .map((script) => {
+        const text = (script.textContent || '').slice(0, Math.min(300000, room))
+        room -= text.length
+        return { type: script.type || '', text }
+      })
+      .filter((script) => script.text)
+  })(),
   frames: document.querySelectorAll('iframe, frame').length,
   text: ((document.body && document.body.innerText) || '').slice(0, 2000),
 })"""

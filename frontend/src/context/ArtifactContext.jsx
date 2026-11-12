@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, upload } from '../services/api.js'
 import { artifactIdFromPath, artifactKind, artifactPath } from '../domain/artifactRegistry.js'
+import { isIndicatorPage, onLocationChange, setPath } from '../lib/location.js'
 import { useAuth } from './AuthContext.jsx'
 
 /*
@@ -88,15 +89,16 @@ export function ArtifactProvider({ children }) {
 
   // Back and forward move between artifacts and incidents.
   useEffect(() => {
-    const onPopState = () => setCurrentId(idFromUrl())
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    // The address decides: another page (an incident, the IoC library) leaves the artifact.
+    const onPopState = () => {
+      if (!isIndicatorPage(window.location.pathname)) setCurrentId(idFromUrl())
+    }
+    return onLocationChange(onPopState)
   }, [])
 
   const openArtifact = useCallback((id) => {
     setCurrentId(id)
-    if (window.location.pathname !== artifactPath(id))
-      window.history.pushState({ artifactId: id }, '', artifactPath(id))
+    setPath(artifactPath(id), { state: { artifactId: id } })
   }, [])
 
   /** Leave the artifact view (the caller restores the incident's URL). */

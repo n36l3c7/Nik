@@ -23,6 +23,7 @@ import { normalizeOs } from '../config/os.js'
 import { generateId } from '../lib/id.js'
 import { deriveIncidentName, hasIdentity, normalizeSeverity, normalizeStatus } from '../domain/incidentName.js'
 import { useAuth } from './AuthContext.jsx'
+import { onLocationChange, setPath } from '../lib/location.js'
 import { useAudit } from './AuditContext.jsx'
 
 /*
@@ -256,9 +257,8 @@ function syncUrl(incidentId, { replace = false } = {}) {
   if (typeof window === 'undefined') return
   const path = incidentId ? `/incident/${encodeURIComponent(incidentId)}` : '/'
   if (window.location.pathname === path) return
-  const state = { incidentId: incidentId ?? null }
-  if (replace) window.history.replaceState(state, '', path)
-  else window.history.pushState(state, '', path)
+  // Announced, so an artifact or the IoC library open in the main area leaves it.
+  setPath(path, { replace, state: { incidentId: incidentId ?? null } })
 }
 
 /** The light listing row of an incident (what `GET /incidents?view=summary` returns). */
@@ -469,8 +469,7 @@ export function IncidentProvider({ children }) {
       // replaces it in the main area: the active incident stays as it is too.
       if (!/^\/(artifact|iocs?)(\/|$)/.test(window.location.pathname)) setActiveIncidentId(incidentIdFromUrl())
     }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    return onLocationChange(onPopState)
   }, [])
 
   // Load the LIGHT incident list once authenticated; reset on logout. Full

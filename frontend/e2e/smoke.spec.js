@@ -554,6 +554,13 @@ test('a packet capture opens as in Wireshark', async () => {
   await packets.locator('tbody tr').first().click()
   const tree = page.getByRole('tree', { name: 'Packet details' })
   await expect(tree).toContainText('Hypertext Transfer Protocol')
+  // Public addresses in the packet's details are indicators: a click opens their window.
+  const address = tree.getByRole('button', { name: /^(203\.0\.113|198\.51\.100)\.\d+$/ }).first()
+  await expect(address).toBeVisible()
+  await address.click()
+  await expect(page.getByRole('dialog', { name: 'Indicator' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tree.getByRole('button', { name: /^10\.\d+\.\d+\.\d+$/ })).toHaveCount(0)
   await tree.getByText('Hypertext Transfer Protocol').click()
   await expect(page.getByLabel('Packet bytes').locator('.bg-accent').first()).toBeVisible()
   // Follow the HTTP stream: the credentials in clear.
@@ -861,6 +868,104 @@ test('the IoC library: paste many, group them in a list, export with chosen fiel
   await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
   await expect(page).toHaveURL(/\/incident\//)
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('the page always follows the address: incident, artifact, library, indicator', async () => {
+  const rail = page.getByRole('navigation', { name: 'Sections' })
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  const library = page.getByRole('table', { name: 'Indicators' })
+  const artifact = page.getByRole('region', { name: 'Artifact' })
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  const indicator = page.getByRole('dialog', { name: 'Indicator' })
+  const openLibrary = async () => {
+    if (!(await page.getByRole('complementary', { name: 'IoCs panel' }).count()))
+      await rail.getByRole('button', { name: /^IoC library/ }).click()
+    await page
+      .getByRole('complementary', { name: 'IoCs panel' })
+      .getByRole('button', { name: /^All indicators/ })
+      .click()
+    await expect(page).toHaveURL(/\/iocs$/)
+    await expect(library).toBeVisible()
+  }
+  /** What the main area shows must be what the address says. */
+  const expectIncident = async () => {
+    await expect(page).toHaveURL(/\/incident\//)
+    await expect(tabs).toBeVisible()
+    await expect(library).toHaveCount(0)
+    await expect(artifact).toHaveCount(0)
+  }
+
+  // From the library, an incident found with the search.
+  await openLibrary()
+  await page.keyboard.press('ControlOrMeta+k')
+  await palette.getByRole('textbox', { name: 'Search' }).fill('WKS-FINANCE')
+  await palette
+    .getByRole('option', { name: /WKS-FINANCE-01/ })
+    .first()
+    .click()
+  await expectIncident()
+
+  // From the library, "go to a tab" of the search.
+  await openLibrary()
+  await page.keyboard.press('ControlOrMeta+k')
+  await palette.getByRole('textbox', { name: 'Search' }).fill('> timeline')
+  await page.keyboard.press('Enter')
+  await expectIncident()
+  await expect(tabs.locator('[aria-current="page"]')).toContainText('Timeline')
+
+  // From the library, the incident an indicator was seen in.
+  await openLibrary()
+  await page.getByLabel('Filter indicators').fill('185.220.101.47')
+  await library.getByRole('button', { name: '185.220.101.47', exact: true }).first().click()
+  await indicator
+    .getByRole('region', { name: 'Seen in' })
+    .getByRole('button', { name: 'Open', exact: true })
+    .first()
+    .click()
+  await expect(indicator).toHaveCount(0)
+  await expectIncident()
+
+  // Library, then an artifact, then Back and Forward: each address shows its own page.
+  await openLibrary()
+  await rail.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Artifacts' }).getByRole('button').first().click()
+  await expect(page).toHaveURL(/\/artifact\//)
+  await expect(artifact).toBeVisible()
+  await expect(library).toHaveCount(0)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/iocs$/)
+  await expect(library).toBeVisible()
+  await expect(artifact).toHaveCount(0)
+  await page.goForward()
+  await expect(page).toHaveURL(/\/artifact\//)
+  await expect(artifact).toBeVisible()
+  await expect(library).toHaveCount(0)
+
+  // From an artifact, an incident found with the search.
+  await page.keyboard.press('ControlOrMeta+k')
+  await palette.getByRole('textbox', { name: 'Search' }).fill('WKS-FINANCE')
+  await palette
+    .getByRole('option', { name: /WKS-FINANCE-01/ })
+    .first()
+    .click()
+  await expectIncident()
+
+  // An indicator's page over the library: back to a window keeps it open and restores the address.
+  await openLibrary()
+  await page.getByLabel('Filter indicators').fill('185.220.101.47')
+  await library.getByRole('button', { name: '185.220.101.47', exact: true }).first().click()
+  await indicator.getByRole('button', { name: 'Open as a page' }).click()
+  await expect(page).toHaveURL(/\/ioc\/ip\?v=185\.220\.101\.47$/)
+  await indicator.getByRole('button', { name: 'Back to a window' }).click()
+  await expect(page).toHaveURL(/\/iocs$/)
+  await expect(indicator).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(library).toBeVisible()
+
+  // Back to the incident for the tests that follow.
+  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
+  await expectIncident()
 })
 
 test('an incident has a status and an assignee, set from the panel and filtered there', async () => {

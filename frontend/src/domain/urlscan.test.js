@@ -72,3 +72,101 @@ test('finished scans are timeline events, with the verdict as severity', () => {
   )
   assert.equal(events[0].flaggable.key, 'url:a')
 })
+
+test('the scripts of a page are listed worst first and named by where they come from', async () => {
+  const { codeSegments, scriptBadge, scriptName, scriptStats, sortScripts } = await import('./urlscan.js')
+  const scripts = [
+    {
+      kind: 'external',
+      url: 'https://cdnjs.cloudflare.com/jquery.min.js',
+      host: 'cdnjs.cloudflare.com',
+      thirdParty: true,
+      library: 'jQuery 3.7.1',
+    },
+    { kind: 'inline', name: 'inline #1', findings: [{ id: 'obf.eval-decode' }], severity: 'medium', obfuscation: 40 },
+    {
+      kind: 'external',
+      url: 'https://evil.example/assets/app.min.js?v=2',
+      host: 'evil.example',
+      findings: [{ id: 'a' }, { id: 'b' }],
+      severity: 'high',
+    },
+    { kind: 'inline', name: 'inline #2' },
+  ]
+  const sorted = sortScripts(scripts)
+  assert.deepEqual(
+    sorted.map((script) => script.index),
+    [2, 1, 3, 0],
+  )
+  assert.equal(scriptName(sorted[0]), '/assets/app.min.js?v=2')
+  assert.equal(scriptName(sorted[1]), 'inline #1')
+  assert.deepEqual(scriptBadge(sorted[0]), { color: 'red', label: '2 findings' })
+  assert.deepEqual(scriptBadge(sorted[1]), { color: 'amber', label: '1 finding' })
+  assert.deepEqual(scriptBadge(sorted[2]), { color: 'slate', label: 'clean' })
+  assert.deepEqual(scriptBadge(sorted[3]), { color: 'emerald', label: 'known library' })
+  assert.deepEqual(scriptStats(scripts), {
+    total: 4,
+    external: 2,
+    inline: 2,
+    flagged: 2,
+    high: 1,
+    obfuscated: 1,
+    hosts: 1,
+  })
+
+  const parts = codeSegments('abc fetch(x) def eval(y)', [
+    { id: 'two', start: 17, end: 24 },
+    { id: 'one', start: 4, end: 12 },
+    { id: 'inside', start: 6, end: 9 },
+    { id: 'whole', start: 0, end: 0 },
+  ])
+  assert.deepEqual(parts, [
+    { text: 'abc ' },
+    { text: 'fetch(x)', finding: 'one' },
+    { text: ' def ' },
+    { text: 'eval(y)', finding: 'two' },
+  ])
+  assert.deepEqual(codeSegments('plain', []), [{ text: 'plain' }])
+})
+
+test('minified code is laid out to be read, with the marks on the same text', async () => {
+  const { beautifySegments, codeSegments, looksMinified } = await import('./urlscan.js')
+  const code =
+    "function a(b){if(b){fetch('https://x.example/a;b{c}',{method:'POST'});return 1}for(var i=0;i<3;i++){c(i)}}// done; {\nvar z=`t{1};`;"
+  const start = code.indexOf('fetch(')
+  const segments = codeSegments(code, [{ id: 'send', start, end: start + 35 }])
+  const laid = beautifySegments(segments)
+  const text = laid.map((part) => part.text).join('')
+  assert.equal(
+    text,
+    [
+      'function a(b){',
+      '  if(b){',
+      "    fetch('https://x.example/a;b{c}',{",
+      "      method:'POST'",
+      '    });',
+      '    return 1',
+      '  }',
+      '  for(var i=0;i<3;i++){',
+      '    c(i)',
+      '  }',
+      '}',
+      '// done; {',
+      'var z=`t{1};`;',
+      '',
+    ].join('\n'),
+  )
+  // Only white space changed, and the mark still covers the call.
+  assert.equal(text.replace(/\s+/g, ''), code.replace(/\s+/g, ''))
+  const marked = laid.filter((part) => part.finding)
+  assert.equal(marked.length, 1)
+  assert.equal(marked[0].text.replace(/\s+/g, ''), code.slice(start, start + 35).replace(/\s+/g, ''))
+
+  // Statements of a callback passed to a call are statements too; "for (;;)" stays on its line.
+  const callback = beautifySegments([{ text: "on('x',function(e){var u=1;send(u);for(;;){}});" }])[0].text
+  assert.equal(callback, ["on('x',function(e){", '  var u=1;', '  send(u);', '  for(;;){', '  }', '});', ''].join('\n'))
+
+  assert.equal(looksMinified('a;'.repeat(400)), true)
+  assert.equal(looksMinified('var a = 1\n'.repeat(100)), false)
+  assert.equal(looksMinified('short'), false)
+})
