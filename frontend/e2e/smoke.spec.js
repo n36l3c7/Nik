@@ -854,7 +854,10 @@ test('the IoC library: paste many, group them in a list, export with chosen fiel
   // The link alone opens the list; an incident leaves the library.
   await page.reload()
   await expect(page.getByRole('heading', { name: /E2E wave/ })).toBeVisible({ timeout: 20_000 })
-  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: 'Incidents', exact: true })
+    .click()
   await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
   await expect(page).toHaveURL(/\/incident\//)
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
