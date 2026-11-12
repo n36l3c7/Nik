@@ -280,3 +280,20 @@ def test_migration_0023_adds_the_ioc_library_tables(tmp_path, monkeypatch):
     command.downgrade(cfg, "0022_intel_keys_history")
     with engine.connect() as conn:
         assert not tables & set(sa.inspect(conn).get_table_names())
+
+
+def test_migration_0023_leaves_tables_the_baseline_already_made(tmp_path, monkeypatch):
+    """On a new database the baseline creates the schema from the models."""
+    url = "sqlite:///" + str(tmp_path / "new.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    from app.core.db import Base
+
+    Base.metadata.create_all(engine)
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0022_intel_keys_history")
+    command.upgrade(cfg, "0023_ioc_library")
+    with engine.connect() as conn:
+        assert "ioc_alerts" in sa.inspect(conn).get_table_names()

@@ -24,6 +24,22 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # The baseline creates the schema from the models, so on a new database
+    # these tables exist already: each is created only where it is missing.
+    tables = set(sa.inspect(op.get_bind()).get_table_names())
+    if "iocs" not in tables:
+        _iocs()
+    if "ioc_lists" not in tables:
+        _lists()
+    if "ioc_list_items" not in tables:
+        _list_items()
+    if "ioc_checks" not in tables:
+        _checks()
+    if "ioc_alerts" not in tables:
+        _alerts()
+
+
+def _iocs() -> None:
     op.create_table(
         "iocs",
         sa.Column("type", sa.String(16), primary_key=True),
@@ -37,6 +53,9 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(), nullable=False, server_default=""),
         sa.Column("updated_at", sa.String(), nullable=False),
     )
+
+
+def _lists() -> None:
     op.create_table(
         "ioc_lists",
         sa.Column("id", sa.String(), primary_key=True),
@@ -48,6 +67,9 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(), nullable=False, server_default=""),
         sa.Column("updated_at", sa.String(), nullable=False),
     )
+
+
+def _list_items() -> None:
     op.create_table(
         "ioc_list_items",
         sa.Column("list_id", sa.String(), sa.ForeignKey("ioc_lists.id", ondelete="CASCADE"), primary_key=True),
@@ -57,6 +79,9 @@ def upgrade() -> None:
         sa.Column("added_by", sa.String(), nullable=False, server_default=""),
     )
     op.create_index("ix_ioc_list_items_type_value", "ioc_list_items", ["type", "value"])
+
+
+def _checks() -> None:
     op.create_table(
         "ioc_checks",
         sa.Column("id", sa.String(), primary_key=True),
@@ -72,6 +97,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.String(), nullable=False),
     )
     op.create_index("ix_ioc_checks_status", "ioc_checks", ["status"])
+
+
+def _alerts() -> None:
     op.create_table(
         "ioc_alerts",
         sa.Column("id", sa.String(), primary_key=True),
