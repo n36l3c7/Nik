@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
+import SortHeader from './SortHeader.jsx'
 import { useIocLookup } from '../../../context/IocLookupContext.jsx'
 import { Badge } from '../../ui/index.js'
 import { hexRows, formatOffset, neutraliseLinks } from '../../../domain/mail.js'
 import {
-  REQUEST_TYPES,
   base64Text,
   filterRequests,
   formatBytesShort,
@@ -13,8 +13,11 @@ import {
   header,
   isText,
   payloadFields,
+  REQUEST_TYPES,
   requestName,
+  requestSortValue,
   requestStatus,
+  sortRows,
   timeSpan,
   waterfall,
 } from '../../../domain/network.js'
@@ -318,7 +321,11 @@ export default function RequestLog({ entries, loadEntry, live = false }) {
   const [selected, setSelected] = useState(null)
   const [detail, setDetail] = useState(null)
   const [error, setError] = useState(null)
-  const shown = useMemo(() => filterRequests(entries, filter), [entries, filter])
+  const [sort, setSort] = useState(null) // null: the order the requests were made in
+  const shown = useMemo(
+    () => sortRows(filterRequests(entries, filter), sort, requestSortValue),
+    [entries, filter, sort],
+  )
   const { start, span } = useMemo(() => timeSpan(entries), [entries])
   const version = entries.find((e) => e.id === selected)?.seq
 
@@ -341,15 +348,29 @@ export default function RequestLog({ entries, loadEntry, live = false }) {
           <table className="w-full table-fixed border-collapse text-[11px]">
             <thead className="sticky top-0 bg-panel text-left text-fg-muted">
               <tr className="border-b border-line">
-                <th className="px-2 py-1 font-normal">Name</th>
+                <SortHeader label="Name" sortKey="name" sort={sort} onSort={setSort} />
                 {selected === null && (
                   <>
-                    <th className="w-16 px-2 py-1 font-normal">Method</th>
-                    <th className="w-16 px-2 py-1 font-normal">Status</th>
-                    <th className="w-20 px-2 py-1 font-normal">Type</th>
-                    <th className="w-16 px-2 py-1 text-right font-normal">Size</th>
-                    <th className="w-16 px-2 py-1 text-right font-normal">Time</th>
-                    <th className="w-[22%] px-2 py-1 font-normal">Waterfall</th>
+                    <SortHeader label="Method" sortKey="method" sort={sort} onSort={setSort} className="w-20" />
+                    <SortHeader label="Status" sortKey="status" sort={sort} onSort={setSort} className="w-20" />
+                    <SortHeader label="Type" sortKey="type" sort={sort} onSort={setSort} className="w-20" />
+                    <SortHeader
+                      label="Size"
+                      sortKey="size"
+                      sort={sort}
+                      onSort={setSort}
+                      className="w-20"
+                      align="right"
+                    />
+                    <SortHeader
+                      label="Time"
+                      sortKey="time"
+                      sort={sort}
+                      onSort={setSort}
+                      className="w-20"
+                      align="right"
+                    />
+                    <SortHeader label="Waterfall" sortKey="start" sort={sort} onSort={setSort} className="w-[22%]" />
                   </>
                 )}
               </tr>

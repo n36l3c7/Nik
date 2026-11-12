@@ -134,3 +134,43 @@ test('captures, held submissions and beacons are timeline events', () => {
   )
   assert.equal(events[0].label, 'attachment login.html')
 })
+
+test('column sorting: numbers by value, addresses in natural order, three-state headers', async () => {
+  const { compareCells, nextSort, requestSortValue, sortRows } = await import('./network.js')
+  assert.deepEqual(nextSort(null, 5), { key: 5, dir: 'asc' })
+  assert.deepEqual(nextSort({ key: 5, dir: 'asc' }, 5), { key: 5, dir: 'desc' })
+  assert.equal(nextSort({ key: 5, dir: 'desc' }, 5), null)
+  assert.deepEqual(nextSort({ key: 5, dir: 'desc' }, 2), { key: 2, dir: 'asc' })
+  assert.ok(compareCells('9', '10') < 0) // lengths, packet numbers
+  assert.ok(compareCells('10.0.0.2', '10.0.0.10') < 0)
+  assert.ok(compareCells('TCP', 'dns') > 0)
+
+  const packets = [
+    { c: ['1', '0.5', '10.0.0.10', 'TLS', '1514'] },
+    { c: ['2', '0.1', '10.0.0.2', 'DNS', '74'] },
+    { c: ['3', '', '10.0.0.2', 'DNS', '90'] },
+  ]
+  const cell = (row, column) => row.c[column]
+  assert.equal(sortRows(packets, null, cell), packets)
+  assert.deepEqual(
+    sortRows(packets, { key: 4, dir: 'asc' }, cell).map((r) => r.c[0]),
+    ['2', '3', '1'],
+  )
+  assert.deepEqual(
+    sortRows(packets, { key: 4, dir: 'desc' }, cell).map((r) => r.c[0]),
+    ['1', '3', '2'],
+  )
+  // Equal values keep the capture's order; empty values stay last either way.
+  assert.deepEqual(
+    sortRows(packets, { key: 3, dir: 'asc' }, cell).map((r) => r.c[0]),
+    ['2', '3', '1'],
+  )
+  assert.deepEqual(
+    sortRows(packets, { key: 1, dir: 'desc' }, cell).map((r) => r.c[0]),
+    ['1', '2', '3'],
+  )
+
+  const entry = { url: 'https://x.example/a/login.php?x=1', method: 'POST', state: 'held', resourceType: 'document' }
+  assert.equal(requestSortValue(entry, 'status'), 'held')
+  assert.equal(requestSortValue({ ...entry, response: { status: 302, bodySize: 12 } }, 'size'), 12)
+})

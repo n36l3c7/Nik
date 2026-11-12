@@ -499,6 +499,18 @@ test('a packet capture opens as in Wireshark', async () => {
   }
   const packets = page.getByRole('table', { name: 'Packets' })
   await expect(packets.locator('tbody tr').first()).toBeVisible({ timeout: 120_000 })
+  // Column headers sort the loaded packets: by length, largest first on the second click.
+  const lengths = async () =>
+    (await packets.locator('tbody tr td:nth-child(6)').allTextContents()).map((text) => Number(text))
+  await packets.getByRole('button', { name: 'Length' }).click()
+  const ascending = await lengths()
+  expect(ascending).toEqual([...ascending].sort((a, b) => a - b))
+  await packets.getByRole('button', { name: 'Length' }).click()
+  await expect(packets.getByRole('columnheader', { name: 'Length' })).toHaveAttribute('aria-sort', 'descending')
+  const descending = await lengths()
+  expect(descending).toEqual([...descending].sort((a, b) => b - a))
+  await packets.getByRole('button', { name: 'Length' }).click()
+  await expect(packets.getByRole('columnheader', { name: 'Length' })).toHaveAttribute('aria-sort', 'none')
   // A Wireshark display filter, then the packet's tree and its bytes.
   await page.getByLabel('Display filter').fill('http.request.method == "POST"')
   await page.getByRole('button', { name: 'Apply', exact: true }).click()

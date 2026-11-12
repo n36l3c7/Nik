@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Bug, Download, FileDown, KeyRound, RefreshCw, Trash2 } from 'lucide-react'
 import { AsciiSkull, Badge, Button, Card, StatCard } from '../../ui/index.js'
 import PacketView from './PacketView.jsx'
 import RequestLog from './RequestLog.jsx'
+import SortHeader from './SortHeader.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
+import { sortRows } from '../../../domain/network.js'
 import { formatDateTime } from '../../../lib/time.js'
 
 /*
@@ -133,17 +135,38 @@ function Summary({ capture }) {
 }
 
 function Objects({ capture, onDownload, onSend, sending }) {
-  const objects = capture.summary?.objects ?? []
+  const [sort, setSort] = useState(null) // null: the order of the packets
+  const all = capture.summary?.objects
+  const objects = useMemo(
+    () =>
+      sortRows(all ?? [], sort, (o, key) =>
+        key === 'file' ? o.name || o.host : key === 'protocol' ? o.tap.replace('eo:', '') : o[key],
+      ),
+    [all, sort],
+  )
   if (!objects.length)
     return <p className="font-mono text-xs text-fg-muted">No object to export (HTTP, SMB, FTP, TFTP, IMF, DICOM).</p>
   return (
     <table className="w-full table-fixed border-collapse font-mono text-xs">
       <thead>
         <tr className="border-b border-line text-left text-fg-muted">
-          <th className="w-14 py-1 font-normal">Packet</th>
-          <th className="w-20 py-1 font-normal">Protocol</th>
-          <th className="py-1 font-normal">File / host</th>
-          <th className="w-24 py-1 text-right font-normal">Size</th>
+          <SortHeader label="Packet" sortKey="frame" sort={sort} onSort={setSort} className="w-20 [&>button]:px-0" />
+          <SortHeader
+            label="Protocol"
+            sortKey="protocol"
+            sort={sort}
+            onSort={setSort}
+            className="w-24 [&>button]:px-0"
+          />
+          <SortHeader label="File / host" sortKey="file" sort={sort} onSort={setSort} className="[&>button]:px-0" />
+          <SortHeader
+            label="Size"
+            sortKey="size"
+            sort={sort}
+            onSort={setSort}
+            className="w-24 [&>button]:px-0"
+            align="right"
+          />
           <th className="w-72 py-1 font-normal" />
         </tr>
       </thead>
