@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sortable columns in Network Analysis**: the packet list (the packets
+  loaded so far), the Requests log and the Objects table sort by any column;
+  a third click returns to the capture's order.
+
 ## [3.3.3] - 2026-11-12
 
 ### Fixed

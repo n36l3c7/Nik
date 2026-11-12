@@ -279,3 +279,62 @@ export const TIME_FORMATS = [
   { id: 'absolute', label: 'Date and time (UTC)' },
   { id: 'delta', label: 'Since previous packet' },
 ]
+
+/*
+ * Column sorting of the Network Analysis tables (packets, requests, objects).
+ * A header cycles: ascending, descending, back to the capture's own order.
+ */
+
+/** The next sort after a click on `key`: asc, desc, then none. */
+export function nextSort(sort, key) {
+  if (sort?.key !== key) return { key, dir: 'asc' }
+  return sort.dir === 'asc' ? { key, dir: 'desc' } : null
+}
+
+/** Numbers by value, text in natural order ("10.0.0.2" before "10.0.0.10"); empty values last. */
+export function compareCells(a, b) {
+  const emptyA = a === null || a === undefined || a === ''
+  const emptyB = b === null || b === undefined || b === ''
+  if (emptyA || emptyB) return emptyA === emptyB ? 0 : emptyA ? 1 : -1
+  const na = typeof a === 'number' ? a : Number(a)
+  const nb = typeof b === 'number' ? b : Number(b)
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb
+  return String(a).localeCompare(String(b), 'en', { numeric: true, sensitivity: 'base' })
+}
+
+/** A sorted copy of `rows` (stable; empty values stay last in both directions), or `rows` itself without a sort. */
+export function sortRows(rows, sort, accessor) {
+  if (!sort) return rows
+  const sign = sort.dir === 'desc' ? -1 : 1
+  return rows
+    .map((row, index) => ({ row, index, value: accessor(row, sort.key) }))
+    .sort((x, y) => {
+      const emptyX = x.value === null || x.value === undefined || x.value === ''
+      const emptyY = y.value === null || y.value === undefined || y.value === ''
+      if (emptyX !== emptyY) return emptyX ? 1 : -1
+      return sign * compareCells(x.value, y.value) || x.index - y.index
+    })
+    .map((item) => item.row)
+}
+
+/** What each column of the request log sorts by. */
+export function requestSortValue(entry, key) {
+  switch (key) {
+    case 'name':
+      return requestName(entry.url)
+    case 'method':
+      return entry.method
+    case 'status':
+      return entry.response?.status ?? requestStatus(entry).text
+    case 'type':
+      return entry.resourceType
+    case 'size':
+      return entry.response?.bodySize
+    case 'time':
+      return entry.timing?.total
+    case 'start':
+      return entry.startedAt
+    default:
+      return null
+  }
+}

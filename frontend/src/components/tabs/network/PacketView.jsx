@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Flag, Filter, MessagesSquare, X } from 'luci
 import { Button } from '../../ui/index.js'
 import { isShortcutProbe } from '../../../context/ContextMenuContext.jsx'
 import FollowStream from './FollowStream.jsx'
+import SortHeader from './SortHeader.jsx'
 import { api } from '../../../services/api.js'
 import { formatOffset, hexRows } from '../../../domain/mail.js'
 import {
@@ -14,12 +15,14 @@ import {
   hexColor,
   highlight,
   normalizeTree,
+  sortRows,
 } from '../../../domain/network.js'
 
 /*
  * Wireshark's main window for one capture, drawn from sharkd's answers:
  *   - the display filter bar (Wireshark syntax, checked as you type);
  *   - the packet list with Wireshark's colouring rules, loaded by pages;
+ *     a click on a column header sorts the packets loaded so far;
  *   - the protocol tree of the selected packet (click a field to see its
  *     bytes, "Apply as filter" from its filter expression);
  *   - the bytes in hex and ASCII, the selected field highlighted.
@@ -198,6 +201,7 @@ export default function PacketView({ capture, flags, onFlag }) {
   const [open, setOpen] = useState(new Set())
   const [field, setField] = useState(null)
   const [follow, setFollow] = useState(null)
+  const [sort, setSort] = useState(null) // { key: column index, dir } | null: capture order
   const generation = useRef(0)
 
   const load = useCallback(
@@ -249,6 +253,7 @@ export default function PacketView({ capture, flags, onFlag }) {
   const target = frame ? followTarget(frame.tree) : null
   const range = highlight(field)
   const selectedRow = rows.find((r) => r.num === selected)
+  const sorted = useMemo(() => sortRows(rows, sort, (row, column) => row.c[column]), [rows, sort])
   const epoch = frame ? Number(fieldValue(findField(frame.tree, 'frame.time_epoch'))) : NaN
 
   return (
@@ -303,14 +308,12 @@ export default function PacketView({ capture, flags, onFlag }) {
             <thead className="sticky top-0 bg-panel text-left text-fg-muted">
               <tr className="border-b border-line">
                 {COLUMNS.map((c, i) => (
-                  <th key={c} className={`${WIDTHS[i]} px-1.5 py-1 font-normal`}>
-                    {c}
-                  </th>
+                  <SortHeader key={c} label={c} sortKey={i} sort={sort} onSort={setSort} className={WIDTHS[i]} />
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {sorted.map((row) => {
                 const active = row.num === selected
                 return (
                   <tr
@@ -338,9 +341,14 @@ export default function PacketView({ capture, flags, onFlag }) {
             ) : complete ? (
               `${rows.length.toLocaleString('en-US')} packet${rows.length === 1 ? '' : 's'}${filter ? ' match the filter' : ''}`
             ) : (
-              <Button size="xs" variant="ghost" onClick={() => load(rows.length, false)}>
-                Load {PAGE} more
-              </Button>
+              <>
+                {sort && (
+                  <span className="mr-2">Sorted: the {rows.length.toLocaleString('en-US')} packets loaded so far.</span>
+                )}
+                <Button size="xs" variant="ghost" onClick={() => load(rows.length, false)}>
+                  Load {PAGE} more
+                </Button>
+              </>
             )}
           </div>
         </div>
