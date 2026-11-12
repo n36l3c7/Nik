@@ -222,3 +222,10 @@ def test_check_now_reads_the_registry_and_never_for_an_internal_name(admin: Test
     with SessionLocal() as db:
         assert service.blocked(db, "domain", "fileserver.corp", service.Allowlist([])) is not None
     assert time.time() > 0
+
+
+def test_a_hostile_whois_answer_is_read_in_linear_time():
+    started = time.monotonic()
+    parsed = registration.parse_whois("Registrar\n" + "\t\t\n" * 50_000 + "Nameservers\n" + "  x \n" * 50_000)
+    assert parsed["registrar"] is None and parsed["nameservers"] == []
+    assert time.monotonic() - started < 2

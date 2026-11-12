@@ -326,6 +326,24 @@ def _field(text: str, *names: str) -> str | None:
     return None
 
 
+_HOST = re.compile(r"[a-z0-9.-]+\.[a-z]{2,}", re.IGNORECASE)
+
+
+def _block(text: str, title: str) -> list[str]:
+    """The indented lines under a line that holds only ``title`` (read line by
+    line: a registry's text is not to be trusted with a backtracking pattern)."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().lower() == title:
+            block = []
+            for following in lines[index + 1 : index + 40]:
+                if following[:1] not in (" ", "\t") or not following.strip():
+                    break
+                block.append(following.strip())
+            return block
+    return []
+
+
 def parse_whois(text: str) -> dict[str, Any]:
     """The few lines every registry writes, whatever it calls them."""
     created = _field(
@@ -354,16 +372,16 @@ def parse_whois(text: str) -> dict[str, Any]:
     registrar = _field(text, "Registrar", "Sponsoring Registrar", "registrar")
     if registrar is None:
         # ".it" and others write the registrar as a block: "Registrar" then "Organization: …".
-        block = re.search(
-            r"^Registrar\s*\n(?:[ \t]+.*\n)*?[ \t]+(?:Organization|Name):[ \t]*(\S.*)$", text, re.I | re.M
-        )
-        registrar = block.group(1).strip()[:200] if block else None
+        for line in _block(text, "registrar"):
+            name, _, value = line.partition(":")
+            if name.strip().lower() in ("organization", "name") and value.strip():
+                registrar = value.strip()[:200]
+                break
     servers = re.findall(
         r"^[ \t]*(?:Name Server|nserver|Nameservers?)[ \t]*:[ \t]*([a-z0-9.-]+\.[a-z]{2,})", text, re.I | re.M
     )
     if not servers:
-        block = re.search(r"^Nameservers[ \t]*\n((?:[ \t]+\S+[ \t]*\n?)+)", text, re.I | re.M)
-        servers = re.findall(r"[a-z0-9.-]+\.[a-z]{2,}", block.group(1), re.I) if block else []
+        servers = [line.split()[0] for line in _block(text, "nameservers") if _HOST.fullmatch(line.split()[0])]
     return {
         "registered": _date(created) if created else None,
         "expires": _date(expires) if expires else None,
