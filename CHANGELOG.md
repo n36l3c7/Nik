@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-11-12
+
 ### Added
 
 - **Indicators in a capture can be clicked.** In Network Analysis, public
@@ -33,7 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   script shows its findings with the matching code marked, its size, hash,
   entropy, how much of it is obfuscated, the indicators in it, and whether it
   is a well-known library. The code can be copied or downloaded in a zip
-  (password `infected`).
+  (password `infected`), and shown *beautified*: a line per statement, blocks
+  indented, with the marks on the same text (on by itself for minified
+  code).
 - What the scripts do counts in the scan's score (once per signature), and
   the addresses they talk to are among the incident's indicators; a
   well-known library's are left out.
@@ -1676,7 +1680,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/n36l3c7/Nik/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/n36l3c7/Nik/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/n36l3c7/Nik/compare/v3.3.3...v3.4.0
 [3.3.3]: https://github.com/n36l3c7/Nik/compare/v3.3.2...v3.3.3

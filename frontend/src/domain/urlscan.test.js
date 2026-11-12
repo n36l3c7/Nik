@@ -128,3 +128,45 @@ test('the scripts of a page are listed worst first and named by where they come 
   ])
   assert.deepEqual(codeSegments('plain', []), [{ text: 'plain' }])
 })
+
+test('minified code is laid out to be read, with the marks on the same text', async () => {
+  const { beautifySegments, codeSegments, looksMinified } = await import('./urlscan.js')
+  const code =
+    "function a(b){if(b){fetch('https://x.example/a;b{c}',{method:'POST'});return 1}for(var i=0;i<3;i++){c(i)}}// done; {\nvar z=`t{1};`;"
+  const start = code.indexOf('fetch(')
+  const segments = codeSegments(code, [{ id: 'send', start, end: start + 35 }])
+  const laid = beautifySegments(segments)
+  const text = laid.map((part) => part.text).join('')
+  assert.equal(
+    text,
+    [
+      'function a(b){',
+      '  if(b){',
+      "    fetch('https://x.example/a;b{c}',{",
+      "      method:'POST'",
+      '    });',
+      '    return 1',
+      '  }',
+      '  for(var i=0;i<3;i++){',
+      '    c(i)',
+      '  }',
+      '}',
+      '// done; {',
+      'var z=`t{1};`;',
+      '',
+    ].join('\n'),
+  )
+  // Only white space changed, and the mark still covers the call.
+  assert.equal(text.replace(/\s+/g, ''), code.replace(/\s+/g, ''))
+  const marked = laid.filter((part) => part.finding)
+  assert.equal(marked.length, 1)
+  assert.equal(marked[0].text.replace(/\s+/g, ''), code.slice(start, start + 35).replace(/\s+/g, ''))
+
+  // Statements of a callback passed to a call are statements too; "for (;;)" stays on its line.
+  const callback = beautifySegments([{ text: "on('x',function(e){var u=1;send(u);for(;;){}});" }])[0].text
+  assert.equal(callback, ["on('x',function(e){", '  var u=1;', '  send(u);', '  for(;;){', '  }', '});', ''].join('\n'))
+
+  assert.equal(looksMinified('a;'.repeat(400)), true)
+  assert.equal(looksMinified('var a = 1\n'.repeat(100)), false)
+  assert.equal(looksMinified('short'), false)
+})

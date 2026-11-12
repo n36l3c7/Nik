@@ -6,7 +6,15 @@ import { useToast } from '../../../context/ToastContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
 import { copyText } from '../../../lib/download.js'
 import { formatBytes } from '../../../domain/events.js'
-import { codeSegments, scriptBadge, scriptName, scriptStats, sortScripts } from '../../../domain/urlscan.js'
+import {
+  beautifySegments,
+  codeSegments,
+  looksMinified,
+  scriptBadge,
+  scriptName,
+  scriptStats,
+  sortScripts,
+} from '../../../domain/urlscan.js'
 
 /*
  * The scripts of a scanned page: those it loaded and those written in it,
@@ -17,12 +25,19 @@ import { codeSegments, scriptBadge, scriptName, scriptStats, sortScripts } from 
 
 const SEVERITY_COLOR = { high: 'red', medium: 'amber', low: 'slate' }
 
-function Code({ code, findings, focus }) {
+function Code({ code, findings, focus, beautified }) {
   const marks = useRef({})
-  const segments = useMemo(() => codeSegments(code, findings), [code, findings])
+  const segments = useMemo(() => {
+    const parts = codeSegments(code, findings)
+    return beautified ? beautifySegments(parts) : parts
+  }, [code, findings, beautified])
+  // The marks are other elements once the layout changes.
+  useEffect(() => {
+    marks.current = {}
+  }, [segments])
   useEffect(() => {
     if (focus) marks.current[focus]?.scrollIntoView({ block: 'center' })
-  }, [focus])
+  }, [focus, segments])
   return (
     <pre
       aria-label="Script code"
@@ -58,6 +73,8 @@ export default function ScriptsView({ scan }) {
   const [detail, setDetail] = useState(null)
   const [error, setError] = useState(null)
   const [focus, setFocus] = useState(null)
+  // Laid out to be read when the script is minified; the analyst can switch.
+  const [beautified, setBeautified] = useState(null)
 
   useEffect(() => {
     if (!scripts.some((script) => script.index === selected)) setSelected(scripts[0]?.index ?? null)
@@ -69,6 +86,7 @@ export default function ScriptsView({ scan }) {
     setDetail(null)
     setError(null)
     setFocus(null)
+    setBeautified(null)
     api
       .get(`/urls/${scan.id}/scripts/${selected}`)
       .then((doc) => !cancelled && setDetail(doc))
@@ -87,6 +105,7 @@ export default function ScriptsView({ scan }) {
       />
     )
   const current = scripts.find((script) => script.index === selected)
+  const pretty = beautified ?? (detail ? looksMinified(detail.code) : false)
 
   return (
     <div className="space-y-4">
@@ -210,7 +229,19 @@ export default function ScriptsView({ scan }) {
                 <h4 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">
                   Code {current.truncated && <span className="normal-case">· first 300 000 characters</span>}
                 </h4>
-                <span className="flex gap-2">
+                <span className="flex flex-wrap items-center gap-2">
+                  <label
+                    className="flex items-center gap-1.5 text-xs text-fg-muted"
+                    title="A line per statement, blocks indented. Only white space changes."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={pretty}
+                      disabled={!detail}
+                      onChange={(event) => setBeautified(event.target.checked)}
+                    />
+                    Beautified
+                  </label>
                   <Button
                     size="xs"
                     variant="secondary"
@@ -239,7 +270,7 @@ export default function ScriptsView({ scan }) {
               ) : !detail ? (
                 <MicroSkull className="text-lg text-fg-muted" />
               ) : (
-                <Code code={detail.code} findings={detail.findings} focus={focus} />
+                <Code code={detail.code} findings={detail.findings} focus={focus} beautified={pretty} />
               )}
             </div>
           </section>

@@ -175,3 +175,102 @@ export function codeSegments(code, findings = []) {
   if (cursor < text.length || out.length === 0) out.push({ text: text.slice(cursor) })
   return out
 }
+
+/** Minified code: few, very long lines. */
+export function looksMinified(code) {
+  const text = String(code ?? '')
+  if (text.length < 400) return false
+  const lines = text.split('\n').length
+  return text.length / lines > 200
+}
+
+/**
+ * The segments of codeSegments() laid out to be read: a line per statement,
+ * blocks indented. Only white space outside strings, template literals and
+ * comments is changed, so the code means the same and each mark stays on the
+ * text it was on. A layout aid, not a parser: a regular expression holding a
+ * quote can throw the rest of its line off.
+ */
+export function beautifySegments(segments = []) {
+  const out = []
+  let piece = ''
+  let indent = 0
+  let parens = 0 // open "(" in the current block: a ";" inside them (for (;;)) ends no statement
+  const outer = [] // the count of each enclosing block
+  let quote = null // ' " ` while inside a string
+  let escaped = false
+  let comment = null // 'line' | 'block'
+  let lineStart = true
+  let previous = ''
+  const pad = () => '  '.repeat(Math.max(0, indent))
+  const emit = (text) => {
+    if (lineStart && text.trim()) {
+      piece += pad()
+      lineStart = false
+    }
+    piece += text
+  }
+  const newline = () => {
+    if (lineStart) return
+    piece = piece.replace(/[ \t]+$/, '')
+    piece += '\n'
+    lineStart = true
+  }
+  const all = segments.map((segment) => segment.text).join('')
+  let position = 0
+  for (const segment of segments) {
+    piece = ''
+    for (const char of segment.text) {
+      const next = all[position + 1] ?? ''
+      position += 1
+      if (comment === 'line') {
+        if (char === '\n') {
+          comment = null
+          newline()
+        } else emit(char)
+      } else if (comment === 'block') {
+        emit(char === '\n' ? ' ' : char)
+        if (char === '/' && previous === '*') comment = null
+      } else if (quote) {
+        emit(char)
+        if (escaped) escaped = false
+        else if (char === '\\') escaped = true
+        else if (char === quote) quote = null
+      } else if (char === '"' || char === "'" || char === '`') {
+        quote = char
+        emit(char)
+      } else if (char === '/' && next === '/') {
+        comment = 'line'
+        emit(char)
+      } else if (char === '/' && next === '*') {
+        comment = 'block'
+        emit(char)
+      } else if (char === '{') {
+        emit(char)
+        indent += 1
+        outer.push(parens)
+        parens = 0
+        newline()
+      } else if (char === '}') {
+        newline()
+        indent -= 1
+        parens = outer.pop() ?? 0
+        emit(char)
+        if (![';', ',', ')', '.', '('].includes(next)) newline()
+      } else if (char === ';') {
+        emit(char)
+        if (parens === 0) newline()
+      } else if (char === '(' || char === ')') {
+        parens = Math.max(0, parens + (char === '(' ? 1 : -1))
+        emit(char)
+      } else if (char === '\n' || char === '\r') {
+        newline()
+      } else if (char === ' ' || char === '\t') {
+        if (!lineStart && !piece.endsWith(' ')) emit(' ')
+      } else emit(char)
+      previous = char
+    }
+    if (piece) out.push(segment.finding ? { text: piece, finding: segment.finding } : { text: piece })
+  }
+  return out
+}
