@@ -9,9 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Several API keys per threat-intelligence provider** (Settings → Threat
+  intelligence, up to ten each, with an optional label). Lookups go round
+  them: the rate limit and the daily quota are counted per key, a key that
+  answers 429 waits an hour while the others carry on, and a key the provider
+  refuses three times in a row is marked *rejected* with its answer and left
+  out. API:
+  `POST /api/enrichment/providers/{id}/keys`,
+  `DELETE /api/enrichment/providers/{id}/keys/{keyId}`, and `keys` on each
+  provider of `GET /api/enrichment/providers`; the single-key
+  `PUT`/`DELETE …/key` still work and act on all of a provider's keys.
+  Migration `0022` keeps the stored keys.
+- **A page for each indicator.** Clicking an indicator opens a window with
+  the overall verdict, one line per source and where Nik saw it; each source
+  expands to what it returned (VirusTotal engines and file or network facts,
+  AbuseIPDB reports, GreyNoise classification, OTX pulses, abuse.ch entries,
+  Shodan ports, urlscan scans, Safe Browsing matches). **Open as a page**
+  turns the window into a full page, and the address
+  (`/ioc/<type>?v=<value>`) can be shared: **Copy link** copies it.
+- **The provider's whole answer** can be copied or downloaded as JSON from
+  each source (`GET /api/enrichment/raw`); it is not shown on the page.
+- **A short history per source**: the last ten answers are kept, and the
+  page says when a verdict changed.
+- **How long an answer stands, per type** (Settings → Threat intelligence):
+  30 days for IP addresses, 30 days for URLs and domains, 180 days for file
+  hashes by default, 1 to 730. An indicator opened after that is asked again
+  by itself; *Ask again when an answer has expired* turns this off, and the
+  old answer is then shown as expired.
+- **VirusTotal options** (Settings → Threat intelligence): list only the
+  vendors that flag the value (default), all of them or none; *Relations*
+  and *Community comments* cost one more request each and are off by default.
 - **Sortable columns in Network Analysis**: the packet list (the packets
   loaded so far), the Requests log and the Objects table sort by any column;
   a third click returns to the capture's order.
+
+### Changed
+
+- A provider key that is refused no longer pauses the whole provider for six
+  hours: that key waits ten minutes, the others carry on, and after three
+  refusals in a row it is taken out; Settings says which one and why.
+- The overall verdict of an indicator is weighted by source instead of being
+  the worst answer: a score from 0 to 100, shown in the IOCs tab and on the
+  indicator's page. `GET /api/enrichment` and `POST /api/enrichment/check`
+  return it as `summary { verdict, score, flagged, checked, counts }`, with
+  `data`, `history`, `expired` and `hasRaw` on each result.
+- The single cache period (`enrichment.ttlHours`, 24 h) is replaced by
+  `enrichment.retentionDays { ip, url, hash }` and
+  `enrichment.refreshExpired`; a stored `ttlHours` is ignored. Migration
+  `0022` also adds `ioc_enrichment.raw` and `ioc_enrichment_history`.
 
 ## [3.3.3] - 2026-11-12
 

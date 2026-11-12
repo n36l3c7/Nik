@@ -65,7 +65,7 @@ def test_a_changed_secret_key_keeps_the_stored_secrets(admin: TestClient, monkey
     monkeypatch.setattr(settings, "SECRET_KEY", "the-old-default")
     old_token = vault.encrypt("vt-api-key")
     with SessionLocal() as db:
-        db.add(IntegrationKey(provider="virustotal", secret=old_token, hint="-key", updated_at="", updated_by=""))
+        db.add(IntegrationKey(id="k1", provider="virustotal", secret=old_token, hint="-key", updated_at=""))
         db.commit()
 
     # The key changes and nothing says what it was: the secret is unreadable.
@@ -82,7 +82,7 @@ def test_a_changed_secret_key_keeps_the_stored_secrets(admin: TestClient, monkey
     # The previous key is no longer needed.
     monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
     with SessionLocal() as db:
-        stored = db.get(IntegrationKey, "virustotal").secret
+        stored = db.get(IntegrationKey, "k1").secret
     assert stored != old_token and vault.decrypt(stored) == "vt-api-key"
 
 

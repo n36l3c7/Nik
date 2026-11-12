@@ -220,8 +220,9 @@
         <li>
           A <strong>hash</strong>, an <strong>IP address</strong>, a <strong>domain</strong> or an
           <strong>e-mail address</strong>: <strong>Search in Nik</strong> opens the search on it,
-          <strong>Where seen</strong> lists the incidents that hold it and its reputation. A domain can also be visited
-          (<em>Analyse as URL</em>); a SHA-256 of a file already analysed opens that analysis.
+          <strong>Where else was this seen?</strong> opens its page: the reputation and the incidents that hold it. A
+          domain can also be visited (<em>Analyse as URL</em>); a SHA-256 of a file already analysed opens that
+          analysis.
         </li>
       </ul>
       <p>
@@ -289,10 +290,14 @@
       <h3>IOCs</h3>
       <p>
         The server extracts the indicators (IP addresses, domains, URLs, e-mail addresses, MD5 / SHA-1 / SHA-256 hashes)
-        from everything in the incident. Click an indicator for <strong>Where seen</strong>: the tabs and the other
-        incidents that hold it. <strong>Check now</strong> asks the threat-intelligence providers configured in Settings
-        for its reputation. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
-        <strong>allowlist</strong> (right-click → Add to the allowlist).
+        from everything in the incident. Click an indicator to open its window: the overall verdict (a score weighted by
+        source), one line per threat-intelligence source and, on the right, the tabs and the other incidents that hold
+        it. A source expands to what it returned (engines, reports, pulses, open ports…), with its whole answer to copy
+        or download as JSON and how its verdict changed over time. <strong>Check now</strong> asks the providers
+        configured in Settings; an answer older than the retention set there is asked again by itself.
+        <strong>Open as a page</strong> gives the indicator a full page, and <strong>Copy link</strong> its address
+        (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a colleague. Export the list as CSV, STIX 2.1 or
+        MISP. Indicators that are known good go to the <strong>allowlist</strong> (right-click → Add to the allowlist).
       </p>
       <figure class="shot">
         <img src="img/iocs.png" alt="The IOCs tab" width="1600" height="1000" loading="lazy" />
@@ -708,7 +713,13 @@
             </tr>
             <tr>
               <td>Threat intelligence</td>
-              <td>Providers, API keys (never shown again) and which indicator types may be sent out (admins).</td>
+              <td>
+                Providers, API keys (never shown again; several per provider, used in rotation; one refused three times
+                is marked rejected), which indicator types may be sent out, how many days an answer stands per type (30
+                for IP addresses and URLs, 180 for hashes) and whether an expired one is asked again, and what
+                VirusTotal lists: the vendors that flag, all or none, with Relations and Community comments off by
+                default because each costs one more request (admins).
+              </td>
             </tr>
             <tr>
               <td>My account</td>

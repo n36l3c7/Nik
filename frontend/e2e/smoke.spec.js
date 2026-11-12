@@ -133,13 +133,26 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
   const attacker = page.getByRole('button', { name: '185.220.101.47', exact: true })
   await expect(attacker).toBeVisible({ timeout: 20_000 })
   await attacker.click()
-  const dialog = page.getByRole('dialog', { name: 'Where seen' })
-  await expect(dialog).toContainText('WKS-FINANCE-01')
-  // External reputation: keyless providers are ready; nothing is sent until asked.
-  const reputation = dialog.getByRole('region', { name: 'External reputation' })
-  await expect(reputation.getByRole('button', { name: 'Check now' })).toBeVisible()
-  await expect(reputation).toContainText('Not checked yet')
-  await page.keyboard.press('Escape')
+  const dialog = page.getByRole('dialog', { name: 'Indicator' })
+  await expect(dialog.getByRole('region', { name: 'Seen in' })).toContainText('WKS-FINANCE-01')
+  // Sources: keyless providers are ready; nothing is sent until asked.
+  await expect(dialog.getByRole('button', { name: 'Check now' })).toBeVisible()
+  await expect(dialog.getByRole('region', { name: 'Sources' })).toContainText('Not checked yet')
+  await expect(dialog).toContainText('not checked')
+  // The window becomes a page with its own address, and goes back to where it was opened.
+  const before = new URL(page.url()).pathname
+  await dialog.getByRole('button', { name: 'Open as a page' }).click()
+  await expect(page).toHaveURL(/\/ioc\/ip\?v=185\.220\.101\.47$/)
+  // The address alone opens the indicator (a shared link, a bookmark).
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: 'Indicator' }).getByRole('region', { name: 'Seen in' })).toContainText(
+    'WKS-FINANCE-01',
+    { timeout: 20_000 },
+  )
+  await page.getByRole('dialog', { name: 'Indicator' }).getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Indicator' })).toHaveCount(0)
+  expect(new URL(page.url()).pathname).toBe(before)
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'IOCs', exact: true }).click()
 })
 
 test('threat intelligence is configured in Settings, keys never shown', async () => {
@@ -150,15 +163,33 @@ test('threat intelligence is configured in Settings, keys never shown', async ()
   await expect(ips).not.toBeChecked()
   await ips.check()
   await expect(ips).toBeChecked()
-  await settings.getByLabel('VirusTotal API key').fill('e2e-virustotal-key-0042')
-  await settings
-    .getByRole('listitem')
-    .filter({ hasText: 'VirusTotal' })
-    .getByRole('button', { name: 'Save key' })
-    .click()
-  await expect(settings.getByText('key …0042')).toBeVisible()
-  await expect(settings.getByLabel('VirusTotal API key')).toHaveValue('')
+  const virustotal = settings.getByRole('listitem').filter({ hasText: 'VirusTotal' }).first()
+  await settings.getByLabel('VirusTotal API key', { exact: true }).fill('e2e-virustotal-key-0042')
+  await virustotal.getByRole('button', { name: 'Add key' }).click()
+  await expect(virustotal.getByText('key …0042')).toBeVisible()
+  await expect(settings.getByLabel('VirusTotal API key', { exact: true })).toHaveValue('')
+  // A second key, with a label: the lookups will go round the two.
+  await settings.getByLabel('VirusTotal API key', { exact: true }).fill('e2e-virustotal-key-0043')
+  await settings.getByLabel('Label of the VirusTotal key').fill('second account')
+  await virustotal.getByRole('button', { name: 'Add key' }).click()
+  await expect(virustotal.getByText('2 keys in rotation')).toBeVisible()
+  const keys = settings.getByRole('list', { name: 'VirusTotal API keys' })
+  await expect(keys.getByRole('listitem')).toHaveCount(2)
+  await expect(keys).toContainText('second account')
+  await expect(settings).not.toContainText('e2e-virustotal-key')
+  await keys.getByRole('button', { name: 'Remove the VirusTotal key ending in 0043' }).click()
+  await expect(keys.getByRole('listitem')).toHaveCount(1)
+  // How long an answer stands, per type, and what VirusTotal is asked for.
+  await expect(settings.getByLabel('File hashes: days an answer stands')).toHaveValue('180')
+  await expect(settings.getByRole('switch', { name: /Ask again when an answer has expired/ })).toBeChecked()
+  await expect(settings.getByLabel('VirusTotal vendors listed')).toHaveValue('flagged')
+  await expect(settings.getByRole('switch', { name: /^Relations/ })).not.toBeChecked()
+  await settings.getByLabel('IP addresses: days an answer stands').fill('45')
   await ips.uncheck()
+  await settings.getByRole('button', { name: 'Close' }).click()
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
+  await expect(settings.getByLabel('IP addresses: days an answer stands')).toHaveValue('45')
   await settings.getByRole('button', { name: 'Close' }).click()
 })
 
@@ -704,7 +735,7 @@ test('pasted text is recognised: an address to scan, an indicator to look up', a
   await page.keyboard.press('Escape')
   await paste('185.220.101.47')
   await prompt.getByRole('button', { name: 'Where seen' }).click()
-  await expect(page.getByRole('dialog', { name: 'Where seen' })).toContainText('WKS-FINANCE-01')
+  await expect(page.getByRole('dialog', { name: 'Indicator' })).toContainText('WKS-FINANCE-01')
   await page.keyboard.press('Escape')
 })
 

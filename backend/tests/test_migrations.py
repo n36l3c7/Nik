@@ -207,3 +207,55 @@ def test_migration_0020_adds_the_revision(tmp_path, monkeypatch):
     command.downgrade(cfg, "0019_incident_status_assignee")
     with engine.connect() as conn:
         assert "rev" not in {c["name"] for c in sa.inspect(conn).get_columns("incidents")}
+
+
+def test_migration_0022_keeps_the_stored_keys_and_adds_raw_and_history(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE integration_keys (provider VARCHAR PRIMARY KEY, secret TEXT NOT NULL,"
+                " hint VARCHAR NOT NULL DEFAULT '', updated_at VARCHAR NOT NULL,"
+                " updated_by VARCHAR NOT NULL DEFAULT '')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "CREATE TABLE ioc_enrichment (type VARCHAR, value VARCHAR, provider VARCHAR, status VARCHAR,"
+                " verdict VARCHAR, summary VARCHAR, link VARCHAR, data JSON, error VARCHAR, checked_at VARCHAR,"
+                " PRIMARY KEY (type, value, provider))"
+            )
+        )
+        conn.execute(sa.text("INSERT INTO integration_keys VALUES ('virustotal', 'enc-1', '0001', 't1', 'admin')"))
+        conn.execute(sa.text("INSERT INTO integration_keys VALUES ('abuseipdb', 'enc-2', '0002', 't2', 'admin')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0021_user_account_state")
+    command.upgrade(cfg, "0022_intel_keys_history")
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sa.text("SELECT provider, secret, hint, status, updated_by, id FROM integration_keys ORDER BY provider")
+        ).all()
+    assert [tuple(r[:5]) for r in rows] == [
+        ("abuseipdb", "enc-2", "0002", "ok", "admin"),
+        ("virustotal", "enc-1", "0001", "ok", "admin"),
+    ]
+    assert len({r[5] for r in rows}) == 2 and all(len(r[5]) == 32 for r in rows)
+    with engine.connect() as conn:
+        assert "raw" in {c["name"] for c in sa.inspect(conn).get_columns("ioc_enrichment")}
+        assert "ioc_enrichment_history" in sa.inspect(conn).get_table_names()
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO integration_keys (id, provider, secret, hint, status, updated_at)"
+                " VALUES ('z', 'virustotal', 'enc-3', '0003', 'ok', 't3')"
+            )
+        )
+    command.downgrade(cfg, "0021_user_account_state")
+    with engine.connect() as conn:
+        back = conn.execute(sa.text("SELECT provider, secret FROM integration_keys ORDER BY provider")).all()
+    assert [tuple(r) for r in back] == [("abuseipdb", "enc-2"), ("virustotal", "enc-1")]

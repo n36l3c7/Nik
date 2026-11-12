@@ -6,7 +6,7 @@ store), so they are typed as ``dict``/``Any`` rather than fully modeled.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -137,12 +137,32 @@ class EnrichmentAutoIn(BaseModel):
     hash: bool = False
 
 
+class EnrichmentRetentionIn(BaseModel):
+    """Days an answer stands, per type (url covers domains, hash the three digests)."""
+
+    ip: int = Field(default=30, ge=1, le=730)
+    url: int = Field(default=30, ge=1, le=730)
+    hash: int = Field(default=180, ge=1, le=730)
+
+
+class VirusTotalOptionsIn(BaseModel):
+    """What a VirusTotal lookup asks for: the engines listed, and the
+    sections that take one more request each from the quota."""
+
+    engines: Literal["flagged", "all"] = "flagged"
+    relations: bool = False
+    comments: bool = False
+
+
 class EnrichmentSettingsIn(BaseModel):
     """Threat intelligence: automatic lookups per type (IP addresses, URLs and
-    domains, file hashes), cache period, providers the analysts allow."""
+    domains, file hashes), how long answers stand and whether expired ones are
+    asked again, VirusTotal's options, providers the analysts allow."""
 
     auto: EnrichmentAutoIn = Field(default_factory=EnrichmentAutoIn)
-    ttlHours: int = Field(default=24, ge=1, le=720)
+    retentionDays: EnrichmentRetentionIn = Field(default_factory=EnrichmentRetentionIn)
+    refreshExpired: bool = True
+    virustotal: VirusTotalOptionsIn = Field(default_factory=VirusTotalOptionsIn)
     providers: dict[str, bool] = Field(default_factory=dict)
 
 

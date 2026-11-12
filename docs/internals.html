@@ -406,22 +406,42 @@
         API process starts a worker thread (<code>worker.py</code>); a lease row (<code>leases</code>) lets only one of
         them work at a time, so several gunicorn workers do not multiply the requests. Every 30 seconds it checks the
         indexed indicators not in the cache (newest incidents first) with every enabled provider that takes their type,
-        pacing each provider to its free tier. An answer is kept for the cache period (24 h by default, up to 30 days),
-        an error is retried after an hour; a provider that answers 429 waits an hour, one that refuses its key six
-        hours.
+        pacing each provider to its free tier. An answer stands for the retention of its type
+        (<code>retentionDays</code>: 30 days for IP addresses, 30 for URLs and domains, 180 for hashes; 1 to 730), an
+        error is retried after an hour.
       </p>
       <p>
-        <strong>Check now</strong> in Where seen asks every usable provider at once (fresh answers are reused unless
-        "Check again"). The IOCs tab's <strong>Reputation</strong> column shows the worst cached verdict and how many
-        providers flag the value.
+        <strong>Check now</strong> on the indicator's page asks every usable provider at once (fresh answers are reused
+        unless "Check again"). When the page opens on answers past their retention,
+        <code>GET /api/enrichment</code> lists those providers in <code>refresh</code> and the page asks them again
+        once; with <code>refreshExpired</code> off the list stays empty and the answer is shown as expired. A provider
+        function returns the verdict, a one-line summary, a link, the details the page shows (<code>data</code>), the
+        whole answer (<code>raw</code>, stored up to 1.5 MB and served by <code>/api/enrichment/raw</code>) and how many
+        requests it made, which are charged to the key. The last ten answers per indicator and provider go to
+        <code>ioc_enrichment_history</code>.
+      </p>
+      <p>
+        The <strong>overall verdict</strong> is weighted (<code>overall()</code> in <code>service.py</code>): each
+        provider has a weight (VirusTotal, abuse.ch and Safe Browsing 3; AbuseIPDB, urlscan and GreyNoise 2; OTX and
+        Shodan InternetDB 1), a malicious answer counts in full and a suspicious one half, and the score is the weighted
+        share of the providers that answered, from 0 to 100. It is malicious from 50 with at least one malicious answer,
+        suspicious from 20 or with any malicious answer, harmless when nobody flags and somebody says harmless. The IOCs
+        tab's <strong>Reputation</strong> column shows that verdict and score. VirusTotal's extra sections
+        (<code>virustotal.relations</code>, <code>virustotal.comments</code>) are separate requests and are off by
+        default; <code>virustotal.engines</code> chooses which vendors are listed.
       </p>
       <p>
         <strong>Keys</strong> are entered by admins and stored in <code>integration_keys</code>, encrypted with Fernet
         under a key derived from <code>SECRET_KEY</code> (HKDF, <code>vault.py</code>): the API returns only whether a
-        key is set and its last four characters. Changing <code>SECRET_KEY</code> without
-        <code>SECRET_KEY_PREVIOUS</code> makes the stored keys unreadable (Settings says so): enter them again. Requests
-        use the standard library (<code>urllib</code>), so <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> apply; a
-        transparent proxy needs nothing.
+        key is set and its last four characters. A provider can have up to ten keys: the interval and the daily quota
+        are counted per key, a lookup takes the key that is free and was used longest ago (so requests go round them), a
+        key that answers 429 waits an hour while the others carry on, and a key the provider refuses waits ten minutes;
+        after three refusals in a row it is marked <code>rejected</code> with the answer, shown in Settings and left out
+        until an admin removes or replaces it. Whether several keys may be used to raise a free tier's limits is for
+        each provider's terms to say. Changing <code>SECRET_KEY</code> without <code>SECRET_KEY_PREVIOUS</code> makes
+        the stored keys unreadable (Settings says so): enter them again. Requests use the standard library
+        (<code>urllib</code>), so <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> apply; a transparent proxy needs
+        nothing.
       </p>
       <h2 id="attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</h2>
       <p>

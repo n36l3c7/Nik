@@ -295,7 +295,7 @@
 │   │                               #   useSocEngine(): memoized detection engine
 │   ├── IncidentContext.jsx         # useIncidents(): incident state, CRUD, flags, notes,
 │   │                               #   export/import — optimistic model backed by the API
-│   ├── IocLookupContext.jsx        # useIocLookup(): &quot;Where seen&quot;, allowlist dialog, IOC menu; &lt;IocValue&gt;
+│   ├── IocLookupContext.jsx        # useIocLookup(): the indicator window / page (/ioc/…), allowlist dialog, IOC menu; &lt;IocValue&gt;
 │   ├── ContextMenuContext.jsx      # useContextMenu(): the app's right-click menu, askText()
 │   ├── NavigationContext.jsx       # useNavigation(): go to a tab, open the search, import a file
 │   ├── ArtifactContext.jsx         # useArtifacts(): the artifact list, the open artifact, link/tag/delete
@@ -362,6 +362,8 @@
     │                               #   EmptyState, SearchInput, Select, StatCard, AsciiSkull,
     │                               #   ErrorBoundary, EvidenceLink: an address from the evidence,
     │                               #   opened only after asking)
+    ├── ioc/                        # IocDetail (verdict, sources, "Seen in"; window or page),
+    │                               #   SourceDetails (what each provider returned)
     ├── auth/                       # AuthLayout (banner + live status), FirstRunSetup, LoginScreen,
     │                               #   SessionExpiredDialog (sign in again over the app)
     ├── backup/                     # BackupModal (full export/restore, admin only)
@@ -386,8 +388,7 @@
         │                           #   filters, widgets, bookmarks/shortcuts tables
         ├── commands/               # CommandHistoryTab, CommandsSection, TopBinariesWidget
         ├── endpoint/               # EndpointArtifactsTab, ArtifactSection (generic table)
-        ├── iocs/                   # IocsTab (indicators, cross-incident counts, reputation, export),
-        │                           #   IocReputation (external answers, Check now)
+        ├── iocs/                   # IocsTab (indicators, cross-incident counts, reputation, export)
         ├── eventlogs/              # EventLogsTab, EvtxUpload (server-side parse + job poll),
         │                           #   CoverageChart, EventsSection
         ├── malware/                # MalwareAnalysisTab, SampleList, SampleDetail, EntropyChart,
@@ -564,13 +565,13 @@
       </ul>
       <p>
         Indicators also seen in other incidents come first, in red. Clicking a value here, in a sample's IOC table or in
-        the Event Logs tab opens <strong>Where seen</strong>: every incident it appears in, with the sources, count and
-        first/last time, and a link to open it. Settings → <strong>IOC allowlist</strong> (one entry per line: a domain
-        and its subdomains, an IP or CIDR network, or an exact value) starts with private and loopback ranges and common
-        vendor and CDN domains; matching values are hidden by default and never exported. The index keeps them, so
-        editing the list applies at once. Exports: CSV, a <strong>STIX 2.1</strong> bundle and a
-        <strong>MISP</strong> event, for a TIP or a firewall blocklist. Incidents saved before 2.12.0 are indexed on the
-        api's first start.
+        the Event Logs tab opens the indicator's window, with <strong>Seen in</strong>: every incident it appears in,
+        with the sources, count and first/last time, and a link to open it. Settings →
+        <strong>IOC allowlist</strong> (one entry per line: a domain and its subdomains, an IP or CIDR network, or an
+        exact value) starts with private and loopback ranges and common vendor and CDN domains; matching values are
+        hidden by default and never exported. The index keeps them, so editing the list applies at once. Exports: CSV, a
+        <strong>STIX 2.1</strong> bundle and a <strong>MISP</strong> event, for a TIP or a firewall blocklist. Incidents
+        saved before 2.12.0 are indexed on the api's first start.
       </p>
       <p>
         <strong>Incident report.</strong> The report button in the header (or <code>&gt; report</code> in the search
@@ -614,10 +615,10 @@
         asks the server (<code>GET /api/search</code>) for incidents, indicators from <strong>every</strong> incident
         and samples, and searches the <strong>open</strong> incident in memory: its timeline events (every tab), notes
         and samples (by file name too). Enter opens the result: an incident is selected, an indicator or a sample opens
-        <em>Where seen</em>, an event jumps to its tab, a note to the Summary. A query starting with
-        <code>&gt;</code> lists actions instead: go to any tab, new incident, export the incident, settings, the IOC
-        allowlist, sign out. On PostgreSQL the substring matches use the trigram (<code>pg_trgm</code>) indexes of
-        migration <code>0012</code>; when the extension cannot be created the search works without them.
+        its window, an event jumps to its tab, a note to the Summary. A query starting with <code>&gt;</code> lists
+        actions instead: go to any tab, new incident, export the incident, settings, the IOC allowlist, sign out. On
+        PostgreSQL the substring matches use the trigram (<code>pg_trgm</code>) indexes of migration <code>0012</code>;
+        when the extension cannot be created the search works without them.
       </p>
       <p>
         Platform configuration lives in one sectioned <strong>Settings</strong> panel (opened from the rail's gear, or
