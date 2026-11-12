@@ -181,5 +181,7 @@ def test_addresses_are_analysed_together_only_when_asked_and_never_the_internal_
     many = "\n".join(f"https://host{n}.example.org/" for n in range(21))
     admin.post("/api/iocs", json={"text": many, "list": {"name": "Many"}})
     listed = next(entry for entry in admin.get("/api/iocs/lists").json()["lists"] if entry["name"] == "Many")
-    refused = admin.post("/api/iocs/analyse", json={"scope": {"list": listed["id"]}})
-    assert refused.status_code == 422 and "at most 20" in refused.json()["detail"]
+    # More than the limit: the first 20 are offered, the rest waits for the next time.
+    plan = admin.post("/api/iocs/analyse", json={"scope": {"list": listed["id"]}, "dryRun": True}).json()
+    assert len(plan["visit"]) == 20 and plan["max"] == 20
+    assert [item["reason"] for item in plan["skipped"]] == ["over the limit of 20 at a time"]

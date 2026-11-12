@@ -790,7 +790,10 @@ export default function IocLibraryPage({ onOpenIncident }) {
                 </ul>
               </details>
             )}
-            <p className="text-xs text-fg-subtle">At most {analysing.max} addresses at a time.</p>
+            <p className="text-xs text-fg-subtle">
+              At most {analysing.max} addresses at a time: with more, the first {analysing.max} are visited and the
+              others wait for the next time.
+            </p>
           </div>
         )}
       </Modal>

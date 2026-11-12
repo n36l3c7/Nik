@@ -225,8 +225,8 @@
             <tr>
               <td><code>POST /api/iocs/analyse</code></td>
               <td>
-                Have the isolated browser visit the URLs and domains of a scope that Nik has not analysed yet (20 at
-                most, a domain as <code>https://&lt;domain&gt;/</code>). <code>dryRun</code> returns
+                Have the isolated browser visit the URLs and domains of a scope that Nik has not analysed yet (the first
+                20, a domain as <code>https://&lt;domain&gt;/</code>). <code>dryRun</code> returns
                 <code>visit</code> and <code>skipped</code> (with the reason) and visits nothing; otherwise
                 <code>started</code> lists the new artifacts. Audited.
               </td>

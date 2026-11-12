@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the library (origin *artifact*); an *Analysis* column shows what Nik saw
   and opens it; *Addresses to analyse* finds the URLs and domains not
   analysed yet; *Analyse addresses* on a selection visits them one after the
-  other, 20 at most, after showing what will be visited and what is left out.
+  other, 20 at a time, after showing what will be visited and what is left out.
 - API: `analysis` in `GET /api/enrichment`; `indicator` in
   `GET /api/artifacts/{id}`; `artifacts` and `sourceArtifacts` in
   `GET /api/iocs/lookup`; `analysis`, `canAnalyse`, `artifacts` and the

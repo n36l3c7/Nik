@@ -699,7 +699,7 @@ def analyse_addresses(
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Have the isolated browser visit the URLs and domains of a scope that
-    Nik has not analysed yet, one after the other (20 at most; a domain is
+    Nik has not analysed yet, one after the other (the first 20; a domain is
     visited as ``https://<domain>/``). A visit is seen by the site, so this is
     only done when asked: ``dryRun`` says what would be visited and what is
     left out, and why."""
@@ -726,11 +726,12 @@ def analyse_addresses(
                 skipped.append(
                     {"value": row["value"], "reason": "cannot be visited (not http or https, or an internal host)"}
                 )
-    if len(visit) > ANALYSE_MAX:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{len(visit)} addresses would be visited: at most {ANALYSE_MAX} at a time. Select fewer.",
-        )
+    # More than the limit: the first ones are visited, the others wait for the next time.
+    skipped += [
+        {"value": row["value"], "reason": f"over the limit of {ANALYSE_MAX} at a time"}
+        for row, _url in visit[ANALYSE_MAX:]
+    ]
+    visit = visit[:ANALYSE_MAX]
     if body.dryRun:
         return {"visit": [url for _, url in visit], "skipped": skipped, "max": ANALYSE_MAX, "started": []}
     started = []
