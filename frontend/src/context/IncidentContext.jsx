@@ -465,8 +465,9 @@ export function IncidentProvider({ children }) {
   useEffect(() => {
     // An artifact's permalink (/artifact/<id>) keeps the active incident as it is.
     const onPopState = () => {
-      // An indicator's page (/ioc/…) is drawn over the incident: it stays as it is too.
-      if (!/^\/(artifact|ioc)\//.test(window.location.pathname)) setActiveIncidentId(incidentIdFromUrl())
+      // An indicator's page (/ioc/…) is drawn over the incident and the library (/iocs…)
+      // replaces it in the main area: the active incident stays as it is too.
+      if (!/^\/(artifact|iocs?)(\/|$)/.test(window.location.pathname)) setActiveIncidentId(incidentIdFromUrl())
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)

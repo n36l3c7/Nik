@@ -57,7 +57,11 @@ def _loop() -> None:
         try:
             with SessionLocal() as db:
                 if acquire(db):
-                    done = service.run_cycle(db, read_settings(db), budget_seconds=BUDGET_SECONDS)
+                    shared = read_settings(db)
+                    # What an analyst asked for comes before the automatic lookups.
+                    done = service.run_checks(db, shared, budget_seconds=BUDGET_SECONDS / 2)
+                    acquire(db)
+                    done += service.run_cycle(db, shared, budget_seconds=BUDGET_SECONDS / 2)
                     if done:
                         logger.info("Threat-intelligence lookups: %d request(s)", done)
         except Exception:  # noqa: BLE001 - the worker must survive a bad pass

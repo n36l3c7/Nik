@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Boxes, Crosshair, Link2, Search, X } from 'lucide-react'
+import { Boxes, Crosshair, Link2, ListPlus, Search, X } from 'lucide-react'
 import { Badge, Button } from '../ui/index.js'
 import { PASTED_LABELS } from '../../domain/pasted.js'
 
@@ -20,6 +20,7 @@ import { PASTED_LABELS } from '../../domain/pasted.js'
  *   onSearch: (value: string) => void,      // open the search palette on it
  *   onLookup: (kind: string, value: string) => void,  // where seen + reputation
  *   onOpenKnown: (artifact: object) => void, // a hash that is an artifact already
+ *   onAdd: (text: string) => void,          // add it to the IoC library
  *   onDismiss: () => void,
  * }} props
  */
@@ -31,6 +32,7 @@ export default function PastePrompt({
   onSearch,
   onLookup,
   onOpenKnown,
+  onAdd,
   onDismiss,
 }) {
   useEffect(() => {
@@ -106,6 +108,9 @@ export default function PastePrompt({
         </Button>
         <Button size="sm" variant="secondary" icon={Crosshair} onClick={() => onLookup(pasted.kind, pasted.value)}>
           Where seen
+        </Button>
+        <Button size="sm" variant="secondary" icon={ListPlus} onClick={() => onAdd(pasted.value)}>
+          Add to IoCs
         </Button>
       </div>
     </section>

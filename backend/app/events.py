@@ -30,6 +30,7 @@ KNOWN_EVENTS = (
     "incident.deleted",
     "note.added",
     "upload.completed",
+    "ioc.watch_hit",
 )
 
 
@@ -68,6 +69,14 @@ def emit_now(db: OrmSession, event: str, data: dict) -> None:
     """Deliver synchronously (used from a background job that has no request)."""
     for hook in _subscribers(db, event):
         _deliver(hook.url, hook.secret, event, data)
+
+
+def emit_detached(db: OrmSession, event: str, data: dict) -> None:
+    """Deliver from a thread of its own, for callers with no BackgroundTasks."""
+    import threading
+
+    for hook in _subscribers(db, event):
+        threading.Thread(target=_deliver, args=(hook.url, hook.secret, event, data), daemon=True).start()
 
 
 def _subscribers(db: OrmSession, event: str):

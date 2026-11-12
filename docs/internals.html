@@ -397,8 +397,9 @@
         <strong>What is never sent</strong> (<code>service.blocked</code>), whoever asks: private, loopback and other
         non-public addresses, internal names (no dot, <code>.local</code>, <code>.lan</code>, <code>.internal</code>,
         <code>.corp</code>, <code>.home.arpa</code>…) and URLs on them; values on the IOC allowlist; values seen in an
-        incident whose report is classified <strong>TLP:RED</strong>; e-mail addresses. MD5 and SHA-1 of stored samples
-        and mail attachments are not looked up automatically: their SHA-256 is.
+        incident whose report is classified <strong>TLP:RED</strong>, or that an analyst or a list of the IoC library
+        classified TLP:RED; e-mail addresses. MD5 and SHA-1 of stored samples and mail attachments are not looked up
+        automatically: their SHA-256 is.
       </p>
       <p>
         <strong>Automatic lookups</strong> are off until an analyst turns them on in
@@ -409,6 +410,30 @@
         pacing each provider to its free tier. An answer stands for the retention of its type
         (<code>retentionDays</code>: 30 days for IP addresses, 30 for URLs and domains, 180 for hashes; 1 to 730), an
         error is retried after an hour.
+      </p>
+      <p>
+        <strong>The IoC library</strong> (<code>app/ioc_library.py</code>) is one row per
+        <code>(type, value)</code> merged from three tables: <code>ioc_index</code> (what the incidents hold),
+        <code>iocs</code> (indicators added by hand or from a file, and the tags, note, TLP and expiry an analyst wrote
+        about any indicator) and <code>ioc_list_items</code> (the lists). <code>parse()</code> reads a paste or a file:
+        a JSON document is tried as Nik's export, a STIX 2.1 bundle or a MISP event; a table with a
+        <code>value</code> column as CSV; anything else line by line, after undoing the usual defanging. Nothing is
+        saved until <code>POST /api/iocs</code>.
+      </p>
+      <p>
+        <strong>A bulk check</strong> is a row of <code>ioc_checks</code> holding what is left to ask (<code
+          >[type, value, [providers]]</code
+        >). The same worker thread works through the checks before the automatic lookups
+        (<code>service.run_checks</code>), with the same keys, limits and "never sent" rules. A check whose remaining
+        sources have all used their daily quota is left <code>waiting</code>, with a message that says which, and goes
+        on when one resets. The plan shown before a check starts counts the requests against what the answering API
+        process has seen used today: with several API processes it is an estimate, and the worker's own count decides.
+      </p>
+      <p>
+        <strong>Watched lists</strong>: when an incident is reindexed, the indicators it did not hold before are
+        compared with the watched lists (<code>ioc_library.watch_hits</code>). Each hit is a row of
+        <code>ioc_alerts</code>, an audit entry (<code>ioc.watch_hit</code>) and one delivery of the
+        <code>ioc.watch_hit</code> webhook. Rebuilding the whole index (a restore) raises no alerts.
       </p>
       <p>
         <strong>Check now</strong> on the indicator's page asks every usable provider at once (fresh answers are reused

@@ -46,6 +46,7 @@
           <li><a href="#layout">The screen</a></li>
           <li><a href="#evidence">Add evidence</a></li>
           <li><a href="#artifacts">Analyse without an incident</a></li>
+          <li><a href="#ioc-library">The IoC library</a></li>
           <li><a href="#tabs">The analysis tabs</a></li>
           <li><a href="#overview-tabs">Summary, Timeline, IOCs</a></li>
           <li><a href="#threat-tabs">Mail, Malware, Network, URL</a></li>
@@ -124,10 +125,10 @@
       <h2 id="layout">The screen</h2>
       <p>
         The narrow column of icons on the left edge is the <strong>rail</strong>. Its top icons choose what the side
-        panel lists: <strong>incidents</strong> or <strong>artifacts</strong> (the files, e-mails and captures analysed
-        so far). Click the active icon again to close the panel and give the whole width to the analysis; drag the
-        panel's edge to resize it. The rail also opens the search, and at the bottom the audit log, the users, the full
-        backup (admins) and the settings.
+        panel lists: <strong>incidents</strong>, <strong>artifacts</strong> (the files, e-mails and captures analysed so
+        far) or the <strong>IoC library</strong>. Click the active icon again to close the panel and give the whole
+        width to the analysis; drag the panel's edge to resize it. The rail also opens the search, and at the bottom the
+        audit log, the users, the full backup (admins) and the settings.
       </p>
 
       <p>
@@ -235,6 +236,56 @@
         <figcaption>A defanged address pasted on the app: read as it was meant, opened only if you choose.</figcaption>
       </figure>
 
+      <h2 id="ioc-library">The IoC library</h2>
+      <p>
+        The third icon of the rail opens the library: one table of every indicator Nik knows, whether an incident holds
+        it, an analyst added it or it came from a file. The side panel has quick filters (added by hand, malicious,
+        never checked, expired), the alerts and the lists; the table filters by text, type, verdict and origin, and
+        sorts by any column. A row is tinted by its verdict only. Click a value for the indicator's page.
+      </p>
+      <h3>Add one or many</h3>
+      <p>
+        <strong>Add</strong> opens one box for one indicator or thousands: type, paste, or choose a file. Defanged
+        values (<code>hxxps://evil[.]example</code>) are read as they are meant and the type is recognised by itself.
+        Plain text, CSV with a <code>value</code> column, a STIX 2.1 bundle, a MISP event and Nik's own JSON are
+        understood. Before anything is saved Nik says what it found: new, already in the library, repeated, private or
+        allowlisted (saved, never sent out) and not recognised. You do not need the dialog to start: drop a file of
+        indicators anywhere, or paste or drag several values as text, and it opens with them.
+      </p>
+      <p>
+        Each indicator is saved on its own. <strong>Group them in a list?</strong> is a question, answered "no" unless
+        you choose a list or name a new one. Tags, a TLP and an expiry date can be set for all of them; an indicator
+        past its date is marked expired and left out of exports and feeds. An indicator the library already has is kept
+        as it is, and joins the list too.
+      </p>
+      <h3>Lists</h3>
+      <p>
+        A list is a named group with its own page and address (<code>/iocs/lists/&lt;id&gt;</code>). The same indicator
+        can be in several lists; <em>Take out of the list</em> leaves it in the library. <strong>Remove</strong> takes
+        an indicator out of the library and of every list, except one an incident still holds, which stays as part of
+        that incident. A list is removed by its author or an admin; its indicators stay.
+      </p>
+      <p>
+        <strong>Watch this list</strong> raises an alert when an incident comes to hold one of its indicators: it shows
+        under <em>Alerts</em> in the panel (a red dot on the rail), in the audit log, and goes to the
+        <code>ioc.watch_hit</code> webhook. <strong>Feed</strong> gives the address a firewall, a SIEM or a SOAR polls
+        for the list as it is now, signed with an API key.
+      </p>
+      <h3>Bulk check and export</h3>
+      <p>
+        Tick rows (or <em>select all</em> of a filter), or use the buttons of a list or of the whole view.
+        <strong>Check</strong> first shows what it costs: how many indicators are asked, how many answers are still
+        fresh, how many are never sent out, and per source how many requests against what is left of today's quota. The
+        check then runs in the background, with its progress at the top of the library. When a source's quota is used up
+        Nik says so and goes on by itself when it resets; <em>Stop</em> ends it.
+      </p>
+      <p>
+        <strong>Export</strong> asks for the format (CSV, JSON, STIX 2.1, MISP, or one value per line) and the fields.
+        Only the main ones are ticked at first; the choice is remembered and the first rows are previewed. Values can be
+        defanged; allowlisted and expired indicators are left out unless you include them. The JSON export imports back
+        into Nik with its tags and lists.
+      </p>
+
       <h2 id="tabs">The analysis tabs</h2>
       <p>The tab bar groups the tabs in the order of an investigation, separated by a thin rule:</p>
       <div class="table-wrap">
@@ -296,8 +347,11 @@
         or download as JSON and how its verdict changed over time. <strong>Check now</strong> asks the providers
         configured in Settings; an answer older than the retention set there is asked again by itself.
         <strong>Open as a page</strong> gives the indicator a full page, and <strong>Copy link</strong> its address
-        (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a colleague. Export the list as CSV, STIX 2.1 or
-        MISP. Indicators that are known good go to the <strong>allowlist</strong> (right-click → Add to the allowlist).
+        (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a colleague. <strong>Check all</strong> asks the
+        sources about every indicator of the incident, and <strong>Save as a list</strong> makes a list of them in the
+        <a href="#ioc-library">IoC library</a>. A row is red when the indicator is malicious and amber when it is
+        suspicious; being seen in other incidents is a number, not a colour. Export the list as CSV, STIX 2.1 or MISP.
+        Indicators that are known good go to the <strong>allowlist</strong> (right-click → Add to the allowlist).
       </p>
       <figure class="shot">
         <img src="img/iocs.png" alt="The IOCs tab" width="1600" height="1000" loading="lazy" />
@@ -663,10 +717,23 @@
           incident holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back.
         </li>
         <li>
+          <strong>Export artifacts</strong> from the artifacts panel (everything the filter lists), from an artifact's
+          page or from its right-click menu: a zip with the analyses, tags and relations, which another Nik imports. The
+          original files are live malware, so each export asks: <em>Analyses only</em> (the default, safe to send) or
+          <em>Analyses and the original files</em>, which puts them in an encrypted zip inside the archive, password
+          <code>infected</code>. <strong>Import</strong> (admins) adds the artifacts the server does not have; a file is
+          stored only when its SHA-256 matches its artifact, and nothing is run. A capture comes only with its file.
+        </li>
+        <li>
+          <strong>Export and import indicators</strong> from the <a href="#ioc-library">IoC library</a>: CSV, JSON, STIX
+          2.1, MISP or text out; the same formats in, by dropping the file anywhere.
+        </li>
+        <li>
           <strong>Full backup</strong> (admins, on the rail): incidents, users, settings and the audit log in one file,
           restored from the same dialog. It does <strong>not</strong> contain the files: samples, e-mails, captures and
-          their analyses stay on the server, and restoring replaces everything else. The backup of a server is
-          <code>deploy/backup.sh</code> (see <a href="deployment.html#docker-podman-in-production">Deployment</a>).
+          their analyses stay on the server, and so do the IoC library's own indicators and lists, and restoring
+          replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
+          <a href="deployment.html#docker-podman-in-production">Deployment</a>).
         </li>
         <li>
           <strong>Audit log</strong> (on the rail): who did what, when, on which incident. It is written by the server

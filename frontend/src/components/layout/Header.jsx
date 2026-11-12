@@ -16,9 +16,16 @@ import { SeverityTag, StatusTag } from '../ui/index.js'
  *   onOpenShortcuts: () => void,
  *   onOpenReport: (() => void) | null,
  *   artifactView?: boolean,   // the main area shows an artifact, not the active incident
+ *   libraryView?: boolean,    // the main area shows the IoC library
  * }} props
  */
-export default function Header({ onOpenSearch, onOpenShortcuts, onOpenReport, artifactView = false }) {
+export default function Header({
+  onOpenSearch,
+  onOpenShortcuts,
+  onOpenReport,
+  artifactView = false,
+  libraryView = false,
+}) {
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
@@ -36,7 +43,12 @@ export default function Header({ onOpenSearch, onOpenShortcuts, onOpenReport, ar
     <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-canvas px-6 py-3">
       {/* Active incident (or an empty-state message) */}
       <div className="min-w-0">
-        {artifactView ? (
+        {libraryView ? (
+          <>
+            <h1 className="truncate font-mono text-lg font-semibold leading-tight text-fg">indicators</h1>
+            <p className="truncate text-xs text-fg-muted">the library of every incident and analyst</p>
+          </>
+        ) : artifactView ? (
           <>
             <h1 className="truncate font-mono text-lg font-semibold leading-tight text-fg">artifact analysis</h1>
             <p className="truncate text-xs text-fg-muted">on its own: link it to an incident from the page below</p>

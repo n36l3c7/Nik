@@ -259,3 +259,41 @@ def test_migration_0022_keeps_the_stored_keys_and_adds_raw_and_history(tmp_path,
     with engine.connect() as conn:
         back = conn.execute(sa.text("SELECT provider, secret FROM integration_keys ORDER BY provider")).all()
     assert [tuple(r) for r in back] == [("abuseipdb", "enc-2"), ("virustotal", "enc-1")]
+
+
+def test_migration_0023_adds_the_ioc_library_tables(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0022_intel_keys_history")
+    command.upgrade(cfg, "0023_ioc_library")
+    tables = {"iocs", "ioc_lists", "ioc_list_items", "ioc_checks", "ioc_alerts"}
+    with engine.connect() as conn:
+        assert tables <= set(sa.inspect(conn).get_table_names())
+        assert {c["name"] for c in sa.inspect(conn).get_columns("iocs")} >= {"type", "value", "tlp", "expires_at"}
+    command.downgrade(cfg, "0022_intel_keys_history")
+    with engine.connect() as conn:
+        assert not tables & set(sa.inspect(conn).get_table_names())
+
+
+def test_migration_0023_leaves_tables_the_baseline_already_made(tmp_path, monkeypatch):
+    """On a new database the baseline creates the schema from the models."""
+    url = "sqlite:///" + str(tmp_path / "new.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    from app.core.db import Base
+
+    Base.metadata.create_all(engine)
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0022_intel_keys_history")
+    command.upgrade(cfg, "0023_ioc_library")
+    with engine.connect() as conn:
+        assert "ioc_alerts" in sa.inspect(conn).get_table_names()

@@ -28,6 +28,10 @@ import ReportDialog from './components/report/ReportDialog.jsx'
 import IncidentFields, { EMPTY_INCIDENT_FIELDS, canCreateIncident } from './components/incident/IncidentFields.jsx'
 import AddFileDialog from './components/incident/AddFileDialog.jsx'
 import ArtifactPage from './components/artifacts/ArtifactPage.jsx'
+import IocLibraryPage from './components/iocs/IocLibraryPage.jsx'
+import { useIocLibrary } from './context/IocLibraryContext.jsx'
+import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
+import { api } from './services/api.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
@@ -172,6 +176,9 @@ export default function App() {
   const { openIoc } = useIocLookup()
   // The main area shows an artifact on its own instead of the active incident.
   const artifactOpen = Boolean(artifacts.currentId)
+  // …or the IoC library, which takes the main area in the same way.
+  const library = useIocLibrary()
+  const libraryOpen = Boolean(library.view)
 
   const [activeTabId, setActiveTabId] = useState(ANALYSIS_TABS[0].id)
 
@@ -182,7 +189,7 @@ export default function App() {
   // Side panel chosen on the rail (null = collapsed), remembered across sessions.
   const [panel, setPanelState] = useState(() => {
     const stored = localStorage.getItem(PANEL_KEY)
-    return stored === '' ? null : stored === 'artifacts' ? 'artifacts' : 'incidents'
+    return stored === '' ? null : ['artifacts', 'iocs'].includes(stored) ? stored : 'incidents'
   })
   const setPanel = useCallback((next) => {
     setPanelState(next)
@@ -192,6 +199,23 @@ export default function App() {
   useEffect(() => {
     if (artifactOpen) setPanelState((open) => (open === null ? open : 'artifacts'))
   }, [artifactOpen])
+
+  // The library and an artifact share the main area: opening one leaves the other.
+  const { closeView: closeLibrary, view: libraryView } = library
+  useEffect(() => {
+    if (artifacts.currentId) closeLibrary()
+  }, [artifacts.currentId, closeLibrary])
+  useEffect(() => {
+    if (!libraryView) return
+    artifacts.closeArtifact()
+    setPanelState((open) => (open === null ? open : 'iocs'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view changes
+  }, [libraryView])
+  useEffect(() => {
+    if (libraryOpen || artifactOpen || !isLibraryPath(window.location.pathname)) return
+    const path = activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'
+    window.history.replaceState({}, '', path)
+  }, [libraryOpen, artifactOpen, activeIncidentId])
 
   // Leaving an artifact without opening an incident: the URL follows.
   useEffect(() => {
@@ -217,9 +241,10 @@ export default function App() {
   const openIncident = useCallback(
     (incidentId) => {
       closeArtifact()
+      closeLibrary()
       selectIncident(incidentId)
     },
-    [closeArtifact, selectIncident],
+    [closeArtifact, closeLibrary, selectIncident],
   )
 
   /**
@@ -227,14 +252,37 @@ export default function App() {
    * what it is and whether it was analysed before, then ask where it goes.
    */
   const { lookup } = artifacts
+  const { openAdd } = library
   const placeFile = useCallback(
-    async (file, { preferAnalysis = false } = {}) => {
+    async (file, { preferAnalysis = false, asEvidence = false } = {}) => {
       const route = detectFileRoute({ name: file.name, head: await readHead(file) })
+      // A file of indicators (text, CSV, STIX, MISP, Nik's export) goes to the
+      // IoC library: the server reads it and says what it holds.
+      if (!preferAnalysis && !asEvidence && mayHoldIndicators({ name: file.name, size: file.size, route })) {
+        try {
+          const text = await file.text()
+          const parsed = await api.post('/iocs/parse', { text })
+          if (isIndicatorList(parsed, text)) {
+            openAdd({
+              text,
+              fileName: file.name,
+              origin: 'import',
+              onNotIndicators: () => {
+                openAdd(null)
+                placeFile(file, { asEvidence: true })
+              },
+            })
+            return
+          }
+        } catch {
+          /* not readable as indicators: it is placed like any other file */
+        }
+      }
       const analysable = Boolean(kindForTab(route?.tab ?? 'malware'))
       const known = analysable && file.size <= LOOKUP_MAX_BYTES ? await lookup(await sha256Hex(file)) : []
       setDrop({ file, route, known, preferAnalysis })
     },
-    [lookup],
+    [lookup, openAdd],
   )
 
   // Text pasted or dragged onto the app: an address or an indicator Nik can act on.
@@ -243,6 +291,16 @@ export default function App() {
   const [pastedError, setPastedError] = useState(null)
   const offerText = useCallback(
     async (text) => {
+      // Several values at once: the "Add indicators" dialog reads them.
+      if (isSeveralValues(text)) {
+        try {
+          const parsed = await api.post('/iocs/parse', { text: String(text) })
+          if (parsed.items.length > 1) openAdd({ text: String(text).trim() })
+        } catch {
+          /* nothing Nik can read */
+        }
+        return
+      }
       const match = recognise(text)
       if (!match) return
       // A SHA-256 may be a file or an e-mail that was analysed already.
@@ -250,7 +308,7 @@ export default function App() {
       setPastedError(null)
       setPasted({ ...match, raw: String(text).trim(), known })
     },
-    [lookup],
+    [lookup, openAdd],
   )
   const dismissPasted = useCallback(() => setPasted(null), [])
   useEffect(() => {
@@ -512,6 +570,8 @@ export default function App() {
         counts={{
           incidents: incidents.length,
           artifacts: Object.values(artifacts.counts).reduce((sum, n) => sum + n, 0),
+          iocs: library.counts.all,
+          alerts: library.alerts,
         }}
         isAdmin={currentUser?.role === 'admin'}
         onSearch={() => setPaletteOpen(true)}
@@ -528,7 +588,7 @@ export default function App() {
             onCreateIncident={openCreateModal}
             onNewAnalysis={() => setAnalysisOpen(true)}
             onSelectIncident={openIncident}
-            incidentShown={!artifactOpen}
+            incidentShown={!artifactOpen && !libraryOpen}
             onOpenReport={() => setReportOpen(true)}
           />
           <SidebarResizer onResize={handleSidebarResize} />
@@ -539,10 +599,11 @@ export default function App() {
         <Header
           onOpenSearch={() => setPaletteOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}
-          onOpenReport={activeIncident && !artifactOpen ? () => setReportOpen(true) : null}
+          onOpenReport={activeIncident && !artifactOpen && !libraryOpen ? () => setReportOpen(true) : null}
           artifactView={artifactOpen}
+          libraryView={libraryOpen}
         />
-        {!artifactOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
+        {!artifactOpen && !libraryOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
 
         {storageError && (
           <div
@@ -563,7 +624,9 @@ export default function App() {
 
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto p-6">
-            {artifactOpen ? (
+            {libraryOpen ? (
+              <IocLibraryPage onOpenIncident={openIncident} />
+            ) : artifactOpen ? (
               <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
             ) : activeIncident ? (
               <Suspense
@@ -679,6 +742,10 @@ export default function App() {
         busy={pastedBusy}
         error={pastedError}
         onDismiss={dismissPasted}
+        onAdd={(value) => {
+          setPasted(null)
+          openAdd({ text: value })
+        }}
         onScan={async (url) => {
           setPastedBusy(true)
           setPastedError(null)

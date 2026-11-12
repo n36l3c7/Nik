@@ -160,6 +160,69 @@
               <td>Indicators seen in two or more incidents, most widespread first.</td>
             </tr>
             <tr>
+              <td><code>GET /api/iocs</code></td>
+              <td>
+                The IoC library: every indicator an incident holds, an analyst added or a list keeps, with its
+                reputation, lists, tags, TLP and expiry. Query: <code>q</code>, <code>type</code>,
+                <code>verdict</code> (<code>malicious</code>, <code>suspicious</code>, <code>harmless</code>,
+                <code>flagged</code>, <code>none</code>), <code>origin</code>, <code>list</code>, <code>expired</code>,
+                <code>sort</code>, <code>dir</code>, <code>offset</code>, <code>limit</code>. Returns <code>iocs</code>,
+                <code>total</code>, <code>counts</code> and the number of unseen <code>alerts</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/iocs/parse</code> · <code>POST /api/iocs</code></td>
+              <td>
+                Read text without saving (<code>{ text }</code>: free text, CSV, STIX 2.1, MISP or Nik's JSON; returns
+                the items and a summary), then add:
+                <code>{ items | text, tags, note, tlp, expires, list: { id | name, watch }, check, origin }</code>. Each
+                indicator is saved on its own; <code>list</code> also groups them; <code>check</code> starts a bulk
+                check. <code>PATCH /api/iocs/item</code> edits tags, note, TLP and expiry;
+                <code>POST /api/iocs/remove</code> takes a scope out of the library.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET/POST /api/iocs/lists</code> · <code>GET/PATCH/DELETE …/{id}</code></td>
+              <td>
+                Lists of indicators (<code>name</code>, <code>description</code>, <code>tlp</code>, <code>watch</code>;
+                <code>scope</code> to fill a new one). <code>POST …/{id}/items</code> and
+                <code>POST …/{id}/items/remove</code> add and take out. Removing a list takes its author or an admin.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/iocs/lists/{id}/feed</code></td>
+              <td>
+                The list as it is now, for machines: <code>format</code> (<code>txt</code> by default, <code>csv</code>,
+                <code>json</code>, <code>stix</code>, <code>misp</code>), <code>types</code>, <code>flagged</code>.
+                Signed with <code>X-API-Key</code> or HTTP Basic with the key as the password. Allowlisted and expired
+                indicators are left out; a TLP:RED list answers <code>403</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/iocs/export</code></td>
+              <td>
+                Download a scope: <code>{ scope, format, fields, defang, flaggedOnly, allowlisted, expired }</code>.
+                Fields: <code>type</code>, <code>value</code>, <code>verdict</code>, <code>score</code>,
+                <code>tags</code>, <code>first_seen</code> (the default), <code>last_checked</code>,
+                <code>sources_flagging</code>, <code>per_source</code>, <code>incidents</code>, <code>lists</code>,
+                <code>note</code>, <code>tlp</code>, <code>origin</code>, <code>added_by</code>, <code>expires</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/iocs/check</code> · <code>GET /api/iocs/checks[/{id}]</code></td>
+              <td>
+                Bulk reputation check of a scope. <code>dryRun</code> returns the plan only (indicators to ask, answers
+                reused, never sent, and per source the requests against today's quota); otherwise the check is queued
+                and worked through in the background: poll its <code>status</code> (<code>running</code>,
+                <code>waiting</code> for a quota, <code>done</code>, <code>stopped</code>), <code>done</code> and
+                <code>total</code>. <code>POST …/checks/{id}/stop</code> ends it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/iocs/alerts</code> · <code>POST /api/iocs/alerts/seen</code></td>
+              <td>Incidents that came to hold an indicator of a watched list, newest first; mark them seen.</td>
+            </tr>
+            <tr>
               <td><code>POST /api/incidents/{id}/report</code></td>
               <td>
                 The incident report as a PDF (default) or HTML. Body, all optional: <code>format</code>,
@@ -363,6 +426,18 @@
               <td>
                 Replace the tags (<code>{"tags": []}</code>, 12 at most). Delete the artifact: its file, its analyses
                 and its reference in every incident.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/artifacts/export</code> · <code>POST /api/artifacts/import</code></td>
+              <td>
+                Export <code>{ ids, files }</code> (500 artifacts at most) as a zip: <code>manifest.json</code> (<code
+                  >format: nik-artifacts</code
+                >), <code>records/&lt;id&gt;.json</code> with each analysis and, only with <code>files: true</code>, the
+                original files in an AES-encrypted <code>files.zip</code> (password <code>infected</code>). Import
+                (<strong>admin</strong>, multipart <code>file</code>) adds the artifacts the server does not have and
+                returns <code>{ added, ids, existing, skipped: [{ name, reason }] }</code>; a file whose SHA-256 is not
+                its artifact's is refused. Both are audited.
               </td>
             </tr>
             <tr>
@@ -628,12 +703,18 @@
           retries safe.
         </li>
         <li>
+          <strong>Scopes of the IoC library</strong>: the actions on many indicators take one of
+          <code>{ items: [{ type, value }] }</code>, <code>{ list: id }</code>, <code>{ incident: id }</code> or
+          <code>{ filters: { q, type, verdict, origin, list, expired } }</code>.
+        </li>
+        <li>
           <strong>Async uploads</strong>: <code>?async=true</code> → <code>202 { jobId }</code>, then poll
           <code>GET /api/jobs/{jobId}</code>.
         </li>
         <li>
           <strong>Webhooks</strong>: <code>incident.created/updated/deleted</code>, <code>note.added</code>,
-          <code>upload.completed</code>; each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>).
+          <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an indicator of a watched list);
+          each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>).
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

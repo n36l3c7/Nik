@@ -23,6 +23,7 @@ import { getOsById } from '../../config/os.js'
 import { Button, MicroSkull, Modal, SeverityTag, StatusTag } from '../ui/index.js'
 import { STATUSES, filterIncidents } from '../../domain/incidentName.js'
 import ArtifactsPanel from '../artifacts/ArtifactsPanel.jsx'
+import IocsPanel from '../iocs/IocsPanel.jsx'
 
 /*
  * ============================================================================
@@ -63,7 +64,7 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
 /**
  * Application sidebar.
  * @param {{
- *   panel: 'incidents' | 'artifacts',
+ *   panel: 'incidents' | 'artifacts' | 'iocs',
  *   onCreateIncident: () => void,  // opens the "New incident" modal owned by App
  *   onNewAnalysis: () => void,     // opens the "New analysis" dialog owned by App
  *   onSelectIncident: (id: string) => void,  // opens an incident (leaves an open artifact)
@@ -136,6 +137,7 @@ export default function Sidebar({
   }
 
   if (panel === 'artifacts') return <ArtifactsPanel width={width} onNewAnalysis={onNewAnalysis} />
+  if (panel === 'iocs') return <IocsPanel width={width} />
 
   return (
     <aside

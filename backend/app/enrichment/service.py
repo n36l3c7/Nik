@@ -48,7 +48,17 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..core import vault
-from ..core.models import Enrichment, EnrichmentHistory, Incident, IntegrationKey, IocEntry
+from ..core.models import (
+    Enrichment,
+    EnrichmentHistory,
+    Incident,
+    IntegrationKey,
+    IocCheck,
+    IocEntry,
+    IocList,
+    IocListItem,
+    IocRecord,
+)
 from ..core.security import now_iso
 from ..iocs import Allowlist, normalize
 from .providers import BY_ID, HASHES, PROVIDERS, Provider, ProviderError
@@ -216,7 +226,25 @@ def blocked(db: OrmSession, kind: str, value: str, allowlist: Allowlist, red: se
         holders = set(db.scalars(select(IocEntry.incident_id).where(IocEntry.type == kind, IocEntry.value == value)))
         if holders & red:
             return "it appears in a TLP:RED incident"
+    if db is not None and _classified_red(db, kind, value):
+        return "it is classified TLP:RED"
     return None
+
+
+def _classified_red(db: OrmSession, kind: str, value: str) -> bool:
+    """An analyst marked the indicator, or a list that holds it, TLP:RED."""
+    record = db.get(IocRecord, (kind, value))
+    if record is not None and record.tlp == "red":
+        return True
+    return (
+        db.scalar(
+            select(IocListItem.list_id)
+            .join(IocList, IocList.id == IocListItem.list_id)
+            .where(IocListItem.type == kind, IocListItem.value == value, IocList.tlp == "red")
+            .limit(1)
+        )
+        is not None
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -652,4 +680,185 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
         provider, kind, value = ready
         ask(db, provider, kind, value, all_keys, options=cfg.get(provider.id))
         calls += 1
+    return calls
+
+
+# --------------------------------------------------------------------------- #
+# Bulk checks                                                                 #
+# --------------------------------------------------------------------------- #
+MAX_CHECK_ITEMS = 10_000
+
+
+def _left_today(provider: Provider, all_keys: Keys) -> int | None:
+    """Requests the provider's keys can still make today; None: no stated limit."""
+    if not provider.daily:
+        return None
+    today = datetime.now(timezone.utc).date().isoformat()
+    left = 0
+    with limiter.lock:
+        for key in slots(provider, all_keys):
+            day, used = limiter.day.get(_slot(provider, key), (today, 0))
+            left += max(0, provider.daily - (used if day == today else 0))
+    return left
+
+
+def plan_check(
+    db: OrmSession, pairs: Iterable[tuple[str, str]], shared: dict[str, Any], force: bool = False
+) -> dict[str, Any]:
+    """What a bulk check would ask: per indicator the providers to ask, and
+    per provider how many requests against what is left today."""
+    cfg = config(shared)
+    all_keys = keys(db)
+    allowlist = Allowlist(shared.get("iocAllowlist") or [])
+    red = red_incidents(db)
+    providers = [p for p in PROVIDERS if usable(p, cfg, all_keys)]
+    wanted = list(dict.fromkeys(pairs))[:MAX_CHECK_ITEMS]
+    cached: dict[tuple[str, str], dict[str, Enrichment]] = {}
+    if not force and wanted:
+        values = sorted({v for _, v in wanted})
+        for start in range(0, len(values), 500):
+            for row in db.scalars(select(Enrichment).where(Enrichment.value.in_(values[start : start + 500]))):
+                cached.setdefault((row.type, row.value), {})[row.provider] = row
+    pending, never, reused = [], 0, 0
+    need: dict[str, int] = {}
+    for kind, value in wanted:
+        if blocked(db, kind, value, allowlist, red=red):
+            never += 1
+            continue
+        known = cached.get((kind, value), {})
+        ask_ids = [p.id for p in providers if p.supports(kind) and (force or not fresh(known.get(p.id), cfg))]
+        if not ask_ids:
+            reused += 1
+            continue
+        pending.append([kind, value, ask_ids])
+        for provider_id in ask_ids:
+            need[provider_id] = need.get(provider_id, 0) + 1
+    sources, seconds = [], 0.0
+    for provider in providers:
+        count = need.get(provider.id, 0)
+        if not count:
+            continue
+        left = _left_today(provider, all_keys)
+        today = count if left is None else min(count, left)
+        key_count = max(1, len(slots(provider, all_keys)))
+        seconds = max(seconds, today * provider.interval / key_count)
+        sources.append(
+            {
+                "provider": provider.id,
+                "label": provider.label,
+                "keys": len(all_keys.get(provider.id, [])),
+                "needed": count,
+                "leftToday": left,
+                "today": today,
+                "later": count - today,
+            }
+        )
+    return {
+        "total": len(wanted),
+        "toAsk": len(pending),
+        "reused": reused,
+        "neverSent": never,
+        "seconds": int(seconds),
+        "sources": sources,
+        "pending": pending,
+        "items": [[k, v] for k, v in wanted],
+    }
+
+
+def start_check(db: OrmSession, plan: dict[str, Any], label: str, actor: str) -> IocCheck:
+    now = now_iso()
+    row = IocCheck(
+        id=uuid.uuid4().hex,
+        label=label[:200],
+        status="running" if plan["pending"] else "done",
+        total=plan["toAsk"],
+        done=0,
+        message="",
+        pending=plan["pending"],
+        items=plan["items"],
+        created_at=now,
+        created_by=actor,
+        updated_at=now,
+    )
+    db.add(row)
+    return row
+
+
+def check_progress(db: OrmSession, row: IocCheck) -> dict[str, Any]:
+    done = [tuple(item) for item in row.items or []]
+    left = {(k, v) for k, v, _ in row.pending or []}
+    found = summaries(db, (pair for pair in done if pair not in left)) if done else {}
+    verdicts: dict[str, int] = {}
+    for summary in found.values():
+        if summary:
+            verdicts[summary["verdict"]] = verdicts.get(summary["verdict"], 0) + 1
+    return {
+        "id": row.id,
+        "label": row.label,
+        "status": row.status,
+        "total": row.total,
+        "done": row.done,
+        "message": row.message,
+        "verdicts": verdicts,
+        "createdAt": row.created_at,
+        "createdBy": row.created_by,
+        "updatedAt": row.updated_at,
+    }
+
+
+def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 60.0, max_calls: int = 300) -> int:
+    """Work through the bulk checks, oldest first; returns the requests made.
+
+    A check whose remaining sources have all used their quota is left
+    ``waiting`` with a message that says so: it goes on when one resets."""
+    cfg = config(shared)
+    all_keys = keys(db)
+    started, calls = time.monotonic(), 0
+    active = db.scalars(
+        select(IocCheck).where(IocCheck.status.in_(("running", "waiting"))).order_by(IocCheck.created_at)
+    ).all()
+    for check in active:
+        pending = [[k, v, list(ids)] for k, v, ids in check.pending or []]
+        # A provider switched off or left without keys is not waited for.
+        live = {p.id for p in PROVIDERS if usable(p, cfg, all_keys)}
+        for item in pending:
+            item[2] = [pid for pid in item[2] if pid in live]
+        while calls < max_calls:
+            remaining = budget_seconds - (time.monotonic() - started)
+            jobs = [(BY_ID[pid], item) for item in pending for pid in item[2]]
+            if not jobs or remaining <= 0:
+                break
+            waits = {p.id: wait(p, all_keys) for p in {job[0] for job in jobs}}
+            ready = next((job for job in jobs if waits[job[0].id] == 0), None)
+            if ready is None:
+                soonest = min(waits.values())
+                if soonest == float("inf") or soonest > remaining:
+                    break
+                time.sleep(soonest)
+                continue
+            provider, item = ready
+            reason = ask(db, provider, item[0], item[1], all_keys, options=cfg.get(provider.id))
+            calls += 1
+            if reason is None or not reason.startswith(("daily quota", "rate limit")):
+                item[2].remove(provider.id)
+        finished = [item for item in pending if not item[2]]
+        pending = [item for item in pending if item[2]]
+        check.done = check.total - len(pending)
+        check.pending = pending
+        flag_modified(check, "pending")
+        if not pending:
+            check.status, check.message = "done", ""
+        else:
+            waiting = {pid for item in pending for pid in item[2]}
+            spent = sorted(BY_ID[pid].label for pid in waiting if wait(BY_ID[pid], all_keys) == float("inf"))
+            if len(spent) == len(waiting):
+                check.status = "waiting"
+                check.message = f"{', '.join(spent)}: daily quota used. It goes on by itself when the quota resets."
+            else:
+                check.status, check.message = "running", ""
+        if finished or check.status != "running":
+            check.updated_at = now_iso()
+        db.commit()
+        if budget_seconds - (time.monotonic() - started) <= 0 or calls >= max_calls:
+            break
     return calls
