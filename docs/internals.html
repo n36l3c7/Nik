@@ -418,6 +418,18 @@
         error is retried after an hour.
       </p>
       <p>
+        <strong>Indicators and artifacts</strong> (<code>app/analysis_links.py</code>). The artifacts that are the
+        analysis of an indicator are found by key, not by search: the scan of a URL has the id derived from the
+        normalised address, a file or an e-mail is named by its SHA-256 (an MD5 or SHA-1 is looked up in
+        <code>samples</code>), and the scans on a host are the analyses of that domain. Their verdict is read as a
+        reputation only when it flags the value (<code>phishing</code> or a high-severity rule → <code>malicious</code>;
+        <code>suspicious</code> or medium → <code>suspicious</code>) and joins the weighted score as the source
+        <code>nik</code>, weight 3; for a domain it is capped at <code>suspicious</code>, since a page on a host says
+        little about the whole domain. The indicators of artifacts no incident references are computed from their stored
+        analyses (kept in memory for a few seconds) so that the library and "Seen in" hold them; nothing is added to
+        <code>ioc_index</code>, which stays the index of the incidents.
+      </p>
+      <p>
         <strong>Registration</strong> (<code>enrichment/registration.py</code>) asks the registries themselves. IANA
         publishes which RDAP server answers for each top-level domain and address block (the bootstrap files, kept in
         memory for a day); a host is asked by its registered domain, tried from the shortest suffix. A top-level domain

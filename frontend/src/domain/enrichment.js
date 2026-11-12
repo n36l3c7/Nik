@@ -83,3 +83,54 @@ export function verdictChanges(history = []) {
   }
   return out
 }
+
+// ---- an indicator and the artifact that is its analysis ---------------------
+
+/** Types Nik can analyse itself: an address it can visit, a file it may hold. */
+export const ANALYSABLE = new Set(['url', 'domain', 'sha256', 'sha1', 'md5'])
+
+/** The address the isolated browser visits for an indicator, or null. */
+export function addressOf(type, value) {
+  if (type === 'url') return String(value)
+  if (type === 'domain') return `https://${value}/`
+  return null
+}
+
+/** "phishing 82", "suspicious", "high": an artifact's verdict as a short label. */
+export function analysisLabel(artifact) {
+  if (!artifact) return ''
+  if (artifact.status && !['done', ''].includes(artifact.status)) return artifact.status
+  const verdict = artifact.verdict || (artifact.kind === 'url' ? 'clean' : 'no rule match')
+  return artifact.score != null && artifact.kind !== 'file' ? `${verdict} ${artifact.score}` : verdict
+}
+
+export function analysisColor(artifact) {
+  const verdict = String(artifact?.verdict ?? '')
+  if (['phishing', 'high', 'malicious'].includes(verdict)) return 'red'
+  if (['suspicious', 'medium'].includes(verdict)) return 'amber'
+  return 'slate'
+}
+
+/**
+ * What the right-click menu offers to analyse an indicator, from what is known
+ * of it (`analysis` of GET /api/enrichment, or undefined when not asked yet):
+ * `[{ id: 'open' | 'analyse' | 'rescan', label, hint }]`.
+ */
+export function analysisActions(type, value, analysis) {
+  if (!ANALYSABLE.has(type)) return []
+  const artifact = analysis?.artifacts?.[0] ?? null
+  const address = addressOf(type, value)
+  if (artifact) {
+    const open = { id: 'open', label: 'Open the analysis', hint: analysisLabel(artifact), artifact }
+    return artifact.kind === 'url' && type === 'url' ? [open, { id: 'rescan', label: 'Scan again', artifact }] : [open]
+  }
+  if (!address || analysis?.canAnalyse === false) return []
+  return [
+    {
+      id: 'analyse',
+      label: type === 'url' ? 'Analyse URL' : 'Analyse as URL',
+      hint: type === 'url' ? 'isolated browser' : address,
+      address,
+    },
+  ]
+}

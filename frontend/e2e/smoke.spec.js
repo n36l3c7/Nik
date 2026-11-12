@@ -968,6 +968,66 @@ test('the page always follows the address: incident, artifact, library, indicato
   await expectIncident()
 })
 
+test('an indicator and the artifact that is its analysis lead to each other', async () => {
+  const rail = page.getByRole('navigation', { name: 'Sections' })
+  const artifact = page.getByRole('region', { name: 'Artifact' })
+  const indicator = page.getByRole('dialog', { name: 'Indicator' })
+
+  // The artifact as an indicator: its value and what the sources say about it.
+  await rail.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel
+    .getByRole('navigation', { name: 'Artifacts' })
+    .getByRole('button', { name: /dropper\.bin/ })
+    .click()
+  await expect(artifact).toContainText('AS AN INDICATOR')
+  await expect(artifact).toContainText(/Reputation: (not checked|\w+ \d+)/)
+
+  // From the indicator back to the analysis Nik made of it.
+  await artifact
+    .getByRole('button', { name: /^[0-9a-f]{64}$/ })
+    .first()
+    .click()
+  const analysed = indicator.getByRole('region', { name: 'Analysed by Nik' })
+  await expect(analysed).toContainText('Analysis · what Nik saw')
+  await expect(indicator).toContainText('Reputation · what the sources say')
+  // The artifact is on its own or in the incident: either way "Seen in" names it.
+  await expect(indicator.getByRole('region', { name: 'Seen in' })).toContainText(/dropper\.bin|file:/)
+  await analysed.getByRole('button', { name: 'Open the analysis' }).click()
+  await expect(indicator).toHaveCount(0)
+  await expect(page).toHaveURL(/\/artifact\/file-[0-9a-f]{64}$/)
+  await expect(artifact.getByRole('heading', { name: 'dropper.bin' })).toBeVisible()
+
+  // An address not analysed yet: the page and the right-click menu offer to analyse it.
+  await rail.getByRole('button', { name: /^IoC library/ }).click()
+  const library = page.getByRole('table', { name: 'Indicators' })
+  await page
+    .getByRole('complementary', { name: 'IoCs panel' })
+    .getByRole('button', { name: /^Addresses to analyse/ })
+    .click()
+  await expect(library.locator('tbody tr').first()).toContainText('not analysed')
+  const address = library.getByRole('button', { name: /^https?:\/\// }).first()
+  await address.click({ button: 'right' })
+  await expect(page.getByRole('menu').getByRole('menuitem', { name: /^Analyse URL/ })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await address.click()
+  await expect(indicator.getByRole('region', { name: 'Analysed by Nik' })).toContainText('Not analysed by Nik yet')
+  await expect(indicator.getByRole('button', { name: 'Analyse URL' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // Several at once: what would be visited is shown first, and nothing is visited until confirmed.
+  await page.getByLabel('Select the page').check()
+  await page.getByRole('region', { name: 'Selection' }).getByRole('button', { name: 'Analyse addresses' }).click()
+  const plan = page.getByRole('dialog', { name: 'Analyse addresses' })
+  await expect(plan).toContainText('A visit is seen by the site')
+  await expect(plan.getByRole('button', { name: /^Visit \d+ address/ })).toBeVisible()
+  await plan.getByRole('button', { name: 'Cancel' }).click()
+
+  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
+  await expect(page).toHaveURL(/\/incident\//)
+})
+
 test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
   const panel = page.locator('aside[aria-label="Incidents panel"]')
   const list = panel.locator('nav[aria-label="Incidents"]')

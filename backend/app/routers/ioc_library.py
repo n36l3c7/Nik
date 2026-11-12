@@ -12,7 +12,7 @@ import re
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select, update
@@ -97,7 +97,8 @@ class Filters(BaseModel):
     q: str = ""
     type: Type | None = None
     verdict: Literal["malicious", "suspicious", "harmless", "unknown", "none", "flagged"] | None = None
-    origin: Literal["incident", "manual", "import", "added"] | None = None
+    origin: Literal["incident", "manual", "import", "artifact", "added"] | None = None
+    analysis: Literal["done", "none"] | None = None
     model_config = ConfigDict(populate_by_name=True)
     list_id: str | None = Field(default=None, alias="list")
     expired: bool | None = None
@@ -230,7 +231,8 @@ def list_library(
     q: str = Query("", max_length=200),
     type: Type | None = Query(None),
     verdict: Literal["malicious", "suspicious", "harmless", "unknown", "none", "flagged"] | None = Query(None),
-    origin: Literal["incident", "manual", "import", "added"] | None = Query(None),
+    origin: Literal["incident", "manual", "import", "artifact", "added"] | None = Query(None),
+    analysis: Literal["done", "none"] | None = Query(None, description="Analysed by Nik, or still to analyse"),
     list_id: str | None = Query(None, alias="list"),
     expired: bool | None = Query(None),
     sort: str = Query("", max_length=20),
@@ -244,7 +246,15 @@ def list_library(
     or kept in a list. ``counts`` are for the whole library, ``total`` for
     the filter."""
     rows = lib.library(db, read_settings(db))
-    filters = {"q": q, "type": type, "verdict": verdict, "origin": origin, "list": list_id, "expired": expired}
+    filters = {
+        "q": q,
+        "type": type,
+        "verdict": verdict,
+        "origin": origin,
+        "list": list_id,
+        "expired": expired,
+        "analysis": analysis,
+    }
     kept = lib.select_rows(rows, filters, sort, dir == "desc")
     return {
         "iocs": kept[offset : offset + limit],
@@ -410,11 +420,16 @@ def remove_indicators(
     for row in rows:
         db.execute(delete(IocRecord).where(IocRecord.type == row["type"], IocRecord.value == row["value"]))
         db.execute(delete(IocListItem).where(IocListItem.type == row["type"], IocListItem.value == row["value"]))
-        if row["incidents"]:
+        if row["incidents"] or row.get("artifacts"):
             kept += 1
         else:
             removed += 1
-    _audit(db, caller, "ioc.remove", f"Removed {removed} indicator(s); {kept} stay because an incident holds them")
+    _audit(
+        db,
+        caller,
+        "ioc.remove",
+        f"Removed {removed} indicator(s); {kept} stay because an incident or an artifact holds them",
+    )
     db.commit()
     return {"removed": removed, "kept": kept}
 
@@ -663,6 +678,70 @@ def stop_check(check_id: str, _caller: Principal = Depends(writer_principal), db
         row.status, row.message, row.updated_at = "stopped", "Stopped.", now_iso()
         db.commit()
     return service.check_progress(db, row)
+
+
+# --------------------------------------------------------------------------- #
+# Analyse many addresses                                                      #
+# --------------------------------------------------------------------------- #
+ANALYSE_MAX = 20
+
+
+class AnalyseIn(BaseModel):
+    scope: Scope
+    dryRun: bool = False
+
+
+@router.post("/analyse")
+def analyse_addresses(
+    body: AnalyseIn,
+    background_tasks: BackgroundTasks,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Have the isolated browser visit the URLs and domains of a scope that
+    Nik has not analysed yet, one after the other (the first 20; a domain is
+    visited as ``https://<domain>/``). A visit is seen by the site, so this is
+    only done when asked: ``dryRun`` says what would be visited and what is
+    left out, and why."""
+    from .. import urlscan
+    from . import urls as url_routes
+
+    rows, label = _resolve(db, body.scope, read_settings(db))
+    visit: list[tuple[dict[str, Any], str]] = []
+    skipped: list[dict[str, str]] = []
+    for row in rows:
+        if row["type"] not in ("url", "domain"):
+            skipped.append({"value": row["value"], "reason": "not an address"})
+        elif row.get("analysis"):
+            skipped.append({"value": row["value"], "reason": "analysed already"})
+        elif row["allowlisted"]:
+            skipped.append({"value": row["value"], "reason": "on the allowlist"})
+        elif row["tlp"] == "red":
+            skipped.append({"value": row["value"], "reason": "classified TLP:RED"})
+        else:
+            try:
+                visit.append((row, urlscan.normalise(row["value"])))
+            except urlscan.UrlError:
+                # Said in fixed words: the text of an exception is not sent to the client.
+                skipped.append(
+                    {"value": row["value"], "reason": "cannot be visited (not http or https, or an internal host)"}
+                )
+    # More than the limit: the first ones are visited, the others wait for the next time.
+    skipped += [
+        {"value": row["value"], "reason": f"over the limit of {ANALYSE_MAX} at a time"}
+        for row, _url in visit[ANALYSE_MAX:]
+    ]
+    visit = visit[:ANALYSE_MAX]
+    if body.dryRun:
+        return {"visit": [url for _, url in visit], "skipped": skipped, "max": ANALYSE_MAX, "started": []}
+    started = []
+    for _row, url in visit:
+        scan = urlscan.register(db, url, caller.actor)
+        url_routes._queue(db, scan, caller.actor, background_tasks)
+        started.append({"url": url, "artifactId": f"url-{scan.id}"})
+    _audit(db, caller, "ioc.analyse", f"Started the analysis of {len(started)} address(es)", target=label)
+    db.commit()
+    return {"visit": [url for _, url in visit], "skipped": skipped, "max": ANALYSE_MAX, "started": started}
 
 
 # --------------------------------------------------------------------------- #

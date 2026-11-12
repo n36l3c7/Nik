@@ -9,6 +9,7 @@ import { formatDateTime, anyToMs } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
+import AsIndicator from './AsIndicator.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
 
 /*
@@ -223,6 +224,11 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
         </div>
 
         <div className="space-y-2 px-4 py-3">
+          {artifact.indicator && (
+            <Row label="AS AN INDICATOR">
+              <AsIndicator indicator={artifact.indicator} />
+            </Row>
+          )}
           <Row label="INCIDENTS">
             {artifact.incidents.length === 0 ? (
               <span className="text-xs text-fg-muted">Not linked to an incident.</span>

@@ -438,6 +438,18 @@ def library(db: OrmSession, shared: dict[str, Any], only: set[Pair] | None = Non
             if item["origin"] == "incident" and not item["incidents"]:
                 item["origin"] = "manual"
 
+    from . import analysis_links
+
+    # Indicators of the artifacts analysed on their own, with no incident.
+    for (kind, value), holders in analysis_links.standalone(db).items():
+        known = (kind, value) in rows
+        item = row(kind, value)
+        if item:
+            item["artifacts"] = holders[:5]
+            if not known:
+                item["origin"] = "artifact"
+                item["firstSeen"] = holders[-1]["createdAt"]
+    analysed = analysis_links.analyses_for(db, rows.keys()) if rows else {}
     reputation = service.summaries(db, rows.keys()) if rows else {}
     checked: dict[Pair, str] = {}
     if rows:
@@ -458,6 +470,11 @@ def library(db: OrmSession, shared: dict[str, Any], only: set[Pair] | None = Non
         item["checkedAt"] = checked.get(pair)
         item["allowlisted"] = allowlist.matches(*pair)
         item["neverSent"] = never_sent(pair[0], pair[1], allowlist, pair in red)
+        # What Nik saw when it analysed the value itself, if it did.
+        found = analysed.get(pair) or []
+        item["analysis"] = analysis_links.brief(found[0]) if found else None
+        item["canAnalyse"] = pair[0] in ("url", "domain") and analysis_links.scan_id_of(pair[1]) is not None
+        item.setdefault("artifacts", [])
     del cfg
     return list(rows.values())
 
@@ -489,13 +506,18 @@ def matches(row: dict[str, Any], filters: dict[str, Any]) -> bool:
         return False
     origin = filters.get("origin")
     if origin == "added":
-        if row["origin"] == "incident":
+        if row["origin"] not in ("manual", "import"):
             return False
     elif origin and row["origin"] != origin:
         return False
     if filters.get("list") and not any(entry["id"] == filters["list"] for entry in row["lists"]):
         return False
     if filters.get("expired") is not None and row["expired"] != bool(filters["expired"]):
+        return False
+    analysis = filters.get("analysis")
+    if analysis == "done" and not row.get("analysis"):
+        return False
+    if analysis == "none" and (row.get("analysis") or not row.get("canAnalyse")):
         return False
     text = str(filters.get("q") or "").strip().lower().lstrip("#")
     if text:
@@ -519,7 +541,8 @@ def select_rows(rows: list[dict[str, Any]], filters: dict[str, Any], sort: str =
 def counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return {
         "all": len(rows),
-        "added": sum(1 for r in rows if r["origin"] != "incident"),
+        "added": sum(1 for r in rows if r["origin"] in ("manual", "import")),
+        "toAnalyse": sum(1 for r in rows if r.get("canAnalyse") and not r.get("analysis")),
         "malicious": sum(1 for r in rows if r["verdict"] == "malicious"),
         "suspicious": sum(1 for r in rows if r["verdict"] == "suspicious"),
         "harmless": sum(1 for r in rows if r["verdict"] == "harmless"),
