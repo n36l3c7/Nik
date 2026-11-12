@@ -39,6 +39,35 @@
       </p>
 
       <section class="release">
+        <h3>3.4.0 <span class="date">2026-11-12</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> A page for each indicator: overall verdict, what every source returned,
+            where Nik saw it; it opens in a window, can become a full page, and has an address to share.
+          </li>
+          <li>
+            <span class="tag added">added</span> Several API keys per threat-intelligence provider, used in turn; a key
+            refused three times in a row is marked rejected.
+          </li>
+          <li>
+            <span class="tag added">added</span> How long an answer stands, per indicator type (30 days for IP addresses
+            and URLs, 180 for hashes); an expired one is asked again when the indicator is opened.
+          </li>
+          <li>
+            <span class="tag added">added</span> The provider's whole answer as JSON to copy or download, a short
+            history per source, and VirusTotal options.
+          </li>
+          <li>
+            <span class="tag added">added</span> Sortable columns in Network Analysis: packets, Requests and Objects.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The overall verdict is a score weighted by source;
+            <code>enrichment.ttlHours</code> is replaced by <code>retentionDays</code>.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>3.3.3 <span class="date">2026-11-12</span></h3>
         <ul>
           <li>
