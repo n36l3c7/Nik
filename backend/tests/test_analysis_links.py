@@ -168,6 +168,16 @@ def test_addresses_are_analysed_together_only_when_asked_and_never_the_internal_
     again = admin.post("/api/iocs/analyse", json={"scope": scope, "dryRun": True}).json()
     assert again["visit"] == []
 
+    # Off the allowlist, an internal host is still never visited.
+    shared = admin.get("/api/settings").json()
+    shared["iocAllowlist"] = []
+    assert admin.put("/api/settings", json=shared).status_code == 200
+    internal = admin.post(
+        "/api/iocs/analyse",
+        json={"scope": {"items": [{"type": "url", "value": "http://192.168.1.10/admin"}]}, "dryRun": True},
+    ).json()
+    assert internal["visit"] == [] and internal["skipped"][0]["reason"].startswith("cannot be visited")
+
     many = "\n".join(f"https://host{n}.example.org/" for n in range(21))
     admin.post("/api/iocs", json={"text": many, "list": {"name": "Many"}})
     listed = next(entry for entry in admin.get("/api/iocs/lists").json()["lists"] if entry["name"] == "Many")

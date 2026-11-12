@@ -721,8 +721,11 @@ def analyse_addresses(
         else:
             try:
                 visit.append((row, urlscan.normalise(row["value"])))
-            except urlscan.UrlError as exc:
-                skipped.append({"value": row["value"], "reason": str(exc).rstrip(".")})
+            except urlscan.UrlError:
+                # Said in fixed words: the text of an exception is not sent to the client.
+                skipped.append(
+                    {"value": row["value"], "reason": "cannot be visited (not http or https, or an internal host)"}
+                )
     if len(visit) > ANALYSE_MAX:
         raise HTTPException(
             status_code=422,
