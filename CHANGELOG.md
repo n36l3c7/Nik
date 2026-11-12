@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-12
+
 ### Added
 
 - **An IoC library.** A third entry in the rail, under incidents and
@@ -1622,7 +1624,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/n36l3c7/Nik/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/n36l3c7/Nik/compare/v3.3.3...v3.4.0
 [3.3.3]: https://github.com/n36l3c7/Nik/compare/v3.3.2...v3.3.3
 [3.3.2]: https://github.com/n36l3c7/Nik/compare/v3.3.1...v3.3.2
