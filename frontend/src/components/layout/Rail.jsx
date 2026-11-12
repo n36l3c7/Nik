@@ -1,4 +1,4 @@
-import { Boxes, DatabaseBackup, FolderClosed, ScrollText, Search, Settings, Users } from 'lucide-react'
+import { Boxes, DatabaseBackup, Fingerprint, FolderClosed, ScrollText, Search, Settings, Users } from 'lucide-react'
 
 /*
  * ============================================================================
@@ -11,7 +11,7 @@ import { Boxes, DatabaseBackup, FolderClosed, ScrollText, Search, Settings, User
  * at the foot of the sidebar.
  */
 
-function RailButton({ icon: Icon, label, active = false, onClick, count = null }) {
+function RailButton({ icon: Icon, label, active = false, onClick, count = null, alert = false }) {
   return (
     <button
       type="button"
@@ -26,6 +26,9 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null }
       ].join(' ')}
     >
       <Icon className="h-5 w-5" aria-hidden="true" />
+      {alert && (
+        <span aria-hidden="true" className="absolute bottom-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-high-line" />
+      )}
       {count != null && count > 0 && (
         <span aria-hidden="true" className="absolute right-1 top-1 font-mono text-[9px] leading-none text-fg-muted">
           {count > 99 ? '99+' : count}
@@ -37,9 +40,9 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null }
 
 /**
  * @param {{
- *   panel: 'incidents' | 'artifacts' | null,   // the open side panel
+ *   panel: 'incidents' | 'artifacts' | 'iocs' | null,   // the open side panel
  *   onPanel: (panel: string | null) => void,
- *   counts: { incidents: number, artifacts: number },
+ *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number },
  *   isAdmin: boolean,
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
@@ -71,6 +74,20 @@ export default function Rail({ panel, onPanel, counts, isAdmin, onSearch, onAudi
         active={panel === 'artifacts'}
         count={counts.artifacts}
         onClick={() => toggle('artifacts')}
+      />
+      <RailButton
+        icon={Fingerprint}
+        label={
+          panel === 'iocs'
+            ? 'Hide the IoC library'
+            : counts.alerts
+              ? `IoC library (${counts.alerts} new alerts)`
+              : 'IoC library'
+        }
+        active={panel === 'iocs'}
+        count={counts.iocs}
+        alert={counts.alerts > 0}
+        onClick={() => toggle('iocs')}
       />
       <RailButton icon={Search} label="Search (Ctrl+K)" onClick={onSearch} />
       <span className="flex-1" />

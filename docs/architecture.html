@@ -255,6 +255,10 @@
 ├── parsing/                        # malware.py (hashes, type, entropy, strings, IOC), executables.py
 │                                   #   (PE, ELF, Mach-O), eventlog.py (.evtx), browser/shell/artifact ports
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
+├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
+│                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
+├── ioc_library.py                  # The IoC library: one row per indicator, reading pastes and files,
+│                                   #   lists, export with chosen fields, alerts of watched lists
 ├── urlscan.py                      # URL scans: the isolated browser's visit, the findings and the verdict
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
@@ -299,6 +303,8 @@
 │   ├── ContextMenuContext.jsx      # useContextMenu(): the app's right-click menu, askText()
 │   ├── NavigationContext.jsx       # useNavigation(): go to a tab, open the search, import a file
 │   ├── ArtifactContext.jsx         # useArtifacts(): the artifact list, the open artifact, link/tag/delete
+│   ├── IocLibraryContext.jsx       # useIocLibrary(): the library's view (/iocs…), lists, bulk checks,
+│   │                               #   and the add / export / check / list dialogs
 │   └── ToastContext.jsx            # useToast(): short notices with an optional Undo
 │
 ├── services/
@@ -380,6 +386,8 @@
     ├── layout/                     # Rail (icons), Sidebar (incidents panel), Header, TabBar (grouped tabs
     │                               #   that shorten to fit),
     │                               #   OsPicker, IncidentLoadingState
+    ├── iocs/                       # IocsPanel (filters, alerts, lists), IocLibraryPage (table, selection),
+    │                               #   AddIocsDialog, ExportIocsDialog, BulkCheckDialog, ListDialog
     ├── artifacts/                  # ArtifactsPanel (list, filters), ArtifactPage (links, tags, related),
     │                               #   NewAnalysisDialog, PastePrompt (pasted or dragged text)
     └── tabs/

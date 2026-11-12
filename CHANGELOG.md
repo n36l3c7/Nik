@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **An IoC library.** A third entry in the rail, under incidents and
+  artifacts: one table of every indicator Nik knows, whether an incident
+  holds it, an analyst added it or it came from a file. Filter by type,
+  verdict, origin or text; sort by any column; open an indicator's page from
+  its value. Addresses to share: `/iocs`, `/iocs/lists/<id>`, `/iocs/alerts`.
+- **Add indicators, one or many.** Type or paste them, defanged values
+  included (`hxxp`, `[.]`), or read a file: plain text, CSV with a `value`
+  column, a STIX 2.1 bundle, a MISP event or Nik's own JSON. Nik says what it
+  found (new, already known, repeated, never sent out, not recognised) before
+  anything is saved. Each indicator is saved on its own, with optional tags,
+  note, TLP and an expiry date.
+- **Drop or paste anywhere.** A file of indicators dropped on the app, or
+  several values pasted or dragged as text, open *Add indicators* with what
+  was read; a single pasted indicator gets *Add to IoCs*.
+- **Lists.** Indicators can be grouped in named lists, when they are added or
+  later from a selection; Nik asks, it never makes a list by itself. The same
+  indicator can be in several lists, and taking it out of one does not remove
+  it. *Save as a list* on an incident's IOCs tab makes one from its indicators.
+- **Bulk check** of a selection, a list, a filter or an incident's
+  indicators. Before anything is asked Nik says what it costs against each
+  source's quota; the check then runs in the background. When a quota is
+  used up Nik says so and goes on by itself when it resets.
+- **Export with chosen fields**: CSV, JSON, STIX 2.1, MISP or one value per
+  line, for a list, a selection or a filter. Only the main fields are ticked
+  at first (type, value, verdict, score, tags, first seen); the choice is
+  remembered and previewed. Values can be defanged.
+- **A feed per list** for a firewall, a SIEM or a SOAR to poll:
+  `GET /api/iocs/lists/{id}/feed`, signed with an API key (the `X-API-Key`
+  header, or HTTP Basic with the key as the password). A TLP:RED list has
+  none.
+- **Watched lists.** A list can be watched: when an incident comes to hold
+  one of its indicators Nik records an alert (IoC panel → Alerts), writes it
+  in the audit log and sends the new `ioc.watch_hit` webhook.
+- **Export and import of artifacts.** *Export* in the artifacts panel (what
+  the filter lists), in an artifact's page and in its right-click menu
+  downloads a zip another Nik can import: the registry entries, tags,
+  relations and analyses. The original files are live malware, so they are
+  left out unless chosen at that export; they then travel in an
+  AES-encrypted `files.zip` inside the archive, password `infected`.
+  *Import* (admins) adds the artifacts the server does not have: a file is
+  stored only when its SHA-256 is the one its artifact is named by, nothing
+  is run and no analysis is started. A capture is imported only with its
+  file; a TLS key log is never exported. API: `POST /api/artifacts/export`,
+  `POST /api/artifacts/import`.
+- API: `GET/POST /api/iocs`, `POST /api/iocs/parse`, `PATCH /api/iocs/item`,
+  `POST /api/iocs/remove`, `/api/iocs/lists…`, `POST /api/iocs/export`,
+  `POST /api/iocs/check`, `/api/iocs/checks…`, `/api/iocs/alerts…`.
+  Migration `0023` adds `iocs`, `ioc_lists`, `ioc_list_items`, `ioc_checks`
+  and `ioc_alerts`.
+
+### Changed
+
+- On an incident's IOCs tab a row is coloured by its verdict only (red for
+  malicious, amber for suspicious). Being seen in other incidents no longer
+  turns it red: *Other incidents* is a plain number to sort on, and the table
+  opens sorted by reputation.
+- An indicator an analyst or a list classified TLP:RED is never sent to the
+  sources, like those of a TLP:RED incident.
+
 ## [3.4.0] - 2026-11-12
 
 ### Added

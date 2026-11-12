@@ -7,6 +7,7 @@ import { SettingsProvider } from './context/SettingsContext.jsx'
 import { IncidentProvider } from './context/IncidentContext.jsx'
 import { ArtifactProvider } from './context/ArtifactContext.jsx'
 import { IocLookupProvider } from './context/IocLookupContext.jsx'
+import { IocLibraryProvider } from './context/IocLibraryContext.jsx'
 import { ContextMenuProvider } from './context/ContextMenuContext.jsx'
 import { NavigationProvider } from './context/NavigationContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
@@ -31,7 +32,9 @@ createRoot(document.getElementById('root')).render(
                 <ToastProvider>
                   <ContextMenuProvider>
                     <IocLookupProvider>
-                      <App />
+                      <IocLibraryProvider>
+                        <App />
+                      </IocLibraryProvider>
                     </IocLookupProvider>
                   </ContextMenuProvider>
                 </ToastProvider>

@@ -569,3 +569,92 @@ class ApiKey(Base):
     expires_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_used_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revoked_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class IocRecord(Base):
+    """An indicator an analyst added to the library, by hand or from a file.
+
+    Indicators seen in incidents live in ``ioc_index``; this table holds the
+    ones kept on their own, and what an analyst wrote about any indicator
+    (tags, a note, a TLP, a date after which it is no longer current).
+    """
+
+    __tablename__ = "iocs"
+
+    type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    value: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")  # manual | import
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    note: Mapped[str] = mapped_column(String, nullable=False, default="")
+    tlp: Mapped[str] = mapped_column(String(8), nullable=False, default="amber")
+    expires_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # YYYY-MM-DD
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class IocList(Base):
+    """A named group of indicators. ``watch`` raises an alert when an incident
+    comes to hold one of them."""
+
+    __tablename__ = "ioc_lists"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    tlp: Mapped[str] = mapped_column(String(8), nullable=False, default="amber")
+    watch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class IocListItem(Base):
+    """An indicator is in a list. The same indicator can be in several."""
+
+    __tablename__ = "ioc_list_items"
+    __table_args__ = (Index("ix_ioc_list_items_type_value", "type", "value"),)
+
+    list_id: Mapped[str] = mapped_column(String, ForeignKey("ioc_lists.id", ondelete="CASCADE"), primary_key=True)
+    type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    value: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    added_at: Mapped[str] = mapped_column(String, nullable=False)
+    added_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class IocCheck(Base):
+    """A bulk reputation check, worked through by the enrichment worker.
+
+    ``pending`` holds what is left: ``[type, value, [provider ids]]``. The
+    status is ``running``, ``waiting`` (every source left has used its quota:
+    it goes on by itself when one resets), ``done`` or ``stopped``.
+    """
+
+    __tablename__ = "ioc_checks"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    label: Mapped[str] = mapped_column(String, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="running", index=True)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message: Mapped[str] = mapped_column(String, nullable=False, default="")
+    pending: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    items: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # every [type, value] asked for
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class IocAlert(Base):
+    """An incident came to hold an indicator of a watched list."""
+
+    __tablename__ = "ioc_alerts"
+    __table_args__ = (Index("ix_ioc_alerts_at", "at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    at: Mapped[str] = mapped_column(String, nullable=False)
+    list_id: Mapped[str] = mapped_column(String, ForeignKey("ioc_lists.id", ondelete="CASCADE"), nullable=False)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    value: Mapped[str] = mapped_column(String(1024), nullable=False)
+    seen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())

@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
-import { Boxes, Bug, FolderOpen, Link2, Mail, Network, Plus, Tag } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Boxes, Bug, Download, FolderOpen, Link2, Mail, Network, Plus, Tag, Upload } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { ARTIFACT_KINDS, artifactMeta, artifactPath, verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatRelative } from '../../lib/time.js'
 import { Badge, Button, MicroSkull } from '../ui/index.js'
 import { useItemMenu } from '../menu/useRowMenu.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
@@ -35,6 +37,8 @@ function Chip({ active, onClick, children }) {
  */
 export default function ArtifactsPanel({ width, onNewAnalysis }) {
   const { artifacts, counts, filters, setFilters, loading, error, currentId, openArtifact, refresh } = useArtifacts()
+  const { currentUser } = useAuth()
+  const [transfer, setTransfer] = useState(null) // { mode: 'export', ids, label } | { mode: 'import' }
   // No incident here: the menu offers what an artifact offers on its own.
   const menu = useItemMenu(null)
   const artifactMenu = (event, artifact) =>
@@ -47,6 +51,11 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
       ],
       actions: [
         { label: 'Open', icon: FolderOpen, onSelect: () => openArtifact(artifact.id) },
+        {
+          label: 'Export…',
+          icon: Download,
+          onSelect: () => setTransfer({ mode: 'export', ids: [artifact.id], label: artifact.name }),
+        },
         ...artifact.tags.slice(0, 5).map((tag) => ({
           label: `Filter by #${tag}`,
           icon: Tag,
@@ -165,6 +174,33 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
           </ul>
         )}
       </nav>
+      <div className="flex gap-2 border-t border-line px-3 py-2.5">
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={Download}
+          className="min-w-0 flex-1"
+          disabled={artifacts.length === 0}
+          title="Export the artifacts listed above"
+          onClick={() =>
+            setTransfer({ mode: 'export', ids: artifacts.slice(0, 500).map((a) => a.id), label: artifacts[0].name })
+          }
+        >
+          Export {artifacts.length > 0 ? Math.min(artifacts.length, 500) : ''}
+        </Button>
+        {currentUser?.role === 'admin' && (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={Upload}
+            className="min-w-0 flex-1"
+            onClick={() => setTransfer({ mode: 'import' })}
+          >
+            Import
+          </Button>
+        )}
+      </div>
+      <ArtifactTransferDialog request={transfer} onClose={() => setTransfer(null)} onImported={refresh} />
     </aside>
   )
 }

@@ -202,6 +202,12 @@
           default), so nothing on the way, nor the workstation's antivirus, runs or deletes them by accident.
         </li>
         <li>
+          <strong>An export of artifacts</strong> holds no file unless the analyst chooses so at that export; the files
+          then sit in an AES-encrypted zip inside the archive (password <code>infected</code>). Treat such an archive as
+          live malware. An <strong>import</strong> takes an admin, stores a file only when its SHA-256 is the one its
+          artifact is named by, checks every id against the artifact id format, and runs nothing.
+        </li>
+        <li>
           The app's pages carry a <strong>Content-Security-Policy</strong> that lets only its own scripts run and lets
           it talk to its own origin only, with <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>,
           <code>Referrer-Policy</code> and HSTS. The session cookie is <code>HttpOnly</code>, <code>Secure</code> and

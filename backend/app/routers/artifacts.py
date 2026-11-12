@@ -19,7 +19,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifacts, urlscan
+from .. import artifact_transfer, artifacts, urlscan
+from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import (
     Artifact,
@@ -32,7 +33,7 @@ from ..core.models import (
     Sample,
     UrlScan,
 )
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, admin_principal, now_iso, principal, writer_principal
 from ..network import service as captures
 from ..workers import previews
 from . import mails as mail_routes
@@ -452,3 +453,96 @@ def remove_incident_artifacts(db: OrmSession, incident_id: str) -> None:
             urlscan.delete(db, db.get(UrlScan, row.ref))
         else:
             mail_routes.delete_mail_data(db, db.get(Mail, row.ref))
+
+
+# --------------------------------------------------------------------------- #
+# Export and import                                                           #
+# --------------------------------------------------------------------------- #
+class ExportIn(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=artifact_transfer.MAX_ARTIFACTS)
+    # The original files are live malware: asked for at each export, never the default.
+    files: bool = False
+
+
+@router.post("/artifacts/export")
+def export_artifacts(
+    body: ExportIn,
+    caller: Principal = Depends(principal),
+    db: OrmSession = Depends(get_db),
+):
+    """Download artifacts as a zip another Nik can import: the registry entries
+    and the analyses, and with ``files`` the original files too, inside an
+    AES-encrypted ``files.zip`` (password ``infected``)."""
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    rows = [row for row in (db.get(Artifact, artifact_id) for artifact_id in dict.fromkeys(body.ids)) if row]
+    if not rows:
+        raise HTTPException(status_code=404, detail="No such artifact")
+    if body.files and sum(row.size or 0 for row in rows) > settings.ARTIFACT_MAX_MB * 2 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail=f"These files exceed {settings.ARTIFACT_MAX_MB * 2} MB together: export fewer at a time.",
+        )
+    now = now_iso()
+    path = artifact_transfer.export_archive(db, rows, body.files, now, request_version())
+    _audit(
+        db,
+        caller,
+        "artifact.export",
+        f"Exported {len(rows)} artifact(s) {'with their files' if body.files else 'without the files'}",
+    )
+    db.commit()
+    name = f"nik-artifacts-{now[:10]}{'-with-files' if body.files else ''}.zip"
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=name,
+        background=BackgroundTask(lambda: path.unlink(missing_ok=True)),
+    )
+
+
+def request_version() -> str:
+    from ..main import app
+
+    return app.version
+
+
+@router.post("/artifacts/import")
+async def import_artifacts(
+    file: UploadFile = File(...),
+    caller: Principal = Depends(admin_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Add the artifacts of an export that this server does not have
+    (**admin**). A file is stored only when its SHA-256 is the one its
+    artifact is named by; nothing is run and no analysis is started."""
+    import tempfile
+    from pathlib import Path
+
+    limit = settings.ARTIFACT_MAX_MB * 2 * 1024 * 1024
+    handle = tempfile.NamedTemporaryFile(prefix="nik-import-", suffix=".zip", delete=False)
+    path = Path(handle.name)
+    try:
+        size = 0
+        with handle:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(status_code=413, detail=f"The archive exceeds {limit // (1024 * 1024)} MB.")
+                handle.write(chunk)
+        try:
+            result = await run_in_threadpool(artifact_transfer.import_archive, db, path, caller.actor)
+        except artifact_transfer.TransferError as exc:
+            db.rollback()
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+    finally:
+        path.unlink(missing_ok=True)
+    _audit(
+        db,
+        caller,
+        "artifact.import",
+        f"Imported {result['added']} artifact(s); {result['existing']} already here, {len(result['skipped'])} skipped",
+    )
+    db.commit()
+    return result

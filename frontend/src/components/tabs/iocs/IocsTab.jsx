@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Crosshair, Download, Link2, RefreshCw, ShieldCheck, Share2 } from 'lucide-react'
+import { Crosshair, Download, Link2, ListPlus, RefreshCw, ShieldCheck, Share2 } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { IocValue, useIocLookup } from '../../../context/IocLookupContext.jsx'
+import { useIocLibrary } from '../../../context/IocLibraryContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
 import { IOC_TYPES, sourceLabel } from '../../../domain/iocs.js'
 import { reputationRank, verdictMeta } from '../../../domain/enrichment.js'
+import { verdictRowClass } from '../../../domain/iocLibrary.js'
 import { formatDateTime } from '../../../lib/time.js'
 
 /*
@@ -115,9 +117,9 @@ const BASE_COLUMNS = [
     sortable: true,
     render: (row) =>
       row.otherIncidents > 0 ? (
-        <Badge color="red" title="Also seen in other incidents: click the value to see where">
+        <span className="font-mono tabular-nums" title="Also seen in other incidents: click the value to see where">
           {row.otherIncidents}
-        </Badge>
+        </span>
       ) : (
         <span className="text-fg-muted">—</span>
       ),
@@ -126,6 +128,7 @@ const BASE_COLUMNS = [
 
 export default function IocsTab({ incident }) {
   const { openAllowlist, iocMenu } = useIocLookup()
+  const { openCheck, openListForm, version: libraryVersion } = useIocLibrary()
   const { iocAllowlist } = useSettings()
   const columns = useMemo(
     () => [
@@ -175,7 +178,8 @@ export default function IocsTab({ incident }) {
       controller.abort()
     }
     // The allowlist changes what is hidden: reload once Settings has saved it.
-  }, [load, incident.updatedAt, iocAllowlist])
+    // …and when a bulk check brought new answers.
+  }, [load, incident.updatedAt, iocAllowlist, libraryVersion])
 
   const visible = useMemo(
     () =>
@@ -240,8 +244,26 @@ export default function IocsTab({ incident }) {
         title="Indicators of compromise"
         icon={Crosshair}
         actions={
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-fg-muted">Export</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              size="xs"
+              disabled={state.iocs.length === 0}
+              onClick={() => openCheck({ incident: incident.id }, incident.name)}
+            >
+              Check all {state.iocs.length}
+            </Button>
+            <Button
+              size="xs"
+              variant="secondary"
+              icon={ListPlus}
+              disabled={state.iocs.length === 0}
+              onClick={() =>
+                openListForm({ scope: { incident: incident.id }, count: state.iocs.length, name: incident.name })
+              }
+            >
+              Save as a list
+            </Button>
+            <span className="ml-2 text-xs text-fg-muted">Export</span>
             {EXPORTS.map(({ format, label }) => (
               <a
                 key={format}
@@ -274,8 +296,8 @@ export default function IocsTab({ incident }) {
             data={visible}
             searchKeys={['value', 'type']}
             searchPlaceholder="Search indicators…"
-            defaultSort={{ key: 'otherIncidents', dir: 'desc' }}
-            rowClassName={(row) => (row.otherIncidents > 0 ? 'bg-high-soft border-l-2 border-l-high-line' : '')}
+            defaultSort={{ key: 'reputation', dir: 'desc' }}
+            rowClassName={(row) => verdictRowClass(row.reputation?.verdict)}
             toolbar={toolbar}
             emptyMessage={state.loading ? 'Loading…' : 'No indicators match the current filters'}
           />

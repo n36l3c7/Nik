@@ -139,6 +139,11 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
   await expect(dialog.getByRole('button', { name: 'Check now' })).toBeVisible()
   await expect(dialog.getByRole('region', { name: 'Sources' })).toContainText('Not checked yet')
   await expect(dialog).toContainText('not checked')
+  await page.keyboard.press('Escape')
+  // Seen in another incident is a plain number now: only the verdict colours a row.
+  await expect(page.getByRole('button', { name: /^Check all \d+$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save as a list' })).toBeVisible()
+  await attacker.click()
   // The window becomes a page with its own address, and goes back to where it was opened.
   const before = new URL(page.url()).pathname
   await dialog.getByRole('button', { name: 'Open as a page' }).click()
@@ -623,6 +628,29 @@ test('a file is analysed on its own, tagged, then linked to the incident', async
   await page.getByRole('button', { name: 'Incidents', exact: true }).click()
 })
 
+test('an artifact is exported: the analyses, and the files only when asked', async () => {
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel.getByRole('button', { name: /^Export \d+$/ }).click()
+  const dialog = page.getByRole('dialog', { name: /^Export / })
+  // The original files are live malware: not in the archive unless chosen, each time.
+  await expect(dialog.getByRole('radio', { name: /^Analyses only/ })).toBeChecked()
+  await expect(dialog).not.toContainText('live malware')
+  await dialog.getByRole('radio', { name: /^Analyses and the original files/ }).check()
+  await expect(dialog).toContainText('password infected')
+  await expect(dialog).toContainText('live malware')
+  await dialog.getByRole('radio', { name: /^Analyses only/ }).check()
+  const download = page.waitForEvent('download')
+  await dialog.getByRole('button', { name: 'Download the archive' }).click()
+  expect((await download).suggestedFilename()).toMatch(/^nik-artifacts-\d{4}-\d{2}-\d{2}\.zip$/)
+  await expect(dialog).toBeHidden()
+  // An admin can bring an archive in.
+  await panel.getByRole('button', { name: 'Import' }).click()
+  await expect(page.getByRole('dialog', { name: 'Import artifacts' })).toContainText('Nothing is run')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+})
+
 test('an address is scanned on its own, then linked to the incident', async () => {
   if (process.env.E2E_BROWSER_URL) test.setTimeout(180_000)
   await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
@@ -739,6 +767,99 @@ test('pasted text is recognised: an address to scan, an indicator to look up', a
   await page.keyboard.press('Escape')
 })
 
+test('the IoC library: paste many, group them in a list, export with chosen fields, plan a bulk check', async () => {
+  const paste = (text) =>
+    page.evaluate((value) => {
+      const data = new DataTransfer()
+      data.setData('text/plain', value)
+      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+    }, text)
+
+  // Several values pasted anywhere open "Add indicators" with what Nik read.
+  await paste('203.0.113[.]77\nhxxps://nik-e2e-list[.]invalid/get.php\nnot an indicator\n10.12.0.4')
+  const add = page.getByRole('dialog', { name: 'Add indicators' })
+  const found = add.getByRole('region', { name: 'What Nik found' })
+  await expect(found).toContainText('New indicators 3')
+  await expect(found).toContainText('Not recognised show1')
+  await expect(add.getByLabel('Indicators', { exact: true })).toHaveValue(/203\.0\.113\[\.\]77/)
+  // A list is asked for, never assumed.
+  await expect(add.getByRole('combobox').first()).toHaveValue('none')
+  await add.getByRole('combobox').first().selectOption('new')
+  await add.getByLabel('New list name').fill('E2E wave')
+  await add.getByLabel('Check them when saved').uncheck()
+  await add.getByRole('button', { name: 'Save 3 indicators' }).click()
+
+  // The list opens on its own page, with an address to share.
+  await expect(page).toHaveURL(/\/iocs\/lists\/[0-9a-f]{32}$/)
+  const table = page.getByRole('table', { name: 'Indicators' })
+  await expect(table.locator('tbody tr')).toHaveCount(3)
+  await expect(table).toContainText('https://nik-e2e-list.invalid/get.php')
+  await expect(table.locator('tbody tr', { hasText: '10.12.0.4' })).toContainText('never sent out')
+  const panel = page.getByRole('complementary', { name: 'IoCs panel' })
+  await expect(panel.getByRole('button', { name: /E2E wave/ })).toHaveAttribute('aria-current', 'true')
+  const listUrl = page.url()
+
+  // Columns sort on the server.
+  await table.getByRole('button', { name: 'Value' }).click()
+  await expect(table.locator('tbody tr').first()).toContainText('10.12.0.4')
+
+  // Export: the main fields are ticked; the preview follows the choice.
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  const exportDialog = page.getByRole('dialog', { name: /^Export · E2E wave/ })
+  const preview = exportDialog.getByLabel('Export preview')
+  await expect(preview).toContainText('type,value,verdict,score,tags,first_seen')
+  await exportDialog.getByLabel('Lists').check()
+  await exportDialog.getByLabel('Defang values').check()
+  await expect(preview).toContainText('first_seen,lists')
+  await expect(preview).toContainText('203[.]0[.]113[.]77')
+  await exportDialog.getByRole('radio', { name: /^Text/ }).check({ force: true })
+  await expect(preview).not.toContainText('first_seen')
+  const download = page.waitForEvent('download')
+  await exportDialog.getByRole('button', { name: /^Download e2e-wave\.txt/ }).click()
+  expect((await download).suggestedFilename()).toBe('e2e-wave.txt')
+
+  // Bulk check: what it costs is shown before anything is asked.
+  await page.getByRole('button', { name: 'Check all 3' }).click()
+  const check = page.getByRole('dialog', { name: /^Check 3 indicators/ })
+  await expect(check).toContainText('Never sent out')
+  await expect(check.getByRole('button', { name: 'Start' })).toBeVisible()
+  await check.getByRole('button', { name: 'Cancel' }).click()
+
+  // The whole library: the incident's indicators are there too, tinted by verdict only.
+  await panel.getByRole('button', { name: /^All indicators/ }).click()
+  await expect(page).toHaveURL(/\/iocs$/)
+  await page.getByLabel('Filter indicators').fill('185.220.101.47')
+  const attacker = table.locator('tbody tr', { hasText: '185.220.101.47' }).first()
+  await expect(attacker).toContainText('incident')
+  await expect(attacker).not.toHaveClass(/bg-high-soft/)
+
+  // A file of indicators dropped anywhere is read as one, and can join a list.
+  const transfer = await page.evaluateHandle(() => {
+    const data = new DataTransfer()
+    data.items.add(new File(['type,value,tags\nip,198.51.100.23,c2\ndomain,nik-e2e-feed.invalid,c2\n'], 'feed.csv'))
+    return data
+  })
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  await expect(add).toContainText('feed.csv')
+  await expect(found).toContainText('CSV')
+  await expect(found).toContainText('New indicators 2')
+  await add.getByRole('combobox').first().selectOption({ label: 'Yes: add to "E2E wave"' })
+  await add.getByLabel('Check them when saved').uncheck()
+  await add.getByRole('button', { name: 'Save 2 indicators' }).click()
+  await expect(page).toHaveURL(listUrl)
+  await expect(table.locator('tbody tr')).toHaveCount(5)
+  await expect(table.locator('tbody tr', { hasText: '198.51.100.23' })).toContainText('import')
+
+  // The link alone opens the list; an incident leaves the library.
+  await page.reload()
+  await expect(page.getByRole('heading', { name: /E2E wave/ })).toBeVisible({ timeout: 20_000 })
+  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
+  await expect(page).toHaveURL(/\/incident\//)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
 test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
   const panel = page.locator('aside[aria-label="Incidents panel"]')
   const list = panel.locator('nav[aria-label="Incidents"]')
@@ -785,6 +906,8 @@ test('keyboard shortcuts: F flags the row under the pointer, C comments, ? lists
   await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
   const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
   const flag = sample.getByLabel('Flagged')
+  // The tab may have just been drawn: read the flag once the sample is there.
+  await expect(sample).toBeVisible()
   const before = await flag.count()
 
   // F toggles the flag of the row under the pointer, as its menu would.

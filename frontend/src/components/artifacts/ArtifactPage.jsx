@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, FolderOpen, FolderPlus, Link2, Plus, Tag, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Boxes, Download, FolderOpen, FolderPlus, Link2, Plus, Tag, Trash2, X } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -8,6 +8,7 @@ import { artifactKind, parseTags, standaloneIncident, verdictBadge } from '../..
 import { formatDateTime, anyToMs } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
+import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
 
 /*
@@ -80,6 +81,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
   const menu = useItemMenu(null)
 
   const [linkOpen, setLinkOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [linkTarget, setLinkTarget] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [tagsDraft, setTagsDraft] = useState(null) // null = not editing
@@ -211,6 +213,9 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           </Button>
           <Button size="sm" icon={FolderPlus} disabled={!canLink} onClick={() => onNewIncident(artifact)}>
             New incident from this
+          </Button>
+          <Button variant="ghost" size="sm" icon={Download} onClick={() => setExportOpen(true)}>
+            Export
           </Button>
           <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)}>
             Delete
@@ -407,6 +412,11 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           </p>
         </div>
       </Modal>
+      <ArtifactTransferDialog
+        request={exportOpen ? { mode: 'export', ids: [artifact.id], label: artifact.name } : null}
+        onClose={() => setExportOpen(false)}
+        onImported={() => {}}
+      />
     </div>
   )
 }

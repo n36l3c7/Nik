@@ -346,8 +346,10 @@ def _iso_ms(value: Any) -> int | None:
         return None
 
 
-def reindex_incident(db: OrmSession, row: Incident) -> int:
-    """Replace the incident's index rows with what its document holds now."""
+def reindex_incident(db: OrmSession, row: Incident, alerts: bool = True) -> int:
+    """Replace the incident's index rows with what its document holds now.
+    With ``alerts``, an indicator of a watched list that the incident newly
+    holds is recorded and announced (see ``ioc_library.watch_hits``)."""
     doc = row.doc or {}
     refs = ((doc.get("data") or {}).get("malware") or {}).get("samples") or []
     digests = [r.get("sha256") for r in refs if isinstance(r, dict) and r.get("sha256")]
@@ -376,6 +378,11 @@ def reindex_incident(db: OrmSession, row: Incident) -> int:
     urls = {u.id: u for u in db.scalars(select(UrlScan).where(UrlScan.id.in_(scan_ids)))} if scan_ids else {}
     artifacts.sync_links(db, row, samples, mails, captures, names, urls)
     items = extract(doc, samples, mails, captures, urls)
+    before = (
+        {(t, v) for t, v in db.execute(select(IocEntry.type, IocEntry.value).where(IocEntry.incident_id == row.id))}
+        if alerts
+        else set()
+    )
     db.execute(delete(IocEntry).where(IocEntry.incident_id == row.id))
     db.add_all(
         IocEntry(
@@ -389,14 +396,36 @@ def reindex_incident(db: OrmSession, row: Incident) -> int:
         )
         for (kind, value), item in items.items()
     )
+    if alerts:
+        _announce(db, row, before, set(items))
     return len(items)
+
+
+def _announce(db: OrmSession, row: Incident, before: set, after: set) -> None:
+    from .core import audit
+    from .core.security import now_iso
+    from .events import emit_detached
+    from .ioc_library import watch_hits
+
+    hits = watch_hits(db, row, before, after, now_iso())
+    for hit in hits[:20]:
+        audit.record(
+            db,
+            "nik",
+            "ioc.watch_hit",
+            f'{hit["type"]} {hit["value"]} of the watched list "{hit["list"]["name"]}" is in this incident',
+            row,
+            target=hit["value"],
+        )
+    if hits:
+        emit_detached(db, "ioc.watch_hit", {"incident": hits[0]["incident"], "hits": hits[:200]})
 
 
 def reindex_all(db: OrmSession) -> int:
     """Rebuild the whole index (backup restore)."""
     count = 0
     for row in db.scalars(select(Incident)):
-        count += reindex_incident(db, row)
+        count += reindex_incident(db, row, alerts=False)
     return count
 
 
@@ -415,7 +444,7 @@ def backfill(session_factory) -> int:
             if row is None:
                 continue
             try:
-                indexed += reindex_incident(db, row)
+                indexed += reindex_incident(db, row, alerts=False)
                 db.commit()
             except Exception:  # noqa: BLE001 - another worker got there first
                 db.rollback()
@@ -564,7 +593,7 @@ def stix_bundle(incident: dict, iocs: list[dict], now: str) -> dict:
                 "created": created,
                 "modified": created,
                 "name": f"{ioc['type']}: {ioc['value']}"[:250],
-                "description": f"Seen in {', '.join(ioc['sources'])} ({ioc['count']} times).",
+                "description": ioc.get("description") or f"Seen in {', '.join(ioc['sources'])} ({ioc['count']} times).",
                 "indicator_types": ["malicious-activity"],
                 "pattern": _STIX_PATTERNS[ioc["type"]](value),
                 "pattern_type": "stix",
@@ -579,7 +608,7 @@ def stix_bundle(incident: dict, iocs: list[dict], now: str) -> dict:
         "created": created,
         "modified": created,
         "name": str(incident.get("name") or incident.get("id")),
-        "report_types": ["incident"],
+        "report_types": [str(incident.get("reportType") or "incident")],
         "published": created,
         "object_refs": [i["id"] for i in indicators] or [identity_id],
     }
@@ -606,13 +635,13 @@ def misp_event(incident: dict, iocs: list[dict], now: str) -> dict:
                 "category": category,
                 "value": ioc["value"],
                 "to_ids": True,
-                "comment": f"Seen in {', '.join(ioc['sources'])}"[:255],
+                "comment": str(ioc.get("description") or f"Seen in {', '.join(ioc['sources'])}")[:255],
                 "uuid": str(uuid.uuid5(_STIX_NAMESPACE, ioc["type"] + ":" + ioc["value"])),
             }
         )
     return {
         "Event": {
-            "info": f"Nik incident: {incident.get('name') or incident.get('id')}",
+            "info": str(incident.get("info") or f"Nik incident: {incident.get('name') or incident.get('id')}"),
             "date": now[:10],
             "threat_level_id": "2",
             "analysis": "1",
