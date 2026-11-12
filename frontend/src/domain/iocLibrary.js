@@ -32,9 +32,10 @@ export const QUICK_FILTERS = [
   { id: 'suspicious', label: 'Suspicious', count: 'suspicious', filters: { verdict: 'suspicious' } },
   { id: 'unchecked', label: 'Never checked', count: 'unchecked', filters: { verdict: 'none' } },
   { id: 'expired', label: 'Expired', count: 'expired', filters: { expired: true } },
+  { id: 'toAnalyse', label: 'Addresses to analyse', count: 'toAnalyse', filters: { analysis: 'none' } },
 ]
 
-export const EMPTY_FILTERS = { q: '', type: '', verdict: '', origin: '', expired: null }
+export const EMPTY_FILTERS = { q: '', type: '', verdict: '', origin: '', expired: null, analysis: '' }
 
 /** Query string of GET /api/iocs for the filters, the sort and the page. */
 export function libraryQuery({ filters = {}, list = null, sort = null, offset = 0, limit = 100 } = {}) {
@@ -43,6 +44,7 @@ export function libraryQuery({ filters = {}, list = null, sort = null, offset = 
   if (filters.type) params.set('type', filters.type)
   if (filters.verdict) params.set('verdict', filters.verdict)
   if (filters.origin) params.set('origin', filters.origin)
+  if (filters.analysis) params.set('analysis', filters.analysis)
   if (filters.expired === true || filters.expired === false) params.set('expired', String(filters.expired))
   if (list) params.set('list', list)
   if (sort?.key) {
@@ -58,13 +60,13 @@ export function libraryQuery({ filters = {}, list = null, sort = null, offset = 
 export function scopeFilters(filters = {}, list = null) {
   const out = {}
   if (filters.q?.trim()) out.q = filters.q.trim()
-  for (const key of ['type', 'verdict', 'origin']) if (filters[key]) out[key] = filters[key]
+  for (const key of ['type', 'verdict', 'origin', 'analysis']) if (filters[key]) out[key] = filters[key]
   if (filters.expired === true || filters.expired === false) out.expired = filters.expired
   if (list) out.list = list
   return out
 }
 
-export const ORIGIN_LABELS = { incident: 'incident', manual: 'by hand', import: 'import' }
+export const ORIGIN_LABELS = { incident: 'incident', artifact: 'artifact', manual: 'by hand', import: 'import' }
 
 export const TLP_OPTIONS = [
   { value: 'clear', label: 'TLP:CLEAR' },

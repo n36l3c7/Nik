@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-11-12
+
+### Added
+
+- **Indicators and artifacts lead to each other.** An indicator is a value
+  and what the sources say about it (its *Reputation*); an artifact is what
+  Nik saw when it analysed something (its *Analysis*). The two are now named
+  that way everywhere and one click apart.
+- **Analyse from the right-click menu.** On a URL, *Analyse URL* has the
+  isolated browser visit it; on a domain, *Analyse as URL* visits
+  `https://<domain>/`. When Nik already analysed the value (an address, or a
+  file or e-mail by its hash) the menu says *Open the analysis*, with its
+  verdict, and *Scan again* for an address. Nothing is visited without the
+  click, and an address already analysed is not visited twice.
+- **Analysed by Nik** on the indicator's page: the analysis of that value
+  (verdict, screenshot, findings, scripts) with *Open the analysis* and *Scan
+  again*, or the offer to analyse an address not analysed yet.
+- **Nik's analysis is one of the sources.** A scan that concludes *phishing*
+  or a file a high-severity rule matches counts in the indicator's score as
+  malicious (weight 3, the highest); a suspicious one as suspicious. A clean
+  scan is no judgement and leaves the score alone. For a whole domain, a page
+  on it counts as suspicious at most.
+- **As an indicator** on the artifact's page: the value the artifact is the
+  analysis of (a file's or an e-mail's SHA-256, a scanned address), its
+  reputation, and *Check reputation*.
+- **Seen in** links each source to the artifact it comes from, and lists the
+  artifacts analysed on their own that hold the value.
+- **IoC library**: the indicators of artifacts not linked to any incident are
+  in the library (origin *artifact*); an *Analysis* column shows what Nik saw
+  and opens it; *Addresses to analyse* finds the URLs and domains not
+  analysed yet; *Analyse addresses* on a selection visits them one after the
+  other, 20 at most, after showing what will be visited and what is left out.
+- API: `analysis` in `GET /api/enrichment`; `indicator` in
+  `GET /api/artifacts/{id}`; `artifacts` and `sourceArtifacts` in
+  `GET /api/iocs/lookup`; `analysis`, `canAnalyse`, `artifacts` and the
+  `analysis` filter in `GET /api/iocs`; `POST /api/iocs/analyse`.
+
+### Changed
+
+- The verdict card of an indicator is titled *Reputation · what the sources
+  say*; the artifact's own verdict is shown as *Analysis*.
+- *Remove* in the IoC library keeps an indicator an artifact still holds, as
+  it keeps one an incident holds.
+
 ## [3.6.0] - 2026-11-12
 
 ### Added
@@ -1680,7 +1724,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/n36l3c7/Nik/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/n36l3c7/Nik/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/n36l3c7/Nik/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/n36l3c7/Nik/compare/v3.3.3...v3.4.0

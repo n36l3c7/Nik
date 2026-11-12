@@ -19,9 +19,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import analysis_links
 from ..core import vault
 from ..core.db import get_db
-from ..core.models import AuditEntry, Enrichment, IntegrationKey
+from ..core.models import AuditEntry, Enrichment, IntegrationKey, UrlScan
 from ..core.security import Principal, admin_principal, now_iso, principal, writer_principal
 from ..enrichment import service
 from ..enrichment.providers import BY_ID, PROVIDERS
@@ -204,6 +205,27 @@ def delete_key(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _analysis(db: OrmSession, row) -> dict:
+    """An artifact as the indicator's page shows it: its verdict, and for a
+    scanned address what was found."""
+    out = analysis_links.brief(row)
+    if row.kind == "url":
+        scan = db.get(UrlScan, row.ref)
+        result = (scan.result or {}) if scan is not None else {}
+        scripts = result.get("scripts") or []
+        out.update(
+            status=scan.status if scan is not None else "",
+            url=scan.url if scan is not None else "",
+            scannedAt=scan.scanned_at if scan is not None else None,
+            finalUrl=result.get("finalUrl"),
+            findings=[str(f.get("text")) for f in (result.get("findings") or [])[:4]],
+            scripts=len(scripts),
+            scriptsFlagged=sum(1 for s in scripts if s.get("findings")),
+            screenshot=bool(result.get("screenshot")),
+        )
+    return out
+
+
 def _detail(db: OrmSession, kind: str, value: str, shared: dict, reason: str | None) -> dict:
     """What the indicator's page shows: each provider's answer with its
     history, the weighted verdict, and what could still be asked."""
@@ -211,6 +233,11 @@ def _detail(db: OrmSession, kind: str, value: str, shared: dict, reason: str | N
     available = [p.id for p in PROVIDERS if p.supports(kind) and service.usable(p, cfg, all_keys)]
     results = service.results(db, kind, value, cfg)
     answered = {r["provider"] for r in results}
+    analyses = analysis_links.analyses_for(db, [(kind, value)]).get((kind, value), [])
+    flagged = analysis_links.verdicts(db, [(kind, value)]).get((kind, value))
+    answers = [(r["provider"], r["verdict"]) for r in results if r["status"] == "done"]
+    if flagged:
+        answers.append((service.NIK, flagged))
     stale = [r["provider"] for r in results if r["expired"] and r["provider"] in available]
     return {
         "type": kind,
@@ -219,7 +246,17 @@ def _detail(db: OrmSession, kind: str, value: str, shared: dict, reason: str | N
         "providers": available,
         "notAsked": [{"provider": p, "label": BY_ID[p].label} for p in available if p not in answered],
         "results": results,
-        "summary": service.overall((r["provider"], r["verdict"]) for r in results if r["status"] == "done"),
+        "summary": service.overall(answers),
+        # What Nik saw when it analysed this value itself (an artifact), next
+        # to what the sources say. ``verdict`` is the analysis in the words of
+        # a reputation when it flags the value: it counts among the sources.
+        "analysis": {
+            "label": analysis_links.LABEL,
+            "weight": service.NIK_WEIGHT,
+            "verdict": flagged,
+            "canAnalyse": kind in ("url", "domain") and analysis_links.scan_id_of(value) is not None,
+            "artifacts": [_analysis(db, row) for row in analyses[:5]],
+        },
         "retentionDays": cfg["retentionDays"][service.retention_group(kind)],
         # Expired answers the app should ask again now (Settings: refresh expired answers).
         "refresh": stale if cfg["refreshExpired"] and not reason else [],

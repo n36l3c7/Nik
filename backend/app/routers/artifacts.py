@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifact_transfer, artifacts, urlscan
+from .. import analysis_links, artifact_transfer, artifacts, urlscan
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import (
@@ -109,7 +109,11 @@ def _summary(row: Artifact, incidents: list[dict[str, str]]) -> dict[str, Any]:
 
 
 def _one(db: OrmSession, row: Artifact) -> dict[str, Any]:
-    return _summary(row, _incidents_of(db, [row.id])[row.id])
+    # ``indicator``: the value this artifact is the analysis of (see analysis_links).
+    return {
+        **_summary(row, _incidents_of(db, [row.id])[row.id]),
+        "indicator": analysis_links.indicator_of(db, row),
+    }
 
 
 def _related(db: OrmSession, row: Artifact) -> dict[str, list[dict[str, Any]]]:

@@ -3,6 +3,7 @@ import {
   BellRing,
   Download,
   Eye,
+  Globe,
   Link2,
   ListPlus,
   Pencil,
@@ -19,7 +20,8 @@ import { useIocLibrary } from '../../context/IocLibraryContext.jsx'
 import { IocValue } from '../../context/IocLookupContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { verdictMeta } from '../../domain/enrichment.js'
+import { analysisColor, analysisLabel, verdictMeta } from '../../domain/enrichment.js'
+import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { IOC_TYPES } from '../../domain/iocs.js'
 import {
   EMPTY_FILTERS,
@@ -52,6 +54,7 @@ const COLUMNS = [
   { key: 'value', label: 'Value' },
   { key: 'verdict', label: 'Verdict' },
   { key: 'score', label: 'Score' },
+  { key: null, label: 'Analysis' },
   { key: null, label: 'Lists' },
   { key: 'incidents', label: 'Incidents' },
   { key: 'origin', label: 'Origin' },
@@ -160,6 +163,8 @@ export default function IocLibraryPage({ onOpenIncident }) {
     library
   const { showToast } = useToast()
   const { currentUser } = useAuth()
+  const { openArtifact, refresh: refreshArtifacts } = useArtifacts()
+  const [analysing, setAnalysing] = useState(null) // the plan of POST /iocs/analyse (dryRun)
   const listId = view?.kind === 'list' ? view.id : null
   const list = listId ? (lists.find((entry) => entry.id === listId) ?? null) : null
 
@@ -277,6 +282,23 @@ export default function IocLibraryPage({ onOpenIncident }) {
       () => api.post('/iocs/remove', scope()),
       (res) => `${res.removed} removed.${res.kept ? ` ${res.kept} stay: an incident holds them.` : ''}`,
     )
+  // Addresses are visited only after the analyst has seen what will be visited.
+  const planAnalysis = async () => {
+    try {
+      setAnalysing({ ...(await api.post('/iocs/analyse', { scope: scope(), dryRun: true })), scope: scope() })
+    } catch (err) {
+      showToast({ message: err.message })
+    }
+  }
+  const startAnalysis = async () => {
+    const plan = analysing
+    setAnalysing(null)
+    await act(
+      () => api.post('/iocs/analyse', { scope: plan.scope }),
+      (res) => `The isolated browser is visiting ${res.started.length} address${res.started.length === 1 ? '' : 'es'}.`,
+    )
+    refreshArtifacts()
+  }
   const stop = (check) => api.post(`/iocs/checks/${check.id}/stop`, {}).then(refresh)
   const feedUrl = list ? `${window.location.origin}/api/iocs/lists/${list.id}/feed` : ''
   const canDelete = list && (currentUser?.role === 'admin' || list.createdBy === currentUser?.username)
@@ -428,8 +450,20 @@ export default function IocLibraryPage({ onOpenIncident }) {
             options={[
               { value: '', label: 'Any origin' },
               { value: 'incident', label: 'From an incident' },
+              { value: 'artifact', label: 'From an artifact' },
               { value: 'manual', label: 'Added by hand' },
               { value: 'import', label: 'Imported' },
+            ]}
+          />
+        )}
+        {!quickFilters.analysis && (
+          <Select
+            value={filters.analysis}
+            onChange={(analysis) => setFilters({ ...filters, analysis })}
+            options={[
+              { value: '', label: 'Analysed or not' },
+              { value: 'done', label: 'Analysed by Nik' },
+              { value: 'none', label: 'Addresses to analyse' },
             ]}
           />
         )}
@@ -476,6 +510,15 @@ export default function IocLibraryPage({ onOpenIncident }) {
                   .map((entry) => ({ value: entry.id, label: entry.name })),
               ]}
             />
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Globe}
+              title="Have the isolated browser visit the addresses not analysed yet"
+              onClick={planAnalysis}
+            >
+              Analyse addresses
+            </Button>
             <Button
               size="sm"
               variant="secondary"
@@ -595,6 +638,23 @@ export default function IocLibraryPage({ onOpenIncident }) {
                       {row.score ?? <span className="text-fg-subtle">—</span>}
                     </td>
                     <td className="px-2 py-1.5">
+                      {row.analysis ? (
+                        // What Nik saw when it analysed the value itself.
+                        <button
+                          type="button"
+                          onClick={() => openArtifact(row.analysis.id)}
+                          title="Open the analysis"
+                          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          <Badge color={analysisColor(row.analysis)}>{analysisLabel(row.analysis)}</Badge>
+                        </button>
+                      ) : row.canAnalyse ? (
+                        <span className="text-fg-subtle">not analysed</span>
+                      ) : (
+                        <span className="text-fg-subtle">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5">
                       <span className="flex flex-wrap gap-1">
                         {row.lists.length === 0 && <span className="text-fg-subtle">—</span>}
                         {row.lists.map((entry) => (
@@ -684,6 +744,55 @@ export default function IocLibraryPage({ onOpenIncident }) {
         }
       >
         <p>{confirm?.message}</p>
+      </Modal>
+      <Modal
+        open={Boolean(analysing)}
+        onClose={() => setAnalysing(null)}
+        title="Analyse addresses"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAnalysing(null)}>
+              Cancel
+            </Button>
+            <Button icon={Globe} disabled={!analysing?.visit.length} onClick={startAnalysis}>
+              Visit {analysing?.visit.length ?? 0} {analysing?.visit.length === 1 ? 'address' : 'addresses'}
+            </Button>
+          </>
+        }
+      >
+        {analysing && (
+          <div className="space-y-3">
+            <p>
+              The isolated browser will visit <b>{analysing.visit.length}</b>{' '}
+              {analysing.visit.length === 1 ? 'address' : 'addresses'}, one after the other. It types and submits
+              nothing. A visit is seen by the site.
+            </p>
+            {analysing.visit.length > 0 && (
+              <ul className="max-h-32 overflow-y-auto border border-line bg-canvas p-2 font-mono text-xs">
+                {analysing.visit.map((url) => (
+                  <li key={url} className="break-all">
+                    {url}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {analysing.skipped.length > 0 && (
+              <details className="text-sm text-fg-muted">
+                <summary className="cursor-pointer">
+                  {analysing.skipped.length} left out (analysed already, not an address, never visited)
+                </summary>
+                <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-xs">
+                  {analysing.skipped.map((item) => (
+                    <li key={item.value} className="break-all">
+                      {item.value}: {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            <p className="text-xs text-fg-subtle">At most {analysing.max} addresses at a time.</p>
+          </div>
+        )}
       </Modal>
       <Modal open={listMenu && Boolean(list)} onClose={() => setListMenu(false)} title="Feed of the list">
         <div className="space-y-3">

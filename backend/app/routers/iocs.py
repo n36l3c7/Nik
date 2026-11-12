@@ -19,8 +19,9 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import analysis_links
 from ..core.db import get_db
-from ..core.models import AuditEntry, Incident, IocEntry
+from ..core.models import Artifact, ArtifactLink, AuditEntry, Incident, IocEntry, UrlScan
 from ..core.security import Principal, now_iso, principal
 from ..enrichment.service import summaries
 from ..iocs import TYPES, Allowlist, incident_iocs, misp_event, normalize, stix_bundle
@@ -59,6 +60,37 @@ def listincident_iocs(
     return {"iocs": iocs, "total": len(iocs)}
 
 
+def _source_links(db: OrmSession, incident_ids: list[str]) -> dict[str, dict[str, str]]:
+    """``incident -> {source label -> artifact id}``: a source such as
+    ``sample:invoice.exe``, ``mail:…``, ``network:…`` or ``url:host`` names an
+    artifact of that incident; the label is matched to the artifact's name."""
+    out: dict[str, dict[str, str]] = {incident: {} for incident in incident_ids}
+    if not incident_ids:
+        return out
+    rows = db.execute(
+        select(ArtifactLink.incident_id, Artifact)
+        .join(Artifact, Artifact.id == ArtifactLink.artifact_id)
+        .where(ArtifactLink.incident_id.in_(incident_ids))
+    ).all()
+    prefixes = {"file": "sample", "mail": "mail", "pcap": "network", "url": "url"}
+    for incident_id, artifact in rows:
+        names = {artifact.name, artifact.ref[:12], artifact.ref}
+        if artifact.kind == "url":
+            scan = db.get(UrlScan, artifact.ref)
+            names.add(scan.host if scan is not None else "")
+        for name in names - {""}:
+            out[incident_id].setdefault(f"{prefixes[artifact.kind]}:{name}", artifact.id)
+    doc_names = db.execute(select(Incident.id, Incident.doc).where(Incident.id.in_(incident_ids))).all()
+    for incident_id, doc in doc_names:
+        data = (doc or {}).get("data") or {}
+        refs = [("sample", "file", r) for r in (data.get("malware") or {}).get("samples") or []]
+        refs += [("mail", "mail", r) for r in (data.get("mail") or {}).get("messages") or []]
+        for prefix, kind, ref in refs:
+            if isinstance(ref, dict) and ref.get("sha256") and ref.get("fileName"):
+                out[incident_id].setdefault(f"{prefix}:{ref['fileName']}", f"{kind}-{ref['sha256']}")
+    return out
+
+
 @router.get("/iocs/lookup")
 def lookup_ioc(
     type: Literal["ip", "domain", "url", "email", "md5", "sha1", "sha256"] = Query(...),
@@ -76,10 +108,13 @@ def lookup_ioc(
         .where(IocEntry.type == type, IocEntry.value == lookup)
         .order_by(Incident.updated_at.desc())
     ).all()
+    links = _source_links(db, [entry.incident_id for entry, *_ in rows])
     return {
         "type": type,
         "value": lookup,
         "allowlisted": _allowlist(db).matches(type, lookup),
+        # Artifacts analysed on their own (no incident) that hold the value.
+        "artifacts": analysis_links.standalone(db).get((type, lookup), []),
         "incidents": [
             {
                 "id": entry.incident_id,
@@ -87,6 +122,10 @@ def lookup_ioc(
                 "host": host,
                 "updatedAt": updated_at,
                 "sources": entry.sources,
+                # source -> the artifact it names, where one can be told.
+                "sourceArtifacts": {
+                    s: links[entry.incident_id][s] for s in entry.sources if s in links[entry.incident_id]
+                },
                 "count": entry.count,
                 "firstSeen": entry.first_seen,
                 "lastSeen": entry.last_seen,

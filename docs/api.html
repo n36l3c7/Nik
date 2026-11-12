@@ -153,7 +153,11 @@
             </tr>
             <tr>
               <td><code>GET /api/iocs/lookup?type=&amp;value=</code></td>
-              <td>Every incident an indicator appears in ("where seen").</td>
+              <td>
+                Every incident an indicator appears in ("where seen"); per incident,
+                <code>sourceArtifacts</code> maps a source to the artifact it comes from. <code>artifacts</code> lists
+                the artifacts analysed on their own that hold the value.
+              </td>
             </tr>
             <tr>
               <td><code>GET /api/iocs/shared</code></td>
@@ -216,6 +220,15 @@
                 and worked through in the background: poll its <code>status</code> (<code>running</code>,
                 <code>waiting</code> for a quota, <code>done</code>, <code>stopped</code>), <code>done</code> and
                 <code>total</code>. <code>POST …/checks/{id}/stop</code> ends it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/iocs/analyse</code></td>
+              <td>
+                Have the isolated browser visit the URLs and domains of a scope that Nik has not analysed yet (20 at
+                most, a domain as <code>https://&lt;domain&gt;/</code>). <code>dryRun</code> returns
+                <code>visit</code> and <code>skipped</code> (with the reason) and visits nothing; otherwise
+                <code>started</code> lists the new artifacts. Audited.
               </td>
             </tr>
             <tr>
@@ -532,10 +545,13 @@
                 <code>score</code> 0–100, <code>flagged</code>, <code>checked</code>, <code>counts</code>),
                 <code>results</code> (per provider: verdict, summary, link, <code>data</code> with the details,
                 <code>history</code> of the last ten answers, <code>expired</code>, <code>hasRaw</code>),
-                <code>notAsked</code>, <code>retentionDays</code>, <code>refresh</code> (providers whose answer has
-                expired and should be asked again) and why the value is never sent, if so. <code>POST</code> asks every
-                usable provider now (<code>{ type, value, force }</code>, <code>422</code> for a private, internal,
-                allowlisted or TLP:RED value, audited).
+                <code>analysis</code> (what Nik saw when it analysed the value itself: <code>artifacts</code> with their
+                verdict, <code>verdict</code> when it counts among the sources with <code>weight</code> 3, and
+                <code>canAnalyse</code> for an address that can be visited), <code>notAsked</code>,
+                <code>retentionDays</code>, <code>refresh</code> (providers whose answer has expired and should be asked
+                again) and why the value is never sent, if so. <code>POST</code> asks every usable provider now (<code
+                  >{ type, value, force }</code
+                >, <code>422</code> for a private, internal, allowlisted or TLP:RED value, audited).
               </td>
             </tr>
             <tr>

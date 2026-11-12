@@ -54,3 +54,51 @@ test('score bar, retention wording and what changed over time', async () => {
   )
   assert.ok(reputationRank({ verdict: 'malicious', score: 80 }) > reputationRank({ verdict: 'malicious', score: 55 }))
 })
+
+test('the menu offers to analyse a value, or to open its analysis', async () => {
+  const { addressOf, analysisActions, analysisColor, analysisLabel } = await import('./enrichment.js')
+  assert.equal(addressOf('domain', 'evil.example'), 'https://evil.example/')
+  assert.equal(addressOf('ip', '1.2.3.4'), null)
+
+  // Not asked yet, or not analysed: an address can be visited.
+  assert.deepEqual(
+    analysisActions('url', 'https://a.example/x').map((a) => [a.id, a.label]),
+    [['analyse', 'Analyse URL']],
+  )
+  assert.deepEqual(analysisActions('domain', 'a.example', { artifacts: [], canAnalyse: true })[0], {
+    id: 'analyse',
+    label: 'Analyse as URL',
+    hint: 'https://a.example/',
+    address: 'https://a.example/',
+  })
+  // An internal name is never offered; a hash cannot be "analysed" from its value.
+  assert.deepEqual(analysisActions('domain', 'fileserver.corp', { artifacts: [], canAnalyse: false }), [])
+  assert.deepEqual(analysisActions('sha256', 'a'.repeat(64), { artifacts: [] }), [])
+  assert.deepEqual(analysisActions('ip', '1.2.3.4', { artifacts: [] }), [])
+  assert.deepEqual(analysisActions('email', 'a@b.example'), [])
+
+  const scan = { id: 'url-1', kind: 'url', verdict: 'phishing', score: 82, status: 'done' }
+  assert.deepEqual(
+    analysisActions('url', 'https://a.example/x', { artifacts: [scan] }).map((a) => [a.id, a.hint]),
+    [
+      ['open', 'phishing 82'],
+      ['rescan', undefined],
+    ],
+  )
+  // A domain's analysis is a page on it: opened, not scanned again from here.
+  assert.deepEqual(
+    analysisActions('domain', 'a.example', { artifacts: [scan] }).map((a) => a.id),
+    ['open'],
+  )
+  const file = { id: 'file-1', kind: 'file', verdict: 'high', score: null }
+  assert.deepEqual(
+    analysisActions('sha256', 'a'.repeat(64), { artifacts: [file] }).map((a) => [a.id, a.hint]),
+    [['open', 'high']],
+  )
+  assert.equal(analysisLabel({ kind: 'url', verdict: '', score: 0, status: 'done' }), 'clean 0')
+  assert.equal(analysisLabel({ kind: 'url', verdict: '', status: 'running' }), 'running')
+  assert.equal(analysisLabel({ kind: 'file', verdict: '' }), 'no rule match')
+  assert.equal(analysisColor(scan), 'red')
+  assert.equal(analysisColor({ verdict: 'medium' }), 'amber')
+  assert.equal(analysisColor({ verdict: 'clean' }), 'slate')
+})

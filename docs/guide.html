@@ -208,6 +208,35 @@
         <figcaption>An artifact: its incident, its tags and the same analysis as in the incident's tab.</figcaption>
       </figure>
 
+      <h3 id="indicator-artifact">Indicators and artifacts</h3>
+      <p>
+        The same thing is seen two ways. An <strong>indicator</strong> is a value (an address, a domain, a hash) and
+        what the sources say about it: its <strong>Reputation</strong>. An <strong>artifact</strong> is what Nik saw
+        when it analysed something itself (a file, an e-mail, a capture, an address visited by the isolated browser):
+        its <strong>Analysis</strong>. Each leads to the other:
+      </p>
+      <ul>
+        <li>
+          <strong>Right-click</strong> a URL anywhere: <em>Analyse URL</em> has the isolated browser visit it (a domain
+          is visited as <code>https://&lt;domain&gt;/</code>). If Nik analysed it already, the menu says
+          <em>Open the analysis</em> with its verdict, and <em>Scan again</em>. The same for a hash of a file or an
+          e-mail Nik holds. Nothing is visited without the click.
+        </li>
+        <li>
+          The indicator's page has <strong>Analysed by Nik</strong>: verdict, screenshot and findings of the analysis,
+          or the offer to analyse an address. Nik's analysis is also one of the sources of the reputation, with the
+          highest weight, when it flags the value; a clean scan is no judgement.
+        </li>
+        <li>
+          The artifact's page has <strong>As an indicator</strong>: its value, its reputation and
+          <em>Check reputation</em>.
+        </li>
+        <li>
+          <strong>Seen in</strong> links each source to the artifact it comes from, and lists the artifacts analysed on
+          their own that hold the value.
+        </li>
+      </ul>
+
       <h3 id="paste">Paste or drag text</h3>
       <p>
         Press <kbd>Ctrl</kbd>+<kbd>V</kbd> anywhere outside a text field, or drag selected text onto the app. When the
@@ -270,6 +299,15 @@
         under <em>Alerts</em> in the panel (a red dot on the rail), in the audit log, and goes to the
         <code>ioc.watch_hit</code> webhook. <strong>Feed</strong> gives the address a firewall, a SIEM or a SOAR polls
         for the list as it is now, signed with an API key.
+      </p>
+      <h3>Analysed or not</h3>
+      <p>
+        The <strong>Analysis</strong> column shows what Nik saw when it analysed the value itself, and opens it.
+        Indicators of artifacts not linked to any incident are in the library too (origin <em>artifact</em>).
+        <strong>Addresses to analyse</strong>, in the panel, lists the URLs and domains Nik has not visited yet; select
+        some and choose <strong>Analyse addresses</strong>: Nik shows what would be visited and what is left out
+        (analysed already, allowlisted, internal, TLP:RED), and visits at most 20, one after the other, once you
+        confirm. A visit is seen by the site.
       </p>
       <h3>Bulk check and export</h3>
       <p>

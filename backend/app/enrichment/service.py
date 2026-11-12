@@ -390,6 +390,9 @@ def results(db: OrmSession, kind: str, value: str, cfg: dict[str, Any] | None = 
 
 
 # What a verdict is worth in the overall score.
+# Nik's own analysis of the value (the scan of a URL, the file with that
+# hash) among the sources of its reputation: see ``analysis_links``.
+NIK, NIK_WEIGHT = "nik", 3
 VERDICT_VALUE = {"malicious": 1.0, "suspicious": 0.5, "harmless": 0.0, "unknown": 0.0}
 MALICIOUS_SCORE, SUSPICIOUS_SCORE = 50, 20
 
@@ -413,11 +416,13 @@ def overall(answers: Iterable[tuple[str, str]]) -> dict[str, Any] | None:
     counted = 0
     for provider_id, verdict in answers:
         provider = BY_ID.get(provider_id)
-        # Facts, not a judgement: counted only when they flag the value.
-        if provider is not None and provider.informational and verdict not in ("malicious", "suspicious"):
+        # Facts, not a judgement: counted only when they flag the value. So is
+        # Nik's own analysis of the value (NIK), which has the highest weight.
+        informational = provider_id == NIK or (provider is not None and provider.informational)
+        if informational and verdict not in ("malicious", "suspicious"):
             continue
         counted += 1
-        w = provider.weight if provider else 1
+        w = NIK_WEIGHT if provider_id == NIK else provider.weight if provider else 1
         weight += w
         points += w * VERDICT_VALUE.get(verdict, 0.0)
         counts[verdict if verdict in counts else "unknown"] += 1
@@ -450,7 +455,12 @@ def summaries(db: OrmSession, pairs: Iterable[tuple[str, str]]) -> dict[tuple[st
         ):
             if (row.type, row.value) in wanted:
                 answers.setdefault((row.type, row.value), []).append((row.provider, row.verdict))
-    return {key: overall(found) for key, found in answers.items()}
+    from .. import analysis_links
+
+    for pair, verdict in analysis_links.verdicts(db, wanted).items():
+        answers.setdefault(pair, []).append((NIK, verdict))
+    summed = {key: overall(found) for key, found in answers.items()}
+    return {key: value for key, value in summed.items() if value is not None}
 
 
 # --------------------------------------------------------------------------- #

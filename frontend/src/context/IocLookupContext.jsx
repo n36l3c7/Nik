@@ -1,9 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Copy, Crosshair, Link2, Maximize2, Minimize2, Search, ShieldCheck } from 'lucide-react'
+import {
+  Boxes,
+  Copy,
+  Crosshair,
+  Globe,
+  Link2,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from 'lucide-react'
 import { Button, Modal } from '../components/ui/index.js'
 import IocDetail from '../components/ioc/IocDetail.jsx'
 import { onLocationChange, setPath } from '../lib/location.js'
-import { iocFromLocation, iocPath } from '../domain/enrichment.js'
+import { ANALYSABLE, analysisActions, iocFromLocation, iocPath } from '../domain/enrichment.js'
+import { api } from '../services/api.js'
 import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable } from '../domain/iocs.js'
 import { flagItems } from '../components/menu/flagItems.js'
 import { useArtifacts } from './ArtifactContext.jsx'
@@ -33,7 +45,7 @@ const IocLookupContext = createContext(null)
  * can be copied, bookmarked and opened in another tab. Closing the page goes
  * back to where the analyst was.
  */
-function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist }) {
+function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist, onAnalysis, onOpenArtifact }) {
   const { activeIncidentId: loadedIncidentId, selectIncident } = useIncidents()
   // "This incident" is the one on screen: with an artifact or the IoC library in the
   // main area no incident is, and the one it was seen in can be opened.
@@ -83,6 +95,8 @@ function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist
           selectIncident(id)
         }}
         onAllowlist={() => onAllowlist(lookup.type, lookup.value)}
+        onAnalysis={(action) => onAnalysis(action, lookup.type, lookup.value)}
+        onOpenArtifact={onOpenArtifact}
         onNotice={(message) => showToast({ message })}
       />
     </Modal>
@@ -207,12 +221,58 @@ export function IocLookupProvider({ children }) {
   const { showToast } = useToast()
   // An indicator is flagged in the incident on screen (none while an artifact is open on its own).
   const { activeIncident, activeIncidentId, toggleFlag, addFlagComment } = useIncidents()
-  const { currentId: artifactOpen } = useArtifacts()
+  const { currentId: artifactOpen, scanUrl, openArtifact } = useArtifacts()
   const flagIncident = artifactOpen ? null : activeIncident
   // Where to go back to when the page is closed.
   const returnTo = useRef(null)
 
   const openIoc = useCallback((type, value) => setLookup({ type, value: String(value), full: false }), [])
+
+  // What Nik analysed itself for an indicator (`analysis` of GET /api/enrichment),
+  // remembered so that the right-click menu can say "Open the analysis" at once.
+  // Asked when the pointer rests on a value; never needed to act (see runAnalysis).
+  const known = useRef(new Map())
+  const learn = useCallback(async (type, value) => {
+    const key = `${type}\n${value}`
+    if (!ANALYSABLE.has(type) || known.current.has(key)) return known.current.get(key)
+    known.current.set(key, undefined) // being asked
+    try {
+      const { analysis } = await api.get(`/enrichment?${new URLSearchParams({ type, value })}`)
+      if (known.current.size > 500) known.current.clear()
+      known.current.set(key, analysis)
+      return analysis
+    } catch {
+      known.current.delete(key)
+      return undefined
+    }
+  }, [])
+  const forget = useCallback((type, value) => known.current.delete(`${type}\n${value}`), [])
+
+  /**
+   * Do what an entry of analysisActions() says: open the artifact, visit the
+   * address with the isolated browser, or visit it again. Visiting an address
+   * Nik already analysed opens that analysis: nothing is visited twice.
+   */
+  const runAnalysis = useCallback(
+    async (action, type, value) => {
+      try {
+        let artifactId = action.artifact?.id
+        if (action.id === 'analyse') {
+          showToast({ message: `The isolated browser is visiting ${action.address}…` })
+          artifactId = (await scanUrl(action.address)).artifactId
+        } else if (action.id === 'rescan') {
+          await api.post(`/urls/${action.artifact.id.replace(/^url-/, '')}/rescan`, {})
+        }
+        forget(type, value)
+        setLookup(null)
+        returnTo.current = null
+        openArtifact(artifactId)
+      } catch (err) {
+        showToast({ message: err.message })
+      }
+    },
+    [scanUrl, openArtifact, showToast, forget],
+  )
   const openAllowlist = useCallback((type, value) => setAllowlistTarget({ type, value: String(value) }), [])
 
   /** The address the app shows without an indicator page: the open incident, or the start. */
@@ -278,6 +338,12 @@ export function IocLookupProvider({ children }) {
                 'separator',
               ]
             : []),
+          ...analysisActions(type, text, known.current.get(`${type}\n${text}`)).map((action) => ({
+            label: action.label,
+            hint: action.hint,
+            icon: action.id === 'open' ? Boxes : action.id === 'rescan' ? RefreshCw : Globe,
+            onSelect: () => runAnalysis(action, type, text),
+          })),
           { label: 'Where else was this seen?', icon: Crosshair, onSelect: () => openIoc(type, text) },
           { label: 'Search for it', icon: Search, hint: 'ctrl k', onSelect: () => openSearch(text) },
           'separator',
@@ -288,10 +354,24 @@ export function IocLookupProvider({ children }) {
         ],
       })
     },
-    [openMenu, openIoc, openSearch, openAllowlist, showToast, flagIncident, toggleFlag, addFlagComment, askText],
+    [
+      openMenu,
+      openIoc,
+      openSearch,
+      openAllowlist,
+      showToast,
+      flagIncident,
+      toggleFlag,
+      addFlagComment,
+      askText,
+      runAnalysis,
+    ],
   )
 
-  const value = useMemo(() => ({ openIoc, openAllowlist, iocMenu }), [openIoc, openAllowlist, iocMenu])
+  const value = useMemo(
+    () => ({ openIoc, openAllowlist, iocMenu, learn, runAnalysis }),
+    [openIoc, openAllowlist, iocMenu, learn, runAnalysis],
+  )
   return (
     <IocLookupContext.Provider value={value}>
       {children}
@@ -303,6 +383,12 @@ export function IocLookupProvider({ children }) {
           onExpand={expand}
           onShrink={shrink}
           onAllowlist={openAllowlist}
+          onAnalysis={runAnalysis}
+          onOpenArtifact={(id) => {
+            setLookup(null)
+            returnTo.current = null
+            openArtifact(id)
+          }}
         />
       )}
       <AllowlistDialog target={allowlistTarget} onClose={() => setAllowlistTarget(null)} />
@@ -323,8 +409,13 @@ export function useIocLookup() {
  * (and F, C) then act on the row, wherever in it the pointer is.
  */
 export function IocValue({ type, value, className = '', ownMenu = true }) {
-  const { openIoc, iocMenu } = useIocLookup()
+  const { openIoc, iocMenu, learn } = useIocLookup()
+  const hover = useRef(null)
   if (!type) return <span className={className}>{value}</span>
+  // The pointer resting on a value: learn whether Nik analysed it, for the menu.
+  const rest = () => {
+    hover.current = setTimeout(() => learn(type, String(value)), 200)
+  }
   return (
     <button
       type="button"
@@ -333,7 +424,10 @@ export function IocValue({ type, value, className = '', ownMenu = true }) {
         openIoc(type, value)
       }}
       onContextMenu={ownMenu ? (event) => iocMenu(event, type, value) : undefined}
-      title="Where else was this seen? (right-click for more)"
+      onMouseEnter={rest}
+      onMouseLeave={() => clearTimeout(hover.current)}
+      onFocus={() => learn(type, String(value))}
+      title="Reputation and where seen (right-click: analyse, copy, more)"
       className={[
         'group inline-flex max-w-full items-center gap-1 text-left underline decoration-dotted decoration-fg-subtle underline-offset-2',
         'hover:text-accent-fg hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
