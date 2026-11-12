@@ -32,6 +32,7 @@ import IocLibraryPage from './components/iocs/IocLibraryPage.jsx'
 import { useIocLibrary } from './context/IocLibraryContext.jsx'
 import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
 import { api } from './services/api.js'
+import { setPath } from './lib/location.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
@@ -214,14 +215,14 @@ export default function App() {
   useEffect(() => {
     if (libraryOpen || artifactOpen || !isLibraryPath(window.location.pathname)) return
     const path = activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'
-    window.history.replaceState({}, '', path)
+    setPath(path, { replace: true })
   }, [libraryOpen, artifactOpen, activeIncidentId])
 
   // Leaving an artifact without opening an incident: the URL follows.
   useEffect(() => {
     if (artifactOpen || !window.location.pathname.startsWith('/artifact/')) return
     const path = activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'
-    window.history.replaceState({}, '', path)
+    setPath(path, { replace: true })
   }, [artifactOpen, activeIncidentId])
 
   const [backupOpen, setBackupOpen] = useState(false)
@@ -232,9 +233,17 @@ export default function App() {
   // Navigation requests from menus and dialogs (see NavigationContext).
   const navigation = useNavigation()
   const { importInto, clearSearch } = navigation
+  /** Show the active incident's tabs: an artifact or the IoC library in the main area is left. */
+  const showIncident = useCallback(() => {
+    artifacts.closeArtifact()
+    closeLibrary()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeArtifact is stable
+  }, [closeLibrary])
   useEffect(() => {
-    if (navigation.focus) setActiveTabId(navigation.focus.tab)
-  }, [navigation.focus])
+    if (!navigation.focus) return
+    showIncident()
+    setActiveTabId(navigation.focus.tab)
+  }, [navigation.focus, showIncident])
 
   /** Open an incident in the main area (leaving an artifact opened on its own). */
   const { closeArtifact } = artifacts
@@ -465,7 +474,7 @@ export default function App() {
     const incident = createIncident(newFields)
     setCreateOpen(false)
     if (!seedArtifact) {
-      closeArtifact()
+      showIncident()
       return
     }
     // The incident must exist on the server before the artifact is linked to it.
@@ -521,7 +530,7 @@ export default function App() {
           icon: tab.icon,
           hint: 'tab',
           run: () => {
-            closeArtifact()
+            showIncident()
             setActiveTabId(tab.id)
           },
         }))
@@ -802,7 +811,7 @@ export default function App() {
         }}
         actions={paletteActions}
         onOpenTab={(tab) => {
-          closeArtifact()
+          showIncident()
           setActiveTabId(tab)
         }}
       />

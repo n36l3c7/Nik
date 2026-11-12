@@ -37,7 +37,13 @@ function Heading({ children }) {
   return <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">{children}</h3>
 }
 
-function Verdict({ summary, retentionDays, lookedUp }) {
+/** Days since the domain was registered, when the registry says it is a young one; else null. */
+function youngDomainDays(results = []) {
+  const found = results.find((result) => result.provider === 'registration' && result.data?.young)
+  return found ? (found.data.ageDays ?? null) : null
+}
+
+function Verdict({ summary, retentionDays, lookedUp, young = null }) {
   if (!lookedUp)
     return (
       <div className="border border-line bg-panel px-3 py-2.5 text-xs text-fg-muted">
@@ -72,6 +78,14 @@ function Verdict({ summary, retentionDays, lookedUp }) {
         ))}
       </div>
       <p className="text-xs text-fg-muted">{countsLine(summary.counts)}</p>
+      {young !== null && (
+        <p role="alert" className="border-l-2 border-high-line bg-high-soft/50 px-2.5 py-1.5 text-xs text-fg">
+          <b>
+            Domain registered {young} {young === 1 ? 'day' : 'days'} ago
+          </b>
+          : it counts in the score. See Registration below.
+        </p>
+      )}
       <p className="text-[11px] text-fg-subtle">
         The score weighs each source (shown as ×1 to ×3). Answers stand for {retentionLabel(retentionDays)}.
       </p>
@@ -325,7 +339,12 @@ export default function IocDetail({ type, value, activeIncidentId, onOpenInciden
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,19rem)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-4">
-          <Verdict summary={data?.summary} retentionDays={data?.retentionDays ?? 30} lookedUp={lookedUp} />
+          <Verdict
+            summary={data?.summary}
+            retentionDays={data?.retentionDays ?? 30}
+            lookedUp={lookedUp}
+            young={youngDomainDays(data?.results)}
+          />
 
           {lookedUp && (
             <section aria-label="Sources" className="space-y-1.5">

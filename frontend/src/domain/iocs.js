@@ -146,3 +146,83 @@ export function defang(value) {
     .replace(/@/g, '[@]')
     .replace(/\./g, '[.]')
 }
+
+// ---- indicators inside a line of text ---------------------------------------
+
+/** An address on the internet: not private, loopback, link-local, CGNAT, multicast or reserved. */
+export function isPublicIp(value) {
+  const text = String(value ?? '')
+  if (IPV4.test(text)) {
+    const [a, b] = text.split('.').map(Number)
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false
+    if (a === 172 && b >= 16 && b <= 31) return false
+    if (a === 192 && b === 168) return false
+    if (a === 169 && b === 254) return false
+    if (a === 100 && b >= 64 && b <= 127) return false
+    return true
+  }
+  if (IPV6.test(text) && text.includes(':')) {
+    const lower = text.toLowerCase()
+    return !(lower === '::' || lower === '::1' || /^(fe[89ab]|f[cd]|ff)/.test(lower))
+  }
+  return false
+}
+
+// What a host name is not: a file, a version, a protocol field.
+const NOT_A_TLD = new Set(
+  (
+    'php html htm js css json xml txt exe dll bin dat zip rar gz tar png jpg jpeg gif svg ico bmp webp pdf doc docx ' +
+    'xls xlsx ppt pptx asp aspx jsp cgi log tmp bak cfg conf ini sys bat cmd ps vbs sh py rb pl so lib pem crt key ' +
+    'woff woff2 ttf eot mp3 mp4 avi mov wav map min src dst len seq ack win request response local lan internal corp home'
+  ).split(' '),
+)
+const TOKEN =
+  /\b(?:https?|ftp|wss?):\/\/[^\s"'<>]+|\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b|\b[a-f0-9]{64}\b|\b[a-f0-9]{40}\b|\b[a-f0-9]{32}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b/gi
+
+/**
+ * A line of text cut where it holds indicators: `[{ text, type? }]`, in order.
+ * Public addresses, URLs, hashes and host names get a type; private addresses
+ * and everything else stay plain text. `hint` names what the whole line is
+ * when the caller knows (a protocol field): 'ip', 'domain' or 'url'.
+ */
+export function indicatorSegments(text, hint = null) {
+  const line = String(text ?? '')
+  const out = []
+  const push = (piece, type) => {
+    if (!piece) return
+    const last = out[out.length - 1]
+    if (!type && last && !last.type) last.text += piece
+    else out.push(type ? { text: piece, type } : { text: piece })
+  }
+  let cursor = 0
+  for (const match of line.matchAll(TOKEN)) {
+    let token = match[0]
+    // Punctuation that ends a sentence or closes a bracket is not part of an address.
+    token = token.replace(/[.,;:)\]}'"]+$/, '')
+    if (!token) continue
+    const start = match.index
+    // A token glued to "/" or "@" on its left is a path segment or the host of an e-mail address.
+    const before = line[start - 1] ?? ''
+    let type = guessIocType(token)
+    // "Chrome/130.0.0.0" is a version, not an address.
+    if (type === 'ip' && (!isPublicIp(token) || before === '/')) type = null
+    if (type === 'domain') {
+      const tld = token.slice(token.lastIndexOf('.') + 1).toLowerCase()
+      if (NOT_A_TLD.has(tld) || /^\d+$/.test(tld) || before === '/' || before === '@' || before === '\\') type = null
+      else if (hint !== 'domain' && !/[a-z]/i.test(token.split('.')[0])) type = null
+    }
+    if (type === 'url') {
+      try {
+        const host = new URL(token).hostname
+        if (IPV4.test(host) ? !isPublicIp(host) : !host.includes('.')) type = null
+      } catch {
+        type = null
+      }
+    }
+    push(line.slice(cursor, start), null)
+    push(token, type)
+    cursor = start + token.length
+  }
+  push(line.slice(cursor), null)
+  return out
+}

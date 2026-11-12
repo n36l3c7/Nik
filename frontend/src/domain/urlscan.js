@@ -100,3 +100,78 @@ export function urlEvents(scans = [], engine) {
   }
   return out
 }
+
+// ---- scripts of a scanned page (result.scripts) ------------------------------
+
+const SCRIPT_RANK = { high: 3, medium: 2, low: 1 }
+
+/** The scripts with their place in `result.scripts` (`index`), worst first. */
+export function sortScripts(scripts = []) {
+  return scripts
+    .map((script, index) => ({ ...script, index, findings: script.findings ?? [], iocs: script.iocs ?? [] }))
+    .sort(
+      (a, b) =>
+        (SCRIPT_RANK[b.severity] ?? 0) - (SCRIPT_RANK[a.severity] ?? 0) ||
+        b.findings.length - a.findings.length ||
+        Number(Boolean(a.library)) - Number(Boolean(b.library)) ||
+        a.index - b.index,
+    )
+}
+
+/** What the list calls a script: the end of its address, or "inline #n". */
+export function scriptName(script) {
+  if (script.kind === 'inline') return script.name || 'inline'
+  try {
+    const { pathname, search } = new URL(script.url)
+    return `${pathname}${search}`.slice(0, 120) || script.url
+  } catch {
+    return script.url || 'script'
+  }
+}
+
+/** The badge of a script in the list. */
+export function scriptBadge(script) {
+  const count = script.findings?.length ?? 0
+  if (count > 0) {
+    const color = script.severity === 'high' ? 'red' : script.severity === 'medium' ? 'amber' : 'slate'
+    return { color, label: `${count} ${count === 1 ? 'finding' : 'findings'}` }
+  }
+  if (script.library) return { color: 'emerald', label: 'known library' }
+  return { color: 'slate', label: 'clean' }
+}
+
+export function scriptStats(scripts = []) {
+  const flagged = scripts.filter((script) => (script.findings?.length ?? 0) > 0)
+  return {
+    total: scripts.length,
+    external: scripts.filter((script) => script.kind === 'external').length,
+    inline: scripts.filter((script) => script.kind === 'inline').length,
+    flagged: flagged.length,
+    high: flagged.filter((script) => script.severity === 'high').length,
+    obfuscated: scripts.filter((script) => (script.obfuscation ?? 0) >= 25).length,
+    hosts: new Set(scripts.filter((script) => script.thirdParty).map((script) => script.host)).size,
+  }
+}
+
+/**
+ * The code cut where the findings matched: `[{ text, finding? }]`, in order.
+ * Overlapping matches keep the first; a finding with no range (the whole
+ * script is obfuscated) marks nothing.
+ */
+export function codeSegments(code, findings = []) {
+  const text = String(code ?? '')
+  const ranges = findings
+    .filter((finding) => finding.end > finding.start && finding.start < text.length)
+    .sort((a, b) => a.start - b.start)
+  const out = []
+  let cursor = 0
+  for (const range of ranges) {
+    if (range.start < cursor) continue
+    if (range.start > cursor) out.push({ text: text.slice(cursor, range.start) })
+    const end = Math.min(range.end, text.length)
+    out.push({ text: text.slice(range.start, end), finding: range.id })
+    cursor = end
+  }
+  if (cursor < text.length || out.length === 0) out.push({ text: text.slice(cursor) })
+  return out
+}

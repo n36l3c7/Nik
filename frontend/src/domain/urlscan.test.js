@@ -72,3 +72,59 @@ test('finished scans are timeline events, with the verdict as severity', () => {
   )
   assert.equal(events[0].flaggable.key, 'url:a')
 })
+
+test('the scripts of a page are listed worst first and named by where they come from', async () => {
+  const { codeSegments, scriptBadge, scriptName, scriptStats, sortScripts } = await import('./urlscan.js')
+  const scripts = [
+    {
+      kind: 'external',
+      url: 'https://cdnjs.cloudflare.com/jquery.min.js',
+      host: 'cdnjs.cloudflare.com',
+      thirdParty: true,
+      library: 'jQuery 3.7.1',
+    },
+    { kind: 'inline', name: 'inline #1', findings: [{ id: 'obf.eval-decode' }], severity: 'medium', obfuscation: 40 },
+    {
+      kind: 'external',
+      url: 'https://evil.example/assets/app.min.js?v=2',
+      host: 'evil.example',
+      findings: [{ id: 'a' }, { id: 'b' }],
+      severity: 'high',
+    },
+    { kind: 'inline', name: 'inline #2' },
+  ]
+  const sorted = sortScripts(scripts)
+  assert.deepEqual(
+    sorted.map((script) => script.index),
+    [2, 1, 3, 0],
+  )
+  assert.equal(scriptName(sorted[0]), '/assets/app.min.js?v=2')
+  assert.equal(scriptName(sorted[1]), 'inline #1')
+  assert.deepEqual(scriptBadge(sorted[0]), { color: 'red', label: '2 findings' })
+  assert.deepEqual(scriptBadge(sorted[1]), { color: 'amber', label: '1 finding' })
+  assert.deepEqual(scriptBadge(sorted[2]), { color: 'slate', label: 'clean' })
+  assert.deepEqual(scriptBadge(sorted[3]), { color: 'emerald', label: 'known library' })
+  assert.deepEqual(scriptStats(scripts), {
+    total: 4,
+    external: 2,
+    inline: 2,
+    flagged: 2,
+    high: 1,
+    obfuscated: 1,
+    hosts: 1,
+  })
+
+  const parts = codeSegments('abc fetch(x) def eval(y)', [
+    { id: 'two', start: 17, end: 24 },
+    { id: 'one', start: 4, end: 12 },
+    { id: 'inside', start: 6, end: 9 },
+    { id: 'whole', start: 0, end: 0 },
+  ])
+  assert.deepEqual(parts, [
+    { text: 'abc ' },
+    { text: 'fetch(x)', finding: 'one' },
+    { text: ' def ' },
+    { text: 'eval(y)', finding: 'two' },
+  ])
+  assert.deepEqual(codeSegments('plain', []), [{ text: 'plain' }])
+})

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import re
 import time
@@ -28,7 +29,7 @@ from urllib.parse import urlsplit, urlunsplit
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from . import artifacts
+from . import artifacts, jsanalysis
 from .core.config import settings
 from .core.db import SessionLocal
 from .core.locking import relock
@@ -102,6 +103,74 @@ def screenshot_path(scan: str) -> Path:
     folder = Path(settings.SAMPLE_STORE) / "_urls"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / f"{scan}.jpg"
+
+
+def scripts_path(scan: str) -> Path:
+    """The code of the page's scripts, as a JSON list in the order of ``result.scripts``."""
+    return screenshot_path(scan).with_suffix(".scripts.json")
+
+
+_JS_TYPES = ("", "text/javascript", "application/javascript", "module", "text/ecmascript", "application/ecmascript")
+
+
+def collect_scripts(
+    entries: list[dict[str, Any]], page: dict[str, Any], final_url: str
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The scripts of the visit, analysed: those the page loaded (their bodies
+    are in the network log) and those written in it. Returns what the Scripts
+    tab lists and, in the same order, the code. Nothing is run."""
+    page_host = links.host_of(final_url)
+    found: list[tuple[dict[str, Any], str]] = []
+    seen: set[str] = set()
+    room = jsanalysis.MAX_TOTAL
+    for entry in entries:
+        response = entry.get("response") or {}
+        body = response.get("body")
+        mime = str(response.get("mimeType") or "").lower()
+        if not body or not (entry.get("resourceType") == "script" or "javascript" in mime or "ecmascript" in mime):
+            continue
+        try:
+            code = base64.b64decode(body).decode("utf-8", "replace")
+        except ValueError:
+            continue
+        address = str(entry.get("url") or "")[:URL_MAX]
+        if address in seen or not code.strip():
+            continue
+        seen.add(address)
+        meta = jsanalysis.analyse(code, kind="external", url=address, host=links.host_of(address), page_host=page_host)
+        found.append((meta, code[: jsanalysis.MAX_CODE]))
+    number = 0
+    for script in page.get("inlineScripts") or []:
+        if not isinstance(script, dict) or str(script.get("type") or "").lower().split(";")[0] not in _JS_TYPES:
+            continue
+        code = str(script.get("text") or "")
+        if not code.strip():
+            continue
+        number += 1
+        meta = jsanalysis.analyse(code, kind="inline", url="", host=page_host, page_host=page_host)
+        meta["name"] = f"inline #{number}"
+        found.append((meta, code[: jsanalysis.MAX_CODE]))
+    kept_meta, kept_code = [], []
+    for meta, code in found[: jsanalysis.MAX_SCRIPTS]:
+        if room <= 0:
+            break
+        code = code[:room]
+        room -= len(code)
+        kept_meta.append(meta)
+        kept_code.append(code)
+    return kept_meta, kept_code
+
+
+def with_scripts(verdict: dict[str, Any], scripts: list[dict[str, Any]]) -> dict[str, Any]:
+    """The verdict once what the scripts do is counted in."""
+    findings = [*verdict["findings"], *jsanalysis.score_findings(scripts)]
+    findings.sort(key=lambda f: -f["points"])
+    score = min(100, sum(f["points"] for f in findings))
+    return {
+        "findings": findings,
+        "score": score,
+        "verdict": "phishing" if score >= 70 else "suspicious" if score >= 40 else "clean",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -296,6 +365,12 @@ def run_scan(scan: str, actor: str) -> None:
                 own,
                 allowlist,
             )
+            scripts, code = collect_scripts(entries, page, final_url)
+            verdict = with_scripts(verdict, scripts)
+            if code:
+                scripts_path(scan).write_text(json.dumps(code), encoding="utf-8")
+            else:
+                scripts_path(scan).unlink(missing_ok=True)
             shot = inspected.get("screenshot")
             if shot:
                 screenshot_path(scan).write_bytes(base64.b64decode(shot))
@@ -326,6 +401,7 @@ def run_scan(scan: str, actor: str) -> None:
                     for e in inspected.get("events") or []
                 ],
                 "findings": verdict["findings"],
+                "scripts": scripts,
                 "screenshot": bool(shot),
             }
             flag_modified(row, "result")
@@ -465,6 +541,7 @@ def delete(db: OrmSession, row: UrlScan) -> None:
         if capture is not None:
             network_service.remove_capture(db, capture)
     screenshot_path(row.id).unlink(missing_ok=True)
+    scripts_path(row.id).unlink(missing_ok=True)
     artifacts.forget(db, "url", row.id)
     db.delete(row)
 
@@ -487,4 +564,11 @@ def url_iocs(row: UrlScan) -> list[tuple[str, str]]:
         host = links.host_of(form.get("action") or "")
         if host:
             found.append(("domain", host))
-    return list(dict.fromkeys(found))
+    # What the page's own scripts talk to; a well-known library's addresses are left out.
+    for script in result.get("scripts") or []:
+        if script.get("library"):
+            continue
+        for item in (script.get("iocs") or [])[:20]:
+            if item.get("type") in ("url", "domain", "ip"):
+                found.append((item["type"], item["value"]))
+    return list(dict.fromkeys(found))[:400]

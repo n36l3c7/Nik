@@ -24,6 +24,7 @@ import { formatDateTime, anyToMs } from '../../../lib/time.js'
 import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import RemoteBrowser from '../mail/RemoteBrowser.jsx'
 import RequestLog from '../network/RequestLog.jsx'
+import ScriptsView from './ScriptsView.jsx'
 
 /*
  * ============================================================================
@@ -235,6 +236,7 @@ function UrlDetail({ scan, incident, error, onRescan, onRemove, onBrowse, busy }
             {[
               ['overview', 'Overview'],
               ...(scan.captureId ? [['requests', `Requests ${scan.result.requests ?? ''}`.trim()]] : []),
+              ['scripts', `Scripts ${scan.result.scripts?.length ?? 0}`],
             ].map(([id, label]) => (
               <button
                 key={id}
@@ -261,6 +263,7 @@ function UrlDetail({ scan, incident, error, onRescan, onRemove, onBrowse, busy }
           </div>
           {view === 'overview' && <Overview scan={scan} incident={incident} />}
           {view === 'requests' && scan.captureId && <Requests captureId={scan.captureId} />}
+          {view === 'scripts' && <ScriptsView scan={scan} />}
         </div>
       ) : (
         <MicroSkull className="text-lg text-fg-muted" />

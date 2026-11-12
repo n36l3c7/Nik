@@ -5,6 +5,7 @@ import AddIocsDialog from '../components/iocs/AddIocsDialog.jsx'
 import BulkCheckDialog from '../components/iocs/BulkCheckDialog.jsx'
 import ExportIocsDialog from '../components/iocs/ExportIocsDialog.jsx'
 import ListDialog from '../components/iocs/ListDialog.jsx'
+import { isIndicatorPage, onLocationChange, setPath } from '../lib/location.js'
 import { useAuth } from './AuthContext.jsx'
 import { useToast } from './ToastContext.jsx'
 
@@ -109,15 +110,16 @@ export function IocLibraryProvider({ children }) {
 
   // Back and forward.
   useEffect(() => {
-    const onPopState = () => setView(viewFromUrl())
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    // The address decides: an incident or an artifact opened elsewhere leaves the library.
+    const onPopState = () => {
+      if (!isIndicatorPage(window.location.pathname)) setView(viewFromUrl())
+    }
+    return onLocationChange(onPopState)
   }, [])
 
   const openView = useCallback((next) => {
     setView(next)
-    const path = libraryPath(next)
-    if (window.location.pathname !== path) window.history.pushState({ iocs: true }, '', path)
+    setPath(libraryPath(next), { state: { iocs: true } })
   }, [])
   /** Leave the library (the caller restores the incident's or the artifact's URL). */
   const closeView = useCallback(() => setView(null), [])

@@ -8,11 +8,12 @@ own or in an incident; the scan itself runs in the background
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
@@ -20,8 +21,10 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts, urlscan
 from ..core.db import get_db
+from ..core.files import attachment_headers, safe_name
 from ..core.models import AuditEntry, Incident, UrlScan
 from ..core.security import Principal, now_iso, principal, writer_principal
+from ..malware.samples import zip_sample
 
 router = APIRouter(tags=["artifacts"])
 STALE_AFTER = timedelta(minutes=5)
@@ -157,3 +160,42 @@ def screenshot(scan_id: str, _caller: Principal = Depends(principal), db: OrmSes
     if not path.is_file():
         raise HTTPException(status_code=404, detail="No screenshot for this scan")
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+def _script(row: UrlScan, index: int) -> tuple[dict[str, Any], str]:
+    scripts = (row.result or {}).get("scripts") or []
+    if not 0 <= index < len(scripts):
+        raise HTTPException(status_code=404, detail="No such script in this scan")
+    path = urlscan.scripts_path(row.id)
+    try:
+        code = json.loads(path.read_text(encoding="utf-8"))[index] if path.is_file() else ""
+    except (ValueError, IndexError):
+        code = ""
+    return scripts[index], str(code)
+
+
+@router.get("/urls/{scan_id}/scripts/{index}")
+def script(scan_id: str, index: int, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+    """One script of the scanned page: what the scan found in it, and its code
+    as text (at most 300 000 characters). It was read, never run."""
+    meta, code = _script(_scan_or_404(db, scan_id), index)
+    return {**meta, "index": index, "code": code}
+
+
+@router.get("/urls/{scan_id}/scripts/{index}/download")
+def download_script(
+    scan_id: str, index: int, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    """The script inside a password-protected zip (``infected``), as samples are downloaded."""
+    row = _scan_or_404(db, scan_id)
+    meta, code = _script(row, index)
+    name = safe_name((meta.get("url") or "").split("?")[0].rsplit("/", 1)[-1] or f"inline-{index + 1}.js")
+    if not name.lower().endswith((".js", ".mjs")):
+        name += ".js"
+    _audit(db, caller, "url.script.download", f"Downloaded script {name} of {row.url[:120]}")
+    db.commit()
+    return Response(
+        content=zip_sample(code.encode("utf-8"), name),
+        media_type="application/zip",
+        headers=attachment_headers(f"{name}.zip"),
+    )

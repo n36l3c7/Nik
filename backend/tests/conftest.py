@@ -55,3 +55,17 @@ def make_key(admin_client, **body):
     res = admin_client.post("/api/keys", json=body)
     assert res.status_code == 201, res.text
     return {"X-API-Key": res.json()["key"]}
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """No test reaches a threat-intelligence provider or a registry: a lookup
+    that is not faked by the test fails at once instead of going out."""
+    from app.enrichment import providers, registration
+
+    def refuse(*args, **kwargs):
+        raise providers.ProviderError("network", "no network in tests")
+
+    monkeypatch.setattr(providers, "_request", refuse)
+    monkeypatch.setattr(registration, "_whois", refuse)
+    registration.reset_cache()

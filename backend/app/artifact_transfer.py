@@ -119,6 +119,7 @@ def _files_of(row: Artifact) -> list[tuple[Path, str]]:
         found.append((log, f"{row.id}/log.jsonl"))
     elif row.kind == "url":
         found.append((urlscan_store.screenshot_path(row.ref), f"{row.id}/screenshot.jpg"))
+        found.append((urlscan_store.scripts_path(row.ref), f"{row.id}/scripts.json"))
     return [(path, name) for path, name in found if path.is_file()]
 
 
@@ -275,6 +276,9 @@ def _restore(db: OrmSession, entry: dict[str, Any], record: Any, files, names: l
         shot = _read_file(files, names, (".jpg",))
         if shot is not None:
             urlscan_store.screenshot_path(ref).write_bytes(shot[1])
+        code = _read_file(files, names, ("scripts.json",))
+        if code is not None:
+            urlscan_store.scripts_path(ref).write_bytes(code[1])
         if values.get("status") not in ("done", "error"):
             values["status"], values["error"] = "error", "Imported before the scan had finished."
     required = {"file": ("sha1", "md5", "size"), "mail": ("size",), "pcap": (), "url": ("url",)}[kind]

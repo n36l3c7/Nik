@@ -1,6 +1,6 @@
 import { Badge } from '../ui/index.js'
 import { formatBytes } from '../../domain/events.js'
-import { formatDateTime } from '../../lib/time.js'
+import { formatDate, formatDateTime } from '../../lib/time.js'
 
 /*
  * What each threat-intelligence provider says about an indicator, laid out
@@ -519,7 +519,81 @@ function SafeBrowsing({ data }) {
   )
 }
 
+const day = (ms) => (ms ? formatDate(ms) : null)
+
+/** Registration data from the registries (RDAP, or WHOIS where there is none). */
+function Registration({ data }) {
+  if (data.kind === 'ip')
+    return (
+      <Section title="Network">
+        <Facts
+          rows={[
+            ['network', data.network],
+            ['name', data.name],
+            ['holder', data.holder],
+            ['country', data.country],
+            ['type', data.type],
+            ['registered', day(data.registered)],
+            ['last changed', day(data.changed)],
+            ['abuse contact', data.abuse],
+            ['source', data.source],
+          ]}
+        />
+      </Section>
+    )
+  if (!data.name) return <p className="font-mono text-xs text-fg-muted">The registry has no record of this domain.</p>
+  const steps = [
+    ['registered', data.registered],
+    ['last changed', data.changed],
+    ['expires', data.expires],
+  ].filter(([, at]) => at)
+  return (
+    <>
+      {data.young && (
+        <p role="alert" className="border-l-2 border-high-line bg-high-soft/50 px-3 py-2 text-sm text-fg">
+          <b>
+            Registered {data.ageDays} {data.ageDays === 1 ? 'day' : 'days'} ago.
+          </b>{' '}
+          A domain this young is a common sign of phishing and malware delivery: it counts in the score.
+        </p>
+      )}
+      <ol aria-label="Registration dates" className="flex flex-wrap gap-x-6 gap-y-2 font-mono text-xs">
+        {steps.map(([label, at]) => (
+          <li key={label} className="border-t-2 border-line pt-1.5">
+            <b className="block text-fg">{day(at)}</b>
+            <span className="text-fg-muted">{label}</span>
+          </li>
+        ))}
+        {data.ageDays != null && (
+          <li className={`border-t-2 pt-1.5 ${data.young ? 'border-high-line' : 'border-line'}`}>
+            <b className={`block ${data.young ? 'text-high' : 'text-fg'}`}>
+              {data.ageDays < 730 ? `${data.ageDays} days` : `${Math.floor(data.ageDays / 365)} years`}
+            </b>
+            <span className="text-fg-muted">age</span>
+          </li>
+        )}
+      </ol>
+      <Section title="Registration">
+        <Facts
+          rows={[
+            ['domain', data.name],
+            ['registrar', [data.registrar, data.registrarId && `IANA ${data.registrarId}`].filter(Boolean).join(' · ')],
+            ['registrant', data.private ? 'hidden (privacy or redacted)' : data.registrant],
+            ['country', data.registrantCountry],
+            ['name servers', data.nameservers?.join(', ')],
+            ['status', data.status?.join(', ')],
+            ['DNSSEC', data.dnssec],
+            ['abuse contact', data.abuse],
+            ['source', data.source],
+          ]}
+        />
+      </Section>
+    </>
+  )
+}
+
 const VIEWS = {
+  registration: Registration,
   virustotal: VirusTotal,
   abuseipdb: AbuseIpdb,
   greynoise: GreyNoise,

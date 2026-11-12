@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Indicators in a capture can be clicked.** In Network Analysis, public
+  addresses, host names, URLs and hashes in the packet list, in the packet's
+  protocol tree and in a request's details open the indicator's window, with
+  the usual right-click menu. Private addresses stay plain text.
+- **Registration of a domain or an address** among an indicator's sources:
+  registrar, dates, name servers, status, registrant (when not hidden) and
+  abuse contact for a domain; network, holder and country for an address.
+  Read from the registries with RDAP, the successor of WHOIS, with no account
+  and no key; a top-level domain without RDAP is asked over WHOIS (port 43).
+  Read on *Check now* and by the automatic lookups, under the same "never
+  sent" rules as the other sources.
+- **A domain registered in the last 30 days is flagged**: the registration
+  answers *suspicious*, counts in the score (weight 2), and the indicator's
+  page says so next to the verdict. An older domain is information only and
+  leaves the score as it was.
+- **Scripts of a scanned address.** URL Analysis has a *Scripts* tab: every
+  script the page loaded and every script written in it, read as text (never
+  run) and checked against built-in signatures: data sent to a Telegram bot
+  or a Discord webhook, a password field read and sent out, a keylogger,
+  HTML smuggling, miners, wallet drainers, obfuscation (packer, string
+  arrays, JSFuck, code decoded and run), anti-debugging, and more. Each
+  script shows its findings with the matching code marked, its size, hash,
+  entropy, how much of it is obfuscated, the indicators in it, and whether it
+  is a well-known library. The code can be copied or downloaded in a zip
+  (password `infected`).
+- What the scripts do counts in the scan's score (once per signature), and
+  the addresses they talk to are among the incident's indicators; a
+  well-known library's are left out.
+- API: `GET /api/urls/{id}/scripts/{n}` and `…/download`; `scripts` in the
+  result of `GET /api/urls/{id}`; the `registration` provider in
+  `GET /api/enrichment`.
+
+### Changed
+
+- The isolated browser reports the text of the page's inline scripts when it
+  inspects a page (rebuild the `browser` worker image). An address scanned
+  before this release shows its scripts after a re-scan.
+
+### Fixed
+
+- The page did not always follow the address. Opening an incident from the
+  search or from an indicator's window while an artifact or the IoC library
+  was on screen changed the address but left the old page in place until a
+  reload; so did "go to a tab" from the search with the library open, and a
+  new incident created from there. Every part of the app now announces the
+  address it sets, and the others follow it.
+- With an artifact or the IoC library on screen, an indicator's window marked
+  the loaded incident as "this incident" and offered no way to open it. It is
+  now offered like any other.
+
 ## [3.5.0] - 2026-11-12
 
 ### Added

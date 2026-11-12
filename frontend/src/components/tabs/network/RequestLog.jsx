@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import SortHeader from './SortHeader.jsx'
+import IocText from '../../ioc/IocText.jsx'
 import { useIocLookup } from '../../../context/IocLookupContext.jsx'
 import { Badge } from '../../ui/index.js'
 import { hexRows, formatOffset, neutraliseLinks } from '../../../domain/mail.js'
@@ -102,7 +103,7 @@ function Pairs({ pairs }) {
       {pairs.map(([name, value], i) => (
         <div key={i} className="contents">
           <dt className="py-0.5 text-fg-muted">{name}</dt>
-          <dd className="break-all py-0.5 text-fg">{value}</dd>
+          <dd className="break-all py-0.5 text-fg">{typeof value === 'string' ? <IocText text={value} /> : value}</dd>
         </div>
       ))}
     </dl>
