@@ -36,7 +36,7 @@ fail() {
 
 # The env file an operator gets: the example, with every secret generated.
 rm -f "$ENV_FILE"
-deploy/init-env.sh "$ENV_FILE"
+NIK_EXISTING_INSTALL=0 deploy/init-env.sh "$ENV_FILE"
 grep -Eq '^(SECRET_KEY|DB_PASSWORD|[A-Z]+_TOKEN)=(please-change|change-this)' "$ENV_FILE" &&
   fail "init-env.sh left a placeholder secret"
 {

@@ -9,18 +9,31 @@
 # value, and leaves every setting that is already good untouched. It is safe
 # to run again: a second run changes nothing.
 #
+# What it writes depends on whether Nik already ran here:
+#
 #  - New install: every secret is generated.
-#  - Existing install (an .env from before 3.0.0, possibly with secrets left
-#    at their defaults): the missing ones are added. A replaced SECRET_KEY is
-#    kept as SECRET_KEY_PREVIOUS, so the provider API keys and TLS key logs
-#    already stored are re-encrypted at the next start instead of being lost.
-#    A missing DB_PASSWORD is written as the old default, which is what the
-#    existing database was created with: change it in PostgreSQL first if you
-#    want another.
+#  - Existing install, with or WITHOUT an .env (a stack from before 3.0.0 could
+#    run on the built-in defaults, with no .env at all). Its database was
+#    created with a password and its stored secrets were encrypted with a key,
+#    and a fresh random value for either would lock the stack out of its own
+#    data. So:
+#      - a missing DB_PASSWORD is written as the old default, which is what the
+#        existing database uses. To have another, change it in PostgreSQL first
+#        (ALTER ROLE nik PASSWORD '…');
+#      - a replaced SECRET_KEY is kept as SECRET_KEY_PREVIOUS, so the provider
+#        API keys and TLS key logs already stored are re-encrypted at the next
+#        start instead of being lost.
+#
+# An existing install is recognised by its .env, or by the database volume of
+# the Compose project (docker or podman). Say so yourself when the script
+# cannot see it (another user's podman, a remote engine):
+#
+#   NIK_EXISTING_INSTALL=1 deploy/init-env.sh     # or =0 to say it is new
 set -eu
 
-ENV_FILE="${1:-$(cd "$(dirname "$0")/.." && pwd)/.env}"
-EXAMPLE="$(cd "$(dirname "$0")/.." && pwd)/.env.example"
+NIK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="${1:-$NIK_DIR/.env}"
+EXAMPLE="$NIK_DIR/.env.example"
 OLD_SECRET_KEY_DEFAULT="please-change-this-secret"
 OLD_DB_PASSWORD_DEFAULT="nik"
 
@@ -56,9 +69,36 @@ set_value() {
     fi
 }
 
-new_install=0
-if [ ! -f "$ENV_FILE" ]; then
-    new_install=1
+# True when a database volume of this Compose project exists: Nik ran here
+# before, whatever the .env says. The project is named after the directory
+# unless COMPOSE_PROJECT_NAME says otherwise, as Compose does.
+has_database_volume() {
+    project=${COMPOSE_PROJECT_NAME:-$(basename "$NIK_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')}
+    for engine in podman docker; do
+        command -v "$engine" >/dev/null 2>&1 || continue
+        if "$engine" volume ls --format '{{.Name}}' 2>/dev/null | grep -Eq "^${project}_db-data(-18)?\$"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+had_env=1
+[ -f "$ENV_FILE" ] || had_env=0
+
+case "${NIK_EXISTING_INSTALL:-}" in
+    1) existing=1 ;;
+    0) existing=0 ;;
+    *)
+        existing=$had_env
+        if [ "$existing" -eq 0 ] && has_database_volume; then
+            existing=1
+            echo "init-env: a database volume of this stack exists: treating this as an existing install"
+        fi
+        ;;
+esac
+
+if [ "$had_env" -eq 0 ]; then
     if [ -f "$EXAMPLE" ]; then
         cp "$EXAMPLE" "$ENV_FILE"
     else
@@ -72,10 +112,12 @@ changed=0
 
 current=$(value_of SECRET_KEY)
 if is_placeholder "$current"; then
-    if [ "$new_install" -eq 0 ]; then
-        # What the running server encrypted with: the value in the file, or the
-        # old built-in default when the file had none.
-        previous="${current:-$OLD_SECRET_KEY_DEFAULT}"
+    if [ "$existing" -eq 1 ]; then
+        # What the running server encrypted with: the value its .env had, or the
+        # old built-in default when it had no .env (the example's placeholder,
+        # just copied, was never in use).
+        previous=$OLD_SECRET_KEY_DEFAULT
+        if [ "$had_env" -eq 1 ] && [ -n "$current" ]; then previous=$current; fi
         set_value SECRET_KEY_PREVIOUS "$previous"
         echo "init-env: SECRET_KEY replaced; the old one is kept as SECRET_KEY_PREVIOUS so stored secrets are re-encrypted at the next start (remove it afterwards)"
     fi
@@ -84,14 +126,15 @@ if is_placeholder "$current"; then
 fi
 
 current=$(value_of DB_PASSWORD)
-if [ "$new_install" -eq 1 ]; then
-    if is_placeholder "$current"; then
-        set_value DB_PASSWORD "$(random)"
+if [ "$existing" -eq 1 ]; then
+    # The existing database keeps the password it was created with.
+    if [ "$had_env" -eq 0 ] || [ -z "$current" ]; then
+        set_value DB_PASSWORD "$OLD_DB_PASSWORD_DEFAULT"
+        echo "init-env: DB_PASSWORD written as the old default, which the existing database uses"
         changed=1
     fi
-elif [ -z "$current" ]; then
-    set_value DB_PASSWORD "$OLD_DB_PASSWORD_DEFAULT"
-    echo "init-env: DB_PASSWORD was not set; written as the old default, which the existing database uses"
+elif is_placeholder "$current"; then
+    set_value DB_PASSWORD "$(random)"
     changed=1
 fi
 

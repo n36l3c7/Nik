@@ -245,6 +245,13 @@ sudo podman compose up -d --build
           what the existing database uses.
         </li>
         <li>
+          <strong>A stack that ran with no <code>.env</code> at all</strong> is an existing install too: the script
+          recognises it by the database volume of the Compose project and says so. If it cannot see the volume (another
+          user's Podman, a project name of your own), tell it: <code>NIK_EXISTING_INSTALL=1 deploy/init-env.sh</code>.
+          Check the result before starting: <code>DB_PASSWORD</code> must be the password the database was created with
+          (<code>nik</code> if you never set one).
+        </li>
+        <li>
           Everyone now uses <strong>https://&lt;host&gt;:8443</strong>; <code>http://&lt;host&gt;:8080</code> answers
           with a redirect to it. The session cookie is <code>Secure</code>, so everyone signs in once more. A line
           <code>COOKIE_SECURE=false</code> left in <code>.env</code> should be removed.
@@ -260,8 +267,14 @@ sudo podman compose up -d --build
       </ul>
       <p>
         If the stack refuses to start, the <code>api</code> container's log says which secret is missing or public and
-        how to set it.
+        how to set it. If that log says <code>password authentication failed for user "nik"</code>, the
+        <code>DB_PASSWORD</code> of <code>.env</code> is not the one the database was created with: either put the old
+        one back in <code>.env</code>, or give the database the new one, then start again:
       </p>
+      <pre><code class="language-bash">podman exec -it nik_db_1 psql -U nik -d nik -c "ALTER ROLE nik PASSWORD 'the value of DB_PASSWORD'"
+podman compose up -d
+</code></pre>
+      <p>Nothing is lost in either case: the data is in the volumes, which no step here touches.</p>
       <h4 id="upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18 (2.12.2)</h4>
       <p>
         Releases up to 2.12.1 run PostgreSQL 16 on the <code>db-data</code> volume. From 2.12.2 the Compose file runs

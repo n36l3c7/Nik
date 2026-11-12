@@ -63,6 +63,8 @@ jobs:
           done
       - name: Every image names its registry
         run: deploy/check-images.sh
+      - name: deploy/init-env.sh (new install, existing install with and without an .env)
+        run: .github/scripts/test-init-env.sh
 
   # The images as they are built today, with today's base images and system
   # packages (LibreOffice, Wireshark, Chromium: where the next vulnerability
