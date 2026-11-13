@@ -418,6 +418,22 @@
         error is retried after an hour.
       </p>
       <p>
+        <strong>Mailboxes</strong> (<code>app/mailboxes.py</code>). Whatever is uploaded ends as one mbox in
+        <code>_mailboxes/&lt;id&gt;/mailbox.mbox</code>: an mbox is kept as it is; a Maildir archive is read member by
+        member (nothing is unpacked to a path) and its messages are written one after the other, with the
+        <code>From </code> lines of a body escaped as mboxrd does; a PST is sent to the document worker, which runs
+        <code>readpst</code> unprivileged and with no network, and answers with the mbox (both streamed). The index is
+        built in one pass over the file, line by line, so a mailbox of gigabytes is never held in memory: for each
+        message its place in the file, its headers and its SHA-256, which is the id it will have as an e-mail artifact.
+        <code>thread()</code> then joins each message to the one it answers (<code>In-Reply-To</code>, the last known of
+        <code>References</code>, else the latest earlier message with the same subject when this one starts with
+        <code>Re:</code> or <code>Fwd:</code>), merges what Gmail's <code>X-GM-THRID</code> says belongs together, and
+        marks a second copy of the same <code>Message-ID</code> as a duplicate. An import reads the chosen messages back
+        from the file and runs the same analysis as an uploaded <code>.eml</code>; the mail keeps a mark of the mailbox
+        it came from, and <code>iocs.quiet_mail</code> leaves the indicators of such a message out unless it is phishing
+        or suspicious.
+      </p>
+      <p>
         <strong>Indicators and artifacts</strong> (<code>app/analysis_links.py</code>). The artifacts that are the
         analysis of an indicator are found by key, not by search: the scan of a URL has the id derived from the
         normalised address, a file or an e-mail is named by its SHA-256 (an MD5 or SHA-1 is looked up in

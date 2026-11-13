@@ -51,6 +51,7 @@ from .routers import (
     iocs,
     jobs,
     keys,
+    mailboxes,
     mails,
     network,
     previews,
@@ -58,6 +59,7 @@ from .routers import (
     samples,
     search,
     settings,
+    storage,
     urls,
     users,
     webhooks,
@@ -116,7 +118,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="3.7.0",
+    version="3.8.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -185,6 +187,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
 app.include_router(ioc_library.router, prefix="/api")
+app.include_router(mailboxes.router, prefix="/api")
 app.include_router(iocs.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
@@ -204,3 +207,4 @@ app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
+app.include_router(storage.router, prefix="/api")

@@ -29,6 +29,7 @@ from ..core.models import (
     AuditEntry,
     Incident,
     Mail,
+    Mailbox,
     NetworkCapture,
     Sample,
     UrlScan,
@@ -139,7 +140,7 @@ def _related(db: OrmSession, row: Artifact) -> dict[str, list[dict[str, Any]]]:
 # --------------------------------------------------------------------------- #
 @router.get("/artifacts")
 def list_artifacts(
-    kind: Optional[Literal["file", "mail", "pcap", "url"]] = None,
+    kind: Optional[Literal["file", "mail", "pcap", "url", "mailbox"]] = None,
     q: str = Query("", max_length=200, description="Text in the name, hash, detail or tags."),
     tag: str = Query("", max_length=40),
     mine: bool = Query(False, description="Only the artifacts the caller created."),
@@ -421,6 +422,10 @@ def delete_artifact_data(db: OrmSession, row: Artifact) -> None:
         mail_routes.delete_mail_data(db, db.get(Mail, row.ref))
     elif row.kind == "url":
         urlscan.delete(db, db.get(UrlScan, row.ref))
+    elif row.kind == "mailbox":
+        from . import mailboxes as mailbox_routes
+
+        mailbox_routes.delete_mailbox_data(db, db.get(Mailbox, row.ref))
     else:
         captures.remove_capture(db, db.get(NetworkCapture, row.ref))
 

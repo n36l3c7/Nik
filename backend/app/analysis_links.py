@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from . import artifacts, urlscan
 from .core.models import Artifact, ArtifactLink, Mail, NetworkCapture, Sample, UrlScan
-from .iocs import TYPES, capture_iocs, normalize
+from .iocs import TYPES, capture_iocs, normalize, quiet_mail
 
 Pair = tuple[str, str]
 SOURCE = "nik"  # Nik's own analysis among an indicator's sources
@@ -140,6 +140,8 @@ def _indicators(db: OrmSession, row: Artifact) -> list[Pair]:
     elif row.kind == "mail":
         mail = db.get(Mail, row.ref)
         found.append(("sha256", row.ref))
+        if mail is not None and quiet_mail(mail):
+            return found
         for ioc in ((mail.analysis or {}).get("iocs") if mail is not None else None) or []:
             if ioc.get("type") in TYPES:
                 found.append((ioc["type"], ioc.get("value")))

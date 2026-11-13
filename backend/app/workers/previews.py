@@ -148,3 +148,40 @@ def close_session(owner: str, session_id: str) -> None:
     from urllib.parse import quote
 
     _browser("DELETE", f"/sessions/{session_id}?owner={quote(owner)}")
+
+
+# --------------------------------------------------------------------------- #
+# Outlook PST -> mbox (the document worker runs readpst)                      #
+# --------------------------------------------------------------------------- #
+PST_TIMEOUT = 900
+
+
+def convert_pst(source, target) -> None:
+    """Send the PST to the document worker and write the mbox it answers with
+    to ``target``. Both are streamed: neither is held in memory here."""
+    if not docview_configured():
+        raise WorkerError("The document worker is not configured (DOCVIEW_URL): a PST cannot be read.", 503)
+    size = os.path.getsize(source)
+    with open(source, "rb") as handle:
+        request = urllib.request.Request(  # noqa: S310 - operator-configured URL
+            f"{settings.DOCVIEW_URL}/pst",
+            data=handle,
+            method="POST",
+            headers={
+                "X-Docview-Token": settings.DOCVIEW_TOKEN,
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(size),
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=PST_TIMEOUT) as response, open(target, "wb") as out:  # noqa: S310
+                while chunk := response.read(1024 * 1024):
+                    out.write(chunk)
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = json.loads(exc.read() or b"{}").get("detail")
+            except ValueError:
+                detail = None
+            raise WorkerError(str(detail or f"The document worker answered {exc.code}"), exc.code) from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise WorkerError("The document worker cannot be reached.", 502) from exc

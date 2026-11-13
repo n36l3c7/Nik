@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-11-13
+
+### Added
+
+- **Mailboxes.** A file of many e-mails is an artifact of its own: an
+  **mbox**, a **Maildir** (as a zip or tar archive) or an Outlook **PST**.
+  Dropped anywhere, it is stored and indexed (its messages, conversations,
+  dates, main senders); nothing is analysed until messages are chosen.
+- **Import what you choose**, 500 messages at a time: by dates, sender,
+  subject, with attachments, and with the whole conversation of each match.
+  Nik says what the filter would take before taking it. Each message becomes
+  an e-mail artifact, analysed as an `.eml` is; one already in Nik is not
+  analysed twice. The file stays on the server, so more can be imported later.
+- **The graph of conversations**, drawn like a source-control tree: a row per
+  message, newest first, joined to the message it answers; a colour is a
+  conversation, a fork is a second answer or a forward. A hollow node is a
+  message of the file not imported yet: click it to import it. A row opens
+  the message; *Show only this conversation* narrows the graph to one thread.
+- Conversations follow `In-Reply-To` and `References`; without them, Gmail's
+  thread id or the subject without its `Re:` / `Fwd:`. The same message found
+  twice in the file (Sent and Inbox) is one row.
+- **Into an incident, all or some**: every imported message, or the ticked
+  ones, go in an incident's Mail Analysis tab.
+- Only the **phishing and suspicious** messages of a mailbox give indicators:
+  a mailbox is mostly ordinary mail.
+- API: `POST /api/artifacts/mailboxes`, `GET /api/mailboxes/{id}`,
+  `GET /api/mailboxes/{id}/messages`, `POST /api/mailboxes/{id}/import`,
+  `POST /api/mailboxes/{id}/link`. Settings `MAILBOX_MAX_MB` (2048) and
+  `PST_MAX_MB` (500). Migration `0024` adds `mailboxes` and
+  `mailbox_messages`.
+
+- **Import the next 500.** A filter that matches more than one import takes
+  is remembered: the mailbox says how many messages were left for later and
+  one button goes on with them (`next` in `POST /api/mailboxes/{id}/import`).
+- **A Maildir is recognised by what it holds.** A zip or tar archive with any
+  name is a mailbox when it has the folders of a Maildir (`cur/`, `new/`):
+  the directory of the zip, or the first headers of the tar, is read in the
+  browser, a slice of the file whatever its size.
+- **Storage** (Settings, admins): how large the disk of the file store is,
+  how much is free, and how Nik's files share the used part (mailboxes,
+  packet captures, files, e-mails, previews, screenshots, the database),
+  with the ten largest objects, each a link to its page. A warning shows
+  when less than a tenth of the disk is free. API: `GET /api/storage`.
+
+### Changed
+
+- The document worker also converts PST files (`readpst`): rebuild its image.
+  nginx accepts up to 2100 MB on the mailbox upload only.
+
 ## [3.7.0] - 2026-11-12
 
 ### Added
@@ -1724,7 +1773,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.7.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/n36l3c7/Nik/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/n36l3c7/Nik/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/n36l3c7/Nik/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/n36l3c7/Nik/compare/v3.4.0...v3.5.0

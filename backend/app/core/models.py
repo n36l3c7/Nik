@@ -658,3 +658,48 @@ class IocAlert(Base):
     type: Mapped[str] = mapped_column(String(16), nullable=False)
     value: Mapped[str] = mapped_column(String(1024), nullable=False)
     seen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+
+
+class Mailbox(Base):
+    """A file of many e-mails (mbox, a Maildir archive, an Outlook PST) kept
+    as one artifact. Its messages are indexed in ``mailbox_messages``; those
+    an analyst imports become e-mail artifacts of their own."""
+
+    __tablename__ = "mailboxes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    file_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    format: Mapped[str] = mapped_column(String(16), nullable=False, default="mbox")  # mbox | maildir | pst
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # indexing | ready | importing | error
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="indexing")
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    meta: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class MailboxMessage(Base):
+    """One message of a mailbox: where it is in the stored file, its headers,
+    the message it answers (``parent``) and its conversation (``thread``)."""
+
+    __tablename__ = "mailbox_messages"
+    __table_args__ = (Index("ix_mailbox_messages_sha256", "sha256"),)
+
+    mailbox_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("mailboxes.id", ondelete="CASCADE"), primary_key=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    length: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    message_id: Mapped[str] = mapped_column(String(400), nullable=False, default="")
+    parent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    thread: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicate_of: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    sender: Mapped[str] = mapped_column(String(320), nullable=False, default="")
+    recipients: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    date_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    attachments: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())

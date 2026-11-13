@@ -142,6 +142,13 @@ def _host(url: str) -> tuple[str, str] | None:
         return ("domain", host.lower()) if "." in host else None
 
 
+def quiet_mail(mail) -> bool:
+    """A message imported from a mailbox that nothing flags. A mailbox is
+    mostly ordinary mail: only its phishing and suspicious messages give
+    indicators, or the library would fill with every address ever written to."""
+    return bool((mail.analysis or {}).get("mailbox")) and mail.verdict not in ("phishing", "suspicious")
+
+
 def text_iocs(text: str) -> list[tuple[str, str]]:
     """Indicators in free text; a host inside a URL is reported as its own domain too."""
     found: list[tuple[str, str]] = []
@@ -286,6 +293,8 @@ def extract(
         source = f"mail:{ref.get('fileName') or str(ref.get('sha256', ''))[:12]}"
         when = ref.get("date") or _iso_ms(ref.get("importedAt"))
         mail = (mails or {}).get(ref.get("sha256"))
+        if mail is not None and quiet_mail(mail):
+            continue
         for ioc in (mail.analysis.get("iocs") if mail is not None else None) or []:
             if ioc.get("type") in TYPES:
                 out.add(ioc["type"], ioc.get("value"), source, when)

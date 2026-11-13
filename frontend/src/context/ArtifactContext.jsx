@@ -20,7 +20,7 @@ import { useAuth } from './AuthContext.jsx'
 
 const ArtifactContext = createContext(null)
 const EMPTY_FILTERS = { kind: '', q: '', mine: false }
-const NO_COUNTS = { file: 0, mail: 0, pcap: 0, url: 0 }
+const NO_COUNTS = { file: 0, mail: 0, pcap: 0, url: 0, mailbox: 0 }
 
 const idFromUrl = () => (typeof window === 'undefined' ? null : artifactIdFromPath(window.location.pathname))
 

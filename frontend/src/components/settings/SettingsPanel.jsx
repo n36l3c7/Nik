@@ -13,6 +13,7 @@ import {
   UserCog,
   Users,
   X,
+  HardDrive,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useLayer } from '../../lib/layers.js'
@@ -26,6 +27,7 @@ import AccountsSection from './sections/AccountsSection.jsx'
 import MyAccountSection from './sections/MyAccountSection.jsx'
 import ApiKeysSection from './sections/ApiKeysSection.jsx'
 import AuditLogSection from './sections/AuditLogSection.jsx'
+import StorageSection from './sections/StorageSection.jsx'
 import YaraRulesSection from './sections/YaraRulesSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import CapaRulesSection from './sections/CapaRulesSection.jsx'
@@ -39,7 +41,7 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
  * modals. Sections (left nav): the analysts' working settings (Detection
  * rules, Business hours, IOC allowlist), My account and the Audit log for
  * everyone; Report header, Mail analysis, Threat intelligence, Accounts, API
- * keys and the rule sets for admins only (the server enforces the same split).
+ * keys, Storage and the rule sets for admins only (the server enforces the same split).
  * The active section is owned by App so the header and sidebar buttons can
  * deep-link into a specific section.
  */
@@ -57,6 +59,7 @@ const SECTIONS = [
   { id: 'yara', label: 'YARA rules', icon: FileSearch, Component: YaraRulesSection, adminOnly: true },
   { id: 'flirt', label: 'FLIRT signatures', icon: Fingerprint, Component: FlirtSignaturesSection, adminOnly: true },
   { id: 'capa', label: 'capa rules', icon: Radar, Component: CapaRulesSection, adminOnly: true },
+  { id: 'storage', label: 'Storage', icon: HardDrive, Component: StorageSection, adminOnly: true },
   { id: 'audit', label: 'Audit log', icon: ScrollText, Component: AuditLogSection },
 ]
 
@@ -66,9 +69,10 @@ const SECTIONS = [
  *   onClose: () => void,
  *   section?: string,
  *   onSectionChange?: (id: string) => void,
+ *   onOpenArtifact?: (id: string) => void,
  * }} props
  */
-export default function SettingsPanel({ open, onClose, section = 'detection', onSectionChange }) {
+export default function SettingsPanel({ open, onClose, section = 'detection', onSectionChange, onOpenArtifact }) {
   const { currentUser } = useAuth()
   const isAdmin = currentUser?.role === 'admin'
 
@@ -139,7 +143,7 @@ export default function SettingsPanel({ open, onClose, section = 'detection', on
           </nav>
 
           <div className="min-w-0 flex-1 overflow-y-auto p-5">
-            <ActiveComponent />
+            <ActiveComponent onOpenArtifact={onOpenArtifact} />
           </div>
         </div>
       </div>

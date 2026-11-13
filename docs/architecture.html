@@ -257,6 +257,8 @@
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
 ├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
 │                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
+├── storage.py                      # The disk of the file store: how full, with what (Settings > Storage)
+├── mailboxes.py                    # Mailboxes (mbox, Maildir archive, PST): one-pass index, conversations
 ├── analysis_links.py               # An indicator and the artifact that is its analysis: each finds the other
 ├── jsanalysis.py                   # Scripts of a scanned page read as text: signatures, obfuscation, libraries
 ├── ioc_library.py                  # The IoC library: one row per indicator, reading pastes and files,

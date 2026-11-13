@@ -1,5 +1,5 @@
-# Nik document viewer worker: LibreOffice (Office -> PDF) and pdfium (PDF ->
-# page images) behind a small Python HTTP front (standard library). It runs
+# Nik document viewer worker: LibreOffice (Office -> PDF), pdfium (PDF ->
+# page images) and readpst (an Outlook PST -> mbox) behind a small Python HTTP front (standard library). It runs
 # on the internal network only: a document cannot reach anything outside.
 FROM docker.io/library/python:3.12-slim
 
@@ -9,7 +9,7 @@ COPY requirements.txt /tmp/requirements.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
-       fonts-dejavu-core fonts-liberation2 \
+       fonts-dejavu-core fonts-liberation2 pst-utils \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r /tmp/requirements.txt \
     && useradd --create-home --uid 1000 viewer

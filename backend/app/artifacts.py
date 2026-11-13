@@ -40,10 +40,10 @@ from .core.security import now_iso
 
 logger = logging.getLogger("nik.artifacts")
 
-KINDS = ("file", "mail", "pcap", "url")
+KINDS = ("file", "mail", "pcap", "url", "mailbox")
 TAG_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,39}")
 TAGS_MAX = 12
-_ID_RE = re.compile(r"(file|mail)-[0-9a-f]{64}|(pcap|url)-[0-9a-f]{32}")
+_ID_RE = re.compile(r"(file|mail)-[0-9a-f]{64}|(pcap|url|mailbox)-[0-9a-f]{32}")
 
 
 def artifact_id(kind: str, ref: str) -> str:
@@ -150,6 +150,29 @@ def register_url(db: OrmSession, scan: UrlScan) -> Artifact:
         score=scan.score if scan.status == "done" else None,
         detail=detail,
         size=0,
+    )
+
+
+def register_mailbox(db: OrmSession, mailbox) -> Artifact:
+    """A mailbox (mbox, Maildir, PST): its verdict is the worst of the messages imported from it."""
+    meta = mailbox.meta or {}
+    counts = meta.get("verdicts") or {}
+    verdict = "phishing" if counts.get("phishing") else "suspicious" if counts.get("suspicious") else ""
+    if mailbox.status == "ready":
+        detail = f"{meta.get('imported', 0)} of {mailbox.total} messages imported"
+    else:
+        detail = mailbox.status
+    return _upsert(
+        db,
+        "mailbox",
+        mailbox.id,
+        mailbox.file_name or mailbox.id,
+        mailbox.created_by,
+        mailbox.created_at,
+        verdict=verdict,
+        score=None,
+        detail=detail,
+        size=mailbox.size,
     )
 
 
