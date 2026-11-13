@@ -1,7 +1,7 @@
 # Nik document viewer worker: LibreOffice (Office -> PDF), pdfium (PDF ->
 # page images) and readpst (an Outlook PST -> mbox) behind a small Python HTTP front (standard library). It runs
 # on the internal network only: a document cannot reach anything outside.
-FROM docker.io/library/python:3.12-slim
+FROM docker.io/library/python:3.15-slim
 
 # The Python packages are pinned in requirements.txt, where Dependabot and
 # pip-audit see them.
