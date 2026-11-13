@@ -165,6 +165,8 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
                             files.write(source, target)
                             packed.add(target)
             for row in rows:
+                if row.kind not in _MODELS:
+                    continue  # a mailbox is not exported: its messages are, one by one
                 model, columns = _MODELS[row.kind]
                 record = db.get(model, row.ref)
                 entry = _summary(row)

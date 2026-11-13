@@ -201,6 +201,19 @@
               <td>Largest packet capture accepted, in MB.</td>
             </tr>
             <tr>
+              <td><code>MAILBOX_MAX_MB</code></td>
+              <td><code>2048</code></td>
+              <td>Largest mailbox accepted (an mbox, or a zip or tar archive of a Maildir), in MB.</td>
+            </tr>
+            <tr>
+              <td><code>PST_MAX_MB</code></td>
+              <td><code>500</code></td>
+              <td>
+                Largest Outlook PST accepted, in MB. It is converted in the document worker's memory: raise
+                <code>DOCVIEW_MEMORY</code> with it.
+              </td>
+            </tr>
+            <tr>
               <td><code>ENRICHMENT_WORKER</code></td>
               <td><code>true</code></td>
               <td>
@@ -358,6 +371,19 @@
               <td><code>PCAP_MAX_MB</code></td>
               <td><code>500</code></td>
               <td>Largest packet capture accepted, in MB.</td>
+            </tr>
+            <tr>
+              <td><code>MAILBOX_MAX_MB</code></td>
+              <td><code>2048</code></td>
+              <td>Largest mailbox accepted (an mbox, or a zip or tar archive of a Maildir), in MB.</td>
+            </tr>
+            <tr>
+              <td><code>PST_MAX_MB</code></td>
+              <td><code>500</code></td>
+              <td>
+                Largest Outlook PST accepted, in MB. It is converted in the document worker's memory: raise
+                <code>DOCVIEW_MEMORY</code> with it.
+              </td>
             </tr>
             <tr>
               <td><code>DOCVIEW_MEMORY</code> · <code>BROWSER_MEMORY</code> · <code>PCAP_MEMORY</code></td>

@@ -51,6 +51,7 @@ from .routers import (
     iocs,
     jobs,
     keys,
+    mailboxes,
     mails,
     network,
     previews,
@@ -185,6 +186,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
 app.include_router(ioc_library.router, prefix="/api")
+app.include_router(mailboxes.router, prefix="/api")
 app.include_router(iocs.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(report.router, prefix="/api")

@@ -448,6 +448,39 @@
               </td>
             </tr>
             <tr>
+              <td><code>POST /api/artifacts/mailboxes</code> · <code>GET /api/mailboxes/{id}</code></td>
+              <td>
+                Upload a mailbox (multipart <code>file</code>: an mbox, a zip or tar archive of a Maildir, up to
+                <code>MAILBOX_MAX_MB</code>; an Outlook PST up to <code>PST_MAX_MB</code>). It is indexed in the
+                background: <code>status</code> is <code>indexing</code>, then <code>ready</code> or <code>error</code>;
+                <code>importing</code> while messages are being imported, with <code>progress</code>. The detail has
+                <code>total</code>, <code>threads</code>, <code>from</code> / <code>to</code>, <code>attachments</code>,
+                <code>topSenders</code>, <code>imported</code> and <code>verdicts</code>. The artifact is
+                <code>mailbox-&lt;id&gt;</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/mailboxes/{id}/messages</code></td>
+              <td>
+                The messages, newest first, each with <code>seq</code>, the message it answers (<code>parent</code>),
+                its conversation (<code>thread</code>), subject, sender, recipients, date, and when imported its
+                <code>artifactId</code>, <code>verdict</code> and <code>score</code>.
+                <code>scope=imported</code> (default) keeps the conversations with an imported message, whole;
+                <code>scope=all</code> the whole file. Also <code>q</code>, <code>flagged</code>, <code>thread</code>,
+                <code>offset</code>, <code>limit</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/mailboxes/{id}/import</code> · <code>POST …/link</code></td>
+              <td>
+                Import messages by <code>seqs</code> or by a filter (<code>dateFrom</code>, <code>dateTo</code> in Unix
+                milliseconds, <code>sender</code>, <code>subject</code>, <code>attachments</code>), with the rest of
+                their conversations when <code>threads</code> is true: 500 at most, the others are counted in
+                <code>waiting</code>. <code>dryRun</code> only counts. <code>link</code> puts imported messages in an
+                incident: <code>{ incidentId, seqs }</code>, all of them when <code>seqs</code> is omitted.
+              </td>
+            </tr>
+            <tr>
               <td><code>POST /api/artifacts/export</code> · <code>POST /api/artifacts/import</code></td>
               <td>
                 Export <code>{ ids, files }</code> (500 artifacts at most) as a zip: <code>manifest.json</code> (<code

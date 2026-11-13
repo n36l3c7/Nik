@@ -94,6 +94,9 @@ services:
       PCAP_URL: http://pcap:8740
       PCAP_TOKEN: ${PCAP_TOKEN:?PCAP_TOKEN is not set, run deploy/init-env.sh}
       PCAP_MAX_MB: ${PCAP_MAX_MB:-500}
+      # Mailboxes (mbox, Maildir archive) and Outlook PST files, read as many e-mails.
+      MAILBOX_MAX_MB: ${MAILBOX_MAX_MB:-2048}
+      PST_MAX_MB: ${PST_MAX_MB:-500}
     volumes:
       - sample-store:/app/samples
     networks: [default, analysis, browser-control]
@@ -181,6 +184,8 @@ services:
     build: ./workers/docview
     environment:
       DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
+      # A PST is converted here, in /tmp (memory): it and its mbox must fit in DOCVIEW_MEMORY.
+      DOCVIEW_PST_MAX_MB: ${PST_MAX_MB:-500}
     networks: [analysis]
     read_only: true
     tmpfs: [/tmp]

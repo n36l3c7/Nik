@@ -15,10 +15,12 @@ export const ARTIFACT_KINDS = [
   { id: 'pcap', label: 'pcap', plural: 'captures', tab: 'network', uploadPath: '/artifacts/captures' },
   // A URL is not uploaded: it is scanned (POST /artifacts/urls).
   { id: 'url', label: 'url', plural: 'addresses', tab: 'urls', uploadPath: null },
+  // A mailbox (mbox, Maildir archive, PST) has a page of its own, not an analysis tab.
+  { id: 'mailbox', label: 'mailbox', plural: 'mailboxes', tab: null, uploadPath: '/artifacts/mailboxes' },
 ]
 
 const BY_ID = Object.fromEntries(ARTIFACT_KINDS.map((kind) => [kind.id, kind]))
-const BY_TAB = Object.fromEntries(ARTIFACT_KINDS.map((kind) => [kind.tab, kind]))
+const BY_TAB = Object.fromEntries(ARTIFACT_KINDS.filter((kind) => kind.tab).map((kind) => [kind.tab, kind]))
 
 export const artifactKind = (id) => BY_ID[id] ?? null
 
@@ -69,7 +71,7 @@ export function parseTags(text) {
 
 /* ---- Permalink (/artifact/<id>) ---- */
 
-const PATH_RE = /^\/artifact\/((?:file|mail)-[0-9a-f]{64}|(?:pcap|url)-[0-9a-f]{32})$/
+const PATH_RE = /^\/artifact\/((?:file|mail)-[0-9a-f]{64}|(?:pcap|url|mailbox)-[0-9a-f]{32})$/
 
 export const artifactPath = (id) => `/artifact/${id}`
 

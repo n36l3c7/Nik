@@ -33,6 +33,7 @@ import { useIocLibrary } from './context/IocLibraryContext.jsx'
 import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
 import { api } from './services/api.js'
 import { setPath } from './lib/location.js'
+import { mailboxFormat } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
@@ -260,11 +261,25 @@ export default function App() {
    * A file to place (dropped anywhere, or chosen in "New analysis"): detect
    * what it is and whether it was analysed before, then ask where it goes.
    */
-  const { lookup } = artifacts
+  const { lookup, startAnalysis, openArtifact } = artifacts
   const { openAdd } = library
   const placeFile = useCallback(
     async (file, { preferAnalysis = false, asEvidence = false } = {}) => {
-      const route = detectFileRoute({ name: file.name, head: await readHead(file) })
+      const head = await readHead(file)
+      // A mailbox (mbox, Maildir archive, PST) is stored and indexed as an
+      // artifact of its own; what to import from it is chosen on its page.
+      if (!asEvidence && mailboxFormat({ name: file.name, head })) {
+        showToast({ message: `Uploading ${file.name}…` })
+        try {
+          const box = await startAnalysis('mailbox', file)
+          setPanel('artifacts')
+          openArtifact(box.artifactId)
+        } catch (err) {
+          showToast({ message: `${file.name}: ${err.message}` })
+        }
+        return
+      }
+      const route = detectFileRoute({ name: file.name, head })
       // A file of indicators (text, CSV, STIX, MISP, Nik's export) goes to the
       // IoC library: the server reads it and says what it holds.
       if (!preferAnalysis && !asEvidence && mayHoldIndicators({ name: file.name, size: file.size, route })) {
@@ -291,7 +306,7 @@ export default function App() {
       const known = analysable && file.size <= LOOKUP_MAX_BYTES ? await lookup(await sha256Hex(file)) : []
       setDrop({ file, route, known, preferAnalysis })
     },
-    [lookup, openAdd],
+    [lookup, openAdd, startAnalysis, openArtifact, setPanel, showToast],
   )
 
   // Text pasted or dragged onto the app: an address or an indicator Nik can act on.

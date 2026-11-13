@@ -1028,6 +1028,88 @@ test('an indicator and the artifact that is its analysis lead to each other', as
   await expect(page).toHaveURL(/\/incident\//)
 })
 
+test('a mailbox is indexed, its messages imported, and its conversations drawn as a graph', async () => {
+  test.setTimeout(180_000)
+  const rail = page.getByRole('navigation', { name: 'Sections' })
+  const artifact = page.getByRole('region', { name: 'Artifact' })
+  const mail = (id, subject, from, date, reply) =>
+    [
+      'From sender@example.org Tue Nov 10 08:31:00 2026',
+      `From: ${from}`,
+      'To: finance@example.org',
+      `Subject: ${subject}`,
+      `Date: ${date}`,
+      `Message-ID: <${id}@nik-e2e.example>`,
+      ...(reply ? [`In-Reply-To: <${reply}@nik-e2e.example>`] : []),
+      '',
+      'Please see the invoice.',
+      '>From the accounts team',
+      '',
+    ].join('\n')
+  const mbox = [
+    mail('q1', 'Quarterly invoice', 'billing@nik-e2e-vendor.example', 'Tue, 10 Nov 2026 08:31:00 +0000'),
+    mail('q2', 'Re: Quarterly invoice', 'finance@example.org', 'Wed, 11 Nov 2026 09:00:00 +0000', 'q1'),
+    mail('q3', 'Fwd: Quarterly invoice', 'colleague@example.org', 'Wed, 11 Nov 2026 10:00:00 +0000', 'q1'),
+  ].join('\n')
+
+  // Dropped anywhere, an mbox becomes a mailbox artifact: indexed, nothing analysed yet.
+  const transfer = await page.evaluateHandle((text) => {
+    const data = new DataTransfer()
+    data.items.add(new File([text], 'team.mbox'))
+    return data
+  }, mbox)
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  await expect(page).toHaveURL(/\/artifact\/mailbox-[0-9a-f]{32}$/, { timeout: 30_000 })
+  await expect(artifact).toContainText('team.mbox')
+  await expect(artifact).toContainText('Nothing imported yet', { timeout: 30_000 })
+  await expect(artifact).toContainText('0 of 3 messages imported')
+
+  // The import says what it will take before taking it.
+  await artifact.getByRole('button', { name: 'Import messages' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Import from team.mbox' })
+  await expect(dialog.getByRole('status', { name: 'Import plan' })).toContainText('3 messages match')
+  await dialog.getByLabel('Sender or domain').fill('nik-e2e-vendor.example')
+  await expect(dialog.getByRole('status', { name: 'Import plan' })).toContainText(
+    '1 message matches · 3 with their conversations',
+  )
+  await dialog.getByRole('button', { name: 'Import 3 messages' }).click()
+
+  // The graph: a row per message, newest first, each imported one with its verdict.
+  const rows = artifact.getByRole('list', { name: 'Messages' }).getByRole('listitem')
+  await expect(rows).toHaveCount(3, { timeout: 120_000 })
+  await expect(artifact).toContainText('3 of 3 messages imported', { timeout: 120_000 })
+  await expect(rows.first()).toContainText('Fwd: Quarterly invoice')
+  await expect(rows.last()).toContainText('Quarterly invoice')
+  await expect(rows.last()).not.toContainText('not imported')
+
+  // A row shows the message and what it answers; the e-mail opens as its own artifact.
+  await rows
+    .nth(1)
+    .getByRole('button', { name: /Re: Quarterly invoice/ })
+    .click()
+  const detail = artifact.getByRole('complementary', { name: 'Message' })
+  await expect(detail).toContainText('finance@example.org')
+  await expect(detail.getByRole('button', { name: 'Quarterly invoice', exact: true })).toBeVisible()
+  await detail.getByRole('button', { name: 'Open the e-mail' }).click()
+  await expect(page).toHaveURL(/\/artifact\/mail-[0-9a-f]{64}$/)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/artifact\/mailbox-[0-9a-f]{32}$/)
+  await expect(rows).toHaveCount(3)
+
+  // All of them, or the ticked ones, go in an incident.
+  await rows.first().getByRole('checkbox').check()
+  await artifact.getByRole('button', { name: 'Put 1 in an incident' }).click()
+  const link = page.getByRole('dialog', { name: 'Put messages in an incident' })
+  await expect(link).toContainText('Only the phishing and suspicious ones add indicators')
+  await link.getByRole('button', { name: 'Put the 1 selected' }).click()
+  await expect(page.getByText(/1 message is in /)).toBeVisible()
+
+  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
+  await expect(page).toHaveURL(/\/incident\//)
+})
+
 test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
   const panel = page.locator('aside[aria-label="Incidents panel"]')
   const list = panel.locator('nav[aria-label="Incidents"]')

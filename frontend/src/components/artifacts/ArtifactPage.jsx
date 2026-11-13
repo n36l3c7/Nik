@@ -10,6 +10,7 @@ import { AsciiSkull, Badge, Button, EmptyState, ErrorBoundary, Modal } from '../
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import AsIndicator from './AsIndicator.jsx'
+import MailboxPage from './MailboxPage.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
 
 /*
@@ -119,6 +120,48 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
       </div>
     )
   }
+
+  // A mailbox has a page of its own: the file's messages and the graph of its conversations.
+  if (artifact.kind === 'mailbox')
+    return (
+      <>
+        <MailboxPage
+          artifact={artifact}
+          onOpenArtifact={openArtifact}
+          onOpenIncident={onOpenIncident}
+          onDelete={() => setDeleteOpen(true)}
+        />
+        <Modal
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          title="Delete the mailbox?"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                icon={Trash2}
+                onClick={async () => {
+                  setDeleteOpen(false)
+                  try {
+                    await remove(artifact.id)
+                    showToast({ message: 'Mailbox deleted. The e-mails imported from it stay.' })
+                  } catch (err) {
+                    showToast({ message: err.message })
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            </>
+          }
+        >
+          <p>The file and its index are removed. The e-mails imported from it stay, as artifacts of their own.</p>
+        </Modal>
+      </>
+    )
 
   const kind = artifactKind(artifact.kind)
   const Icon = KIND_ICONS[artifact.kind] ?? Boxes

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Boxes, Bug, Download, FolderOpen, Link2, Mail, Network, Plus, Tag, Upload } from 'lucide-react'
+import { Boxes, Bug, Download, FolderOpen, Inbox, Link2, Mail, Network, Plus, Tag, Upload } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { ARTIFACT_KINDS, artifactMeta, artifactPath, verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatRelative } from '../../lib/time.js'
@@ -14,7 +14,7 @@ import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
  * filter and the kind chips are applied by the server.
  */
 
-export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network, url: Link2 }
+export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network, url: Link2, mailbox: Inbox }
 
 const CHIP =
   'h-7 px-2.5 border font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'

@@ -297,3 +297,24 @@ def test_migration_0023_leaves_tables_the_baseline_already_made(tmp_path, monkey
     command.upgrade(cfg, "0023_ioc_library")
     with engine.connect() as conn:
         assert "ioc_alerts" in sa.inspect(conn).get_table_names()
+
+
+def test_migration_0024_adds_the_mailbox_tables_and_leaves_existing_ones(tmp_path, monkeypatch):
+    url = "sqlite:///" + str(tmp_path / "old.db").replace("\\", "/")
+    engine = sa.create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0023_ioc_library")
+    command.upgrade(cfg, "0024_mailboxes")
+    with engine.connect() as conn:
+        assert {"mailboxes", "mailbox_messages"} <= set(sa.inspect(conn).get_table_names())
+        assert {c["name"] for c in sa.inspect(conn).get_columns("mailbox_messages")} >= {"seq", "parent", "thread"}
+    command.upgrade(cfg, "0024_mailboxes")  # again: nothing to do
+    command.downgrade(cfg, "0023_ioc_library")
+    with engine.connect() as conn:
+        assert "mailboxes" not in sa.inspect(conn).get_table_names()

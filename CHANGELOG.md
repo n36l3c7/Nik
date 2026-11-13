@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Mailboxes.** A file of many e-mails is an artifact of its own: an
+  **mbox**, a **Maildir** (as a zip or tar archive) or an Outlook **PST**.
+  Dropped anywhere, it is stored and indexed (its messages, conversations,
+  dates, main senders); nothing is analysed until messages are chosen.
+- **Import what you choose**, 500 messages at a time: by dates, sender,
+  subject, with attachments, and with the whole conversation of each match.
+  Nik says what the filter would take before taking it. Each message becomes
+  an e-mail artifact, analysed as an `.eml` is; one already in Nik is not
+  analysed twice. The file stays on the server, so more can be imported later.
+- **The graph of conversations**, drawn like a source-control tree: a row per
+  message, newest first, joined to the message it answers; a colour is a
+  conversation, a fork is a second answer or a forward. A hollow node is a
+  message of the file not imported yet: click it to import it. A row opens
+  the message; *Show only this conversation* narrows the graph to one thread.
+- Conversations follow `In-Reply-To` and `References`; without them, Gmail's
+  thread id or the subject without its `Re:` / `Fwd:`. The same message found
+  twice in the file (Sent and Inbox) is one row.
+- **Into an incident, all or some**: every imported message, or the ticked
+  ones, go in an incident's Mail Analysis tab.
+- Only the **phishing and suspicious** messages of a mailbox give indicators:
+  a mailbox is mostly ordinary mail.
+- API: `POST /api/artifacts/mailboxes`, `GET /api/mailboxes/{id}`,
+  `GET /api/mailboxes/{id}/messages`, `POST /api/mailboxes/{id}/import`,
+  `POST /api/mailboxes/{id}/link`. Settings `MAILBOX_MAX_MB` (2048) and
+  `PST_MAX_MB` (500). Migration `0024` adds `mailboxes` and
+  `mailbox_messages`.
+
+### Changed
+
+- The document worker also converts PST files (`readpst`): rebuild its image.
+  nginx accepts up to 2100 MB on the mailbox upload only.
+
 ## [3.7.0] - 2026-11-12
 
 ### Added
