@@ -2,7 +2,7 @@
 # sharkd for the packet list, protocol tree, Follow Stream and Export
 # Objects) behind a small Python HTTP front (standard library). It reads the
 # sample store read-only and runs on the internal network only.
-FROM docker.io/library/python:3.12-slim
+FROM docker.io/library/python:3.15-slim
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark \

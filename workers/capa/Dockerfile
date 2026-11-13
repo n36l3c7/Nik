@@ -1,7 +1,7 @@
 # Nik capa worker: Mandiant capa (vivisect backend) + a small Python HTTP front
 # (standard library only). capa, its rules and its library signatures are
 # pinned; the rules and signatures are checked against their SHA-256.
-FROM docker.io/library/python:3.12-slim
+FROM docker.io/library/python:3.15-slim
 
 ARG CAPA_VERSION=10.0.0
 ARG CAPA_RULES_SHA256=3d14dbdaf5b71731e42395ed5fa4d287418e6a2e5d6b0a348c7fd9fbe1699611

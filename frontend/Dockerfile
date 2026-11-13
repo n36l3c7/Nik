@@ -12,7 +12,7 @@ RUN npm run build
 RUN node security-headers.js /app/nginx-headers
 
 # ---- Stage 2: serve with nginx ----
-FROM docker.io/library/nginx:1.30-alpine
+FROM docker.io/library/nginx:1.31-alpine
 # openssl backs the entrypoint hook that self-signs a TLS certificate when the
 # operator has not mounted one (see nginx/gen-selfsigned.sh).
 RUN apk add --no-cache openssl
