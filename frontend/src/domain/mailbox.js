@@ -8,8 +8,9 @@ const ARCHIVE = /\.(zip|tar|tgz|tar\.gz)$/i
 
 /**
  * Whether a dropped file is a mailbox, from its name and first bytes: an mbox
- * starts with "From ", a PST with "!BDN". An archive is one only when its
- * name says so (maildir, mailbox): any other zip is a file to analyse.
+ * starts with "From ", a PST with "!BDN". An archive is one when its name
+ * says so (maildir, mailbox) or, see `mailboxFormatOf`, when it holds the
+ * folders of a Maildir: any other zip is a file to analyse.
  */
 export function mailboxFormat({ name = '', head = new Uint8Array() } = {}) {
   const starts = (text) => text.split('').every((char, index) => head[index] === char.charCodeAt(0))
@@ -17,6 +18,71 @@ export function mailboxFormat({ name = '', head = new Uint8Array() } = {}) {
   if (starts('!BDN')) return 'pst'
   if (starts('From ')) return 'mbox'
   if (ARCHIVE.test(name) && /maildir|mailbox/i.test(name)) return 'maildir'
+  return null
+}
+
+/**
+ * Whether the bytes of an archive (a zip directory, tar headers) name the
+ * messages of a Maildir: a file in a `cur/` folder, or one in `new/` named
+ * as a Maildir names them (it starts with the time of delivery).
+ */
+export function holdsMaildir(bytes) {
+  let text = ''
+  for (let at = 0; at < bytes.length; at += 8192) text += String.fromCharCode(...bytes.subarray(at, at + 8192))
+  return /(^|[/\0])cur\/[^/\0]/.test(text) || /(^|[/\0])new\/\d{9,}\./.test(text)
+}
+
+const SNIFF_BYTES = 512 * 1024
+
+async function gunzipStart(blob, limit = 2 * SNIFF_BYTES) {
+  // The start of a gzip, as far as the slice goes: its end is cut, which
+  // ends the reading with an error after the bytes that could be read.
+  const chunks = []
+  let size = 0
+  try {
+    const reader = blob.stream().pipeThrough(new DecompressionStream('gzip')).getReader()
+    while (size < limit) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      size += value.length
+    }
+    reader.cancel().catch(() => {})
+  } catch {
+    // Cut short: what was read is enough.
+  }
+  const out = new Uint8Array(size)
+  let at = 0
+  for (const chunk of chunks) {
+    out.set(chunk, at)
+    at += chunk.length
+  }
+  return out
+}
+
+/**
+ * `mailboxFormat`, and for an archive with any name a look inside: the
+ * directory at the end of a zip, the first headers of a tar (gzipped or
+ * not). Only a slice of the file is read, whatever its size.
+ */
+export async function mailboxFormatOf(file, head) {
+  const format = mailboxFormat({ name: file.name, head })
+  if (format) return format
+  const zip = head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
+  const gzip = head[0] === 0x1f && head[1] === 0x8b
+  const tar = /\.tar$/i.test(file.name)
+  if (!zip && !gzip && !tar) return null
+  try {
+    const start = file.slice(0, SNIFF_BYTES)
+    if (gzip) return holdsMaildir(await gunzipStart(start)) ? 'maildir' : null
+    if (holdsMaildir(new Uint8Array(await start.arrayBuffer()))) return 'maildir'
+    if (zip && file.size > SNIFF_BYTES) {
+      const end = new Uint8Array(await file.slice(file.size - SNIFF_BYTES).arrayBuffer())
+      if (holdsMaildir(end)) return 'maildir'
+    }
+  } catch {
+    // Unreadable: not a mailbox we can tell.
+  }
   return null
 }
 

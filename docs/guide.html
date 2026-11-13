@@ -211,15 +211,18 @@
       <h3 id="mailboxes">Mailboxes (mbox, Maildir, PST)</h3>
       <p>
         A file of many e-mails is an artifact of its own. Drop an <strong>mbox</strong>, an Outlook
-        <strong>PST</strong>, or a zip or tar archive of a <strong>Maildir</strong> (name it with "maildir" or
-        "mailbox", so that it is not taken for a file to analyse). Nik stores it and reads its index: how many messages
-        and conversations, the dates they span, the main senders. Nothing is analysed yet.
+        <strong>PST</strong>, or a zip or tar archive of a <strong>Maildir</strong> (Nik looks inside the archive for
+        its <code>cur</code> and <code>new</code> folders: any other archive stays a file to analyse; when in doubt,
+        name it with "maildir" or "mailbox", so that it is not taken for a file to analyse). Nik stores it and reads its
+        index: how many messages and conversations, the dates they span, the main senders. Nothing is analysed yet.
       </p>
       <p>
         <strong>Import messages</strong> asks what to take: dates, a sender or a domain, words of the subject, only with
         attachments, and whether to take the whole conversation of each match. It says how many that is before starting;
-        at most 500 at a time, the newest first. Each message becomes an e-mail artifact with its verdict, exactly as if
-        you had dropped its <code>.eml</code>. The file stays on the server: <strong>Import more</strong>
+        at most 500 at a time, the newest first; when more match, the page says how many were left for later and
+        <strong>Import the next 500</strong> goes on with them. Each message becomes an e-mail artifact with its
+        verdict, exactly as if you had dropped its <code>.eml</code>. The file stays on the server:
+        <strong>Import more</strong>
         takes others later.
       </p>
       <p>
@@ -880,6 +883,15 @@
             <tr>
               <td>YARA rules · FLIRT signatures · capa rules</td>
               <td>Your own rules and signatures for Malware Analysis (admins).</td>
+            </tr>
+            <tr>
+              <td>Storage <em>(admins)</em></td>
+              <td>
+                How large the disk that holds Nik's files is, how much is free, and what fills the used part: mailboxes,
+                packet captures, files, e-mails, previews, screenshots, the database, and everything else on the disk.
+                The ten largest objects are listed and open their page, where they can be deleted. A warning shows when
+                less than a tenth of the disk is free.
+              </td>
             </tr>
             <tr>
               <td>Audit log</td>

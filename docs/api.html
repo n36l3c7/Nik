@@ -476,8 +476,18 @@
                 Import messages by <code>seqs</code> or by a filter (<code>dateFrom</code>, <code>dateTo</code> in Unix
                 milliseconds, <code>sender</code>, <code>subject</code>, <code>attachments</code>), with the rest of
                 their conversations when <code>threads</code> is true: 500 at most, the others are counted in
-                <code>waiting</code>. <code>dryRun</code> only counts. <code>link</code> puts imported messages in an
+                <code>waiting</code>, and <code>{ "next": true }</code> goes on with them (the detail has them in
+                <code>pending</code>). <code>dryRun</code> only counts. <code>link</code> puts imported messages in an
                 incident: <code>{ incidentId, seqs }</code>, all of them when <code>seqs</code> is omitted.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/storage</code></td>
+              <td>
+                Admins. The disk of the file store: <code>disk</code> (<code>total</code>, <code>used</code>,
+                <code>free</code>, in bytes), what Nik keeps on it by kind in <code>groups</code> (<code>bytes</code>,
+                <code>files</code>), the rest of the used part in <code>elsewhere</code>, and the ten
+                <code>largest</code> objects with their <code>artifactId</code>.
               </td>
             </tr>
             <tr>

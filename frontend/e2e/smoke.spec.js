@@ -1110,6 +1110,20 @@ test('a mailbox is indexed, its messages imported, and its conversations drawn a
   await expect(page).toHaveURL(/\/incident\//)
 })
 
+test('Storage shows how full the disk is and what fills it', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Storage').click()
+  await expect(settings.getByRole('img', { name: /% of the disk is used/ })).toBeVisible()
+  const use = settings.getByRole('table', { name: 'Disk use' })
+  await expect(use).toContainText('Mailboxes')
+  await expect(use).toContainText('Database')
+  await expect(use).toContainText('Everything else on the disk')
+  await expect(settings.getByRole('list', { name: 'Largest objects' })).toContainText('team.mbox')
+  await page.keyboard.press('Escape')
+  await expect(settings).toBeHidden()
+})
+
 test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
   const panel = page.locator('aside[aria-label="Incidents panel"]')
   const list = panel.locator('nav[aria-label="Incidents"]')

@@ -39,6 +39,32 @@
       </p>
 
       <section class="release">
+        <h3>3.8.0 <span class="date">2026-11-13</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> Mailboxes: an mbox, a Maildir archive or an Outlook PST is an artifact
+            of its own, indexed when dropped; messages are imported by dates, sender, subject or conversation, 500 at a
+            time, each as an e-mail artifact.
+          </li>
+          <li>
+            <span class="tag added">added</span> The graph of conversations, drawn like a source-control tree: a colour
+            per conversation, forks for second answers and forwards, messages not imported yet as hollow nodes.
+          </li>
+          <li>
+            <span class="tag added">added</span> Imported messages go in an incident, all or the selected ones; only the
+            phishing and suspicious ones give indicators.
+          </li>
+          <li>
+            <span class="tag added">added</span> Storage, in Settings: how full the disk is, what fills it, and the
+            largest objects.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The document worker also converts PST files: rebuild its image.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>3.7.0 <span class="date">2026-11-12</span></h3>
         <ul>
           <li>

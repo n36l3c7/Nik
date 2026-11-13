@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { dateRange, dayToMs, edgePath, layoutGraph, mailboxFormat, planLine, threadColour } from './mailbox.js'
+import {
+  dateRange,
+  dayToMs,
+  edgePath,
+  holdsMaildir,
+  layoutGraph,
+  mailboxFormat,
+  mailboxFormatOf,
+  planLine,
+  threadColour,
+} from './mailbox.js'
 
 const bytes = (text) => Uint8Array.from(text, (char) => char.charCodeAt(0))
 
@@ -13,6 +23,24 @@ test('a mailbox is told from another file by its first bytes, an archive by its 
   assert.equal(mailboxFormat({ name: 'samples.zip', head: bytes('PK\x03\x04') }), null)
   assert.equal(mailboxFormat({ name: 'a.eml', head: bytes('From: someone@example.org') }), null)
   assert.equal(mailboxFormat({ name: 'a.txt', head: bytes('Fro') }), null)
+})
+
+test('an archive with any name is a Maildir when it holds the folders of one', async () => {
+  assert.equal(holdsMaildir(bytes('PK\x01\x02....backup/INBOX/cur/1700000000.M1P2.host:2,S')), true)
+  assert.equal(holdsMaildir(bytes('home/new/1700000000.M1P2.host\0\0')), true)
+  assert.equal(holdsMaildir(bytes('project/new/readme.txt\0src/current/a.js')), false)
+
+  const zip = bytes('PK\x03\x04' + 'x'.repeat(40) + 'export/cur/1700000000.M1.host:2,S')
+  assert.equal(await mailboxFormatOf(new File([zip], 'export.zip'), zip.subarray(0, 16)), 'maildir')
+  const other = bytes('PK\x03\x04' + 'x'.repeat(40) + 'docs/report.docx')
+  assert.equal(await mailboxFormatOf(new File([other], 'samples.zip'), other.subarray(0, 16)), null)
+
+  const tar = bytes('box/cur/1700000000.M1.host:2,S' + '\0'.repeat(600))
+  const gz = new Uint8Array(
+    await new Response(new Blob([tar]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(),
+  )
+  assert.equal(await mailboxFormatOf(new File([gz], 'export.tgz'), gz.subarray(0, 16)), 'maildir')
+  assert.equal(await mailboxFormatOf(new File([bytes('hello')], 'a.txt'), bytes('hello')), null)
 })
 
 test('a conversation runs down one lane and a second answer forks from its own', () => {

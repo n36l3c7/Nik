@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-11-13
+
 ### Added
 
 - **Mailboxes.** A file of many e-mails is an artifact of its own: an
@@ -35,6 +37,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `POST /api/mailboxes/{id}/link`. Settings `MAILBOX_MAX_MB` (2048) and
   `PST_MAX_MB` (500). Migration `0024` adds `mailboxes` and
   `mailbox_messages`.
+
+- **Import the next 500.** A filter that matches more than one import takes
+  is remembered: the mailbox says how many messages were left for later and
+  one button goes on with them (`next` in `POST /api/mailboxes/{id}/import`).
+- **A Maildir is recognised by what it holds.** A zip or tar archive with any
+  name is a mailbox when it has the folders of a Maildir (`cur/`, `new/`):
+  the directory of the zip, or the first headers of the tar, is read in the
+  browser, a slice of the file whatever its size.
+- **Storage** (Settings, admins): how large the disk of the file store is,
+  how much is free, and how Nik's files share the used part (mailboxes,
+  packet captures, files, e-mails, previews, screenshots, the database),
+  with the ten largest objects, each a link to its page. A warning shows
+  when less than a tenth of the disk is free. API: `GET /api/storage`.
 
 ### Changed
 
@@ -1758,7 +1773,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.7.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/n36l3c7/Nik/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/n36l3c7/Nik/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/n36l3c7/Nik/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/n36l3c7/Nik/compare/v3.4.0...v3.5.0

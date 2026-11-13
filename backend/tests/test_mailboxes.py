@@ -263,8 +263,18 @@ def test_import_takes_five_hundred_at_a_time_and_needs_a_writer(admin: TestClien
     box = _upload(admin)
     plan = admin.post(f"/api/mailboxes/{box['id']}/import", json={"dryRun": True}).json()
     assert plan["toImport"] == 2 and plan["waiting"] == 3
+    assert admin.post(f"/api/mailboxes/{box['id']}/import", json={"next": True}).status_code == 409
     admin.post(f"/api/mailboxes/{box['id']}/import", json={})
-    assert admin.get(f"/api/mailboxes/{box['id']}").json()["imported"] == 2
+    detail = admin.get(f"/api/mailboxes/{box['id']}").json()
+    assert detail["imported"] == 2 and detail["pending"]["waiting"] == 3
+
+    # The rest follows without choosing again, until nothing waits.
+    assert admin.post(f"/api/mailboxes/{box['id']}/import", json={"next": True}).json()["toImport"] == 2
+    detail = admin.get(f"/api/mailboxes/{box['id']}").json()
+    assert detail["imported"] == 4 and detail["pending"]["waiting"] == 1
+    admin.post(f"/api/mailboxes/{box['id']}/import", json={"next": True})
+    detail = admin.get(f"/api/mailboxes/{box['id']}").json()
+    assert detail["imported"] == 5 and detail["pending"] is None
 
     from tests.conftest import make_key
 

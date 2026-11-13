@@ -59,6 +59,7 @@ from .routers import (
     samples,
     search,
     settings,
+    storage,
     urls,
     users,
     webhooks,
@@ -117,7 +118,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="3.7.0",
+    version="3.8.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -206,3 +207,4 @@ app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
+app.include_router(storage.router, prefix="/api")

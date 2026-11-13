@@ -28,6 +28,7 @@ import { AsciiSkull, Badge, Button, EmptyState, MicroSkull, Modal, StatCard } fr
  */
 
 const POLL_MS = 2000
+const IMPORT_MAX = 500
 const PAGE = 300
 const ROW = 30
 const LANE = 16
@@ -334,6 +335,15 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
     }
   }, [artifact.ref, version, reload])
 
+  const importNext = async () => {
+    try {
+      await api.post(`/mailboxes/${artifact.ref}/import`, { next: true })
+      reload()
+    } catch (err) {
+      showToast({ message: err.message })
+    }
+  }
+
   const ready = box?.status === 'ready' || box?.status === 'importing'
   useEffect(() => {
     if (!ready) return undefined
@@ -441,6 +451,19 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
       {box.status === 'error' && (
         <div role="alert" className="border-l-2 border-high-line bg-high-soft/50 px-3 py-2 text-sm">
           <b>The mailbox could not be read.</b> {box.error}
+        </div>
+      )}
+      {box.status === 'ready' && box.pending && (
+        <div
+          role="status"
+          aria-label="Waiting to import"
+          className="flex flex-wrap items-center justify-between gap-3 border border-line bg-panel px-3.5 py-2.5 text-sm"
+        >
+          <span>
+            <b>{box.pending.waiting}</b> more {box.pending.waiting === 1 ? 'message matches' : 'messages match'} your
+            last import and {box.pending.waiting === 1 ? 'was' : 'were'} left for later.
+          </span>
+          <Button onClick={importNext}>Import the next {Math.min(box.pending.waiting, IMPORT_MAX)}</Button>
         </div>
       )}
       {box.status === 'importing' && box.progress && (

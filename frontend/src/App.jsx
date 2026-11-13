@@ -33,7 +33,7 @@ import { useIocLibrary } from './context/IocLibraryContext.jsx'
 import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
 import { api } from './services/api.js'
 import { setPath } from './lib/location.js'
-import { mailboxFormat } from './domain/mailbox.js'
+import { mailboxFormatOf } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
@@ -268,7 +268,7 @@ export default function App() {
       const head = await readHead(file)
       // A mailbox (mbox, Maildir archive, PST) is stored and indexed as an
       // artifact of its own; what to import from it is chosen on its page.
-      if (!asEvidence && mailboxFormat({ name: file.name, head })) {
+      if (!asEvidence && (await mailboxFormatOf(file, head))) {
         showToast({ message: `Uploading ${file.name}…` })
         try {
           const box = await startAnalysis('mailbox', file)
@@ -836,6 +836,11 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         section={settingsSection}
         onSectionChange={setSettingsSection}
+        onOpenArtifact={(id) => {
+          setSettingsOpen(false)
+          setPanel('artifacts')
+          openArtifact(id)
+        }}
       />
     </div>
   )

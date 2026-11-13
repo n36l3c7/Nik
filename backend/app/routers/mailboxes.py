@@ -79,6 +79,7 @@ def _detail(db: OrmSession, row: Mailbox) -> dict[str, Any]:
         "imported": meta.get("imported", 0),
         "verdicts": meta.get("verdicts") or {},
         "progress": meta.get("progress"),
+        "pending": meta.get("pending"),
         "createdAt": row.created_at,
         "createdBy": row.created_by,
         "topSenders": mailboxes.top_senders(db, row.id) if row.status in ("ready", "importing") else [],
@@ -251,6 +252,8 @@ class ImportIn(BaseModel):
     attachments: bool = False
     threads: bool = True
     dryRun: bool = False
+    # Go on with the last filter: the messages it left waiting.
+    next: bool = False
 
 
 def _plan(db: OrmSession, row: Mailbox, body: ImportIn) -> dict[str, Any]:
@@ -336,17 +339,37 @@ def import_mailbox(
     """Choose messages by ``seqs`` or by a filter (dates in Unix milliseconds,
     sender, subject, with attachments), with the rest of their conversations
     when ``threads`` is true, and import them: 500 at most, the newest first;
-    the others wait for the next time. ``dryRun`` only counts."""
+    the others wait, and ``next`` goes on with them. ``dryRun`` only counts."""
     row = _or_404(db, mailbox_id)
     if row.status != "ready":
         raise HTTPException(status_code=409, detail=f"The mailbox is {row.status}: wait until it is ready.")
+    if body.next:
+        pending = (row.meta or {}).get("pending")
+        if not pending:
+            raise HTTPException(status_code=409, detail="No import is waiting to go on.")
+        body = ImportIn(**pending["filter"], dryRun=body.dryRun)
     plan = _plan(db, row, body)
     seqs = plan.pop("seqs")
     plan.pop("linkOnly")
-    if body.dryRun or not seqs:
+    if body.dryRun:
+        return {**plan, "started": False}
+    meta = dict(row.meta or {})
+    if body.seqs is None:
+        # A filter that matches more than one import takes is remembered, so
+        # that the rest can follow without choosing again.
+        meta.pop("pending", None)
+        if seqs and plan["waiting"]:
+            meta["pending"] = {
+                "filter": body.model_dump(exclude={"seqs", "dryRun", "next"}),
+                "waiting": plan["waiting"],
+            }
+        row.meta = meta
+        flag_modified(row, "meta")
+    if not seqs:
+        db.commit()
         return {**plan, "started": False}
     row.status = "importing"
-    row.meta = {**(row.meta or {}), "progress": {"done": 0, "total": len(seqs), "failed": 0}}
+    row.meta = {**meta, "progress": {"done": 0, "total": len(seqs), "failed": 0}}
     flag_modified(row, "meta")
     artifacts.register_mailbox(db, row)
     _audit(db, caller, "mailbox.import", f"Importing {len(seqs)} message(s) of {row.file_name}", row.file_name)
