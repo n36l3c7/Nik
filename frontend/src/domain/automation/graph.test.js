@@ -34,7 +34,7 @@ import {
   valueTree,
 } from './catalog.js'
 import { layered, tidy } from './layout.js'
-import { automationFromPath, automationPath } from '../automationNav.js'
+import { automationFromPath, automationPath, visibleAreas } from '../automationNav.js'
 import { hostOf } from './hosts.js'
 
 const node = (id, kind, config = {}, position = { x: 0, y: 0 }) => ({ id, kind, name: id, position, config })
@@ -322,6 +322,19 @@ test('the addresses of the Automations area', () => {
     tab: 'runs',
   })
   assert.equal(automationPath('runs', 'r1'), '/automation/runs/r1')
+  assert.deepEqual(automationFromPath('/automation/scripts/s1'), { area: 'scripts', id: 's1', tab: null })
+  const canOf =
+    (...granted) =>
+    (permission) =>
+      granted.includes(permission)
+  assert.deepEqual(
+    visibleAreas(canOf('automation.run')).map((area) => area.id),
+    ['playbooks', 'runs', 'approvals'],
+  )
+  assert.deepEqual(
+    visibleAreas(canOf('automation.run', 'automation.edit')).map((area) => area.id),
+    ['playbooks', 'scripts', 'runs', 'approvals'],
+  )
   assert.equal(automationPath(), '/automation/playbooks')
   assert.equal(automationPath('playbooks', 'a b'), '/automation/playbooks/a%20b')
   assert.equal(automationPath('playbooks', 'ab12', 'canvas'), '/automation/playbooks/ab12')

@@ -1888,6 +1888,110 @@ test('a playbook runs on an incident: the approval is asked where the incident i
   await expect(page.getByRole('button', { name: 'automation', exact: true })).toHaveCount(1)
 })
 
+test('a script is written, tested in the sandbox, saved as a version and offered as a node', async () => {
+  const before = page.url()
+  // The sandbox runs in CI (and wherever E2E_SANDBOX_URL names one); without it, what needs one is checked to be refused.
+  const sandbox = Boolean(process.env.E2E_SANDBOX_URL)
+  /** Replace what a code editor holds. */
+  const write = async (editor, text) => {
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+a')
+    await page.keyboard.insertText(text)
+  }
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Scripts' }).click()
+  await expect(page).toHaveURL(/\/automation\/scripts$/)
+  const shipped = area.getByRole('table', { name: 'Scripts' }).getByRole('row').filter({ hasText: 'GroupByField' })
+  await expect(shipped).toContainText('in the library')
+  await expect(shipped).toContainText('shipped with Nik')
+
+  // A name is how nodes call the script: a capital letter, letters and digits.
+  await area.getByRole('button', { name: 'New script' }).click()
+  const create = page.getByRole('dialog', { name: 'New script' })
+  await create.getByLabel('Name').fill('count words')
+  await expect(create.getByRole('alert')).toContainText('A capital letter')
+  await expect(create.getByRole('button', { name: 'Create' })).toBeDisabled()
+  await create.getByLabel('Name').fill('CountWords')
+  await create.getByLabel('Description').fill('How many words a text has')
+  await create.getByRole('button', { name: 'Create' }).click()
+  await expect(page).toHaveURL(/\/automation\/scripts\/[0-9a-f]+$/)
+  await expect(area.getByRole('heading', { name: 'CountWords' })).toBeVisible()
+  await expect(area.getByText('no version yet: not in the library')).toBeVisible()
+
+  // The code, what it takes and gives, and its test.
+  const code = area.getByRole('textbox', { name: 'Code of the script' })
+  await write(code, 'print("no function here")\n')
+  await expect(area.getByRole('alert', { name: 'Before the script can be tested' })).toContainText('def main(args)')
+  await expect(area.getByRole('button', { name: 'Run the test' })).toBeDisabled()
+  await write(
+    code,
+    'def main(args):\n    words = str(args.get("text", "")).split()\n    print("counting", len(words))\n    return {"count": len(words)}\n',
+  )
+  await area.getByLabel('Argument 1: name').fill('text')
+  await area.getByLabel('Output 1: name').fill('count')
+  await area.getByLabel('Output 1: type').selectOption('number')
+  await write(area.getByRole('textbox', { name: 'Arguments of the test' }), '{"text": "one two three"')
+  await expect(area.getByRole('alert', { name: 'Before the script can be tested' })).toContainText('Not JSON')
+  await write(area.getByRole('textbox', { name: 'Arguments of the test' }), '{"text": "one two three"}')
+  await write(area.getByRole('textbox', { name: 'What the test expects' }), '{"count": 2}')
+  await expect(area.getByText('draft saved')).toBeVisible()
+  // The draft is the server's: a reload finds the code.
+  await page.reload()
+  await expect(code).toContainText('counting')
+
+  if (sandbox) {
+    const result = area.getByRole('status', { name: 'Result of the test' })
+    // The test runs the draft: it returns 3, the test expected 2.
+    await area.getByRole('button', { name: 'Run the test' }).click()
+    await expect(result).toContainText('failed')
+    await expect(result).toContainText('did not return what the test expects')
+    await expect(result).toContainText('counting 3')
+    // A version needs the test to pass.
+    await area.getByRole('button', { name: 'Save as version 1' }).click()
+    await expect(page.getByText(/^The test does not pass/)).toBeVisible()
+    await write(area.getByRole('textbox', { name: 'What the test expects' }), '{"count": 3}')
+    await area.getByRole('button', { name: 'Run the test' }).click()
+    await expect(result).toContainText('passed')
+    await area.getByRole('button', { name: 'Save as version 1' }).click()
+    await expect(page.getByText('Version 1 saved: CountWords is in the library of nodes.')).toBeVisible()
+    await expect(area.getByText('script · version 1')).toBeVisible()
+    await expect(area.getByRole('button', { name: 'Save as version 2' })).toBeDisabled()
+
+    // What the draft changes from a version, line by line; the version can be put back.
+    await write(
+      code,
+      'def main(args):\n    words = str(args.get("text", "")).split()\n    return {"count": len(words)}\n',
+    )
+    await expect(area.getByText('draft changed')).toBeVisible()
+    await area.getByRole('button', { name: 'See version 1' }).click()
+    const version = page.getByRole('dialog', { name: 'Version 1' })
+    await expect(version).toContainText('0 lines added, 1 removed')
+    await expect(version.getByLabel('What the draft changes from version 1')).toContainText(
+      '-     print("counting", len(words))',
+    )
+    await version.getByRole('button', { name: 'Put version 1 back into the draft' }).click()
+    await expect(code).toContainText('counting')
+
+    // The script is now a node of the library.
+    await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Playbooks' }).click()
+    await area.getByRole('button', { name: 'Note on high' }).click()
+    const library = area.getByRole('complementary', { name: 'Node library' })
+    await library.getByLabel('Search nodes').fill('countwords')
+    await expect(library.getByRole('button', { name: 'CountWords' })).toBeVisible()
+  } else {
+    await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Scripts' }).click()
+    await expect(area.getByRole('region', { name: 'The box every script runs in' }).getByRole('alert')).toContainText(
+      'The sandbox is not configured',
+    )
+    await expect(area.getByRole('row').filter({ hasText: 'CountWords' })).toContainText('draft · not usable yet')
+  }
+
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

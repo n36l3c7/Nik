@@ -169,7 +169,7 @@ export function DurationInput({ id, value, onChange, disabled = false }) {
         value={amount}
         min={1}
         disabled={disabled}
-        className="w-20"
+        className="w-20!"
         onChange={(next) => onChange(next === null ? null : next * unit)}
       />
       <select
@@ -181,7 +181,7 @@ export function DurationInput({ id, value, onChange, disabled = false }) {
           setUnit(next)
           if (amount !== null) onChange(Math.round(amount) * next)
         }}
-        className={`${INPUT} w-auto cursor-pointer`}
+        className={`${INPUT} w-auto! cursor-pointer`}
       >
         {UNITS.map((option) => (
           <option key={option.value} value={option.value}>

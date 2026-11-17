@@ -308,7 +308,7 @@ function OnError({ config, onConfig, disabled }) {
               min={1}
               max={100}
               disabled={disabled}
-              className="w-16"
+              className="w-16!"
               onChange={(times) => onConfig({ on_error: { mode: 'retry', times: times ?? 1 } })}
             />
             <span className="text-xs text-fg-muted">times (100 at most)</span>

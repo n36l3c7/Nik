@@ -177,3 +177,12 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
+
+/* ---- The code editor (CodeMirror 6): its height; its colours are in CodeEditor.jsx ---- */
+.nik-code .cm-editor {
+  min-height: var(--nik-code-min, 8rem);
+  max-height: var(--nik-code-max, 60vh);
+}
+.nik-code .cm-scroller {
+  overflow: auto;
+}

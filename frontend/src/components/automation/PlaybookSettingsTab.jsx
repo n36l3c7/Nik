@@ -214,7 +214,7 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
                 min={1}
                 max={10000}
                 disabled={!canEdit}
-                className="w-28"
+                className="w-28!"
                 onChange={(value) => setLimits({ ...limits, maxRunsPerHour: value ?? 1 })}
               />
             )}

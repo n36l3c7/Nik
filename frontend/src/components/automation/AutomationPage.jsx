@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
@@ -11,6 +11,10 @@ import PlaybooksPage from './PlaybooksPage.jsx'
 import ApprovalsPage from './ApprovalsPage.jsx'
 import RunPage from './RunPage.jsx'
 import RunsPage from './RunsPage.jsx'
+import ScriptsPage from './ScriptsPage.jsx'
+
+// The script editor brings CodeMirror with it: loaded when a script is opened.
+const ScriptPage = lazy(() => import('./ScriptPage.jsx'))
 
 /*
  * ============================================================================
@@ -144,6 +148,23 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
               onOpenRun={(runId) => onNavigate('runs', runId)}
               onOpenIncident={onOpenIncident}
             />
+          ) : area?.id === 'scripts' && route.id ? (
+            <Suspense
+              fallback={
+                <p role="status" className="p-6 font-mono text-sm text-fg-muted">
+                  Loading the editor…
+                </p>
+              }
+            >
+              <ScriptPage
+                key={route.id}
+                id={route.id}
+                onBack={() => onNavigate('scripts')}
+                onOpenPlaybooks={() => onNavigate('playbooks')}
+              />
+            </Suspense>
+          ) : area?.id === 'scripts' ? (
+            <ScriptsPage onOpen={(scriptId) => onNavigate('scripts', scriptId)} />
           ) : area?.id === 'runs' && route.id ? (
             <RunPage
               key={route.id}

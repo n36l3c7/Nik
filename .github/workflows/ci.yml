@@ -157,7 +157,7 @@ jobs:
         working-directory: frontend
       - name: Build the worker images (base images and packages come from the network)
         run: |
-          for w in analyzer capa docview browser pcap; do
+          for w in analyzer capa docview browser pcap sandbox; do
             .github/scripts/retry.sh 3 docker build -t "nik-$w" "workers/$w"
           done
       - name: The workers' own tests, inside their images (capa, LibreOffice, Chromium, tshark)
@@ -180,6 +180,8 @@ jobs:
             -e BROWSER_TOKEN=e2e-browser-token nik-browser
           docker run -d --name nik-pcap -p 127.0.0.1:8740:8740 --read-only --tmpfs /tmp \
             -v "$PWD/backend/.e2e-samples:/samples:ro" -e PCAP_TOKEN=e2e-pcap-token nik-pcap
+          docker run -d --name nik-sandbox -p 127.0.0.1:8750:8750 --read-only --tmpfs /tmp --cap-drop ALL \
+            -e SANDBOX_TOKEN=e2e-sandbox-token nik-sandbox
       - run: npm run build
         working-directory: frontend
       - run: npm run test:e2e
@@ -195,9 +197,11 @@ jobs:
           E2E_BROWSER_TOKEN: e2e-browser-token
           E2E_PCAP_URL: http://127.0.0.1:8740
           E2E_PCAP_TOKEN: e2e-pcap-token
+          E2E_SANDBOX_URL: http://127.0.0.1:8750
+          E2E_SANDBOX_TOKEN: e2e-sandbox-token
       - name: Worker logs
         if: failure()
-        run: for w in analyzer capa docview browser pcap; do docker logs nik-$w || true; done
+        run: for w in analyzer capa docview browser pcap sandbox; do docker logs nik-$w || true; done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:

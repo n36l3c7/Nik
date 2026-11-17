@@ -81,6 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   playbook's page. A **dry run** sends nothing outside Nik and changes
   nothing in it: each step shows what it would have done.
 - A note written by a playbook is marked *automation* and opens its run.
+- **Scripts have their screens** (*Automations → Scripts*, for the role
+  Playbooks): the library, and for each script an editor with syntax
+  colours and line numbers (CodeMirror 6, drawn as Nik), the arguments and
+  outputs as tables, the stored test with what it must return, "Run the
+  test", and the versions with what the draft changes from each, line by
+  line. The draft saves itself; a version is saved when the test passes.
+  Scripts are exported and imported as files.
 - A new container, **`sandbox`**, runs the scripts: an image with Python
   and nothing else, on a network with no route outside, a read-only
   filesystem and no capabilities; each script in a process of its own with
