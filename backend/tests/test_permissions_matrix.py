@@ -134,6 +134,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/incidents/{incident_id}/war-room/{entry_id}"): ("read",),
     ("POST", "/api/incidents/{incident_id}/war-room"): ("write",),
     ("PUT", "/api/incidents/{incident_id}/war-room/{entry_id}/tags"): ("write",),
+    # A line of the War Room is a note (write) or a command (automation.run): the route sorts it out.
+    ("POST", "/api/incidents/{incident_id}/war-room/command"): ("read",),
     ("GET", "/api/automation/connectors"): ("connectors.manage",),
     ("POST", "/api/automation/connectors"): ("connectors.manage",),
     ("POST", "/api/automation/connectors/check"): ("connectors.manage",),

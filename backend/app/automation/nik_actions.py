@@ -27,7 +27,7 @@ from ..core.models import Artifact, Incident, IocList, IocListItem, Mail, Sample
 from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
 from ..iocs import TYPES, normalize
-from . import payloads, triggers
+from . import egress, payloads, triggers
 from .actions import ActionError, Call, Result, action
 
 ACTOR = SYSTEM_USER
@@ -643,6 +643,116 @@ def get_indicator(call: Call) -> Result:
     }
     # The value keeps the classes it came in with; what Nik says of it is a verdict.
     return Result(output=output, classes={"value": sorted(call.classes), "verdict": ["verdict"], "score": ["verdict"]})
+
+
+VERDICTS = ("malicious", "suspicious", "harmless", "unknown")
+_ENTITY = {"ip": ("IP", "Address"), "domain": ("Domain", "Name"), "url": ("URL", "Data")}
+_HASH = {32: "md5", 40: "sha1", 64: "sha256"}
+
+
+@action(
+    "nik.reputation",
+    group="Nik",
+    name="Reputation of an indicator",
+    description=(
+        "What is known of an address, a domain, a URL, a file hash or an e-mail address: Nik's own "
+        "reputation sources and every connector command that looks that kind up, in one verdict."
+    ),
+    arguments=[
+        {"name": "kind", "type": "choice", "choices": ["ip", "domain", "url", "file", "email"], "required": True},
+        {"name": "value", "type": "text", "required": True, "description": "The indicator"},
+    ],
+    outputs=[
+        {"name": "verdict", "type": "text", "description": "malicious, suspicious, harmless, unknown or empty"},
+        {"name": "score", "type": "number", "description": "0 to 100"},
+        {"name": "sources", "type": "list", "description": "Each source that answered: {source, verdict, summary}"},
+        {"name": "skipped", "type": "list", "description": "The sources that were not asked, and why"},
+    ],
+    timeout=120,
+)
+def reputation(call: Call) -> Result:
+    from ..core.models import Connector
+    from ..enrichment import service
+    from ..iocs import Allowlist
+    from ..routers.settings import read_settings
+    from . import connector_actions, outbound
+
+    wanted = str(call.args.get("kind") or "")
+    raw = str(call.args.get("value") or "").strip()
+    kind = _HASH.get(len(raw), "") if wanted == "file" else wanted
+    value = normalize(kind, raw) if kind in TYPES else ""
+    if not value:
+        what = {"file": "a file hash (MD5, SHA-1 or SHA-256)", "ip": "an IP address", "email": "an e-mail address"}
+        raise ActionError("That is not " + what.get(wanted, f"a {wanted}"), retry=False)
+    shared = read_settings(call.db)
+    skipped: list[dict[str, str]] = []
+    answers: list[tuple[str, str]] = []
+    sources: list[dict[str, Any]] = []
+    # Nik's own sources, under the rules that say what is never sent to them.
+    why = service.blocked(call.db, kind, value, Allowlist(shared.get("iocAllowlist") or []))
+    if why:
+        skipped.append({"source": "reputation sources", "reason": why})
+    elif not call.dry_run:
+        skipped += [
+            {"source": item["label"], "reason": item["reason"]}
+            for item in service.check_now(call.db, kind, value, shared)["skipped"]
+        ]
+    for item in service.results(call.db, kind, value, service.config(shared)) if not why else []:
+        if item.get("status") == "done":
+            answers.append((item["provider"], item.get("verdict") or "unknown"))
+            sources.append(
+                {
+                    "source": item.get("label") or item["provider"],
+                    "verdict": item.get("verdict") or "unknown",
+                    "summary": item.get("summary") or "",
+                }
+            )
+    # The connectors that look this kind up, each on each of its connections.
+    if not call.dry_run:
+        for row in call.db.scalars(select(Connector).order_by(Connector.name)):
+            connector = connector_actions.parsed(row)
+            for command in connector.commands if connector is not None else []:
+                if command.reputation != wanted or not command.arguments:
+                    continue
+                for connection in connector_actions.connections_of(call.db, row.id):
+                    name = f"{connector.name} ({connection.name})"
+                    try:
+                        outbound.guarded(call, {"value": value})
+                        runtime = connector_actions.runtime_for(call.db, connector, connection, call.playbook, call.now)
+                        answer = runtime.run(command.name, {command.arguments[0].name: value})
+                    except (ActionError, connector_actions.CommandError, egress.EgressError) as error:
+                        skipped.append({"source": name, "reason": getattr(error, "message", str(error))[:300]})
+                        continue
+                    outputs = answer.outputs or {}
+                    verdict = str(outputs.get("verdict") or "unknown").lower()
+                    verdict = verdict if verdict in VERDICTS else "unknown"
+                    answers.append((f"connector:{row.id}", verdict))
+                    sources.append(
+                        {"source": name, "verdict": verdict, "summary": str(outputs.get("summary") or "")[:500]}
+                    )
+    summary = service.overall(answers) or {}
+    output = {
+        "kind": kind,
+        "value": value,
+        "verdict": summary.get("verdict") or "",
+        "score": summary.get("score"),
+        "sources": sources,
+        "skipped": skipped,
+    }
+    context: list[tuple[str, Any]] = []
+    held = payloads.indicator_data(call.db, kind, value)[1]
+    if summary:
+        if kind in _ENTITY:
+            entity, key = _ENTITY[kind]
+            context.append((entity, {key: value, "Verdict": output["verdict"], "Score": output["score"]}))
+        elif kind in ("md5", "sha1", "sha256"):
+            context.append(("File", {kind.upper(): value, "Verdict": output["verdict"], "Score": output["score"]}))
+    return Result(
+        output=output,
+        classes={"value": held, "verdict": ["verdict"], "score": ["verdict"], "kind": ["verdict"]},
+        context=context,
+        request={"would": f"look up {value}"} if call.dry_run else None,
+    )
 
 
 # --------------------------------------------------------------------------- #

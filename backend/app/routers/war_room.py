@@ -148,3 +148,89 @@ def set_tags(
             audit.record(db, caller.actor, "warroom.evidence", what, incident)
     db.commit()
     return next(item for item in war_room.entries(db, incident, limit=1000) if item["id"] == row.id)
+
+
+class LineIn(BaseModel):
+    line: str = Field(min_length=1, max_length=8000)
+    # A command that changes something outside is started only when this says so.
+    confirm: bool = False
+
+
+@router.post("/{incident_id}/war-room/command", status_code=status.HTTP_201_CREATED, response_model=None)
+def run_line(
+    incident_id: str,
+    body: LineIn,
+    caller: Principal = Depends(reader_principal),
+    db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+):
+    """What is typed in the War Room. Plain text and ``/note`` write a note; ``/assign @user``
+    gives the incident to someone; ``/close`` answers ``{action: "close"}`` for the form of
+    closing; ``!name arg=value`` runs a command as a run of one node (``automation.run``).
+
+    ``409`` with ``needsConfirm`` for a command that changes something outside until
+    ``confirm`` is sent; ``400`` with what is wrong in the line.
+    """
+    from fastapi.responses import JSONResponse
+
+    from .. import commands
+    from .. import fields as registry
+    from ..automation import state as automation_state
+    from ..core.permissions import AUTOMATION_RUN, WRITE
+
+    try:
+        parsed = commands.parse(body.line)
+    except commands.CommandError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+
+    def needs(permission: str, what: str) -> None:
+        if not caller.has(permission):
+            raise HTTPException(status_code=403, detail=f"Your roles do not include {what}")
+
+    if parsed.kind == "note" or (parsed.kind == "slash" and parsed.name == "note"):
+        needs(WRITE, "writing in an incident")
+        if not parsed.text:
+            raise HTTPException(status_code=400, detail="/note is followed by the note")
+        return add_note(incident_id, NoteIn(text=parsed.text), caller, db, background_tasks)
+    incident = _incident(db, incident_id, lock=True)
+    if parsed.kind == "slash":
+        needs(WRITE, "changing an incident")
+        if parsed.name == "close":
+            return JSONResponse(status_code=200, content={"action": "close"})
+        if parsed.name == "task":
+            raise HTTPException(status_code=400, detail="Tasks come with the next release of Nik")
+        who = parsed.text.lstrip("@").strip()
+        try:
+            registry.update(db, incident, {"owner": who or None}, caller.actor, f"user:{caller.actor}")
+        except registry.FieldError as error:
+            raise HTTPException(status_code=400, detail=error.message) from None
+        row = war_room.system(
+            db,
+            incident.id,
+            f"{caller.actor} assigned the incident to {who}" if who else f"{caller.actor} removed the assignee",
+        )
+        db.commit()
+        emit(db, background_tasks, "incident.updated", {"id": incident.id, "name": incident.name})
+        return JSONResponse(status_code=201, content={**war_room.out(row), "action": "assigned"})
+    needs(AUTOMATION_RUN, "running commands")
+    if not automation_state.enabled(db):
+        raise HTTPException(status_code=409, detail="Automation is stopped: an admin can start it again in Settings")
+    try:
+        target = commands.resolve(db, parsed)
+    except commands.CommandError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+    if target.changes and not body.confirm:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": f"{target.title} changes something outside Nik: confirm to run it",
+                "needsConfirm": True,
+                "command": target.title,
+            },
+        )
+    entry, run = commands.start(db, incident, body.line.strip(), target, parsed, caller.actor)
+    audit.record(
+        db, caller.actor, "warroom.command", f"Ran {target.title} in the War Room", incident, target=target.title
+    )
+    db.commit()
+    return JSONResponse(status_code=201, content={**war_room.out(entry), "runId": run.id})

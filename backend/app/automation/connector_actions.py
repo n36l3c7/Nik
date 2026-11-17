@@ -135,6 +135,10 @@ def store_secrets(connection: Connection, secrets: dict[str, Any]) -> None:
     forget_tokens(connection.id)
 
 
+def connections_of(db: OrmSession, connector_id: str) -> list[Connection]:
+    return list(db.scalars(select(Connection).where(Connection.connector_id == connector_id).order_by(Connection.name)))
+
+
 def host_of(connector: ConnectorFile, config: dict[str, Any]) -> str | None:
     """``host`` or ``host:port`` of a connection, as the egress policy lists it; None when it has no address."""
     # With the defaults of what was left out, as the runtime reads it (a region that has a default).

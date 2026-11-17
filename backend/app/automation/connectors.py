@@ -209,6 +209,9 @@ class Command(_Strict):
     poll: Poll | None = None
     outputs: dict[str, Any] = Field(default_factory=dict)
     context: list[ContextOutput] = Field(default_factory=list, max_length=20)
+    # A command that says what is known of an indicator of this kind: "!ip", "!domain"… of the
+    # War Room ask it too. Its first argument is the value; its "verdict" output is counted.
+    reputation: Literal["ip", "domain", "url", "file", "email"] | None = None
     sample: dict[str, Any] | None = None
     timeout: int = Field(default=60, ge=1, le=300)
 

@@ -55,6 +55,7 @@
           <li><a href="#scripts">Scripts</a></li>
           <li><a href="#switch">The switch and the worker</a></li>
           <li><a href="#context">The incident and its context</a></li>
+          <li><a href="#command-line">The command line of the War Room</a></li>
           <li><a href="#connectors">Connectors</a></li>
           <li><a href="#shipped">The playbooks Nik ships</a></li>
           <li><a href="#files">Playbooks and scripts as files</a></li>
@@ -1197,6 +1198,90 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         </li>
       </ul>
 
+      <h2 id="command-line">The command line of the War Room</h2>
+      <p>
+        The line at the bottom of an incident's <a href="guide.html#war-room">War Room</a> takes notes and commands.
+        A command does one thing now, on this incident, without a playbook: look an address up, read a ticket, isolate
+        a host.
+      </p>
+      <pre><code>Called the user, who confirms the click.
+/note The laptop is in the safe.
+/assign @anna
+/close
+!ip 185.220.101.47
+!servicenow-get-incident number=INC0012345
+!sentinelone-isolate-agent agent_id=${context.Host[0].AgentID} using="SentinelOne EU"
+!ExtractDomains text={{ context.Mail[0].Subject }}</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>A line that starts with</th>
+              <th>Is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>anything else</td>
+              <td>A note of the incident.</td>
+            </tr>
+            <tr>
+              <td><code>/</code></td>
+              <td>
+                <code>/note text</code>; <code>/assign @user</code> (alone: nobody has it); <code>/close</code>, which
+                opens the form of closing.
+              </td>
+            </tr>
+            <tr>
+              <td><code>!</code></td>
+              <td>
+                A command, then its arguments as <code>name=value</code>. The name is a command of a connector
+                (<code>&lt;connector id&gt;-&lt;command&gt;</code>), an action of Nik (<code>nik-add-tags</code>), a
+                script by its name, or a reputation command.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>
+          <strong>Values.</strong> A bare word; <code>"quoted"</code> when it holds spaces; JSON between backticks for
+          an object or a list. A value alone, with no name, is the first argument: <code>!ip 185.220.101.47</code>. An
+          argument that is a list takes words separated by commas; a number and <code>true</code>/<code>false</code>
+          are read as such.
+        </li>
+        <li>
+          <strong>Reading the incident.</strong> <code>${path}</code> or <code>{{ … }}</code> is an
+          <a href="#expressions">expression</a> on <code>incident</code> and <code>context</code>:
+          <code>host=${context.Host[0].Name}</code>. The Context tab gives the path of any value, ready to paste.
+        </li>
+        <li>
+          <strong>Reserved names.</strong> <code>using=&lt;connection&gt;</code> picks the connection when a connector
+          has more than one; <code>raw=true</code> shows the result as JSON; <code>extend=&lt;anything&gt;</code>
+          keeps the result out of the context.
+        </li>
+        <li>
+          <strong>While typing.</strong> After <code>!</code> the commands that match are listed (arrows, then Tab or
+          Enter); once the name is written the arguments still to give are shown, the required ones marked; ↑ brings
+          back the lines typed before.
+        </li>
+        <li>
+          <strong>Reputation.</strong> <code>!ip</code>, <code>!domain</code>, <code>!url</code>, <code>!file</code>
+          (a hash) and <code>!email</code> ask what is known of an indicator: Nik's reputation sources, under the
+          same rules that say what is never sent to them, and every command of a connector that declares
+          <code>reputation: &lt;kind&gt;</code> in its file, on each of its connections. The answers are put together
+          in one verdict and one score, with each source beside them and those that were not asked, with why.
+        </li>
+      </ul>
+      <p>
+        <strong>A command is a run.</strong> It runs on the same engine as a playbook, as a run of one node, and
+        needs the same permission (<em>Analyst</em> has it). It reaches the host of its connection and the hosts
+        listed for every playbook, sends through the same data guard with <strong>no class of data opened</strong>,
+        and writes what it declares to the context of the incident. A command that changes something outside is not
+        sent until you confirm it in a dialog that shows the line. What it gave is under its line in the War Room,
+        and opens beside the stream; each command is in the audit log under your name.
+      </p>
+
       <h2 id="connectors">Connectors</h2>
       <p>
         A <strong>connector</strong> is one YAML file that says how to talk to a product: what a connection to it needs
@@ -1640,6 +1725,16 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                   >{ ID: "{{ response.result.sys_id }}", Number: "{{ response.result.number }}", System: ServiceNow
                   }</code
                 >. A value the answer does not hold is left out. Secrets cannot be read here.
+              </td>
+            </tr>
+            <tr>
+              <td><code>reputation</code></td>
+              <td>
+                <code>ip</code>, <code>domain</code>, <code>url</code>, <code>file</code> or <code>email</code>: the
+                command says what is known of an indicator of that kind, and the War Room's <code>!ip</code>,
+                <code>!domain</code>… ask it too. Its first argument takes the value; of its outputs,
+                <code>verdict</code> (<code>malicious</code>, <code>suspicious</code>, <code>harmless</code>,
+                <code>unknown</code>) is counted and <code>summary</code> is shown.
               </td>
             </tr>
             <tr>

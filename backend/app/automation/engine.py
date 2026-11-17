@@ -820,7 +820,7 @@ def script_context(db: OrmSession, config: dict, output: Any) -> list[tuple[str,
 def _to_context(db: OrmSession, run: Run, writes: list, source: str) -> list[str]:
     """Write what a step declared to the context of the run's incident. Nothing in a dry run, and
     nothing for a run that works on no incident. A write that is refused fails the step."""
-    if not writes or run.dry_run or not run.incident_id:
+    if not writes or run.dry_run or not run.incident_id or (run.trigger or {}).get("no_context"):
         return []
     from .. import context as incident_context
 

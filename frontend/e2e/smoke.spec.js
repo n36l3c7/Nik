@@ -2417,6 +2417,65 @@ test('the War Room holds what was said and done on the incident, and marks evide
   await expect(page.getByText('Laptop collected from the finance office.')).toBeVisible()
 })
 
+test('the command line of the War Room runs commands, asks before a change outside, and closes', async () => {
+  test.setTimeout(120_000)
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'War Room', exact: true }).click()
+  const stream = page.getByRole('list', { name: 'War Room' })
+  const line = page.locator('#war-room-line')
+  await page.getByRole('group', { name: 'Show' }).getByRole('button', { name: 'All' }).click()
+
+  // The name of a command is completed while it is typed, and its arguments are hinted.
+  await line.fill('!nik-get-ind')
+  const offered = page.getByRole('listbox', { name: 'Commands' })
+  await expect(offered.getByRole('option')).toHaveText([/!nik-get-indicator/])
+  await line.press('Tab')
+  await expect(line).toHaveValue('!nik-get-indicator ')
+  await expect(page.getByLabel('Arguments of the command')).toContainText('value=')
+  await line.pressSequentially('185.220.101.47')
+  await line.press('Enter')
+  // The command, and under it what it gave.
+  const command = stream.getByRole('listitem').filter({ hasText: '!nik-get-indicator 185.220.101.47' })
+  await expect(command).toHaveCount(1)
+  const result = stream.getByRole('listitem').filter({ hasText: /^automation.*nik-get-indicator/ })
+  await expect(result).toHaveCount(1, { timeout: 20_000 })
+  await result.getByRole('button').click()
+  const inspector = page.getByRole('complementary', { name: 'The chosen entry' })
+  await expect(inspector.getByRole('heading', { name: 'Result' })).toBeVisible()
+  await expect(inspector).toContainText('185.220.101.47')
+  await inspector.getByRole('button', { name: 'Close the entry' }).click()
+
+  // What is wrong with a line is said under it, and nothing runs.
+  await line.fill('!nik-get-indicator colour=red')
+  await line.press('Enter')
+  await expect(page.getByRole('alert').filter({ hasText: 'is not an argument of this command' })).toBeVisible()
+  // The arrow brings back the line typed before.
+  await line.fill('')
+  await line.press('ArrowUp')
+  await expect(line).toHaveValue('!nik-get-indicator 185.220.101.47')
+  await line.press('ArrowDown')
+  await expect(line).toHaveValue('')
+
+  // A command that changes something outside asks first, with the line as it will be sent.
+  await line.fill('!acme-create-ticket title="From the War Room"')
+  await line.press('Enter')
+  const confirm = page.getByRole('dialog', { name: 'Run this command?' })
+  await expect(confirm).toContainText('acme-create-ticket changes something outside Nik')
+  await expect(confirm).toContainText('!acme-create-ticket title="From the War Room"')
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(stream.getByRole('listitem').filter({ hasText: '!acme-create-ticket' })).toHaveCount(0)
+
+  // A slash command: /close opens the form of closing.
+  await line.fill('/cl')
+  await expect(page.getByRole('listbox', { name: 'Commands' }).getByRole('option')).toHaveText([/\/close/])
+  await line.press('Tab')
+  await line.press('Enter')
+  const closing = page.getByRole('dialog', { name: 'Close the incident' })
+  await expect(closing).toBeVisible()
+  await closing.getByRole('button', { name: 'Cancel' }).click()
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()
