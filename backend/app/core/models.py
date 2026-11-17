@@ -1152,6 +1152,44 @@ class Notification(Base):
     read_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class NamedList(Base):
+    """A list a feature or a playbook reads by its name: values, key → value pairs,
+    or one JSON document. What Nik kept as fixed lists in its settings lives here."""
+
+    __tablename__ = "lists"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, default="values")  # values | key_value | json
+    # What its items are, for whoever edits it: text, domain, cidr, email, user…
+    item_type: Mapped[str] = mapped_column(String(16), nullable=False, default="text")
+    # The columns of the value of a key → value list, when it has a fixed shape.
+    columns: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    writable_by_automation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class NamedListItem(Base):
+    __tablename__ = "list_items"
+    __table_args__ = (Index("ix_list_items_expires", "expires_at"),)
+
+    list_id: Mapped[str] = mapped_column(String(32), ForeignKey("lists.id", ondelete="CASCADE"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(500), primary_key=True)
+    value: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    added_at: Mapped[str] = mapped_column(String, nullable=False)
+    added_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    expires_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+
+# Created by migration 0031_lists where missing, in this order.
+LIST_TABLES = ("lists", "list_items")
+
 # Created by migration 0030_tasks_sla where missing, in this order.
 TASK_TABLES = ("tasks", "notifications")
 

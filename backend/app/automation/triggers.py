@@ -146,7 +146,7 @@ def trigger_config(db: OrmSession, playbook: Playbook) -> dict:
     return (node or {}).get("config") or {}
 
 
-def accepts(config: dict, kind: str, data: dict, classes: dict) -> bool:
+def accepts(config: dict, kind: str, data: dict, classes: dict, db: OrmSession | None = None) -> bool:
     """Whether a trigger waits for this event and its conditions hold."""
     if config.get("event") != kind:
         return False
@@ -154,7 +154,8 @@ def accepts(config: dict, kind: str, data: dict, classes: dict) -> bool:
     if not conditions:
         return True
     try:
-        return engine.holds(conditions, ex.Scope(values={"trigger": data}, classes={"trigger": classes}))
+        scope = ex.Scope(values={"trigger": data}, classes={"trigger": classes}, in_list=engine._in_list(db))
+        return engine.holds(conditions, scope)
     except (ex.ExpressionError, engine.StepFailed):
         return False
 
@@ -221,7 +222,7 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
         # A playbook never starts on what its own run did.
         if caused_by is not None and caused_by.playbook_id == playbook.id:
             continue
-        if not accepts(trigger_config(db, playbook), event.kind, data, classes):
+        if not accepts(trigger_config(db, playbook), event.kind, data, classes, db):
             continue
         why = refusal(db, playbook, event.object_kind, event.object_id, now)
         if why:

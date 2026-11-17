@@ -122,6 +122,19 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
+    id: 'lists',
+    label: 'Lists',
+    sections: [
+      {
+        id: 'lists',
+        slug: 'all',
+        label: 'Lists',
+        permission: 'lists.manage',
+        keywords: 'allowlist domains keywords business hours hosts values import export csv json watch vip',
+      },
+    ],
+  },
+  {
     id: 'automation',
     label: 'Automation',
     sections: [

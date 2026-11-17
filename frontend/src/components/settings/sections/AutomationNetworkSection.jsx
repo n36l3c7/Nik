@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Globe, Plus, X } from 'lucide-react'
+import { Globe } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import { hostOf } from '../../../domain/automation/hosts.js'
 import { Badge, Button } from '../../ui/index.js'
+import ListPicker from '../ListPicker.jsx'
 
 /*
  * Automation → Network and data (admins).
  *
  * Two things every playbook shares: the hosts any "listed hosts only"
- * playbook may reach besides its own, and the SMTP server the "Send an
+ * playbook may reach besides its own (a list: this section says which one is
+ * read, and Settings → Lists edits it), and the SMTP server the "Send an
  * e-mail" node uses. What one playbook may reach or send beyond that is
  * chosen on the playbook itself (its Settings tab), behind a double check.
  *
@@ -30,7 +31,6 @@ export default function AutomationNetworkSection() {
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [newHost, setNewHost] = useState('')
   const [smtp, setSmtp] = useState(null)
   const [password, setPassword] = useState('')
 
@@ -64,13 +64,6 @@ export default function AutomationNetworkSection() {
     } finally {
       setBusy(false)
     }
-  }
-
-  const addHost = async (event) => {
-    event.preventDefault()
-    const host = hostOf(newHost)
-    if (!host) return
-    if (await save({ hosts: [...settings.hosts, host] }, `${host} can be reached by every playbook.`)) setNewHost('')
   }
 
   const saveSmtp = (event) => {
@@ -129,49 +122,19 @@ export default function AutomationNetworkSection() {
               A playbook set to “Listed hosts only” reaches these and its own. Addresses inside the server’s own network
               are refused whatever is listed.
             </p>
-            <ul className="flex flex-wrap gap-1.5">
-              {settings.hosts.length === 0 && <li className="text-sm text-fg-muted">None.</li>}
-              {settings.hosts.map((host) => (
-                <li
-                  key={host}
-                  className="inline-flex items-center gap-1 border border-line bg-sunken pl-2 font-mono text-xs"
-                >
-                  {host}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${host}`}
-                    disabled={busy}
-                    onClick={() =>
-                      save(
-                        { hosts: settings.hosts.filter((item) => item !== host) },
-                        `${host} is no longer listed for every playbook.`,
-                      )
-                    }
-                    className="p-1 text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <X className="h-3 w-3" aria-hidden="true" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <form onSubmit={addHost} className="flex items-end gap-2">
-              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-fg-muted" htmlFor="automation-new-host">
-                Add a host
-                <input
-                  id="automation-new-host"
-                  type="text"
-                  value={newHost}
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="api.example.org or api.example.org:8443"
-                  onChange={(event) => setNewHost(event.target.value)}
-                  className={INPUT}
-                />
-              </label>
-              <Button type="submit" variant="secondary" icon={Plus} disabled={busy || !newHost.trim()}>
-                Add
-              </Button>
-            </form>
+            <ListPicker
+              setting="state.hosts"
+              label="Hosts"
+              hint="A host is a name or an address, with a port if needed: api.example.org or api.example.org:8443."
+            />
+            <p className="text-xs text-fg-muted">
+              It holds:{' '}
+              {settings.hosts.length ? (
+                <span className="font-mono text-fg">{settings.hosts.join(', ')}</span>
+              ) : (
+                <em>no host yet</em>
+              )}
+            </p>
           </div>
 
           <form onSubmit={saveSmtp} className="max-w-xl space-y-3">

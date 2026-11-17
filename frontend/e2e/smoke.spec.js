@@ -1132,7 +1132,7 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
   // The sections are in groups; the one shown is marked.
-  await expect(sections.getByRole('group')).toHaveCount(7)
+  await expect(sections.getByRole('group')).toHaveCount(8)
   await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
     'YARA rules',
     'capa rules',
@@ -1768,9 +1768,17 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await expect(settings.getByText('running')).toBeVisible()
   await expect(settings.getByText('alive')).toBeVisible()
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Network and data').click()
-  await settings.getByLabel('Add a host').fill('intel.example.org')
-  await settings.getByRole('button', { name: 'Add' }).click()
-  await expect(settings.getByText('intel.example.org can be reached by every playbook.')).toBeVisible()
+  // The hosts every playbook may reach are a list: the section says which, and Lists edits it.
+  await expect(settings.getByLabel('Hosts: reads the list')).toHaveValue('automation_hosts')
+  await settings.getByRole('button', { name: 'Open in Lists' }).click()
+  await expect(page).toHaveURL(/\/settings\/lists\/all\?open=automation_hosts$/)
+  const hosts = settings.getByRole('article', { name: 'Hosts every playbook may reach' })
+  await hosts.getByLabel('Items, one a line').fill('Intel.Example.org')
+  await hosts.getByRole('button', { name: 'Save the items' }).click()
+  await expect(hosts.getByRole('status')).toHaveText('Saved.')
+  // Kept as a host is written: in lower case.
+  await expect(hosts.getByLabel('Items, one a line')).toHaveValue('intel.example.org')
+  await expect(hosts.getByRole('region', { name: 'Where it is used' })).toContainText('Network and data')
   await settings.getByRole('button', { name: 'Close settings' }).click()
   // The area was reloaded on its own address: back to the incident the next steps work on.
   await page.goto(before)
@@ -2339,8 +2347,12 @@ test('a type of incident is built with a field of its own, and closing asks for 
 
 test('the Context tab shows what playbooks read of the incident, with the path of each value', async () => {
   const tabs = page.locator('nav[aria-label="Analysis tabs"]')
-  await tabs.getByRole('button', { name: 'Context', exact: true }).click()
   const tree = page.getByRole('tree', { name: 'Context of the incident' })
+  // The incident may still be settling on the tab its type remembers (the test before changed its type).
+  await expect(async () => {
+    await tabs.getByRole('button', { name: 'Context', exact: true }).click()
+    await expect(tree).toBeVisible({ timeout: 2000 })
+  }).toPass()
   // Two roots: the fields of the incident, and what the analysis found for it.
   await expect(tree.getByRole('treeitem', { name: /^incident/ }).first()).toBeVisible()
   await expect(tree.getByRole('treeitem', { name: /^File \d+ items?$/ })).toBeVisible()
@@ -2654,6 +2666,62 @@ test('a type times its incidents: the SLA in Settings, the timers on the inciden
   await expect(told.getByRole('button', { name: 'Mark all as read' })).toBeDisabled()
   await told.getByRole('button', { name: 'Close' }).click()
   await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible()
+})
+
+test('lists: one is made and filled, a feature is pointed at it, and what Nik ships is there', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Lists', { exact: true }).last().click()
+  await expect(page).toHaveURL(/\/settings\/lists\/all/)
+  const table = settings.getByRole('table', { name: 'Lists' })
+  // What the settings held is here: the allowlist, the keywords with their columns, the business hours.
+  await expect(table.getByRole('row').filter({ hasText: 'ioc_allowlist' })).toContainText('Values')
+  await table.getByRole('button', { name: 'Suspicious keywords' }).click()
+  const keywords = settings.getByRole('article', { name: 'Suspicious keywords' })
+  await expect(keywords.getByRole('columnheader', { name: 'Severity' })).toBeVisible()
+  await expect(keywords.getByRole('region', { name: 'Where it is used' })).toContainText('Detection rules')
+  await table.getByRole('button', { name: 'Business hours' }).click()
+  await expect(
+    settings.getByRole('article', { name: 'Business hours' }).getByLabel('The document, as JSON'),
+  ).toHaveValue(/"startHour"/)
+
+  // A list of one's own.
+  await settings.getByRole('button', { name: 'New list' }).click()
+  const dialog = page.getByRole('dialog', { name: 'New list' })
+  await dialog.getByLabel('Label').fill('Strict allowlist')
+  await expect(dialog.getByLabel('Name')).toHaveValue('strict_allowlist')
+  await dialog.getByRole('button', { name: 'Create the list' }).click()
+  const strict = settings.getByRole('article', { name: 'Strict allowlist' })
+  await expect(strict).toContainText('Nothing reads this list yet.')
+  await strict.getByLabel('Items, one a line').fill('only.example\n\nonly.example\n192.0.2.0/24')
+  await strict.getByRole('button', { name: 'Save the items' }).click()
+  await expect(strict.getByRole('status')).toHaveText('Saved.')
+  await expect(strict.getByLabel('Items, one a line')).toHaveValue('only.example\n192.0.2.0/24')
+  await expect(table.getByRole('row').filter({ hasText: 'strict_allowlist' })).toContainText('2 items')
+  const exported = await page.request.get('/api/lists/strict_allowlist/export?format=csv')
+  expect(await exported.text()).toBe('key,note\r\nonly.example,\r\n192.0.2.0/24,\r\n')
+
+  // The allowlist of the indicators reads it when it is chosen, and the factory one when it is chosen back.
+  await sections.getByText('IOC allowlist', { exact: true }).click()
+  const picker = settings.getByLabel('Allowlist: reads the list')
+  await expect(picker).toHaveValue('ioc_allowlist')
+  await picker.selectOption('strict_allowlist')
+  await expect(settings.getByText('2 entries')).toBeVisible()
+  await sections.getByText('Lists', { exact: true }).last().click()
+  await table.getByRole('button', { name: 'Strict allowlist' }).click()
+  await expect(strict.getByRole('region', { name: 'Where it is used' })).toContainText('Allowlist')
+  // A list in use is not deleted.
+  await strict.getByRole('button', { name: 'Delete the list' }).click()
+  await expect(strict.getByRole('alert')).toContainText('This list is used by')
+  await sections.getByText('IOC allowlist', { exact: true }).click()
+  await picker.selectOption('ioc_allowlist')
+  await expect(settings.getByText('2 entries')).toHaveCount(0)
+  await sections.getByText('Lists', { exact: true }).last().click()
+  await table.getByRole('button', { name: 'Strict allowlist' }).click()
+  await strict.getByRole('button', { name: 'Delete the list' }).click()
+  await expect(table.getByRole('row').filter({ hasText: 'strict_allowlist' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {

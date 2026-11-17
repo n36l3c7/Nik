@@ -465,6 +465,8 @@ const length = (value) =>
  */
 const FILTERS = {
   default: { args: [0, 1], run: null },
+  // Whether the value is in a list by its name: only the server holds the lists, so a preview says no.
+  in_list: { args: [1, 1], run: () => false },
   length: { args: [0, 0], run: length },
   join: { args: [0, 1], run: (v, sep = ', ') => listed(v).map(text).join(text(sep)) },
   lower: { args: [0, 0], run: (v) => text(v).toLowerCase() },

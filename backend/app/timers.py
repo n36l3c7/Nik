@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import fields as registry
-from .core.models import Incident, IncidentType, Setting, User
+from .core.models import Incident, IncidentType, User
 from .core.permissions import clean_roles
 from .core.security import now_iso
 from .defaults import DEFAULT_BUSINESS_HOURS
@@ -54,8 +54,9 @@ class TimerError(ValueError):
 # --------------------------------------------------------------------------- #
 def business_hours(db: OrmSession) -> dict[str, Any]:
     """The hours the organisation works, as Settings hold them (in UTC)."""
-    row = db.get(Setting, 1)
-    held = (row.doc or {}).get("businessHours") if row is not None else None
+    from . import lists
+
+    held = lists.settings_value(db, "businessHours", None)
     hours = {**DEFAULT_BUSINESS_HOURS, **(held if isinstance(held, dict) else {})}
     try:
         start, end = int(hours["startHour"]), int(hours["endHour"])

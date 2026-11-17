@@ -187,6 +187,10 @@ def housekeeping(db, now: float) -> None:
     tasks.tick(db, now)
     # SLA timers: what the type of an incident times, and what is past its time.
     timers.tick(db, now)
+    from .. import lists
+
+    if lists.prune(db, now):
+        db.commit()
     reclaim(db, now)
     global _storage_looked
     if abs(now - _storage_looked) >= STORAGE_LOOK_EVERY:

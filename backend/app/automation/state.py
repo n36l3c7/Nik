@@ -24,16 +24,28 @@ DEFAULTS: dict[str, Any] = {"enabled": True, "hosts": [], "heartbeat": 0.0}
 
 
 def read(db: OrmSession) -> dict[str, Any]:
+    from .. import lists
+
     row = db.get(Setting, SETTINGS_ID)
-    return {**DEFAULTS, **((row.doc if row else None) or {})}
+    held = {**DEFAULTS, **((row.doc if row else None) or {})}
+    # The hosts every playbook may reach are a list: read in the shape they always had.
+    held["hosts"] = lists.settings_value(db, "state.hosts", [])
+    return held
 
 
 def write(db: OrmSession, **changes: Any) -> dict[str, Any]:
     """Change some of the settings (the caller commits)."""
+    from .. import lists
+
     row = db.get(Setting, SETTINGS_ID)
     if row is None:
         row = Setting(id=SETTINGS_ID, doc=dict(DEFAULTS))
         db.add(row)
+        db.flush()
+    if "hosts" in changes:
+        # Written to their list; the row keeps which list that is.
+        lists.apply_setting(db, "state.hosts", changes["hosts"], "nik")
+        changes = {**changes, "hosts": {"list": lists.pointers_of(db)["state.hosts"]}}
     row.doc = {**DEFAULTS, **(row.doc or {}), **changes}
     flag_modified(row, "doc")
     return row.doc

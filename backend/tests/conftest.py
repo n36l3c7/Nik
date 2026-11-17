@@ -22,6 +22,7 @@ os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token")
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import lists
 from app.core import security  # noqa: E402
 from app.core.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -36,6 +37,7 @@ ADMIN = {"username": "admin", "password": "supersecret"}
 def client():
     """A TestClient on a freshly-created schema and empty rate-limit counters."""
     app.state.limiter.reset()
+    lists.clear_cache()  # what the last test's lists held is not this one's
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     return TestClient(app)

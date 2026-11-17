@@ -633,6 +633,20 @@ Content-Type: application/json
           </tbody>
         </table>
       </div>
+      <p id="lists">
+        <strong>Lists.</strong> A list is what a playbook reads by a name: the VIP users, the hosts that are yours, the
+        addresses a campaign used. Lists are made and filled in <em>Settings → Lists</em>; what Nik used to keep in its
+        settings (the IoC allowlist, your domains, the suspicious keywords, the business hours, the hosts every playbook
+        may reach) is there too, and so are the watch lists of the IoC library, read like the others.
+        <em>Read a list</em> gives its <code>items</code> (values, an object of key → value, or a document) and their
+        <code>count</code>; <em>Is it in a list?</em> gives <code>found</code>; <em>Add to a list</em>,
+        <em>Remove from a list</em> and <em>Set a list</em> change one, and only a list that says
+        <em>Playbooks may write to this list</em>: every other is refused. An item can be added for a time
+        (<code>expires_minutes</code>) and is dropped when it is over. In an expression,
+        <code>{{ trigger.mail.sender_domain | in_list('internal_domains') }}</code> is true or false; a list of networks
+        holds the addresses inside them, and a list of values is compared without regard to case. A trigger's condition
+        can use it too.
+      </p>
       <p id="sla">
         <strong>SLA timers.</strong> A timer counts how long an incident has taken: to be assigned, to be contained, to
         be closed. The type of an incident says which timers its incidents have and the minutes each is allowed (<em
