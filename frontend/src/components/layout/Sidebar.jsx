@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CircleDot,
@@ -18,10 +18,16 @@ import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
+import { api } from '../../services/api.js'
+import { useQuerySchema } from '../../services/querySchema.js'
+import { tryParse } from '../../domain/query/parse.js'
+import { writeValue } from '../../domain/query/complete.js'
+import { conditionOn, withCondition } from '../../domain/query/builder.js'
 import { formatRelative } from '../../lib/time.js'
 import { getOsById } from '../../config/os.js'
 import { Button, MicroSkull, Modal, SeverityTag, StatusTag } from '../ui/index.js'
-import { STATUSES, filterIncidents } from '../../domain/incidentName.js'
+import QueryInput from '../ui/QueryInput.jsx'
+import { STATUSES } from '../../domain/incidentName.js'
 import ArtifactsPanel from '../artifacts/ArtifactsPanel.jsx'
 import IocsPanel from '../iocs/IocsPanel.jsx'
 
@@ -32,7 +38,8 @@ import IocsPanel from '../iocs/IocsPanel.jsx'
  *
  * The rail (Rail.jsx) chooses the panel. The incidents panel holds the "New
  * incident" button (opens the modal owned by App via `onCreateIncident`), the
- * incident list sorted by last update, filtered by status and by "mine", with
+ * incident list sorted by last update, filtered by a query (the status and
+ * "mine" filters write their condition into it; the server reads it), with
  * per-row actions (export / delete; status and assignee in the right-click menu)
  * and the JSON import; the artifacts panel is ArtifactsPanel.
  *
@@ -82,13 +89,59 @@ export default function Sidebar({
   onOpenReport,
   width = 288,
 }) {
-  const { incidents, activeIncidentId, deleteIncident, exportIncident, importIncidentFromFile, setIncidentTriage } =
-    useIncidents()
-  const { currentUser } = useAuth()
+  const {
+    incidents,
+    activeIncidentId,
+    deleteIncident,
+    exportIncident,
+    importIncidentFromFile,
+    setIncidentTriage,
+    unsavedChanges,
+  } = useIncidents()
+  const { currentUser, can } = useAuth()
+  const canWrite = can('write')
   const me = currentUser?.username ?? ''
-  // The panel's filters: a status (or all) and only the incidents assigned to the analyst.
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [mineOnly, setMineOnly] = useState(false)
+  // The panel's filter is a query (see docs: the query language). The status
+  // select and "mine" write their condition into it, and show what it says.
+  const [query, setQuery] = useState('')
+  const schema = useQuerySchema('incidents')
+  const statusCondition = conditionOn(query, 'status', schema) ?? ''
+  const statusFilter = STATUSES.find((s) => statusCondition === `status:${s.value}`)?.value ?? 'all'
+  const mineCondition = me ? `owner:${writeValue(me)}` : ''
+  const mineOnly = Boolean(mineCondition) && conditionOn(query, 'owner', schema) === mineCondition
+  const setStatusFilter = (status) =>
+    setQuery(withCondition(query, 'status', status === 'all' ? '' : `status:${status}`, schema))
+  const toggleMine = () => setQuery(withCondition(query, 'owner', mineOnly ? '' : mineCondition, schema))
+
+  // The incidents the query keeps: asked of the server, which is what reads the
+  // language. `ids` is null while there is no query. Asked again when the list
+  // changes or a change reaches the server, so an edit shows in the filter.
+  const [match, setMatch] = useState({ ids: null, error: null })
+  const stamp = `${incidents.length}:${incidents.reduce((latest, i) => (i.updatedAt > latest ? i.updatedAt : latest), '')}:${unsavedChanges}`
+  useEffect(() => {
+    const text = query.trim()
+    if (!text) {
+      setMatch({ ids: null, error: null })
+      return undefined
+    }
+    // What cannot be read is said by the input; the list stays as it was.
+    if (tryParse(text).error) return undefined
+    let cancelled = false
+    const timer = setTimeout(() => {
+      api
+        .get(`/incidents?view=summary&q=${encodeURIComponent(text)}`)
+        .then((res) => {
+          if (!cancelled) setMatch({ ids: new Set((res?.incidents ?? []).map((row) => row.id)), error: null })
+        })
+        .catch((err) => {
+          if (!cancelled) setMatch((current) => ({ ids: current.ids, error: err.query ?? { message: err.message } }))
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [query, stamp])
   const selectIncident = onSelectIncident
   const { openMenu } = useContextMenu()
   const { showToast } = useToast()
@@ -106,10 +159,10 @@ export default function Sidebar({
   // List ordered by last update (most recent first).
   const sortedIncidents = useMemo(
     () =>
-      filterIncidents(incidents, { status: statusFilter, assignee: mineOnly ? me : '' }).sort(
-        (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-      ),
-    [incidents, statusFilter, mineOnly, me],
+      incidents
+        .filter((incident) => !match.ids || match.ids.has(incident.id))
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+    [incidents, match.ids],
   )
 
   /** Confirm permanent deletion of the incident. */
@@ -153,12 +206,24 @@ export default function Sidebar({
             ? incidents.length
             : `${sortedIncidents.length}/${incidents.length}`}
         </p>
-        <Button size="sm" icon={Plus} onClick={onCreateIncident}>
-          New incident
-        </Button>
+        {canWrite && (
+          <Button size="sm" icon={Plus} onClick={onCreateIncident}>
+            New incident
+          </Button>
+        )}
       </div>
 
-      {/* ----- Filters: status, mine ----- */}
+      {/* ----- Filters: a query; status and mine write into it ----- */}
+      <div className="border-b border-line px-3 pt-2">
+        <QueryInput
+          entity="incidents"
+          label="Filter incidents"
+          placeholder="status:open severity:>=high…"
+          value={query}
+          onChange={setQuery}
+          error={match.error}
+        />
+      </div>
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <select
           aria-label="Status filter"
@@ -176,7 +241,7 @@ export default function Sidebar({
         <button
           type="button"
           aria-pressed={mineOnly}
-          onClick={() => setMineOnly((value) => !value)}
+          onClick={toggleMine}
           title="Only the incidents assigned to me"
           className={[
             'h-7 shrink-0 border px-2 font-mono text-xs transition-colors',
@@ -351,16 +416,20 @@ export default function Sidebar({
           </div>
         )}
 
-        <Button
-          variant="secondary"
-          icon={Upload}
-          className="w-full justify-center"
-          disabled={importing}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {importing ? 'Importing…' : 'Import incident'}
-        </Button>
-        <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
+        {canWrite && (
+          <>
+            <Button
+              variant="secondary"
+              icon={Upload}
+              className="w-full justify-center"
+              disabled={importing}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {importing ? 'Importing…' : 'Import incident'}
+            </Button>
+            <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
+          </>
+        )}
       </div>
 
       {/* ----- Delete confirmation modal ----- */}

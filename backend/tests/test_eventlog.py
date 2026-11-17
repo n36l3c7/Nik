@@ -147,5 +147,5 @@ def test_upload_evtx(admin: TestClient, monkeypatch):
     meta = channel["meta"]
     assert meta["fileName"] == "Security.evtx" and meta["format"] == "evtx" and len(meta["sha256"]) == 64
 
-    actions = [e["action"] for e in admin.get("/api/audit", headers=key).json()["entries"]]
+    actions = [e["action"] for e in admin.get("/api/audit").json()["entries"]]
     assert "eventlog.upload" in actions

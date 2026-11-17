@@ -3,7 +3,8 @@
  *
  * Several contexts own a part of the address: the active incident
  * (/incident/<id>), an artifact on its own (/artifact/<id>), the IoC library
- * (/iocs…) and an indicator's page (/ioc/<type>). Each derives its state from
+ * (/iocs…), an indicator's page (/ioc/<type>) and the Settings page
+ * (/settings/<group>/<section>). Each derives its state from
  * the address. The browser tells them about Back and Forward (`popstate`) but
  * not about the app's own pushState, so a change made by one context used to
  * leave the others showing what they showed before: the address changed and
@@ -43,5 +44,9 @@ export function onLocationChange(handler) {
   }
 }
 
-/** An indicator's page is drawn over whatever is open: the view under it stays. */
-export const isIndicatorPage = (pathname) => /^\/ioc\//.test(pathname)
+/**
+ * An indicator's page and the Settings page are drawn over whatever is open:
+ * the incident, the artifact or the library under them stays as it is, and is
+ * there again when they are left.
+ */
+export const isOverlayPage = (pathname) => /^\/(ioc|settings)(\/|$)/.test(pathname)

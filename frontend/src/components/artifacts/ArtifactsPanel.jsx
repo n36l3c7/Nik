@@ -6,12 +6,17 @@ import { formatRelative } from '../../lib/time.js'
 import { Badge, Button, MicroSkull } from '../ui/index.js'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import QueryInput from '../ui/QueryInput.jsx'
+import { useQuerySchema } from '../../services/querySchema.js'
+import { writeValue } from '../../domain/query/complete.js'
+import { conditionOn, withCondition } from '../../domain/query/builder.js'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
- * their own or in incidents, and scanned addresses, for the whole team, newest first. The text
- * filter and the kind chips are applied by the server.
+ * their own or in incidents, and scanned addresses, for the whole team, newest first. The filter
+ * is a query read by the server ("mine" writes its condition into it); the kind chips count
+ * what the query keeps of each kind.
  */
 
 export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network, url: Link2, mailbox: Inbox }
@@ -36,8 +41,13 @@ function Chip({ active, onClick, children }) {
  * @param {{ width: number, onNewAnalysis: () => void }} props
  */
 export default function ArtifactsPanel({ width, onNewAnalysis }) {
-  const { artifacts, counts, filters, setFilters, loading, error, currentId, openArtifact, refresh } = useArtifacts()
-  const { currentUser } = useAuth()
+  const { artifacts, counts, filters, setFilters, loading, error, queryError, currentId, openArtifact, refresh } =
+    useArtifacts()
+  const { can, currentUser } = useAuth()
+  const schema = useQuerySchema('artifacts')
+  // "mine" is a condition of the query: the artifacts this account added.
+  const mineCondition = currentUser ? `createdBy:${writeValue(currentUser.username)}` : ''
+  const mine = Boolean(mineCondition) && conditionOn(filters.q, 'createdBy', schema) === mineCondition
   const [transfer, setTransfer] = useState(null) // { mode: 'export', ids, label } | { mode: 'import' }
   // No incident here: the menu offers what an artifact offers on its own.
   const menu = useItemMenu(null)
@@ -77,19 +87,21 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
         <p className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-wider text-fg-muted">
           ARTIFACTS · {total}
         </p>
-        <Button size="sm" icon={Plus} onClick={onNewAnalysis}>
-          New analysis
-        </Button>
+        {can('write') && (
+          <Button size="sm" icon={Plus} onClick={onNewAnalysis}>
+            New analysis
+          </Button>
+        )}
       </div>
 
       <div className="space-y-2 border-b border-line px-3 py-2.5">
-        <input
-          type="search"
-          aria-label="Filter artifacts"
-          placeholder="filter by name, hash, tag…"
+        <QueryInput
+          entity="artifacts"
+          label="Filter artifacts"
+          placeholder="name, hash, tag… or verdict:phishing"
           value={filters.q}
-          onChange={(event) => setFilters({ ...filters, q: event.target.value })}
-          className="h-8 w-full border border-line bg-canvas px-2.5 font-mono text-xs text-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          onChange={(q) => setFilters({ ...filters, q })}
+          error={queryError}
         />
         <div className="flex flex-wrap gap-1.5">
           <Chip active={!filters.kind} onClick={() => setFilters({ ...filters, kind: '' })}>
@@ -104,7 +116,12 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
               {kind.label} {counts[kind.id] ?? 0}
             </Chip>
           ))}
-          <Chip active={filters.mine} onClick={() => setFilters({ ...filters, mine: !filters.mine })}>
+          <Chip
+            active={mine}
+            onClick={() =>
+              setFilters({ ...filters, q: withCondition(filters.q, 'createdBy', mine ? '' : mineCondition, schema) })
+            }
+          >
             mine
           </Chip>
         </div>
@@ -125,7 +142,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
             <p className="text-sm text-fg-muted">
               {loading
                 ? 'Loading…'
-                : filters.q || filters.kind || filters.mine
+                : filters.q || filters.kind
                   ? 'No artifact matches these filters.'
                   : 'No artifacts yet: start an analysis, or drop a file anywhere.'}
             </p>
@@ -188,7 +205,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
         >
           Export {artifacts.length > 0 ? Math.min(artifacts.length, 500) : ''}
         </Button>
-        {currentUser?.role === 'admin' && (
+        {can('admin') && (
           <Button
             size="sm"
             variant="secondary"

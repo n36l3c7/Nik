@@ -172,7 +172,7 @@ def test_report_endpoint_html_pdf_and_branding(admin: TestClient):
     assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF") and "WKS-042-report.pdf" in pdf.headers["content-disposition"]
 
-    actions = [e["action"] for e in admin.get("/api/audit", headers=key).json()["entries"]]
+    actions = [e["action"] for e in admin.get("/api/audit").json()["entries"]]
     assert "report.generate" in actions
     assert admin.post("/api/incidents/nope/report", headers=key, json={}).status_code == 404
 

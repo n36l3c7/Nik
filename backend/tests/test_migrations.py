@@ -318,3 +318,79 @@ def test_migration_0024_adds_the_mailbox_tables_and_leaves_existing_ones(tmp_pat
     command.downgrade(cfg, "0023_ioc_library")
     with engine.connect() as conn:
         assert "mailboxes" not in sa.inspect(conn).get_table_names()
+
+
+def _database_before_roles(tmp_path, monkeypatch):
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE users (id VARCHAR PRIMARY KEY, username VARCHAR NOT NULL UNIQUE,"
+                " password_hash VARCHAR NOT NULL, role VARCHAR NOT NULL, created_at VARCHAR NOT NULL,"
+                " created_by VARCHAR, disabled BOOLEAN NOT NULL DEFAULT 0, failed_logins INTEGER NOT NULL DEFAULT 0,"
+                " locked_until VARCHAR)"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "CREATE TABLE api_keys (id VARCHAR PRIMARY KEY, label VARCHAR NOT NULL, prefix VARCHAR NOT NULL,"
+                " key_hash VARCHAR NOT NULL, role VARCHAR NOT NULL, scopes VARCHAR NOT NULL,"
+                " created_at VARCHAR NOT NULL, created_by VARCHAR, expires_at VARCHAR, last_used_at VARCHAR,"
+                " revoked_at VARCHAR)"
+            )
+        )
+        for name, role in (("root", "admin"), ("anna", "analyst")):
+            conn.execute(
+                sa.text("INSERT INTO users VALUES (:n, :n, 'h', :r, 't', NULL, 0, 0, NULL)"), {"n": name, "r": role}
+            )
+        for label, role, scopes in (
+            ("adm", "admin", "read,write,admin"),
+            ("rw", "analyst", "read,write"),
+            ("ro", "analyst", "read"),
+        ):
+            conn.execute(
+                sa.text("INSERT INTO api_keys VALUES (:l, :l, 'nik_', 'h', :r, :s, 't', NULL, NULL, NULL, NULL)"),
+                {"l": label, "r": role, "s": scopes},
+            )
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    return engine
+
+
+def _stored_roles(engine, table: str, key: str) -> dict:
+    with engine.connect() as conn:
+        rows = conn.execute(sa.text(f"SELECT {key}, roles, role FROM {table}")).all()  # noqa: S608 (fixed names)
+    return {row[0]: (json.loads(row[1]) if isinstance(row[1], str) else row[1], row[2]) for row in rows}
+
+
+def test_migration_0025_gives_accounts_and_keys_their_roles(tmp_path, monkeypatch):
+    engine = _database_before_roles(tmp_path, monkeypatch)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0024_mailboxes")
+    command.upgrade(cfg, "0025_roles")
+
+    assert _stored_roles(engine, "users", "username") == {
+        "root": (["admin"], "admin"),
+        "anna": (["analyst"], "analyst"),
+    }
+    assert _stored_roles(engine, "api_keys", "label") == {
+        "adm": (["admin"], "admin"),
+        "rw": (["analyst"], "analyst"),
+        "ro": (["viewer"], "analyst"),  # the old columns are left as they were
+    }
+    with engine.connect() as conn:
+        assert "session_epoch" in {c["name"] for c in sa.inspect(conn).get_columns("users")}
+
+    # A second run changes nothing, and keeps roles given since.
+    with engine.begin() as conn:
+        conn.execute(sa.text("UPDATE users SET roles = '[\"viewer\", \"audit\"]' WHERE username = 'anna'"))
+    command.stamp(cfg, "0024_mailboxes")
+    command.upgrade(cfg, "0025_roles")
+    assert _stored_roles(engine, "users", "username")["anna"] == (["viewer", "audit"], "analyst")
+
+    command.downgrade(cfg, "0024_mailboxes")
+    with engine.connect() as conn:
+        assert {"roles", "session_epoch"}.isdisjoint({c["name"] for c in sa.inspect(conn).get_columns("users")})
+        assert "roles" not in {c["name"] for c in sa.inspect(conn).get_columns("api_keys")}
+        assert conn.execute(sa.text("SELECT role FROM users WHERE username = 'root'")).scalar() == "admin"

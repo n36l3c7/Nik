@@ -53,6 +53,7 @@
           <li><a href="#host-tabs">Endpoint, Event Logs, Browser, Commands</a></li>
           <li><a href="#flags">Flags, comments and the right-click menu</a></li>
           <li><a href="#shortcuts">Keyboard shortcuts</a></li>
+          <li><a href="#queries">Filter the lists with a query</a></li>
           <li><a href="#search">Search</a></li>
           <li><a href="#report">The incident report</a></li>
           <li><a href="#share">Export, import and backup</a></li>
@@ -64,8 +65,8 @@
       <h2 id="sign-in">Sign in</h2>
       <p>
         On a new installation the first screen asks for an account: the first one created becomes the
-        <strong>admin</strong>. Every other analyst gets an account from the admin (Settings → Accounts) as an
-        <strong>analyst</strong> or another admin. Every action is recorded under the analyst's name in the audit log.
+        <strong>admin</strong>. Everyone else gets an account from the admin (Settings → Accounts), with the
+        <a href="#roles">roles</a> their work needs. Every action is recorded under the account's name in the audit log.
       </p>
       <figure class="shot">
         <img src="img/sign-in.png" alt="The sign-in screen" width="1600" height="1000" loading="lazy" />
@@ -96,8 +97,8 @@
         Every incident has a <strong>status</strong> (open, in progress or closed) and can be
         <strong>assigned</strong> to an analyst. Set them from the Summary tab, or right-click an incident in the panel:
         <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>. The panel
-        shows the status and the assignee under the name, and filters the list by status or to the incidents that are
-        <strong>mine</strong>. Both are stated in the report.
+        shows the status and the assignee under the name, and filters the list by status, to the incidents that are
+        <strong>mine</strong>, or by any <a href="#queries">query</a>. Both are stated in the report.
       </p>
       <h3 id="saving">Saving, and working on the same incident</h3>
       <p>
@@ -128,7 +129,8 @@
         panel lists: <strong>incidents</strong>, <strong>artifacts</strong> (the files, e-mails and captures analysed so
         far) or the <strong>IoC library</strong>. Click the active icon again to close the panel and give the whole
         width to the analysis; drag the panel's edge to resize it. The rail also opens the search, and at the bottom the
-        audit log, the users, the full backup (admins) and the settings.
+        settings, with shortcuts to three of their sections: the audit log, the accounts and the backup. An entry is
+        there for the accounts whose roles let them use it.
       </p>
 
       <p>
@@ -752,6 +754,105 @@
         </table>
       </div>
 
+      <h2 id="queries">Filter the lists with a query</h2>
+      <p>
+        The incidents panel, the artifacts panel and the IoC library each have a filter box that takes a
+        <strong>query</strong>. Plain words work as they always did (<code>wks-finance</code>,
+        <code>evil.example</code>); a query says more:
+      </p>
+      <pre><code>status:open severity:&gt;=high owner:""           open, high or critical, nobody has them
+host:wks-* -status:closed created:&gt;=now-7d      this week's incidents on the workstations
+kind:mail verdict:phishing tag:campaign           the phishing e-mails of a campaign
+verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domains</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Write</th>
+              <th>To find</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>field:value</code></td>
+              <td>
+                A name, a host, a note <em>contain</em> the value; a status, a kind, a verdict <em>is</em> the value.
+                Capitals do not matter. Quote two words: <code>name:"lateral movement"</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>-</code> or <code>not</code> · <code>field:!value</code></td>
+              <td>Not that: <code>-status:closed</code>, <code>tag:!test</code>.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>:&gt;=</code> <code>:&gt;</code> <code>:&lt;=</code> <code>:&lt;</code> · <code>[a TO b]</code>
+              </td>
+              <td>
+                More, less, between: <code>score:&gt;=70</code>, <code>severity:&gt;=high</code>,
+                <code>created:[2026-11-01 TO today]</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>*</code> · <code>?</code></td>
+              <td>Any characters, one character: <code>host:srv-*</code>. The value is then matched whole.</td>
+            </tr>
+            <tr>
+              <td><code>field:""</code> · <code>field:*</code></td>
+              <td>Empty, or holding something: <code>owner:""</code> is unassigned, <code>tags:*</code> is tagged.</td>
+            </tr>
+            <tr>
+              <td><code>or</code> · <code>( )</code></td>
+              <td>
+                Conditions side by side must all hold; <code>or</code> is either one; parentheses group:
+                <code>status:open (severity:high or severity:critical)</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>Dates</td>
+              <td>
+                <code>today</code>, <code>yesterday</code>, <code>now-7d</code>, <code>now-12h</code>,
+                <code>"7 days ago"</code>, <code>2026-11-10</code>, <code>2026-11</code> (the month). Times are UTC.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>
+          <strong>It completes as you type.</strong> Start a word and the fields of the list are offered, each with what
+          it is; after the colon come the values a field can take (<code>status:</code> offers open, in progress,
+          closed). Arrows choose, Enter or Tab takes; <kbd>Ctrl</kbd>+<kbd>Space</kbd> lists every field.
+        </li>
+        <li>
+          <strong>It is coloured, and says what is wrong</strong>: a parenthesis left open, a field that does not exist
+          (<em>did you mean "status"?</em>), a value a field cannot take. The list stays as it was until the query can
+          be read.
+        </li>
+        <li>
+          <strong>The builder</strong> (the sliders button next to the box) shows the same query as rows of field,
+          operator and value, to build one without typing. The text stays what is kept: a query the rows cannot show
+          (one that nests groups, say) is edited as text.
+        </li>
+        <li>
+          <strong>The filters write the query.</strong> The status picker and <em>mine</em> of the incidents panel,
+          <em>mine</em> of the artifacts panel, the type, verdict and origin pickers of the IoC library add their
+          condition to the box, where you can see it and change it.
+        </li>
+      </ul>
+      <p>
+        The fields of incidents: <code>name</code>, <code>ticket</code>, <code>host</code>, <code>user</code>,
+        <code>os</code>, <code>severity</code>, <code>status</code>, <code>owner</code>, <code>hasMail</code>,
+        <code>created</code>, <code>modified</code>. Of artifacts: <code>kind</code>, <code>name</code>,
+        <code>hash</code>, <code>verdict</code>, <code>score</code>, <code>detail</code>, <code>size</code>,
+        <code>tags</code>, <code>created</code>, <code>createdBy</code>, <code>linked</code>, <code>incident</code>. Of
+        indicators: <code>type</code>, <code>value</code>, <code>verdict</code>, <code>score</code>,
+        <code>origin</code>, <code>incidents</code>, <code>tags</code>, <code>note</code>, <code>tlp</code>,
+        <code>list</code>, <code>expired</code>, <code>expires</code>, <code>firstSeen</code>, <code>checked</code>,
+        <code>allowlisted</code>, <code>analysed</code>, <code>addedBy</code>. The same language is in the
+        <a href="api.html#query">API</a>.
+      </p>
+
       <h2 id="search">Search</h2>
       <p>
         Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>⌘</kbd>+<kbd>K</kbd> on a Mac) anywhere. Type to find incidents,
@@ -813,10 +914,10 @@
           2.1, MISP or text out; the same formats in, by dropping the file anywhere.
         </li>
         <li>
-          <strong>Full backup</strong> (admins, on the rail): incidents, users, settings and the audit log in one file,
-          restored from the same dialog. It does <strong>not</strong> contain the files: samples, e-mails, captures and
-          their analyses stay on the server, and so do the IoC library's own indicators and lists, and restoring
-          replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
+          <strong>Full backup</strong> (admins, Settings → System → Backup): incidents, users, settings and the audit
+          log in one file, restored from the same section. It does <strong>not</strong> contain the files: samples,
+          e-mails, captures and their analyses stay on the server, and so do the IoC library's own indicators and lists,
+          and restoring replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
           <a href="deployment.html#docker-podman-in-production">Deployment</a>).
         </li>
         <li>
@@ -828,7 +929,20 @@
 
       <h2 id="settings">Settings</h2>
       <p>
-        The gear at the bottom of the rail opens the settings. Sections marked <em>admins</em> are shown to admins only.
+        The gear at the bottom of the rail opens the settings: a page of their own, next to the rail, with the sections
+        on the left in groups and the chosen one at full width. Type in <strong>Find a setting</strong> to narrow the
+        sections by name or by what they hold (<em>password</em>, <em>restore</em>, <em>domains</em>).
+      </p>
+      <p>
+        Every section has an <strong>address</strong>, for example <code>/settings/access/accounts</code> or
+        <code>/settings/system/audit-log</code>: it can be bookmarked or sent to a colleague, and a reload stays on it.
+        Escape, the cross, the gear again or the browser's Back leave the page, and what was open before (an incident,
+        an artifact) is there as it was.
+      </p>
+      <p>
+        A section is shown to the accounts whose <a href="#roles">roles</a> let them use it: the ones marked
+        <em>admins</em> to admins, the rule sets to the Rules role, the audit log to the Audit role. A group with no
+        section for you is not shown.
       </p>
       <div class="table-wrap">
         <table>
@@ -840,6 +954,9 @@
           </thead>
           <tbody>
             <tr>
+              <th colspan="2" scope="colgroup">Analysis</th>
+            </tr>
+            <tr>
               <td>Detection rules</td>
               <td>The suspicious keywords and the built-in command, endpoint and event-log rules.</td>
             </tr>
@@ -848,19 +965,22 @@
               <td>The working hours; activity outside them is highlighted.</td>
             </tr>
             <tr>
-              <td>IOC allowlist</td>
-              <td>Known-good indicators (addresses, networks, domains) left out of the IOCs tab.</td>
+              <td>Mail analysis</td>
+              <td>
+                Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
+                results are trusted (admins).
+              </td>
             </tr>
             <tr>
               <td>Report header</td>
               <td>The organisation's name and logo on the report (admins).</td>
             </tr>
             <tr>
-              <td>Mail analysis</td>
-              <td>
-                Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
-                results are trusted (admins).
-              </td>
+              <th colspan="2" scope="colgroup">Indicators</th>
+            </tr>
+            <tr>
+              <td>IOC allowlist</td>
+              <td>Known-good indicators (addresses, networks, domains) left out of the IOCs tab.</td>
             </tr>
             <tr>
               <td>Threat intelligence</td>
@@ -873,16 +993,27 @@
               </td>
             </tr>
             <tr>
+              <th colspan="2" scope="colgroup">Rule sets</th>
+            </tr>
+            <tr>
+              <td>YARA rules · capa rules · FLIRT signatures</td>
+              <td>Your own rules and signatures for Malware Analysis (the Rules role, or an admin).</td>
+            </tr>
+            <tr>
+              <th colspan="2" scope="colgroup">Access</th>
+            </tr>
+            <tr>
               <td>My account</td>
-              <td>Who you are signed in as, and a form to change your password.</td>
+              <td>Who you are signed in as, your roles, and a form to change your password.</td>
             </tr>
             <tr>
-              <td>Accounts · API keys</td>
-              <td>Users and their roles; keys for scripts and integrations (admins).</td>
+              <td>Accounts and roles · API keys</td>
+              <td>
+                The accounts and their roles; keys for scripts and integrations, with roles of their own (admins).
+              </td>
             </tr>
             <tr>
-              <td>YARA rules · FLIRT signatures · capa rules</td>
-              <td>Your own rules and signatures for Malware Analysis (admins).</td>
+              <th colspan="2" scope="colgroup">System</th>
             </tr>
             <tr>
               <td>Storage <em>(admins)</em></td>
@@ -894,14 +1025,21 @@
               </td>
             </tr>
             <tr>
+              <td>Backup <em>(admins)</em></td>
+              <td>
+                The full backup: export everything the database holds in one file, or restore from one (see
+                <a href="#share">Export, import and backup</a>).
+              </td>
+            </tr>
+            <tr>
               <td>Audit log</td>
-              <td>The platform's audit trail.</td>
+              <td>The platform's audit trail (the Audit role, or an admin).</td>
             </tr>
           </tbody>
         </table>
       </div>
       <figure class="shot">
-        <img src="img/settings.png" alt="The Settings dialog" width="1600" height="1000" loading="lazy" />
+        <img src="img/settings.png" alt="The Settings page" width="1600" height="1000" loading="lazy" />
         <figcaption>Settings: detection rules.</figcaption>
       </figure>
       <h3 id="accounts">Accounts</h3>
@@ -911,7 +1049,10 @@
           <strong>Username</strong>: the incidents assigned to the account follow the new name. What it already wrote
           (notes, flags, audit entries) keeps the name it had.
         </li>
-        <li><strong>Role</strong>: analyst or admin.</li>
+        <li>
+          <strong>Roles</strong>: one or more, ticked in the list; see <a href="#roles">Roles</a> below. They take
+          effect at the account's next click, without signing in again.
+        </li>
         <li><strong>New password</strong>: for someone who forgot theirs. It signs the account out everywhere.</li>
         <li>
           <strong>Disabled</strong>: the account cannot sign in and is signed out at once; everything it did stays. Use
@@ -919,10 +1060,73 @@
         </li>
       </ul>
       <p>
-        There is always at least one admin that can sign in: you cannot demote, disable or delete yourself, nor the last
-        admin. Everyone changes their own password under <strong>My account</strong>, which ends the account's other
-        sessions. After ten wrong passwords in a row an account is locked for five minutes; an admin's password reset
-        unlocks it.
+        There is always at least one admin that can sign in: you cannot take the Admin role away from yourself, disable
+        or delete yourself, nor do so to the last admin. Everyone changes their own password under
+        <strong>My account</strong>, which ends the account's other sessions. After ten wrong passwords in a row an
+        account is locked for five minutes; an admin's password reset unlocks it.
+      </p>
+      <h3 id="roles">Roles</h3>
+      <p>
+        A role is a tag on an account. An account holds one or more, and may do what they grant
+        <strong>together</strong>: an analyst who also keeps the YARA rules is <em>Analyst</em> + <em>Rules</em>, not an
+        admin. The chips next to each name in <strong>Accounts</strong> show them; your own are under
+        <strong>My account</strong> and next to your name in the header.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>What the account can do</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Viewer</td>
+              <td>
+                Read incidents, artifacts, indicators and analyses. It changes nothing: the header says
+                <em>read-only</em>, and the buttons that create or import are not shown.
+              </td>
+            </tr>
+            <tr>
+              <td>Analyst</td>
+              <td>
+                Read and work: create and edit incidents, upload and analyse, manage indicators, change the detection
+                rules, business hours and allowlist.
+              </td>
+            </tr>
+            <tr>
+              <td>Rules</td>
+              <td>Add, change and remove the YARA rules, capa rules and FLIRT signatures.</td>
+            </tr>
+            <tr>
+              <td>Audit</td>
+              <td>Read the audit log.</td>
+            </tr>
+            <tr>
+              <td>Admin</td>
+              <td>
+                Everything, and alone: accounts and their roles, API keys, webhooks, storage, backup, the report header,
+                the mail settings and threat intelligence (what leaves the server), clearing the audit log.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        An account can hold a single narrow role. With <em>Audit</em> alone it signs in and finds the audit log and its
+        own account, nothing else; with <em>Rules</em> alone, the rule sets. To let an auditor also read the incidents,
+        add <em>Viewer</em>.
+      </p>
+      <p>
+        <strong>Coming from a release before 4.0</strong>: every admin is still an admin and every analyst an analyst.
+        One thing changed for analysts: the audit log now needs the Audit role. Add it to the accounts that should still
+        read it.
+      </p>
+      <p>
+        An <strong>API key</strong> takes roles in the same way when it is created: <em>Viewer</em> for a key that only
+        reads (a feed for a firewall), <em>Analyst</em> for one that uploads and edits, <em>Admin</em> for backups and
+        accounts. Keys made before 4.0 keep working as they did.
       </p>
     </main>
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import hmac
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -37,6 +38,7 @@ from .core.ratelimit import limiter
 from .enrichment import worker as enrichment_worker
 from .iocs import backfill as backfill_iocs
 from .malware.samples import repair_store_permissions
+from .query import QueryError, QueryForbidden
 from .routers import (
     annotations,
     artifacts,
@@ -55,6 +57,7 @@ from .routers import (
     mails,
     network,
     previews,
+    query,
     report,
     samples,
     search,
@@ -78,10 +81,14 @@ or an **API key**. Send the key in the `X-API-Key` header. Create keys in the
 app under *Settings → API keys* (admin only), then click **Authorize** above to
 try the endpoints here.
 
-**Key permissions.** Each key is created with a role and scopes bound to it:
-an *analyst* key can work with incidents, notes and uploads; an *admin* key can
-also manage users and backups. A read-only key (`scopes: ["read"]`) cannot
-mutate anything. Keys may carry an expiry.
+**Roles.** An account or a key holds one or more roles, and may do what they
+grant together: `viewer` reads; `analyst` reads, changes, uploads and analyses;
+`rules` manages the YARA, capa and FLIRT rule sets; `audit` reads the audit
+log; `admin` does everything, and alone manages accounts, keys, storage,
+backups and the settings that decide what leaves the server. `playbooks`,
+`connectors` and `dashboards` belong to features of later 4.x releases. A
+read-only key is a key with the role `viewer`. Keys may carry an expiry.
+`GET /api/auth/me` answers with the roles and the permissions they grant.
 """.strip()
 
 TAGS_METADATA = [
@@ -89,12 +96,16 @@ TAGS_METADATA = [
     {"name": "incidents/notes", "description": "Add, edit and remove incident notes."},
     {"name": "incidents/upload", "description": "Upload raw artifact files; parsed server-side (optionally async)."},
     {"name": "jobs", "description": "Status of async jobs (e.g. background uploads)."},
-    {"name": "yara-rules", "description": "Admin-managed YARA rules, compiled with the built-in set (admin only)."},
+    {
+        "name": "query",
+        "description": "One query language over incidents, artifacts, indicators and the audit log.",
+    },
+    {"name": "yara-rules", "description": "YARA rules added to the built-in set (rules.manage to change)."},
     {
         "name": "flirt-signatures",
-        "description": "Admin-uploaded FLIRT signatures applied by the analyzer worker (admin to change).",
+        "description": "Uploaded FLIRT signatures applied by the analyzer worker (rules.manage to change).",
     },
-    {"name": "capa-rules", "description": "Admin capa rules, checked by the capa worker (admin to change)."},
+    {"name": "capa-rules", "description": "Added capa rules, checked by the capa worker (rules.manage to change)."},
     {
         "name": "samples",
         "description": "Malware samples: stored on the server, analysed statically, downloaded as a protected zip.",
@@ -107,18 +118,18 @@ TAGS_METADATA = [
     {"name": "settings", "description": "Shared detection rules and business hours (read via key)."},
     {
         "name": "api-keys",
-        "description": "Manage API keys (admin session or admin key). Set each key's role/scopes/expiry.",
+        "description": "Manage API keys (admin session or admin key). Set each key's roles and expiry.",
     },
     {"name": "auth", "description": "Session login/logout (browser)."},
     {"name": "users", "description": "User management (admin session or admin key)."},
-    {"name": "audit", "description": "Global audit log."},
+    {"name": "audit", "description": "Global audit log (the audit.read permission)."},
     {"name": "backup", "description": "Full platform export/restore (admin session or admin key)."},
     {"name": "health", "description": "Liveness probe."},
 ]
 
 app = FastAPI(
     title="Nik API",
-    version="3.8.0",
+    version="4.0.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -181,6 +192,17 @@ def metrics(request: Request):
     return metrics_response()
 
 
+@app.exception_handler(QueryError)
+def _query_error(_request: Request, error: QueryError) -> JSONResponse:
+    """A query that cannot be read: where, and why, in fixed sentences."""
+    return JSONResponse(status_code=422, content={"detail": error.message, "query": error.as_dict()})
+
+
+@app.exception_handler(QueryForbidden)
+def _query_forbidden(_request: Request, _error: QueryForbidden) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"detail": "You do not have the permission this needs"})
+
+
 # Mount routers under /api. Each router declares its own sub-prefix.
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
@@ -190,6 +212,7 @@ app.include_router(ioc_library.router, prefix="/api")
 app.include_router(mailboxes.router, prefix="/api")
 app.include_router(iocs.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
+app.include_router(query.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Download,
@@ -22,7 +22,7 @@ import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
 import IncidentLoadingState from './components/layout/IncidentLoadingState.jsx'
 import { isTypingTarget } from './domain/search.js'
-import SettingsPanel from './components/settings/SettingsPanel.jsx'
+import SettingsPage from './components/settings/SettingsPage.jsx'
 import CommandPalette from './components/search/CommandPalette.jsx'
 import ReportDialog from './components/report/ReportDialog.jsx'
 import IncidentFields, { EMPTY_INCIDENT_FIELDS, canCreateIncident } from './components/incident/IncidentFields.jsx'
@@ -32,12 +32,12 @@ import IocLibraryPage from './components/iocs/IocLibraryPage.jsx'
 import { useIocLibrary } from './context/IocLibraryContext.jsx'
 import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
 import { api } from './services/api.js'
-import { setPath } from './lib/location.js'
+import { currentPath, onLocationChange, setPath } from './lib/location.js'
+import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
 import { mailboxFormatOf } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
-import BackupModal from './components/backup/BackupModal.jsx'
 import { kindForTab } from './domain/artifactRegistry.js'
 import { recognise } from './domain/pasted.js'
 import { useIocLookup } from './context/IocLookupContext.jsx'
@@ -65,6 +65,8 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
  * Layout: the rail (icons), the side panel it opens (incidents or
  * artifacts, collapsible) and the main column: header, then either the
  * active incident (analysis tab bar + tab) or the artifact opened on its own.
+ * The Settings page (/settings/…) takes the whole area next to the rail; what
+ * was open under it is there again when it is left.
  */
 
 // Sidebar width bounds. The maximum is a quarter of the viewport (computed at
@@ -154,7 +156,10 @@ function UnreachableScreen({ error, onRetry }) {
 }
 
 export default function App() {
-  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout, currentUser } = useAuth()
+  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout, can } = useAuth()
+  // What the roles of the signed-in account allow: the shell shows what it can use.
+  const canRead = can('read')
+  const canWrite = can('write')
   const {
     activeIncident,
     activeSummary,
@@ -226,7 +231,6 @@ export default function App() {
     setPath(path, { replace: true })
   }, [artifactOpen, activeIncidentId])
 
-  const [backupOpen, setBackupOpen] = useState(false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   // The artifact a new incident is being created from (linked once it is saved).
   const [seedArtifact, setSeedArtifact] = useState(null)
@@ -336,7 +340,7 @@ export default function App() {
   )
   const dismissPasted = useCallback(() => setPasted(null), [])
   useEffect(() => {
-    if (!isAuthenticated) return undefined
+    if (!isAuthenticated || !canWrite) return undefined
     const onPaste = (event) => {
       // In a text field, pasting is just pasting.
       if (isTypingTarget(event.target)) return
@@ -346,13 +350,13 @@ export default function App() {
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [isAuthenticated, placeFile, offerText])
+  }, [isAuthenticated, canWrite, placeFile, offerText])
 
   // A file dropped anywhere: the overlay while dragging, then the dialog.
   const [dragging, setDragging] = useState(false)
   const [drop, setDrop] = useState(null) // { file, route }
   useEffect(() => {
-    if (!isAuthenticated) return undefined
+    if (!isAuthenticated || !canWrite) return undefined
     let depth = 0
     const hasFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
     // Selected text dragged onto the app (not into a text field, where it is just text).
@@ -398,16 +402,34 @@ export default function App() {
       window.removeEventListener('dragover', onOver)
       window.removeEventListener('drop', onDrop)
     }
-  }, [isAuthenticated, placeFile, offerText])
+  }, [isAuthenticated, canWrite, placeFile, offerText])
 
-  // Unified settings panel: a single dialog with sections. `settingsSection`
-  // lets the header/sidebar deep-link into Detection rules / Accounts / Audit.
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsSection, setSettingsSection] = useState('detection')
-  const openSettings = (section = 'detection') => {
-    setSettingsSection(section)
-    setSettingsOpen(true)
-  }
+  // The Settings page: the address says whether it is open and on which section
+  // (/settings/<group>/<section>), so a link opens it and Back leaves it.
+  const [settings, setSettings] = useState(() => settingsFromPath(window.location.pathname))
+  useEffect(() => onLocationChange(() => setSettings(settingsFromPath(window.location.pathname))), [])
+  // Where the page was opened from, to go back there when it is closed.
+  const settingsReturn = useRef(null)
+  const openSettings = useCallback((section = 'detection') => {
+    if (!settingsFromPath(window.location.pathname)) settingsReturn.current = currentPath()
+    setPath(settingsPath(section))
+  }, [])
+  // Moving between sections does not add to the history: Back leaves the page at once.
+  const showSettingsSection = useCallback((section) => setPath(settingsPath(section), { replace: true }), [])
+  const closeSettings = useCallback(() => {
+    if (settingsReturn.current !== null) {
+      // Opened from inside the app: Back is the way out, and the entry is not left behind.
+      settingsReturn.current = null
+      window.history.back()
+      return
+    }
+    // Opened by its link: there is nothing to go back to.
+    setPath(activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/', { replace: true })
+  }, [activeIncidentId])
+  // Back or Forward left the page: there is nothing to return to any more.
+  useEffect(() => {
+    if (!settings) settingsReturn.current = null
+  }, [settings])
 
   // The list of keyboard shortcuts ("?" or the header button).
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -425,7 +447,7 @@ export default function App() {
     clearSearch()
   }, [navigation.search, clearSearch])
   useEffect(() => {
-    if (!isAuthenticated) return undefined
+    if (!isAuthenticated || !canRead) return undefined
     const onKeyDown = (event) => {
       const modifier = event.ctrlKey || event.metaKey
       if (modifier && !event.altKey && event.key.toLowerCase() === 'k') {
@@ -438,7 +460,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isAuthenticated])
+  }, [isAuthenticated, canRead])
 
   // Resizable sidebar width (persisted, re-clamped on load and on window resize).
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -530,14 +552,18 @@ export default function App() {
 
   // Palette actions (typed after ">").
   const paletteActions = [
-    { id: 'new', label: 'New incident', icon: Plus, run: openCreateModal },
-    {
-      id: 'analysis',
-      label: 'New analysis (no incident)',
-      icon: Microscope,
-      keywords: 'artifact file mail upload',
-      run: () => setAnalysisOpen(true),
-    },
+    ...(canWrite
+      ? [
+          { id: 'new', label: 'New incident', icon: Plus, run: openCreateModal },
+          {
+            id: 'analysis',
+            label: 'New analysis (no incident)',
+            icon: Microscope,
+            keywords: 'artifact file mail upload',
+            run: () => setAnalysisOpen(true),
+          },
+        ]
+      : []),
     ...(activeIncident
       ? ANALYSIS_TABS.map((tab) => ({
           id: `tab:${tab.id}`,
@@ -562,18 +588,22 @@ export default function App() {
         ]
       : []),
     { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings('detection') },
-    {
-      id: 'allowlist',
-      label: 'Edit the IOC allowlist',
-      icon: ShieldCheck,
-      keywords: 'settings indicators',
-      run: () => openSettings('allowlist'),
-    },
+    ...(canWrite
+      ? [
+          {
+            id: 'allowlist',
+            label: 'Edit the IOC allowlist',
+            icon: ShieldCheck,
+            keywords: 'settings indicators',
+            run: () => openSettings('allowlist'),
+          },
+        ]
+      : []),
     { id: 'logout', label: 'Sign out', icon: LogOut, run: logout },
   ]
 
   // ---- Initial async load of incidents from the API ----
-  if (loading) {
+  if (loading && canRead) {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas">
         <div className="flex flex-col items-center gap-3">
@@ -590,21 +620,36 @@ export default function App() {
     <div className="flex h-screen overflow-hidden">
       <Rail
         panel={panel}
-        onPanel={setPanel}
+        onPanel={(next) => {
+          if (settings) closeSettings()
+          setPanel(next)
+        }}
         counts={{
           incidents: incidents.length,
           artifacts: Object.values(artifacts.counts).reduce((sum, n) => sum + n, 0),
           iocs: library.counts.all,
           alerts: library.alerts,
         }}
-        isAdmin={currentUser?.role === 'admin'}
+        can={can}
         onSearch={() => setPaletteOpen(true)}
         onAudit={() => openSettings('audit')}
         onUsers={() => openSettings('accounts')}
-        onBackup={() => setBackupOpen(true)}
-        onSettings={() => openSettings('detection')}
+        onBackup={() => openSettings('backup')}
+        onSettings={() => (settings ? closeSettings() : openSettings('detection'))}
+        settingsOpen={Boolean(settings)}
       />
-      {panel && (
+      {settings && (
+        <SettingsPage
+          section={settings.id}
+          onSection={showSettingsSection}
+          onClose={closeSettings}
+          onOpenArtifact={(id) => {
+            setPanel('artifacts')
+            openArtifact(id)
+          }}
+        />
+      )}
+      {!settings && panel && canRead && (
         <>
           <Sidebar
             panel={panel}
@@ -619,7 +664,7 @@ export default function App() {
         </>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={settings ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
         <Header
           onOpenSearch={() => setPaletteOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}
@@ -627,7 +672,7 @@ export default function App() {
           artifactView={artifactOpen}
           libraryView={libraryOpen}
         />
-        {!artifactOpen && !libraryOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
+        {canRead && !artifactOpen && !libraryOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
 
         {storageError && (
           <div
@@ -648,7 +693,20 @@ export default function App() {
 
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto p-6">
-            {libraryOpen ? (
+            {!canRead ? (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                  title="Nothing to open here"
+                  message="Your roles do not include reading incidents, artifacts and indicators. What they do include is in Settings; an admin can give your account more roles."
+                  action={
+                    <Button icon={Settings} onClick={() => openSettings('account')}>
+                      Open settings
+                    </Button>
+                  }
+                />
+              </div>
+            ) : libraryOpen ? (
               <IocLibraryPage onOpenIncident={openIncident} />
             ) : artifactOpen ? (
               <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
@@ -687,16 +745,22 @@ export default function App() {
                 <EmptyState
                   illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
                   title="No active incident"
-                  message="Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere."
+                  message={
+                    canWrite
+                      ? 'Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere.'
+                      : 'Choose an incident on the left to read it.'
+                  }
                   action={
-                    <div className="flex flex-wrap justify-center gap-2">
-                      <Button icon={Plus} onClick={openCreateModal}>
-                        New incident
-                      </Button>
-                      <Button variant="secondary" icon={Microscope} onClick={() => setAnalysisOpen(true)}>
-                        New analysis
-                      </Button>
-                    </div>
+                    canWrite && (
+                      <div className="flex flex-wrap justify-center gap-2">
+                        <Button icon={Plus} onClick={openCreateModal}>
+                          New incident
+                        </Button>
+                        <Button variant="secondary" icon={Microscope} onClick={() => setAnalysisOpen(true)}>
+                          New analysis
+                        </Button>
+                      </div>
+                    )
                   }
                 />
               </div>
@@ -800,8 +864,6 @@ export default function App() {
         }}
       />
 
-      {currentUser?.role === 'admin' && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />}
-
       {dragging && (
         <div
           aria-hidden="true"
@@ -828,18 +890,6 @@ export default function App() {
         onOpenTab={(tab) => {
           showIncident()
           setActiveTabId(tab)
-        }}
-      />
-
-      <SettingsPanel
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        section={settingsSection}
-        onSectionChange={setSettingsSection}
-        onOpenArtifact={(id) => {
-          setSettingsOpen(false)
-          setPanel('artifacts')
-          openArtifact(id)
         }}
       />
     </div>

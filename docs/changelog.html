@@ -39,6 +39,37 @@
       </p>
 
       <section class="release">
+        <h3>4.0.0 <span class="date">2026-11-17</span></h3>
+        <ul>
+          <li>
+            <span class="tag changed">changed</span> <strong>Roles are tags</strong>, and an account or an API key can
+            hold several: Viewer, Analyst, Rules, Audit, Admin. Accounts and keys are converted on upgrade and keep
+            working. <strong>Breaking for API clients</strong> that manage accounts or keys: <code>roles</code>, a list,
+            replaces <code>role</code> (still accepted and answered until 5.0).
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The audit log is read with the Audit role (or Admin); the rule sets
+            are managed with the Rules role, without being an admin. Every route of the API asks for a permission, and a
+            test walks them all with a key of each role.
+          </li>
+          <li>
+            <span class="tag added">added</span> Settings is a page: sections in groups, an address for each
+            (<code>/settings/access/accounts</code>), a box that finds a setting by name or keyword. The full backup is
+            one of its sections.
+          </li>
+          <li>
+            <span class="tag added">added</span> A query language over incidents, artifacts, indicators and the audit
+            log (<code>status:open severity:&gt;=high owner:""</code>), in the API and in the filter boxes of the three
+            lists, with colours, autocomplete, errors that say where and why, and a builder of rows.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The status, <em>mine</em>, type, verdict and origin filters write
+            their condition into the query, where it can be seen and changed.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>3.8.0 <span class="date">2026-11-13</span></h3>
         <ul>
           <li>

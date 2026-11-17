@@ -155,7 +155,7 @@ def test_upload_queues_the_disassembly_and_stores_the_result(admin: TestClient, 
     assert worker == [sha, sha]
     read_only = make_key(admin, role="analyst", scopes=["read"])
     assert admin.post(f"/api/samples/{sha}/code", headers=read_only).status_code == 403
-    actions = {e["action"] for e in admin.get("/api/audit", headers=key).json()["entries"]}
+    actions = {e["action"] for e in admin.get("/api/audit").json()["entries"]}
     assert "sample.disassemble" in actions
 
 

@@ -38,17 +38,18 @@ Docker image; no extra Python packages are needed.
 
 ### Permissions (which key to use)
 
-A Nik key carries a **role** and **scopes** chosen at creation:
+A Nik key carries one or more **roles** chosen at creation (Nik 4.0 and
+later; a key made before keeps working with the roles it was converted to):
 
-- An **analyst** key (read+write) covers everything below except `nik-get-audit`
-  cleanup and any future admin-only endpoint. This is the right key for most
-  playbooks.
-- A **read-only** key (`scopes: ["read"]`) can run only the `nik-get-*` commands;
-  write commands (create/update/delete/note/upload) return `403`.
-- An **admin** key is required only if you later call admin-data endpoints
-  (users/backup). None of the commands here need admin except reading is always
-  allowed. Prefer the **least-privilege** key that a given playbook needs, and
-  set an **expiry** on it.
+- An **Analyst** key covers everything below except `nik-get-audit`. This is
+  the right key for most playbooks.
+- A **Viewer** key (read-only) can run only the `nik-get-*` commands; write
+  commands (create/update/delete/note/upload) return `403`.
+- `nik-get-audit` needs the **Audit** role: give the key Analyst + Audit (an
+  analyst key could read the audit log before Nik 4.0).
+- An **Admin** key is needed only for admin-data endpoints (users, backup),
+  which no command here calls. Prefer the **least-privilege** key that a given
+  playbook needs, and set an **expiry** on it.
 
 Run **Test** after configuring — it performs an authenticated request and
 reports clearly if the URL or key is wrong.

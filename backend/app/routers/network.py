@@ -29,7 +29,7 @@ from ..core.config import settings
 from ..core.db import get_db
 from ..core.files import attachment_headers, safe_name
 from ..core.models import AuditEntry, Incident, NetworkCapture
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..malware.samples import DEFAULT_ZIP_PASSWORD, zip_sample
 from ..network import har, service, store
 from ..workers import previews
@@ -182,7 +182,7 @@ async def upload_capture(
 @router.get("/incidents/{incident_id}/captures")
 def list_captures(
     incident_id: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
     background_tasks: BackgroundTasks = None,
 ) -> dict:
@@ -200,7 +200,7 @@ def list_captures(
 @router.get("/captures/{capture_id}")
 def get_capture(
     capture_id: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
     background_tasks: BackgroundTasks = None,
 ) -> dict:
@@ -217,7 +217,7 @@ class RpcIn(BaseModel):
 
 @router.post("/captures/{capture_id}/rpc")
 async def capture_rpc(
-    capture_id: str, body: RpcIn, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    capture_id: str, body: RpcIn, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """A read-only call to Wireshark's engine on the capture: ``frames`` (the
     packet list, with ``filter``, ``skip``, ``limit``), ``frame`` (protocol
@@ -238,7 +238,7 @@ async def download_object(
     capture_id: str,
     token: str = Query(..., pattern=r"^eo:[a-z-]+_\d{1,6}$"),
     password: str = Query(DEFAULT_ZIP_PASSWORD, min_length=1, max_length=128),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ):
     """An exported object (Export Objects) inside an AES-256 zip (default password ``infected``). Audited."""
@@ -292,7 +292,7 @@ async def object_to_sample(
 
 
 @router.get("/captures/{capture_id}/file")
-def download_capture(capture_id: str, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)):
+def download_capture(capture_id: str, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)):
     """The capture file as stored (pcap, pcapng or gzip). Audited."""
     row = _capture_or_404(db, capture_id)
     path = store.find_capture(row.id)
@@ -306,7 +306,7 @@ def download_capture(capture_id: str, caller: Principal = Depends(principal), db
 
 @router.get("/captures/{capture_id}/har")
 def download_har(
-    capture_id: str, request: Request, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    capture_id: str, request: Request, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
 ):
     """An isolated browser session's network log as HAR 1.2. Audited."""
     row = _capture_or_404(db, capture_id)
@@ -326,7 +326,7 @@ def download_har(
 @router.get("/captures/{capture_id}/requests")
 def list_requests(
     capture_id: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """An isolated browser session's requests, without bodies (the Network panel's list)."""
@@ -349,7 +349,7 @@ def list_requests(
 
 @router.get("/captures/{capture_id}/requests/{entry_id}")
 def get_request(
-    capture_id: str, entry_id: int, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    capture_id: str, entry_id: int, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """One request in full: headers, bodies (base64), timings, WebSocket messages."""
     row = _capture_or_404(db, capture_id)

@@ -3,10 +3,11 @@
 - Passwords are hashed with bcrypt; API keys (high-entropy tokens) with SHA-256.
 - Sessions are server-side rows keyed by a random hex token delivered in the
   ``nik_session`` httpOnly cookie.
-- ``current_user`` and ``require_admin`` resolve the session cookie to a live
-  user. ``principal`` additionally accepts an ``X-API-Key`` header, so the same
-  endpoints can be driven by the browser (cookie) or by external API clients
-  (key). Raises 401/403 as appropriate.
+- ``current_user`` resolves the session cookie to a live user. ``principal``
+  additionally accepts an ``X-API-Key`` header, so the same endpoints can be
+  driven by the browser (cookie) or by external API clients (key).
+- What a caller may do comes from its roles (``core/permissions.py``): a route
+  depends on ``require("<permission>")``. Raises 401/403 as appropriate.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -27,6 +28,17 @@ from .config import settings
 from .db import get_db
 from .models import ApiKey, User
 from .models import Session as SessionModel
+from .permissions import (
+    ADMIN,
+    AUDIT_READ,
+    PERMISSIONS,
+    READ,
+    RULES_MANAGE,
+    WRITE,
+    legacy_role,
+    permissions_of,
+    stored_roles,
+)
 
 # bcrypt cost factor (2^12 rounds, the value the existing hashes use) and the
 # password length bcrypt reads.
@@ -138,39 +150,39 @@ def _unauthorized() -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
+def _forbidden(detail: str = "You do not have the permission this needs") -> HTTPException:
+    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+def _session_user(db: OrmSession, token: str | None) -> User | None:
+    """The live user of a session token, or None.
+
+    An expired session is deleted. The roles are read from the account on
+    every request, so a role given or taken away takes effect at once.
+    """
+    if not token:
+        return None
+    session = db.get(SessionModel, token)
+    if session is None:
+        return None
+    if _parse_iso(session.expires_at) <= datetime.now(timezone.utc):
+        db.delete(session)
+        db.commit()
+        return None
+    user = db.get(User, session.user_id)
+    if user is None or user.disabled:
+        return None
+    return user
+
+
 def current_user(
     db: OrmSession = Depends(get_db),
     nik_session: str | None = Cookie(default=None),
 ) -> User:
-    """Resolve the session cookie to the authenticated user.
-
-    Raises 401 when the cookie is missing, unknown, or the session has expired.
-    Expired sessions are proactively deleted.
-    """
-    if not nik_session:
+    """Resolve the session cookie to the authenticated user (401 otherwise)."""
+    user = _session_user(db, nik_session)
+    if user is None:
         raise _unauthorized()
-
-    session = db.get(SessionModel, nik_session)
-    if session is None:
-        raise _unauthorized()
-
-    # Reject and clean up expired sessions.
-    if _parse_iso(session.expires_at) <= datetime.now(timezone.utc):
-        db.delete(session)
-        db.commit()
-        raise _unauthorized()
-
-    user = db.get(User, session.user_id)
-    if user is None or user.disabled:
-        raise _unauthorized()
-
-    return user
-
-
-def require_admin(user: User = Depends(current_user)) -> User:
-    """Dependency that requires the current user to have the admin role."""
-    if user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
     return user
 
 
@@ -178,8 +190,8 @@ def require_admin(user: User = Depends(current_user)) -> User:
 # API keys
 # ---------------------------------------------------------------------------
 # API keys are 256-bit random tokens (high entropy), so a fast digest with an
-# exact-match lookup is both safe and O(1) — unlike passwords, they don't need
-# a slow bcrypt hash. Only the digest is stored; the plaintext is shown once.
+# exact-match lookup is both safe and O(1): unlike passwords, they need no
+# slow bcrypt hash. Only the digest is stored; the plaintext is shown once.
 API_KEY_PREFIX = "nik_"
 
 
@@ -197,35 +209,32 @@ def hash_api_key(key: str) -> str:
 # Documented in OpenAPI so Swagger UI shows an "Authorize" box for the header.
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# Scopes: 'read' (GET), 'write' (create/edit/delete/upload), 'admin' (users,
-# backup, keys). A key carries the subset chosen by its admin creator.
-SCOPE_READ = "read"
-SCOPE_WRITE = "write"
-SCOPE_ADMIN = "admin"
-VALID_SCOPES = (SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)
-
-
-def normalize_scopes(scopes, role: str) -> list[str]:
-    """Clean a requested scope list; an admin role always implies all scopes."""
-    if role == "admin":
-        return [SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN]
-    wanted = [s for s in (scopes or []) if s in VALID_SCOPES and s != SCOPE_ADMIN]
-    # Read is always granted so a key can at least fetch what it may write.
-    return sorted(set([SCOPE_READ, *wanted]))
-
 
 @dataclass
 class Principal:
-    """The authenticated caller: a logged-in user or an API key."""
+    """The authenticated caller: a signed-in user or an API key.
+
+    ``roles`` are the role tags of the account; ``permissions`` is everything
+    they grant together. Code asks ``has(permission)``, never for a role.
+    """
 
     kind: str  # 'user' | 'apikey'
     actor: str  # username, or 'api:<label>'
-    role: str  # 'admin' | 'analyst'
-    scopes: list[str]  # granted scopes
+    roles: list[str] = field(default_factory=list)
     user: User | None = None
+    permissions: frozenset[str] = field(init=False)
 
-    def has_scope(self, scope: str) -> bool:
-        return scope in self.scopes
+    def __post_init__(self) -> None:
+        self.permissions = permissions_of(self.roles)
+
+    def has(self, *wanted: str) -> bool:
+        """True when the caller holds at least one of the permissions."""
+        return any(permission in self.permissions for permission in wanted)
+
+    @property
+    def role(self) -> str:
+        """The single role of releases before 4.0 (for messages and old clients)."""
+        return legacy_role(self.roles)
 
 
 def _key_expired(row: ApiKey) -> bool:
@@ -237,6 +246,23 @@ def _key_expired(row: ApiKey) -> bool:
         return False
 
 
+def key_principal(db: OrmSession, key: str | None, touch: bool = True) -> Principal | None:
+    """The caller behind an API key, or None when the key is unknown, revoked or expired."""
+    if not key:
+        return None
+    row = db.scalar(select(ApiKey).where(ApiKey.key_hash == hash_api_key(key), ApiKey.revoked_at.is_(None)))
+    if row is None or _key_expired(row):
+        return None
+    if touch:
+        row.last_used_at = now_iso()
+        db.commit()
+    return Principal(kind="apikey", actor=f"api:{row.label}", roles=stored_roles(row.roles))
+
+
+def _user_principal(user: User) -> Principal:
+    return Principal(kind="user", actor=user.username, roles=stored_roles(user.roles), user=user)
+
+
 def principal(
     db: OrmSession = Depends(get_db),
     nik_session: str | None = Cookie(default=None),
@@ -244,36 +270,20 @@ def principal(
 ) -> Principal:
     """Resolve the caller from an API key header OR the session cookie.
 
-    Endpoints usable both from the browser and by external clients depend on
-    this instead of ``current_user``. The key's permissions (role + scopes)
-    were set by the admin who created it.
+    Any signed-in caller passes, whatever its roles: routes that need a
+    permission depend on ``require(...)`` (or on one of the wrappers below).
     """
     # 1. API key (external clients): exact digest match against a live key.
     if api_key:
-        row = db.scalar(
-            select(ApiKey).where(
-                ApiKey.key_hash == hash_api_key(api_key),
-                ApiKey.revoked_at.is_(None),
-            )
-        )
-        if row is None or _key_expired(row):
+        caller = key_principal(db, api_key)
+        if caller is None:
             raise _unauthorized()
-        row.last_used_at = now_iso()
-        db.commit()
-        role = row.role if row.role in {"admin", "analyst"} else "analyst"
-        scopes = normalize_scopes((row.scopes or "").split(","), role)
-        return Principal(kind="apikey", actor=f"api:{row.label}", role=role, scopes=scopes)
-
-    # 2. Session cookie (browser): reuse the same validation as current_user.
-    if nik_session:
-        session = db.get(SessionModel, nik_session)
-        if session is not None and _parse_iso(session.expires_at) > datetime.now(timezone.utc):
-            user = db.get(User, session.user_id)
-            if user is not None and not user.disabled:
-                scopes = [SCOPE_READ, SCOPE_WRITE] + ([SCOPE_ADMIN] if user.role == "admin" else [])
-                return Principal(kind="user", actor=user.username, role=user.role, scopes=scopes, user=user)
-
-    raise _unauthorized()
+        return caller
+    # 2. Session cookie (browser).
+    user = _session_user(db, nik_session)
+    if user is None:
+        raise _unauthorized()
+    return _user_principal(user)
 
 
 def optional_principal(request: Request, db: OrmSession) -> Principal | None:
@@ -284,41 +294,48 @@ def optional_principal(request: Request, db: OrmSession) -> Principal | None:
     """
     api_key = request.headers.get("X-API-Key")
     if api_key:
-        row = db.scalar(select(ApiKey).where(ApiKey.key_hash == hash_api_key(api_key), ApiKey.revoked_at.is_(None)))
-        if row is None or _key_expired(row):
-            return None
-        role = row.role if row.role in {"admin", "analyst"} else "analyst"
-        return Principal(
-            kind="apikey",
-            actor=f"api:{row.label}",
-            role=role,
-            scopes=normalize_scopes((row.scopes or "").split(","), role),
-        )
-    token = request.cookies.get(settings.SESSION_COOKIE_NAME)
-    if token:
-        session = db.get(SessionModel, token)
-        if session is not None and _parse_iso(session.expires_at) > datetime.now(timezone.utc):
-            user = db.get(User, session.user_id)
-            if user is not None and not user.disabled:
-                scopes = [SCOPE_READ, SCOPE_WRITE] + ([SCOPE_ADMIN] if user.role == "admin" else [])
-                return Principal(kind="user", actor=user.username, role=user.role, scopes=scopes, user=user)
-    return None
+        return key_principal(db, api_key, touch=False)
+    user = _session_user(db, request.cookies.get(settings.SESSION_COOKIE_NAME))
+    return _user_principal(user) if user is not None else None
 
 
-def writer_principal(caller: Principal = Depends(principal)) -> Principal:
-    """Require the 'write' scope (blocks read-only keys from mutating)."""
-    if not caller.has_scope(SCOPE_WRITE):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="This key is read-only (write scope required)"
-        )
-    return caller
+_REQUIRE_CACHE: dict[tuple[str, ...], object] = {}
 
 
-def admin_principal(caller: Principal = Depends(principal)) -> Principal:
-    """Require admin permissions (an admin session OR an admin-role API key)."""
-    if caller.role != "admin" or not caller.has_scope(SCOPE_ADMIN):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
-    return caller
+def require(*wanted: str):
+    """A dependency that lets a caller through when it holds **one of** the
+    permissions (any signed-in caller when none is named), and returns it.
+
+    The same permissions give the same dependency object, and the object
+    carries them as ``permissions``: the route matrix test reads them there.
+    """
+    for permission in wanted:
+        if permission not in PERMISSIONS:
+            raise ValueError(f"unknown permission {permission!r}")
+    key = tuple(wanted)
+    cached = _REQUIRE_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    def dependency(caller: Principal = Depends(principal)) -> Principal:
+        if wanted and not caller.has(*wanted):
+            raise _forbidden()
+        return caller
+
+    dependency.permissions = key
+    _REQUIRE_CACHE[key] = dependency
+    return dependency
+
+
+# The gates the routes use (module-level, so a route names one instead of
+# calling require() in its signature).
+reader_principal = require(READ)
+writer_principal = require(WRITE)
+admin_principal = require(ADMIN)
+audit_principal = require(AUDIT_READ)
+rules_principal = require(RULES_MANAGE)
+# Rule sets are listed by whoever reads the analyses they produce or manages them.
+rules_reader_principal = require(READ, RULES_MANAGE)
 
 
 # ---------------------------------------------------------------------------
@@ -326,10 +343,14 @@ def admin_principal(caller: Principal = Depends(principal)) -> Principal:
 # ---------------------------------------------------------------------------
 def user_to_dict(user: User) -> dict:
     """Convert a User ORM object into the public API representation."""
+    roles = stored_roles(user.roles)
     return {
         "id": user.id,
         "username": user.username,
-        "role": user.role,
+        "roles": roles,
+        # The single role of releases before 4.0, for clients that still read it.
+        "role": legacy_role(roles),
+        "permissions": sorted(permissions_of(roles)),
         "createdAt": user.created_at,
         "createdBy": user.created_by,
         "disabled": bool(user.disabled),

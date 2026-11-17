@@ -12,14 +12,15 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import query
 from ..core import audit
 from ..core.db import get_db
-from ..core.models import AuditEntry, User
+from ..core.models import AuditEntry
 from ..core.schemas import AuditEnvelope, AuditIn, AuditOut
-from ..core.security import Principal, admin_principal, current_user, now_iso, principal
+from ..core.security import Principal, admin_principal, audit_principal, now_iso, reader_principal
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -46,11 +47,15 @@ def _entry_to_dict(entry: AuditEntry) -> dict:
 @router.get("", response_model=AuditEnvelope)
 def list_audit(
     response: Response,
-    _caller: Principal = Depends(principal),
+    caller: Principal = Depends(audit_principal),
     db: OrmSession = Depends(get_db),
     limit: int | None = Query(None, ge=1, le=MAX_ENTRIES, description="Page size (default: up to MAX_ENTRIES)."),
     offset: int = Query(0, ge=0),
-    q: str | None = Query(None, description="Match actor/action/details/incident."),
+    q: str | None = Query(
+        None,
+        max_length=2000,
+        description="A query: `action:user.* at:>=yesterday`; plain words match actor, action, details, incident.",
+    ),
     actor: str | None = Query(None),
     incident_id: str | None = Query(None, alias="incidentId"),
 ) -> dict:
@@ -59,17 +64,9 @@ def list_audit(
     Backward compatible: with no params it returns up to ``MAX_ENTRIES`` entries.
     The total matching count is in the ``X-Total-Count`` header.
     """
-    conditions = []
-    if q:
-        like = f"%{q}%"
-        conditions.append(
-            or_(
-                AuditEntry.actor.ilike(like),
-                AuditEntry.action.ilike(like),
-                AuditEntry.details.ilike(like),
-                AuditEntry.incident_name.ilike(like),
-            )
-        )
+    conditions = query.sql("audit", q, caller) if q and q.strip() else []
+    if conditions:
+        query.statement_timeout(db)
     if actor:
         conditions.append(AuditEntry.actor.ilike(f"%{actor}%"))
     if incident_id:
@@ -87,7 +84,7 @@ def list_audit(
 @router.post("", response_model=AuditOut, status_code=status.HTTP_201_CREATED)
 def create_audit(
     body: AuditIn,
-    user: User = Depends(current_user),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Record an action that happened in the browser only (``incident.export``).
@@ -100,7 +97,7 @@ def create_audit(
     entry = AuditEntry(
         id=str(uuid.uuid4()),
         at=now_iso(),
-        actor=user.username,  # server-authoritative
+        actor=caller.actor,  # server-authoritative
         action=body.action,
         target=body.target,
         details=body.details or "",

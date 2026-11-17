@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, upload } from '../services/api.js'
 import { artifactIdFromPath, artifactKind, artifactPath } from '../domain/artifactRegistry.js'
-import { isIndicatorPage, onLocationChange, setPath } from '../lib/location.js'
+import { isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
 import { useAuth } from './AuthContext.jsx'
 
 /*
@@ -19,18 +19,21 @@ import { useAuth } from './AuthContext.jsx'
  */
 
 const ArtifactContext = createContext(null)
-const EMPTY_FILTERS = { kind: '', q: '', mine: false }
+const EMPTY_FILTERS = { kind: '', q: '' }
 const NO_COUNTS = { file: 0, mail: 0, pcap: 0, url: 0, mailbox: 0 }
 
 const idFromUrl = () => (typeof window === 'undefined' ? null : artifactIdFromPath(window.location.pathname))
 
 export function ArtifactProvider({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated: signedIn, can } = useAuth()
+  const isAuthenticated = signedIn && can('read')
   const [artifacts, setArtifacts] = useState([])
   const [counts, setCounts] = useState(NO_COUNTS)
   const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  // What the server said of the query in `filters.q`, when it could not read it.
+  const [queryError, setQueryError] = useState(null)
   const [currentId, setCurrentId] = useState(idFromUrl)
   const [current, setCurrent] = useState(null) // summary + parents + children
   const [currentError, setCurrentError] = useState(null)
@@ -52,7 +55,6 @@ export function ArtifactProvider({ children }) {
         const params = new URLSearchParams()
         if (filters.kind) params.set('kind', filters.kind)
         if (filters.q.trim()) params.set('q', filters.q.trim())
-        if (filters.mine) params.set('mine', 'true')
         setLoading(true)
         api
           .get(`/artifacts?${params}`)
@@ -61,8 +63,14 @@ export function ArtifactProvider({ children }) {
             setArtifacts(res.artifacts)
             setCounts(res.counts)
             setError(null)
+            setQueryError(null)
           })
-          .catch((err) => request === requestRef.current && setError(err.message))
+          .catch((err) => {
+            if (request !== requestRef.current) return
+            // A query that cannot be read is said next to the input; the list stays.
+            if (err.query) setQueryError(err.query)
+            else setError(err.message)
+          })
           .finally(() => request === requestRef.current && setLoading(false))
       },
       filters.q ? 250 : 0,
@@ -91,7 +99,7 @@ export function ArtifactProvider({ children }) {
   useEffect(() => {
     // The address decides: another page (an incident, the IoC library) leaves the artifact.
     const onPopState = () => {
-      if (!isIndicatorPage(window.location.pathname)) setCurrentId(idFromUrl())
+      if (!isOverlayPage(window.location.pathname)) setCurrentId(idFromUrl())
     }
     return onLocationChange(onPopState)
   }, [])
@@ -184,6 +192,7 @@ export function ArtifactProvider({ children }) {
       setFilters,
       loading,
       error,
+      queryError,
       refresh,
       currentId,
       current,
@@ -204,6 +213,7 @@ export function ArtifactProvider({ children }) {
       filters,
       loading,
       error,
+      queryError,
       refresh,
       currentId,
       current,

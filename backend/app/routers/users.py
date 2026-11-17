@@ -5,8 +5,10 @@ authentication and the created user is forced to the admin role. Afterwards
 accounts are created, changed and deleted by an admin (session or admin key);
 every signed-in user can change their own password.
 
-Rules that keep the platform reachable: there is always at least one admin
-that can sign in, and an admin cannot disable, demote or delete themselves.
+An account holds one or more roles (``core/permissions.py``); only an admin
+gives them. Rules that keep the platform reachable: there is always at least
+one admin that can sign in, and an admin cannot disable, demote or delete
+themselves.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Incident, User
 from ..core.models import Session as SessionModel
+from ..core.permissions import ADMIN, RoleError, clean_roles, legacy_role, stored_roles
 from ..core.schemas import PasswordChange, UserCreate, UserEnvelope, UsersEnvelope, UserUpdate
 from ..core.security import (
     Principal,
@@ -40,7 +43,21 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 # Minimum password length enforced server-side.
 MIN_PASSWORD_LENGTH = 8
-ROLES = {"admin", "analyst"}
+
+
+def _wanted_roles(roles: list[str] | None, role: str | None) -> list[str] | None:
+    """The roles a request asks for: ``roles``, or the single ``role`` of
+    releases before 4.0; None when it names neither."""
+    if roles is None and role is None:
+        return None
+    try:
+        return clean_roles(roles if roles is not None else [role])
+    except RoleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+def _is_admin(user: User) -> bool:
+    return "admin" in stored_roles(user.roles)
 
 
 def _check_password(password: str) -> None:
@@ -59,10 +76,9 @@ def _name_taken(db: OrmSession, username: str, except_id: str | None = None) -> 
 
 def _active_admins(db: OrmSession, except_id: str | None = None) -> int:
     """Admins that can sign in, not counting ``except_id``."""
-    stmt = select(func.count()).select_from(User).where(User.role == "admin", User.disabled.is_(False))
-    if except_id is not None:
-        stmt = stmt.where(User.id != except_id)
-    return db.scalar(stmt) or 0
+    # Counted in Python: a JSON list has no portable "contains" (SQLite, PostgreSQL).
+    rows = db.execute(select(User.id, User.roles).where(User.disabled.is_(False))).all()
+    return sum(1 for user_id, roles in rows if user_id != except_id and "admin" in stored_roles(roles))
 
 
 def revoke_sessions(db: OrmSession, user_id: str, keep: str | None = None) -> None:
@@ -103,15 +119,15 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
 
     if is_first_run:
         # First user always becomes an admin, no auth needed.
-        role = "admin"
+        roles = ["admin"]
         created_by = None
     else:
         caller = optional_principal(request, db)
         if caller is None:
             raise HTTPException(status_code=401, detail="Not authenticated")
-        if caller.role != "admin" or "admin" not in caller.scopes:
+        if not caller.has(ADMIN):
             raise HTTPException(status_code=403, detail="Admin privileges required")
-        role = body.role if body.role in ROLES else "analyst"
+        roles = _wanted_roles(body.roles, body.role) or ["analyst"]
         created_by = caller.actor
 
     if _name_taken(db, username):
@@ -121,7 +137,8 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
         id=str(uuid.uuid4()),
         username=username,
         password_hash=hash_password(body.password),
-        role=role,
+        roles=roles,
+        role=legacy_role(roles),
         created_at=now_iso(),
         created_by=created_by,
     )
@@ -130,7 +147,7 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
         db,
         created_by or username,
         "user.create",
-        f'Created the {role} account "{username}"' + ("" if created_by else " (first run)"),
+        f'Created the account "{username}" with the roles {", ".join(roles)}' + ("" if created_by else " (first run)"),
         target=username,
     )
     db.commit()
@@ -176,13 +193,15 @@ def update_user(
     admin: Principal = Depends(admin_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    """Change an account (admin session or admin key): any of its name, role,
+    """Change an account (admin session or admin key): any of its name, roles,
     password and whether it is disabled. Fields left out are kept.
 
     - A new **name** is carried to the incidents assigned to the account. What
       the account already wrote (notes, flags, the audit log) keeps the name it
       had then.
-    - A new **password** or **disabling** the account ends its sessions.
+    - A new **password** or **disabling** the account ends its sessions. A
+      change of its **roles** takes effect at its next request, with no need
+      to sign in again.
     - The last admin that can sign in cannot be demoted or disabled, and an
       admin cannot demote or disable themselves.
     """
@@ -192,11 +211,10 @@ def update_user(
     is_self = admin.user is not None and admin.user.id == target.id
     changes: list[str] = []
 
-    role = target.role if body.role is None else body.role
-    if role not in ROLES:
-        raise HTTPException(status_code=400, detail="The role is admin or analyst")
+    current_roles = stored_roles(target.roles)
+    roles = _wanted_roles(body.roles, body.role) or current_roles
     disabled = target.disabled if body.disabled is None else body.disabled
-    loses_admin = target.role == "admin" and not target.disabled and (role != "admin" or disabled)
+    loses_admin = _is_admin(target) and not target.disabled and ("admin" not in roles or disabled)
     if loses_admin and is_self:
         raise HTTPException(status_code=400, detail="You cannot demote or disable your own account")
     if loses_admin and _active_admins(db, except_id=target.id) == 0:
@@ -215,9 +233,11 @@ def update_user(
             )
             target.username = username
 
-    if role != target.role:
-        changes.append(f"role {target.role} → {role}")
-        target.role = role
+    if roles != current_roles:
+        changes.append(f"roles {', '.join(current_roles) or 'none'} → {', '.join(roles)}")
+        target.roles = roles
+        target.role = legacy_role(roles)
+        target.session_epoch = (target.session_epoch or 0) + 1
 
     if body.password is not None:
         _check_password(body.password)
@@ -272,12 +292,10 @@ def delete_user(
     total = db.scalar(select(func.count()).select_from(User)) or 0
     if total <= 1:
         raise HTTPException(status_code=400, detail="Cannot delete the last user")
-    if target.role == "admin" and not target.disabled and _active_admins(db, except_id=target.id) == 0:
+    if _is_admin(target) and not target.disabled and _active_admins(db, except_id=target.id) == 0:
         raise HTTPException(status_code=400, detail="There must be at least one admin that can sign in")
 
-    audit.record(
-        db, admin.actor, "user.delete", f'Deleted the {target.role} account "{target.username}"', target=target.username
-    )
+    audit.record(db, admin.actor, "user.delete", f'Deleted the account "{target.username}"', target=target.username)
     db.delete(target)
     db.commit()
     # 204 No Content

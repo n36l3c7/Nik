@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session as OrmSession
 from .. import artifacts
 from ..core.db import get_db
 from ..core.models import Incident, NetworkCapture
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..enrichment.service import internal_host
 from ..network import service as network_service
 from ..network import store as network_store
@@ -39,14 +39,14 @@ def _worker_error(exc: previews.WorkerError) -> HTTPException:
 
 
 @router.get("/previews/status")
-def status(_caller: Principal = Depends(principal)) -> dict:
+def status(_caller: Principal = Depends(reader_principal)) -> dict:
     """Which preview workers are configured."""
     return {"documents": previews.docview_configured(), "browser": previews.browser_configured()}
 
 
 @router.post("/mails/{sha256}/attachments/{path}/preview")
 async def preview_attachment(
-    sha256: str, path: str, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    sha256: str, path: str, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """The attachment's first pages as PNG (PDF, Office, OpenDocument, RTF,
     images), rendered by the document viewer worker and kept for next time."""
@@ -257,7 +257,7 @@ async def session_action(
 
 @router.get("/browser/sessions/{session_id}/network")
 async def session_network(
-    session_id: str, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    session_id: str, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """The session's requests without bodies (the live Network panel)."""
     if not _SESSION_ID.match(session_id):

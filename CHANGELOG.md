@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-17
+
+The first release of the 4.x series: roles as tags, Settings as a page, and
+a query language. One change is **breaking** for API clients that manage
+accounts or keys (`roles`, a list, instead of one `role`); everything else
+is additive.
+
+**Upgrading from 3.8.0**: `git pull`, then `podman compose up -d --build`.
+The migration `0025_roles` runs at start and converts every account and
+key; nothing else has to be done. No new container, no new setting.
+Afterwards, give the role **Audit** to the analysts who should still read
+the audit log.
+
+### Changed
+
+- **Roles are tags, and an account can hold several** (breaking for API
+  clients that manage accounts or keys). An account or an API key had one
+  role, `admin` or `analyst`; it now has a list of `roles`, and may do what
+  they grant together: `viewer` (read), `analyst` (read, change, upload,
+  analyse), `rules` (the YARA, capa and FLIRT rule sets), `audit` (the audit
+  log), `admin` (everything; alone manages accounts, keys, storage, backup
+  and what leaves the server). `playbooks`, `connectors` and `dashboards`
+  are accepted and stored for the features of the next 4.x releases.
+  - **Nothing to do on upgrade**: migration `0025_roles` converts every
+    account and key (`admin` → `["admin"]`, `analyst` → `["analyst"]`, an
+    analyst key without the `write` scope → `["viewer"]`). Existing keys keep
+    working, with the same header and the same key.
+  - **API**: user and key payloads take and return `roles`;
+    `GET /api/auth/me` also returns `permissions`. The old `role` field (and
+    `scopes` on a key) is still accepted when `roles` is not sent, and still
+    returned next to it, until 5.0.
+  - **The audit log is read with the `audit` role** (or `admin`). An analyst
+    could read it before: give the account the role `audit` as well if it
+    still should.
+  - The rule sets are changed with the `rules` role, without being an admin.
+  - A route asks for a permission, never for a role; a test walks every route
+    of the API with a key of each role, and fails when a new route does not
+    say who may call it.
+- **Accounts and API keys take role chips.** In Settings an admin ticks the
+  roles of an account or a key, each with what it grants; the chips are next
+  to every name, in My account and in the header. The read-only switch of a
+  key is gone: a read-only key is a key with the Viewer role.
+- **The interface shows an account what its roles let it use.** A section of
+  the settings, an entry of the rail, a button that creates or imports is
+  there when the account can use it. A Viewer reads and is told so
+  (*read-only* in the header); an account with the Audit role alone signs in
+  and finds the audit log and its own account.
+- The status picker and *mine* of the incidents panel, *mine* of the
+  artifacts panel and the type, verdict and origin pickers of the IoC
+  library now write their condition into the query, where it can be seen
+  and changed, instead of filtering on their own.
+- Export, bulk check and "make a list" of the IoC library's current filter
+  read its text as a query, as the table does.
+- The **full backup** is a section of the settings (System → Backup)
+  instead of a dialog of its own; the rail's shortcut opens it there.
+
+### Added
+
+- **Settings is a page, and every section has an address.** The settings
+  were a dialog; they are now a page next to the rail, with the sections on
+  the left in groups (Analysis, Indicators, Rule sets, Access, System) and
+  the chosen one at full width. `/settings/access/accounts`,
+  `/settings/system/audit-log` and the others can be bookmarked or sent to
+  a colleague; a reload stays on the section. Escape, the gear and the
+  browser's Back leave the page, and what was open before is there as it
+  was.
+- **Find a setting**: a box above the sections narrows them by name and by
+  what they hold (*password*, *restore*, *domains*).
+- **A query language** over incidents, artifacts, indicators and the audit
+  log: `status:open severity:>=high owner:"" -host:srv-*`. Fields with
+  `:`, comparisons (`:>=`), ranges (`[a TO b]`), wildcards, `and` / `or` /
+  `not` / `-`, parentheses, empty (`field:""`) and filled (`field:*`)
+  fields, and dates as people say them (`today`, `now-7d`,
+  `"7 days ago"`). Plain words still search as before.
+  - It is what `q` takes on `GET /api/incidents`, `/api/artifacts`,
+    `/api/iocs` and `/api/audit`; the older filter parameters still work
+    and add to it. `POST /api/query` runs it on any of them,
+    `GET /api/query/schema` lists the fields.
+  - A query that cannot be read is answered `422` with where and why, and
+    a suggestion for a misspelt field or value.
+  - A query is compiled to bound parameters, never to SQL text, with limits
+    on its length, depth and running time; who may query an entity is
+    checked when it is compiled.
+- **The filter boxes of the incidents panel, the artifacts panel and the
+  IoC library take a query.** As it is typed it is coloured, completed (the
+  fields of the list, then the values a field can take) and checked: what
+  cannot be read is underlined and explained, with a suggestion for a
+  misspelt field. A **builder** shows the same query as rows of field,
+  operator and value; the text stays what is kept.
+- The incidents panel has a filter box (it had only the status picker and
+  *mine*).
+
 ## [3.8.0] - 2026-11-13
 
 ### Added
@@ -1773,7 +1865,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v3.8.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/n36l3c7/Nik/compare/v3.8.0...v4.0.0
 [3.8.0]: https://github.com/n36l3c7/Nik/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/n36l3c7/Nik/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/n36l3c7/Nik/compare/v3.5.0...v3.6.0

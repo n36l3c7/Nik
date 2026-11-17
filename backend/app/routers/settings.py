@@ -66,7 +66,7 @@ def put_settings(
     changed by admins only: sent by anyone else they are left as they are.
     """
     current = read_settings(db)
-    is_admin = caller.role == "admin" and caller.has_scope("admin")
+    is_admin = caller.has("admin")
     if not is_admin:
         body = body.model_copy(update={key: None for key in ADMIN_KEYS})
     doc = {

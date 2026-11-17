@@ -16,10 +16,10 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import analysis_links, artifact_transfer, artifacts, urlscan
+from .. import analysis_links, artifact_transfer, artifacts, query, urlscan
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import (
@@ -34,7 +34,7 @@ from ..core.models import (
     Sample,
     UrlScan,
 )
-from ..core.security import Principal, admin_principal, now_iso, principal, writer_principal
+from ..core.security import Principal, admin_principal, now_iso, reader_principal, writer_principal
 from ..network import service as captures
 from ..workers import previews
 from . import mails as mail_routes
@@ -141,27 +141,25 @@ def _related(db: OrmSession, row: Artifact) -> dict[str, list[dict[str, Any]]]:
 @router.get("/artifacts")
 def list_artifacts(
     kind: Optional[Literal["file", "mail", "pcap", "url", "mailbox"]] = None,
-    q: str = Query("", max_length=200, description="Text in the name, hash, detail or tags."),
+    q: str = Query(
+        "",
+        max_length=2000,
+        description="A query: `kind:mail verdict:phishing created:>=now-7d`; plain words match name, hash, detail, tags"
+        ".",
+    ),
     tag: str = Query("", max_length=40),
     mine: bool = Query(False, description="Only the artifacts the caller created."),
     linked: Optional[bool] = Query(None, description="true: linked to an incident; false: on their own."),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """The artifacts every analyst can see, newest first, with the incidents that reference each."""
-    conditions = []
-    if q.strip():
-        needle = f"%{q.strip().lower()}%"
-        conditions.append(
-            or_(
-                func.lower(Artifact.name).like(needle),
-                Artifact.ref.like(needle),
-                func.lower(Artifact.detail).like(needle),
-                func.lower(cast(Artifact.tags, String)).like(needle),
-            )
-        )
+    # `q` is the query language (app/query); the older parameters add their conditions.
+    conditions = query.sql("artifacts", q, caller) if q.strip() else []
+    if conditions:
+        query.statement_timeout(db)
     if tag.strip():
         conditions.append(func.lower(cast(Artifact.tags, String)).like(f'%"{tag.strip().lower()}"%'))
     if mine:
@@ -186,7 +184,7 @@ def list_artifacts(
 @router.get("/artifacts/lookup")
 def lookup_artifact(
     sha256: str = Query(..., pattern=r"^[0-9a-f]{64}$", description="SHA-256 of a file, computed before uploading it."),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Is this file already known? The artifacts with that digest (a file, an e-mail), if any."""
@@ -198,7 +196,7 @@ def lookup_artifact(
 @router.get("/artifacts/{artifact_id}")
 def get_artifact(
     artifact_id: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """One artifact: its summary, the incidents that reference it and its relations."""
@@ -476,7 +474,7 @@ class ExportIn(BaseModel):
 @router.post("/artifacts/export")
 def export_artifacts(
     body: ExportIn,
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ):
     """Download artifacts as a zip another Nik can import: the registry entries

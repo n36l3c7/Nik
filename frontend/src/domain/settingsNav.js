@@ -1,0 +1,207 @@
+/*
+ * The Settings page: its groups, its sections and their addresses.
+ *
+ * Every section has an address of its own, /settings/<group>/<section>, so a
+ * link opens it, the browser's Back leaves it and a reload stays on it. A
+ * section names the permission it needs (the server enforces the same split);
+ * `permission: null` is for every signed-in account.
+ *
+ * Later releases add sections and groups here (automation, incidents,
+ * integrations, lists): a group that has no section the account can open is
+ * simply not shown.
+ */
+
+export const SETTINGS_ROOT = '/settings'
+
+/**
+ * `id` is what the code names a section by (and what older links used);
+ * `slug` is its part of the address. `keywords` are what the search box
+ * matches besides the label.
+ */
+export const SETTINGS_GROUPS = [
+  {
+    id: 'analysis',
+    label: 'Analysis',
+    sections: [
+      {
+        id: 'detection',
+        slug: 'detection-rules',
+        label: 'Detection rules',
+        permission: 'read',
+        keywords: 'keywords suspicious patterns categories severity',
+      },
+      {
+        id: 'hours',
+        slug: 'business-hours',
+        label: 'Business hours',
+        permission: 'read',
+        keywords: 'working time off-hours weekend timezone',
+      },
+      {
+        id: 'mail',
+        slug: 'mail-analysis',
+        label: 'Mail analysis',
+        permission: 'admin',
+        keywords: 'e-mail organisation domains trusted authentication servers spf dkim',
+      },
+      {
+        id: 'report',
+        slug: 'report-header',
+        label: 'Report header',
+        permission: 'admin',
+        keywords: 'branding logo organisation pdf tlp',
+      },
+    ],
+  },
+  {
+    id: 'indicators',
+    label: 'Indicators',
+    sections: [
+      {
+        id: 'allowlist',
+        slug: 'allowlist',
+        label: 'IOC allowlist',
+        permission: 'read',
+        keywords: 'indicators known good internal addresses networks domains',
+      },
+      {
+        id: 'intel',
+        slug: 'threat-intelligence',
+        label: 'Threat intelligence',
+        permission: 'admin',
+        keywords: 'providers api keys virustotal abuseipdb reputation lookups retention automatic enrichment',
+      },
+    ],
+  },
+  {
+    id: 'rules',
+    label: 'Rule sets',
+    sections: [
+      { id: 'yara', slug: 'yara', label: 'YARA rules', permission: 'rules.manage', keywords: 'malware signatures' },
+      {
+        id: 'capa',
+        slug: 'capa',
+        label: 'capa rules',
+        permission: 'rules.manage',
+        keywords: 'capabilities malware behaviour',
+      },
+      {
+        id: 'flirt',
+        slug: 'flirt',
+        label: 'FLIRT signatures',
+        permission: 'rules.manage',
+        keywords: 'library functions disassembly sig pat',
+      },
+    ],
+  },
+  {
+    id: 'access',
+    label: 'Access',
+    sections: [
+      { id: 'account', slug: 'my-account', label: 'My account', permission: null, keywords: 'password roles me' },
+      {
+        id: 'accounts',
+        slug: 'accounts',
+        label: 'Accounts and roles',
+        permission: 'admin',
+        keywords: 'users people permissions disable admin analyst viewer',
+      },
+      {
+        id: 'apikeys',
+        slug: 'api-keys',
+        label: 'API keys',
+        permission: 'admin',
+        keywords: 'tokens integrations scripts rest',
+      },
+    ],
+  },
+  {
+    id: 'system',
+    label: 'System',
+    sections: [
+      {
+        id: 'storage',
+        slug: 'storage',
+        label: 'Storage',
+        permission: 'admin',
+        keywords: 'disk space free largest files mailboxes captures',
+      },
+      {
+        id: 'backup',
+        slug: 'backup',
+        label: 'Backup',
+        permission: 'admin',
+        keywords: 'export restore full platform',
+      },
+      {
+        id: 'audit',
+        slug: 'audit-log',
+        label: 'Audit log',
+        permission: 'audit.read',
+        keywords: 'history who did what',
+      },
+    ],
+  },
+]
+
+const SECTIONS = SETTINGS_GROUPS.flatMap((group) => group.sections.map((section) => ({ ...section, group: group.id })))
+const BY_ID = new Map(SECTIONS.map((section) => [section.id, section]))
+
+/** The section with this id, or null. */
+export const settingsSection = (id) => BY_ID.get(id) ?? null
+
+/** The address of a section (by id); of the page itself when the id is unknown. */
+export function settingsPath(id) {
+  const section = BY_ID.get(id)
+  return section ? `${SETTINGS_ROOT}/${section.group}/${section.slug}` : SETTINGS_ROOT
+}
+
+export const isSettingsPath = (pathname) => /^\/settings(\/|$)/.test(String(pathname ?? ''))
+
+/**
+ * What a path asks for: null when it is not the Settings page; otherwise
+ * `{ id }` with the section's id, or `{ id: null }` for /settings alone or an
+ * address that names no section (the page then opens its first one).
+ */
+export function settingsFromPath(pathname) {
+  const path = String(pathname ?? '')
+  if (!isSettingsPath(path)) return null
+  const [, , group, slug] = path.replace(/\/+$/, '').split('/')
+  const section = SECTIONS.find((candidate) => candidate.group === group && candidate.slug === slug)
+  if (section) return { id: section.id }
+  // /settings/<group>: its first section. An id of an older link (/settings/audit) is understood too.
+  const first = SECTIONS.find((candidate) => candidate.group === group)
+  return { id: first?.id ?? (BY_ID.has(group) ? group : null) }
+}
+
+/** The groups and sections an account can open, given its `can(permission)`. */
+export function visibleSettings(can) {
+  return SETTINGS_GROUPS.map((group) => ({
+    ...group,
+    sections: group.sections.filter((section) => !section.permission || can(section.permission)),
+  })).filter((group) => group.sections.length > 0)
+}
+
+/** The section to show: the one asked for when the account can open it, its first one otherwise. */
+export function resolveSection(groups, id) {
+  const all = groups.flatMap((group) => group.sections)
+  return all.find((section) => section.id === id) ?? all[0] ?? null
+}
+
+/** The groups narrowed to the sections whose label, group or keywords hold every word typed. */
+export function filterSettings(groups, query) {
+  const words = String(query ?? '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (words.length === 0) return groups
+  return groups
+    .map((group) => ({
+      ...group,
+      sections: group.sections.filter((section) => {
+        const text = `${section.label} ${group.label} ${section.keywords ?? ''}`.toLowerCase()
+        return words.every((word) => text.includes(word))
+      }),
+    }))
+    .filter((group) => group.sections.length > 0)
+}

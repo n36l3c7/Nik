@@ -162,7 +162,7 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
 
 test('threat intelligence is configured in Settings, keys never shown', async () => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
   const ips = settings.getByRole('switch', { name: /IP addresses/ })
   await expect(ips).not.toBeChecked()
@@ -191,11 +191,11 @@ test('threat intelligence is configured in Settings, keys never shown', async ()
   await expect(settings.getByRole('switch', { name: /^Relations/ })).not.toBeChecked()
   await settings.getByLabel('IP addresses: days an answer stands').fill('45')
   await ips.uncheck()
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
   await expect(settings.getByLabel('IP addresses: days an answer stands')).toHaveValue('45')
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {
@@ -348,7 +348,7 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
     await expect(page.getByText('capa 10.0.0')).toBeVisible()
     // An admin capa rule: checked by the worker, matched after Re-analyse, marked custom.
     await page.getByRole('button', { name: 'Open platform settings' }).click()
-    const settings = page.getByRole('dialog', { name: 'Settings' })
+    const settings = page.getByRole('region', { name: 'Settings' })
     await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('capa rules').click()
     await settings.getByRole('button', { name: 'Add rule' }).click()
     await settings
@@ -363,7 +363,7 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
     await expect(settings.getByRole('button', { name: 'Delete reference team C2 gate' })).toBeVisible({
       timeout: 60_000,
     })
-    await settings.getByRole('button', { name: 'Close' }).click()
+    await settings.getByRole('button', { name: 'Close settings' }).click()
     await page.getByRole('button', { name: 'Re-analyse' }).click()
     await page.getByRole('tab', { name: /^Capabilities/ }).click()
     const custom = page.locator('tbody tr', { hasText: 'reference team C2 gate' })
@@ -1112,7 +1112,7 @@ test('a mailbox is indexed, its messages imported, and its conversations drawn a
 
 test('Storage shows how full the disk is and what fills it', async () => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Storage').click()
   await expect(settings.getByRole('img', { name: /% of the disk is used/ })).toBeVisible()
   const use = settings.getByRole('table', { name: 'Disk use' })
@@ -1122,6 +1122,68 @@ test('Storage shows how full the disk is and what fills it', async () => {
   await expect(settings.getByRole('list', { name: 'Largest objects' })).toContainText('team.mbox')
   await page.keyboard.press('Escape')
   await expect(settings).toBeHidden()
+})
+
+test('Settings is a page: every section has an address, Back leaves it, a link opens it', async () => {
+  const before = new URL(page.url()).pathname
+  const gear = page.getByRole('button', { name: 'Open platform settings' })
+  await gear.click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  // The sections are in groups; the one shown is marked.
+  await expect(sections.getByRole('group')).toHaveCount(5)
+  await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
+    'YARA rules',
+    'capa rules',
+    'FLIRT signatures',
+  ])
+  await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveAttribute('aria-current', 'page')
+  // The rail shows the page is open; what was open under it is not shown.
+  await expect(page.getByRole('button', { name: 'Close platform settings' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
+
+  // The box narrows the sections by name and by keyword.
+  const find = settings.getByRole('searchbox', { name: 'Find a setting' })
+  await find.fill('password')
+  await expect(sections.getByRole('button')).toHaveText(['My account'])
+  await find.fill('restore')
+  await expect(sections.getByRole('button')).toHaveText(['Backup'])
+  await find.fill('zzz')
+  await expect(sections.getByRole('status')).toContainText('No section matches')
+  await find.fill('')
+
+  // A section has its address; the full backup is one of them.
+  await sections.getByRole('button', { name: 'Backup' }).click()
+  await expect(page).toHaveURL(/\/settings\/system\/backup$/)
+  await expect(settings.getByRole('button', { name: 'Export full backup' })).toBeVisible()
+  await sections.getByRole('button', { name: 'Audit log' }).click()
+  await expect(page).toHaveURL(/\/settings\/system\/audit-log$/)
+
+  // Back leaves the page in one step, wherever one went inside it; Forward returns to the section.
+  await page.goBack()
+  await expect(settings).toHaveCount(0)
+  expect(new URL(page.url()).pathname).toBe(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  await page.goForward()
+  await expect(settings.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible()
+
+  // The address is a link: a reload stays on the section.
+  await page.reload()
+  await expect(settings.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible()
+  await expect(sections.getByRole('button', { name: 'Audit log' })).toHaveAttribute('aria-current', 'page')
+  // An older or shortened address still opens the page.
+  await page.goto('/settings/accounts')
+  await expect(settings.getByRole('heading', { name: 'Accounts', level: 2 })).toBeVisible()
+
+  // Closing a page opened by its link goes to the start; an entry of the rail leaves it too.
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  await expect(settings).toHaveCount(0)
+  await gear.click()
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Incidents' }).click()
+  await expect(settings).toHaveCount(0)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
 test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
@@ -1163,6 +1225,113 @@ test('an incident has a status and an assignee, set from the panel and filtered 
   await row.click({ button: 'right' })
   await menu.getByRole('menuitem', { name: 'Mark as open' }).click()
   await expect(row).not.toContainText('closed')
+})
+
+test('a query filters the lists: typed, completed, built from rows; the filters write it', async () => {
+  const panel = page.locator('aside[aria-label="Incidents panel"]')
+  const list = panel.locator('nav[aria-label="Incidents"]')
+  const filter = panel.getByRole('combobox', { name: 'Filter incidents' })
+  const status = panel.getByLabel('Status filter')
+
+  // Plain words, then a field with a wildcard: the server reads the query.
+  await filter.fill('wks-finance')
+  await expect(list.locator('li')).toHaveCount(1)
+  await expect(list).toContainText('WKS-FINANCE-01')
+  await filter.fill('host:nowhere-*')
+  await expect(list).toContainText('No incident matches the filters.')
+  await filter.fill('host:wks-* -host:nowhere')
+  await expect(list).toContainText('WKS-FINANCE-01')
+
+  // Autocomplete: the fields at the start of a condition, the values after the colon.
+  await filter.fill('')
+  await filter.pressSequentially('stat')
+  const suggestions = panel.getByRole('listbox', { name: 'Suggestions' })
+  await expect(suggestions.getByRole('option')).toHaveCount(1)
+  await expect(suggestions.getByRole('option').first()).toContainText('status')
+  await page.keyboard.press('Enter')
+  await expect(filter).toHaveValue('status:')
+  await expect(suggestions.getByRole('option')).toHaveText(['open', 'in_progress', 'closed'])
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Tab')
+  await expect(filter).toHaveValue('status:closed ')
+  await expect(filter).toBeFocused()
+  // The status picker shows what the query says, and writes into it; so does "mine".
+  await expect(status).toHaveValue('closed')
+  await status.selectOption('open')
+  await expect(filter).toHaveValue('status:open')
+  await panel.getByRole('button', { name: 'mine' }).click()
+  await expect(filter).toHaveValue(`status:open owner:${ADMIN.username}`)
+  await expect(panel.getByRole('button', { name: 'mine' })).toHaveAttribute('aria-pressed', 'true')
+
+  // The builder: the same query as rows; a change of a row rewrites the text.
+  await panel.getByRole('button', { name: 'Query builder' }).click()
+  await expect(panel.getByLabel('Condition 1: field')).toHaveValue('status')
+  await expect(panel.getByLabel('Condition 2: field')).toHaveValue('owner')
+  await panel.getByLabel('Condition 1: value').selectOption('closed')
+  await expect(filter).toHaveValue(`status:closed owner:${ADMIN.username}`)
+  await panel.getByRole('button', { name: 'Remove Condition 2' }).click()
+  await expect(filter).toHaveValue('status:closed')
+  await panel.getByRole('button', { name: 'Add a condition' }).click()
+  await panel.getByLabel('Condition 2: field').selectOption('severity')
+  await panel.getByLabel('Condition 2: operator').selectOption('>=')
+  await panel.getByLabel('Condition 2: value').selectOption('high')
+  await expect(filter).toHaveValue('status:closed severity:>=high')
+  await panel.getByLabel('How the conditions combine').selectOption('or')
+  await expect(filter).toHaveValue('status:closed or severity:>=high')
+  // What it cannot show, it says; the text stays the query.
+  await filter.fill('-(wks or srv)')
+  await expect(panel.getByText('Edit it as text.')).toBeVisible()
+  await panel.getByRole('button', { name: 'Query builder' }).click()
+
+  // What cannot be read is said where it goes wrong, at once or by the server.
+  await filter.fill('(status:open')
+  await expect(panel.getByText('A parenthesis is not closed: add the closing )')).toBeVisible()
+  await filter.fill('stauts:open')
+  await expect(panel.getByText('"stauts" is not a field of incidents: did you mean "status"?')).toBeVisible()
+  await expect(filter).toHaveAttribute('aria-invalid', 'true')
+  await filter.fill('')
+  await expect(filter).not.toHaveAttribute('aria-invalid', 'true')
+  await expect(list).toContainText('WKS-FINANCE-01')
+
+  // The artifacts: the same language; "mine" writes its condition.
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const artifacts = page.getByRole('complementary', { name: 'Artifacts panel' })
+  const artifactFilter = artifacts.getByRole('combobox', { name: 'Filter artifacts' })
+  await artifactFilter.fill('kind:file dropper')
+  await expect(artifacts.getByRole('navigation', { name: 'Artifacts' })).toContainText('dropper.bin')
+  await artifacts.getByRole('button', { name: 'mine' }).click()
+  await expect(artifactFilter).toHaveValue(`kind:file dropper createdBy:${ADMIN.username}`)
+  await artifactFilter.fill('kind:file size:<1')
+  await expect(artifacts.getByRole('navigation', { name: 'Artifacts' })).toContainText(
+    'No artifact matches these filters.',
+  )
+  await artifactFilter.fill('knid:file')
+  await expect(artifacts.getByText('did you mean "kind"?')).toBeVisible()
+  await artifactFilter.fill('')
+
+  // The IoC library: its pickers write the query too.
+  await page.getByRole('button', { name: /^IoC library/ }).click()
+  await page
+    .getByRole('complementary', { name: 'IoCs panel' })
+    .getByRole('button', { name: /^All indicators/ })
+    .click()
+  const indicatorFilter = page.getByRole('combobox', { name: 'Filter indicators' })
+  await indicatorFilter.fill('type:ip 185.220.*')
+  await expect(page.locator('main tbody tr').first()).toContainText('185.220.101.47')
+  await page.locator('main').getByRole('combobox').filter({ hasText: 'All types' }).selectOption('domain')
+  await expect(indicatorFilter).toHaveValue('185.220.* type:domain')
+  await page.locator('main').getByRole('combobox').filter({ hasText: 'Any verdict' }).selectOption('flagged')
+  await expect(indicatorFilter).toHaveValue('185.220.* type:domain verdict:>=suspicious')
+  await indicatorFilter.fill('')
+
+  // Back to the incident.
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: 'Incidents', exact: true })
+    .click()
+  await list.locator('li', { hasText: 'WKS-FINANCE-01' }).getByRole('button').first().click()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
 test('keyboard shortcuts: F flags the row under the pointer, C comments, ? lists them', async () => {
@@ -1284,7 +1453,7 @@ test("saves are retried, merged with a colleague's, resumed after the session ex
 
 test('an admin manages accounts; the audit log is written by the server', async ({ browser }) => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Accounts').click()
 
@@ -1298,12 +1467,13 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await anna.getByRole('button', { name: 'Edit user anna' }).click()
   const edit = page.getByRole('dialog', { name: 'Account: anna' })
   await edit.locator('#edit-username').fill('anna.b')
-  await edit.getByRole('combobox').selectOption('admin')
+  await edit.getByRole('checkbox', { name: /^Admin/ }).check()
   await edit.locator('#edit-password').fill('second-secret')
   await edit.getByRole('button', { name: 'Save changes' }).click()
   await expect(edit).toHaveCount(0)
   const renamed = accounts.getByRole('listitem').filter({ hasText: 'anna.b' })
-  await expect(renamed).toContainText('Admin')
+  // Roles add up: the account is an analyst and an admin.
+  await expect(renamed.getByLabel('Roles')).toHaveText('AnalystAdmin')
 
   // The account signs in with its new name and password, and changes its own password.
   const other = await browser.newPage()
@@ -1312,7 +1482,7 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await other.fill('#login-password', 'second-secret')
   await other.click('button[type=submit]')
   await other.getByRole('button', { name: 'Open platform settings' }).click()
-  const theirs = other.getByRole('dialog', { name: 'Settings' })
+  const theirs = other.getByRole('region', { name: 'Settings' })
   await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('My account').click()
   await theirs.locator('#own-current-password').fill('second-secret')
   await theirs.locator('#own-new-password').fill('third-secret')
@@ -1323,7 +1493,7 @@ test('an admin manages accounts; the audit log is written by the server', async 
   // Disabled by the admin: the open session is over at its next request.
   await renamed.getByRole('button', { name: 'Edit user anna.b' }).click()
   const again = page.getByRole('dialog', { name: 'Account: anna.b' })
-  await again.getByRole('checkbox').check()
+  await again.getByRole('checkbox', { name: /^Disabled/ }).check()
   await again.getByRole('button', { name: 'Save changes' }).click()
   await expect(renamed).toContainText('Disabled')
   await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('Audit log').click()
@@ -1337,8 +1507,9 @@ test('an admin manages accounts; the audit log is written by the server', async 
     .getByRole('button', { name: /^Edit user/ })
     .click()
   const own = page.getByRole('dialog', { name: `Account: ${ADMIN.username}` })
-  await expect(own.getByRole('combobox')).toBeDisabled()
-  await expect(own.getByRole('checkbox')).toBeDisabled()
+  await expect(own.getByRole('checkbox', { name: /^Admin/ })).toBeDisabled()
+  await expect(own.getByRole('checkbox', { name: /^Analyst/ })).toBeEnabled()
+  await expect(own.getByRole('checkbox', { name: /^Disabled/ })).toBeDisabled()
   await own.getByRole('button', { name: 'Cancel' }).click()
 
   // Everything above is in the audit log, recorded by the server.
@@ -1353,13 +1524,104 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await sections.getByText('Accounts').click()
   await renamed.getByRole('button', { name: 'Delete user anna.b' }).click()
   await expect(renamed).toHaveCount(0)
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
-test('dialogs own the keyboard: Escape closes the top one, Tab stays inside, focus comes back', async () => {
+test('roles are tags: an account sees and does what its roles grant together', async ({ browser }) => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Accounts').click()
+  const accounts = settings.getByRole('list', { name: 'Accounts' })
+
+  // Rita reads and manages the rule sets; Otto reads the audit log and nothing else.
+  const add = async (name, roles) => {
+    await settings.locator('#add-username').fill(name)
+    await settings.locator('#add-password').fill('role-secret')
+    for (const role of ['Viewer', 'Analyst', 'Rules', 'Audit', 'Admin']) {
+      await settings.locator(`#add-role-${role.toLowerCase()}`).setChecked(roles.includes(role))
+    }
+    await settings.getByRole('button', { name: 'Add user' }).click()
+    await expect(accounts.getByRole('listitem').filter({ hasText: name }).getByLabel('Roles')).toHaveText(
+      roles.join(''),
+    )
+  }
+  await add('rita', ['Viewer', 'Rules'])
+  await add('otto', ['Audit'])
+  // An account needs at least one role.
+  await settings.locator('#add-role-analyst').uncheck()
+  await expect(settings.getByRole('button', { name: 'Add user' })).toBeDisabled()
+  await settings.locator('#add-role-analyst').check()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+
+  const signIn = async (name) => {
+    const other = await browser.newPage()
+    await other.goto('/')
+    await other.fill('#login-username', name)
+    await other.fill('#login-password', 'role-secret')
+    await other.click('button[type=submit]')
+    await expect(other.getByRole('button', { name: 'Open platform settings' })).toBeVisible()
+    return other
+  }
+
+  // A viewer with the rules role: reads the incidents, creates none, manages the rule sets.
+  const rita = await signIn('rita')
+  const ritaRail = rita.getByRole('navigation', { name: 'Sections' })
+  await expect(ritaRail.getByRole('button', { name: /incidents/i })).toBeVisible()
+  await expect(ritaRail.getByRole('button', { name: 'Audit log' })).toHaveCount(0)
+  await expect(ritaRail.getByRole('button', { name: 'Users' })).toHaveCount(0)
+  await expect(rita.getByText('read-only', { exact: true })).toBeVisible()
+  await expect(rita.getByRole('button', { name: 'New incident' })).toHaveCount(0)
+  expect((await rita.request.post('/api/incidents', { data: { id: 'by-rita', data: {} } })).status()).toBe(403)
+  await rita.getByRole('button', { name: 'Open platform settings' }).click()
+  const ritaSections = rita.getByRole('navigation', { name: 'Settings sections' })
+  await expect(ritaSections.getByText('YARA rules')).toBeVisible()
+  await expect(ritaSections.getByText('Detection rules')).toBeVisible()
+  for (const hidden of ['Accounts and roles', 'API keys', 'Audit log', 'Storage', 'Backup', 'Threat intelligence']) {
+    await expect(ritaSections.getByText(hidden, { exact: true })).toHaveCount(0)
+  }
+  await ritaSections.getByText('My account').click()
+  await expect(rita.getByRole('region', { name: 'Settings' }).getByLabel('Roles')).toHaveText('ViewerRules')
+  const rule = { name: 'by-rita', source: 'rule by_rita { condition: false }', enabled: true }
+  const made = await rita.request.post('/api/yara-rules', { data: rule })
+  expect(made.status()).toBe(201)
+  expect((await rita.request.delete(`/api/yara-rules/${(await made.json()).id}`)).status()).toBe(204)
+  await rita.close()
+
+  // The audit role alone: no incidents, no artifacts; the audit log, and one's own account.
+  const otto = await signIn('otto')
+  await expect(otto.getByText('Nothing to open here')).toBeVisible()
+  const ottoRail = otto.getByRole('navigation', { name: 'Sections' })
+  await expect(ottoRail.getByRole('button')).toHaveCount(2) // the audit log and the settings
+  await ottoRail.getByRole('button', { name: 'Audit log' }).click()
+  const ottoSettings = otto.getByRole('region', { name: 'Settings' })
+  await expect(ottoSettings.getByText('user.create').first()).toBeVisible()
+  await expect(ottoSettings.getByRole('button', { name: /clear/i })).toHaveCount(0)
+  await expect(ottoSettings.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')).toHaveText([
+    'My account',
+    'Audit log',
+  ])
+  expect((await otto.request.get('/api/incidents')).status()).toBe(403)
+  await otto.close()
+
+  // Leave the accounts as they were.
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await sections.getByText('Accounts').click()
+  for (const name of ['rita', 'otto']) {
+    await accounts
+      .getByRole('listitem')
+      .filter({ hasText: name })
+      .getByRole('button', { name: `Delete user ${name}` })
+      .click()
+    await expect(accounts.getByRole('listitem').filter({ hasText: name })).toHaveCount(0)
+  }
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+})
+
+test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Accounts').click()
   await settings.getByRole('button', { name: `Edit user ${ADMIN.username}` }).click()
   const edit = page.getByRole('dialog', { name: `Account: ${ADMIN.username}` })
@@ -1370,7 +1632,7 @@ test('dialogs own the keyboard: Escape closes the top one, Tab stays inside, foc
     await page.keyboard.press('Tab')
     expect(await edit.evaluate((node) => node.contains(document.activeElement))).toBe(true)
   }
-  // Escape closes that dialog only; Settings, under it, stays.
+  // Escape closes that dialog only; the Settings page, under it, stays.
   await page.keyboard.press('Escape')
   await expect(edit).toHaveCount(0)
   await expect(settings).toBeVisible()

@@ -1,9 +1,10 @@
 """Cortex XSOAR integration for the Nik forensic analysis platform.
 
 Talks to the Nik REST API (see the project README § "REST API"). Authenticates
-with an API key sent in the ``X-API-Key`` header; the key's role/scopes decide
-what each command may do (an analyst key covers incidents/notes/uploads; an
-admin key is required for the audit-clear and any admin-data endpoints).
+with an API key sent in the ``X-API-Key`` header; the key's roles decide what
+each command may do (an Analyst key covers incidents/notes/uploads; reading the
+audit log needs the Audit role as well; an Admin key is required for the
+audit-clear and any admin-data endpoints).
 """
 
 import demistomock as demisto  # noqa: F401
@@ -82,7 +83,7 @@ def test_module(client: Client) -> str:
         client.list_incidents(limit=1, view="summary")
     except DemistoException as exc:  # noqa: F405
         if exc.res is not None and exc.res.status_code in (401, 403):
-            return "Authorization failed: check the API Key (and that it has the needed scope)."
+            return "Authorization failed: check the API Key (and that it has the needed role)."
         raise
     return "ok"
 

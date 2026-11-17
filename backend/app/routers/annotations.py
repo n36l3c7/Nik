@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core.db import get_db
 from ..core.models import AuditEntry, FunctionAnnotation, Sample, SampleCode
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..malware.samples import is_sha256
 
 router = APIRouter(tags=["samples"])
@@ -72,7 +72,9 @@ def delete_for_sample(db: OrmSession, sha256: str) -> None:
 
 
 @router.get("/samples/{sha256}/annotations")
-def list_annotations(sha256: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_annotations(
+    sha256: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict:
     if not is_sha256(sha256) or db.get(Sample, sha256) is None:
         raise HTTPException(status_code=404, detail="Sample not found")
     rows = db.scalars(

@@ -23,7 +23,7 @@ from .. import artifacts, urlscan
 from ..core.db import get_db
 from ..core.files import attachment_headers, safe_name
 from ..core.models import AuditEntry, Incident, UrlScan
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..malware.samples import zip_sample
 
 router = APIRouter(tags=["artifacts"])
@@ -131,7 +131,7 @@ def analyse_url(
 
 
 @router.get("/urls/{scan_id}")
-def get_scan(scan_id: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def get_scan(scan_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The scan's state and result: final address, redirect chain, forms, findings, verdict."""
     return _detail(db, _scan_or_404(db, scan_id))
 
@@ -153,7 +153,7 @@ def rescan(
 
 
 @router.get("/urls/{scan_id}/screenshot")
-def screenshot(scan_id: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)):
+def screenshot(scan_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)):
     """The screenshot of the last visit (JPEG)."""
     row = _scan_or_404(db, scan_id)
     path = urlscan.screenshot_path(row.id)
@@ -175,7 +175,9 @@ def _script(row: UrlScan, index: int) -> tuple[dict[str, Any], str]:
 
 
 @router.get("/urls/{scan_id}/scripts/{index}")
-def script(scan_id: str, index: int, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def script(
+    scan_id: str, index: int, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict:
     """One script of the scanned page: what the scan found in it, and its code
     as text (at most 300 000 characters). It was read, never run."""
     meta, code = _script(_scan_or_404(db, scan_id), index)
@@ -184,7 +186,7 @@ def script(scan_id: str, index: int, _caller: Principal = Depends(principal), db
 
 @router.get("/urls/{scan_id}/scripts/{index}/download")
 def download_script(
-    scan_id: str, index: int, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    scan_id: str, index: int, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     """The script inside a password-protected zip (``infected``), as samples are downloaded."""
     row = _scan_or_404(db, scan_id)

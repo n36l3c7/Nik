@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from alembic import command
 from app.core.audit import describe_patch
+from app.core.permissions import ALL
 from app.main import app as fastapi_app
 from tests.conftest import ADMIN, make_key
 
@@ -43,7 +44,14 @@ def test_an_admin_changes_name_role_and_password_of_an_account(admin: TestClient
 
     res = admin.patch(f"/api/users/{anna['id']}", json={"username": "anna.b", "role": "admin"})
     assert res.status_code == 200
-    assert res.json()["user"] == {**anna, "username": "anna.b", "role": "admin", "disabled": False}
+    assert res.json()["user"] == {
+        **anna,
+        "username": "anna.b",
+        "roles": ["admin"],
+        "role": "admin",
+        "permissions": sorted(ALL),
+        "disabled": False,
+    }
     # The incidents assigned to the account follow its new name.
     assert admin.get("/api/incidents/i1").json()["assignee"] == "anna.b"
     assert admin.get("/api/incidents?view=summary&assignee=anna.b").json()["total"] == 1
@@ -61,7 +69,7 @@ def test_an_admin_changes_name_role_and_password_of_an_account(admin: TestClient
 
     entry = admin.get("/api/audit?q=renamed").json()["entries"][0]
     assert entry["action"] == "user.update" and entry["actor"] == "admin"
-    assert "1 assigned incidents follow" in entry["details"] and "role analyst → admin" in entry["details"]
+    assert "1 assigned incidents follow" in entry["details"] and "roles analyst → admin" in entry["details"]
 
 
 def test_account_changes_are_validated(admin: TestClient):

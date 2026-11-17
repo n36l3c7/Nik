@@ -25,7 +25,7 @@ from ..core.db import after_commit, get_db
 from ..core.files import attachment_headers, read_upload, safe_name
 from ..core.locking import relock
 from ..core.models import AuditEntry, Incident, Mail
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..events import emit
 from ..iocs import Allowlist, reindex_incident
 from ..mail.analyze import ANALYSIS_VERSION, analyse_mail
@@ -272,7 +272,7 @@ async def upload_mail(
 
 
 @router.get("/mails/{sha256}")
-def get_mail(sha256: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def get_mail(sha256: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The message's full analysis and the incidents that reference it."""
     row = _mail_or_404(db, sha256)
     incidents = [{"id": inc.id, "name": (inc.doc or {}).get("name", "")} for inc in _incidents_referencing(db, sha256)]
@@ -311,7 +311,7 @@ async def reanalyse_mail(
 
 
 @router.get("/mails/{sha256}/source")
-def mail_source(sha256: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def mail_source(sha256: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The message as text (an ``.eml`` as received; a ``.msg`` has no such text)."""
     row = _mail_or_404(db, sha256)
     if row.format != "eml":
@@ -330,7 +330,7 @@ def attachment_bytes(
     path: str,
     offset: int = Query(0, ge=0),
     length: int = Query(4096, ge=1, le=HEX_CHUNK_MAX),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """A slice of an attachment's bytes, base64-encoded, for the hex view."""
@@ -347,7 +347,7 @@ def attachment_download(
     sha256: str,
     path: str,
     password: str = Query(DEFAULT_ZIP_PASSWORD, min_length=1, max_length=128),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ):
     """The attachment inside an AES-256 zip protected by `password` (default `infected`)."""

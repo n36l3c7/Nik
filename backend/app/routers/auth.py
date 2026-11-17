@@ -130,5 +130,6 @@ def logout(
 
 @router.get("/me", response_model=UserEnvelope)
 def me(user: User = Depends(current_user)) -> dict:
-    """Return the currently authenticated user, or 401 if no valid session."""
+    """Return the signed-in user with its ``roles`` and the ``permissions``
+    they grant, or 401 if there is no valid session."""
     return {"user": user_to_dict(user)}

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core.db import get_db
 from ..core.models import AuditEntry, YaraRule
 from ..core.schemas import YaraRuleIn, YaraRulesEnvelope
-from ..core.security import Principal, admin_principal, now_iso, principal
+from ..core.security import Principal, now_iso, rules_principal, rules_reader_principal
 from ..malware import yara_rules
 
 router = APIRouter(prefix="/yara-rules", tags=["yara-rules"])
@@ -57,7 +57,7 @@ def _validated(body: YaraRuleIn) -> None:
 
 
 @router.get("", response_model=YaraRulesEnvelope)
-def list_rules(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_rules(_caller: Principal = Depends(rules_reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Admin rules with their source, plus the names of the built-in rule files."""
     rows = db.scalars(select(YaraRule).order_by(YaraRule.created_at)).all()
     builtin = [
@@ -69,7 +69,7 @@ def list_rules(_caller: Principal = Depends(principal), db: OrmSession = Depends
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_rule(
-    body: YaraRuleIn, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    body: YaraRuleIn, caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Add a rule set; it must compile on its own."""
     _validated(body)
@@ -92,7 +92,7 @@ def create_rule(
 
 @router.put("/{rule_id}")
 def update_rule(
-    rule_id: str, body: YaraRuleIn, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    rule_id: str, body: YaraRuleIn, caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Replace a rule set's name, source or enabled flag."""
     row = db.get(YaraRule, rule_id)
@@ -111,7 +111,7 @@ def update_rule(
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rule(
-    rule_id: str, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    rule_id: str, caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     row = db.get(YaraRule, rule_id)
     if row is None:
@@ -124,7 +124,7 @@ def delete_rule(
 
 
 @router.post("/validate")
-def validate_rule(body: YaraRuleIn, _caller: Principal = Depends(admin_principal)) -> dict:
+def validate_rule(body: YaraRuleIn, _caller: Principal = Depends(rules_principal)) -> dict:
     """Compile a source without saving it: `{ ok, errors, ruleNames }`."""
     errors = yara_rules.validate(body.source)
     return {"ok": not errors, "errors": errors, "ruleNames": _rule_names(body.source)}

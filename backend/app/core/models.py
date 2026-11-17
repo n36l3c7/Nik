@@ -27,7 +27,15 @@ class User(Base):
     # Stored as provided; case-insensitive matching is done at query time.
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # What the account may do: a list of role names (core/permissions.py).
+    roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # The single role of releases before 4.0, kept filled with the most able
+    # role for a downgrade; the code does not read it.
     role: Mapped[str] = mapped_column(String, nullable=False, default="analyst")
+    # Raised each time the roles change. The roles themselves are read on every
+    # request; the counter is for whatever keeps a copy of them (a long-lived
+    # worker, a client) to notice that its copy is old.
+    session_epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # A disabled account keeps its history but cannot sign in.
@@ -547,10 +555,9 @@ class ApiKey(Base):
     (safe to display) so a key can be recognised in listings.
 
     Permissions are set by the admin at creation and tied to the key:
-    - ``role``   'admin' | 'analyst' — an admin key can reach the admin-data
-      endpoints (users, backup, keys); an analyst key cannot.
-    - ``scopes`` comma-separated subset of read/write/admin controlling which
-      operations the key may perform.
+    - ``roles``  a list of role names (core/permissions.py), as on an account.
+    - ``role`` and ``scopes`` are what releases before 4.0 stored; they are
+      kept filled for a downgrade and the code does not read them.
     - ``expires_at`` optional ISO timestamp after which the key is rejected.
 
     A revoked key has a non-null ``revoked_at`` and is rejected.
@@ -562,6 +569,7 @@ class ApiKey(Base):
     label: Mapped[str] = mapped_column(String, nullable=False)
     prefix: Mapped[str] = mapped_column(String, nullable=False)
     key_hash: Mapped[str] = mapped_column(String, nullable=False)
+    roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     role: Mapped[str] = mapped_column(String, nullable=False, default="analyst")
     scopes: Mapped[str] = mapped_column(String, nullable=False, default="read,write")
     created_at: Mapped[str] = mapped_column(String, nullable=False)

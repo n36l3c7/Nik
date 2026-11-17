@@ -91,7 +91,7 @@
         </li>
       </ul>
       <p>
-        The REST API is one FastAPI application with a router per area (<code>backend/app/routers/</code>, 23 of them),
+        The REST API is one FastAPI application with a router per area (<code>backend/app/routers/</code>, 24 of them),
         all under <code>/api</code>. The <a href="api.html">API page</a> lists the endpoints; Swagger UI at
         <code>/api/docs</code> has every request and response shape.
       </p>
@@ -225,7 +225,8 @@
 │   ├── db.py                       # SQLAlchemy engine / session factory
 │   ├── models.py                   # users, sessions, incidents, audit_log, settings, samples, …
 │   ├── schemas.py                  # Pydantic request/response models
-│   ├── security.py                 # bcrypt hashing, session-auth dependencies
+│   ├── security.py                 # bcrypt hashing, sessions, the Principal and require("&lt;permission&gt;")
+│   ├── permissions.py              # The roles, the permissions and what each role grants
 │   ├── locking.py                  # Row lock every writer of an incident document takes first
 │   ├── files.py                    # read_upload (size limit while reading), safe_name,
 │   │                               #   attachment_headers (RFC 5987 download names)
@@ -270,8 +271,11 @@
 ├── browser_profiles.py             # browser profiles: legacy conversion, upload routing
 ├── defaults.py                     # Factory defaults for detection settings
 ├── events.py                       # Outbound webhook events
+├── query/                          # The query language: parser.py (text to a tree), dates.py (spans of
+│                                   #   time), fields.py (what a condition means, as SQL and on rows),
+│                                   #   entities.py (incidents, artifacts, indicators, audit and their fields)
 └── routers/                        # auth, users, incidents, audit, settings, backup, samples, mails,
-                                    #   network, previews, enrichment, search, yara_rules, flirt, capa_rules, …
+                                    #   network, previews, enrichment, search, query, yara_rules, flirt, …
 </code></pre>
       <p>The frontend sources, <code>frontend/src/</code>:</p>
       <pre><code>src/
@@ -343,6 +347,9 @@
 │   └── url.js                      # extractDomain, extractSearchQuery, topDomains…
 │
 ├── domain/                         # Forensic logic, pure and unit-tested (+ .test.js)
+│   ├── query/                      # The query language in the browser: parse (the twin of the server's
+│   │                               #   parser, same test vectors), tokenize (colours), complete, builder
+│   ├── permissions.js              # Roles and can(permission); settingsNav.js: the Settings page's addresses
 │   ├── events.js                   # buildEvents, historyEventType, redirect helpers
 │   ├── browserProfiles.js          # browser profiles: normalize, order, names, labels
 │   ├── commands.js                 # buildCommandEvents, extractBinary, topBinaries
@@ -378,10 +385,10 @@
     │                               #   SourceDetails (what each provider returned)
     ├── auth/                       # AuthLayout (banner + live status), FirstRunSetup, LoginScreen,
     │                               #   SessionExpiredDialog (sign in again over the app)
-    ├── backup/                     # BackupModal (full export/restore, admin only)
-    ├── settings/                   # SettingsPanel + sections/ (detection rules, business
+    ├── settings/                   # SettingsPage (a page with an address per section, in groups, with a
+    │                               #   search box), RolePicker, and sections/ (detection rules, business
     │                               #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
-    │                               #   FLIRT signatures, capa rules, audit log)
+    │                               #   FLIRT signatures, capa rules, storage, backup, audit log)
     ├── search/                     # CommandPalette (Ctrl/Cmd+K: nik&gt; search and &gt; actions)
     ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog
     ├── menu/                       # useItemMenu (the right-click menu of any item, built from the parts
@@ -917,11 +924,11 @@
         flowing. Sessions expire after <code>SESSION_TTL_HOURS</code>.
       </p>
       <p>
-        User shape: <code>{ id, username, role: 'admin' | 'analyst', createdAt, createdBy, disabled }</code> — the
-        password hash never leaves the backend. A sign-in that names an unknown account does the same hashing work as a
-        wrong password, ten wrong passwords in a row lock the account for five minutes
-        (<code>users.failed_logins</code>, <code>users.locked_until</code>), and expired sessions are purged at each
-        sign-in.
+        User shape: <code>{ id, username, roles, permissions, createdAt, createdBy, disabled }</code> (and
+        <code>role</code>, the single role of releases before 4.0, until 5.0) — the password hash never leaves the
+        backend. A sign-in that names an unknown account does the same hashing work as a wrong password, ten wrong
+        passwords in a row lock the account for five minutes (<code>users.failed_logins</code>,
+        <code>users.locked_until</code>), and expired sessions are purged at each sign-in.
       </p>
       <p>
         The App shell (<code>App.jsx</code>) implements a three-state <strong>auth gate</strong>, driven by
@@ -977,6 +984,66 @@
         whole log behind an inline confirmation step, and the new log starts with an <code>audit.clear</code> entry
         naming them.
       </p>
+      <h3 id="roles-and-permissions">Roles and permissions</h3>
+      <p>
+        An account or an API key holds a list of <strong>roles</strong>; a role grants <strong>permissions</strong>;
+        what a caller may do is the union (<code>backend/app/core/permissions.py</code>: <code>ROLE_PERMISSIONS</code>,
+        <code>permissions_of(roles)</code>). The roles are read from the row on every request, so there is nothing
+        cached to refresh when they change.
+      </p>
+      <ul>
+        <li>
+          <strong>A route asks for a permission, never for a role.</strong> It depends on
+          <code>require("&lt;permission&gt;")</code>, or on one of the gates built from it in
+          <code>core/security.py</code>: <code>reader_principal</code> (<code>read</code>),
+          <code>writer_principal</code> (<code>write</code>), <code>admin_principal</code>,
+          <code>audit_principal</code>, <code>rules_principal</code>. <code>require</code> with several permissions lets
+          through a caller that holds one of them; <code>principal</code> alone is any signed-in caller.
+        </li>
+        <li>
+          <strong>Adding a route</strong>: give it its gate and add a line to <code>EXPECTED</code> in
+          <code>backend/tests/test_permissions_matrix.py</code>. The test fails for a route that is not in the table,
+          checks that the gate the route declares is the one the table says, and calls every route with one API key per
+          role.
+        </li>
+        <li>
+          <strong>Adding a role or a permission</strong>: a line in <code>permissions.py</code> and its mirror
+          <code>frontend/src/domain/permissions.js</code> (what the role picker shows). No migration: roles are a JSON
+          list on <code>users</code> and <code>api_keys</code>.
+        </li>
+        <li>
+          <strong>In the interface</strong>, <code>can('&lt;permission&gt;')</code> of <code>AuthContext</code> reads
+          the <code>permissions</code> that <code>GET /api/auth/me</code> returns. A section of Settings names the
+          permission it needs in <code>domain/settingsNav.js</code>.
+        </li>
+      </ul>
+      <h3 id="query-language">The query language</h3>
+      <p>
+        <code>backend/app/query/</code> reads a query into a tree (<code>parser.py</code>, hand-written, with limits on
+        length, depth and number of conditions) and gives it a meaning for an <strong>entity</strong>
+        (<code>entities.py</code>): a model or a set of rows, the fields it exposes with their kind (text, keyword,
+        ordered, number, date, bool, tags) and the fields a plain word is looked for in.
+      </p>
+      <ul>
+        <li>
+          <code>query.sql(entity, text, caller)</code> returns SQLAlchemy conditions with bound parameters for an entity
+          that is a table; <code>query.rows(entity, text, caller)</code> a predicate for one assembled in Python (the
+          indicator library). Both meanings are written side by side in <code>fields.py</code>, and
+          <code>tests/test_query.py</code> runs the same queries through both, on SQLite and on PostgreSQL.
+        </li>
+        <li>
+          The permission of the entity is checked by the compiler, so a new caller of the module cannot forget it.
+        </li>
+        <li>
+          <strong>Adding a field</strong> is a <code>FieldSpec</code> in <code>entities.py</code>;
+          <code>GET /api/query/schema</code> and with it the autocomplete and the builder follow by themselves.
+        </li>
+        <li>
+          The browser has the same parser (<code>frontend/src/domain/query/parse.js</code>) for colours, completion and
+          the builder; both read <code>backend/tests/data/query_vectors.json</code> in their tests. The server alone
+          decides what a query matches.
+        </li>
+      </ul>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>
         A browser history of a few hundred thousand visits has to stay usable, so the Browser tab keeps its per-row work

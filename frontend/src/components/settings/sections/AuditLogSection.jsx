@@ -72,8 +72,8 @@ const SEARCH_KEYS = ['actor', 'action', 'details', 'incidentName']
 export default function AuditLogSection() {
   const menu = useItemMenu(null)
   const { entries, loading, error, clearAudit, refresh } = useAudit()
-  const { currentUser } = useAuth()
-  const isAdmin = currentUser?.role === 'admin'
+  const { can } = useAuth()
+  const isAdmin = can('admin')
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {

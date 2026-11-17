@@ -33,6 +33,10 @@ every action is attributed to a named analyst in the audit log.
   Windows event logs, parsed in the analyst's browser where possible.
 - **Reporting and automation** — a PDF/HTML incident report, a REST API with
   API keys, webhooks and a Cortex XSOAR integration.
+- **Roles and queries** — accounts and API keys hold one or more roles
+  (viewer, analyst, rules, audit, admin), and one query language filters
+  incidents, artifacts and indicators:
+  `status:open severity:>=high owner:""`.
 
 ## Requirements
 
@@ -129,7 +133,14 @@ the incident JSON format.
 
 ## Roadmap
 
-Planned, not built yet:
+The 4.x series is being built release by release. 4.0 brought roles as tags,
+Settings as a page and the query language; still to come: Nik's own
+automation engine with a canvas of playbooks and a sandbox for scripts,
+connectors written as YAML files, incident types with their fields and
+layouts, a War Room per incident, tasks and SLA timers, lists, fetching and
+mirroring of alerts, dashboards and content packs.
+
+Also planned, not built yet:
 
 - **Editable script signatures.** The signatures the Scripts tab of URL
   Analysis checks are built in (`backend/app/jsanalysis.py`); adding, changing

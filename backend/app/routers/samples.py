@@ -25,7 +25,7 @@ from ..core.db import after_commit, get_db
 from ..core.files import attachment_headers, read_upload, safe_name
 from ..core.locking import relock
 from ..core.models import AuditEntry, Incident, Sample, SampleCapa, SampleCode, SampleFunction
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..events import emit
 from ..iocs import reindex_incident
 from ..malware import capa_rules, flirt, yara_rules
@@ -383,7 +383,7 @@ def reanalyse_sample(
 @router.get("/samples/{sha256}/code")
 def get_sample_code(
     sha256: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Disassembly state and, when done, the function list with calls (no CFGs)."""
@@ -411,7 +411,7 @@ def start_sample_code(
 @router.get("/samples/{sha256}/capabilities")
 def get_sample_capabilities(
     sha256: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """capa's state and, when done, the capabilities with their ATT&CK / MBC mappings and addresses."""
@@ -442,7 +442,7 @@ def start_sample_capabilities(
 def get_function_cfg(
     sha256: str,
     addr: int,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Control-flow graph of one function: blocks with their instructions and successors."""
@@ -460,7 +460,7 @@ def get_function_cfg(
 def get_function_decompiled(
     sha256: str,
     addr: int,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Pseudo-C of one function (rz-ghidra): stored by the analysis, or decompiled now and kept.
@@ -502,7 +502,7 @@ def get_function_decompiled(
 @router.get("/samples/{sha256}")
 def get_sample(
     sha256: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """The sample's metadata and full static analysis (the first 5,000 strings)."""
@@ -519,7 +519,7 @@ def sample_strings(
     encoding: str = Query("all", pattern="^(all|ascii|utf-16)$"),
     offset: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=5000),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Strings recomputed from the stored file, for searches beyond the stored preview."""
@@ -543,7 +543,7 @@ def download_sample(
     sha256: str,
     password: str = Query(DEFAULT_ZIP_PASSWORD, min_length=1, max_length=128),
     name: str = Query("", max_length=255, description="File name inside the archive (default: the digest)."),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ):
     """The sample inside an AES-256 zip protected by `password` (default `infected`)."""

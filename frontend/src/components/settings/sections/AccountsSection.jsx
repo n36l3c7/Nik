@@ -1,16 +1,19 @@
 import { useState } from 'react'
-import { AlertCircle, Ban, Pencil, ShieldCheck, Trash2, User, UserPlus, Users } from 'lucide-react'
+import { AlertCircle, Ban, Pencil, Trash2, UserPlus, Users } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { formatRelative } from '../../../lib/time.js'
-import { Badge, Button, Modal, Select } from '../../ui/index.js'
+import { rolesOf, sameRoles } from '../../../domain/permissions.js'
+import { Badge, Button, Modal } from '../../ui/index.js'
+import RolePicker, { RoleChips } from '../RolePicker.jsx'
 
 /*
  * Accounts settings section (admin only): the local accounts. An admin adds
- * an account, changes its name, role or password, disables it (it keeps its
- * history and cannot sign in) or deletes it. The server refuses what would
- * lock everybody out (the last admin, one's own role) and records each
- * change in the audit log.
+ * an account, changes its name, roles or password, disables it (it keeps its
+ * history and cannot sign in) or deletes it. Roles are tags: an account holds
+ * one or more and may do what they grant together. The server refuses what
+ * would lock everybody out (the last admin, one's own admin role) and records
+ * each change in the audit log.
  */
 
 const INPUT_CLASS =
@@ -18,11 +21,6 @@ const INPUT_CLASS =
   'placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 const LABEL_CLASS = 'mb-1.5 block text-sm font-medium text-fg'
-
-const ROLE_OPTIONS = [
-  { value: 'analyst', label: 'Analyst' },
-  { value: 'admin', label: 'Admin' },
-]
 
 function ErrorNote({ children }) {
   return (
@@ -40,7 +38,7 @@ function ErrorNote({ children }) {
 function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
   const { updateUser } = useAuth()
   const [username, setUsername] = useState(user.username)
-  const [role, setRole] = useState(user.role)
+  const [roles, setRoles] = useState(() => rolesOf(user))
   const [password, setPassword] = useState('')
   const [disabled, setDisabled] = useState(Boolean(user.disabled))
   const [error, setError] = useState(null)
@@ -48,10 +46,10 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
 
   const changes = {}
   if (username.trim() !== user.username) changes.username = username.trim()
-  if (role !== user.role) changes.role = role
+  if (!sameRoles(roles, rolesOf(user))) changes.roles = roles
   if (password) changes.password = password
   if (disabled !== Boolean(user.disabled)) changes.disabled = disabled
-  const dirty = Object.keys(changes).length > 0
+  const dirty = Object.keys(changes).length > 0 && roles.length > 0
 
   const save = async (event) => {
     event.preventDefault()
@@ -73,7 +71,7 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
       open
       onClose={onClose}
       title={`Account: ${user.username}`}
-      maxWidth="max-w-md"
+      maxWidth="max-w-lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
@@ -104,10 +102,14 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
           </p>
         </div>
 
-        <div>
-          <Select value={role} onChange={setRole} options={ROLE_OPTIONS} label="Role" disabled={isSelf} />
-          {isSelf && <p className="mt-1 text-xs text-fg-muted">You cannot change your own role.</p>}
-        </div>
+        <RolePicker
+          idPrefix="edit"
+          value={roles}
+          onChange={setRoles}
+          held={rolesOf(user)}
+          locked={isSelf ? ['admin'] : []}
+          lockedNote="You cannot take it away from your own account."
+        />
 
         <div>
           <label htmlFor="edit-password" className={LABEL_CLASS}>
@@ -157,7 +159,7 @@ export default function AccountsSection() {
 
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [newRole, setNewRole] = useState('analyst')
+  const [newRoles, setNewRoles] = useState(['analyst'])
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -168,7 +170,7 @@ export default function AccountsSection() {
     if (submitting) return
     setError(null)
     setSubmitting(true)
-    const result = await createUser({ username: newUsername, password: newPassword, role: newRole })
+    const result = await createUser({ username: newUsername, password: newPassword, roles: newRoles })
     setSubmitting(false)
     if (!result.ok) {
       setError(result.error || 'Unable to create the user.')
@@ -176,7 +178,7 @@ export default function AccountsSection() {
     }
     setNewUsername('')
     setNewPassword('')
-    setNewRole('analyst')
+    setNewRoles(['analyst'])
     refreshIncidents()
   }
 
@@ -198,8 +200,8 @@ export default function AccountsSection() {
           <Badge color="slate">{users.length}</Badge>
         </div>
         <p className="mt-1 text-sm text-fg-muted">
-          Local analyst and admin accounts. Change a name, a role or a password, or disable an account, with the pencil.
-          There is always at least one admin that can sign in.
+          The local accounts. Each holds one or more roles and may do what they grant together. Change a name, the roles
+          or a password, or disable an account, with the pencil. There is always at least one admin that can sign in.
         </p>
       </div>
 
@@ -234,14 +236,7 @@ export default function AccountsSection() {
                 <p className="mt-0.5 text-xs text-fg-muted">Created {formatRelative(user.createdAt)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Badge color={user.role === 'admin' ? 'cyan' : 'slate'}>
-                  {user.role === 'admin' ? (
-                    <ShieldCheck className="h-3 w-3" aria-hidden="true" />
-                  ) : (
-                    <User className="h-3 w-3" aria-hidden="true" />
-                  )}
-                  {user.role === 'admin' ? 'Admin' : 'Analyst'}
-                </Badge>
+                <RoleChips roles={rolesOf(user)} className="justify-end" />
                 <Button
                   variant="ghost"
                   size="xs"
@@ -313,9 +308,10 @@ export default function AccountsSection() {
 
           {error && <ErrorNote>{error}</ErrorNote>}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Select value={newRole} onChange={setNewRole} options={ROLE_OPTIONS} label="Role" />
-            <Button type="submit" icon={UserPlus} disabled={submitting} className="ml-auto">
+          <RolePicker idPrefix="add" value={newRoles} onChange={setNewRoles} />
+
+          <div className="flex justify-end">
+            <Button type="submit" icon={UserPlus} disabled={submitting || newRoles.length === 0}>
               {submitting ? 'Adding…' : 'Add user'}
             </Button>
           </div>

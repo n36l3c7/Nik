@@ -98,7 +98,8 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
     const detail =
       (payload && typeof payload.detail === 'string' && payload.detail) || `Request failed (${response.status})`
     reportUnauthorized(response.status, path)
-    throw Object.assign(new Error(detail), { status: response.status })
+    // `query`: for a query that cannot be read, where and why (position, code, suggestion).
+    throw Object.assign(new Error(detail), { status: response.status, query: payload?.query ?? null })
   }
 
   return payload

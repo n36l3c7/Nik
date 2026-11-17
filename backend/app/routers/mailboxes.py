@@ -23,7 +23,7 @@ from .. import artifacts, mailboxes
 from ..core.config import settings
 from ..core.db import SessionLocal, get_db
 from ..core.models import Artifact, AuditEntry, Incident, Mail, Mailbox, MailboxMessage
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..mail.parse import MailError
 from ..malware.samples import write_mail
 from ..workers import previews
@@ -169,7 +169,9 @@ async def upload_mailbox(
 
 
 @router.get("/mailboxes/{mailbox_id}")
-def get_mailbox(mailbox_id: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def get_mailbox(
+    mailbox_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict:
     """The mailbox: its state, how many messages and conversations it holds,
     the dates they span, the main senders, and what was imported."""
     return _detail(db, _or_404(db, mailbox_id))
@@ -184,7 +186,7 @@ def list_messages(
     thread: Optional[int] = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=PAGE_MAX),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """The messages, newest first, each with the one it answers (``parent``)

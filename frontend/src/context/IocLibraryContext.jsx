@@ -5,7 +5,7 @@ import AddIocsDialog from '../components/iocs/AddIocsDialog.jsx'
 import BulkCheckDialog from '../components/iocs/BulkCheckDialog.jsx'
 import ExportIocsDialog from '../components/iocs/ExportIocsDialog.jsx'
 import ListDialog from '../components/iocs/ListDialog.jsx'
-import { isIndicatorPage, onLocationChange, setPath } from '../lib/location.js'
+import { isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
 import { useAuth } from './AuthContext.jsx'
 import { useToast } from './ToastContext.jsx'
 
@@ -31,7 +31,8 @@ const viewFromUrl = () => (typeof window === 'undefined' ? null : viewFromPath(w
 const active = (check) => check.status === 'running' || check.status === 'waiting'
 
 export function IocLibraryProvider({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated: signedIn, can } = useAuth()
+  const isAuthenticated = signedIn && can('read')
   const { showToast } = useToast()
   const [view, setView] = useState(viewFromUrl)
   const [quick, setQuick] = useState('all') // the side panel's quick filter
@@ -112,7 +113,7 @@ export function IocLibraryProvider({ children }) {
   useEffect(() => {
     // The address decides: an incident or an artifact opened elsewhere leaves the library.
     const onPopState = () => {
-      if (!isIndicatorPage(window.location.pathname)) setView(viewFromUrl())
+      if (!isOverlayPage(window.location.pathname)) setView(viewFromUrl())
     }
     return onLocationChange(onPopState)
   }, [])
