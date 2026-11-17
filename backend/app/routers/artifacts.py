@@ -34,7 +34,7 @@ from ..core.models import (
     Sample,
     UrlScan,
 )
-from ..core.security import Principal, admin_principal, now_iso, principal, writer_principal
+from ..core.security import Principal, admin_principal, now_iso, reader_principal, writer_principal
 from ..network import service as captures
 from ..workers import previews
 from . import mails as mail_routes
@@ -147,7 +147,7 @@ def list_artifacts(
     linked: Optional[bool] = Query(None, description="true: linked to an incident; false: on their own."),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """The artifacts every analyst can see, newest first, with the incidents that reference each."""
@@ -186,7 +186,7 @@ def list_artifacts(
 @router.get("/artifacts/lookup")
 def lookup_artifact(
     sha256: str = Query(..., pattern=r"^[0-9a-f]{64}$", description="SHA-256 of a file, computed before uploading it."),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Is this file already known? The artifacts with that digest (a file, an e-mail), if any."""
@@ -198,7 +198,7 @@ def lookup_artifact(
 @router.get("/artifacts/{artifact_id}")
 def get_artifact(
     artifact_id: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """One artifact: its summary, the incidents that reference it and its relations."""
@@ -476,7 +476,7 @@ class ExportIn(BaseModel):
 @router.post("/artifacts/export")
 def export_artifacts(
     body: ExportIn,
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ):
     """Download artifacts as a zip another Nik can import: the registry entries

@@ -19,17 +19,9 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import ApiKey
+from ..core.permissions import RoleError, clean_roles, legacy_role, legacy_scopes, roles_from_legacy, stored_roles
 from ..core.schemas import ApiKeyCreate, ApiKeyCreated, ApiKeysEnvelope
-from ..core.security import (
-    SCOPE_READ,
-    SCOPE_WRITE,
-    Principal,
-    admin_principal,
-    generate_api_key,
-    hash_api_key,
-    normalize_scopes,
-    now_iso,
-)
+from ..core.security import Principal, admin_principal, generate_api_key, hash_api_key, now_iso
 
 router = APIRouter(prefix="/keys", tags=["api-keys"])
 
@@ -39,8 +31,9 @@ def _to_dict(key: ApiKey) -> dict:
         "id": key.id,
         "label": key.label,
         "prefix": key.prefix,
-        "role": key.role,
-        "scopes": (key.scopes or "").split(",") if key.scopes else [],
+        "roles": stored_roles(key.roles),
+        "role": legacy_role(stored_roles(key.roles)),
+        "scopes": legacy_scopes(stored_roles(key.roles)),
         "createdAt": key.created_at,
         "createdBy": key.created_by,
         "expiresAt": key.expires_at,
@@ -63,18 +56,22 @@ def create_key(
 ) -> dict:
     """Create an API key (admin only).
 
-    The permissions are set here and bound to the key: ``role`` decides whether
-    the key can reach the admin-data endpoints, ``scopes`` restricts read/write.
-    The response contains the plaintext ``key`` — shown only here.
+    What the key may do is set here and bound to it: ``roles``, the same role
+    names an account takes. The response contains the plaintext ``key``, shown
+    only here.
     """
     label = body.label.strip()
     if not label:
         raise HTTPException(status_code=400, detail="A label is required")
 
-    role = body.role if body.role in {"admin", "analyst"} else "analyst"
-    # Default an analyst key to read+write when scopes are not specified.
-    requested = body.scopes if body.scopes is not None else [SCOPE_READ, SCOPE_WRITE]
-    scopes = normalize_scopes(requested, role)
+    try:
+        if body.roles is not None:
+            roles = clean_roles(body.roles)
+        else:
+            # A request of a release before 4.0: a role, and scopes for an analyst key.
+            roles = roles_from_legacy(body.role, body.scopes)
+    except RoleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
     expires_at = None
     if body.expiresInDays is not None:
@@ -88,15 +85,20 @@ def create_key(
         label=label,
         prefix=prefix,
         key_hash=hash_api_key(token),
-        role=role,
-        scopes=",".join(scopes),
+        roles=roles,
+        role="admin" if "admin" in roles else "analyst",
+        scopes=",".join(legacy_scopes(roles)),
         created_at=now_iso(),
         created_by=admin.actor,
         expires_at=expires_at,
     )
     db.add(row)
     audit.record(
-        db, admin.actor, "apikey.create", f'Created the {role} API key "{label}" ({", ".join(scopes)})', target=label
+        db,
+        admin.actor,
+        "apikey.create",
+        f'Created the API key "{label}" with the roles {", ".join(roles)}',
+        target=label,
     )
     db.commit()
     return {"key": token, "apiKey": _to_dict(row)}

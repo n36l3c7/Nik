@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core.db import get_db
 from ..core.models import Incident, IocEntry, Sample
-from ..core.security import Principal, principal
+from ..core.security import Principal, reader_principal
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -32,7 +32,7 @@ def _like(text: str) -> str:
 def search(
     q: str = Query(..., min_length=2, max_length=200),
     limit: int = Query(8, ge=1, le=50),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Incidents, indicators and samples matching ``q`` (case-insensitive substring)."""

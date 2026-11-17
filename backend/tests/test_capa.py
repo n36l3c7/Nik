@@ -74,7 +74,7 @@ def test_upload_runs_capa_and_stores_the_capabilities(admin: TestClient, capa_wo
     assert capa_worker == [sha, sha, sha]
     read_only = make_key(admin, role="analyst", scopes=["read"])
     assert admin.post(f"/api/samples/{sha}/capabilities", headers=read_only).status_code == 403
-    actions = {e["action"] for e in admin.get("/api/audit", headers=key).json()["entries"]}
+    actions = {e["action"] for e in admin.get("/api/audit").json()["entries"]}
     assert "sample.capabilities" in actions
 
     # Removing the last reference removes the capabilities with the sample.

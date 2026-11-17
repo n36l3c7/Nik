@@ -169,5 +169,5 @@ def test_admin_yara_rules_api_and_reanalyse(admin: TestClient):
 
     assert admin.delete(f"/api/yara-rules/{rule_id}", headers=admin_key).status_code == 204
     assert admin.get("/api/yara-rules", headers=analyst).json()["rules"] == []
-    actions = {e["action"] for e in admin.get("/api/audit", headers=analyst).json()["entries"]}
+    actions = {e["action"] for e in admin.get("/api/audit").json()["entries"]}
     assert {"yara.add", "yara.update", "yara.delete", "sample.reanalyse"} <= actions

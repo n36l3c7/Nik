@@ -64,18 +64,80 @@
       <pre><code><span class="prompt"></span>curl -H "X-API-Key: nik_XXXXXXXX…" https://localhost:8443/api/incidents</code></pre>
       <p>
         Keys are created and revoked in the app under <strong>Settings → API keys</strong> (admin only). The plaintext
-        key is shown once, at creation, and carries permissions bound to it:
+        key is shown once, at creation, and carries what it may do:
       </p>
       <ul>
         <li>
-          <strong>role</strong> — <code>analyst</code> (incidents, notes, uploads, read settings) or
-          <code>admin</code> (also users, backup, keys, webhooks).
-        </li>
-        <li>
-          <strong>scopes</strong> — <code>read</code> / <code>write</code>; a read-only key can fetch but not mutate.
+          <strong>roles</strong> — one or more of the roles below, as an account. A read-only key is a key with the role
+          <code>viewer</code>.
         </li>
         <li><strong>expiry</strong> — optional; an expired key is rejected.</li>
       </ul>
+
+      <h3 id="roles">Roles and permissions</h3>
+      <p>
+        An account or a key holds one or more <strong>roles</strong>. A role is a tag that grants permissions; what a
+        caller may do is everything its roles grant together, and a route asks for a permission, never for a role. A
+        caller without the permission gets <code>403</code>.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Grants</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>viewer</code></td>
+              <td><code>read</code>: incidents, artifacts, indicators, analyses.</td>
+            </tr>
+            <tr>
+              <td><code>analyst</code></td>
+              <td><code>read</code>, <code>write</code> (change, upload, analyse) and <code>automation.run</code>.</td>
+            </tr>
+            <tr>
+              <td><code>rules</code></td>
+              <td><code>rules.manage</code>: the YARA, capa and FLIRT rule sets.</td>
+            </tr>
+            <tr>
+              <td><code>audit</code></td>
+              <td><code>audit.read</code>: the audit log.</td>
+            </tr>
+            <tr>
+              <td><code>admin</code></td>
+              <td>
+                Every permission, among them <code>admin</code>: accounts, API keys, webhooks, storage, backup, the
+                provider keys and the settings that decide what leaves the server.
+              </td>
+            </tr>
+            <tr>
+              <td><code>playbooks</code> · <code>connectors</code> · <code>dashboards</code></td>
+              <td>
+                Accepted and stored now; what they grant (<code>automation.edit</code>,
+                <code>connectors.manage</code>, <code>dashboards.share</code>…) is used by features of later 4.x
+                releases.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <code>GET /api/auth/me</code> answers with <code>roles</code> and with <code>permissions</code>, the list of
+        what they grant. A role given or taken away takes effect at the account's next request.
+      </p>
+      <p>
+        <strong>Changed in 4.0.</strong> Before 4.0 an account had one <code>role</code> (<code>admin</code> or
+        <code>analyst</code>) and a key a role plus <code>scopes</code>. Existing accounts and keys were converted
+        (<code>admin</code> → <code>["admin"]</code>, <code>analyst</code> → <code>["analyst"]</code>, an analyst key
+        without the <code>write</code> scope → <code>["viewer"]</code>) and keep working. The API still accepts
+        <code>role</code> (and <code>scopes</code> on a key) when <code>roles</code> is not sent, and still answers with
+        <code>role</code> (the most able of <code>admin</code>, <code>analyst</code>, <code>viewer</code> the caller
+        holds) and <code>scopes</code> next to <code>roles</code>; both old fields go away in 5.0. One thing an analyst
+        could do and no longer can: read the audit log (now <code>audit.read</code>). Give the account the role
+        <code>audit</code> as well if it still should.
+      </p>
       <p>
         Every change is recorded in the audit log by the server, whoever makes it: a key appears as
         <code>api:&lt;label&gt;</code>, a session as its username.
@@ -543,19 +605,19 @@
                 <code>GET/POST /api/capa-rules</code> · <code>PUT/DELETE …/{id}</code> · <code>POST …/validate</code>
               </td>
               <td>
-                capa rules (YAML, one each) matched with capa's bundled set (<strong>admin</strong> to change). The capa
-                worker checks a rule before it is saved; a rule another enabled rule matches cannot be renamed, disabled
-                or deleted.
+                capa rules (YAML, one each) matched with capa's bundled set (<code>rules.manage</code> to change). The
+                capa worker checks a rule before it is saved; a rule another enabled rule matches cannot be renamed,
+                disabled or deleted.
               </td>
             </tr>
             <tr>
               <td><code>GET/POST /api/flirt-signatures</code> · <code>PUT/DELETE …/{id}</code></td>
               <td>
                 FLIRT signatures (<code>.sig</code> or <code>.pat</code>, multipart <code>name</code> +
-                <code>file</code>, up to 32 MB) applied by the analyzer worker from the next disassembly (<strong
-                  >admin</strong
+                <code>file</code>, up to 32 MB) applied by the analyzer worker from the next disassembly (<code
+                  >rules.manage</code
                 >
-                to change; any caller may list).
+                to change; listed with <code>read</code> or <code>rules.manage</code>).
               </td>
             </tr>
             <tr>
@@ -564,8 +626,8 @@
                 <code>POST …/validate</code>
               </td>
               <td>
-                Admin-managed YARA rule sets, compiled with the built-in ones (<strong>admin</strong> to change; any
-                caller may list). A source must compile before it is saved.
+                YARA rule sets added to the built-in ones (<code>rules.manage</code> to change; listed with
+                <code>read</code> or <code>rules.manage</code>). A source must compile before it is saved.
               </td>
             </tr>
             <tr>
@@ -611,9 +673,9 @@
                 (<code>mail: { orgDomains, trustedAuthServers }</code>) and threat-intelligence options (<code
                   >enrichment: { auto, retentionDays: { ip, url, hash }, refreshExpired, virustotal: { engines,
                   relations, comments }, providers }</code
-                >, never the keys). <code>PUT</code> replaces them (a session, or a key with the write scope): the
-                report header, the mail settings and the threat-intelligence options change only for an
-                <strong>admin</strong>, and are left as they are for anyone else.
+                >, never the keys); any signed-in caller reads them. <code>PUT</code> replaces them
+                (<code>write</code>): the report header, the mail settings and the threat-intelligence options change
+                only for an <strong>admin</strong>, and are left as they are for anyone else.
               </td>
             </tr>
             <tr>
@@ -623,18 +685,20 @@
             <tr>
               <td><code>GET/POST /api/users</code></td>
               <td>
-                List and create accounts (<strong>admin</strong>): <code>{ username, password, role }</code>, the
-                password at least 8 characters. While no account exists the first <code>POST</code> needs no
-                authentication and creates an admin.
+                List and create accounts (<strong>admin</strong>): <code>{ username, password, roles }</code>, the
+                password at least 8 characters, <code>roles</code> a list of role names (<code>["analyst"]</code> when
+                left out). While no account exists the first <code>POST</code> needs no authentication and creates an
+                admin.
               </td>
             </tr>
             <tr>
               <td><code>PATCH /api/users/{id}</code></td>
               <td>
                 Change an account (<strong>admin</strong>): any of
-                <code>{ username, role, password, disabled }</code>. A new name is carried to the incidents assigned to
-                the account; a new password or <code>disabled: true</code> ends its sessions. <code>400</code> when it
-                would leave no admin able to sign in, or change the caller's own role.
+                <code>{ username, roles, password, disabled }</code>. A new name is carried to the incidents assigned to
+                the account; a new password or <code>disabled: true</code> ends its sessions; new roles take effect at
+                its next request. <code>400</code> for an unknown or empty list of roles, when it would leave no admin
+                able to sign in, or when the caller would take away their own <code>admin</code> role.
               </td>
             </tr>
             <tr>
@@ -654,7 +718,10 @@
             </tr>
             <tr>
               <td><code>GET/POST/DELETE /api/keys</code></td>
-              <td>API-key management (<strong>admin</strong>).</td>
+              <td>
+                API-key management (<strong>admin</strong>). Create with
+                <code>{ label, roles, expiresInDays }</code>; the plaintext key is in the answer, once.
+              </td>
             </tr>
             <tr>
               <td><code>GET/POST /api/backup/{export,import}</code></td>
@@ -663,15 +730,15 @@
             <tr>
               <td><code>GET /api/audit</code></td>
               <td>
-                Audit log, newest first: <code>limit</code>, <code>offset</code>, <code>q</code>, <code>actor</code>,
-                <code>incidentId</code>. The log is written by the server.
+                Audit log, newest first (<code>audit.read</code>): <code>limit</code>, <code>offset</code>,
+                <code>q</code>, <code>actor</code>, <code>incidentId</code>. The log is written by the server.
               </td>
             </tr>
             <tr>
               <td><code>POST /api/audit</code></td>
               <td>
-                Record an action done in the browser alone (session only). Only <code>incident.export</code> is
-                accepted; anything else is <code>400</code>.
+                Record an action done in the browser alone (<code>read</code>). Only <code>incident.export</code> is
+                accepted; anything else is <code>400</code>. Nobody writes the log by hand.
               </td>
             </tr>
             <tr>
@@ -690,8 +757,10 @@
         </table>
       </div>
       <p>
-        Endpoints marked <strong>admin</strong> accept an admin session or an admin-role API key; any other key gets
-        <code>403</code>.
+        Endpoints marked <strong>admin</strong> need the <code>admin</code> permission (an account or a key with the
+        role <code>admin</code>); the others need <code>read</code> to fetch and <code>write</code> to change, unless
+        the row names another permission. A caller without it gets <code>403</code>. See
+        <a href="#roles">Roles and permissions</a>.
       </p>
 
       <h2 id="uploads">Uploading files</h2>

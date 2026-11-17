@@ -78,10 +78,14 @@ or an **API key**. Send the key in the `X-API-Key` header. Create keys in the
 app under *Settings → API keys* (admin only), then click **Authorize** above to
 try the endpoints here.
 
-**Key permissions.** Each key is created with a role and scopes bound to it:
-an *analyst* key can work with incidents, notes and uploads; an *admin* key can
-also manage users and backups. A read-only key (`scopes: ["read"]`) cannot
-mutate anything. Keys may carry an expiry.
+**Roles.** An account or a key holds one or more roles, and may do what they
+grant together: `viewer` reads; `analyst` reads, changes, uploads and analyses;
+`rules` manages the YARA, capa and FLIRT rule sets; `audit` reads the audit
+log; `admin` does everything, and alone manages accounts, keys, storage,
+backups and the settings that decide what leaves the server. `playbooks`,
+`connectors` and `dashboards` belong to features of later 4.x releases. A
+read-only key is a key with the role `viewer`. Keys may carry an expiry.
+`GET /api/auth/me` answers with the roles and the permissions they grant.
 """.strip()
 
 TAGS_METADATA = [
@@ -89,12 +93,12 @@ TAGS_METADATA = [
     {"name": "incidents/notes", "description": "Add, edit and remove incident notes."},
     {"name": "incidents/upload", "description": "Upload raw artifact files; parsed server-side (optionally async)."},
     {"name": "jobs", "description": "Status of async jobs (e.g. background uploads)."},
-    {"name": "yara-rules", "description": "Admin-managed YARA rules, compiled with the built-in set (admin only)."},
+    {"name": "yara-rules", "description": "YARA rules added to the built-in set (rules.manage to change)."},
     {
         "name": "flirt-signatures",
-        "description": "Admin-uploaded FLIRT signatures applied by the analyzer worker (admin to change).",
+        "description": "Uploaded FLIRT signatures applied by the analyzer worker (rules.manage to change).",
     },
-    {"name": "capa-rules", "description": "Admin capa rules, checked by the capa worker (admin to change)."},
+    {"name": "capa-rules", "description": "Added capa rules, checked by the capa worker (rules.manage to change)."},
     {
         "name": "samples",
         "description": "Malware samples: stored on the server, analysed statically, downloaded as a protected zip.",
@@ -107,11 +111,11 @@ TAGS_METADATA = [
     {"name": "settings", "description": "Shared detection rules and business hours (read via key)."},
     {
         "name": "api-keys",
-        "description": "Manage API keys (admin session or admin key). Set each key's role/scopes/expiry.",
+        "description": "Manage API keys (admin session or admin key). Set each key's roles and expiry.",
     },
     {"name": "auth", "description": "Session login/logout (browser)."},
     {"name": "users", "description": "User management (admin session or admin key)."},
-    {"name": "audit", "description": "Global audit log."},
+    {"name": "audit", "description": "Global audit log (the audit.read permission)."},
     {"name": "backup", "description": "Full platform export/restore (admin session or admin key)."},
     {"name": "health", "description": "Liveness probe."},
 ]

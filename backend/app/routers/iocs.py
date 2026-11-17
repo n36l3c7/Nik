@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session as OrmSession
 from .. import analysis_links
 from ..core.db import get_db
 from ..core.models import Artifact, ArtifactLink, AuditEntry, Incident, IocEntry, UrlScan
-from ..core.security import Principal, now_iso, principal
+from ..core.security import Principal, now_iso, reader_principal
 from ..enrichment.service import summaries
 from ..iocs import TYPES, Allowlist, incident_iocs, misp_event, normalize, stix_bundle
 from .settings import read_settings
@@ -44,7 +44,7 @@ def _incident_or_404(db: OrmSession, incident_id: str) -> Incident:
 @router.get("/incidents/{incident_id}/iocs")
 def listincident_iocs(
     incident_id: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Every indicator of the incident: where it was seen, how often, when, and
@@ -95,7 +95,7 @@ def _source_links(db: OrmSession, incident_ids: list[str]) -> dict[str, dict[str
 def lookup_ioc(
     type: Literal["ip", "domain", "url", "email", "md5", "sha1", "sha256"] = Query(...),
     value: str = Query(..., min_length=1, max_length=1024),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Every incident an indicator was seen in (any analyst's)."""
@@ -138,7 +138,7 @@ def lookup_ioc(
 @router.get("/iocs/shared")
 def shared_iocs(
     limit: int = Query(100, ge=1, le=1000),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Indicators seen in two or more incidents, most widespread first."""
@@ -164,7 +164,7 @@ def exportincident_iocs(
     format: Literal["csv", "stix", "misp"] = Query("csv"),
     types: str | None = Query(None, description="Comma-separated types to keep, e.g. ip,domain,sha256"),
     include_allowlisted: bool = Query(False, alias="allowlisted"),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response:
     """Download the incident's indicators as CSV, a STIX 2.1 bundle or a MISP

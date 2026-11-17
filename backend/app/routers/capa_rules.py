@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core.db import get_db
 from ..core.models import AuditEntry, CapaRule
-from ..core.security import Principal, admin_principal, now_iso, principal
+from ..core.security import Principal, now_iso, rules_principal, rules_reader_principal
 from ..malware import capa_rules
 from ..workers import capa
 from ..workers.analyzer import AnalyzerError
@@ -99,7 +99,7 @@ def _refuse_if_used(db: OrmSession, row: CapaRule, action: str) -> None:
 
 
 @router.get("")
-def list_rules(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_rules(_caller: Principal = Depends(rules_reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Admin rules, oldest first."""
     rows = db.scalars(select(CapaRule).order_by(CapaRule.created_at)).all()
     return {"rules": [_to_dict(row) for row in rows]}
@@ -107,7 +107,7 @@ def list_rules(_caller: Principal = Depends(principal), db: OrmSession = Depends
 
 @router.post("/validate")
 def validate_rule(
-    body: CapaRuleCheck, _caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    body: CapaRuleCheck, _caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Check a source without saving it: `{ ok, errors, name, namespace, scope }`."""
     return _check(db, body.source, body.id)
@@ -115,7 +115,7 @@ def validate_rule(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_rule(
-    body: CapaRuleIn, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    body: CapaRuleIn, caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Add a rule; the capa worker must accept it."""
     verdict = _validated(db, body.source, None)
@@ -140,7 +140,7 @@ def create_rule(
 
 @router.put("/{rule_id}")
 def update_rule(
-    rule_id: str, body: CapaRuleIn, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    rule_id: str, body: CapaRuleIn, caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Replace a rule's source or switch it on/off."""
     row = _row_or_404(db, rule_id)
@@ -157,7 +157,7 @@ def update_rule(
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rule(
-    rule_id: str, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    rule_id: str, caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     row = _row_or_404(db, rule_id)
     _refuse_if_used(db, row, "delete")

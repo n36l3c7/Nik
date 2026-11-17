@@ -23,7 +23,7 @@ from .. import analysis_links
 from ..core import vault
 from ..core.db import get_db
 from ..core.models import AuditEntry, Enrichment, IntegrationKey, UrlScan
-from ..core.security import Principal, admin_principal, now_iso, principal, writer_principal
+from ..core.security import Principal, admin_principal, now_iso, reader_principal, writer_principal
 from ..enrichment import service
 from ..enrichment.providers import BY_ID, PROVIDERS
 from ..iocs import Allowlist
@@ -74,7 +74,7 @@ def _key_out(row: IntegrationKey) -> dict:
 
 
 @router.get("/providers")
-def list_providers(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_providers(_caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Every provider: types, key requirement, its keys' state (never the keys), free-tier limits."""
     shared = read_settings(db)
     cfg = service.config(shared)
@@ -267,7 +267,7 @@ def _detail(db: OrmSession, kind: str, value: str, shared: dict, reason: str | N
 def cached(
     type: LookupType = Query(...),
     value: str = Query(..., min_length=1, max_length=1024),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """What is known about an indicator: each provider's cached answer
@@ -286,7 +286,7 @@ def raw_answer(
     type: LookupType = Query(...),
     value: str = Query(..., min_length=1, max_length=1024),
     provider: str = Query(..., max_length=40),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response:
     """A provider's own answer about the indicator, as a JSON file."""

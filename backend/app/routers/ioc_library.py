@@ -20,14 +20,13 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .. import ioc_library as lib
 from ..core.db import get_db
-from ..core.models import ApiKey, AuditEntry, Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
+from ..core.models import AuditEntry, Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
 from ..core.security import (
     Principal,
-    _key_expired,
-    hash_api_key,
-    normalize_scopes,
+    key_principal,
     now_iso,
     principal,
+    reader_principal,
     writer_principal,
 )
 from ..enrichment import service
@@ -239,7 +238,7 @@ def list_library(
     dir: Literal["asc", "desc"] = Query("asc"),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Every indicator Nik knows: seen in an incident, added by hand, imported
@@ -265,7 +264,7 @@ def list_library(
 
 
 @router.post("/parse")
-def parse_text(body: ParseIn, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def parse_text(body: ParseIn, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Read a paste or a file without saving anything: the indicators found,
     which are new, which the library already has and which are never sent to
     the sources."""
@@ -438,7 +437,7 @@ def remove_indicators(
 # Lists                                                                       #
 # --------------------------------------------------------------------------- #
 @router.get("/lists")
-def lists(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def lists(_caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     sizes = dict(db.execute(select(IocListItem.list_id, func.count()).group_by(IocListItem.list_id)).all())
     rows = db.scalars(select(IocList).order_by(func.lower(IocList.name))).all()
     return {"lists": [_list_out(row, sizes.get(row.id, 0)) for row in rows]}
@@ -465,7 +464,7 @@ def create_list(body: ListIn, caller: Principal = Depends(writer_principal), db:
 
 
 @router.get("/lists/{list_id}")
-def get_list(list_id: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def get_list(list_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     target = _list_or_404(db, list_id)
     rows, _ = _resolve(db, Scope(list_id=list_id), read_settings(db))
     return {**_list_out(target, len(rows)), "counts": lib.counts(rows)}
@@ -496,7 +495,7 @@ def delete_list(
 ) -> Response:
     """Remove the list; its indicators stay in the library. Its author or an admin."""
     target = _list_or_404(db, list_id)
-    if caller.role != "admin" and target.created_by != caller.actor:
+    if not caller.has("admin") and target.created_by != caller.actor:
         raise HTTPException(status_code=403, detail="Only the list's author or an admin can remove it.")
     db.execute(delete(IocListItem).where(IocListItem.list_id == list_id))
     db.execute(delete(IocAlert).where(IocAlert.list_id == list_id))
@@ -550,19 +549,18 @@ def _feed_caller(request: Request, db: OrmSession = Depends(get_db)) -> Principa
             secret = base64.b64decode(header[6:]).decode("utf-8").split(":", 1)[1]
         except (ValueError, IndexError, UnicodeDecodeError):
             secret = ""
-        row = db.scalar(select(ApiKey).where(ApiKey.key_hash == hash_api_key(secret), ApiKey.revoked_at.is_(None)))
-        if secret and row is not None and not _key_expired(row):
-            row.last_used_at = now_iso()
-            db.commit()
-            role = row.role if row.role in {"admin", "analyst"} else "analyst"
-            return Principal(
-                kind="apikey",
-                actor=f"api:{row.label}",
-                role=role,
-                scopes=normalize_scopes((row.scopes or "").split(","), role),
-            )
-        raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Basic"})
-    return principal(db, request.cookies.get("nik_session"), request.headers.get("X-API-Key"))
+        caller = key_principal(db, secret)
+        if caller is None:
+            raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Basic"})
+    else:
+        caller = principal(db, request.cookies.get("nik_session"), request.headers.get("X-API-Key"))
+    if not caller.has("read"):
+        raise HTTPException(status_code=403, detail="You do not have the permission this needs")
+    return caller
+
+
+# Read by the route matrix test, as the gates of core/security.py.
+_feed_caller.permissions = ("read",)
 
 
 @router.get("/lists/{list_id}/feed")
@@ -599,7 +597,7 @@ def feed(
 # --------------------------------------------------------------------------- #
 @router.post("/export")
 def export_indicators(
-    body: ExportIn, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)
+    body: ExportIn, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     """Download a list, a selection or a filter in the chosen format with the
     chosen fields. Allowlisted and expired indicators are left out unless asked for."""
@@ -655,14 +653,14 @@ def bulk_check(body: CheckIn, caller: Principal = Depends(writer_principal), db:
 
 
 @router.get("/checks")
-def checks(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def checks(_caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The bulk checks still going, and the last few that ended."""
     rows = db.scalars(select(IocCheck).order_by(IocCheck.created_at.desc()).limit(20)).all()
     return {"checks": [service.check_progress(db, row) for row in rows]}
 
 
 @router.get("/checks/{check_id}")
-def get_check(check_id: str, _caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def get_check(check_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     row = db.get(IocCheck, check_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Check not found")
@@ -748,7 +746,7 @@ def analyse_addresses(
 # Alerts                                                                      #
 # --------------------------------------------------------------------------- #
 @router.get("/alerts")
-def alerts(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def alerts(_caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Incidents that came to hold an indicator of a watched list, newest first."""
     rows = db.execute(
         select(IocAlert, IocList.name, Incident.name)

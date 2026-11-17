@@ -42,7 +42,7 @@ from ..core.files import read_upload
 from ..core.locking import lock_incident
 from ..core.models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
 from ..core.schemas import NoteIn
-from ..core.security import Principal, now_iso, principal, writer_principal
+from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..events import emit, emit_now
 from ..iocs import reindex_incident
 from ..parsing.registry import apply_upload
@@ -111,7 +111,7 @@ def _idempotent_save(db: OrmSession, key: str | None, status_code: int, body: An
 @router.get("")
 def list_incidents(
     response: Response,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
     limit: int | None = Query(None, ge=1, le=1000, description="Page size (default: all)."),
     offset: int = Query(0, ge=0),
@@ -209,7 +209,7 @@ def list_incidents(
 def get_incident(
     incident_id: str,
     response: Response,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
     if_none_match: str | None = Header(None, alias="If-None-Match"),
 ) -> dict | Response:

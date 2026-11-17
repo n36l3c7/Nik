@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Roles are tags, and an account can hold several** (breaking for API
+  clients that manage accounts or keys). An account or an API key had one
+  role, `admin` or `analyst`; it now has a list of `roles`, and may do what
+  they grant together: `viewer` (read), `analyst` (read, change, upload,
+  analyse), `rules` (the YARA, capa and FLIRT rule sets), `audit` (the audit
+  log), `admin` (everything; alone manages accounts, keys, storage, backup
+  and what leaves the server). `playbooks`, `connectors` and `dashboards`
+  are accepted and stored for the features of the next 4.x releases.
+  - **Nothing to do on upgrade**: migration `0025_roles` converts every
+    account and key (`admin` → `["admin"]`, `analyst` → `["analyst"]`, an
+    analyst key without the `write` scope → `["viewer"]`). Existing keys keep
+    working, with the same header and the same key.
+  - **API**: user and key payloads take and return `roles`;
+    `GET /api/auth/me` also returns `permissions`. The old `role` field (and
+    `scopes` on a key) is still accepted when `roles` is not sent, and still
+    returned next to it, until 5.0.
+  - **The audit log is read with the `audit` role** (or `admin`). An analyst
+    could read it before: give the account the role `audit` as well if it
+    still should.
+  - The rule sets are changed with the `rules` role, without being an admin.
+  - A route asks for a permission, never for a role; a test walks every route
+    of the API with a key of each role, and fails when a new route does not
+    say who may call it.
+
 ## [3.8.0] - 2026-11-13
 
 ### Added

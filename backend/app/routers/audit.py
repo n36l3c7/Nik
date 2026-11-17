@@ -17,9 +17,9 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core import audit
 from ..core.db import get_db
-from ..core.models import AuditEntry, User
+from ..core.models import AuditEntry
 from ..core.schemas import AuditEnvelope, AuditIn, AuditOut
-from ..core.security import Principal, admin_principal, current_user, now_iso, principal
+from ..core.security import Principal, admin_principal, audit_principal, now_iso, reader_principal
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -46,7 +46,7 @@ def _entry_to_dict(entry: AuditEntry) -> dict:
 @router.get("", response_model=AuditEnvelope)
 def list_audit(
     response: Response,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(audit_principal),
     db: OrmSession = Depends(get_db),
     limit: int | None = Query(None, ge=1, le=MAX_ENTRIES, description="Page size (default: up to MAX_ENTRIES)."),
     offset: int = Query(0, ge=0),
@@ -87,7 +87,7 @@ def list_audit(
 @router.post("", response_model=AuditOut, status_code=status.HTTP_201_CREATED)
 def create_audit(
     body: AuditIn,
-    user: User = Depends(current_user),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Record an action that happened in the browser only (``incident.export``).
@@ -100,7 +100,7 @@ def create_audit(
     entry = AuditEntry(
         id=str(uuid.uuid4()),
         at=now_iso(),
-        actor=user.username,  # server-authoritative
+        actor=caller.actor,  # server-authoritative
         action=body.action,
         target=body.target,
         details=body.details or "",

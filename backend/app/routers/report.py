@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, Mail, Sample, SampleCapa
-from ..core.security import Principal, now_iso, principal
+from ..core.security import Principal, now_iso, reader_principal
 from ..iocs import Allowlist, incident_iocs
 from ..report import LANGS, SCOPES, SECTIONS, TLP_LEVELS, build_html, to_pdf
 from .settings import read_settings
@@ -105,7 +105,7 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 def incident_report(
     incident_id: str,
     body: ReportIn = Body(default_factory=ReportIn),
-    caller: Principal = Depends(principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ):
     """The incident report, as a PDF (default) or HTML.

@@ -43,7 +43,7 @@ def test_annotations_are_shared_audited_and_removed_with_the_sample(admin: TestC
     cleared = admin.put(f"{url}/{ENTRY}", headers=key, json={"name": "", "comment": " "})
     assert cleared.status_code == 200 and cleared.json() is None
     assert admin.get(url, headers=key).json()["annotations"] == []
-    actions = [e["action"] for e in admin.get("/api/audit", headers=key).json()["entries"]]
+    actions = [e["action"] for e in admin.get("/api/audit").json()["entries"]]
     assert actions.count("sample.annotate") == 2
 
     admin.put(f"{url}/{ENTRY}", headers=key, json={"comment": "keep"})

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core.db import get_db
 from ..core.models import AuditEntry, FlirtSignature
-from ..core.security import Principal, admin_principal, now_iso, principal
+from ..core.security import Principal, now_iso, rules_principal, rules_reader_principal
 from ..malware import flirt
 
 router = APIRouter(prefix="/flirt-signatures", tags=["flirt-signatures"])
@@ -67,7 +67,7 @@ def _row_or_404(db: OrmSession, signature_id: str) -> FlirtSignature:
 
 
 @router.get("")
-def list_signatures(_caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_signatures(_caller: Principal = Depends(rules_reader_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Uploaded signatures, oldest first (the order the worker applies them in)."""
     rows = db.scalars(select(FlirtSignature).order_by(FlirtSignature.created_at)).all()
     return {"signatures": [_to_dict(row) for row in rows]}
@@ -77,7 +77,7 @@ def list_signatures(_caller: Principal = Depends(principal), db: OrmSession = De
 async def upload_signature(
     name: str = Form(..., description="Display name, e.g. the library and version it covers."),
     file: UploadFile = File(..., description="A compiled FLIRT signature (.sig) or a pattern file (.pat)."),
-    caller: Principal = Depends(admin_principal),
+    caller: Principal = Depends(rules_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Store a signature file; it applies from the next disassembly of each sample."""
@@ -111,7 +111,7 @@ async def upload_signature(
 def update_signature(
     signature_id: str,
     body: FlirtSignatureUpdate,
-    caller: Principal = Depends(admin_principal),
+    caller: Principal = Depends(rules_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     row = _row_or_404(db, signature_id)
@@ -126,7 +126,7 @@ def update_signature(
 
 @router.delete("/{signature_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_signature(
-    signature_id: str, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    signature_id: str, caller: Principal = Depends(rules_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     row = _row_or_404(db, signature_id)
     flirt.delete_file(row)

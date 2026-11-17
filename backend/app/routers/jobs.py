@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core.db import get_db
 from ..core.models import Job
 from ..core.schemas import JobOut
-from ..core.security import Principal, principal
+from ..core.security import Principal, reader_principal
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.get("/{job_id}", response_model=JobOut)
 def get_job(
     job_id: str,
-    _caller: Principal = Depends(principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Return an async job's status (and result when done)."""
