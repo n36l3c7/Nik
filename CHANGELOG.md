@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Connectors.** A connector is one YAML file that says how to talk to a
+  product, without code: what a connection needs (an address, credentials)
+  and commands, each a request built from templates in the playbooks' own
+  expression language. Every command of an installed connector is a node of
+  the canvas. A file is checked when it is read, and refused with every
+  problem and the line it is on.
+- Credentials of five kinds (basic, bearer, a named header, OAuth2 client
+  credentials, a session opened with a login) and the sign-in of Zscaler's
+  API; lists read page by page (offset, page, cursor, link); commands made
+  of several requests that feed each other; commands that wait for the
+  other side by asking again later, without holding a worker.
+- A command never sends anywhere but to the host of its connection, goes
+  through the same data guard as the HTTP node, and records what it sent
+  with every secret replaced. In a dry run it sends nothing and gives the
+  sample its file declares.
+
 ## [4.1.0] - 2026-11-17
 
 Nik's own automation: playbooks drawn on a canvas and run by Nik, scripts in

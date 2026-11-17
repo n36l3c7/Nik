@@ -147,7 +147,8 @@ def reclaim(db, now: float) -> int:
                 continue
             shape = engine.graph_of(db, run)
             node = graph.nodes_of(shape).get(step.node_id) or {}
-            spec = actions.get(str((node.get("config") or {}).get("action") or "")) if step.kind == "action" else None
+            action_id = str((node.get("config") or {}).get("action") or "")
+            spec = actions.lookup(db, action_id) if step.kind == "action" else None
             if spec is not None and spec.changes_outside and not spec.idempotent:
                 engine._fail(
                     db, run, shape, step, "The worker stopped while this ran: outcome unknown", now, retry=False

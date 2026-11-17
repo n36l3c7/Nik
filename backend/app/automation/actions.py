@@ -51,6 +51,8 @@ class Call:
     approved_by: str | None = None
     now: float = 0.0
     held: str = "fail"  # what the node does with data the guard holds back: fail | drop
+    connection: str = ""  # the connection a connector command uses (its id or its name)
+    state: dict | None = None  # what the action left when it asked to be called again
 
 
 @dataclass
@@ -61,6 +63,9 @@ class Result:
     classes: dict[str, list] = field(default_factory=dict)  # of the output: {path: [class]}
     request: dict | None = None  # what was sent, or would have been (dry run): method, host, path, held…
     log: str | None = None
+    # "Call me again at this time": the step waits without holding a worker (a command that polls).
+    again_at: float | None = None
+    state: dict | None = None  # given back in ``Call.state`` at that time
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,7 @@ class Spec:
     timeout: int
     run: Callable[[Call], Result]
     outside: Callable[[dict], bool] | None = None  # when it depends on the arguments (a GET changes nothing)
+    extra: dict = field(default_factory=dict)  # more for the catalog: the connector a command belongs to
 
     def changes(self, args: dict) -> bool:
         """Whether this call changes something outside Nik."""
@@ -92,6 +98,7 @@ class Spec:
             "arguments": list(self.arguments),
             "outputs": list(self.outputs),
             "changesOutside": self.changes_outside,
+            **self.extra,
         }
 
 
@@ -132,6 +139,36 @@ def action(
 
 def get(action_id: str) -> Spec | None:
     return _REGISTRY.get(action_id)
+
+
+# Actions that are not written in code: the commands of the connectors that are installed.
+# A provider answers ``find(db, action_id)`` and ``every(db)``.
+_PROVIDERS: list[Any] = []
+
+
+def provide(provider: Any) -> None:
+    if provider not in _PROVIDERS:
+        _PROVIDERS.append(provider)
+
+
+def lookup(db: OrmSession, action_id: str) -> Spec | None:
+    """An action by its id: one written in code, or a command of an installed connector."""
+    found = _REGISTRY.get(action_id)
+    if found is not None:
+        return found
+    for provider in _PROVIDERS:
+        found = provider.find(db, action_id)
+        if found is not None:
+            return found
+    return None
+
+
+def every(db: OrmSession) -> list[Spec]:
+    """Every action there is: those written in code, then those of the connectors."""
+    found = list(all_specs())
+    for provider in _PROVIDERS:
+        found += provider.every(db)
+    return found
 
 
 def all_specs() -> list[Spec]:

@@ -244,7 +244,7 @@ def _new_step(db: OrmSession, run: Run, node: dict, index: int | None, now: floa
     tries = 1 + (int(on_error.get("times") or 0) if on_error.get("mode") == "retry" else 0)
     timeout = TIMEOUTS.get(node["kind"], 30)
     if node["kind"] == "action":
-        spec = actions.get(str(config.get("action") or ""))
+        spec = actions.lookup(db, str(config.get("action") or ""))
         timeout = spec.timeout if spec else timeout
     run.state["seq"] = int(run.state.get("seq", 0)) + 1
     step = RunStep(
@@ -644,7 +644,7 @@ def _perform(
         if "until" in config:
             poll = config.get("poll")
             if isinstance(poll, dict) and poll.get("action"):
-                spec = actions.get(str(poll["action"]))
+                spec = actions.lookup(db, str(poll["action"]))
                 if spec is None:
                     raise StepFailed("The action this wait asks does not exist", retry=False)
                 rendered = ex.render(poll.get("args") or {}, scope)
@@ -692,7 +692,7 @@ def _perform(
         return Outcome(wait={"kind": "each"}, input={"items": len(items)})
 
     if kind == "action":
-        spec = actions.get(str(config.get("action") or ""))
+        spec = actions.lookup(db, str(config.get("action") or ""))
         if spec is None:
             raise StepFailed("This action does not exist any more", retry=False)
         rendered = ex.render(config.get("args") or {}, scope)
@@ -712,6 +712,8 @@ def _perform(
             db=db, args=args, classes=rendered.classes, arg_classes=arg_classes, dry_run=bool(run.dry_run),
             run=run, playbook=playbook, step_id=step.id, approved_by=approved_by, now=now,
             held="drop" if config.get("held") == "drop" else "fail",
+            connection=str(config.get("connection") or ""),
+            state=waiting.get("state") if waiting.get("kind") == "again" else None,
         )  # fmt: skip
         try:
             result = spec.run(call)
@@ -719,6 +721,12 @@ def _perform(
             unknown = error.unknown_outcome and spec.changes(args) and not spec.idempotent
             message = f"{error.message} (outcome unknown: it is not tried again)" if unknown else error.message
             raise StepFailed(message, retry=error.retry and not unknown, request=error.request) from None
+        if result.again_at is not None:
+            # The action is not finished (it waits for the other side): the step is called again then.
+            return Outcome(
+                wait={"kind": "again", "state": result.state or {}, "approved_by": approved_by},
+                next_at=max(now + 1, float(result.again_at)), request=result.request, log=result.log, input=shown,
+            )  # fmt: skip
         return Outcome(
             port="out", output=result.output, classes=result.classes or _inherit(rendered.classes),
             request=result.request, log=result.log, input=shown,

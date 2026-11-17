@@ -88,7 +88,7 @@ class Library:
         self.db = db
 
     def action(self, action_id: str) -> dict | None:
-        spec = actions.get(action_id)
+        spec = actions.lookup(self.db, action_id)
         return spec.entry() if spec else None
 
     def script(self, name: str, version: int | None) -> dict | None:
@@ -133,7 +133,7 @@ def script_entries(db: OrmSession) -> list[dict[str, Any]]:
 
 def entries(db: OrmSession) -> list[dict[str, Any]]:
     """Every node of the library."""
-    return [*FLOW, *(spec.entry() for spec in actions.all_specs()), *script_entries(db)]
+    return [*FLOW, *(spec.entry() for spec in actions.every(db)), *script_entries(db)]
 
 
 def updates(db: OrmSession, shape: dict) -> list[dict[str, Any]]:

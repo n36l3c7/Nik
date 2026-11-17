@@ -305,7 +305,11 @@ def _send(
             if size > max_body:
                 raise EgressError(f"The answer is larger than {max_body // 1_000_000} MB", sent=True)
             chunks.append(chunk)
-        return answer.status, {key.lower(): value for key, value in answer.getheaders()}, b"".join(chunks)
+        headers: dict[str, str] = {}
+        for key, value in answer.getheaders():
+            # A header sent more than once (Set-Cookie) is kept whole, as HTTP joins them.
+            headers[key.lower()] = f"{headers[key.lower()]}, {value}" if key.lower() in headers else value
+        return answer.status, headers, b"".join(chunks)
     finally:
         connection.close()
 
