@@ -1,0 +1,46 @@
+{
+  "args": {
+    "space_id": "65537",
+    "title": "Weekly report",
+    "html": "<p>3 indicators changed.</p>"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/wiki/api/v2/pages",
+        "json": {
+          "spaceId": "65537",
+          "status": "current",
+          "title": "Weekly report",
+          "body": {
+            "representation": "storage",
+            "value": "<p>3 indicators changed.</p>"
+          }
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "98765",
+          "title": "Weekly report",
+          "spaceId": "65537",
+          "version": {
+            "number": 1
+          },
+          "_links": {
+            "webui": "/spaces/SOC/pages/98765/Weekly+report"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "98765",
+    "title": "Weekly report",
+    "url": "https://acme.atlassian.net/wiki/spaces/SOC/pages/98765/Weekly+report"
+  }
+}

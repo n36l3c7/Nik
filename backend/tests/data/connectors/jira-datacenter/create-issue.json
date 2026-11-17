@@ -1,0 +1,49 @@
+{
+  "args": {
+    "project": "SEC",
+    "summary": "Phishing: Invoice 2026",
+    "description": "7 recipients",
+    "labels": [
+      "phishing"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/2/issue",
+        "json": {
+          "fields": {
+            "project": {
+              "key": "SEC"
+            },
+            "issuetype": {
+              "name": "Task"
+            },
+            "summary": "Phishing: Invoice 2026",
+            "labels": [
+              "phishing"
+            ],
+            "description": "7 recipients"
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "id": "10000",
+          "key": "SEC-12",
+          "self": "https://jira.acme.example/rest/api/2/issue/10000"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "key": "SEC-12",
+    "id": "10000",
+    "url": "https://jira.acme.example/browse/SEC-12"
+  }
+}

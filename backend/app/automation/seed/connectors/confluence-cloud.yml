@@ -1,0 +1,99 @@
+# Confluence Cloud, through its REST API v2.
+#
+# Written against the Confluence Cloud REST API v2
+# (developer.atlassian.com/cloud/confluence/rest/v2). For a Confluence you
+# host yourself use "Confluence Data Center". Not run against a real site:
+# see "verified" below.
+#
+# The connection signs in with the e-mail address of an Atlassian account
+# and an API token of that account. The text of a page is Confluence's
+# "storage" format, which is HTML with a few tags of its own:
+# <p>plain paragraphs</p> are enough for a report.
+name: Confluence Cloud
+id: confluence-cloud
+version: 1
+description: Pages in Confluence Cloud, made and added to.
+api_version: "Confluence Cloud REST API v2 (/wiki/api/v2)"
+verified: false
+configuration:
+  - name: url
+    label: Site address
+    type: url
+    required: true
+    help: "https://your-site.atlassian.net"
+  - name: credentials
+    type: basic
+base_url: "{{ config.url }}/wiki/api/v2"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /spaces, query: { limit: 1 } }
+commands:
+  - name: find-space
+    description: The id of a space, from its key.
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the space: SOC" }
+    request: { method: GET, path: /spaces, query: { keys: "{{ args.key }}" } }
+    outputs:
+      id: "{{ response.results[0].id }}"
+      name: "{{ response.results[0].name }}"
+      homepage: "{{ response.results[0].homepageId }}"
+
+  - name: create-page
+    description: Make a page in a space, under another page if one is named.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: space_id, type: text, required: true, description: "The id of the space (find-space gives it)" }
+      - { name: title, type: text, required: true, description: The title of the page }
+      - { name: html, type: text, required: true, description: "The text, in storage format: <p>…</p>" }
+      - { name: parent_id, type: text, description: The id of the page it goes under (the space's home page when empty) }
+    request:
+      method: POST
+      path: /pages
+      json:
+        spaceId: "{{ args.space_id }}"
+        status: current
+        title: "{{ args.title }}"
+        parentId: "{{ args.parent_id }}"
+        body: { representation: storage, value: "{{ args.html }}" }
+    success: { status: [200, 201] }
+    error: { message: "{{ response.errors[0].title }}" }
+    outputs:
+      id: "{{ response.id }}"
+      title: "{{ response.title }}"
+      url: "{{ config.url }}/wiki{{ response._links.webui }}"
+    sample: { id: "123456", title: Report, url: "https://your-site.atlassian.net/wiki/spaces/SOC/pages/123456" }
+
+  - name: append-to-page
+    description: Add text at the end of a page.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: page_id, type: text, required: true, description: The id of the page }
+      - { name: html, type: text, required: true, description: "What to add, in storage format: <p>…</p>" }
+      - { name: message, type: text, default: Added by Nik, description: The note on the new version }
+    steps:
+      # A page is written whole, with the number of its next version: it is read first.
+      - name: page
+        request: { method: GET, path: "/pages/{{ args.page_id }}", query: { body-format: storage } }
+        error: { message: "{{ response.errors[0].title }}" }
+      - name: write
+        request:
+          method: PUT
+          path: "/pages/{{ args.page_id }}"
+          json:
+            id: "{{ args.page_id }}"
+            status: current
+            title: "{{ steps.page.response.title }}"
+            body:
+              representation: storage
+              value: "{{ steps.page.response.body.storage.value }}{{ args.html }}"
+            version:
+              number: "{{ steps.page.response.version.number | add(1) }}"
+              message: "{{ args.message }}"
+        error: { message: "{{ response.errors[0].title }}" }
+    outputs:
+      id: "{{ steps.write.response.id }}"
+      version: "{{ steps.write.response.version.number }}"
+    sample: { id: "123456", version: 2 }

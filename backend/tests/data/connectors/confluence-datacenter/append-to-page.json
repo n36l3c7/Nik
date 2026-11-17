@@ -1,0 +1,73 @@
+{
+  "args": {
+    "page_id": "98765",
+    "html": "<p>One more.</p>"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rest/api/content/98765",
+        "query": {
+          "expand": "body.storage,version"
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "98765",
+          "title": "Weekly report",
+          "version": {
+            "number": 4
+          },
+          "body": {
+            "storage": {
+              "value": "<p>3 indicators changed.</p>",
+              "representation": "storage"
+            }
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/rest/api/content/98765",
+        "json": {
+          "id": "98765",
+          "type": "page",
+          "title": "Weekly report",
+          "version": {
+            "number": 5
+          },
+          "body": {
+            "storage": {
+              "value": "<p>3 indicators changed.</p><p>One more.</p>",
+              "representation": "storage"
+            }
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "98765",
+          "title": "Weekly report",
+          "version": {
+            "number": 5
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "98765",
+    "version": 5
+  }
+}

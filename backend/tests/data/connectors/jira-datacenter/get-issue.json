@@ -1,0 +1,65 @@
+{
+  "args": {
+    "key": "SEC-12"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rest/api/2/issue/SEC-12",
+        "query": {
+          "fields": "summary,status,assignee,priority,labels,created,updated"
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "10000",
+          "key": "SEC-12",
+          "self": "https://jira.acme.example/rest/api/2/issue/10000",
+          "fields": {
+            "summary": "Phishing: Invoice 2026",
+            "status": {
+              "name": "To Do"
+            },
+            "assignee": {
+              "displayName": "Mario Rossi"
+            },
+            "labels": [
+              "phishing"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "key": "SEC-12",
+    "summary": "Phishing: Invoice 2026",
+    "status": "To Do",
+    "assignee": "Mario Rossi",
+    "labels": [
+      "phishing"
+    ],
+    "issue": {
+      "id": "10000",
+      "key": "SEC-12",
+      "self": "https://jira.acme.example/rest/api/2/issue/10000",
+      "fields": {
+        "summary": "Phishing: Invoice 2026",
+        "status": {
+          "name": "To Do"
+        },
+        "assignee": {
+          "displayName": "Mario Rossi"
+        },
+        "labels": [
+          "phishing"
+        ]
+      }
+    }
+  }
+}

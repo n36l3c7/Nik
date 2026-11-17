@@ -1,0 +1,37 @@
+{
+  "args": {
+    "key": "SOC"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/wiki/api/v2/spaces",
+        "query": {
+          "keys": "SOC"
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "id": "65537",
+              "key": "SOC",
+              "name": "Security operations",
+              "homepageId": "65600"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "65537",
+    "name": "Security operations",
+    "homepage": "65600"
+  }
+}

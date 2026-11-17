@@ -1,0 +1,56 @@
+{
+  "args": {
+    "space": "SOC",
+    "parent_id": "456",
+    "title": "INC-2026-0412",
+    "html": "<p>Timeline.</p>"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/content",
+        "json": {
+          "type": "page",
+          "title": "INC-2026-0412",
+          "space": {
+            "key": "SOC"
+          },
+          "ancestors": [
+            {
+              "id": "456"
+            }
+          ],
+          "body": {
+            "storage": {
+              "value": "<p>Timeline.</p>",
+              "representation": "storage"
+            }
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "98766",
+          "type": "page",
+          "title": "INC-2026-0412",
+          "version": {
+            "number": 1
+          },
+          "_links": {
+            "webui": "/display/SOC/INC-2026-0412"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "98766",
+    "title": "INC-2026-0412",
+    "url": "https://confluence.acme.example/display/SOC/INC-2026-0412"
+  }
+}

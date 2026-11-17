@@ -1,0 +1,9 @@
+{
+  "config": {
+    "url": "https://acme.service-now.com"
+  },
+  "secrets": {
+    "username": "nik.integration",
+    "password": "sn-Passw0rd-123"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "args": {
+    "repository": "blocklists",
+    "path": "lists/blocked.txt"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/2.0/repositories/acme/blocklists/src/main/lists/blocked.txt",
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "bad.example\nworse.example\n"
+      }
+    }
+  ],
+  "outputs": {
+    "content": "bad.example\nworse.example\n",
+    "lines": [
+      "bad.example",
+      "worse.example"
+    ]
+  }
+}

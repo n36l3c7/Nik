@@ -1,0 +1,113 @@
+# Confluence Data Center (and Server), through its REST API.
+#
+# Written against the REST API of Confluence Data Center 10.2
+# (developer.atlassian.com/server/confluence/rest). For a site at
+# atlassian.net use "Confluence Cloud". Not run against a real server: see
+# "verified" below.
+#
+# The connection signs in with a personal access token (your profile,
+# Personal Access Tokens; Confluence 7.9 or later). The text of a page is
+# Confluence's "storage" format: <p>plain paragraphs</p> are enough.
+name: Confluence Data Center
+id: confluence-datacenter
+version: 1
+description: Pages in Confluence Data Center, made and added to.
+api_version: "Confluence Data Center REST API (/rest/api), 10.2"
+verified: false
+configuration:
+  - name: url
+    label: Server address
+    type: url
+    required: true
+    help: "https://confluence.example.org (with the context path, if it has one)"
+  - name: credentials
+    type: bearer
+base_url: "{{ config.url }}"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /rest/api/user/current }
+commands:
+  - name: create-page
+    description: Make a page at the top of a space.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: space, type: text, required: true, description: "The key of the space: SOC" }
+      - { name: title, type: text, required: true, description: The title of the page }
+      - { name: html, type: text, required: true, description: "The text, in storage format: <p>…</p>" }
+    request:
+      method: POST
+      path: /rest/api/content
+      json:
+        type: page
+        title: "{{ args.title }}"
+        space: { key: "{{ args.space }}" }
+        body: { storage: { value: "{{ args.html }}", representation: storage } }
+    success: { status: [200, 201] }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      title: "{{ response.title }}"
+      url: "{{ config.url }}{{ response._links.webui }}"
+    sample: { id: "123456", title: Report, url: "https://confluence.example.org/display/SOC/Report" }
+
+  - name: create-child-page
+    description: Make a page under another page.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: space, type: text, required: true, description: "The key of the space: SOC" }
+      - { name: parent_id, type: text, required: true, description: The id of the page it goes under }
+      - { name: title, type: text, required: true, description: The title of the page }
+      - { name: html, type: text, required: true, description: "The text, in storage format: <p>…</p>" }
+    request:
+      method: POST
+      path: /rest/api/content
+      json:
+        type: page
+        title: "{{ args.title }}"
+        space: { key: "{{ args.space }}" }
+        ancestors: [{ id: "{{ args.parent_id }}" }]
+        body: { storage: { value: "{{ args.html }}", representation: storage } }
+    success: { status: [200, 201] }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      title: "{{ response.title }}"
+      url: "{{ config.url }}{{ response._links.webui }}"
+    sample: { id: "123457", title: Report, url: "https://confluence.example.org/display/SOC/Report" }
+
+  - name: append-to-page
+    description: Add text at the end of a page.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: page_id, type: text, required: true, description: The id of the page }
+      - { name: html, type: text, required: true, description: "What to add, in storage format: <p>…</p>" }
+    steps:
+      # A page is written whole, with the number of its next version: it is read first.
+      - name: page
+        request:
+          method: GET
+          path: "/rest/api/content/{{ args.page_id }}"
+          query: { expand: "body.storage,version" }
+        error: { message: "{{ response.message }}" }
+      - name: write
+        request:
+          method: PUT
+          path: "/rest/api/content/{{ args.page_id }}"
+          json:
+            id: "{{ args.page_id }}"
+            type: page
+            title: "{{ steps.page.response.title }}"
+            version: { number: "{{ steps.page.response.version.number | add(1) }}" }
+            body:
+              storage:
+                value: "{{ steps.page.response.body.storage.value }}{{ args.html }}"
+                representation: storage
+        error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ steps.write.response.id }}"
+      version: "{{ steps.write.response.version.number }}"
+    sample: { id: "123456", version: 2 }

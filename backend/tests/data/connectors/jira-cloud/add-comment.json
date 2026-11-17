@@ -1,0 +1,44 @@
+{
+  "args": {
+    "key": "SEC-12",
+    "text": "Blocked on the firewall by Nik"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/3/issue/SEC-12/comment",
+        "json": {
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Blocked on the firewall by Nik"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "id": "10100",
+          "self": "https://acme.atlassian.net/rest/api/3/issue/10000/comment/10100"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "10100"
+  }
+}

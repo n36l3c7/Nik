@@ -1,0 +1,43 @@
+{
+  "args": {
+    "short_description": "Phishing: Invoice 2026",
+    "description": "7 recipients",
+    "urgency": "2",
+    "assignment_group": "SOC"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/now/table/incident",
+        "json": {
+          "short_description": "Phishing: Invoice 2026",
+          "description": "7 recipients",
+          "urgency": "2",
+          "impact": "3",
+          "assignment_group": "SOC"
+        },
+        "headers": {
+          "Authorization": "Basic bmlrLmludGVncmF0aW9uOnNuLVBhc3N3MHJkLTEyMw==",
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "result": {
+            "number": "INC0010001",
+            "sys_id": "9d385017c611228701d22104cc95c371",
+            "short_description": "Phishing: Invoice 2026",
+            "state": "1"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "number": "INC0010001",
+    "sys_id": "9d385017c611228701d22104cc95c371",
+    "url": "https://acme.service-now.com/nav_to.do?uri=incident.do?sys_id=9d385017c611228701d22104cc95c371"
+  }
+}

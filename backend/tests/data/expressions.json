@@ -501,6 +501,32 @@
     "position": 13
    },
    "message": "}} is expected here"
+  },
+  {
+   "template": "{{ search.count | add }}",
+   "result": 4
+  },
+  {
+   "template": "{{ search.count | add(10) }}",
+   "result": 13
+  },
+  {
+   "template": "{{ search.count | add(-1) }}",
+   "result": 2
+  },
+  {
+   "template": "{{ trigger.mail.subject | add(1) }}",
+   "error": {
+    "position": 26
+   },
+   "message": "The filter \"add\" cannot be applied to this value"
+  },
+  {
+   "template": "{{ trigger.mail.flag | add(1) }}",
+   "error": {
+    "position": 23
+   },
+   "message": "The filter \"add\" cannot be applied to this value"
   }
  ]
 }

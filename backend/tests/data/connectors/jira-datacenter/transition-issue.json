@@ -1,0 +1,30 @@
+{
+  "args": {
+    "key": "SEC-12",
+    "transition_id": "31"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/2/issue/SEC-12/transitions",
+        "json": {
+          "transition": {
+            "id": "31"
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "key": "SEC-12",
+    "transition_id": "31"
+  }
+}

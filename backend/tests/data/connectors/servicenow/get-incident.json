@@ -1,0 +1,50 @@
+{
+  "args": {
+    "number": "INC0010001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/now/table/incident",
+        "query": {
+          "sysparm_query": "number=INC0010001",
+          "sysparm_limit": 1,
+          "sysparm_display_value": "true"
+        },
+        "headers": {
+          "Authorization": "Basic bmlrLmludGVncmF0aW9uOnNuLVBhc3N3MHJkLTEyMw=="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "result": [
+            {
+              "number": "INC0010001",
+              "sys_id": "9d385017c611228701d22104cc95c371",
+              "state": "New",
+              "short_description": "Phishing: Invoice 2026",
+              "assigned_to": ""
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "found": true,
+    "sys_id": "9d385017c611228701d22104cc95c371",
+    "number": "INC0010001",
+    "state": "New",
+    "short_description": "Phishing: Invoice 2026",
+    "assigned_to": "",
+    "incident": {
+      "number": "INC0010001",
+      "sys_id": "9d385017c611228701d22104cc95c371",
+      "state": "New",
+      "short_description": "Phishing: Invoice 2026",
+      "assigned_to": ""
+    }
+  }
+}

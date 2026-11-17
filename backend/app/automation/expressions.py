@@ -398,6 +398,14 @@ def _number(kind, value: Any) -> Any:
         raise ValueError("That is not a number") from None
 
 
+def _add(value: Any, amount: Any = 1) -> Any:
+    """A number plus a number: the next version of a page, the next page of a list."""
+    for item in (value, amount):
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise ValueError("That is not a number")
+    return value + amount
+
+
 def _sorted(value: Any) -> list:
     items = _listed(value)
     try:
@@ -432,6 +440,7 @@ FILTERS = {
     "map": _map,
     "split": lambda v, sep=",": [part.strip() for part in _text(v).split(_text(sep) or ",") if part.strip()],
     "replace": lambda v, old, new="": _text(v).replace(_text(old), _text(new)),
+    "add": _add,
     "int": lambda v: _number(int, v),
     "float": lambda v: _number(float, v),
     "bool": lambda v: bool(v) and _text(v).lower() not in ("false", "no", "0", "off"),

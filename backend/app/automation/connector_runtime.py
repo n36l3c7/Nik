@@ -151,6 +151,13 @@ def _pruned(value: Any) -> Any:
     return value
 
 
+def _named(fields: dict[str, Any], scope: ex.Scope) -> dict[str, Any]:
+    """The fields of a form with the names that are templates filled in."""
+    return {
+        (ex._text(ex.render_text(key, scope).data) if "{{" in str(key) else key): value for key, value in fields.items()
+    }
+
+
 def _multipart(fields: dict[str, Any]) -> tuple[bytes, str]:
     boundary = "nik" + pysecrets.token_hex(12)
     parts = []
@@ -236,8 +243,11 @@ class Runtime:
             "query": ex.render(spec.query, scope).data if spec.query is not None else None,
             "headers": ex.render(spec.headers or {}, scope).data,
             "json": _pruned(ex.render(spec.json_body, scope).data) if spec.json_body is not None else None,
-            "form": _pruned(ex.render(spec.form, scope).data) if spec.form is not None else None,
-            "multipart": _pruned(ex.render(spec.multipart, scope).data) if spec.multipart is not None else None,
+            # The name of a field may be a template too (Bitbucket names the field after the file).
+            "form": _pruned(ex.render(_named(spec.form, scope), scope).data) if spec.form is not None else None,
+            "multipart": _pruned(ex.render(_named(spec.multipart, scope), scope).data)
+            if spec.multipart is not None
+            else None,
             "body": ex.render_text(spec.body, scope).data if spec.body is not None else None,
         }
         headers = {

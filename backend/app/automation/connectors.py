@@ -414,6 +414,9 @@ def _check_templates(value: Any, allowed: frozenset, loc: tuple, lines: dict, pr
                 )
     elif isinstance(value, dict):
         for key, item in value.items():
+            if isinstance(key, str) and "{{" in key:
+                # The name of a form field may be a template: it is checked like a value.
+                _check_templates(key, allowed, (*loc, key), lines, problems)
             _check_templates(item, allowed, (*loc, key), lines, problems)
     elif isinstance(value, list):
         for index, item in enumerate(value):

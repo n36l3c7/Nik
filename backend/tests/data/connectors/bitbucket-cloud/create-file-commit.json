@@ -1,0 +1,32 @@
+{
+  "args": {
+    "repository": "blocklists",
+    "path": "lists/blocked.txt",
+    "content": "bad.example\nworse.example\nevil.example\n",
+    "message": "Block evil.example (INC-2026-0412)"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/2.0/repositories/acme/blocklists/src",
+        "form": {
+          "/lists/blocked.txt": "bad.example\nworse.example\nevil.example\n",
+          "message": "Block evil.example (INC-2026-0412)",
+          "branch": "main"
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 201,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "path": "lists/blocked.txt",
+    "branch": "main"
+  }
+}

@@ -1,0 +1,70 @@
+# Bitbucket Cloud, through its REST API 2.0.
+#
+# Written against the Bitbucket Cloud REST API
+# (developer.atlassian.com/cloud/bitbucket/rest). For a Bitbucket you host
+# yourself use "Bitbucket Data Center". Not run against a real workspace:
+# see "verified" below.
+#
+# What it is for: a file in a repository that other systems read, such as a
+# list of blocked addresses a firewall fetches. "get-file" reads it,
+# "create-file-commit" writes it again with a commit.
+#
+# The connection signs in with the e-mail address of an Atlassian account
+# and an API token with the scopes read:repository:bitbucket and
+# write:repository:bitbucket. (App passwords stopped working in June 2026.)
+name: Bitbucket Cloud
+id: bitbucket-cloud
+version: 1
+description: A file in a Bitbucket Cloud repository, read and written with a commit.
+api_version: "Bitbucket Cloud REST API 2.0"
+verified: false
+configuration:
+  - name: workspace
+    label: Workspace
+    type: text
+    required: true
+    help: "The workspace, as in the address: bitbucket.org/<workspace>/<repository>"
+  - name: credentials
+    type: basic
+base_url: "https://api.bitbucket.org/2.0"
+test:
+  request: { method: GET, path: /user }
+commands:
+  - name: get-file
+    description: The text of a file, at a commit or at the tip of a branch.
+    arguments:
+      - { name: repository, type: text, required: true, description: The repository (its slug) }
+      - { name: path, type: text, required: true, description: "The path of the file: lists/blocked.txt" }
+      - { name: ref, type: text, default: main, description: "A commit, or the name of a branch" }
+    request:
+      method: GET
+      path: "/repositories/{{ config.workspace }}/{{ args.repository }}/src/{{ args.ref }}/{{ args.path }}"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      content: "{{ response.text }}"
+      lines: "{{ response.text | split('\n') }}"
+
+  - name: create-file-commit
+    description: Write a file (new, or again) with a commit on a branch.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: repository, type: text, required: true, description: The repository (its slug) }
+      - { name: path, type: text, required: true, description: "The path of the file: lists/blocked.txt" }
+      - { name: content, type: text, required: true, description: The whole text of the file }
+      - { name: message, type: text, default: Updated by Nik, description: The commit message }
+      - { name: branch, type: text, default: main, description: The branch to commit on }
+    request:
+      method: POST
+      path: "/repositories/{{ config.workspace }}/{{ args.repository }}/src"
+      # The name of the field is the path of the file; a leading slash keeps it apart from "message" and "branch".
+      form:
+        "/{{ args.path }}": "{{ args.content }}"
+        message: "{{ args.message }}"
+        branch: "{{ args.branch }}"
+    success: { status: [200, 201] }
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      path: "{{ args.path }}"
+      branch: "{{ args.branch }}"
+    sample: { path: lists/blocked.txt, branch: main }

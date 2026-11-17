@@ -1,0 +1,9 @@
+{
+  "config": {
+    "workspace": "acme"
+  },
+  "secrets": {
+    "username": "nik@acme.example",
+    "password": "ATATT3xFfGF0-api-token-0123456789"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "args": {
+    "project": "SEC",
+    "repository": "blocklists",
+    "path": "lists/blocked.txt",
+    "ref": "refs/heads/master"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rest/api/latest/projects/SEC/repos/blocklists/raw/lists/blocked.txt",
+        "query": {
+          "at": "refs/heads/master"
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "bad.example\nworse.example\n"
+      }
+    }
+  ],
+  "outputs": {
+    "content": "bad.example\nworse.example\n",
+    "lines": [
+      "bad.example",
+      "worse.example"
+    ]
+  }
+}

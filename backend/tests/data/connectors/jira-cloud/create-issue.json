@@ -1,0 +1,63 @@
+{
+  "args": {
+    "project": "SEC",
+    "summary": "Phishing: Invoice 2026",
+    "description": "7 recipients",
+    "labels": [
+      "phishing"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/3/issue",
+        "json": {
+          "fields": {
+            "project": {
+              "key": "SEC"
+            },
+            "issuetype": {
+              "name": "Task"
+            },
+            "summary": "Phishing: Invoice 2026",
+            "labels": [
+              "phishing"
+            ],
+            "description": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "7 recipients"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "id": "10000",
+          "key": "SEC-12",
+          "self": "https://acme.atlassian.net/rest/api/3/issue/10000"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "key": "SEC-12",
+    "id": "10000",
+    "url": "https://acme.atlassian.net/browse/SEC-12"
+  }
+}

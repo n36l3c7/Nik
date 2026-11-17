@@ -1,0 +1,143 @@
+# Jira Data Center (and Server), through its REST API v2.
+#
+# Written against the REST API of Jira Software Data Center 11.3
+# (developer.atlassian.com/server/jira/platform/rest). For a site at
+# atlassian.net use "Jira Cloud": the two differ in how they sign in and in
+# how a text is written. Not run against a real server: see "verified" below.
+#
+# The connection signs in with a personal access token (your profile,
+# Personal Access Tokens; Jira 8.14 or later). Texts are plain text, with
+# Jira's wiki markup if you want it.
+name: Jira Data Center
+id: jira-datacenter
+version: 1
+description: Issues, comments and transitions in Jira Data Center.
+api_version: "Jira Data Center REST API v2 (/rest/api/2), 11.3"
+verified: false
+configuration:
+  - name: url
+    label: Server address
+    type: url
+    required: true
+    help: "https://jira.example.org (with the context path, if it has one: https://example.org/jira)"
+  - name: credentials
+    type: bearer
+base_url: "{{ config.url }}"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /rest/api/2/myself }
+commands:
+  - name: create-issue
+    description: Open an issue.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: project, type: text, required: true, description: "The key of the project: SEC" }
+      - { name: issue_type, type: text, default: Task, description: "The name of the issue type: Task, Bug, Incident" }
+      - { name: summary, type: text, required: true, description: The title }
+      - { name: description, type: text, description: What it is about }
+      - { name: labels, type: list, description: Labels to put on it }
+    request:
+      method: POST
+      path: /rest/api/2/issue
+      json:
+        fields:
+          project: { key: "{{ args.project }}" }
+          issuetype: { name: "{{ args.issue_type }}" }
+          summary: "{{ args.summary }}"
+          labels: "{{ args.labels }}"
+          description: "{{ args.description }}"
+    success: { status: [200, 201] }
+    error: { message: "{{ response.errorMessages | join('; ') }} {{ response.errors | json }}" }
+    outputs:
+      key: "{{ response.key }}"
+      id: "{{ response.id }}"
+      url: "{{ config.url }}/browse/{{ response.key }}"
+    sample: { key: SEC-1, id: "10000", url: "https://jira.example.org/browse/SEC-1" }
+
+  - name: get-issue
+    description: An issue, by its key.
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+    request:
+      method: GET
+      path: "/rest/api/2/issue/{{ args.key }}"
+      query: { fields: "summary,status,assignee,priority,labels,created,updated" }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      key: "{{ response.key }}"
+      summary: "{{ response.fields.summary }}"
+      status: "{{ response.fields.status.name }}"
+      assignee: "{{ response.fields.assignee.displayName }}"
+      labels: "{{ response.fields.labels }}"
+      issue: "{{ response }}"
+
+  - name: update-issue
+    description: Change fields of an issue.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+      - name: fields
+        type: object
+        required: true
+        description: "The fields to change, as Jira names them: {\"summary\": \"New title\", \"labels\": [\"phishing\"]}"
+    request:
+      method: PUT
+      path: "/rest/api/2/issue/{{ args.key }}"
+      json: { fields: "{{ args.fields }}" }
+    success: { status: [200, 204] }
+    error: { message: "{{ response.errorMessages | join('; ') }} {{ response.errors | json }}" }
+    outputs:
+      key: "{{ args.key }}"
+    sample: { key: SEC-1 }
+
+  - name: add-comment
+    description: Write a comment on an issue.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+      - { name: text, type: text, required: true, description: The comment }
+    request:
+      method: POST
+      path: "/rest/api/2/issue/{{ args.key }}/comment"
+      json:
+        body: "{{ args.text }}"
+    success: { status: [200, 201] }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      id: "{{ response.id }}"
+    sample: { id: "10001" }
+
+  - name: list-transitions
+    description: "The transitions an issue offers now, each with its id and its name."
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+    request: { method: GET, path: "/rest/api/2/issue/{{ args.key }}/transitions" }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      transitions: "{{ response.transitions }}"
+      names: "{{ response.transitions | pluck('name') }}"
+
+  - name: transition-issue
+    # The id is the one "list-transitions" gives; in a playbook:
+    #   {{ transitions.transitions | where('name', 'eq', 'Done') | first | get('id') }}
+    description: "Move an issue along its workflow, by the id of the transition (list-transitions gives the ids)."
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+      - { name: transition_id, type: text, required: true, description: The id of the transition }
+    request:
+      method: POST
+      path: "/rest/api/2/issue/{{ args.key }}/transitions"
+      json:
+        transition: { id: "{{ args.transition_id }}" }
+    success: { status: [200, 204] }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      key: "{{ args.key }}"
+      transition_id: "{{ args.transition_id }}"
+    sample: { key: SEC-1, transition_id: "31" }
