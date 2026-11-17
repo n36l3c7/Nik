@@ -1126,6 +1126,50 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/tasks</code> · <code>GET /api/tasks/count</code> ·
+                <code>GET /api/tasks/{id}</code>
+              </td>
+              <td>
+                The open tasks and questions the caller may complete, the most pressing first (<code>which=all</code>
+                for everyone's, <code>incident</code> for one incident, <code>status=open|closed|all</code>):
+                <code
+                  >{tasks: [{id, kind, title, instructions, status, incidentId, for, assignee, choices, inputs, fields,
+                  answer, dueAt, mine}]}</code
+                >. <code>kind</code> is <code>task</code> or <code>ask</code>; <code>status</code> is <code>open</code>,
+                <code>overdue</code>, <code>done</code> or <code>skipped</code>; <code>mine</code> says whether the
+                caller may complete it · <code>{mine, overdue}</code>, for a count · one task, with
+                <code>entries</code>: what the War Room of its incident says of it.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/incidents/{id}/tasks</code> ·
+                <code>PUT /api/tasks/{id}/assignee</code>
+              </td>
+              <td>
+                Add a task to an incident by hand:
+                <code>{title, instructions, assignee: {user | role | owner}, due, fields}</code>; with nobody named it
+                is for the owner of the incident. <code>due</code> is <code>"30m"</code>, <code>"2h"</code>,
+                <code>"3d"</code>, seconds or a date · give an open task to someone else (<strong>write</strong>).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/tasks/{id}/complete</code> ·
+                <code>POST /api/tasks/{id}/skip</code>
+              </td>
+              <td>
+                Complete a task or answer a question:
+                <code>{choice, fields: {name: value}, values: {name: value}, comment}</code>. The fields are written to
+                the incident through the registry; the run that waits goes on by the port of the answer.
+                <code>403</code> when the task is for someone else (it is for the user it names, whoever holds its role,
+                the owner of its incident, and an admin), <code>409</code> when it is not open any more,
+                <code>400</code> with what is missing · give it up, <code>{why}</code>: the run goes on as if the task
+                were done, or the question unanswered.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET</code> · <code>PUT /api/automation/state</code></td>
               <td>
                 Whether automation is on and its worker alive · the general switch,

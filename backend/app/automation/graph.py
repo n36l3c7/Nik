@@ -34,7 +34,7 @@ MAX_EDGES = 600
 ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 INPUT_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
-KINDS = ("trigger", "condition", "for_each", "wait", "approval", "action", "script", "playbook", "end")
+KINDS = ("trigger", "condition", "for_each", "wait", "approval", "task", "ask", "action", "script", "playbook", "end")
 
 # The ports a node leaves by. ``error`` is drawn only when a failure is handled.
 PORTS = {
@@ -43,6 +43,10 @@ PORTS = {
     "for_each": ("each", "done", "error"),
     "wait": ("out",),
     "approval": ("approved", "refused"),
+    # A task that passes its due time is also left by "overdue", and stays to do.
+    "task": ("done", "overdue"),
+    # A question with choices has a port for each of them instead of "answered" (ports_of).
+    "ask": ("answered", "timeout"),
     "action": ("out", "error"),
     "script": ("out", "error"),
     "playbook": ("out", "error"),
@@ -71,6 +75,12 @@ ALWAYS = ("trigger", "run", "inputs", "context", "incident")
 IN_LOOP = ("item", "index")
 
 WAIT_MIN, WAIT_MAX = 60, 2_592_000
+DUE_MAX = 7_776_000  # 90 days
+REMINDER_MIN = 300
+CHOICES_MAX, FORM_FIELDS_MAX, FORM_INPUTS_MAX = 6, 20, 10
+INPUT_TYPES = ("text", "number", "bool")
+DURATION_RE = re.compile(r"^\s*(\d{1,5})\s*(m|h|d)\s*$")
+PHASE_MAX = 40
 EACH_MAX = 500
 RETRY_MAX = 100
 CALL_DEPTH = 5
@@ -101,6 +111,39 @@ class Library(Protocol):
 # --------------------------------------------------------------------------- #
 # Shape                                                                       #
 # --------------------------------------------------------------------------- #
+def slug(text: Any) -> str:
+    """The port an answer leaves by: ``Yes, block it`` gives ``yes_block_it``."""
+    out = re.sub(r"[^a-z0-9]+", "_", str(text).strip().lower()).strip("_")
+    return out[:24].strip("_") or "answer"
+
+
+def answer_ports(config: dict) -> tuple[str, ...]:
+    """The ports of the answers to a question: one for each choice, or ``answered``."""
+    choices = config.get("choices") if isinstance(config, dict) else None
+    if isinstance(choices, list) and choices:
+        return tuple(slug(choice) for choice in choices)
+    return ("answered",)
+
+
+def ports_of(node: dict) -> tuple[str, ...]:
+    """The ports a node leaves by. Those of a question depend on its choices."""
+    if node.get("kind") == "ask":
+        return (*answer_ports(node.get("config") or {}), "timeout")
+    return PORTS.get(node.get("kind", ""), ())
+
+
+def seconds_of(value: Any) -> int | None:
+    """A length of time: a number of seconds, or ``30m``, ``2h``, ``3d``. None when it is neither."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    found = DURATION_RE.match(str(value))
+    if found is None:
+        return int(str(value).strip()) if str(value).strip().isdigit() else None
+    return int(found.group(1)) * {"m": 60, "h": 3600, "d": 86400}[found.group(2)]
+
+
 def nodes_of(graph: dict) -> dict[str, dict]:
     return {node["id"]: node for node in graph.get("nodes") or [] if isinstance(node, dict) and "id" in node}
 
@@ -257,6 +300,81 @@ def _check_conditions(config: dict, node_id: str, field: str, problems: list[Pro
                 problems.append(Problem("A pattern of 1 to 500 characters is needed", node_id, where))
 
 
+def _check_person(node: dict, config: dict, library: Library, problems: list[Problem]) -> None:
+    """A task or a question: what is asked, of whom, by when, and what is filled."""
+    from ..core.permissions import ROLES
+
+    node_id, kind = node["id"], node["kind"]
+    what = "title" if kind == "task" else "question"
+    if not str(config.get(what) or "").strip():
+        problems.append(
+            Problem("What to do is needed" if kind == "task" else "The question to ask is needed", node_id, what)
+        )
+    who = config.get("assignee")
+    if who is not None:
+        given = [key for key in ("user", "role", "owner") if isinstance(who, dict) and who.get(key)]
+        if not isinstance(who, dict) or len(given) > 1:
+            problems.append(
+                Problem("It is for one user, for one role, or for the owner of the incident", node_id, "assignee")
+            )
+        elif who.get("role") and who["role"] not in ROLES:
+            problems.append(Problem("This role does not exist: " + ", ".join(ROLES), node_id, "assignee.role"))
+    due = config.get("due")
+    if due not in (None, "") and not (isinstance(due, str) and "{{" in due):
+        seconds = seconds_of(due)
+        if seconds is None or not WAIT_MIN <= seconds <= DUE_MAX:
+            problems.append(Problem("Due in 1 minute to 90 days: seconds, or 30m, 2h, 3d", node_id, "due"))
+    reminder = config.get("reminder_seconds")
+    if reminder is not None and (
+        not isinstance(reminder, int) or isinstance(reminder, bool) or not REMINDER_MIN <= reminder <= WAIT_MAX
+    ):
+        problems.append(Problem("A reminder every 5 minutes to 30 days", node_id, "reminder_seconds"))
+    names = config.get("fields")
+    if names is not None:
+        if not isinstance(names, list) or len(names) > FORM_FIELDS_MAX or not all(isinstance(n, str) for n in names):
+            problems.append(Problem(f"At most {FORM_FIELDS_MAX} fields to fill, by name", node_id, "fields"))
+        else:
+            fillable = getattr(library, "fillable_fields", lambda: None)()
+            for name in names:
+                if fillable is not None and name not in fillable:
+                    problems.append(
+                        Problem(f'"{name}" is not a field of incidents that can be filled', node_id, "fields")
+                    )
+    if kind == "task":
+        return
+    _check_wait(config.get("timeout_seconds"), node_id, "timeout_seconds", problems, optional=True)
+    choices = config.get("choices")
+    if choices is not None:
+        labels = [str(choice).strip() for choice in choices] if isinstance(choices, list) else None
+        ports = [slug(label) for label in labels or []]
+        if labels is None or len(labels) > CHOICES_MAX or not all(labels):
+            problems.append(
+                Problem(f"A question has {CHOICES_MAX} choices at most, none of them empty", node_id, "choices")
+            )
+        elif len(set(ports)) != len(ports) or "timeout" in ports:
+            problems.append(
+                Problem('The choices are different from one another, and none is "timeout"', node_id, "choices")
+            )
+    inputs = config.get("inputs")
+    if inputs is not None:
+        if not isinstance(inputs, list) or len(inputs) > FORM_INPUTS_MAX:
+            problems.append(Problem(f"At most {FORM_INPUTS_MAX} things to ask for", node_id, "inputs"))
+            return
+        seen: set[str] = set()
+        for index, item in enumerate(inputs):
+            where = f"inputs.{index}"
+            if not isinstance(item, dict) or not INPUT_RE.match(str(item.get("name") or "")):
+                problems.append(
+                    Problem("What is asked for needs a name: lower-case letters, digits, _", node_id, where)
+                )
+            elif item["name"] in seen:
+                problems.append(Problem(f'"{item["name"]}" is asked for twice', node_id, where))
+            elif item.get("type", "text") not in INPUT_TYPES:
+                problems.append(Problem("What is asked for is text, a number or yes/no", node_id, where))
+            else:
+                seen.add(item["name"])
+
+
 def _check_node(node: dict, library: Library, problems: list[Problem]) -> None:
     node_id, kind = node["id"], node["kind"]
     config = node.get("config") or {}
@@ -299,6 +417,8 @@ def _check_node(node: dict, library: Library, problems: list[Problem]) -> None:
         _check_wait(config.get("wait_seconds"), node_id, "wait_seconds", problems, optional=True)
         if config.get("on_expire", "skip") not in ("skip", "stop", "refuse"):
             problems.append(Problem("When the wait ends: skip, stop or refuse", node_id, "on_expire"))
+    elif kind in ("task", "ask"):
+        _check_person(node, config, library, problems)
     elif kind == "action":
         entry = library.action(str(config.get("action") or ""))
         if entry is None:
@@ -392,6 +512,9 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
             )
         if len(str(node.get("name") or "")) > 80:
             problems.append(Problem("A node's name has at most 80 characters", node["id"], "name"))
+        phase = (node.get("config") or {}).get("phase") if isinstance(node.get("config"), dict) else None
+        if phase is not None and (not isinstance(phase, str) or len(phase) > PHASE_MAX):
+            problems.append(Problem(f"A phase is a name of {PHASE_MAX} characters at most", node["id"], "phase"))
 
     nodes = nodes_of(graph)
     triggers = [node_id for node_id, node in nodes.items() if node["kind"] == "trigger"]
@@ -405,7 +528,9 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
             return [*problems, Problem("An edge joins two nodes of the playbook")]
         source = nodes[edge["from"]]
         port = edge.get("port") or DEFAULT_PORT[source["kind"]]
-        if port not in PORTS[source["kind"]]:
+        if source["kind"] == "ask" and not edge.get("port"):
+            return [*problems, Problem("An edge from a question says which answer it follows", source["id"])]
+        if port not in ports_of(source):
             return [*problems, Problem(f'A {source["kind"].replace("_", " ")} node has no "{port}" port', source["id"])]
         if edge["to"] == trigger:
             problems.append(Problem("Nothing leads to the trigger", trigger))
@@ -437,6 +562,10 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
             if nodes[node_id]["kind"] == "approval":
                 problems.append(
                     Problem('An approval inside a "for each" would ask once per item: ask before the loop', node_id)
+                )
+            if nodes[node_id]["kind"] in ("task", "ask"):
+                problems.append(
+                    Problem('A task or a question inside a "for each" is not supported: ask before the loop', node_id)
                 )
             for source, _port in incoming[node_id]:
                 if source != loop and source not in body:

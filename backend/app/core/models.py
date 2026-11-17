@@ -903,7 +903,8 @@ class RunStep(Base):
     input: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     output: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     request: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
-    port: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)  # the port it left by
+    # The port the step left by: a choice of a question can be 24 characters long.
+    port: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -1097,6 +1098,62 @@ class WarRoomEntry(Base):
     tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     parent_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
+
+class Task(Base):
+    """Something a person does for an incident: a task, or a question to answer.
+
+    Made by a ``task`` or an ``ask`` node of a playbook (the step waits for it:
+    ``run_id``, ``step_id``), or by hand on an incident. It is for one user,
+    for whoever holds a role, or for the owner of the incident at the moment
+    it is done. ``form`` is what is filled on completion: the choices of a
+    question, the fields to give.
+    """
+
+    __tablename__ = "tasks"
+    __table_args__ = (Index("ix_tasks_incident", "incident_id"), Index("ix_tasks_status_due", "status", "due_at"))
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False, default="task")  # task | ask
+    title: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    instructions: Mapped[str] = mapped_column(String, nullable=False, default="")
+    assignee_user: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    assignee_role: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    # The owner of the incident, whoever that is when the task is done.
+    assignee_owner: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    status: Mapped[str] = mapped_column(String(8), nullable=False, default="open")  # open | done | skipped | overdue
+    form: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    answer: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    due_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    reminder_s: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    next_reminder_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # An ask node gives up at this time and leaves by its "timeout" port.
+    timeout_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    completed_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    completed_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class Notification(Base):
+    """Something an account is told inside Nik: a task given, an approval asked, an SLA breached."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notifications_user", "username", "read_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    username: Mapped[str] = mapped_column(String(200), nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    text: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    link: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    at: Mapped[str] = mapped_column(String, nullable=False)
+    read_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+# Created by migration 0030_tasks_sla where missing, in this order.
+TASK_TABLES = ("tasks", "notifications")
 
 # Created by migration 0029_context_war_room where missing, in this order.
 CONTEXT_TABLES = ("incident_context", "incident_context_meta", "war_room_entries")

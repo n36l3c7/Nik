@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tasks and questions in playbooks.** A *Task* node gives a person
+  something to do and the run waits until it is done; a *Question* node asks
+  a person to choose or to fill a small form and the run goes on by the
+  answer, with a port for each choice. Either is for a user, for whoever
+  holds a role, or for the owner of the incident at the moment it is done;
+  either can ask for fields of the incident, checked and written through the
+  registry. A task past its due time is overdue and stays to do: the run
+  also leaves by *when overdue*. Reminders at an interval; a question nobody
+  answered in its time leaves by *no answer*.
+- Tasks added to an incident by hand (`POST /api/incidents/{id}/tasks`, and
+  `/task Call the user @anna due=2h` in the War Room), given to someone else,
+  completed and skipped through `/api/tasks`. The War Room tells each step.
+
+### Changed
+
+- A run that waits for a task or a question is *waiting*, like one that
+  waits for an approval; that time does not count against its longest run.
+
 ## [4.3.0] - 2026-11-17
 
 Incidents your way: a registry of fields, types of incident with a page

@@ -14,12 +14,13 @@ import {
 import '@xyflow/react/dist/style.css'
 import { asksApproval, entryOf, headingOf, summaryOf } from '../../domain/automation/catalog.js'
 import {
-  PORTS,
-  PORT_LABELS,
+  portLabel,
+  portsOf,
   connect,
   connectProblem,
   disconnect,
   moveNodes,
+  nodeOf,
   portOf,
   removeNodes,
 } from '../../domain/automation/graph.js'
@@ -53,6 +54,8 @@ const HEADS = {
   for_each: 'bg-med-soft text-med',
   wait: 'bg-raised text-fg-muted',
   approval: 'bg-high-soft text-high',
+  task: 'bg-accent-soft text-accent-fg',
+  ask: 'bg-high-soft text-high',
   action: 'bg-info-soft/60 text-info',
   script: 'bg-violet-soft text-violet',
   playbook: 'bg-info-soft/60 text-info',
@@ -72,17 +75,18 @@ const STATUS_BORDERS = {
 const HANDLE = '!h-2.5 !w-2.5 !rounded-none !border !border-line !bg-raised'
 
 /** Where the handles of a node sit along its lower edge: `error` leaves from the right side. */
-function handlePlaces(kind) {
-  const below = PORTS[kind].filter((port) => port !== 'error')
+function handlePlaces(node) {
+  const ports = portsOf(node)
+  const below = ports.filter((port) => port !== 'error')
   return {
     below: below.map((port, index) => ({ port, left: `${((index + 1) / (below.length + 1)) * 100}%` })),
-    side: PORTS[kind].includes('error'),
+    side: ports.includes('error'),
   }
 }
 
 const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
   const { node, entry, problems, status, approval, readOnly } = data
-  const places = handlePlaces(node.kind)
+  const places = handlePlaces(node)
   const border = status ? (STATUS_BORDERS[status] ?? 'border-line') : problems ? 'border-high-line' : 'border-line'
   return (
     <div
@@ -130,7 +134,7 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
           style={{ left }}
           className={HANDLE}
           isConnectable={!readOnly}
-          title={PORT_LABELS[port] || 'then'}
+          title={portLabel(node, port) || 'then'}
         />
       ))}
       {places.side && (
@@ -221,6 +225,7 @@ function Flow({
       graph.edges.map((edge) => {
         const port = portOf(edge, graph)
         const id = edgeId(edge, graph)
+        const label = portLabel(nodeOf(graph, edge.from), port)
         const failing = port === 'error'
         const stroke = failing ? '#f85149' : '#6e7681'
         return {
@@ -230,14 +235,14 @@ function Flow({
           sourceHandle: port,
           type: 'smoothstep',
           selected: chosen.edges.has(id),
-          label: PORT_LABELS[port] || undefined,
+          label: label || undefined,
           labelStyle: { fill: LABEL_COLORS[port] ?? '#9da7b3', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
           labelBgStyle: { fill: '#0d1117' },
           labelBgPadding: [3, 1],
           labelBgBorderRadius: 0,
           style: { stroke, strokeWidth: 1.5, strokeDasharray: failing ? '4 3' : undefined },
           markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 14, height: 14 },
-          ariaLabel: `From ${edge.from} to ${edge.to}${PORT_LABELS[port] ? `, ${PORT_LABELS[port]}` : ''}`,
+          ariaLabel: `From ${edge.from} to ${edge.to}${label ? `, ${label}` : ''}`,
         }
       }),
     [graph, chosen.edges],

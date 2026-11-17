@@ -42,7 +42,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep
+from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep, Task
 from ..core.permissions import SYSTEM_USER
 from . import actions, graph
 from . import expressions as ex
@@ -309,7 +309,10 @@ def _resolve(
             continue
         if body is not None and target not in body:
             continue
-        edges[f"{node_id}|{found}|{target}"] = "t" if found == port else "d"
+        key = f"{node_id}|{found}|{target}"
+        if edges.get(key) == "t":
+            continue  # followed already: the "overdue" of a task that was still to do
+        edges[key] = "t" if found == port else "d"
         _consider(db, run, shape, loop, index, target, now)
 
 
@@ -367,6 +370,13 @@ def _finish(db: OrmSession, run: Run, status: str, error: str | None, now: float
     for approval in db.scalars(select(Approval).where(Approval.run_id == run.id, Approval.status == "waiting")):
         approval.status = "expired"
         approval.answered_at = iso(now)
+    # What a person was still to do for this run is not asked any more.
+    for task in db.scalars(select(Task).where(Task.run_id == run.id, Task.status.in_(("open", "overdue")))):
+        task.status = "skipped"
+        task.completed_at = iso(now)
+        task.completed_by = "nik"
+        task.next_reminder_at = None
+        task.answer = {"by": "nik", "at": iso(now), "skipped": f"The run ended ({status})"}
     # Child runs stop with their parent.
     for child in db.scalars(select(Run).where(Run.parent_run_id == run.id, Run.status.notin_(FINISHED))):
         _finish(db, child, "stopped", "The playbook that started it ended", now)
@@ -650,6 +660,61 @@ def _ask(
     return Outcome(wait={"kind": "approval", "id": approval.id, "inline": step.kind != "approval"})
 
 
+def _person(db: OrmSession, run: Run, node: dict, step: RunStep, scope: ex.Scope, now: float) -> Outcome:
+    """A task or a question: make it, and wait for the person it is for."""
+    from .. import tasks
+
+    kind = node["kind"]
+    config = node.get("config") or {}
+
+    def text(key: str) -> str:
+        return ex._text(ex.render(config.get(key) or "", scope).data).strip()
+
+    title = text("title" if kind == "task" else "question") or str(node.get("name") or node["id"])
+    if run.dry_run:
+        # A dry run shows the path of a task done, or of the first answer, without asking anyone.
+        port = "done" if kind == "task" else graph.answer_ports(config)[0]
+        output = {"by": "dry run", "at": iso(now), "comment": ""}
+        if kind == "ask" and config.get("choices"):
+            output["choice"] = str(config["choices"][0])
+        # What would be filled is there, empty, for the steps after to read.
+        if config.get("fields"):
+            output["fields"] = {str(name): None for name in config["fields"]}
+        if kind == "ask" and config.get("inputs"):
+            output["values"] = {str(item.get("name")): None for item in config["inputs"] if isinstance(item, dict)}
+        return Outcome(port=port, output=output, input={"title": title})
+    who = config.get("assignee") if isinstance(config.get("assignee"), dict) else {}
+    user = ex._text(ex.render(who.get("user") or "", scope).data).strip().lstrip("@")
+    role = str(who.get("role") or "")
+    try:
+        due = config.get("due")
+        due_at = tasks.due_at(ex.render(due, scope).data, now) if due not in (None, "") else None
+        task = tasks.create(
+            db,
+            kind=kind,
+            title=title,
+            instructions=text("instructions"),
+            incident_id=run.incident_id,
+            assignee_user=user,
+            assignee_role=role,
+            # A task with nobody named is for whoever has the incident; a question, for anyone.
+            assignee_owner=bool(who.get("owner")) or (kind == "task" and not user and not role),
+            form=tasks.clean_form(db, config.get("choices"), config.get("fields"), config.get("inputs")),
+            due_at=due_at,
+            reminder_s=config.get("reminder_seconds"),
+            timeout_at=(now + int(config["timeout_seconds"])) if config.get("timeout_seconds") else None,
+            run=run,
+            step=step,
+            actor="nik-automation",
+            now=now,
+        )
+    except tasks.TaskError as error:
+        raise StepFailed(error.message, retry=False) from None
+    return Outcome(
+        wait={"kind": "task", "id": task.id, "since": now}, input={"title": title, "for": tasks.for_whom(task)}
+    )
+
+
 def _perform(
     db: OrmSession, run: Run, playbook: Playbook, shape: dict, node: dict, step: RunStep, now: float
 ) -> Outcome:
@@ -697,6 +762,9 @@ def _perform(
         detail = ex.render(config.get("detail") or {}, scope).data
         detail = detail if isinstance(detail, dict) else {"detail": detail}
         return _ask(db, run, step, question, detail, config.get("wait_seconds"), config.get("on_expire", "skip"), now)
+
+    if kind in ("task", "ask"):
+        return _person(db, run, node, step, scope, now)
 
     if kind == "for_each":
         rendered = ex.render(config.get("items"), scope)
@@ -939,7 +1007,7 @@ def _apply(db: OrmSession, run: Run, shape: dict, step: RunStep, outcome: Outcom
         step.claimed_by = None
         if outcome.wait.get("kind") == "each":
             _start_items(db, run, shape, step.node_id, now)
-        if run.status == "running" and outcome.wait.get("kind") == "approval":
+        if run.status == "running" and outcome.wait.get("kind") in ("approval", "task"):
             run.status = "waiting"
         _touch(run)
         return
@@ -1004,20 +1072,76 @@ def answer(db: OrmSession, approval: Approval, verdict: str, by: str, comment: s
             ):
                 # A person saying no is not a malfunction: the run stops, it has not failed.
                 run.status = "stopped"
-        if run.status == "waiting" and not _waiting_approvals(db, run):
+        if run.status == "waiting" and not _waiting_people(db, run):
             run.status = "running"
         _touch(run)
         return True
 
 
-def _waiting_approvals(db: OrmSession, run: Run) -> int:
+def _waiting_people(db: OrmSession, run: Run) -> int:
+    """How many answers of people the run waits for: approvals, tasks, questions."""
     db.flush()
-    return (
-        db.scalar(
-            select(func.count()).select_from(Approval).where(Approval.run_id == run.id, Approval.status == "waiting")
-        )
-        or 0
+    approvals = db.scalar(
+        select(func.count()).select_from(Approval).where(Approval.run_id == run.id, Approval.status == "waiting")
     )
+    tasks = db.scalar(
+        select(func.count()).select_from(Task).where(Task.run_id == run.id, Task.status.in_(("open", "overdue")))
+    )
+    return (approvals or 0) + (tasks or 0)
+
+
+def resume(db: OrmSession, step_id: str, port: str, output: Any, now: float) -> bool:
+    """A person did what a step waited for: the run goes on by ``port`` (the caller commits).
+    False when the step waits no more."""
+    step = db.get(RunStep, step_id)
+    if step is None:
+        return False
+    with serial(db):
+        run = locked_run(db, step.run_id)
+        if run is None or run.status in FINISHED or step.status != "waiting":
+            return False
+        # Time spent waiting for a person does not count against the longest run.
+        waited = max(0.0, now - float((step.waiting or {}).get("since") or now))
+        run.waited_seconds = (run.waited_seconds or 0) + waited
+        run.deadline = (run.deadline or now) + waited
+        _complete(db, run, graph_of(db, run), step, port, output, now)
+        if run.status == "waiting" and not _waiting_people(db, run):
+            run.status = "running"
+        _touch(run)
+        return True
+
+
+def follow(db: OrmSession, step_id: str, port: str, now: float) -> bool:
+    """Leave a waiting step by one more port while it goes on waiting: the
+    ``overdue`` of a task that is still to do (the caller commits). False when
+    nothing is drawn from that port, or it was followed already."""
+    step = db.get(RunStep, step_id)
+    if step is None:
+        return False
+    with serial(db):
+        run = locked_run(db, step.run_id)
+        waiting = dict(step.waiting or {})
+        if run is None or run.status in FINISHED or step.status != "waiting" or port in waiting.get("followed", []):
+            return False
+        shape = graph_of(db, run)
+        nodes = graph.nodes_of(shape)
+        targets = [
+            target
+            for found, target in graph.edges_from(shape).get(step.node_id, [])
+            if found == port and target in nodes
+        ]
+        waiting["followed"] = [*waiting.get("followed", []), port]
+        step.waiting = waiting
+        if not targets:
+            return False
+        # What comes after reads the node before its answer is there.
+        _outputs(run, None, None).setdefault(step.node_id, {port: True, "task": waiting.get("id")})
+        edges = _edges(run, None, None)
+        for target in targets:
+            edges[f"{step.node_id}|{port}|{target}"] = "t"
+            _consider(db, run, shape, None, None, target, now)
+        _touch(run)
+        return True
 
 
 def stop(db: OrmSession, run_id: str, by: str, now: float) -> bool:
