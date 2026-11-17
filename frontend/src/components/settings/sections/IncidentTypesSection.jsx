@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, PanelLeft, Plus, Trash2, X } from 'lucide-react'
 import { api } from '../../../services/api.js'
+import { useFields } from '../../../context/FieldsContext.jsx'
 import {
   FIELD_TYPES,
   UNCLASSIFIED,
@@ -480,16 +481,19 @@ export default function IncidentTypesSection() {
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // The incident page is drawn from the types: what changes here is read again for it.
+  const { reload: reloadShared } = useFields()
   const load = useCallback(async () => {
     try {
       const [found, registry] = await Promise.all([api.get('/incident-types'), api.get('/fields')])
       setTypes(found.types)
       setColours(found.colours)
       setFields(registry.fields)
+      reloadShared()
     } catch (failure) {
       setError(failure.message)
     }
-  }, [])
+  }, [reloadShared])
   useEffect(() => {
     load()
   }, [load])
@@ -522,7 +526,10 @@ export default function IncidentTypesSection() {
         colours={colours}
         types={types}
         onBack={() => setOpenId(null)}
-        onSaved={(saved) => setTypes(types.map((type) => (type.id === saved.id ? saved : type)))}
+        onSaved={(saved) => {
+          setTypes(types.map((type) => (type.id === saved.id ? saved : type)))
+          reloadShared()
+        }}
         onDeleted={() => {
           setOpenId(null)
           load()

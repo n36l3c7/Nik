@@ -35,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason among those of its type, notes, and the fields the type wants
   filled first. The server checks the same, so an incident closed through
   the API or by a playbook is held to it too.
+- **The incident page follows its type.** A panel beside the tabs shows
+  the incident's type and its key facts (the section its type flags as
+  the side panel), whichever tab is open; it folds away for a wide tab,
+  and below 1100 px it is a band above the tabs. The Summary shows the
+  other sections of the type with their fields, each with a form to edit
+  them. The type orders the tabs and hides those it does not need, and the
+  tab last opened is remembered for each type. The type of an incident is
+  changed from the panel.
 - An incident read through the API carries `type` and `fields`; sent back
   in a `POST` or a `PATCH`, they are checked by the registry.
 - Migration `0028_fields_types`: the tables of fields and of incident

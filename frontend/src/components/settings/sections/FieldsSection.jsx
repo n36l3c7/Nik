@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
+import { useFields } from '../../../context/FieldsContext.jsx'
 import { FIELD_TYPES } from '../../../domain/fields.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import NewFieldDialog from '../../fields/NewFieldDialog.jsx'
@@ -166,13 +167,15 @@ export default function FieldsSection() {
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
 
+  const { reload: reloadShared } = useFields()
   const load = useCallback(async () => {
     try {
       setFields((await api.get('/fields')).fields)
+      reloadShared()
     } catch (failure) {
       setError(failure.message)
     }
-  }, [])
+  }, [reloadShared])
   useEffect(() => {
     load()
   }, [load])

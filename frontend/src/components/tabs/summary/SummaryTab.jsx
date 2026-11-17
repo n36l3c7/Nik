@@ -1,3 +1,4 @@
+import IncidentSections from '../../fields/IncidentSections.jsx'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
@@ -309,6 +310,9 @@ export default function SummaryTab({ incident }) {
           </Button>
         </div>
       </Card>
+
+      {/* ---- The sections of the incident's type, with their fields ---- */}
+      <IncidentSections incident={incident} />
 
       {/* ---- 2. Recap StatCards ---- */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 2xl:grid-cols-6">

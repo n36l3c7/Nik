@@ -195,3 +195,45 @@ test('the flags of a field of a type, and what is saved of the type', () => {
   assert.equal(payload.colour, 'slate')
   assert.equal(payload.layout, LAYOUT)
 })
+
+test('the page of an incident follows the layout of its type', async () => {
+  const { changesOf, orderTabs, panelSection, summarySections } = await import('./fields.js')
+  const tabs = ['summary', 'timeline', 'iocs', 'mail', 'malware'].map((id) => ({ id }))
+  const ids = (layout) => orderTabs(tabs, layout).map((tab) => tab.id)
+  assert.deepEqual(ids(null), ['summary', 'timeline', 'iocs', 'mail', 'malware'])
+  assert.deepEqual(ids({ tabs: ['mail', 'summary'], hidden: ['malware'] }), ['mail', 'summary', 'timeline', 'iocs'])
+  // A tab that does not exist is ignored, and the Summary is never hidden.
+  assert.deepEqual(ids({ tabs: ['war_room'], hidden: ['summary', 'timeline'] }), ['summary', 'iocs', 'mail', 'malware'])
+
+  assert.equal(panelSection(TYPE).id, 'key')
+  assert.equal(panelSection({ layout: { sections: [{ id: 'a', key: false, fields: [] }] } }), null)
+  // The Summary shows the other sections, without what its own form edits and without what is gone.
+  const type = {
+    ...TYPE,
+    layout: {
+      sections: [
+        ...LAYOUT.sections,
+        { id: 'more', title: 'More', key: false, fields: ['status', 'site', 'gone'] },
+        { id: 'empty', title: 'Empty', key: false, fields: ['severity'] },
+      ],
+    },
+  }
+  assert.deepEqual(
+    summarySections(type, FIELDS).map((section) => [section.id, section.fields]),
+    [
+      ['about', ['campaign']],
+      ['more', ['site']],
+    ],
+  )
+
+  // A form sends what changed; an emptied field is null; a required one cannot be emptied.
+  const known = byName(FIELDS)
+  const form = [known.campaign, known.site, known.root_cause]
+  const values = { campaign: 'Q4', site: 'Milan' }
+  assert.deepEqual(changesOf(TYPE, form, { campaign: 'Q4', site: '', root_cause: 'A rule' }, values), {
+    site: null,
+    root_cause: 'A rule',
+  })
+  assert.deepEqual(changesOf(TYPE, form, { campaign: 'Q4', site: 'Milan', root_cause: '' }, values), {})
+  assert.throws(() => changesOf(TYPE, form, { campaign: ' ', site: 'Milan' }, values), /Campaign is required/)
+})

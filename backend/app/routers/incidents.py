@@ -214,6 +214,7 @@ def list_incidents(
                 Incident.has_mail,
                 Incident.created_at,
                 Incident.updated_at,
+                Incident.type_id,
             )
             .where(*conditions)
             .order_by(order)
@@ -231,6 +232,7 @@ def list_incidents(
                 "status": r.status or "open",
                 "assignee": r.assignee,
                 "hasMail": bool(r.has_mail),
+                "type": r.type_id or field_registry.UNCLASSIFIED,
                 "createdAt": r.created_at,
                 "updatedAt": r.updated_at,
             }

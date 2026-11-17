@@ -357,3 +357,65 @@ export function typePayload(type) {
       .filter(Boolean),
   }
 }
+
+// --------------------------------------------------------------------------- //
+// The incident page                                                           //
+// --------------------------------------------------------------------------- //
+
+/** The fields the Summary's own form already edits: a section does not show them twice. */
+export const IN_SUMMARY_FORM = ['name', 'ticket', 'host', 'username', 'os', 'severity', 'status', 'owner']
+
+/**
+ * The tabs of an incident page, as its type's layout orders them: those the
+ * layout names first, in its order, then the others as they come; the hidden
+ * ones left out. The Summary is always there.
+ */
+export function orderTabs(tabs, layout) {
+  const all = list(tabs)
+  const hidden = new Set(list(layout?.hidden).filter((id) => id !== 'summary'))
+  const named = list(layout?.tabs)
+    .map((id) => all.find((tab) => tab.id === id))
+    .filter(Boolean)
+  const rest = all.filter((tab) => !named.includes(tab))
+  return [...named, ...rest].filter((tab) => !hidden.has(tab.id))
+}
+
+/** The section of a type that is the side panel of the incident page (null when it has none). */
+export const panelSection = (type) => list(type?.layout?.sections).find((section) => section.key) ?? null
+
+/**
+ * The sections the Summary shows: every one but the side panel, each with the
+ * fields that exist and that the Summary's own form does not already edit.
+ * A section left with no field is not shown.
+ */
+export function summarySections(type, fields) {
+  const known = byName(fields)
+  return list(type?.layout?.sections)
+    .filter((section) => !section.key)
+    .map((section) => ({
+      ...section,
+      fields: list(section.fields).filter((name) => known[name] && !IN_SUMMARY_FORM.includes(name)),
+    }))
+    .filter((section) => section.fields.length > 0)
+}
+
+/** Whether a field of a type must hold a value (`required` on the type). */
+export const isRequired = (type, name) => list(type?.fields).some((item) => item.name === name && item.required)
+
+/**
+ * What a form of fields sends: the values that changed, `null` for one that
+ * was emptied. Throws (a sentence) for a value that cannot be one, or a
+ * required field left empty.
+ */
+export function changesOf(type, fields, typed, values) {
+  const changes = {}
+  for (const field of list(fields)) {
+    if (field.writable === false) continue
+    const next = fromInput(field, typed[field.name])
+    if (next === null && isRequired(type, field.name)) throw new Error(`${field.label} is required`)
+    const before = values?.[field.name]
+    const same = JSON.stringify(next ?? null) === JSON.stringify(isEmpty(before) && before !== false ? null : before)
+    if (!same) changes[field.name] = next
+  }
+  return changes
+}

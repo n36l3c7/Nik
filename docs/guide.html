@@ -135,6 +135,16 @@
         there for the accounts whose roles let them use it.
       </p>
 
+      <p id="incident-facts">
+        An open incident has a column of its own beside the tabs: its <strong>type</strong> and its
+        <strong>key facts</strong> (status, severity, owner, ticket, when it occurred, TLP, or whatever its type puts
+        there). It stays while the tabs change. <em>Edit</em> opens a form for those fields; the select changes the type
+        of the incident, which keeps every value it holds: what the new type does not show is hidden, not lost. The
+        arrow folds the column away, which a wide tab wants, and Nik remembers it; in a narrow window the column is a
+        band above the tabs. The type of an incident also decides the sections of its Summary, the order of its tabs and
+        which are hidden; the tab you last opened is remembered for each type.
+      </p>
+
       <p>
         The lists inside the Mail, Malware, Network and URL tabs close with the button in their corner, and stay closed
         the next time. When the window is narrow the tab bar shortens its labels, then shows icons only; the open tab
@@ -901,7 +911,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
       <ul>
         <li>
           <strong>Export an incident</strong> from its row in the incidents panel: a JSON file with everything the
-          incident holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back.
+          incident holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back; an
+          imported incident starts <em>Unclassified</em>, since its type and its custom fields are those of the Nik it
+          came from.
         </li>
         <li>
           <strong>Export artifacts</strong> from the artifacts panel (everything the filter lists), from an artifact's
