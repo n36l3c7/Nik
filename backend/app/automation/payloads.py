@@ -348,6 +348,18 @@ def watch_hit(db, incident: Incident, hits: list[dict]) -> tuple[dict, dict]:
 # --------------------------------------------------------------------------- #
 # The server, the outside                                                     #
 # --------------------------------------------------------------------------- #
+def sla_breached(incident: Incident, field: str, label: str, due_s: int, elapsed_s: int) -> tuple[dict, dict]:
+    """``sla.breached``: a timer of an incident passed the time its type allows."""
+    data = {
+        "incident": incident_data(incident),
+        "timer": {"field": field, "label": label, "due_minutes": due_s // 60, "elapsed_minutes": elapsed_s // 60},
+    }
+    classes = incident_classes()
+    for key in ("field", "label", "due_minutes", "elapsed_minutes"):
+        classes[f"timer.{key}"] = ["verdict"]
+    return data, classes
+
+
 def storage_low(total: int, free: int) -> tuple[dict, dict]:
     """``storage.low``: the disk that holds the evidence is nearly full."""
     percent = round(100 * free / total, 1) if total else 0

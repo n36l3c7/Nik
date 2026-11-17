@@ -31,8 +31,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   incident, the most pressing first, at `/tasks` and `/tasks/<id>`. The
   instructions of a task are read as a small Markdown.
 
+- **SLA timers.** The type of an incident says how long its incidents are
+  allowed to be assigned, contained and closed (*Settings → Incidents →
+  SLA*), by severity if wanted, counting every hour or business hours only.
+  The timers are shown beside the tabs of the incident and are started,
+  paused and stopped by the rules of the type, by the new nodes *Start a
+  timer*, *Pause a timer* and *Stop a timer*, or by hand. A timer past its
+  time marks the incident, tells its owner and publishes `sla.breached`, a
+  new event for playbooks and webhooks.
+- **Notifications.** A bell on the rail with what the account was told: a
+  task given, a reminder, a task overdue, an approval that waits, a mention
+  (`@name`) in a War Room, an SLA past its time.
+
 ### Changed
 
+- A field of type *timer* is started and stopped, never written: the
+  registry refuses a value for it.
 - The bar of the analysis tabs takes a second row when even the icons alone
   do not fit in one.
 - A run that waits for a task or a question is *waiting*, like one that

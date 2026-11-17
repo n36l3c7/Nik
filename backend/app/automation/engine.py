@@ -657,6 +657,9 @@ def _ask(
         expires_at=(now + int(wait_seconds)) if wait_seconds else None,
     )
     db.add(approval)
+    from .. import tasks
+
+    tasks.notify_approval(db, run, question)
     return Outcome(wait={"kind": "approval", "id": approval.id, "inline": step.kind != "approval"})
 
 

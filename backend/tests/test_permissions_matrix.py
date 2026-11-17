@@ -145,6 +145,11 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/tasks/{task_id}/complete"): ("read",),
     ("POST", "/api/tasks/{task_id}/skip"): ("read",),
     ("PUT", "/api/tasks/{task_id}/assignee"): ("write",),
+    # SLA timers of an incident, and what an account was told.
+    ("GET", "/api/incidents/{incident_id}/timers"): ("read",),
+    ("POST", "/api/incidents/{incident_id}/timers/{field}/{what}"): ("write",),
+    ("GET", "/api/notifications"): ("read",),
+    ("POST", "/api/notifications/read"): ("read",),
     ("GET", "/api/automation/connectors"): ("connectors.manage",),
     ("POST", "/api/automation/connectors"): ("connectors.manage",),
     ("POST", "/api/automation/connectors/check"): ("connectors.manage",),

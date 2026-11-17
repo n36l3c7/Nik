@@ -124,6 +124,11 @@ SYSTEM_FIELDS: dict[str, System] = {
     "mirror_direction": _s("Mirror direction", "text", "json", False),
     "mirror_id": _s("Mirror id", "text", "json", False),
     "mirror_last_sync": _s("Last mirrored", "date", "json", False),
+    # SLA timers: started and stopped (timers.py), never written like another field.
+    "time_to_assign": _s("Time to assign", "timer", "json", False, description="Until the incident has an owner."),
+    "time_to_contain": _s("Time to contain", "timer", "json", False, description="Until it is contained."),
+    "time_to_close": _s("Time to close", "timer", "json", False, description="Until the incident is closed."),
+    "sla_breached": _s("SLA breached", "bool", "json", False, description="A timer of the incident passed its time."),
 }
 
 
@@ -482,6 +487,8 @@ def update(
         if spec is None and not field.all_types and name not in of_type:
             what = kind.name if kind is not None else "Unclassified"
             raise FieldError(f'{field.label} is not a field of the type "{what}"', name)
+        if field.type == "timer":
+            raise FieldError(f"{field.label} is a timer: it is started and stopped, not written", name)
         if name == "type":
             wanted = None if raw in (None, "", UNCLASSIFIED) else str(raw)
             if wanted is not None and db.get(IncidentType, wanted) is None:
@@ -540,6 +547,12 @@ def update(
     # The names the playbooks have always been told: the keys of the document where a field is one.
     told = [SYSTEM_FIELDS[name].where.partition(":")[2] if name in _DOC_KEYS else name for name in changed]
     triggers.incident_changed(db, incident, "incident.updated", sorted(set(told) | set(changed)))
+    # An owner, a closing, another type or severity: the SLA timers follow at once.
+    import time
+
+    from . import timers
+
+    timers.sync(db, incident, time.time())
     del source  # recorded with the provenance of the context, which comes with it
     return changed
 

@@ -36,6 +36,7 @@ KNOWN_EVENTS = (
     "url.analysed",
     "ioc.verdict_changed",
     "storage.low",
+    "sla.breached",
 )
 
 
