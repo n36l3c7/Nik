@@ -379,6 +379,23 @@
           <code>name=value</code>, and expressions that can only read the incident and its context. A command that
           changes something outside is not sent until it is confirmed.
         </li>
+        <li id="tasks-security">
+          <strong>Tasks and questions</strong> are completed by whom they are for, and by nobody else: the user a task
+          names, whoever holds its role, the owner of its incident at that moment, and an admin. The fields a task asks
+          for are written through the field registry under the name of who completed it, with the checks of any other
+          write. The instructions of a task are written by whoever builds a playbook and read by someone else: they are
+          drawn as text, with a small Markdown read into elements and never into HTML, and a link is kept only when it
+          is http, https or mailto. The work plan of an incident shows a node by its name and its kind, never by what it
+          is given.
+        </li>
+        <li id="lists-security">
+          <strong>Lists</strong> are read by whoever reads incidents and changed with <code>lists.manage</code> (the
+          roles <em>admin</em> and <em>playbooks</em>). A playbook writes only to a list that says it may, which no list
+          does until someone who manages lists turns it on: the IoC allowlist, your domains and the hosts every playbook
+          may reach decide what Nik hides, trusts and reaches, so a playbook cannot widen them on its own. Choosing
+          which list a feature reads is a change of the same weight and needs the same permission; both are in the audit
+          log. A CSV export writes a cell a spreadsheet would run as a formula so that it does not.
+        </li>
         <li>
           <strong>Loops and floods.</strong> A playbook's changes can start other playbooks three deep; each playbook
           has a ceiling of runs an hour and, by default, one run at a time on the same object; the whole server has a

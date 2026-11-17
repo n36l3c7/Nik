@@ -44,6 +44,7 @@
           <li><a href="#production-deployment">Production deployment</a></li>
           <li><a href="#docker-podman-in-production">Docker / Podman in production: TLS, start on boot, backups</a></li>
           <li><a href="#upgrading-to-43">Upgrading to 4.3</a></li>
+          <li><a href="#upgrading-to-44">Upgrading to 4.4</a></li>
           <li><a href="#upgrading-to-42">Upgrading to 4.2</a></li>
           <li><a href="#upgrading-to-41">Upgrading to 4.1</a></li>
           <li><a href="#automation-containers">The automation containers</a></li>
@@ -253,6 +254,33 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           the connectors <em>ServiceNow</em> and <em>Jira</em> are replaced by version 2 of their files, which also
           write the ticket they open to the context of the incident. A connector you changed and installed with a higher
           version is left as it is.
+        </li>
+      </ul>
+      <h4 id="upgrading-to-44">Upgrading to 4.4</h4>
+      <p>
+        Release 4.4 needs nothing more than the two commands above. The migrations <code>0030_tasks_sla</code> and
+        <code>0031_lists</code> run at start. After the update:
+      </p>
+      <ul>
+        <li>
+          what Settings kept as fixed lists is in <em>Settings → Lists</em>, as it was: the IoC allowlist, your
+          organisation's domains, the trusted mail servers, the suspicious keywords, the business hours and the hosts
+          every playbook may reach. The move is done once and changes no value. The allowlist, the mail domains and
+          servers and the hosts are now edited in Lists (their own sections say which list they read and link to it);
+          the keywords and the business hours keep their forms;
+        </li>
+        <li>
+          an API client that reads or writes <code>/api/settings</code> keeps working: the same arrays come out and go
+          in. One thing changed: a <code>PUT</code> that leaves <code>keywords</code> or <code>businessHours</code> out
+          now keeps what is stored, where it used to empty them;
+        </li>
+        <li>
+          no incident is timed until a type is given an SLA (<em>Settings → Incidents → SLA</em>). Business hours are
+          counted in UTC, as the rest of Nik counts them;
+        </li>
+        <li>
+          the incident page has one more tab, <em>Work plan</em>, and the rail two more entries, <em>My tasks</em> and
+          the bell. Accounts start with nothing in either.
         </li>
       </ul>
       <h4 id="upgrading-to-42">Upgrading to 4.2</h4>

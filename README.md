@@ -38,6 +38,11 @@ every action is attributed to a named analyst in the audit log.
 - **Incidents your way** — types of incident with fields of your own, a page
   laid out for each type, a form for closing, and a War Room: one log of
   what was said and done, with a command line (`!ip 185.220.101.47`).
+- **Tasks, SLA and lists** — playbooks give people tasks and ask them
+  questions, each incident has a work plan and each analyst a page of their
+  tasks; types of incident time their incidents, in business hours if you
+  want; and what features and playbooks compare with lives in lists you
+  edit, import and export.
 - **Connectors** — other products reached through YAML files anyone can read
   and write, with no code: Check Point, Zscaler, SentinelOne, ServiceNow,
   Jira, Confluence and Bitbucket ship (written from the vendors' public
@@ -151,7 +156,8 @@ as YAML files (twelve ship, for nine products), playbooks started by what Nik
 analyses or by a request from outside, and five playbooks ready to turn on;
 4.3 a registry of fields, types of incident with their own page, the context
 of an incident as data playbooks read and write, and a War Room with a
-command line. Still to come: tasks and SLA timers, lists, fetching and
+command line; 4.4 tasks and questions in playbooks, the work plan of an
+incident, SLA timers, notifications and lists. Still to come: fetching and
 mirroring of alerts, dashboards and content packs.
 
 Also planned, not built yet:
