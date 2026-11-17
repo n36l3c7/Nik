@@ -428,7 +428,18 @@ function Pairs({ value, onChange, tree, disabled }) {
 }
 
 /** The settings that depend on the kind of node. */
-function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, disabled, onConfig, problemAt }) {
+function KindSettings({
+  node,
+  entry,
+  tree,
+  events,
+  playbooks,
+  connections,
+  approvalDefault,
+  disabled,
+  onConfig,
+  problemAt,
+}) {
   const config = node.config ?? {}
   switch (node.kind) {
     case 'trigger': {
@@ -711,6 +722,44 @@ function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, d
       return (
         <>
           {entry.description && <p className="text-xs text-fg-muted">{entry.description}</p>}
+          {entry.needsConnection && (
+            <Field
+              label="Connection"
+              required
+              hint={
+                (connections[entry.connector] ?? []).length === 0
+                  ? `No connection to ${entry.group} yet: one is made in Settings → Automation → Connections.`
+                  : 'The system this node talks to. The playbook may reach its host.'
+              }
+              problem={problemAt('connection')}
+            >
+              {(id) => (
+                <SelectInput
+                  id={id}
+                  value={config.connection ?? ''}
+                  disabled={disabled}
+                  onChange={(connection) => onConfig({ connection: connection || undefined })}
+                  options={[
+                    {
+                      value: '',
+                      label:
+                        (connections[entry.connector] ?? []).length === 1 ? '(the only one)' : '(choose a connection)',
+                    },
+                    ...(connections[entry.connector] ?? []).map((connection) => ({
+                      value: connection.name,
+                      label: connection.name,
+                    })),
+                    ...(config.connection &&
+                    !(connections[entry.connector] ?? []).some((connection) =>
+                      [connection.name, connection.id].includes(config.connection),
+                    )
+                      ? [{ value: config.connection, label: `${config.connection} (missing)` }]
+                      : []),
+                  ]}
+                />
+              )}
+            </Field>
+          )}
           {entry.arguments.length > 0 && <SectionTitle>Arguments</SectionTitle>}
           {entry.arguments.map((argument) => (
             <ArgumentField
@@ -1033,6 +1082,7 @@ function PlaybookSettings({ graph, disabled, onGraph, problems }) {
  *   nodeId: string | null,
  *   catalog: object[],
  *   events: string[],                 // what a trigger can wait for
+ *   connections: Record<string, Array<{ id: string, name: string }>>,  // by connector
  *   playbooks: string[],              // the names a "run another playbook" node can choose
  *   problems: Array<{ message: string, node: string | null, field: string | null }>,
  *   updates: Array<{ node: string, script: string, from: number, to: number }>,
@@ -1051,6 +1101,7 @@ export default function Inspector({
   catalog,
   events,
   playbooks,
+  connections,
   problems,
   updates,
   approvalDefault,
@@ -1082,7 +1133,8 @@ export default function Inspector({
   const problemAt = (field) => mine.find((problem) => problem.field === field)?.message ?? null
   const elsewhere = mine.filter(
     (problem) =>
-      !problem.field || !/^(args\.|event$|cron$|items$|max$|seconds$|timeout$|question$|playbook$)/.test(problem.field),
+      !problem.field ||
+      !/^(args\.|event$|cron$|items$|max$|seconds$|timeout$|question$|playbook$|connection$)/.test(problem.field),
   )
   const notReadable = unreadable(graph, node.id)
   const update = updates.find((item) => item.node === node.id)
@@ -1190,6 +1242,7 @@ export default function Inspector({
           tree={tree}
           events={events}
           playbooks={playbooks}
+          connections={connections}
           approvalDefault={approvalDefault}
           disabled={readOnly}
           onConfig={onConfig}

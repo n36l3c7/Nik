@@ -610,6 +610,8 @@ def get_catalog(_caller: Principal = Depends(runner_principal), db: OrmSession =
     """Every node of the library with what it takes and gives, and what a trigger can wait for."""
     return {
         "nodes": catalog.entries(db),
+        # The connections there are, by connector: what a node of a connector chooses from.
+        "connections": catalog.connections(db),
         "events": list(graph.EVENTS),
         "operators": list(graph.OPERATORS),
         "ports": {kind: list(ports) for kind, ports in graph.PORTS.items()},

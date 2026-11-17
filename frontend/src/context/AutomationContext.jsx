@@ -25,7 +25,7 @@ import { useAuth } from './AuthContext.jsx'
 
 const AutomationContext = createContext(null)
 
-const EMPTY_CATALOG = { nodes: [], events: [], operators: [], ports: {} }
+const EMPTY_CATALOG = { nodes: [], events: [], operators: [], ports: {}, connections: {} }
 const APPROVALS_EVERY_MS = 20_000
 
 export function AutomationProvider({ children }) {

@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API; lists read page by page (offset, page, cursor, link); commands made
   of several requests that feed each other; commands that wait for the
   other side by asking again later, without holding a worker.
+- **Settings → Automation → Connectors**: add a connector from its file
+  (what is wrong is listed with its line, and nothing is installed until
+  the file is right), read its commands and its file, download the shipped
+  ones as samples. **Connections**: a connector plus an address and
+  credentials, in a form built from what the connector asks for, with
+  "Test". Credentials are stored encrypted and never shown again, here or
+  in the API. Both are for the role **Connectors**, which can now be given.
+- On the canvas a connector is a group of the library, and a node of it
+  names the connection it sends through. A version is not saved while a
+  node names a connection that does not exist.
 - A command never sends anywhere but to the host of its connection, goes
   through the same data guard as the HTTP node, and records what it sent
   with every secret replaced. In a dry run it sends nothing and gives the

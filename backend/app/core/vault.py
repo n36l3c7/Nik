@@ -66,6 +66,28 @@ def _rotated(token: str | None) -> str | None:
         return None
 
 
+def _automation_secrets(db) -> int:
+    """The secrets of automation: the credentials of connections, the SMTP password."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from .models import Connection, Setting
+
+    moved = 0
+    for row in db.scalars(select(Connection).where(Connection.secrets != "")):
+        token = _rotated(row.secrets)
+        if token:
+            row.secrets = token
+            moved += 1
+    settings_row = db.get(Setting, 2)  # automation/state.py
+    smtp = ((settings_row.doc if settings_row else None) or {}).get("smtp") or {}
+    token = _rotated(smtp["password"]) if smtp.get("password") else None
+    if token:
+        settings_row.doc = {**settings_row.doc, "smtp": {**smtp, "password": token}}
+        flag_modified(settings_row, "doc")
+        moved += 1
+    return moved
+
+
 def reencrypt(session_factory) -> int:
     """Re-encrypt what is stored under a previous key with the current one.
 
@@ -88,6 +110,7 @@ def reencrypt(session_factory) -> int:
             if token:
                 row.keylog = token
                 moved += 1
+        moved += _automation_secrets(db)
         db.commit()
     if moved:
         _logger.info("re-encrypted %d stored secret(s) with the current SECRET_KEY", moved)

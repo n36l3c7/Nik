@@ -129,20 +129,21 @@ def test_a_command_goes_to_its_connection_with_its_credentials(admin: TestClient
 
 
 def test_a_node_needs_a_connection_that_exists(admin: TestClient, acme):
-    pb = playbook(
-        admin,
-        "No such connection",
-        [command("open", "create-ticket", connection="Acme test", title="x")],
-        [edge("start", "open")],
-    )
-    run = go(admin, pb)
-    assert run["status"] == "failed"
-    assert (
-        steps(run)["open"]["error"]
-        == 'The connection "Acme test" does not exist: Acme Desk needs one to know where to send'
-    )
-    assert acme.requests == []
-    # With one connection only, a node that names none uses it; with two it must choose.
+    # A version is not saved while a node names a connection that is not there.
+    draft = admin.post("/api/automation/playbooks", json={"name": "No such connection"}).json()["id"]
+    shape = {
+        "nodes": [
+            node("start", "trigger", manual=True),
+            command("open", "create-ticket", connection="Acme test", title="x"),
+        ],
+        "edges": [edge("start", "open")],
+    }
+    refused = admin.post(f"/api/automation/playbooks/{draft}/versions", json={"graph": shape})
+    assert refused.status_code == 422
+    assert refused.json()["problems"] == [
+        {"message": "This connection does not exist", "node": "open", "field": "connection"}
+    ]
+    # With one connection only, a node that names none uses it.
     one = playbook(
         admin, "The only one", [command("open", "get-ticket", connection="", number="T-1")], [edge("start", "open")]
     )
@@ -160,7 +161,24 @@ def test_a_node_needs_a_connection_that_exists(admin: TestClient, acme):
             )
         )
         db.commit()
+    # With two it must choose: the version that ran is now refused at its step, and a new one at saving.
     assert steps(go(admin, one))["open"]["error"].startswith("Choose a connection")
+    shape["nodes"][1]["config"]["connection"] = ""
+    again = admin.post(f"/api/automation/playbooks/{draft}/versions", json={"graph": shape})
+    assert again.json()["problems"][0]["message"] == "Choose the connection to send through"
+    # A connection deleted after the version was saved: the step says which one is missing.
+    shape["nodes"][1]["config"]["connection"] = "Acme test"
+    assert admin.post(f"/api/automation/playbooks/{draft}/versions", json={"graph": shape}).status_code == 201
+    with SessionLocal() as db:
+        db.delete(db.get(Connection, "d" * 32))
+        db.commit()
+    acme.requests.clear()
+    run = go(admin, draft)
+    assert run["status"] == "failed" and acme.requests == []
+    assert (
+        steps(run)["open"]["error"]
+        == 'The connection "Acme test" does not exist: Acme Desk needs one to know where to send'
+    )
 
 
 def test_a_dry_run_sends_nothing_and_gives_the_sample(admin: TestClient, acme):

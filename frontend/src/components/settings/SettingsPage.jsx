@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import {
+  Cable,
   Clock,
   DatabaseBackup,
   FileSearch,
@@ -10,6 +11,7 @@ import {
   KeyRound,
   Mail,
   OctagonX,
+  Plug,
   Radar,
   ScrollText,
   Search,
@@ -31,6 +33,8 @@ import AutomationNetworkSection from './sections/AutomationNetworkSection.jsx'
 import AutomationSwitchSection from './sections/AutomationSwitchSection.jsx'
 import BackupSection from './sections/BackupSection.jsx'
 import CapaRulesSection from './sections/CapaRulesSection.jsx'
+import ConnectionsSection from './sections/ConnectionsSection.jsx'
+import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
 import MailSettingsSection from './sections/MailSettingsSection.jsx'
@@ -66,6 +70,8 @@ const SECTION_VIEWS = {
   yara: { icon: FileSearch, Component: YaraRulesSection },
   capa: { icon: Radar, Component: CapaRulesSection },
   flirt: { icon: Fingerprint, Component: FlirtSignaturesSection },
+  connectors: { icon: Plug, Component: ConnectorsSection },
+  connections: { icon: Cable, Component: ConnectionsSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },
   automationSwitch: { icon: OctagonX, Component: AutomationSwitchSection },
   account: { icon: UserCog, Component: MyAccountSection },

@@ -1,0 +1,424 @@
+"""Connectors and connections.
+
+A connector is a YAML file (``automation/connectors.py``); a connection is a
+connector plus an address and credentials. Both are managed with
+``connectors.manage`` (the role *Connectors*, or an admin). Who builds or
+runs playbooks reads the list of connections, names only, to choose one on a
+node.
+
+Credentials are write-only: they are stored encrypted and no route returns
+them; a connection says only which of its secrets are set.
+"""
+
+from __future__ import annotations
+
+import io
+import zipfile
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session as OrmSession
+
+from ..automation import connector_actions as store
+from ..automation import connectors as files
+from ..automation import engine, graph
+from ..core import audit
+from ..core.db import get_db
+from ..core.models import Connection, Connector, Playbook, PlaybookVersion
+from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_RUN, CONNECTORS_MANAGE
+from ..core.security import Principal, now_iso, require
+
+router = APIRouter(prefix="/automation", tags=["automation"])
+
+manager_principal = require(CONNECTORS_MANAGE)
+# Whoever builds or runs playbooks sees which connections there are (never what is in them).
+chooser_principal = require(CONNECTORS_MANAGE, AUTOMATION_RUN, AUTOMATION_EDIT)
+
+
+class SourceIn(BaseModel):
+    source: str = Field(min_length=1, max_length=files.MAX_BYTES)
+
+
+class ConnectionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    connector: str = Field(min_length=1, max_length=41)
+    config: dict[str, Any] = Field(default_factory=dict)
+    # Write-only. A secret left out keeps what is stored; an empty one removes it.
+    secrets: dict[str, str | None] = Field(default_factory=dict)
+
+
+class ConnectionPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    config: dict[str, Any] | None = None
+    secrets: dict[str, str | None] | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Helpers                                                                     #
+# --------------------------------------------------------------------------- #
+def _problems(error: files.ConnectorError) -> JSONResponse:
+    first = error.problems[0]
+    where = f" (line {first.line})" if first.line else ""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": f"The file is not a connector: {first.message}{where}",
+            "problems": [problem.as_dict() for problem in error.problems],
+        },
+    )
+
+
+def _users_of(db: OrmSession, connector_id: str, connection: Connection | None = None) -> list[str]:
+    """The playbooks whose current version or draft has a node of this connector (using this connection)."""
+    found = []
+    for playbook in db.scalars(select(Playbook).order_by(Playbook.name)):
+        version = db.get(PlaybookVersion, (playbook.id, playbook.current_version)) if playbook.current_version else None
+        shapes = [shape for shape in (version.graph if version else None, playbook.draft) if shape]
+        for shape in shapes:
+            used = False
+            for node in graph.nodes_of(shape).values():
+                config = node.get("config") or {}
+                if node.get("kind") != "action" or not str(config.get("action") or "").startswith(connector_id + "."):
+                    continue
+                if connection is None or config.get("connection") in (connection.id, connection.name):
+                    used = True
+            if used:
+                found.append(playbook.name)
+                break
+    return found
+
+
+def _connector_out(db: OrmSession, row: Connector, *, source: bool = False) -> dict[str, Any]:
+    connector = store.parsed(row)
+    count = db.scalar(select(func.count()).select_from(Connection).where(Connection.connector_id == row.id)) or 0
+    out: dict[str, Any] = {
+        "id": row.id,
+        "name": row.name,
+        "version": row.version,
+        "builtin": bool(row.builtin),
+        "connections": count,
+        "readable": connector is not None,
+        "updatedAt": row.updated_at,
+        "updatedBy": row.updated_by,
+    }
+    if connector is not None:
+        out.update(files.summary(connector))
+        out["secrets"] = store.secret_names(connector)
+    if source:
+        out["source"] = row.source
+        out["usedBy"] = _users_of(db, row.id)
+    return out
+
+
+def _connection_out(db: OrmSession, row: Connection, *, full: bool) -> dict[str, Any]:
+    connector_row = db.get(Connector, row.connector_id)
+    connector = store.parsed(connector_row) if connector_row is not None else None
+    out: dict[str, Any] = {
+        "id": row.id,
+        "name": row.name,
+        "connector": row.connector_id,
+        "connectorName": connector_row.name if connector_row else row.connector_id,
+    }
+    if not full:
+        return out
+    stored = store.secrets_of(row)
+    names = store.secret_names(connector) if connector is not None else sorted(stored)
+    out.update(
+        config=row.config or {},
+        # Which secrets are set: never what they are.
+        secrets={name: bool(stored.get(name)) for name in names},
+        host=store.host_of(connector, row.config or {}) if connector is not None else None,
+        lastTest=row.last_test,
+        updatedAt=row.updated_at,
+        updatedBy=row.updated_by,
+    )
+    return out
+
+
+def _label(param: files.ConfigParam) -> str:
+    return param.label or param.name.replace("_", " ").capitalize()
+
+
+def _clean_config(connector: files.ConnectorFile, given: dict[str, Any]) -> dict[str, Any]:
+    """The plain values of a connection, checked against what the connector asks for."""
+    out: dict[str, Any] = {}
+    plain = [param for param in connector.configuration if not param.is_auth and param.type != "secret"]
+    known = {param.name for param in plain}
+    for name in given:
+        if name not in known:
+            raise HTTPException(status_code=400, detail=f'"{name}" is not something this connector asks for')
+    for param in plain:
+        value = given.get(param.name)
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, ""):
+            if param.required and param.default in (None, ""):
+                raise HTTPException(status_code=400, detail=f"{_label(param)} is required")
+            continue
+        if param.type == "url":
+            if not isinstance(value, str) or not value.lower().startswith(("https://", "http://")):
+                raise HTTPException(status_code=400, detail=f"{_label(param)} is an https:// address")
+            value = value.rstrip("/")
+        elif param.type == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise HTTPException(status_code=400, detail=f"{_label(param)} is a number")
+        elif param.type == "bool":
+            if not isinstance(value, bool):
+                raise HTTPException(status_code=400, detail=f"{_label(param)} is true or false")
+        elif param.type == "choice":
+            if value not in (param.choices or []):
+                raise HTTPException(
+                    status_code=400, detail=f"{_label(param)} is one of: {', '.join(param.choices or [])}"
+                )
+        elif not isinstance(value, str) or len(value) > 20_000:
+            raise HTTPException(status_code=400, detail=f"{_label(param)} is a text")
+        out[param.name] = value
+    if store.host_of(connector, {**{p.name: p.default for p in plain if p.default is not None}, **out}) is None:
+        raise HTTPException(status_code=400, detail="The connection has no address to send to")
+    return out
+
+
+def _merge_secrets(connector: files.ConnectorFile, row: Connection, given: dict[str, str | None]) -> None:
+    known = set(store.secret_names(connector))
+    stored = store.secrets_of(row)
+    for name, value in given.items():
+        if name not in known:
+            raise HTTPException(status_code=400, detail=f'"{name}" is not a secret of this connector')
+        if value is None:
+            continue  # kept
+        if len(value) > 20_000:
+            raise HTTPException(status_code=400, detail="A secret is too long")
+        if value == "":
+            stored.pop(name, None)
+        else:
+            stored[name] = value
+    store.store_secrets(row, stored)
+
+
+def _connector(db: OrmSession, connector_id: str) -> tuple[Connector, files.ConnectorFile]:
+    row = db.get(Connector, connector_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    connector = store.parsed(row)
+    if connector is None:
+        raise HTTPException(status_code=409, detail="The stored file of this connector cannot be read: upload it again")
+    return row, connector
+
+
+def _connection(db: OrmSession, connection_id: str) -> Connection:
+    row = db.get(Connection, connection_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    return row
+
+
+# --------------------------------------------------------------------------- #
+# Connectors                                                                  #
+# --------------------------------------------------------------------------- #
+@router.get("/connectors")
+def list_connectors(_caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)) -> dict:
+    rows = db.scalars(select(Connector).order_by(func.lower(Connector.name))).all()
+    return {"connectors": [_connector_out(db, row) for row in rows]}
+
+
+@router.post("/connectors/check")
+def check_connector(body: SourceIn, _caller: Principal = Depends(manager_principal)) -> dict:
+    """What is wrong with a file, without installing it: ``{problems: [{line, message, where}]}``."""
+    try:
+        connector = files.load(body.source)
+    except files.ConnectorError as error:
+        return {"problems": [problem.as_dict() for problem in error.problems], "connector": None}
+    return {"problems": [], "connector": files.summary(connector)}
+
+
+@router.get("/connectors/samples")
+def connector_samples(_caller: Principal = Depends(manager_principal)) -> Response:
+    """The connectors Nik ships, as the files they are, in a zip: something to start from."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(store.SEED_DIR.glob("*.yml")):
+            archive.writestr(path.name, path.read_text(encoding="utf-8"))
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="nik-connectors.zip"'},
+    )
+
+
+@router.post("/connectors", status_code=status.HTTP_201_CREATED, response_model=None)
+def install_connector(
+    body: SourceIn, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict | JSONResponse:
+    """Install a connector from its file, or replace the one with the same id. ``422`` with
+    every problem and its line when the file is not a connector."""
+    try:
+        existed = db.get(Connector, files.load(body.source).id) is not None
+        row, connector = store.install(db, body.source, caller.actor)
+    except files.ConnectorError as error:
+        db.rollback()
+        return _problems(error)
+    word = "Replaced" if existed else "Installed"
+    audit.record(
+        db,
+        caller.actor,
+        "connector.install",
+        f'{word} the connector "{connector.name}" (version {connector.version}, {len(connector.commands)} commands)',
+        target=connector.id,
+    )
+    db.commit()
+    return _connector_out(db, row, source=True)
+
+
+@router.get("/connectors/{connector_id}")
+def get_connector(
+    connector_id: str, _caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    row = db.get(Connector, connector_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    return _connector_out(db, row, source=True)
+
+
+@router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_connector(
+    connector_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    """Remove a connector with its connections. One a playbook uses is refused."""
+    row = db.get(Connector, connector_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    users = _users_of(db, row.id)
+    if users:
+        raise HTTPException(status_code=409, detail="Used by: " + ", ".join(users[:10]))
+    audit.record(db, caller.actor, "connector.delete", f'Removed the connector "{row.name}"', target=row.id)
+    for connection in db.scalars(select(Connection).where(Connection.connector_id == row.id)):
+        db.delete(connection)
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --------------------------------------------------------------------------- #
+# Connections                                                                 #
+# --------------------------------------------------------------------------- #
+@router.get("/connections")
+def list_connections(caller: Principal = Depends(chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """The connections. With ``connectors.manage``: their address, which secrets are set, the last
+    test. Otherwise their names only, to choose one on a node."""
+    full = caller.has(CONNECTORS_MANAGE)
+    rows = db.scalars(select(Connection).order_by(func.lower(Connection.name))).all()
+    return {"connections": [_connection_out(db, row, full=full) for row in rows]}
+
+
+@router.post("/connections", status_code=status.HTTP_201_CREATED)
+def create_connection(
+    body: ConnectionIn, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    _row, connector = _connector(db, body.connector)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A name is required")
+    if db.scalars(select(Connection).where(func.lower(Connection.name) == name.lower())).first() is not None:
+        raise HTTPException(status_code=400, detail="A connection with this name exists already")
+    now = now_iso()
+    row = Connection(
+        id=engine.new_id(),
+        name=name,
+        connector_id=connector.id,
+        config=_clean_config(connector, body.config),
+        created_at=now,
+        created_by=caller.actor,
+        updated_at=now,
+        updated_by=caller.actor,
+    )
+    _merge_secrets(connector, row, body.secrets)
+    db.add(row)
+    host = store.host_of(connector, row.config)
+    audit.record(
+        db,
+        caller.actor,
+        "connection.create",
+        f'Made the connection "{name}" to {connector.name} at {host}',
+        target=name,
+    )
+    db.commit()
+    return _connection_out(db, row, full=True)
+
+
+@router.put("/connections/{connection_id}")
+def update_connection(
+    connection_id: str,
+    body: ConnectionPatch,
+    caller: Principal = Depends(manager_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Change a connection. A secret that is left out stays as it is; an empty one is removed."""
+    row = _connection(db, connection_id)
+    _connector_row, connector = _connector(db, row.connector_id)
+    changes = []
+    if body.name is not None and body.name.strip() != row.name:
+        name = body.name.strip()
+        taken = db.scalars(select(Connection).where(func.lower(Connection.name) == name.lower())).first()
+        if not name or (taken is not None and taken.id != row.id):
+            raise HTTPException(status_code=400, detail="A connection with this name exists already")
+        changes.append(f'renamed from "{row.name}"')
+        # Nodes name a connection by its id or by its name: one named by its old name must be chosen again.
+        row.name = name
+    if body.config is not None:
+        before = store.host_of(connector, row.config or {})
+        row.config = _clean_config(connector, body.config)
+        after = store.host_of(connector, row.config)
+        changes.append(f"address {before} → {after}" if before != after else "settings")
+        row.last_test = None
+    if body.secrets is not None and any(value is not None for value in body.secrets.values()):
+        _merge_secrets(connector, row, body.secrets)
+        changes.append("credentials")
+        row.last_test = None
+    if changes:
+        row.updated_at = now_iso()
+        row.updated_by = caller.actor
+        audit.record(
+            db,
+            caller.actor,
+            "connection.update",
+            f'Changed the connection "{row.name}": {", ".join(changes)}',
+            target=row.name,
+        )
+        db.commit()
+    return _connection_out(db, row, full=True)
+
+
+@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_connection(
+    connection_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    row = _connection(db, connection_id)
+    users = _users_of(db, row.connector_id, row)
+    if users:
+        raise HTTPException(status_code=409, detail="Used by: " + ", ".join(users[:10]))
+    audit.record(db, caller.actor, "connection.delete", f'Deleted the connection "{row.name}"', target=row.name)
+    store.forget_tokens(row.id)
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/connections/{connection_id}/test")
+def test_connection(
+    connection_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Send the connector's test request with these credentials: ``{ok, status, message, at}``.
+    It reaches the host of the connection and nothing else."""
+    row = _connection(db, connection_id)
+    _connector_row, connector = _connector(db, row.connector_id)
+    try:
+        result = store.runtime_for(db, connector, row).test()
+    except store.CommandError as error:
+        result = {"ok": False, "status": 0, "message": error.message}
+    result["at"] = now_iso()
+    row.last_test = result
+    db.commit()
+    return result

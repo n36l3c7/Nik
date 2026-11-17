@@ -1994,6 +1994,101 @@ test('a script is written, tested in the sandbox, saved as a version and offered
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })
 
+test('a connector is added from its file, a connection is made, and its commands are nodes', async () => {
+  test.setTimeout(180_000)
+  const before = page.url()
+  const source = readFileSync(new URL('./fixtures/acme-connector.yml', import.meta.url), 'utf8')
+  const file = (text) => ({ name: 'acme.yml', mimeType: 'text/yaml', buffer: Buffer.from(text) })
+
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Connectors').click()
+  await expect(page).toHaveURL(/\/settings\/automation\/connectors$/)
+
+  // A file with a mistake is not installed: the problem comes with its line.
+  const wrong = source.replace(
+    'request: { method: GET, path: "/tickets/{{ args.number }}" }',
+    'request: { method: FETCH, path: "/tickets/{{ args.nmber }}" }',
+  )
+  await settings.getByLabel('Connector file to add').setInputFiles(file(wrong))
+  const add = page.getByRole('dialog', { name: 'Add acme.yml' })
+  const problems = add.getByRole('list', { name: 'Problems of the file' })
+  await expect(problems.getByRole('listitem')).toHaveCount(1)
+  await expect(problems).toContainText('line 16')
+  await expect(add.getByRole('button', { name: 'Install' })).toBeDisabled()
+  await add.getByRole('button', { name: 'Cancel' }).click()
+
+  await settings.getByLabel('Connector file to add').setInputFiles(file(source))
+  await expect(add).toContainText('version 1: 2 commands')
+  await expect(add).toContainText('a user name and a password')
+  await add.getByRole('button', { name: 'Install' }).click()
+  await expect(settings.getByRole('status')).toContainText('Acme Desk is installed: version 1, 2 commands.')
+  const installed = settings
+    .getByRole('table', { name: 'Installed connectors' })
+    .getByRole('row')
+    .filter({ hasText: 'Acme Desk' })
+  await expect(installed).toContainText('no connection')
+  await expect(installed).toContainText('not verified')
+  // Its commands and its file can be read.
+  await installed.getByRole('button', { name: 'Acme Desk' }).click()
+  const shown = page.getByRole('dialog', { name: 'Acme Desk' })
+  await expect(shown.getByRole('table', { name: 'Commands of Acme Desk' }).getByRole('row')).toHaveCount(3)
+  await shown.getByText('The file', { exact: true }).click()
+  await expect(shown.getByLabel('The file of Acme Desk')).toContainText('base_url: "{{ config.url }}"')
+  await shown.getByRole('button', { name: 'Close', exact: true }).last().click()
+
+  // A connection: the form is the connector's; credentials are written and never shown again.
+  await sections.getByText('Connections').click()
+  await settings.getByRole('button', { name: 'New connection' }).click()
+  const form = page.getByRole('dialog', { name: 'New connection' })
+  await form.getByLabel('Connector').selectOption('acme')
+  await form.locator('#connection-name').fill('Acme test')
+  await form.getByLabel('Instance address').fill('desk.example.invalid')
+  await expect(form.getByRole('button', { name: 'Create' })).toBeDisabled() // not an https:// address
+  await form.getByLabel('Instance address').fill('https://desk.example.invalid/api')
+  await form.getByLabel('User name').fill('svc')
+  await form.getByLabel('Password').fill('s3cret-pass')
+  await form.getByRole('button', { name: 'Create' }).click()
+  const row = settings.getByRole('table', { name: 'Connections' }).getByRole('row').filter({ hasText: 'Acme test' })
+  await expect(row).toContainText('desk.example.invalid')
+  await expect(row).toContainText('not tested')
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  const edit = page.getByRole('dialog', { name: 'Connection: Acme test' })
+  await expect(edit.getByLabel(/^Password/)).toHaveValue('')
+  await expect(edit.getByLabel(/^Password/)).toHaveAttribute('placeholder', 'stored: type to replace it')
+  await edit.getByRole('button', { name: 'Cancel' }).click()
+  // The test reaches the host of the connection: this one does not exist, and the row says so.
+  await row.getByRole('button', { name: 'Test the connection Acme test' }).click()
+  await expect(settings.getByRole('alert')).toContainText('Acme test: ', { timeout: 30_000 })
+  await expect(row).toContainText('failed')
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+
+  // On the canvas the connector is a group of the library; a node of it names its connection.
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('button', { name: 'Note on high' }).click()
+  const library = area.getByRole('complementary', { name: 'Node library' })
+  await library.getByLabel('Search nodes').fill('acme')
+  await expect(library.getByRole('button', { name: /^create-ticket/ })).toContainText('changes')
+  await library.getByRole('button', { name: 'get-ticket', exact: true }).click()
+  const inspector = area.getByRole('complementary', { name: 'Inspector' })
+  await expect(inspector.getByRole('heading', { name: /Acme Desk/ })).toBeVisible()
+  await expect(inspector.getByLabel(/^Connection/)).toHaveValue('')
+  await inspector.getByLabel(/^Connection/).selectOption('Acme test')
+  await inspector.getByLabel(/^number/).fill('T-1')
+  await expect(area.getByText('draft saved')).toBeVisible()
+  // The playbook is left as it was.
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await expect(area.getByTestId('playbook-canvas').locator('.react-flow__node')).toHaveCount(4)
+  await expect(area.getByText('draft saved')).toBeVisible()
+
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

@@ -99,6 +99,20 @@ export const SETTINGS_GROUPS = [
     label: 'Automation',
     sections: [
       {
+        id: 'connectors',
+        slug: 'connectors',
+        label: 'Connectors',
+        permission: 'connectors.manage',
+        keywords: 'integrations yaml file commands products servicenow jira upload samples',
+      },
+      {
+        id: 'connections',
+        slug: 'connections',
+        label: 'Connections',
+        permission: 'connectors.manage',
+        keywords: 'credentials address token instance test systems',
+      },
+      {
         id: 'automationNetwork',
         slug: 'network-and-data',
         label: 'Network and data',

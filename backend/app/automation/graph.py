@@ -294,6 +294,14 @@ def _check_node(node: dict, library: Library, problems: list[Problem]) -> None:
             problems.append(Problem("This action does not exist", node_id, "action"))
         else:
             _check_arguments(node, entry["arguments"], problems)
+            if entry.get("needsConnection"):
+                # A command of a connector is sent through a connection: the one named, or the only one.
+                known = getattr(library, "connections", lambda _connector: [])(entry.get("connector"))
+                wanted = str(config.get("connection") or "")
+                if wanted and not any(wanted in pair for pair in known):
+                    problems.append(Problem("This connection does not exist", node_id, "connection"))
+                elif not wanted and len(known) != 1:
+                    problems.append(Problem("Choose the connection to send through", node_id, "connection"))
         _check_on_error(node, problems)
         approval = config.get("approval")
         if approval is not None:

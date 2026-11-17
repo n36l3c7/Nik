@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..core.models import Playbook, PlaybookVersion, Script, ScriptVersion
+from ..core.models import Connection, Playbook, PlaybookVersion, Script, ScriptVersion
 from . import actions, graph
 
 FLOW = [
@@ -100,6 +100,11 @@ class Library:
             return None
         return {"arguments": row.arguments or [], "outputs": row.outputs or []}
 
+    def connections(self, connector_id: str) -> list[tuple[str, str]]:
+        """(id, name) of the connections of a connector."""
+        rows = self.db.execute(select(Connection.id, Connection.name).where(Connection.connector_id == connector_id))
+        return [(row[0], row[1]) for row in rows]
+
     def playbook_graph(self, name: str) -> dict | None:
         playbook = self.db.scalars(select(Playbook).where(Playbook.name == name)).first()
         if playbook is None or not playbook.current_version:
@@ -149,4 +154,12 @@ def updates(db: OrmSession, shape: dict) -> list[dict[str, Any]]:
             found.append(
                 {"node": node["id"], "script": config["script"], "from": config["script_version"], "to": latest}
             )
+    return found
+
+
+def connections(db: OrmSession) -> dict[str, list[dict[str, str]]]:
+    """connector id → its connections (id and name), for the inspector of a connector's node."""
+    found: dict[str, list[dict[str, str]]] = {}
+    for row in db.execute(select(Connection.id, Connection.name, Connection.connector_id).order_by(Connection.name)):
+        found.setdefault(row[2], []).append({"id": row[0], "name": row[1]})
     return found
