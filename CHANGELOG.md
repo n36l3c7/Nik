@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an incident created or updated (with conditions), a schedule, by hand.
   Limits per playbook: runs per hour, one run at a time for the same
   object, a longest run. A general switch stops all automation at once.
-  Through the API only, for now (`/api/automation`): the canvas follows.
 - **Automation, third part: what a playbook does and where it may send.**
   Nodes that act inside Nik (a note, the status, the assignee, a new
   incident, indicators and lists, linking an artifact), an **HTTP request**
@@ -45,6 +44,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pass. A playbook stays on the version it was saved with and is told when
   a newer one exists. Seven ship with Nik: GroupByField, ExtractDomains,
   DefangIndicators, BusinessHours, CsvToList, FilterList, VerdictChanges.
+- **The canvas.** A new area, **Automations** (the rail, or
+  `/automation/playbooks`), lists the playbooks and opens each on a canvas:
+  the library of nodes on the left (drag one in, or click it to add it
+  after the selected node), the playbook in the middle, the settings of
+  the selected node on the right. A field takes a value typed, or picked
+  from what the node can read ("Pick a value"); an expression that cannot
+  be read says why as it is typed. The canvas edits a draft that saves
+  itself; **Save as version** has the server check it and shows what is to
+  fix on the nodes. Undo and redo, copy and paste, "Tidy up", a minimap.
+  Everything is reachable from the keyboard: nodes take the focus, edges
+  are drawn from the inspector, and "Node list" shows the same playbook as
+  a table.
+- A playbook has **Versions** (an older one is restored as a new version)
+  and **Settings**: its limits, the hosts it may reach and the classes of
+  data it may send, the last two for admins and behind the double check.
+  Playbooks are exported and imported as files; an imported one arrives as
+  a draft, off, reaching and sending nothing more than the default.
+- **Settings → Automation**: *Network and data* (the hosts every playbook
+  may reach, the SMTP server of the e-mail node) and *Stop all* (the
+  general switch, with the state of the worker).
+- The role **Playbooks** can now be given to an account or a key: it
+  builds playbooks and scripts. Analysts run playbooks and see them
+  read-only.
 - A new container, **`sandbox`**, runs the scripts: an image with Python
   and nothing else, on a network with no route outside, a read-only
   filesystem and no capabilities; each script in a process of its own with

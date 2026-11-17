@@ -1,4 +1,14 @@
-import { Boxes, DatabaseBackup, Fingerprint, FolderClosed, ScrollText, Search, Settings, Users } from 'lucide-react'
+import {
+  Boxes,
+  DatabaseBackup,
+  Fingerprint,
+  FolderClosed,
+  ScrollText,
+  Search,
+  Settings,
+  Users,
+  Workflow,
+} from 'lucide-react'
 
 /*
  * ============================================================================
@@ -48,6 +58,8 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
  *   settingsOpen?: boolean,                        // the Settings page is shown
+ *   onAutomation: () => void,
+ *   automationOpen?: boolean,                      // the Automations area is shown
  * }} props
  */
 export default function Rail({
@@ -61,9 +73,11 @@ export default function Rail({
   onBackup,
   onSettings,
   settingsOpen = false,
+  onAutomation,
+  automationOpen = false,
 }) {
-  // With the Settings page open no panel is shown, and an entry leaves the page for its panel.
-  const open = settingsOpen ? null : panel
+  // With Settings or Automations open no panel is shown, and an entry leaves the page for its panel.
+  const open = settingsOpen || automationOpen ? null : panel
   const toggle = (name) => onPanel(open === name ? null : name)
   const canRead = can('read')
   return (
@@ -109,6 +123,14 @@ export default function Rail({
           />
           <RailButton icon={Search} label="Search (Ctrl+K)" onClick={onSearch} />
         </>
+      )}
+      {can('automation.run') && (
+        <RailButton
+          icon={Workflow}
+          label={automationOpen ? 'Close automations' : 'Automations'}
+          active={automationOpen}
+          onClick={onAutomation}
+        />
       )}
       <span className="flex-1" />
       {can('audit.read') && <RailButton icon={ScrollText} label="Audit log" onClick={onAudit} />}

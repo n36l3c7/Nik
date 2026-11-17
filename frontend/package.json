@@ -19,6 +19,7 @@
     "format:check": "prettier --check . ../docs ../.github ../docker-compose.yml"
   },
   "dependencies": {
+    "@xyflow/react": "13.0.1",
     "elkjs": "0.12.1",
     "lucide-react": "^1.71.0",
     "papaparse": "^5.7.0",

@@ -1132,7 +1132,7 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
   // The sections are in groups; the one shown is marked.
-  await expect(sections.getByRole('group')).toHaveCount(5)
+  await expect(sections.getByRole('group')).toHaveCount(6)
   await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
     'YARA rules',
     'capa rules',
@@ -1618,6 +1618,151 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
+test('a playbook is drawn on the canvas, checked by the server and saved as a version', async () => {
+  const before = page.url()
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  await expect(area.getByText('No playbook yet')).toBeVisible()
+
+  await area.getByRole('button', { name: 'New playbook' }).first().click()
+  const create = page.getByRole('dialog', { name: 'New playbook' })
+  await create.getByLabel('Name').fill('Note on high')
+  await create.getByRole('button', { name: 'Create' }).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks\/[0-9a-f]+$/)
+  await expect(area.getByRole('heading', { name: 'Note on high' })).toBeVisible()
+  await expect(area.getByText('playbook · no version yet')).toBeVisible()
+
+  const canvas = area.getByTestId('playbook-canvas')
+  const library = area.getByRole('complementary', { name: 'Node library' })
+  const inspector = area.getByRole('complementary', { name: 'Inspector' })
+  const nodes = canvas.locator('.react-flow__node')
+  await expect(nodes).toHaveCount(1)
+  await expect(nodes.first()).toContainText('by hand')
+
+  // The trigger: an event of Nik, besides being run by hand.
+  await nodes.first().click()
+  await inspector.getByLabel('On an event').selectOption('incident.created')
+  await expect(nodes.first()).toContainText('incident.created · by hand')
+
+  // A node added from the library comes after the selected one, joined to it.
+  await library.getByLabel('Search nodes').fill('condit')
+  await library.getByRole('button', { name: 'Condition', exact: true }).click()
+  await library.getByLabel('Search nodes').fill('')
+  await expect(nodes).toHaveCount(2)
+  await expect(canvas.locator('.react-flow__edge')).toHaveCount(1)
+  // "Pick a value" writes the expression; what is typed wrong says where.
+  await inspector.getByRole('button', { name: 'Pick a value for Comparison 1: what to compare' }).click()
+  await page
+    .getByRole('dialog', { name: 'Pick a value' })
+    .getByText('trigger.incident.severity', { exact: true })
+    .click()
+  await expect(inspector.getByRole('textbox', { name: 'Comparison 1: what to compare' })).toHaveValue(
+    '{{ trigger.incident.severity }}',
+  )
+  await inspector.getByRole('textbox', { name: 'Comparison 1: with what' }).fill('{{ trigger.incident.severity ')
+  await expect(inspector.getByText('The expression is not closed: add }}')).toBeVisible()
+  await inspector.getByRole('textbox', { name: 'Comparison 1: with what' }).fill('high')
+
+  await library.getByRole('button', { name: 'Add a note', exact: true }).click()
+  await expect(nodes).toHaveCount(3)
+  await expect(canvas.locator('.react-flow__edge')).toHaveCount(2)
+  await expect(inspector.getByRole('group', { name: 'Port then' })).toBeVisible()
+
+  // The draft saves itself: a reload finds the three nodes.
+  await expect(area.getByText('draft saved')).toBeVisible()
+  await page.reload()
+  await expect(nodes).toHaveCount(3)
+
+  // Not a version yet: the note has no text. The server says what and where.
+  await area.getByRole('button', { name: 'Save as version 1' }).click()
+  await expect(page.getByText('One thing to fix before this can be a version.')).toBeVisible()
+  await expect(inspector.getByText('"text" is required')).toBeVisible()
+  await expect(nodes.filter({ hasText: 'Add a note' })).toContainText('1 to fix')
+  await inspector
+    .getByLabel(/^text/)
+    .fill('Severity is {{ trigger.incident.severity }}: look at {{ trigger.incident.name }}')
+
+  // An "End" on the other branch, drawn from the inspector without a pointer; then undo and redo.
+  await library.getByRole('button', { name: 'End', exact: true }).click()
+  await expect(nodes).toHaveCount(4)
+  await area.getByRole('button', { name: 'Node list' }).click()
+  const table = area.getByRole('table', { name: 'The nodes of the playbook' })
+  await expect(table.getByRole('row')).toHaveCount(5)
+  await table.getByRole('button', { name: 'Condition' }).click()
+  await inspector.getByLabel('Draw an edge "no" to').selectOption({ label: 'End' })
+  await expect(table.getByRole('row', { name: /^Condition/ })).toContainText('no → End')
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await expect(table.getByRole('row', { name: /^Condition/ })).not.toContainText('no → End')
+  await area.getByRole('button', { name: 'Redo' }).click()
+  await expect(table.getByRole('row', { name: /^Condition/ })).toContainText('no → End')
+  await area.getByRole('button', { name: 'Tidy up' }).click()
+  await area.getByRole('button', { name: 'Node list' }).click()
+
+  await area.getByRole('button', { name: 'Save as version 1' }).click()
+  await expect(page.getByText('Version 1 saved: it is what runs from now on.')).toBeVisible()
+  await expect(area.getByText('playbook · version 1')).toBeVisible()
+  await expect(area.getByRole('button', { name: 'Save as version 2' })).toBeDisabled()
+
+  // Versions; then what the playbook may reach, behind the double check.
+  await area.getByRole('radio', { name: 'Versions' }).click()
+  await expect(page).toHaveURL(/\/versions$/)
+  await expect(area.getByRole('table', { name: 'Versions of Note on high' }).getByRole('row')).toHaveCount(2)
+  await area.getByRole('radio', { name: 'Settings' }).click()
+  const network = area.getByRole('region', { name: 'Network' })
+  await network.getByLabel('Add a host').fill('https://Hooks.Example.org/path')
+  await network.getByRole('button', { name: 'Add' }).click()
+  await expect(network.getByRole('listitem').filter({ hasText: 'hooks.example.org' })).toBeVisible()
+  await network.getByRole('radio', { name: 'Any host' }).click()
+  const check = page.getByRole('dialog', { name: 'Let this playbook reach any host?' })
+  const allow = check.getByRole('button', { name: 'Allow any host' })
+  await expect(allow).toBeDisabled()
+  await check.getByRole('checkbox').check()
+  await check.locator('#data-guard-name').fill('note on high')
+  await expect(allow).toBeDisabled() // the name, exactly as it is written
+  await check.locator('#data-guard-name').fill('Note on high')
+  await allow.click()
+  await expect(check).toBeHidden()
+  await expect(network.getByText('any host', { exact: true })).toBeVisible()
+  await network.getByRole('radio', { name: 'Listed hosts only' }).click()
+  await expect(network.getByText('any host', { exact: true })).toBeHidden()
+  // A class of data is opened the same way, and closed with one click.
+  const data = area.getByRole('region', { name: 'Data that may leave' })
+  await data.getByRole('button', { name: 'Open: E-mail addresses' }).click()
+  const open = page.getByRole('dialog', { name: 'Let e-mail addresses leave Nik in this playbook?' })
+  await expect(open).toContainText('hooks.example.org')
+  await open.getByRole('checkbox').check()
+  await open.locator('#data-guard-name').fill('Note on high')
+  await open.getByRole('button', { name: 'Allow e-mail addresses' }).click()
+  await expect(data.getByText('may leave', { exact: true })).toBeVisible()
+  await data.getByRole('button', { name: 'Close: E-mail addresses' }).click()
+  await expect(data.getByText('may leave', { exact: true })).toBeHidden()
+
+  // The list: on, with its trigger and version. Settings has the switch for everything.
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  const row = area.getByRole('row').filter({ hasText: 'Note on high' })
+  await expect(row).toContainText('incident.created')
+  await row.getByRole('switch').click()
+  await expect(row.getByRole('switch')).toBeChecked()
+  await area.getByRole('button', { name: 'Close automations' }).click()
+  await expect(area).toBeHidden()
+
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Stop all').click()
+  await expect(page).toHaveURL(/\/settings\/automation\/stop-all$/)
+  await expect(settings.getByText('running')).toBeVisible()
+  await expect(settings.getByText('alive')).toBeVisible()
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Network and data').click()
+  await settings.getByLabel('Add a host').fill('intel.example.org')
+  await settings.getByRole('button', { name: 'Add' }).click()
+  await expect(settings.getByText('intel.example.org can be reached by every playbook.')).toBeVisible()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  // The area was reloaded on its own address: back to the incident the next steps work on.
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()
@@ -1648,6 +1793,8 @@ test('single-key shortcuts can be turned off and on again', async () => {
   await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
   const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
   const flag = sample.getByLabel('Flagged')
+  // The row first: its flag is counted once the list is there.
+  await expect(sample).toBeVisible()
   const before = await flag.count()
 
   await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()

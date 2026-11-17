@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Download,
@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Settings,
   ShieldCheck,
+  Workflow,
 } from 'lucide-react'
 import { useAuth } from './context/AuthContext.jsx'
 import { useArtifacts } from './context/ArtifactContext.jsx'
@@ -34,6 +35,7 @@ import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } fr
 import { api } from './services/api.js'
 import { currentPath, onLocationChange, setPath } from './lib/location.js'
 import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
+import { automationFromPath, automationPath } from './domain/automationNav.js'
 import { mailboxFormatOf } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
@@ -47,6 +49,9 @@ import { detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import SessionExpiredDialog from './components/auth/SessionExpiredDialog.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
+
+// The Automations area comes with the canvas library: loaded when first opened.
+const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
 
 /*
  * ============================================================================
@@ -65,8 +70,9 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
  * Layout: the rail (icons), the side panel it opens (incidents or
  * artifacts, collapsible) and the main column: header, then either the
  * active incident (analysis tab bar + tab) or the artifact opened on its own.
- * The Settings page (/settings/…) takes the whole area next to the rail; what
- * was open under it is there again when it is left.
+ * The Settings page (/settings/…) and the Automations area (/automation/…)
+ * take the whole area next to the rail; what was open under them is there
+ * again when they are left.
  */
 
 // Sidebar width bounds. The maximum is a quarter of the viewport (computed at
@@ -431,6 +437,27 @@ export default function App() {
     if (!settings) settingsReturn.current = null
   }, [settings])
 
+  // The Automations area, in the same way: /automation/<area>/<id>/<tab>.
+  const [automation, setAutomation] = useState(() => automationFromPath(window.location.pathname))
+  useEffect(() => onLocationChange(() => setAutomation(automationFromPath(window.location.pathname))), [])
+  const automationReturn = useRef(null)
+  const openAutomation = useCallback((area = 'playbooks', id = null, tab = null, { replace = false } = {}) => {
+    const inside = Boolean(automationFromPath(window.location.pathname))
+    if (!inside) automationReturn.current = currentPath()
+    setPath(automationPath(area, id, tab), { replace })
+  }, [])
+  const closeAutomation = useCallback(() => {
+    const back = automationReturn.current
+    automationReturn.current = null
+    // Where it was opened from, when that is known; the incident or the start otherwise.
+    setPath(back ?? (activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'))
+  }, [activeIncidentId])
+  useEffect(() => {
+    if (!automation) automationReturn.current = null
+  }, [automation])
+  const canAutomate = can('automation.run')
+  const automationShown = Boolean(automation) && canAutomate && !settings
+
   // The list of keyboard shortcuts ("?" or the header button).
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
@@ -587,6 +614,17 @@ export default function App() {
           },
         ]
       : []),
+    ...(canAutomate
+      ? [
+          {
+            id: 'automations',
+            label: 'Open automations',
+            icon: Workflow,
+            keywords: 'playbooks canvas runs scripts',
+            run: () => openAutomation(),
+          },
+        ]
+      : []),
     { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings('detection') },
     ...(canWrite
       ? [
@@ -622,6 +660,7 @@ export default function App() {
         panel={panel}
         onPanel={(next) => {
           if (settings) closeSettings()
+          else if (automationShown) closeAutomation()
           setPanel(next)
         }}
         counts={{
@@ -637,6 +676,8 @@ export default function App() {
         onBackup={() => openSettings('backup')}
         onSettings={() => (settings ? closeSettings() : openSettings('detection'))}
         settingsOpen={Boolean(settings)}
+        onAutomation={() => (automationShown ? closeAutomation() : openAutomation())}
+        automationOpen={automationShown}
       />
       {settings && (
         <SettingsPage
@@ -649,7 +690,23 @@ export default function App() {
           }}
         />
       )}
-      {!settings && panel && canRead && (
+      {automationShown && (
+        <Suspense
+          fallback={
+            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
+              Loading automations…
+            </p>
+          }
+        >
+          <AutomationPage
+            route={automation}
+            onNavigate={openAutomation}
+            onClose={closeAutomation}
+            onOpenSettings={openSettings}
+          />
+        </Suspense>
+      )}
+      {!settings && !automationShown && panel && canRead && (
         <>
           <Sidebar
             panel={panel}
@@ -664,7 +721,7 @@ export default function App() {
         </>
       )}
 
-      <div className={settings ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
+      <div className={settings || automationShown ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
         <Header
           onOpenSearch={() => setPaletteOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}

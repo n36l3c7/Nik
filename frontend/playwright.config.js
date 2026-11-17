@@ -46,6 +46,8 @@ export default defineConfig({
         SAMPLE_STORE: E2E_SAMPLES,
         // No automatic threat-intelligence lookups from the test server.
         ENRICHMENT_WORKER: 'false',
+        // Playbooks run inside the test server (in production a container of its own does).
+        AUTOMATION_WORKER: 'inline',
         // Set by CI when the analyzer container runs (see .github/workflows/ci.yml).
         ANALYZER_URL: process.env.E2E_ANALYZER_URL ?? '',
         ANALYZER_TOKEN: process.env.E2E_ANALYZER_TOKEN ?? '',

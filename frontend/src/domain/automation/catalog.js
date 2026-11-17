@@ -1,0 +1,277 @@
+/*
+ * The library of nodes (GET /api/automation/catalog) as the canvas uses it:
+ * its groups, the node an entry becomes when it is dropped, what a node is
+ * called, and the values the expressions of a node can pick.
+ */
+import { IN_LOOP, newId, nodeOf, readable, triggerOf } from './graph.js'
+
+/** The trigger is not in the library (a playbook has exactly one), so it is described here. */
+export const TRIGGER_ENTRY = {
+  id: 'flow.trigger',
+  kind: 'trigger',
+  group: 'Flow',
+  name: 'Trigger',
+  description: 'What starts the playbook: an event, a schedule, or a person.',
+  arguments: [],
+  outputs: [],
+}
+
+const INCIDENT_FIELDS = [
+  ['id', 'text', 'Its id'],
+  ['url', 'text', 'Its address in Nik'],
+  ['name', 'text', 'Its name'],
+  ['ticket', 'text', 'The ticket id'],
+  ['status', 'text', 'open, in_progress or closed'],
+  ['severity', 'text', 'low, medium, high or critical'],
+  ['assignee', 'text', 'Who has it'],
+  ['host', 'text', 'The host'],
+  ['username', 'text', 'The user'],
+  ['os', 'text', 'The operating system'],
+  ['created', 'text', 'When it was created'],
+  ['modified', 'text', 'When it last changed'],
+].map(([name, type, description]) => ({ name: `incident.${name}`, type, description }))
+
+/** What `{{ trigger.… }}` holds, by what starts the playbook. */
+export function triggerFields(config = {}) {
+  const fields = []
+  if (config.event) {
+    fields.push(...INCIDENT_FIELDS)
+    if (config.event === 'incident.updated') {
+      fields.push({ name: 'changed', type: 'list', description: 'The fields that changed' })
+    }
+  }
+  if (config.manual) {
+    fields.push({ name: 'actor', type: 'text', description: 'Who started the run' })
+    if (!config.event) fields.push(...INCIDENT_FIELDS.map((field) => ({ ...field, optional: true })))
+  }
+  if (config.cron) {
+    fields.push({ name: 'at', type: 'text', description: 'When the schedule fired' })
+    fields.push({ name: 'cron', type: 'text', description: 'The schedule' })
+  }
+  return fields
+}
+
+const RUN_FIELDS = [
+  { name: 'id', type: 'text', description: 'The id of this run' },
+  { name: 'url', type: 'text', description: 'Its address in Nik' },
+  { name: 'playbook', type: 'text', description: "The playbook's name" },
+  { name: 'started_at', type: 'text', description: 'When it started' },
+  { name: 'dry_run', type: 'bool', description: 'Whether it is a dry run' },
+]
+
+const list = (value) => (Array.isArray(value) ? value : [])
+
+/** The library in groups: Flow, Nik, the connectors as the server lists them, then HTTP, E-mail and Scripts. */
+const GROUP_RANK = { Flow: 0, Nik: 1, HTTP: 3, 'E-mail': 4, Scripts: 5 }
+export function groupsOf(entries, query = '') {
+  const words = String(query).toLowerCase().split(/\s+/).filter(Boolean)
+  const groups = new Map()
+  for (const entry of list(entries)) {
+    const haystack = `${entry.name} ${entry.group} ${entry.description ?? ''} ${entry.id}`.toLowerCase()
+    if (!words.every((word) => haystack.includes(word))) continue
+    if (!groups.has(entry.group)) groups.set(entry.group, [])
+    groups.get(entry.group).push(entry)
+  }
+  const rank = (name) => GROUP_RANK[name] ?? 2
+  return [...groups].map(([name, found]) => ({ name, entries: found })).sort((a, b) => rank(a.name) - rank(b.name))
+}
+
+/** The library entry a node was made from; null when it is gone (an action or a script removed). */
+export function entryOf(node, entries) {
+  if (!node) return null
+  if (node.kind === 'trigger') return TRIGGER_ENTRY
+  const all = list(entries)
+  if (node.kind === 'action')
+    return all.find((entry) => entry.kind === 'action' && entry.id === node.config?.action) ?? null
+  if (node.kind === 'script') {
+    const found = all.find((entry) => entry.kind === 'script' && entry.script === node.config?.script)
+    // The node stays on the version it was saved with; the entry is the current one.
+    return found ?? null
+  }
+  return all.find((entry) => entry.kind === node.kind && entry.group === 'Flow') ?? null
+}
+
+const defaults = (declared) =>
+  Object.fromEntries(
+    list(declared)
+      .filter((argument) => argument.default !== undefined && argument.default !== null)
+      .map((argument) => [argument.name, argument.default]),
+  )
+
+/** The settings a node starts with. */
+export function startingConfig(entry) {
+  switch (entry.kind) {
+    case 'trigger':
+      return { manual: true }
+    case 'condition':
+      return { all: [{ left: '', op: 'eq', right: '' }] }
+    case 'for_each':
+      return { items: '', max: 500 }
+    case 'wait':
+      return { seconds: 300 }
+    case 'approval':
+      return { question: '' }
+    case 'action':
+      return { action: entry.id, args: defaults(entry.arguments) }
+    case 'script':
+      return { script: entry.script, script_version: entry.version, args: defaults(entry.arguments) }
+    case 'playbook':
+      return { playbook: '', args: {}, wait: true }
+    case 'end':
+      return { status: 'done', message: '' }
+    default:
+      return {}
+  }
+}
+
+/** The node an entry of the library becomes on the canvas. */
+export function nodeFrom(entry, graph, position) {
+  return {
+    id: newId(graph, entry.kind === 'action' ? entry.id.split('.').at(-1) : entry.name),
+    kind: entry.kind,
+    name: entry.kind === 'playbook' ? 'Run another playbook' : entry.name,
+    position: { x: Math.round(position.x), y: Math.round(position.y) },
+    config: startingConfig(entry),
+  }
+}
+
+/** A free place for a node added without a drop: under the lowest node, or under `after`. */
+export function freePosition(graph, after = null) {
+  const anchor = after ? nodeOf(graph, after) : null
+  const nodes = list(graph?.nodes)
+  if (anchor) {
+    let spot = { x: anchor.position.x, y: anchor.position.y + 110 }
+    while (nodes.some((node) => Math.abs(node.position.x - spot.x) < 150 && Math.abs(node.position.y - spot.y) < 60)) {
+      spot = { x: spot.x + 220, y: spot.y }
+    }
+    return spot
+  }
+  if (nodes.length === 0) return { x: 40, y: 40 }
+  const lowest = nodes.reduce((found, node) => (node.position.y > found.position.y ? node : found))
+  return { x: lowest.position.x, y: lowest.position.y + 110 }
+}
+
+/** The small line over a node's name: "Action · Nik", "Script · GroupByField". */
+export function headingOf(node, entry) {
+  switch (node.kind) {
+    case 'action':
+      return `Action · ${entry?.group ?? 'missing'}`
+    case 'script':
+      return `Script · ${node.config?.script ?? ''}`
+    case 'for_each':
+      return 'For each'
+    case 'playbook':
+      return 'Playbook'
+    default:
+      return node.kind.charAt(0).toUpperCase() + node.kind.slice(1)
+  }
+}
+
+const duration = (seconds) => {
+  if (!Number.isFinite(seconds)) return ''
+  if (seconds % 86400 === 0) return `${seconds / 86400} d`
+  if (seconds % 3600 === 0) return `${seconds / 3600} h`
+  return `${Math.round(seconds / 60)} min`
+}
+
+/** What a node says about itself under its name, from its settings. */
+export function summaryOf(node, entry) {
+  const config = node.config ?? {}
+  switch (node.kind) {
+    case 'trigger': {
+      const ways = []
+      if (config.event) ways.push(config.event)
+      if (config.cron) ways.push(`schedule ${config.cron}`)
+      if (config.manual) ways.push('by hand')
+      return ways.join(' · ') || 'not set yet'
+    }
+    case 'condition': {
+      const key = config.any ? 'any' : 'all'
+      const count = list(config[key]).length
+      return count === 1 ? '1 comparison' : `${key} of ${count} comparisons`
+    }
+    case 'for_each':
+      return config.items ? `each of ${config.items}` : 'no list yet'
+    case 'wait':
+      return config.until
+        ? `until a condition · ${duration(config.timeout ?? 86400)} at most`
+        : duration(config.seconds)
+    case 'approval':
+      return `${config.question || 'no question yet'} · ${config.wait_seconds ? `waits ${duration(config.wait_seconds)}` : 'waits without limit'}`
+    case 'action': {
+      if (!entry) return 'this action does not exist any more'
+      // Named as its action: what it is given says more than the name twice.
+      const given = Object.entries(config.args ?? {}).find(([, value]) => value !== '' && value !== null)
+      if (node.name && node.name !== entry.name) return entry.name
+      return given
+        ? `${given[0]}: ${typeof given[1] === 'string' ? given[1] : JSON.stringify(given[1])}`
+        : entry.description || entry.name
+    }
+    case 'script':
+      return entry ? `version ${config.script_version}` : 'this script does not exist any more'
+    case 'playbook':
+      return config.playbook || 'no playbook yet'
+    case 'end':
+      return config.status === 'failed'
+        ? `failed${config.message ? `: ${config.message}` : ''}`
+        : config.message || 'done'
+    default:
+      return ''
+  }
+}
+
+/** True when the node asks a person before it runs (its own setting, else what it does and the playbook's default). */
+export function asksApproval(node, entry, approvalDefault = true) {
+  if (node.kind !== 'action') return false
+  const asked = node.config?.approval?.ask
+  if (typeof asked === 'boolean') return asked
+  return Boolean(entry?.changesOutside) && approvalDefault
+}
+
+/**
+ * The values the expressions of a node can pick, as a tree:
+ * `[{ name, label, fields: [{ path, type, description }] }]`. `path` is what
+ * goes between the braces.
+ */
+export function valueTree(graph, id, entries) {
+  const { nodes, loop, poll } = readable(graph, id)
+  const trigger = triggerOf(graph)
+  const roots = []
+  const push = (name, label, fields) =>
+    roots.push({
+      name,
+      label,
+      fields: fields.map((field) => ({ ...field, path: field.name ? `${name}.${field.name}` : name })),
+    })
+  if (trigger) push('trigger', 'What started the run', triggerFields(trigger.config))
+  for (const other of nodes) {
+    const node = nodeOf(graph, other)
+    if (!node || node.kind === 'trigger' || node.kind === 'end') continue
+    const entry = entryOf(node, entries)
+    let outputs = list(entry?.outputs)
+    if (node.kind === 'script') outputs = list(entry?.outputs)
+    push(
+      node.id,
+      node.name || node.id,
+      outputs.length ? outputs : [{ name: '', type: 'any', description: 'What the node gave' }],
+    )
+  }
+  if (loop) {
+    push('item', 'The item of this turn', [{ name: '', type: 'any', description: `One of the items of "${loop}"` }])
+    push('index', 'Its position', [{ name: '', type: 'number', description: 'Counted from 0' }])
+  }
+  if (poll)
+    push('poll', 'The last answer', [{ name: '', type: 'any', description: 'What the action asked again gave' }])
+  const inputs = list(graph?.inputs).filter((input) => input?.name)
+  if (inputs.length) {
+    push(
+      'inputs',
+      'Inputs of the playbook',
+      inputs.map((input) => ({ name: input.name, type: input.type ?? 'text', description: input.description ?? '' })),
+    )
+  }
+  push('run', 'This run', RUN_FIELDS)
+  return roots
+}
+
+export { IN_LOOP }
