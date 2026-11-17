@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { AlertCircle, CheckCircle2, KeyRound, UserCog } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
-import { Badge, Button } from '../../ui/index.js'
+import { rolesOf } from '../../../domain/permissions.js'
+import { Button } from '../../ui/index.js'
+import { RoleChips } from '../RolePicker.jsx'
 
 /*
  * "My account" settings section, for every user: who is signed in, and a
@@ -55,9 +57,7 @@ export default function MyAccountSection() {
         </div>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-fg-muted">
           Signed in as <span className="font-medium text-fg">{currentUser?.username}</span>
-          <Badge color={currentUser?.role === 'admin' ? 'cyan' : 'slate'}>
-            {currentUser?.role === 'admin' ? 'Admin' : 'Analyst'}
-          </Badge>
+          <RoleChips roles={rolesOf(currentUser)} />
         </p>
       </div>
 

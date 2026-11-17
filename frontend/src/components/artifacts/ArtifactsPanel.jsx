@@ -37,7 +37,7 @@ function Chip({ active, onClick, children }) {
  */
 export default function ArtifactsPanel({ width, onNewAnalysis }) {
   const { artifacts, counts, filters, setFilters, loading, error, currentId, openArtifact, refresh } = useArtifacts()
-  const { currentUser } = useAuth()
+  const { can } = useAuth()
   const [transfer, setTransfer] = useState(null) // { mode: 'export', ids, label } | { mode: 'import' }
   // No incident here: the menu offers what an artifact offers on its own.
   const menu = useItemMenu(null)
@@ -77,9 +77,11 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
         <p className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-wider text-fg-muted">
           ARTIFACTS · {total}
         </p>
-        <Button size="sm" icon={Plus} onClick={onNewAnalysis}>
-          New analysis
-        </Button>
+        {can('write') && (
+          <Button size="sm" icon={Plus} onClick={onNewAnalysis}>
+            New analysis
+          </Button>
+        )}
       </div>
 
       <div className="space-y-2 border-b border-line px-3 py-2.5">
@@ -188,7 +190,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
         >
           Export {artifacts.length > 0 ? Math.min(artifacts.length, 500) : ''}
         </Button>
-        {currentUser?.role === 'admin' && (
+        {can('admin') && (
           <Button
             size="sm"
             variant="secondary"

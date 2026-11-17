@@ -332,7 +332,10 @@ const incidentPath = (incidentId) => `/incidents/${encodeURIComponent(incidentId
 const REVALIDATE_EVERY_MS = 15000
 
 export function IncidentProvider({ children }) {
-  const { currentUser, isAuthenticated, sessionExpired } = useAuth()
+  const { currentUser, isAuthenticated: signedIn, sessionExpired, can } = useAuth()
+  // An account that cannot read incidents (the audit role alone, say) loads none.
+  const isAuthenticated = signedIn && can('read')
+  const canWrite = can('write')
   const { log } = useAudit()
 
   // Light listing rows (no artifacts): what the sidebar renders.
@@ -635,13 +638,18 @@ export function IncidentProvider({ children }) {
     (incidentId, updater, { local = false } = {}) => {
       const prev = documentsRef.current[incidentId]
       if (!prev) return null
+      if (!local && !canWrite) {
+        // A read-only account: the change is not made, here or on the server.
+        setStorageError('Your account can read but not change: nothing was changed.')
+        return prev
+      }
       const next = updater(prev)
       storeDocument(next)
       if (local) queue.adopt(incidentId, prev, next)
       else queue.touch(incidentId)
       return next
     },
-    [queue, storeDocument],
+    [queue, storeDocument, canWrite],
   )
 
   /**

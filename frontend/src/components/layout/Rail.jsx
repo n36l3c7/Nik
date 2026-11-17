@@ -5,7 +5,8 @@ import { Boxes, DatabaseBackup, Fingerprint, FolderClosed, ScrollText, Search, S
  * RAIL — the narrow column of icons on the left edge
  * ============================================================================
  *
- * Always visible. The top icons choose what the side panel lists (incidents
+ * Always visible; an entry is shown to the accounts whose roles let them use
+ * it. The top icons choose what the side panel lists (incidents
  * or artifacts); clicking the active one closes the panel, so the rail is also
  * how the sidebar collapses. The bottom icons open the tools that used to sit
  * at the foot of the sidebar.
@@ -43,13 +44,14 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
  *   panel: 'incidents' | 'artifacts' | 'iocs' | null,   // the open side panel
  *   onPanel: (panel: string | null) => void,
  *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number },
- *   isAdmin: boolean,
+ *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
  * }} props
  */
-export default function Rail({ panel, onPanel, counts, isAdmin, onSearch, onAudit, onUsers, onBackup, onSettings }) {
+export default function Rail({ panel, onPanel, counts, can, onSearch, onAudit, onUsers, onBackup, onSettings }) {
   const toggle = (name) => onPanel(panel === name ? null : name)
+  const canRead = can('read')
   return (
     <nav
       aria-label="Sections"
@@ -61,39 +63,43 @@ export default function Rail({ panel, onPanel, counts, isAdmin, onSearch, onAudi
       >
         &gt;_
       </span>
-      <RailButton
-        icon={FolderClosed}
-        label={panel === 'incidents' ? 'Hide the incidents' : 'Incidents'}
-        active={panel === 'incidents'}
-        count={counts.incidents}
-        onClick={() => toggle('incidents')}
-      />
-      <RailButton
-        icon={Boxes}
-        label={panel === 'artifacts' ? 'Hide the artifacts' : 'Artifacts'}
-        active={panel === 'artifacts'}
-        count={counts.artifacts}
-        onClick={() => toggle('artifacts')}
-      />
-      <RailButton
-        icon={Fingerprint}
-        label={
-          panel === 'iocs'
-            ? 'Hide the IoC library'
-            : counts.alerts
-              ? `IoC library (${counts.alerts} new alerts)`
-              : 'IoC library'
-        }
-        active={panel === 'iocs'}
-        count={counts.iocs}
-        alert={counts.alerts > 0}
-        onClick={() => toggle('iocs')}
-      />
-      <RailButton icon={Search} label="Search (Ctrl+K)" onClick={onSearch} />
+      {canRead && (
+        <>
+          <RailButton
+            icon={FolderClosed}
+            label={panel === 'incidents' ? 'Hide the incidents' : 'Incidents'}
+            active={panel === 'incidents'}
+            count={counts.incidents}
+            onClick={() => toggle('incidents')}
+          />
+          <RailButton
+            icon={Boxes}
+            label={panel === 'artifacts' ? 'Hide the artifacts' : 'Artifacts'}
+            active={panel === 'artifacts'}
+            count={counts.artifacts}
+            onClick={() => toggle('artifacts')}
+          />
+          <RailButton
+            icon={Fingerprint}
+            label={
+              panel === 'iocs'
+                ? 'Hide the IoC library'
+                : counts.alerts
+                  ? `IoC library (${counts.alerts} new alerts)`
+                  : 'IoC library'
+            }
+            active={panel === 'iocs'}
+            count={counts.iocs}
+            alert={counts.alerts > 0}
+            onClick={() => toggle('iocs')}
+          />
+          <RailButton icon={Search} label="Search (Ctrl+K)" onClick={onSearch} />
+        </>
+      )}
       <span className="flex-1" />
-      <RailButton icon={ScrollText} label="Audit log" onClick={onAudit} />
-      <RailButton icon={Users} label="Users" onClick={onUsers} />
-      {isAdmin && <RailButton icon={DatabaseBackup} label="Full backup" onClick={onBackup} />}
+      {can('audit.read') && <RailButton icon={ScrollText} label="Audit log" onClick={onAudit} />}
+      {can('admin') && <RailButton icon={Users} label="Users" onClick={onUsers} />}
+      {can('admin') && <RailButton icon={DatabaseBackup} label="Full backup" onClick={onBackup} />}
       <RailButton icon={Settings} label="Open platform settings" onClick={onSettings} />
     </nav>
   )

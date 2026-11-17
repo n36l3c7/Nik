@@ -38,29 +38,41 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
  * ============================================================================
  *
  * A large, sectioned dialog replacing the old cramped settings/users/audit
- * modals. Sections (left nav): the analysts' working settings (Detection
- * rules, Business hours, IOC allowlist), My account and the Audit log for
- * everyone; Report header, Mail analysis, Threat intelligence, Accounts, API
- * keys, Storage and the rule sets for admins only (the server enforces the same split).
+ * modals. Each section names the permission it needs (the server enforces
+ * the same split): the analysts' working settings for whoever reads
+ * incidents, the rule sets for `rules.manage`, the Audit log for
+ * `audit.read`, the rest for admins; My account for everyone.
  * The active section is owned by App so the header and sidebar buttons can
  * deep-link into a specific section.
  */
 
 const SECTIONS = [
-  { id: 'detection', label: 'Detection rules', icon: ShieldAlert, Component: DetectionRulesSection },
-  { id: 'hours', label: 'Business hours', icon: Clock, Component: BusinessHoursSection },
-  { id: 'allowlist', label: 'IOC allowlist', icon: ShieldCheck, Component: IocAllowlistSection },
-  { id: 'report', label: 'Report header', icon: FileText, Component: ReportBrandingSection, adminOnly: true },
-  { id: 'mail', label: 'Mail analysis', icon: Mail, Component: MailSettingsSection, adminOnly: true },
-  { id: 'intel', label: 'Threat intelligence', icon: Radar, Component: ThreatIntelSection, adminOnly: true },
+  {
+    id: 'detection',
+    label: 'Detection rules',
+    icon: ShieldAlert,
+    Component: DetectionRulesSection,
+    permission: 'read',
+  },
+  { id: 'hours', label: 'Business hours', icon: Clock, Component: BusinessHoursSection, permission: 'read' },
+  { id: 'allowlist', label: 'IOC allowlist', icon: ShieldCheck, Component: IocAllowlistSection, permission: 'read' },
+  { id: 'report', label: 'Report header', icon: FileText, Component: ReportBrandingSection, permission: 'admin' },
+  { id: 'mail', label: 'Mail analysis', icon: Mail, Component: MailSettingsSection, permission: 'admin' },
+  { id: 'intel', label: 'Threat intelligence', icon: Radar, Component: ThreatIntelSection, permission: 'admin' },
   { id: 'account', label: 'My account', icon: UserCog, Component: MyAccountSection },
-  { id: 'accounts', label: 'Accounts', icon: Users, Component: AccountsSection, adminOnly: true },
-  { id: 'apikeys', label: 'API keys', icon: KeyRound, Component: ApiKeysSection, adminOnly: true },
-  { id: 'yara', label: 'YARA rules', icon: FileSearch, Component: YaraRulesSection, adminOnly: true },
-  { id: 'flirt', label: 'FLIRT signatures', icon: Fingerprint, Component: FlirtSignaturesSection, adminOnly: true },
-  { id: 'capa', label: 'capa rules', icon: Radar, Component: CapaRulesSection, adminOnly: true },
-  { id: 'storage', label: 'Storage', icon: HardDrive, Component: StorageSection, adminOnly: true },
-  { id: 'audit', label: 'Audit log', icon: ScrollText, Component: AuditLogSection },
+  { id: 'accounts', label: 'Accounts', icon: Users, Component: AccountsSection, permission: 'admin' },
+  { id: 'apikeys', label: 'API keys', icon: KeyRound, Component: ApiKeysSection, permission: 'admin' },
+  { id: 'yara', label: 'YARA rules', icon: FileSearch, Component: YaraRulesSection, permission: 'rules.manage' },
+  {
+    id: 'flirt',
+    label: 'FLIRT signatures',
+    icon: Fingerprint,
+    Component: FlirtSignaturesSection,
+    permission: 'rules.manage',
+  },
+  { id: 'capa', label: 'capa rules', icon: Radar, Component: CapaRulesSection, permission: 'rules.manage' },
+  { id: 'storage', label: 'Storage', icon: HardDrive, Component: StorageSection, permission: 'admin' },
+  { id: 'audit', label: 'Audit log', icon: ScrollText, Component: AuditLogSection, permission: 'audit.read' },
 ]
 
 /**
@@ -73,10 +85,9 @@ const SECTIONS = [
  * }} props
  */
 export default function SettingsPanel({ open, onClose, section = 'detection', onSectionChange, onOpenArtifact }) {
-  const { currentUser } = useAuth()
-  const isAdmin = currentUser?.role === 'admin'
+  const { can } = useAuth()
 
-  const visibleSections = SECTIONS.filter((s) => !s.adminOnly || isAdmin)
+  const visibleSections = SECTIONS.filter((s) => !s.permission || can(s.permission))
   // Guard against a hidden section being selected (e.g. non-admin deep-link).
   const activeId = visibleSections.some((s) => s.id === section) ? section : visibleSections[0].id
   const active = visibleSections.find((s) => s.id === activeId) ?? visibleSections[0]

@@ -162,7 +162,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const { view, quick, version, refresh, lists, checks, openView, openAdd, openExport, openCheck, openListForm } =
     library
   const { showToast } = useToast()
-  const { currentUser } = useAuth()
+  const { currentUser, can } = useAuth()
   const { openArtifact, refresh: refreshArtifacts } = useArtifacts()
   const [analysing, setAnalysing] = useState(null) // the plan of POST /iocs/analyse (dryRun)
   const listId = view?.kind === 'list' ? view.id : null
@@ -301,7 +301,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
   }
   const stop = (check) => api.post(`/iocs/checks/${check.id}/stop`, {}).then(refresh)
   const feedUrl = list ? `${window.location.origin}/api/iocs/lists/${list.id}/feed` : ''
-  const canDelete = list && (currentUser?.role === 'admin' || list.createdBy === currentUser?.username)
+  const canDelete = list && (can('admin') || list.createdBy === currentUser?.username)
 
   if (!view) return null
   if (view.kind === 'alerts') return <Alerts onOpenIncident={onOpenIncident} />

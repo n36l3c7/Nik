@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A route asks for a permission, never for a role; a test walks every route
     of the API with a key of each role, and fails when a new route does not
     say who may call it.
+- **Accounts and API keys take role chips.** In Settings an admin ticks the
+  roles of an account or a key, each with what it grants; the chips are next
+  to every name, in My account and in the header. The read-only switch of a
+  key is gone: a read-only key is a key with the Viewer role.
+- **The interface shows an account what its roles let it use.** A section of
+  the settings, an entry of the rail, a button that creates or imports is
+  there when the account can use it. A Viewer reads and is told so
+  (*read-only* in the header); an account with the Audit role alone signs in
+  and finds the audit log and its own account.
 
 ## [3.8.0] - 2026-11-13
 

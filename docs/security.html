@@ -266,8 +266,17 @@
           a row. A password change or disabling an account ends its sessions.
         </li>
         <li>
-          There is always one admin that can sign in. API keys are stored as digests, carry a role, scopes and an
-          optional expiry, and are shown once.
+          There is always one admin that can sign in. API keys are stored as digests, carry roles and an optional
+          expiry, and are shown once.
+        </li>
+        <li>
+          <strong>Roles are tags that add up</strong>, and every route of the API asks for a permission, never for a
+          role: <code>read</code>, <code>write</code>, <code>rules.manage</code>, <code>audit.read</code>,
+          <code>admin</code>. An account or a key may do what its roles grant together, and nothing else: a test walks
+          every route with a key of each role, and fails when a new route does not say who may call it. The roles are
+          read from the database on every request, so one that is taken away stops working at once. Only an admin gives
+          roles; nobody takes the admin role away from themselves or from the last admin; nobody, admin included, can
+          write an audit entry by hand.
         </li>
         <li>
           The <strong>audit log is written by the server</strong> for every change, whoever makes it and however: the
@@ -318,7 +327,11 @@
           and try a restore once.
         </li>
         <li>Give each person an account; disable, do not delete, the account of someone who leaves.</li>
-        <li>Give an API key the narrowest role and scopes that work, and an expiry.</li>
+        <li>
+          Give an account and an API key the narrowest roles that work (Viewer for a key that only reads), and a key an
+          expiry. Keep the Admin role for the few who manage the platform: an analyst who maintains the rule sets needs
+          Rules, not Admin.
+        </li>
         <li>
           Update: <code>git pull</code> and <code>compose up -d --build</code> rebuild the images with the current fixes
           of LibreOffice, Wireshark and Chromium, which is where the next vulnerability will be.

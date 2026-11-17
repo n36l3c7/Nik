@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { api, onUnauthorized } from '../services/api.js'
+import { can as userCan } from '../domain/permissions.js'
 import { useAudit } from './AuditContext.jsx'
 
 /*
@@ -11,7 +12,9 @@ import { useAudit } from './AuditContext.jsx'
  * issues an httpOnly session cookie (`nik_session`). The client NEVER hashes
  * passwords and never sees the hash — the old crypto.subtle code is gone.
  *
- * User shape (as returned by the API): { id, username, role, createdAt, createdBy, disabled }.
+ * User shape (as returned by the API): { id, username, roles, permissions, createdAt,
+ * createdBy, disabled }. `roles` are the role tags of the account, `permissions` what
+ * they grant together; the interface asks `can('<permission>')`, never for a role.
  *
  * Boot sequence (on mount):
  *   1. GET /auth/bootstrap → { hasUsers }. This also doubles as the
@@ -59,11 +62,15 @@ export function AuthProvider({ children }) {
 
   /** Reload the user list (auth required). Called after login / on demand. */
   const refreshUsers = useCallback(async () => {
+    // Only an admin lists the accounts: nobody else asks.
+    if (!userCan(currentUserRef.current, 'admin')) {
+      setUsers([])
+      return
+    }
     try {
       const res = await api.get('/users')
       setUsers(Array.isArray(res?.users) ? res.users : [])
     } catch {
-      // Not authorized (e.g. analyst) or transient error → leave list empty.
       setUsers([])
     }
   }, [])
@@ -94,6 +101,7 @@ export function AuthProvider({ children }) {
     // The server is reachable; a failing /auth/me just means "not signed in".
     try {
       const { user } = await api.get('/auth/me')
+      currentUserRef.current = user
       setCurrentUser(user)
       await refreshUsers()
     } catch {
@@ -112,12 +120,12 @@ export function AuthProvider({ children }) {
    * @returns {Promise<{ ok: boolean, error: string|null }>}
    */
   const createUser = useCallback(
-    async ({ username, password, role = 'analyst' }) => {
+    async ({ username, password, roles = ['analyst'] }) => {
       try {
         await api.post('/users', {
           username: normalizeUsername(username),
           password,
-          role,
+          roles,
         })
         // First-run success flips `hasUsers`; a live admin refreshes the list.
         await refreshBootstrap()
@@ -138,6 +146,7 @@ export function AuthProvider({ children }) {
           username: normalizeUsername(username),
           password: password ?? '',
         })
+        currentUserRef.current = user
         setCurrentUser(user)
         setSessionExpired(false)
         await refreshUsers()
@@ -178,7 +187,7 @@ export function AuthProvider({ children }) {
   )
 
   /**
-   * Change an account (admin action): any of `{ username, role, password,
+   * Change an account (admin action): any of `{ username, roles, password,
    * disabled }`. A change to one's own account updates the signed-in user.
    * @returns {Promise<{ok, error}>}
    */
@@ -186,7 +195,10 @@ export function AuthProvider({ children }) {
     async (userId, changes) => {
       try {
         const { user } = await api.patch(`/users/${encodeURIComponent(userId)}`, changes)
-        if (user.id === currentUserRef.current?.id) setCurrentUser(user)
+        if (user.id === currentUserRef.current?.id) {
+          currentUserRef.current = user
+          setCurrentUser(user)
+        }
         await refreshUsers()
         return { ok: true, error: null }
       } catch (err) {
@@ -206,9 +218,13 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  /** Whether the signed-in account holds one of the permissions. */
+  const can = useCallback((...wanted) => userCan(currentUser, ...wanted), [currentUser])
+
   const value = {
     users,
     currentUser,
+    can,
     hasUsers,
     isAuthenticated: currentUser !== null,
     sessionExpired,

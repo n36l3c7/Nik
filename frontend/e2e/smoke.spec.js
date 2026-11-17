@@ -1298,12 +1298,13 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await anna.getByRole('button', { name: 'Edit user anna' }).click()
   const edit = page.getByRole('dialog', { name: 'Account: anna' })
   await edit.locator('#edit-username').fill('anna.b')
-  await edit.getByRole('combobox').selectOption('admin')
+  await edit.getByRole('checkbox', { name: /^Admin/ }).check()
   await edit.locator('#edit-password').fill('second-secret')
   await edit.getByRole('button', { name: 'Save changes' }).click()
   await expect(edit).toHaveCount(0)
   const renamed = accounts.getByRole('listitem').filter({ hasText: 'anna.b' })
-  await expect(renamed).toContainText('Admin')
+  // Roles add up: the account is an analyst and an admin.
+  await expect(renamed.getByLabel('Roles')).toHaveText('AnalystAdmin')
 
   // The account signs in with its new name and password, and changes its own password.
   const other = await browser.newPage()
@@ -1323,7 +1324,7 @@ test('an admin manages accounts; the audit log is written by the server', async 
   // Disabled by the admin: the open session is over at its next request.
   await renamed.getByRole('button', { name: 'Edit user anna.b' }).click()
   const again = page.getByRole('dialog', { name: 'Account: anna.b' })
-  await again.getByRole('checkbox').check()
+  await again.getByRole('checkbox', { name: /^Disabled/ }).check()
   await again.getByRole('button', { name: 'Save changes' }).click()
   await expect(renamed).toContainText('Disabled')
   await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('Audit log').click()
@@ -1337,8 +1338,9 @@ test('an admin manages accounts; the audit log is written by the server', async 
     .getByRole('button', { name: /^Edit user/ })
     .click()
   const own = page.getByRole('dialog', { name: `Account: ${ADMIN.username}` })
-  await expect(own.getByRole('combobox')).toBeDisabled()
-  await expect(own.getByRole('checkbox')).toBeDisabled()
+  await expect(own.getByRole('checkbox', { name: /^Admin/ })).toBeDisabled()
+  await expect(own.getByRole('checkbox', { name: /^Analyst/ })).toBeEnabled()
+  await expect(own.getByRole('checkbox', { name: /^Disabled/ })).toBeDisabled()
   await own.getByRole('button', { name: 'Cancel' }).click()
 
   // Everything above is in the audit log, recorded by the server.
@@ -1353,6 +1355,97 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await sections.getByText('Accounts').click()
   await renamed.getByRole('button', { name: 'Delete user anna.b' }).click()
   await expect(renamed).toHaveCount(0)
+  await settings.getByRole('button', { name: 'Close' }).click()
+})
+
+test('roles are tags: an account sees and does what its roles grant together', async ({ browser }) => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Accounts').click()
+  const accounts = settings.getByRole('list', { name: 'Accounts' })
+
+  // Rita reads and manages the rule sets; Otto reads the audit log and nothing else.
+  const add = async (name, roles) => {
+    await settings.locator('#add-username').fill(name)
+    await settings.locator('#add-password').fill('role-secret')
+    for (const role of ['Viewer', 'Analyst', 'Rules', 'Audit', 'Admin']) {
+      await settings.locator(`#add-role-${role.toLowerCase()}`).setChecked(roles.includes(role))
+    }
+    await settings.getByRole('button', { name: 'Add user' }).click()
+    await expect(accounts.getByRole('listitem').filter({ hasText: name }).getByLabel('Roles')).toHaveText(
+      roles.join(''),
+    )
+  }
+  await add('rita', ['Viewer', 'Rules'])
+  await add('otto', ['Audit'])
+  // An account needs at least one role.
+  await settings.locator('#add-role-analyst').uncheck()
+  await expect(settings.getByRole('button', { name: 'Add user' })).toBeDisabled()
+  await settings.locator('#add-role-analyst').check()
+  await settings.getByRole('button', { name: 'Close' }).click()
+
+  const signIn = async (name) => {
+    const other = await browser.newPage()
+    await other.goto('/')
+    await other.fill('#login-username', name)
+    await other.fill('#login-password', 'role-secret')
+    await other.click('button[type=submit]')
+    await expect(other.getByRole('button', { name: 'Open platform settings' })).toBeVisible()
+    return other
+  }
+
+  // A viewer with the rules role: reads the incidents, creates none, manages the rule sets.
+  const rita = await signIn('rita')
+  const ritaRail = rita.getByRole('navigation', { name: 'Sections' })
+  await expect(ritaRail.getByRole('button', { name: /incidents/i })).toBeVisible()
+  await expect(ritaRail.getByRole('button', { name: 'Audit log' })).toHaveCount(0)
+  await expect(ritaRail.getByRole('button', { name: 'Users' })).toHaveCount(0)
+  await expect(rita.getByText('read-only', { exact: true })).toBeVisible()
+  await expect(rita.getByRole('button', { name: 'New incident' })).toHaveCount(0)
+  expect((await rita.request.post('/api/incidents', { data: { id: 'by-rita', data: {} } })).status()).toBe(403)
+  await rita.getByRole('button', { name: 'Open platform settings' }).click()
+  const ritaSections = rita.getByRole('navigation', { name: 'Settings sections' })
+  await expect(ritaSections.getByText('YARA rules')).toBeVisible()
+  await expect(ritaSections.getByText('Detection rules')).toBeVisible()
+  for (const hidden of ['Accounts', 'API keys', 'Audit log', 'Storage', 'Threat intelligence']) {
+    await expect(ritaSections.getByText(hidden, { exact: true })).toHaveCount(0)
+  }
+  await ritaSections.getByText('My account').click()
+  await expect(rita.getByRole('dialog', { name: 'Settings' }).getByLabel('Roles')).toHaveText('ViewerRules')
+  const rule = { name: 'by-rita', source: 'rule by_rita { condition: false }', enabled: true }
+  const made = await rita.request.post('/api/yara-rules', { data: rule })
+  expect(made.status()).toBe(201)
+  expect((await rita.request.delete(`/api/yara-rules/${(await made.json()).id}`)).status()).toBe(204)
+  await rita.close()
+
+  // The audit role alone: no incidents, no artifacts; the audit log, and one's own account.
+  const otto = await signIn('otto')
+  await expect(otto.getByText('Nothing to open here')).toBeVisible()
+  const ottoRail = otto.getByRole('navigation', { name: 'Sections' })
+  await expect(ottoRail.getByRole('button')).toHaveCount(2) // the audit log and the settings
+  await ottoRail.getByRole('button', { name: 'Audit log' }).click()
+  const ottoSettings = otto.getByRole('dialog', { name: 'Settings' })
+  await expect(ottoSettings.getByText('user.create').first()).toBeVisible()
+  await expect(ottoSettings.getByRole('button', { name: /clear/i })).toHaveCount(0)
+  await expect(ottoSettings.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')).toHaveText([
+    'My account',
+    'Audit log',
+  ])
+  expect((await otto.request.get('/api/incidents')).status()).toBe(403)
+  await otto.close()
+
+  // Leave the accounts as they were.
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await sections.getByText('Accounts').click()
+  for (const name of ['rita', 'otto']) {
+    await accounts
+      .getByRole('listitem')
+      .filter({ hasText: name })
+      .getByRole('button', { name: `Delete user ${name}` })
+      .click()
+    await expect(accounts.getByRole('listitem').filter({ hasText: name })).toHaveCount(0)
+  }
   await settings.getByRole('button', { name: 'Close' }).click()
 })
 

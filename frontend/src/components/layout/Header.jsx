@@ -2,6 +2,7 @@ import { FileText, Keyboard, LogOut, Search, UserCircle } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
+import { describeRoles, rolesOf } from '../../domain/permissions.js'
 import { formatRelative } from '../../lib/time.js'
 import { SeverityTag, StatusTag } from '../ui/index.js'
 
@@ -29,7 +30,7 @@ export default function Header({
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
-  const { currentUser, logout } = useAuth()
+  const { currentUser, logout, can } = useAuth()
 
   const os = activeIncident ? getOsById(activeIncident.os) : null
   const OsIcon = os?.icon
@@ -112,14 +113,23 @@ export default function Header({
           </button>
         )}
 
+        {currentUser && can('read') && !can('write') && (
+          <span
+            className="hidden h-9 items-center border border-line px-2.5 font-mono text-xs text-fg-muted sm:flex"
+            title="Your roles let you read, not change: ask an admin for the Analyst role to work on incidents."
+          >
+            read-only
+          </span>
+        )}
+
         {currentUser && (
           <div
             className="hidden h-9 items-center gap-2 border border-line px-2.5 sm:flex"
-            title={`Signed in as ${currentUser.username} (${currentUser.role})`}
+            title={`Signed in as ${currentUser.username} (${describeRoles(rolesOf(currentUser))})`}
           >
             <UserCircle className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
             <p className="max-w-40 truncate font-mono text-xs text-fg">
-              {currentUser.username} <span className="capitalize text-fg-muted">· {currentUser.role}</span>
+              {currentUser.username} <span className="text-fg-muted">· {describeRoles(rolesOf(currentUser))}</span>
             </p>
           </div>
         )}

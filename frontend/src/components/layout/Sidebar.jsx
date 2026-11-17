@@ -84,7 +84,8 @@ export default function Sidebar({
 }) {
   const { incidents, activeIncidentId, deleteIncident, exportIncident, importIncidentFromFile, setIncidentTriage } =
     useIncidents()
-  const { currentUser } = useAuth()
+  const { currentUser, can } = useAuth()
+  const canWrite = can('write')
   const me = currentUser?.username ?? ''
   // The panel's filters: a status (or all) and only the incidents assigned to the analyst.
   const [statusFilter, setStatusFilter] = useState('all')
@@ -153,9 +154,11 @@ export default function Sidebar({
             ? incidents.length
             : `${sortedIncidents.length}/${incidents.length}`}
         </p>
-        <Button size="sm" icon={Plus} onClick={onCreateIncident}>
-          New incident
-        </Button>
+        {canWrite && (
+          <Button size="sm" icon={Plus} onClick={onCreateIncident}>
+            New incident
+          </Button>
+        )}
       </div>
 
       {/* ----- Filters: status, mine ----- */}
@@ -351,16 +354,20 @@ export default function Sidebar({
           </div>
         )}
 
-        <Button
-          variant="secondary"
-          icon={Upload}
-          className="w-full justify-center"
-          disabled={importing}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {importing ? 'Importing…' : 'Import incident'}
-        </Button>
-        <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
+        {canWrite && (
+          <>
+            <Button
+              variant="secondary"
+              icon={Upload}
+              className="w-full justify-center"
+              disabled={importing}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {importing ? 'Importing…' : 'Import incident'}
+            </Button>
+            <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
+          </>
+        )}
       </div>
 
       {/* ----- Delete confirmation modal ----- */}

@@ -164,8 +164,8 @@ const keyCount = (provider) => (provider.keys ?? []).filter((k) => k.status === 
 
 export default function ThreatIntelSection() {
   const { enrichmentSettings, setEnrichment } = useSettings()
-  const { currentUser } = useAuth()
-  const isAdmin = currentUser?.role === 'admin'
+  const { can } = useAuth()
+  const isAdmin = can('admin')
   const [providers, setProviders] = useState(null)
   const [error, setError] = useState(null)
   const loaded = enrichmentSettings !== null

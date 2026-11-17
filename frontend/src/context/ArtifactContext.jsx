@@ -25,7 +25,8 @@ const NO_COUNTS = { file: 0, mail: 0, pcap: 0, url: 0, mailbox: 0 }
 const idFromUrl = () => (typeof window === 'undefined' ? null : artifactIdFromPath(window.location.pathname))
 
 export function ArtifactProvider({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated: signedIn, can } = useAuth()
+  const isAuthenticated = signedIn && can('read')
   const [artifacts, setArtifacts] = useState([])
   const [counts, setCounts] = useState(NO_COUNTS)
   const [filters, setFilters] = useState(EMPTY_FILTERS)

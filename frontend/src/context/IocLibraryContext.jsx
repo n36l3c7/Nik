@@ -31,7 +31,8 @@ const viewFromUrl = () => (typeof window === 'undefined' ? null : viewFromPath(w
 const active = (check) => check.status === 'running' || check.status === 'waiting'
 
 export function IocLibraryProvider({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated: signedIn, can } = useAuth()
+  const isAuthenticated = signedIn && can('read')
   const { showToast } = useToast()
   const [view, setView] = useState(viewFromUrl)
   const [quick, setQuick] = useState('all') // the side panel's quick filter

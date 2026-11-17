@@ -2,12 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
+import { rolesOf } from '../../../domain/permissions.js'
 import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import RolePicker, { RoleChips } from '../RolePicker.jsx'
 
 /*
  * API keys settings section (admin only): create and revoke keys that let
- * external clients drive the platform via the REST API (see /api/docs). The
- * plaintext key is shown exactly once, right after creation.
+ * external clients drive the platform via the REST API (see /api/docs). A
+ * key holds roles, as an account does. The plaintext key is shown exactly
+ * once, right after creation.
  */
 
 const INPUT_CLASS =
@@ -48,8 +51,7 @@ function CreatedKey({ value, onDismiss }) {
 export default function ApiKeysSection() {
   const [keys, setKeys] = useState([])
   const [label, setLabel] = useState('')
-  const [role, setRole] = useState('analyst')
-  const [readOnly, setReadOnly] = useState(false)
+  const [roles, setRoles] = useState(['analyst'])
   const [expiresDays, setExpiresDays] = useState('')
   const [created, setCreated] = useState(null) // plaintext key shown once
   const [error, setError] = useState(null)
@@ -71,20 +73,17 @@ export default function ApiKeysSection() {
   const handleCreate = async (event) => {
     event.preventDefault()
     const name = label.trim()
-    if (!name || busy) return
+    if (!name || busy || roles.length === 0) return
     setBusy(true)
     setError(null)
     try {
-      const payload = { label: name, role }
-      // Admin keys always get full scopes; for analyst keys, offer read-only.
-      if (role !== 'admin' && readOnly) payload.scopes = ['read']
+      const payload = { label: name, roles }
       const days = Number(expiresDays)
       if (Number.isFinite(days) && days > 0) payload.expiresInDays = days
       const res = await api.post('/keys', payload)
       setCreated(res.key)
       setLabel('')
-      setRole('analyst')
-      setReadOnly(false)
+      setRoles(['analyst'])
       setExpiresDays('')
       await reload()
     } catch (err) {
@@ -114,8 +113,8 @@ export default function ApiKeysSection() {
         </div>
         <p className="mt-1 text-sm text-fg-muted">
           Keys let external clients drive the platform via the REST API. Send the key in the{' '}
-          <code className="font-mono">X-API-Key</code> header. A key grants analyst-level access (incidents, notes,
-          uploads); it cannot manage users or keys. See the{' '}
+          <code className="font-mono">X-API-Key</code> header. A key holds roles as an account does: Viewer for a
+          read-only key, Analyst to work on incidents, Admin to manage accounts and backups too. See the{' '}
           <a href="/api/docs" className="font-medium text-accent hover:underline">
             interactive API docs
           </a>
@@ -143,8 +142,7 @@ export default function ApiKeysSection() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-sm font-medium text-fg">{key.label}</span>
                   <code className="bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-fg-muted">{key.prefix}…</code>
-                  <Badge color={key.role === 'admin' ? 'cyan' : 'slate'}>{key.role}</Badge>
-                  {!(key.scopes || []).includes('write') && <Badge color="amber">read-only</Badge>}
+                  <RoleChips roles={rolesOf(key)} />
                 </div>
                 <p className="mt-0.5 text-xs text-fg-muted">
                   Created {formatRelative(key.createdAt)}
@@ -187,15 +185,6 @@ export default function ApiKeysSection() {
             />
           </div>
           <div>
-            <label htmlFor="new-key-role" className="mb-1 block text-xs font-medium text-fg-muted">
-              Permissions
-            </label>
-            <select id="new-key-role" value={role} onChange={(e) => setRole(e.target.value)} className={INPUT_CLASS}>
-              <option value="analyst">Analyst (incidents, notes, uploads)</option>
-              <option value="admin">Admin (also users &amp; backup)</option>
-            </select>
-          </div>
-          <div>
             <label htmlFor="new-key-expiry" className="mb-1 block text-xs font-medium text-fg-muted">
               Expires (days)
             </label>
@@ -210,22 +199,9 @@ export default function ApiKeysSection() {
             />
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <label
-            className={['flex items-center gap-2 text-sm', role === 'admin' ? 'text-fg-muted' : 'text-fg-muted'].join(
-              ' ',
-            )}
-          >
-            <input
-              type="checkbox"
-              checked={readOnly}
-              disabled={role === 'admin'}
-              onChange={(e) => setReadOnly(e.target.checked)}
-              className="h-4 w-4 border-line text-accent focus-visible:ring-2 focus-visible:ring-accent"
-            />
-            Read-only (no writes)
-          </label>
-          <Button type="submit" icon={busy ? null : Plus} disabled={busy || !label.trim()}>
+        <RolePicker idPrefix="new-key" value={roles} onChange={setRoles} legend="What the key may do" />
+        <div className="flex justify-end">
+          <Button type="submit" icon={busy ? null : Plus} disabled={busy || !label.trim() || roles.length === 0}>
             {busy && <MicroSkull className="mr-2" />}
             {busy ? 'Creating…' : 'Create key'}
           </Button>

@@ -154,7 +154,10 @@ function UnreachableScreen({ error, onRetry }) {
 }
 
 export default function App() {
-  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout, currentUser } = useAuth()
+  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout, can } = useAuth()
+  // What the roles of the signed-in account allow: the shell shows what it can use.
+  const canRead = can('read')
+  const canWrite = can('write')
   const {
     activeIncident,
     activeSummary,
@@ -336,7 +339,7 @@ export default function App() {
   )
   const dismissPasted = useCallback(() => setPasted(null), [])
   useEffect(() => {
-    if (!isAuthenticated) return undefined
+    if (!isAuthenticated || !canWrite) return undefined
     const onPaste = (event) => {
       // In a text field, pasting is just pasting.
       if (isTypingTarget(event.target)) return
@@ -346,13 +349,13 @@ export default function App() {
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [isAuthenticated, placeFile, offerText])
+  }, [isAuthenticated, canWrite, placeFile, offerText])
 
   // A file dropped anywhere: the overlay while dragging, then the dialog.
   const [dragging, setDragging] = useState(false)
   const [drop, setDrop] = useState(null) // { file, route }
   useEffect(() => {
-    if (!isAuthenticated) return undefined
+    if (!isAuthenticated || !canWrite) return undefined
     let depth = 0
     const hasFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
     // Selected text dragged onto the app (not into a text field, where it is just text).
@@ -398,7 +401,7 @@ export default function App() {
       window.removeEventListener('dragover', onOver)
       window.removeEventListener('drop', onDrop)
     }
-  }, [isAuthenticated, placeFile, offerText])
+  }, [isAuthenticated, canWrite, placeFile, offerText])
 
   // Unified settings panel: a single dialog with sections. `settingsSection`
   // lets the header/sidebar deep-link into Detection rules / Accounts / Audit.
@@ -425,7 +428,7 @@ export default function App() {
     clearSearch()
   }, [navigation.search, clearSearch])
   useEffect(() => {
-    if (!isAuthenticated) return undefined
+    if (!isAuthenticated || !canRead) return undefined
     const onKeyDown = (event) => {
       const modifier = event.ctrlKey || event.metaKey
       if (modifier && !event.altKey && event.key.toLowerCase() === 'k') {
@@ -438,7 +441,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isAuthenticated])
+  }, [isAuthenticated, canRead])
 
   // Resizable sidebar width (persisted, re-clamped on load and on window resize).
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -530,14 +533,18 @@ export default function App() {
 
   // Palette actions (typed after ">").
   const paletteActions = [
-    { id: 'new', label: 'New incident', icon: Plus, run: openCreateModal },
-    {
-      id: 'analysis',
-      label: 'New analysis (no incident)',
-      icon: Microscope,
-      keywords: 'artifact file mail upload',
-      run: () => setAnalysisOpen(true),
-    },
+    ...(canWrite
+      ? [
+          { id: 'new', label: 'New incident', icon: Plus, run: openCreateModal },
+          {
+            id: 'analysis',
+            label: 'New analysis (no incident)',
+            icon: Microscope,
+            keywords: 'artifact file mail upload',
+            run: () => setAnalysisOpen(true),
+          },
+        ]
+      : []),
     ...(activeIncident
       ? ANALYSIS_TABS.map((tab) => ({
           id: `tab:${tab.id}`,
@@ -562,18 +569,22 @@ export default function App() {
         ]
       : []),
     { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings('detection') },
-    {
-      id: 'allowlist',
-      label: 'Edit the IOC allowlist',
-      icon: ShieldCheck,
-      keywords: 'settings indicators',
-      run: () => openSettings('allowlist'),
-    },
+    ...(canWrite
+      ? [
+          {
+            id: 'allowlist',
+            label: 'Edit the IOC allowlist',
+            icon: ShieldCheck,
+            keywords: 'settings indicators',
+            run: () => openSettings('allowlist'),
+          },
+        ]
+      : []),
     { id: 'logout', label: 'Sign out', icon: LogOut, run: logout },
   ]
 
   // ---- Initial async load of incidents from the API ----
-  if (loading) {
+  if (loading && canRead) {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas">
         <div className="flex flex-col items-center gap-3">
@@ -597,14 +608,14 @@ export default function App() {
           iocs: library.counts.all,
           alerts: library.alerts,
         }}
-        isAdmin={currentUser?.role === 'admin'}
+        can={can}
         onSearch={() => setPaletteOpen(true)}
         onAudit={() => openSettings('audit')}
         onUsers={() => openSettings('accounts')}
         onBackup={() => setBackupOpen(true)}
         onSettings={() => openSettings('detection')}
       />
-      {panel && (
+      {panel && canRead && (
         <>
           <Sidebar
             panel={panel}
@@ -627,7 +638,7 @@ export default function App() {
           artifactView={artifactOpen}
           libraryView={libraryOpen}
         />
-        {!artifactOpen && !libraryOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
+        {canRead && !artifactOpen && !libraryOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
 
         {storageError && (
           <div
@@ -648,7 +659,20 @@ export default function App() {
 
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto p-6">
-            {libraryOpen ? (
+            {!canRead ? (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                  title="Nothing to open here"
+                  message="Your roles do not include reading incidents, artifacts and indicators. What they do include is in Settings; an admin can give your account more roles."
+                  action={
+                    <Button icon={Settings} onClick={() => openSettings('account')}>
+                      Open settings
+                    </Button>
+                  }
+                />
+              </div>
+            ) : libraryOpen ? (
               <IocLibraryPage onOpenIncident={openIncident} />
             ) : artifactOpen ? (
               <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
@@ -687,16 +711,22 @@ export default function App() {
                 <EmptyState
                   illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
                   title="No active incident"
-                  message="Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere."
+                  message={
+                    canWrite
+                      ? 'Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere.'
+                      : 'Choose an incident on the left to read it.'
+                  }
                   action={
-                    <div className="flex flex-wrap justify-center gap-2">
-                      <Button icon={Plus} onClick={openCreateModal}>
-                        New incident
-                      </Button>
-                      <Button variant="secondary" icon={Microscope} onClick={() => setAnalysisOpen(true)}>
-                        New analysis
-                      </Button>
-                    </div>
+                    canWrite && (
+                      <div className="flex flex-wrap justify-center gap-2">
+                        <Button icon={Plus} onClick={openCreateModal}>
+                          New incident
+                        </Button>
+                        <Button variant="secondary" icon={Microscope} onClick={() => setAnalysisOpen(true)}>
+                          New analysis
+                        </Button>
+                      </div>
+                    )
                   }
                 />
               </div>
@@ -800,7 +830,7 @@ export default function App() {
         }}
       />
 
-      {currentUser?.role === 'admin' && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />}
+      {can('admin') && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />}
 
       {dragging && (
         <div
