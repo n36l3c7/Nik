@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-11-17
+
+People in the loop: playbooks give tasks and ask questions, each incident has
+a work plan and each analyst a page of their tasks; types of incident time
+their incidents; and what features and playbooks compare with lives in lists.
+
+**Upgrading from 4.3.0**: nothing more than the usual two commands.
+
+```
+git pull
+podman compose up -d --build
+```
+
+The migrations `0030_tasks_sla` and `0031_lists` run at start. The second
+moves what Settings kept as fixed lists into *Settings → Lists*, once and as
+it was. No incident is timed until a type is given an SLA.
+
+**Not verified on real systems**: reminders, overdue tasks and SLA breaches
+were tried with the clock of the tests, not over real days; business hours
+are counted in UTC. Nothing in this release talks to another product.
+
 ### Added
 
 - **Tasks and questions in playbooks.** A *Task* node gives a person

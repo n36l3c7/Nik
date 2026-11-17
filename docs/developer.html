@@ -467,6 +467,22 @@ const isRawIp = isRawIpUrl(entry.url)
           Nik's: a product's own names go under <code>ext</code>.
         </li>
         <li>
+          <strong>A kind of node a person answers</strong>: its ports in <code>PORTS</code> (or in
+          <code>ports_of</code> when they depend on its settings) in <code>backend/app/automation/graph.py</code> and in
+          <code>frontend/src/domain/automation/graph.js</code>, its checks in <code>_check_node</code>, and in the
+          engine a branch of <code>_perform</code> that returns <code>Outcome(wait=…)</code>; what the person does then
+          calls <code>engine.resume</code>.
+        </li>
+        <li>
+          <strong>A setting that is a list</strong>: an entry of <code>BUILTIN</code> in
+          <code>backend/app/lists.py</code> with the key of the setting it was moved from, read with
+          <code>lists.settings_value</code> where the setting was read. It is seeded at the next start, from what the
+          setting held. In its section of Settings, <code>&lt;ListPicker setting="…" /&gt;</code> shows which list is
+          read. <strong>A shipped SLA timer</strong>: an entry of type <code>timer</code> in
+          <code>SYSTEM_FIELDS</code> and its name in <code>timers.SHIPPED</code>; when it stops by itself is in
+          <code>timers.sync</code>.
+        </li>
+        <li>
           <strong>An event</strong>: a builder in <code>payloads.py</code> that returns what the event carries and the
           class of each field, a function in <code>triggers.py</code> that writes it to the outbox, called in the
           transaction of the change; the name goes in <code>graph.EVENTS</code>, in
