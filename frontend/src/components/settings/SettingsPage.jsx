@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import {
+  ArrowLeftRight,
   Cable,
   Clock,
   DatabaseBackup,
@@ -42,6 +43,7 @@ import FieldsSection from './sections/FieldsSection.jsx'
 import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import SlaSection from './sections/SlaSection.jsx'
 import ListsSection from './sections/ListsSection.jsx'
+import MappersSection from './sections/MappersSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
@@ -84,6 +86,7 @@ const SECTION_VIEWS = {
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
   connections: { icon: Cable, Component: ConnectionsSection },
+  mappers: { icon: ArrowLeftRight, Component: MappersSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },
   automationSwitch: { icon: OctagonX, Component: AutomationSwitchSection },
   account: { icon: UserCog, Component: MyAccountSection },

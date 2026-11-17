@@ -2724,6 +2724,78 @@ test('lists: one is made and filled, a feature is pointed at it, and what Nik sh
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
+test('a mapper says how the names of a product become those of Nik, tried on a sample; a classifier chooses the type', async () => {
+  const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByText('Classifiers and mappers', { exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/automation\/classifiers-and-mappers$/)
+  await settings.getByLabel('Connector', { exact: true }).selectOption('acme')
+  await expect(settings.getByText('no mapper yet')).toBeVisible()
+
+  // A sample of what the product sends, and two rules written against it.
+  await settings
+    .getByLabel('A sample item, as JSON')
+    .fill('{"id": "T-77", "title": "Emotet on a laptop", "priority": 1, "host": {"name": "WKS-FINANCE-01"}}')
+  const rules = settings.getByRole('table', { name: 'Rules of the incoming mapper' })
+  await settings.getByRole('button', { name: /^Show the \d+ other fields$/ }).click()
+  const name = rules.getByRole('row').filter({ hasText: /^Name/ })
+  // The connector names no field: the picker offers those of the sample.
+  await name.getByLabel('Name: its value: put a field in').selectOption('title')
+  await expect(name.getByLabel('Name: its value', { exact: true })).toHaveValue('{{ item.title }}')
+  const severity = rules.getByRole('row').filter({ hasText: /^Severity/ })
+  await severity.getByLabel('Severity: its value', { exact: true }).fill("{{ item.priority | severity('inverse') }}")
+  await severity.getByLabel('Severity: wins over what a person set').check()
+  const host = rules.getByRole('row').filter({ hasText: /^Host/ })
+  await host.getByLabel('Host: its value', { exact: true }).fill('{{ item.host.name }}')
+  await settings.getByRole('button', { name: 'Add a context path' }).click()
+  await settings.getByLabel('Context path 1', { exact: true }).fill('Alert(val.ID == obj.ID)')
+  await settings.getByLabel('Context path 1: its value', { exact: true }).fill('{"ID": "{{ item.id }}"}')
+
+  // Tried on the sample: each row shows the value the incident would get. Nothing is written.
+  await settings.getByRole('button', { name: 'Try on the sample' }).first().click()
+  await expect(name).toContainText('Emotet on a laptop')
+  await expect(severity).toContainText('critical')
+  await expect(host).toContainText('WKS-FINANCE-01')
+  await expect(rules.getByRole('row').filter({ hasText: 'T-77' })).toHaveCount(1)
+  await settings.getByRole('button', { name: 'Save the mapper' }).click()
+  await expect(settings.getByRole('status').filter({ hasText: 'The mapper is saved.' })).toBeVisible()
+  await expect(settings.getByText('saved', { exact: true })).toBeVisible()
+
+  // What a field refuses is said, and the rest goes on.
+  await severity.getByLabel('Severity: its value', { exact: true }).fill('{{ item.title }}')
+  await settings.getByRole('button', { name: 'Try on the sample' }).first().click()
+  await expect(settings.getByRole('status').filter({ hasText: 'Severity' })).toBeVisible()
+  await expect(name).toContainText('Emotet on a laptop')
+
+  // The classifier of the connection: the first rule that holds gives the type.
+  const classifier = settings.getByRole('region', { name: 'Classifier of Acme test' })
+  await classifier.getByRole('button', { name: 'Add a rule' }).click()
+  await classifier.getByLabel('Rule 1: what to compare', { exact: true }).fill('{{ item.title }}')
+  await classifier.getByLabel('Rule 1: how').selectOption('contains')
+  await classifier.getByLabel('Rule 1: with what').fill('Emotet')
+  await classifier.getByLabel('Rule 1: the type it becomes').selectOption('malware')
+  await classifier.getByRole('button', { name: 'Try on the sample' }).click()
+  await expect(classifier.getByRole('status').filter({ hasText: 'The sample becomes' })).toContainText('Malware')
+  await classifier.getByRole('button', { name: 'Save the classifier' }).click()
+  await expect(classifier.getByRole('status').filter({ hasText: 'The classifier is saved.' })).toBeVisible()
+
+  // The other way: what goes to the product for an incident.
+  await settings.getByRole('group', { name: 'Direction' }).getByRole('button', { name: 'Outgoing' }).click()
+  await settings.getByRole('button', { name: 'Add a name' }).click()
+  await settings.getByLabel('Name 1', { exact: true }).fill('summary')
+  await settings.getByLabel('summary: its value', { exact: true }).fill('{{ incident.name }} ({{ incident.status }})')
+  await settings.getByLabel('The id of an incident to try the mapper on').fill(incidentId)
+  await settings.getByRole('button', { name: 'Try on the sample' }).click()
+  await expect(settings.getByRole('table', { name: 'Rules of the outgoing mapper' })).toContainText(
+    /WKS-FINANCE-01.*\(/,
+  )
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type a fetched item becomes. They are data in Nik (`/api/mappers`,
   `/api/classifiers`), changed without touching a connector file, and
   *try* shows what one makes of a sample.
+- **The mapper editor**, in *Settings → Automation → Classifiers and
+  mappers*: a table with one row for each field of Nik (those the type needs
+  first), the expression that gives it its value with a picker of the
+  product's fields, the value on a pasted sample, and *Wins over edits*; rows
+  for context paths; the outgoing table; and the classifier of each
+  connection.
 - Two filters for expressions: `severity` (another product's scale as
   Nik's) and `regex_extract` (the part of a text a pattern finds).
 

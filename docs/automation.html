@@ -1455,8 +1455,16 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         </li>
       </ul>
       <p>
-        <em>Try</em> shows what a mapper makes of a sample without writing anything: the fields with the values the
-        registry would keep, the writes to the context, the problems, and the fields the type needs that nothing gave.
+        They are edited in <em>Settings → Automation → Classifiers and mappers</em>. Choose the connector, the direction
+        and the type of incident: the table has one row for each field of Nik, those the type needs first, then those
+        that are mapped, then the rest folded away. Each row has the expression that gives the field its value, with a
+        <strong>+</strong> that puts in a field of the product (those its connector names in <code>schema</code>, or
+        those of the sample when it names none), the value on the sample, and <em>Wins over edits</em>.
+        <em>Add a context path</em> adds a row that writes to the context (<code>Alert(val.ID == obj.ID)</code>, an
+        <code>ext</code> field of the connector). Paste one item as the product sends it and <em>Try on the sample</em>:
+        every row shows the value the incident would get, with what a field refused and what the type needs that nothing
+        gave. Nothing is written until the mapper is saved, and trying never writes to an incident. The classifier of
+        each connection of the connector is the small table under it.
       </p>
 
       <h3 id="shipped-connectors">The connectors Nik ships</h3>

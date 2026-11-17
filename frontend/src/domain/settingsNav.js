@@ -153,6 +153,13 @@ export const SETTINGS_GROUPS = [
         keywords: 'credentials address token instance test systems',
       },
       {
+        id: 'mappers',
+        slug: 'classifiers-and-mappers',
+        label: 'Classifiers and mappers',
+        permission: 'connectors.manage',
+        keywords: 'mapping fields vendor incoming outgoing fetch alerts type classify sample expression',
+      },
+      {
         id: 'automationNetwork',
         slug: 'network-and-data',
         label: 'Network and data',
