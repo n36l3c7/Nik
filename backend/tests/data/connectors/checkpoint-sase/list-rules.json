@@ -1,0 +1,83 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/auth/authorize",
+        "json": {
+          "grantType": "api_key",
+          "apiKey": "sase-api-key-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "tokenType": "bearer",
+            "accessToken": "eyJhbGciOiJIUzI1NiJ9.sase-access-token.signature",
+            "accessTokenExpire": 1800003600,
+            "tenantId": "t-1"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/ia/access/policy",
+        "headers": {
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.sase-access-token.signature"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "webRules": [
+              {
+                "id": "r-1",
+                "name": "Block what Nik lists",
+                "action": "block",
+                "priority": 1,
+                "status": "active",
+                "destinations": [
+                  {
+                    "type": "customUrls",
+                    "value": [
+                      "cu-1"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "controlledBy": "hsase"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "rules": [
+      {
+        "id": "r-1",
+        "name": "Block what Nik lists",
+        "action": "block",
+        "priority": 1,
+        "status": "active",
+        "destinations": [
+          {
+            "type": "customUrls",
+            "value": [
+              "cu-1"
+            ]
+          }
+        ]
+      }
+    ],
+    "names": [
+      "Block what Nik lists"
+    ],
+    "controlled_by": "hsase"
+  }
+}

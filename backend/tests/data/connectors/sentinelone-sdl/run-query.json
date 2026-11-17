@@ -1,0 +1,134 @@
+{
+  "args": {
+    "query": "event.type = 'Process Creation' | group count = count() by endpoint.name",
+    "start_time": "24h"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/sdl/v2/api/queries",
+        "json": {
+          "queryType": "PQ",
+          "tenant": true,
+          "startTime": "24h",
+          "queryPriority": "LOW",
+          "pq": {
+            "query": "event.type = 'Process Creation' | group count = count() by endpoint.name",
+            "resultType": "TABLE"
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "lrq-77",
+          "stepsCompleted": 0,
+          "totalSteps": 4
+        },
+        "headers": {
+          "x-dataset-query-forward-tag": "srv-17"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/sdl/v2/api/queries/lrq-77",
+        "query": {
+          "lastStepSeen": 0
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789",
+          "X-Dataset-Query-Forward-Tag": "srv-17"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "lrq-77",
+          "stepsCompleted": 2,
+          "totalSteps": 4
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/sdl/v2/api/queries/lrq-77",
+        "query": {
+          "lastStepSeen": 0
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789",
+          "X-Dataset-Query-Forward-Tag": "srv-17"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "lrq-77",
+          "stepsCompleted": 4,
+          "totalSteps": 4,
+          "data": {
+            "matchCount": 2,
+            "columns": [
+              {
+                "name": "endpoint.name",
+                "type": "STRING"
+              },
+              {
+                "name": "count",
+                "type": "NUMBER"
+              }
+            ],
+            "values": [
+              [
+                "WKS-FINANCE-01",
+                12
+              ],
+              [
+                "SRV-FILE-02",
+                3
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/sdl/v2/api/queries/lrq-77",
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789",
+          "X-Dataset-Query-Forward-Tag": "srv-17"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "columns": [
+      "endpoint.name",
+      "count"
+    ],
+    "rows": [
+      [
+        "WKS-FINANCE-01",
+        12
+      ],
+      [
+        "SRV-FILE-02",
+        3
+      ]
+    ],
+    "matches": 2
+  }
+}

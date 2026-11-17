@@ -1,0 +1,153 @@
+# Zscaler Internet Access, through its legacy cloud service API.
+#
+# This is the API with a session cookie (/api/v1, signed in with a user, a
+# password and an API key), not OneAPI. Zscaler's help pages could not be
+# read by a program, so this file was written from Zscaler's own SDKs
+# (github.com/zscaler/zscaler-sdk-go and zscaler-sdk-python), which use the
+# same calls. Not run against a real tenant: see "verified" below.
+#
+# The sign-in sends the API key scrambled with the time, as Zscaler asks:
+# Nik does that ("zscaler" credentials). A change is not in force until it
+# is activated: the commands that change something activate when asked.
+# The API allows about one call a second: a step refused with 429 is one
+# to try again.
+name: Zscaler ZIA
+id: zscaler-zia
+version: 1
+description: URL categories, URL look-up and activation in Zscaler Internet Access.
+api_version: "ZIA legacy API v1 (zsapi.<cloud>/api/v1)"
+verified: false
+configuration:
+  - name: cloud
+    label: Cloud
+    type: text
+    required: true
+    default: zscaler.net
+    help: "The cloud your tenant is on, as in the address of the admin portal: zscaler.net, zscalerone.net, zscalertwo.net, zscloud.net…"
+  - name: credentials
+    type: zscaler
+base_url: "https://zsapi.{{ config.cloud }}/api/v1"
+test:
+  request: { method: GET, path: /status }
+commands:
+  - name: lookup-url
+    description: The categories Zscaler gives to addresses (100 at most).
+    arguments:
+      - { name: urls, type: list, required: true, description: "Addresses without http:// or https://" }
+    request:
+      method: POST
+      path: /urlLookup
+      json: "{{ args.urls }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response }}"
+      categories: "{{ response[*].urlClassifications }}"
+      security_alerts: "{{ response[*].urlClassificationsWithSecurityAlert }}"
+
+  - name: list-url-categories
+    description: The custom URL categories of the tenant.
+    arguments: []
+    request: { method: GET, path: /urlCategories, query: { customOnly: "true" } }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      categories: "{{ response }}"
+      names: "{{ response | pluck('configuredName') }}"
+
+  - name: get-url-category
+    description: One URL category, with the addresses it holds.
+    arguments:
+      - { name: id, type: text, required: true, description: "The id of the category: CUSTOM_01" }
+    request: { method: GET, path: "/urlCategories/{{ args.id }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.configuredName }}"
+      urls: "{{ response.urls }}"
+
+  - name: add-url-to-category
+    description: Add addresses to a custom URL category, and activate the change if asked.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: id, type: text, required: true, description: "The id of the category: CUSTOM_01" }
+      - { name: urls, type: list, required: true, description: "Addresses without http:// or https://" }
+      - { name: activate, type: bool, default: true, description: Activate the change }
+    steps:
+      # The category is read first: the change must name it and its super-category.
+      - name: category
+        request: { method: GET, path: "/urlCategories/{{ args.id }}" }
+        error: { message: "{{ response.message }}" }
+      - name: change
+        request:
+          method: PUT
+          path: "/urlCategories/{{ args.id }}"
+          query: { action: ADD_TO_LIST }
+          json:
+            id: "{{ args.id }}"
+            configuredName: "{{ steps.category.response.configuredName }}"
+            superCategory: "{{ steps.category.response.superCategory }}"
+            customCategory: true
+            urls: "{{ args.urls }}"
+        error: { message: "{{ response.message }}" }
+      - name: activation
+        when: { all: [{ left: "{{ args.activate }}", op: eq, right: true }] }
+        request: { method: POST, path: /status/activate }
+        error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ steps.change.response.id }}"
+      urls: "{{ steps.change.response.urls | length }}"
+      activation: "{{ steps.activation.response.status | default('not asked') }}"
+    sample: { id: CUSTOM_01, urls: 1, activation: ACTIVE }
+
+  - name: remove-url-from-category
+    description: Take addresses out of a custom URL category, and activate the change if asked.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: id, type: text, required: true, description: "The id of the category: CUSTOM_01" }
+      - { name: urls, type: list, required: true, description: "Addresses without http:// or https://" }
+      - { name: activate, type: bool, default: true, description: Activate the change }
+    steps:
+      - name: category
+        request: { method: GET, path: "/urlCategories/{{ args.id }}" }
+        error: { message: "{{ response.message }}" }
+      - name: change
+        request:
+          method: PUT
+          path: "/urlCategories/{{ args.id }}"
+          query: { action: REMOVE_FROM_LIST }
+          json:
+            id: "{{ args.id }}"
+            configuredName: "{{ steps.category.response.configuredName }}"
+            superCategory: "{{ steps.category.response.superCategory }}"
+            customCategory: true
+            urls: "{{ args.urls }}"
+        error: { message: "{{ response.message }}" }
+      - name: activation
+        when: { all: [{ left: "{{ args.activate }}", op: eq, right: true }] }
+        request: { method: POST, path: /status/activate }
+        error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ steps.change.response.id }}"
+      urls: "{{ steps.change.response.urls | length }}"
+      activation: "{{ steps.activation.response.status | default('not asked') }}"
+    sample: { id: CUSTOM_01, urls: 0, activation: ACTIVE }
+
+  - name: activate
+    description: Put into force the changes that wait.
+    changes_outside: true
+    idempotent: true
+    arguments: []
+    request: { method: POST, path: /status/activate }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      status: "{{ response.status }}"
+    sample: { status: ACTIVE }
+
+  - name: get-status
+    description: Whether changes wait to be activated.
+    arguments: []
+    request: { method: GET, path: /status }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      status: "{{ response.status }}"

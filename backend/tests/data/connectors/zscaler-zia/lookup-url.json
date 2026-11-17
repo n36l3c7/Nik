@@ -1,0 +1,108 @@
+{
+  "args": {
+    "urls": [
+      "bad.example",
+      "example.org"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/authenticatedSession",
+        "json": {
+          "apiKey": "aaaaaacccccc",
+          "username": "nik@acme.example",
+          "password": "zs-Passw0rd-123",
+          "timestamp": "1800000000000"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "authType": "ADMIN_LOGIN",
+          "obfuscateApiKey": true,
+          "passwordExpiryTime": 0,
+          "passwordExpiryDays": 0
+        },
+        "headers": {
+          "set-cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB; Path=/; Secure; HttpOnly"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/urlLookup",
+        "json": [
+          "bad.example",
+          "example.org"
+        ],
+        "headers": {
+          "Cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "url": "bad.example",
+            "urlClassifications": [
+              "MISCELLANEOUS_OR_UNKNOWN"
+            ],
+            "urlClassificationsWithSecurityAlert": [
+              "PHISHING"
+            ]
+          },
+          {
+            "url": "example.org",
+            "urlClassifications": [
+              "PROFESSIONAL_SERVICES"
+            ],
+            "urlClassificationsWithSecurityAlert": []
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v1/authenticatedSession",
+        "headers": {
+          "Cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "results": [
+      {
+        "url": "bad.example",
+        "urlClassifications": [
+          "MISCELLANEOUS_OR_UNKNOWN"
+        ],
+        "urlClassificationsWithSecurityAlert": [
+          "PHISHING"
+        ]
+      },
+      {
+        "url": "example.org",
+        "urlClassifications": [
+          "PROFESSIONAL_SERVICES"
+        ],
+        "urlClassificationsWithSecurityAlert": []
+      }
+    ],
+    "categories": [
+      "MISCELLANEOUS_OR_UNKNOWN",
+      "PROFESSIONAL_SERVICES"
+    ],
+    "security_alerts": [
+      "PHISHING"
+    ]
+  }
+}

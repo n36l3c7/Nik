@@ -137,8 +137,11 @@ def store_secrets(connection: Connection, secrets: dict[str, Any]) -> None:
 
 def host_of(connector: ConnectorFile, config: dict[str, Any]) -> str | None:
     """``host`` or ``host:port`` of a connection, as the egress policy lists it; None when it has no address."""
+    # With the defaults of what was left out, as the runtime reads it (a region that has a default).
+    values = {param.name: param.default for param in connector.configuration if not param.is_auth}
+    values.update({key: value for key, value in (config or {}).items() if value not in (None, "")})
     try:
-        base = ex.render_text(connector.base_url, ex.Scope(values={"config": config or {}})).data
+        base = ex.render_text(connector.base_url, ex.Scope(values={"config": values})).data
     except ex.ExpressionError:
         return None
     parts = urlsplit(str(base or ""))

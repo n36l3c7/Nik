@@ -1,0 +1,60 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/authenticatedSession",
+        "json": {
+          "apiKey": "aaaaaacccccc",
+          "username": "nik@acme.example",
+          "password": "zs-Passw0rd-123",
+          "timestamp": "1800000000000"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "authType": "ADMIN_LOGIN",
+          "obfuscateApiKey": true,
+          "passwordExpiryTime": 0,
+          "passwordExpiryDays": 0
+        },
+        "headers": {
+          "set-cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB; Path=/; Secure; HttpOnly"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/status",
+        "headers": {
+          "Cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "status": "PENDING"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v1/authenticatedSession",
+        "headers": {
+          "Cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "status": "PENDING"
+  }
+}

@@ -1,0 +1,293 @@
+# Check Point Security Management, through its Web API.
+#
+# Written against the public reference of the Management API
+# (https://sc1.checkpoint.com/documents/latest/APIs/), versions v1.7 (R81) to
+# v2.2 (R82.20). The commands used here have the same fields in all of them.
+# Not run against a real server: see "verified" below.
+#
+# A change in Check Point is made in a session and is not in force until it is
+# published; a gateway does not enforce it until the policy is installed. Each
+# command that changes something therefore publishes, waits for the publish to
+# end and, when asked, installs the policy and waits for that too.
+#
+# The account of the connection needs the permission to log in to the API and
+# write permissions on the objects it changes. Give it a profile of its own.
+name: Check Point Firewall
+id: checkpoint-management
+version: 1
+description: Hosts, groups and domain objects on a Check Point Security Management server, published and installed.
+api_version: "Management API v1.7 to v2.2 (R81, R81.10, R81.20, R82)"
+verified: false
+configuration:
+  - name: url
+    label: Management server
+    type: url
+    required: true
+    help: "https://management.example.org (the port when it is not 443)."
+  - name: api_version
+    label: API version
+    type: choice
+    # Empty: the server uses its latest. Pinning one keeps the commands stable across upgrades.
+    choices: ["v1.7", "v1.8", "v1.9", "v2", "v2.1", "v2.2"]
+    help: "v1.7 is R81, v1.8 R81.10, v1.9 R81.20, v2 R82. Leave empty for the latest the server has."
+  - name: domain
+    label: Domain
+    type: text
+    help: "On a Multi-Domain server: the name of the domain. Empty otherwise."
+  - name: ca_pem
+    label: Certificate authority (PEM)
+    type: text
+    help: "When the server's certificate is signed by your own authority."
+  - name: credentials
+    type: session
+    # An API key, or a user name and a password: whichever the connection holds is sent.
+    login:
+      request:
+        method: POST
+        path: /login
+        json:
+          user: "{{ secret.username | default(null) }}"
+          password: "{{ secret.password | default(null) }}"
+          api-key: "{{ secret.api_key | default(null) }}"
+          domain: "{{ config.domain }}"
+          session-name: Nik
+      token: "{{ response.sid }}"
+      header: X-chkp-sid
+    logout:
+      request: { method: POST, path: /logout, json: {} }
+base_url: "{{ config.url }}/web_api/{{ config.api_version }}"
+test:
+  request: { method: POST, path: /show-api-versions, json: {} }
+commands:
+  - name: show-group
+    description: The members of a network group.
+    arguments:
+      - { name: group, type: text, required: true, description: The name of the group }
+    request:
+      method: POST
+      path: /show-group
+      json: { name: "{{ args.group }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      uid: "{{ response.uid }}"
+      members: "{{ response.members[*].name }}"
+      count: "{{ response.members | length }}"
+
+  - name: add-host-to-group
+    description: Make a host object for an address (or use the one with that name) and put it in a group; publish, and install the policy if asked.
+    changes_outside: true
+    idempotent: true
+    timeout: 120
+    arguments:
+      - { name: name, type: text, required: true, description: "The name of the host object, for example nik-203.0.113.7" }
+      - { name: address, type: text, required: true, description: The IPv4 or IPv6 address }
+      - { name: group, type: text, required: true, description: The group to put it in (it must exist) }
+      - { name: comments, type: text, description: A comment on the object }
+      - { name: install, type: bool, default: false, description: Install the policy after publishing }
+      - { name: policy_package, type: text, default: standard, description: The policy package to install }
+      - { name: targets, type: list, description: The gateways to install on (all those of the package when empty) }
+    steps:
+      - name: host
+        request:
+          method: POST
+          path: /add-host
+          json:
+            name: "{{ args.name }}"
+            ip-address: "{{ args.address }}"
+            comments: "{{ args.comments }}"
+            set-if-exists: true
+            ignore-warnings: true
+        error: { message: "{{ response.message }}" }
+      - name: member
+        request:
+          method: POST
+          path: /set-group
+          json:
+            name: "{{ args.group }}"
+            members: { add: "{{ args.name }}" }
+        error: { message: "{{ response.message }}" }
+      - name: publish
+        request: { method: POST, path: /publish, json: {} }
+        error: { message: "{{ response.message }}" }
+      - name: published
+        request:
+          method: POST
+          path: /show-task
+          json: { task-id: "{{ steps.publish.response['task-id'] }}" }
+        poll:
+          until: { all: [{ left: "{{ response.tasks[0].status }}", op: ne, right: in progress }] }
+          fail_when: { all: [{ left: "{{ response.tasks[0].status }}", op: eq, right: failed }] }
+          every: 3
+          timeout: 300
+      - name: install
+        when: { all: [{ left: "{{ args.install }}", op: eq, right: true }] }
+        request:
+          method: POST
+          path: /install-policy
+          json:
+            policy-package: "{{ args.policy_package }}"
+            targets: "{{ args.targets }}"
+            access: true
+        error: { message: "{{ response.message }}" }
+      - name: installed
+        when: { all: [{ left: "{{ args.install }}", op: eq, right: true }] }
+        request:
+          method: POST
+          path: /show-task
+          json: { task-id: "{{ steps.install.response['task-id'] }}" }
+        poll:
+          until: { all: [{ left: "{{ response.tasks[0].status }}", op: ne, right: in progress }] }
+          fail_when: { all: [{ left: "{{ response.tasks[0].status }}", op: eq, right: failed }] }
+          every: 10
+          timeout: 1800
+    outputs:
+      uid: "{{ steps.host.response.uid }}"
+      published: "{{ steps.published.response.tasks[0].status }}"
+      installed: "{{ steps.installed.response.tasks[0].status | default('not asked') }}"
+    sample: { uid: 00000000-0000-0000-0000-000000000000, published: succeeded, installed: not asked }
+
+  - name: remove-host-from-group
+    description: Take a host out of a group (the host object stays); publish, and install the policy if asked.
+    changes_outside: true
+    idempotent: true
+    timeout: 120
+    arguments:
+      - { name: name, type: text, required: true, description: The name of the host object }
+      - { name: group, type: text, required: true, description: The group to take it out of }
+      - { name: install, type: bool, default: false, description: Install the policy after publishing }
+      - { name: policy_package, type: text, default: standard, description: The policy package to install }
+      - { name: targets, type: list, description: The gateways to install on (all those of the package when empty) }
+    steps:
+      - name: member
+        request:
+          method: POST
+          path: /set-group
+          json:
+            name: "{{ args.group }}"
+            members: { remove: "{{ args.name }}" }
+        error: { message: "{{ response.message }}" }
+      - name: publish
+        request: { method: POST, path: /publish, json: {} }
+        error: { message: "{{ response.message }}" }
+      - name: published
+        request:
+          method: POST
+          path: /show-task
+          json: { task-id: "{{ steps.publish.response['task-id'] }}" }
+        poll:
+          until: { all: [{ left: "{{ response.tasks[0].status }}", op: ne, right: in progress }] }
+          fail_when: { all: [{ left: "{{ response.tasks[0].status }}", op: eq, right: failed }] }
+          every: 3
+          timeout: 300
+      - name: install
+        when: { all: [{ left: "{{ args.install }}", op: eq, right: true }] }
+        request:
+          method: POST
+          path: /install-policy
+          json:
+            policy-package: "{{ args.policy_package }}"
+            targets: "{{ args.targets }}"
+            access: true
+        error: { message: "{{ response.message }}" }
+      - name: installed
+        when: { all: [{ left: "{{ args.install }}", op: eq, right: true }] }
+        request:
+          method: POST
+          path: /show-task
+          json: { task-id: "{{ steps.install.response['task-id'] }}" }
+        poll:
+          until: { all: [{ left: "{{ response.tasks[0].status }}", op: ne, right: in progress }] }
+          fail_when: { all: [{ left: "{{ response.tasks[0].status }}", op: eq, right: failed }] }
+          every: 10
+          timeout: 1800
+    outputs:
+      members: "{{ steps.member.response.members[*].name }}"
+      published: "{{ steps.published.response.tasks[0].status }}"
+      installed: "{{ steps.installed.response.tasks[0].status | default('not asked') }}"
+    sample: { members: [], published: succeeded, installed: not asked }
+
+  - name: add-domain-object
+    description: Make a domain object (for a rule that blocks a domain) and, if a group is named, put it in it; publish.
+    changes_outside: true
+    idempotent: false
+    timeout: 120
+    arguments:
+      - name: domain
+        type: text
+        required: true
+        description: "The domain with a dot in front, as Check Point writes it: .example.org"
+      - { name: subdomains, type: bool, default: false, description: Match its sub-domains too }
+      - { name: group, type: text, description: A group to put the object in }
+      - { name: comments, type: text, description: A comment on the object }
+    steps:
+      - name: object
+        request:
+          method: POST
+          path: /add-dns-domain
+          json:
+            name: "{{ args.domain }}"
+            is-sub-domain: "{{ args.subdomains }}"
+            comments: "{{ args.comments }}"
+            ignore-warnings: true
+        error: { message: "{{ response.message }}" }
+      - name: member
+        when: { all: [{ left: "{{ args.group }}", op: exists }] }
+        request:
+          method: POST
+          path: /set-group
+          json:
+            name: "{{ args.group }}"
+            members: { add: "{{ args.domain }}" }
+        error: { message: "{{ response.message }}" }
+      - name: publish
+        request: { method: POST, path: /publish, json: {} }
+        error: { message: "{{ response.message }}" }
+      - name: published
+        request:
+          method: POST
+          path: /show-task
+          json: { task-id: "{{ steps.publish.response['task-id'] }}" }
+        poll:
+          until: { all: [{ left: "{{ response.tasks[0].status }}", op: ne, right: in progress }] }
+          fail_when: { all: [{ left: "{{ response.tasks[0].status }}", op: eq, right: failed }] }
+          every: 3
+          timeout: 300
+    outputs:
+      uid: "{{ steps.object.response.uid }}"
+      published: "{{ steps.published.response.tasks[0].status }}"
+    sample: { uid: 00000000-0000-0000-0000-000000000000, published: succeeded }
+
+  - name: install-policy
+    description: Install a policy package on its gateways, and wait for it to end.
+    changes_outside: true
+    idempotent: true
+    timeout: 120
+    arguments:
+      - { name: policy_package, type: text, default: standard, description: The policy package }
+      - { name: targets, type: list, description: The gateways (all those of the package when empty) }
+      - { name: threat_prevention, type: bool, default: false, description: Install the Threat Prevention policy too }
+    steps:
+      - name: install
+        request:
+          method: POST
+          path: /install-policy
+          json:
+            policy-package: "{{ args.policy_package }}"
+            targets: "{{ args.targets }}"
+            access: true
+            threat-prevention: "{{ args.threat_prevention }}"
+        error: { message: "{{ response.message }}" }
+      - name: installed
+        request:
+          method: POST
+          path: /show-task
+          json: { task-id: "{{ steps.install.response['task-id'] }}" }
+        poll:
+          until: { all: [{ left: "{{ response.tasks[0].status }}", op: ne, right: in progress }] }
+          fail_when: { all: [{ left: "{{ response.tasks[0].status }}", op: eq, right: failed }] }
+          every: 10
+          timeout: 1800
+    outputs:
+      task: "{{ steps.install.response['task-id'] }}"
+      status: "{{ steps.installed.response.tasks[0].status }}"
+    sample: { task: 00000000-0000-0000-0000-000000000000, status: succeeded }

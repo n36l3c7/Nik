@@ -1,0 +1,38 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555",
+    "text": "Seen in Nik: INC-2026-0412"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/notes",
+        "json": {
+          "data": {
+            "text": "Seen in Nik: INC-2026-0412"
+          },
+          "filter": {
+            "ids": [
+              "5555555555555555555"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

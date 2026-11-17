@@ -1,0 +1,84 @@
+{
+  "args": {
+    "group": "Blocked by Nik"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/login",
+        "json": {
+          "user": "nik-api",
+          "password": "cp-Passw0rd-123",
+          "session-name": "Nik"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM",
+          "uid": "7a13a360-9b24-40d7-acd3-5b50247be33e",
+          "session-timeout": 600,
+          "api-server-version": "1.9"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-group",
+        "json": {
+          "name": "Blocked by Nik"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "uid": "2a2a2a2a-0000-4000-8000-000000000001",
+          "name": "Blocked by Nik",
+          "type": "group",
+          "members": [
+            {
+              "uid": "u1",
+              "name": "nik-203.0.113.7",
+              "type": "host",
+              "ipv4-address": "203.0.113.7"
+            },
+            {
+              "uid": "u2",
+              "name": ".bad.example",
+              "type": "dns-domain"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/logout",
+        "json": {},
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "message": "OK"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "uid": "2a2a2a2a-0000-4000-8000-000000000001",
+    "members": [
+      "nik-203.0.113.7",
+      ".bad.example"
+    ],
+    "count": 2
+  }
+}

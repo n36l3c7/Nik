@@ -13,6 +13,8 @@ What it never does:
 - keep a secret: tokens of OAuth and of sessions live in memory (or, for a
   command that waits between two calls, encrypted in the step); what a step
   records has every secret value replaced by ``•••``;
+- send a key without a value: an optional argument that was not given is left
+  out of the body, at any depth, instead of going as ``null``;
 - hold a worker while the other side works: a ``poll`` gives the step back
   with a time, and the engine calls again then (``Result.again_at``).
 
@@ -139,6 +141,16 @@ def _holds(conditions: Any, scope: ex.Scope) -> bool:
     return all(results) if conditions.all is not None else any(results)
 
 
+def _pruned(value: Any) -> Any:
+    """What is sent, without the keys that have no value: an optional argument left empty is left out,
+    at any depth, instead of being sent as null. (Items of a list are kept as they are.)"""
+    if isinstance(value, dict):
+        return {key: _pruned(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [_pruned(item) for item in value]
+    return value
+
+
 def _multipart(fields: dict[str, Any]) -> tuple[bytes, str]:
     boundary = "nik" + pysecrets.token_hex(12)
     parts = []
@@ -223,9 +235,9 @@ class Runtime:
             "path": ex.render_text(spec.path, scope).data,
             "query": ex.render(spec.query, scope).data if spec.query is not None else None,
             "headers": ex.render(spec.headers or {}, scope).data,
-            "json": ex.render(spec.json_body, scope).data if spec.json_body is not None else None,
-            "form": ex.render(spec.form, scope).data if spec.form is not None else None,
-            "multipart": ex.render(spec.multipart, scope).data if spec.multipart is not None else None,
+            "json": _pruned(ex.render(spec.json_body, scope).data) if spec.json_body is not None else None,
+            "form": _pruned(ex.render(spec.form, scope).data) if spec.form is not None else None,
+            "multipart": _pruned(ex.render(spec.multipart, scope).data) if spec.multipart is not None else None,
             "body": ex.render_text(spec.body, scope).data if spec.body is not None else None,
         }
         headers = {
@@ -488,6 +500,8 @@ class Runtime:
         command = self.connector.command(name)
         if command is None:
             raise CommandError("This command is not in the connector any more")
+        # Every declared argument can be read: one that was not given is null (and so left out of what is sent).
+        args = {**{argument.name: argument.default for argument in command.arguments}, **args}
         state = dict(state or {})
         if state.get("session"):
             self._session = dict(state["session"])
@@ -563,6 +577,7 @@ class Runtime:
         command = self.connector.command(name)
         if command is None:
             raise CommandError("This command is not in the connector any more")
+        args = {**{argument.name: argument.default for argument in command.arguments}, **args}
         spec = command.request if command.request is not None else command.steps[0].request
         scope = self._scope(args, {}, sent=True)
         path = str(ex.render_text(spec.path, scope).data)

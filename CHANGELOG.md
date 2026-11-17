@@ -30,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On the canvas a connector is a group of the library, and a node of it
   names the connection it sends through. A version is not saved while a
   node names a connection that does not exist.
+- **Five connectors ship with Nik**, as files that can be read and
+  changed: **Check Point Firewall** (hosts, groups and domain objects on a
+  Security Management server, published and installed; R81 to R82, with the
+  API version as a setting), **Check Point Harmony SASE** (lists of
+  addresses, the Internet Access rules), **Zscaler ZIA** (URL categories,
+  look-up, activation), **SentinelOne EDR** (agents, isolation, threats,
+  the blocklist, Deep Visibility) and **SentinelOne SIEM** (PowerQuery in
+  the Data Lake, alerts). Each was written from what the vendor publishes
+  and is tested against exchanges recorded from it; none has been run
+  against a real system yet, and each is marked *not verified* until
+  someone does.
 - A command never sends anywhere but to the host of its connection, goes
   through the same data guard as the HTTP node, and records what it sent
   with every secret replaced. In a dry run it sends nothing and gives the

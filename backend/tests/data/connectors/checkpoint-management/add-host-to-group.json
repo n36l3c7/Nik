@@ -1,0 +1,240 @@
+{
+  "args": {
+    "name": "nik-203.0.113.7",
+    "address": "203.0.113.7",
+    "group": "Blocked by Nik",
+    "install": true,
+    "targets": [
+      "corporate-gateway"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/login",
+        "json": {
+          "user": "nik-api",
+          "password": "cp-Passw0rd-123",
+          "session-name": "Nik"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM",
+          "uid": "7a13a360-9b24-40d7-acd3-5b50247be33e",
+          "session-timeout": 600,
+          "api-server-version": "1.9"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/add-host",
+        "json": {
+          "name": "nik-203.0.113.7",
+          "ip-address": "203.0.113.7",
+          "set-if-exists": true,
+          "ignore-warnings": true
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "uid": "9423d36f-2d66-4754-b9e2-e7f4493756d4",
+          "name": "nik-203.0.113.7",
+          "type": "host",
+          "ipv4-address": "203.0.113.7",
+          "groups": []
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/set-group",
+        "json": {
+          "name": "Blocked by Nik",
+          "members": {
+            "add": "nik-203.0.113.7"
+          }
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "uid": "2a2a2a2a-0000-4000-8000-000000000001",
+          "name": "Blocked by Nik",
+          "members": [
+            {
+              "name": "nik-203.0.113.7"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/publish",
+        "json": {},
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "task-id": "01234567-89ab-cdef-a930-8c37a59972b3"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-task",
+        "json": {
+          "task-id": "01234567-89ab-cdef-a930-8c37a59972b3"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tasks": [
+            {
+              "task-id": "01234567-89ab-cdef-a930-8c37a59972b3",
+              "status": "in progress",
+              "progress-percentage": 40
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-task",
+        "json": {
+          "task-id": "01234567-89ab-cdef-a930-8c37a59972b3"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tasks": [
+            {
+              "task-id": "01234567-89ab-cdef-a930-8c37a59972b3",
+              "status": "succeeded",
+              "progress-percentage": 100
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/install-policy",
+        "json": {
+          "policy-package": "standard",
+          "targets": [
+            "corporate-gateway"
+          ],
+          "access": true
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-task",
+        "json": {
+          "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tasks": [
+            {
+              "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3",
+              "status": "in progress",
+              "progress-percentage": 40
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-task",
+        "json": {
+          "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tasks": [
+            {
+              "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3",
+              "status": "succeeded with warnings",
+              "progress-percentage": 100
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/logout",
+        "json": {},
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "message": "OK"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "uid": "9423d36f-2d66-4754-b9e2-e7f4493756d4",
+    "published": "succeeded",
+    "installed": "succeeded with warnings"
+  }
+}

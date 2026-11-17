@@ -1,0 +1,110 @@
+{
+  "args": {
+    "id": "CUSTOM_01",
+    "urls": [
+      "evil.example"
+    ],
+    "activate": false
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/authenticatedSession",
+        "json": {
+          "apiKey": "aaaaaacccccc",
+          "username": "nik@acme.example",
+          "password": "zs-Passw0rd-123",
+          "timestamp": "1800000000000"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "authType": "ADMIN_LOGIN",
+          "obfuscateApiKey": true,
+          "passwordExpiryTime": 0,
+          "passwordExpiryDays": 0
+        },
+        "headers": {
+          "set-cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB; Path=/; Secure; HttpOnly"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/urlCategories/CUSTOM_01",
+        "headers": {
+          "Cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "CUSTOM_01",
+          "configuredName": "Blocked by Nik",
+          "superCategory": "USER_DEFINED",
+          "customCategory": true,
+          "urls": [
+            "bad.example",
+            "evil.example"
+          ],
+          "dbCategorizedUrls": []
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/api/v1/urlCategories/CUSTOM_01",
+        "query": {
+          "action": "REMOVE_FROM_LIST"
+        },
+        "json": {
+          "id": "CUSTOM_01",
+          "configuredName": "Blocked by Nik",
+          "superCategory": "USER_DEFINED",
+          "customCategory": true,
+          "urls": [
+            "evil.example"
+          ]
+        },
+        "headers": {
+          "Cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "CUSTOM_01",
+          "configuredName": "Blocked by Nik",
+          "superCategory": "USER_DEFINED",
+          "customCategory": true,
+          "urls": [
+            "bad.example"
+          ],
+          "dbCategorizedUrls": []
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v1/authenticatedSession",
+        "headers": {
+          "Cookie": "JSESSIONID=971F41B2A2F0DBF1C6A0D5D8F8C1A0AB"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "id": "CUSTOM_01",
+    "urls": 1,
+    "activation": "not asked"
+  }
+}

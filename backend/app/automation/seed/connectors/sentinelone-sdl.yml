@@ -1,0 +1,125 @@
+# SentinelOne Singularity Data Lake (the SIEM) and the alerts of the
+# Singularity Operations Center.
+#
+# Neither has a public reference. This file was written from SentinelOne's
+# own code on GitHub (Sentinel-One/purple-mcp: the long-running query API
+# under /sdl/v2/api/queries and the alerts under
+# /web/api/v2.1/unifiedalerts/graphql) and, for the changes to an alert, from
+# the Cortex XSOAR integration, which is the only public source for them.
+# Two things in it are the least certain and are marked below. Not run
+# against a real console: see "verified" below.
+#
+# The token is one of a service user of the console, with its scope at
+# account or site level (a token of global scope is refused by the Data Lake).
+name: SentinelOne SIEM
+id: sentinelone-sdl
+version: 1
+description: PowerQuery searches in the Singularity Data Lake, and the alerts of the Singularity Operations Center.
+api_version: "SDL long-running query API v2 (/sdl/v2/api/queries); unified alerts GraphQL (/web/api/v2.1/unifiedalerts/graphql)"
+verified: false
+configuration:
+  - name: url
+    label: Console address
+    type: url
+    required: true
+    help: "https://your-tenant.sentinelone.net"
+  - name: credentials
+    type: bearer
+base_url: "{{ config.url }}"
+test:
+  request:
+    method: POST
+    path: /web/api/v2.1/unifiedalerts/graphql
+    json: { query: "query { alerts(first: 1) { totalCount } }" }
+  expect:
+    status: 200
+    when: { all: [{ left: "{{ response.errors }}", op: empty }] }
+commands:
+  - name: run-query
+    description: Run a PowerQuery over a time range and read the rows it gives.
+    timeout: 120
+    arguments:
+      - { name: query, type: text, required: true, description: "The PowerQuery: event.type = 'Process Creation' | limit 100" }
+      - { name: start_time, type: text, required: true, description: "From when: an ISO 8601 time, or as the Data Lake reads it (24h)" }
+      - { name: end_time, type: text, description: To when (now when empty) }
+    steps:
+      - name: launch
+        request:
+          method: POST
+          path: /sdl/v2/api/queries
+          json:
+            queryType: PQ
+            tenant: true
+            startTime: "{{ args.start_time }}"
+            endTime: "{{ args.end_time }}"
+            queryPriority: LOW
+            # Least certain: the name of the key that holds the query. It is "pq" in SentinelOne's code.
+            pq: { query: "{{ args.query }}", resultType: TABLE }
+        error: { message: "{{ response.error.message }}" }
+      - name: result
+        request:
+          method: GET
+          path: "/sdl/v2/api/queries/{{ steps.launch.response.id }}"
+          query: { lastStepSeen: 0 }
+          # The Data Lake answers a query from the server that started it: its tag is sent back.
+          headers:
+            X-Dataset-Query-Forward-Tag: "{{ steps.launch.headers['x-dataset-query-forward-tag'] | default('') }}"
+        error: { message: "{{ response.error.message }}" }
+        poll:
+          until: { all: [{ left: "{{ response.stepsCompleted }}", op: gte, right: "{{ response.totalSteps }}" }] }
+          fail_when: { all: [{ left: "{{ response.error.message }}", op: exists }] }
+          every: 2
+          timeout: 280
+      - name: cleanup
+        request:
+          method: DELETE
+          path: "/sdl/v2/api/queries/{{ steps.launch.response.id }}"
+          headers:
+            X-Dataset-Query-Forward-Tag: "{{ steps.launch.headers['x-dataset-query-forward-tag'] | default('') }}"
+        success: { status: [200, 204, 404] }
+    outputs:
+      columns: "{{ steps.result.response.data.columns | pluck('name') }}"
+      rows: "{{ steps.result.response.data.values }}"
+      matches: "{{ steps.result.response.data.matchCount }}"
+
+  - name: get-alert
+    description: One alert of the Singularity Operations Center.
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+    request:
+      method: POST
+      path: /web/api/v2.1/unifiedalerts/graphql
+      json:
+        query: "query Alert($id: ID!) { alert(id: $id) { id name description severity status analystVerdict classification confidenceLevel detectedAt createdAt updatedAt storylineId asset { id name agentUuid osType } } }"
+        variables: { id: "{{ args.id }}" }
+    success: { when: { all: [{ left: "{{ response.errors }}", op: empty }] } }
+    error: { message: "{{ response.errors[0].message }}" }
+    outputs:
+      alert: "{{ response.data.alert }}"
+      status: "{{ response.data.alert.status }}"
+      severity: "{{ response.data.alert.severity }}"
+
+  - name: update-alert
+    # Least certain: the mutation and its action ids are known only from the Cortex XSOAR integration.
+    description: Set the status of an alert (NEW, IN_PROGRESS, RESOLVED, FALSE_POSITIVE).
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - name: status
+        type: choice
+        choices: [NEW, IN_PROGRESS, RESOLVED, FALSE_POSITIVE]
+        required: true
+        description: The status
+    request:
+      method: POST
+      path: /web/api/v2.1/unifiedalerts/graphql
+      json:
+        query: "mutation SetStatus($id: String!, $status: String!) { alertTriggerActions(filter: { or: [ { and: [ { fieldId: \"id\", stringEqual: { value: $id } } ] } ] }, actions: [ { id: \"S1/alert/statusUpdate\", payload: { status: { value: $status } } } ]) { actions { actionId alertCount success { id } failure { id errorMessage } } } }"
+        variables: { id: "{{ args.id }}", status: "{{ args.status }}" }
+    success: { when: { all: [{ left: "{{ response.errors }}", op: empty }] } }
+    error: { message: "{{ response.errors[0].message }}" }
+    outputs:
+      updated: "{{ response.data.alertTriggerActions.actions[0].alertCount }}"
+      failed: "{{ response.data.alertTriggerActions.actions[0].failure | length }}"
+    sample: { updated: 1, failed: 0 }
