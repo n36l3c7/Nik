@@ -162,7 +162,7 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
 
 test('threat intelligence is configured in Settings, keys never shown', async () => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
   const ips = settings.getByRole('switch', { name: /IP addresses/ })
   await expect(ips).not.toBeChecked()
@@ -191,11 +191,11 @@ test('threat intelligence is configured in Settings, keys never shown', async ()
   await expect(settings.getByRole('switch', { name: /^Relations/ })).not.toBeChecked()
   await settings.getByLabel('IP addresses: days an answer stands').fill('45')
   await ips.uncheck()
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
   await expect(settings.getByLabel('IP addresses: days an answer stands')).toHaveValue('45')
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {
@@ -348,7 +348,7 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
     await expect(page.getByText('capa 10.0.0')).toBeVisible()
     // An admin capa rule: checked by the worker, matched after Re-analyse, marked custom.
     await page.getByRole('button', { name: 'Open platform settings' }).click()
-    const settings = page.getByRole('dialog', { name: 'Settings' })
+    const settings = page.getByRole('region', { name: 'Settings' })
     await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('capa rules').click()
     await settings.getByRole('button', { name: 'Add rule' }).click()
     await settings
@@ -363,7 +363,7 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
     await expect(settings.getByRole('button', { name: 'Delete reference team C2 gate' })).toBeVisible({
       timeout: 60_000,
     })
-    await settings.getByRole('button', { name: 'Close' }).click()
+    await settings.getByRole('button', { name: 'Close settings' }).click()
     await page.getByRole('button', { name: 'Re-analyse' }).click()
     await page.getByRole('tab', { name: /^Capabilities/ }).click()
     const custom = page.locator('tbody tr', { hasText: 'reference team C2 gate' })
@@ -1112,7 +1112,7 @@ test('a mailbox is indexed, its messages imported, and its conversations drawn a
 
 test('Storage shows how full the disk is and what fills it', async () => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Storage').click()
   await expect(settings.getByRole('img', { name: /% of the disk is used/ })).toBeVisible()
   const use = settings.getByRole('table', { name: 'Disk use' })
@@ -1122,6 +1122,68 @@ test('Storage shows how full the disk is and what fills it', async () => {
   await expect(settings.getByRole('list', { name: 'Largest objects' })).toContainText('team.mbox')
   await page.keyboard.press('Escape')
   await expect(settings).toBeHidden()
+})
+
+test('Settings is a page: every section has an address, Back leaves it, a link opens it', async () => {
+  const before = new URL(page.url()).pathname
+  const gear = page.getByRole('button', { name: 'Open platform settings' })
+  await gear.click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  // The sections are in groups; the one shown is marked.
+  await expect(sections.getByRole('group')).toHaveCount(5)
+  await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
+    'YARA rules',
+    'capa rules',
+    'FLIRT signatures',
+  ])
+  await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveAttribute('aria-current', 'page')
+  // The rail shows the page is open; what was open under it is not shown.
+  await expect(page.getByRole('button', { name: 'Close platform settings' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
+
+  // The box narrows the sections by name and by keyword.
+  const find = settings.getByRole('searchbox', { name: 'Find a setting' })
+  await find.fill('password')
+  await expect(sections.getByRole('button')).toHaveText(['My account'])
+  await find.fill('restore')
+  await expect(sections.getByRole('button')).toHaveText(['Backup'])
+  await find.fill('zzz')
+  await expect(sections.getByRole('status')).toContainText('No section matches')
+  await find.fill('')
+
+  // A section has its address; the full backup is one of them.
+  await sections.getByRole('button', { name: 'Backup' }).click()
+  await expect(page).toHaveURL(/\/settings\/system\/backup$/)
+  await expect(settings.getByRole('button', { name: 'Export full backup' })).toBeVisible()
+  await sections.getByRole('button', { name: 'Audit log' }).click()
+  await expect(page).toHaveURL(/\/settings\/system\/audit-log$/)
+
+  // Back leaves the page in one step, wherever one went inside it; Forward returns to the section.
+  await page.goBack()
+  await expect(settings).toHaveCount(0)
+  expect(new URL(page.url()).pathname).toBe(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  await page.goForward()
+  await expect(settings.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible()
+
+  // The address is a link: a reload stays on the section.
+  await page.reload()
+  await expect(settings.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible()
+  await expect(sections.getByRole('button', { name: 'Audit log' })).toHaveAttribute('aria-current', 'page')
+  // An older or shortened address still opens the page.
+  await page.goto('/settings/accounts')
+  await expect(settings.getByRole('heading', { name: 'Accounts', level: 2 })).toBeVisible()
+
+  // Closing a page opened by its link goes to the start; an entry of the rail leaves it too.
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  await expect(settings).toHaveCount(0)
+  await gear.click()
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Incidents' }).click()
+  await expect(settings).toHaveCount(0)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
 test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
@@ -1284,7 +1346,7 @@ test("saves are retried, merged with a colleague's, resumed after the session ex
 
 test('an admin manages accounts; the audit log is written by the server', async ({ browser }) => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Accounts').click()
 
@@ -1313,7 +1375,7 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await other.fill('#login-password', 'second-secret')
   await other.click('button[type=submit]')
   await other.getByRole('button', { name: 'Open platform settings' }).click()
-  const theirs = other.getByRole('dialog', { name: 'Settings' })
+  const theirs = other.getByRole('region', { name: 'Settings' })
   await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('My account').click()
   await theirs.locator('#own-current-password').fill('second-secret')
   await theirs.locator('#own-new-password').fill('third-secret')
@@ -1355,12 +1417,12 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await sections.getByText('Accounts').click()
   await renamed.getByRole('button', { name: 'Delete user anna.b' }).click()
   await expect(renamed).toHaveCount(0)
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('roles are tags: an account sees and does what its roles grant together', async ({ browser }) => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Accounts').click()
   const accounts = settings.getByRole('list', { name: 'Accounts' })
@@ -1383,7 +1445,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await settings.locator('#add-role-analyst').uncheck()
   await expect(settings.getByRole('button', { name: 'Add user' })).toBeDisabled()
   await settings.locator('#add-role-analyst').check()
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
 
   const signIn = async (name) => {
     const other = await browser.newPage()
@@ -1408,11 +1470,11 @@ test('roles are tags: an account sees and does what its roles grant together', a
   const ritaSections = rita.getByRole('navigation', { name: 'Settings sections' })
   await expect(ritaSections.getByText('YARA rules')).toBeVisible()
   await expect(ritaSections.getByText('Detection rules')).toBeVisible()
-  for (const hidden of ['Accounts', 'API keys', 'Audit log', 'Storage', 'Threat intelligence']) {
+  for (const hidden of ['Accounts and roles', 'API keys', 'Audit log', 'Storage', 'Backup', 'Threat intelligence']) {
     await expect(ritaSections.getByText(hidden, { exact: true })).toHaveCount(0)
   }
   await ritaSections.getByText('My account').click()
-  await expect(rita.getByRole('dialog', { name: 'Settings' }).getByLabel('Roles')).toHaveText('ViewerRules')
+  await expect(rita.getByRole('region', { name: 'Settings' }).getByLabel('Roles')).toHaveText('ViewerRules')
   const rule = { name: 'by-rita', source: 'rule by_rita { condition: false }', enabled: true }
   const made = await rita.request.post('/api/yara-rules', { data: rule })
   expect(made.status()).toBe(201)
@@ -1425,7 +1487,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
   const ottoRail = otto.getByRole('navigation', { name: 'Sections' })
   await expect(ottoRail.getByRole('button')).toHaveCount(2) // the audit log and the settings
   await ottoRail.getByRole('button', { name: 'Audit log' }).click()
-  const ottoSettings = otto.getByRole('dialog', { name: 'Settings' })
+  const ottoSettings = otto.getByRole('region', { name: 'Settings' })
   await expect(ottoSettings.getByText('user.create').first()).toBeVisible()
   await expect(ottoSettings.getByRole('button', { name: /clear/i })).toHaveCount(0)
   await expect(ottoSettings.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')).toHaveText([
@@ -1446,13 +1508,13 @@ test('roles are tags: an account sees and does what its roles grant together', a
       .click()
     await expect(accounts.getByRole('listitem').filter({ hasText: name })).toHaveCount(0)
   }
-  await settings.getByRole('button', { name: 'Close' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
-test('dialogs own the keyboard: Escape closes the top one, Tab stays inside, focus comes back', async () => {
+test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()
-  const settings = page.getByRole('dialog', { name: 'Settings' })
+  const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Accounts').click()
   await settings.getByRole('button', { name: `Edit user ${ADMIN.username}` }).click()
   const edit = page.getByRole('dialog', { name: `Account: ${ADMIN.username}` })
@@ -1463,7 +1525,7 @@ test('dialogs own the keyboard: Escape closes the top one, Tab stays inside, foc
     await page.keyboard.press('Tab')
     expect(await edit.evaluate((node) => node.contains(document.activeElement))).toBe(true)
   }
-  // Escape closes that dialog only; Settings, under it, stays.
+  // Escape closes that dialog only; the Settings page, under it, stays.
   await page.keyboard.press('Escape')
   await expect(edit).toHaveCount(0)
   await expect(settings).toBeVisible()

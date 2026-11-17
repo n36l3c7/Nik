@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Download,
@@ -22,7 +22,7 @@ import Header from './components/layout/Header.jsx'
 import TabBar from './components/layout/TabBar.jsx'
 import IncidentLoadingState from './components/layout/IncidentLoadingState.jsx'
 import { isTypingTarget } from './domain/search.js'
-import SettingsPanel from './components/settings/SettingsPanel.jsx'
+import SettingsPage from './components/settings/SettingsPage.jsx'
 import CommandPalette from './components/search/CommandPalette.jsx'
 import ReportDialog from './components/report/ReportDialog.jsx'
 import IncidentFields, { EMPTY_INCIDENT_FIELDS, canCreateIncident } from './components/incident/IncidentFields.jsx'
@@ -32,12 +32,12 @@ import IocLibraryPage from './components/iocs/IocLibraryPage.jsx'
 import { useIocLibrary } from './context/IocLibraryContext.jsx'
 import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
 import { api } from './services/api.js'
-import { setPath } from './lib/location.js'
+import { currentPath, onLocationChange, setPath } from './lib/location.js'
+import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
 import { mailboxFormatOf } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
-import BackupModal from './components/backup/BackupModal.jsx'
 import { kindForTab } from './domain/artifactRegistry.js'
 import { recognise } from './domain/pasted.js'
 import { useIocLookup } from './context/IocLookupContext.jsx'
@@ -65,6 +65,8 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
  * Layout: the rail (icons), the side panel it opens (incidents or
  * artifacts, collapsible) and the main column: header, then either the
  * active incident (analysis tab bar + tab) or the artifact opened on its own.
+ * The Settings page (/settings/…) takes the whole area next to the rail; what
+ * was open under it is there again when it is left.
  */
 
 // Sidebar width bounds. The maximum is a quarter of the viewport (computed at
@@ -229,7 +231,6 @@ export default function App() {
     setPath(path, { replace: true })
   }, [artifactOpen, activeIncidentId])
 
-  const [backupOpen, setBackupOpen] = useState(false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   // The artifact a new incident is being created from (linked once it is saved).
   const [seedArtifact, setSeedArtifact] = useState(null)
@@ -403,14 +404,32 @@ export default function App() {
     }
   }, [isAuthenticated, canWrite, placeFile, offerText])
 
-  // Unified settings panel: a single dialog with sections. `settingsSection`
-  // lets the header/sidebar deep-link into Detection rules / Accounts / Audit.
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsSection, setSettingsSection] = useState('detection')
-  const openSettings = (section = 'detection') => {
-    setSettingsSection(section)
-    setSettingsOpen(true)
-  }
+  // The Settings page: the address says whether it is open and on which section
+  // (/settings/<group>/<section>), so a link opens it and Back leaves it.
+  const [settings, setSettings] = useState(() => settingsFromPath(window.location.pathname))
+  useEffect(() => onLocationChange(() => setSettings(settingsFromPath(window.location.pathname))), [])
+  // Where the page was opened from, to go back there when it is closed.
+  const settingsReturn = useRef(null)
+  const openSettings = useCallback((section = 'detection') => {
+    if (!settingsFromPath(window.location.pathname)) settingsReturn.current = currentPath()
+    setPath(settingsPath(section))
+  }, [])
+  // Moving between sections does not add to the history: Back leaves the page at once.
+  const showSettingsSection = useCallback((section) => setPath(settingsPath(section), { replace: true }), [])
+  const closeSettings = useCallback(() => {
+    if (settingsReturn.current !== null) {
+      // Opened from inside the app: Back is the way out, and the entry is not left behind.
+      settingsReturn.current = null
+      window.history.back()
+      return
+    }
+    // Opened by its link: there is nothing to go back to.
+    setPath(activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/', { replace: true })
+  }, [activeIncidentId])
+  // Back or Forward left the page: there is nothing to return to any more.
+  useEffect(() => {
+    if (!settings) settingsReturn.current = null
+  }, [settings])
 
   // The list of keyboard shortcuts ("?" or the header button).
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -601,7 +620,10 @@ export default function App() {
     <div className="flex h-screen overflow-hidden">
       <Rail
         panel={panel}
-        onPanel={setPanel}
+        onPanel={(next) => {
+          if (settings) closeSettings()
+          setPanel(next)
+        }}
         counts={{
           incidents: incidents.length,
           artifacts: Object.values(artifacts.counts).reduce((sum, n) => sum + n, 0),
@@ -612,10 +634,22 @@ export default function App() {
         onSearch={() => setPaletteOpen(true)}
         onAudit={() => openSettings('audit')}
         onUsers={() => openSettings('accounts')}
-        onBackup={() => setBackupOpen(true)}
-        onSettings={() => openSettings('detection')}
+        onBackup={() => openSettings('backup')}
+        onSettings={() => (settings ? closeSettings() : openSettings('detection'))}
+        settingsOpen={Boolean(settings)}
       />
-      {panel && canRead && (
+      {settings && (
+        <SettingsPage
+          section={settings.id}
+          onSection={showSettingsSection}
+          onClose={closeSettings}
+          onOpenArtifact={(id) => {
+            setPanel('artifacts')
+            openArtifact(id)
+          }}
+        />
+      )}
+      {!settings && panel && canRead && (
         <>
           <Sidebar
             panel={panel}
@@ -630,7 +664,7 @@ export default function App() {
         </>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={settings ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
         <Header
           onOpenSearch={() => setPaletteOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}
@@ -830,8 +864,6 @@ export default function App() {
         }}
       />
 
-      {can('admin') && <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />}
-
       {dragging && (
         <div
           aria-hidden="true"
@@ -858,18 +890,6 @@ export default function App() {
         onOpenTab={(tab) => {
           showIncident()
           setActiveTabId(tab)
-        }}
-      />
-
-      <SettingsPanel
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        section={settingsSection}
-        onSectionChange={setSettingsSection}
-        onOpenArtifact={(id) => {
-          setSettingsOpen(false)
-          setPanel('artifacts')
-          openArtifact(id)
         }}
       />
     </div>

@@ -69,24 +69,26 @@ function onKeyDown(event) {
   }
 }
 
-/** True while a modal dialog is open (the single-key shortcuts stand down). */
+/** True while a modal dialog, or a page drawn over the app, is open (the single-key shortcuts stand down). */
 export function hasModalLayer() {
-  return stack.some((layer) => layer.trap)
+  return stack.some((layer) => layer.trap || layer.page)
 }
 
 /**
  * Register `ref`'s element as the top layer while `open`.
  * @param {{ current: HTMLElement | null }} ref
- * @param {{ open: boolean, onClose: () => void, trap?: boolean }} options
- *   `trap` keeps Tab inside (a modal dialog); a menu passes false.
+ * @param {{ open: boolean, onClose: () => void, trap?: boolean, page?: boolean }} options
+ *   `trap` keeps Tab inside (a modal dialog); a menu passes false. `page` is
+ *   for a page drawn over the app (Settings): Tab is free, and the shortcuts
+ *   of what is under it stand down as for a dialog.
  */
-export function useLayer(ref, { open, onClose, trap = true }) {
+export function useLayer(ref, { open, onClose, trap = true, page = false }) {
   const closeRef = useRef(onClose)
   closeRef.current = onClose
   useEffect(() => {
     if (!open) return undefined
     const previous = document.activeElement
-    const layer = { element: () => ref.current, close: () => closeRef.current?.(), trap }
+    const layer = { element: () => ref.current, close: () => closeRef.current?.(), trap, page }
     stack.push(layer)
     // Capture: before the page's own shortcuts see the key.
     if (stack.length === 1) window.addEventListener('keydown', onKeyDown, true)
@@ -98,5 +100,5 @@ export function useLayer(ref, { open, onClose, trap = true }) {
       if (stack.length === 0) window.removeEventListener('keydown', onKeyDown, true)
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true })
     }
-  }, [open, ref, trap])
+  }, [open, ref, trap, page])
 }

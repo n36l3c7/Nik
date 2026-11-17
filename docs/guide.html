@@ -128,7 +128,8 @@
         panel lists: <strong>incidents</strong>, <strong>artifacts</strong> (the files, e-mails and captures analysed so
         far) or the <strong>IoC library</strong>. Click the active icon again to close the panel and give the whole
         width to the analysis; drag the panel's edge to resize it. The rail also opens the search, and at the bottom the
-        audit log, the users, the full backup (admins) and the settings.
+        settings, with shortcuts to three of their sections: the audit log, the accounts and the backup. An entry is
+        there for the accounts whose roles let them use it.
       </p>
 
       <p>
@@ -813,10 +814,10 @@
           2.1, MISP or text out; the same formats in, by dropping the file anywhere.
         </li>
         <li>
-          <strong>Full backup</strong> (admins, on the rail): incidents, users, settings and the audit log in one file,
-          restored from the same dialog. It does <strong>not</strong> contain the files: samples, e-mails, captures and
-          their analyses stay on the server, and so do the IoC library's own indicators and lists, and restoring
-          replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
+          <strong>Full backup</strong> (admins, Settings → System → Backup): incidents, users, settings and the audit
+          log in one file, restored from the same section. It does <strong>not</strong> contain the files: samples,
+          e-mails, captures and their analyses stay on the server, and so do the IoC library's own indicators and lists,
+          and restoring replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
           <a href="deployment.html#docker-podman-in-production">Deployment</a>).
         </li>
         <li>
@@ -828,9 +829,20 @@
 
       <h2 id="settings">Settings</h2>
       <p>
-        The gear at the bottom of the rail opens the settings. A section is shown to the accounts whose
-        <a href="#roles">roles</a> let them use it: the ones marked <em>admins</em> to admins, the rule sets to the
-        Rules role, the audit log to the Audit role.
+        The gear at the bottom of the rail opens the settings: a page of their own, next to the rail, with the sections
+        on the left in groups and the chosen one at full width. Type in <strong>Find a setting</strong> to narrow the
+        sections by name or by what they hold (<em>password</em>, <em>restore</em>, <em>domains</em>).
+      </p>
+      <p>
+        Every section has an <strong>address</strong>, for example <code>/settings/access/accounts</code> or
+        <code>/settings/system/audit-log</code>: it can be bookmarked or sent to a colleague, and a reload stays on it.
+        Escape, the cross, the gear again or the browser's Back leave the page, and what was open before (an incident,
+        an artifact) is there as it was.
+      </p>
+      <p>
+        A section is shown to the accounts whose <a href="#roles">roles</a> let them use it: the ones marked
+        <em>admins</em> to admins, the rule sets to the Rules role, the audit log to the Audit role. A group with no
+        section for you is not shown.
       </p>
       <div class="table-wrap">
         <table>
@@ -842,6 +854,9 @@
           </thead>
           <tbody>
             <tr>
+              <th colspan="2" scope="colgroup">Analysis</th>
+            </tr>
+            <tr>
               <td>Detection rules</td>
               <td>The suspicious keywords and the built-in command, endpoint and event-log rules.</td>
             </tr>
@@ -850,19 +865,22 @@
               <td>The working hours; activity outside them is highlighted.</td>
             </tr>
             <tr>
-              <td>IOC allowlist</td>
-              <td>Known-good indicators (addresses, networks, domains) left out of the IOCs tab.</td>
+              <td>Mail analysis</td>
+              <td>
+                Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
+                results are trusted (admins).
+              </td>
             </tr>
             <tr>
               <td>Report header</td>
               <td>The organisation's name and logo on the report (admins).</td>
             </tr>
             <tr>
-              <td>Mail analysis</td>
-              <td>
-                Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
-                results are trusted (admins).
-              </td>
+              <th colspan="2" scope="colgroup">Indicators</th>
+            </tr>
+            <tr>
+              <td>IOC allowlist</td>
+              <td>Known-good indicators (addresses, networks, domains) left out of the IOCs tab.</td>
             </tr>
             <tr>
               <td>Threat intelligence</td>
@@ -875,18 +893,27 @@
               </td>
             </tr>
             <tr>
-              <td>My account</td>
-              <td>Who you are signed in as, and a form to change your password.</td>
+              <th colspan="2" scope="colgroup">Rule sets</th>
             </tr>
             <tr>
-              <td>Accounts · API keys</td>
+              <td>YARA rules · capa rules · FLIRT signatures</td>
+              <td>Your own rules and signatures for Malware Analysis (the Rules role, or an admin).</td>
+            </tr>
+            <tr>
+              <th colspan="2" scope="colgroup">Access</th>
+            </tr>
+            <tr>
+              <td>My account</td>
+              <td>Who you are signed in as, your roles, and a form to change your password.</td>
+            </tr>
+            <tr>
+              <td>Accounts and roles · API keys</td>
               <td>
                 The accounts and their roles; keys for scripts and integrations, with roles of their own (admins).
               </td>
             </tr>
             <tr>
-              <td>YARA rules · FLIRT signatures · capa rules</td>
-              <td>Your own rules and signatures for Malware Analysis (the Rules role, or an admin).</td>
+              <th colspan="2" scope="colgroup">System</th>
             </tr>
             <tr>
               <td>Storage <em>(admins)</em></td>
@@ -898,6 +925,13 @@
               </td>
             </tr>
             <tr>
+              <td>Backup <em>(admins)</em></td>
+              <td>
+                The full backup: export everything the database holds in one file, or restore from one (see
+                <a href="#share">Export, import and backup</a>).
+              </td>
+            </tr>
+            <tr>
               <td>Audit log</td>
               <td>The platform's audit trail (the Audit role, or an admin).</td>
             </tr>
@@ -905,7 +939,7 @@
         </table>
       </div>
       <figure class="shot">
-        <img src="img/settings.png" alt="The Settings dialog" width="1600" height="1000" loading="lazy" />
+        <img src="img/settings.png" alt="The Settings page" width="1600" height="1000" loading="lazy" />
         <figcaption>Settings: detection rules.</figcaption>
       </figure>
       <h3 id="accounts">Accounts</h3>

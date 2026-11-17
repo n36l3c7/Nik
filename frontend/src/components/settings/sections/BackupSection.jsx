@@ -1,12 +1,10 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, DatabaseBackup, Download, Upload } from 'lucide-react'
-import { api } from '../../services/api.js'
-import { Badge, Button, MicroSkull, Modal } from '../ui/index.js'
+import { api } from '../../../services/api.js'
+import { Badge, Button, MicroSkull } from '../../ui/index.js'
 
 /*
- * ============================================================================
- * FULL BACKUP — export / restore the entire platform (admin only)
- * ============================================================================
+ * Backup settings section (admin only): export / restore the entire platform.
  *
  * Export downloads a single JSON envelope with EVERYTHING stored server-side:
  * users (password hashes included), incidents with all imported artifacts,
@@ -31,24 +29,12 @@ function downloadJson(fileName, data) {
   URL.revokeObjectURL(url)
 }
 
-export default function BackupModal({ open, onClose }) {
+export default function BackupSection() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   // Parsed backup file waiting for the user's confirmation (null = none).
   const [pending, setPending] = useState(null)
   const fileInputRef = useRef(null)
-
-  const reset = () => {
-    setError(null)
-    setPending(null)
-    setBusy(false)
-  }
-
-  const handleClose = () => {
-    if (busy) return
-    reset()
-    onClose()
-  }
 
   /** Download the full backup produced by the server. */
   const handleExport = async () => {
@@ -107,8 +93,19 @@ export default function BackupModal({ open, onClose }) {
     : null
 
   return (
-    <Modal open={open} onClose={handleClose} title="Full backup">
-      <div className="space-y-4">
+    <section className="space-y-6">
+      <div>
+        <div className="flex items-center gap-2">
+          <DatabaseBackup className="h-5 w-5 text-accent" />
+          <h2 className="text-base font-semibold text-fg">Backup</h2>
+        </div>
+        <p className="mt-1 text-sm text-fg-muted">
+          The whole platform in one file, and back from it. For the files on disk (samples, captures, mailboxes) see the
+          deployment guide: they are backed up on the server.
+        </p>
+      </div>
+
+      <div className="max-w-xl space-y-4">
         {error && (
           <p
             role="alert"
@@ -191,6 +188,6 @@ export default function BackupModal({ open, onClose }) {
           </div>
         )}
       </div>
-    </Modal>
+    </section>
   )
 }

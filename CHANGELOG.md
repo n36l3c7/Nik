@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Settings is a page, and every section has an address.** The settings
+  were a dialog; they are now a page next to the rail, with the sections on
+  the left in groups (Analysis, Indicators, Rule sets, Access, System) and
+  the chosen one at full width. `/settings/access/accounts`,
+  `/settings/system/audit-log` and the others can be bookmarked or sent to
+  a colleague; a reload stays on the section. Escape, the gear and the
+  browser's Back leave the page, and what was open before is there as it
+  was.
+- **Find a setting**: a box above the sections narrows them by name and by
+  what they hold (*password*, *restore*, *domains*).
+
 ### Changed
+
+- The **full backup** is a section of the settings (System → Backup)
+  instead of a dialog of its own; the rail's shortcut opens it there.
 
 - **Roles are tags, and an account can hold several** (breaking for API
   clients that manage accounts or keys). An account or an API key had one

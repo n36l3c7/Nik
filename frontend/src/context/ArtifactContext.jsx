@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, upload } from '../services/api.js'
 import { artifactIdFromPath, artifactKind, artifactPath } from '../domain/artifactRegistry.js'
-import { isIndicatorPage, onLocationChange, setPath } from '../lib/location.js'
+import { isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
 import { useAuth } from './AuthContext.jsx'
 
 /*
@@ -92,7 +92,7 @@ export function ArtifactProvider({ children }) {
   useEffect(() => {
     // The address decides: another page (an incident, the IoC library) leaves the artifact.
     const onPopState = () => {
-      if (!isIndicatorPage(window.location.pathname)) setCurrentId(idFromUrl())
+      if (!isOverlayPage(window.location.pathname)) setCurrentId(idFromUrl())
     }
     return onLocationChange(onPopState)
   }, [])

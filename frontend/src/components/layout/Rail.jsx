@@ -47,10 +47,24 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
  *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
+ *   settingsOpen?: boolean,                        // the Settings page is shown
  * }} props
  */
-export default function Rail({ panel, onPanel, counts, can, onSearch, onAudit, onUsers, onBackup, onSettings }) {
-  const toggle = (name) => onPanel(panel === name ? null : name)
+export default function Rail({
+  panel,
+  onPanel,
+  counts,
+  can,
+  onSearch,
+  onAudit,
+  onUsers,
+  onBackup,
+  onSettings,
+  settingsOpen = false,
+}) {
+  // With the Settings page open no panel is shown, and an entry leaves the page for its panel.
+  const open = settingsOpen ? null : panel
+  const toggle = (name) => onPanel(open === name ? null : name)
   const canRead = can('read')
   return (
     <nav
@@ -67,28 +81,28 @@ export default function Rail({ panel, onPanel, counts, can, onSearch, onAudit, o
         <>
           <RailButton
             icon={FolderClosed}
-            label={panel === 'incidents' ? 'Hide the incidents' : 'Incidents'}
-            active={panel === 'incidents'}
+            label={open === 'incidents' ? 'Hide the incidents' : 'Incidents'}
+            active={open === 'incidents'}
             count={counts.incidents}
             onClick={() => toggle('incidents')}
           />
           <RailButton
             icon={Boxes}
-            label={panel === 'artifacts' ? 'Hide the artifacts' : 'Artifacts'}
-            active={panel === 'artifacts'}
+            label={open === 'artifacts' ? 'Hide the artifacts' : 'Artifacts'}
+            active={open === 'artifacts'}
             count={counts.artifacts}
             onClick={() => toggle('artifacts')}
           />
           <RailButton
             icon={Fingerprint}
             label={
-              panel === 'iocs'
+              open === 'iocs'
                 ? 'Hide the IoC library'
                 : counts.alerts
                   ? `IoC library (${counts.alerts} new alerts)`
                   : 'IoC library'
             }
-            active={panel === 'iocs'}
+            active={open === 'iocs'}
             count={counts.iocs}
             alert={counts.alerts > 0}
             onClick={() => toggle('iocs')}
@@ -100,7 +114,12 @@ export default function Rail({ panel, onPanel, counts, can, onSearch, onAudit, o
       {can('audit.read') && <RailButton icon={ScrollText} label="Audit log" onClick={onAudit} />}
       {can('admin') && <RailButton icon={Users} label="Users" onClick={onUsers} />}
       {can('admin') && <RailButton icon={DatabaseBackup} label="Full backup" onClick={onBackup} />}
-      <RailButton icon={Settings} label="Open platform settings" onClick={onSettings} />
+      <RailButton
+        icon={Settings}
+        label={settingsOpen ? 'Close platform settings' : 'Open platform settings'}
+        active={settingsOpen}
+        onClick={onSettings}
+      />
     </nav>
   )
 }

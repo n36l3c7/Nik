@@ -228,7 +228,7 @@ test('search, report and settings', async () => {
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Settings' })).toBeVisible()
   await shot('settings')
   await page.keyboard.press('Escape')
 })
