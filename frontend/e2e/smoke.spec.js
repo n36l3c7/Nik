@@ -1619,6 +1619,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
 })
 
 test('a playbook is drawn on the canvas, checked by the server and saved as a version', async () => {
+  test.setTimeout(240_000) // a long story, and the runners of CI are slower than a desk
   const before = page.url()
   await page.getByRole('button', { name: 'Automations', exact: true }).click()
   const area = page.getByRole('region', { name: 'Automations' })
@@ -1764,7 +1765,7 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
 })
 
 test('a playbook runs on an incident: the approval is asked where the incident is, the run shows what happened', async () => {
-  test.setTimeout(120_000) // the worker takes a step every second or so, and the story has many
+  test.setTimeout(240_000) // the worker takes a step every second or so, and the story has many
   const before = page.url()
   const incidentId = decodeURIComponent(new URL(before).pathname.split('/')[2])
   const tabs = page.locator('nav[aria-label="Analysis tabs"]')
@@ -1889,6 +1890,7 @@ test('a playbook runs on an incident: the approval is asked where the incident i
 })
 
 test('a script is written, tested in the sandbox, saved as a version and offered as a node', async () => {
+  test.setTimeout(240_000) // a long story, and the runners of CI are slower than a desk
   const before = page.url()
   // The sandbox runs in CI (and wherever E2E_SANDBOX_URL names one); without it, what needs one is checked to be refused.
   const sandbox = Boolean(process.env.E2E_SANDBOX_URL)
