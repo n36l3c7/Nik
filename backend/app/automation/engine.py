@@ -455,6 +455,11 @@ def _complete(
     step.next_at = None
     step.waiting = None
     _outputs(run, loop, index)[step.node_id] = stored
+    if not skipped:
+        # A line in the War Room of the incident the run works on.
+        from .. import war_room
+
+        war_room.step_done(db, run, step, graph.nodes_of(shape).get(step.node_id) or {})
     if classes:
         held = run.context_classes
         if loop:
@@ -506,6 +511,9 @@ def _fail(
     step.next_at = None
     step.waiting = None
     nodes = graph.nodes_of(shape)
+    from .. import war_room
+
+    war_room.step_done(db, run, step, nodes.get(step.node_id) or {}, error=step.error)
     loop = _loop_of(shape, step.node_id)
     index = step.item_index if loop else None
     handled = any(port == "error" for port, _target in graph.edges_from(shape).get(step.node_id, []))
@@ -953,6 +961,9 @@ def answer(db: OrmSession, approval: Approval, verdict: str, by: str, comment: s
         approval.answered_at = iso(now)
         approval.answered_by = by
         approval.comment = comment[:1000]
+        from .. import war_room
+
+        war_room.approval_answered(db, run, approval.question, verdict, by, approval.comment)
         step = db.get(RunStep, approval.step_id)
         if run.status in FINISHED or step is None or step.status != "waiting":
             return True

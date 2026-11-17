@@ -60,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set it last.
 - **The Context tab** of an incident: the tree of what playbooks read, with
   a search, the path of each value to copy and who set it.
+- **The War Room** of an incident: one log of what was said and done on
+  it, in the order it happened. The notes people write, each step a
+  playbook ran on the incident, the approvals answered. Chips keep one
+  kind, or what was marked as evidence; the chosen line opens beside the
+  stream with its result (a table when it is a list of flat objects), what
+  was sent and what was written to the context. Text written at the bottom
+  is a note of the incident. The notes an incident already had are listed
+  as they are: nothing is moved, and the Summary and the report keep
+  showing them.
 - Migration `0029_context_war_room`: the context of incidents, who set
   each item, and the War Room entries.
 - An incident read through the API carries `type` and `fields`; sent back

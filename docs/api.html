@@ -220,6 +220,33 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/incidents/{id}/war-room</code> ·
+                <code>GET /api/incidents/{id}/war-room/{entry}</code>
+              </td>
+              <td>
+                The War Room of the incident, oldest first:
+                <code>{entries: [{id, at, author, kind, body, runId, stepId, tags, parentId}]}</code>.
+                <code>kind</code> is <code>note</code>, <code>command</code>, <code>result</code>, <code>error</code>,
+                <code>approval</code>, <code>system</code>… Filters: <code>show</code> (<code>all</code>,
+                <code>notes</code>, <code>commands</code>, <code>automation</code>, <code>evidence</code>),
+                <code>tag</code>, <code>author</code>, <code>limit</code>, <code>before</code> · one entry, with
+                <code>step</code>: what the step behind it was given, gave and sent, when a playbook or a command made
+                it.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/incidents/{id}/war-room</code> ·
+                <code>PUT /api/incidents/{id}/war-room/{entry}/tags</code>
+              </td>
+              <td>
+                Write a note: <code>{text, tags}</code>. It is a note of the incident like those of
+                <code>POST …/notes</code>, with a line here · tag an entry: <code>{tags}</code>;
+                <code>evidence</code> puts it among the evidence of the incident.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/incidents/{id}/context</code></td>
               <td>
                 Needs <code>automation.run</code>. What a playbook reads of the incident: <code>incident</code> (its

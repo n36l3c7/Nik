@@ -117,7 +117,7 @@ def test_a_type_of_your_own_with_fields_and_a_layout(admin: TestClient):
     assert refused(admin, "PUT", url, layout={"sections": [{"key": True}, {"key": True}]}) == (
         "One section at most is the side panel"
     )
-    assert refused(admin, "PUT", url, layout={"tabs": ["war_room"]}).startswith('There is no tab called "war_room"')
+    assert refused(admin, "PUT", url, layout={"tabs": ["cinema"]}).startswith('There is no tab called "cinema"')
     assert refused(admin, "PUT", url, layout={"hidden": ["summary"]}).startswith("The Summary cannot be hidden")
     assert refused(admin, "PUT", url, autoRun=True) == "To run by itself a type needs its playbook"
     assert refused(admin, "PUT", url, defaultPlaybookId="nope") == "The playbook of the type does not exist"

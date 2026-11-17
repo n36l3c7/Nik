@@ -2370,6 +2370,53 @@ test('the Context tab shows what playbooks read of the incident, with the path o
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
 })
 
+test('the War Room holds what was said and done on the incident, and marks evidence', async () => {
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'War Room', exact: true }).click()
+  const stream = page.getByRole('list', { name: 'War Room' })
+  // What the playbook of an earlier test did here is in it: its steps, the approval, the note it wrote.
+  await expect(stream.getByText('Approved by admin: looks right')).toBeVisible()
+  await expect(
+    stream
+      .getByText('Ask first: go ahead?')
+      .or(stream.getByText(/^Add a note to/))
+      .first(),
+  ).toBeVisible()
+
+  // Plain text written below is a note of the incident.
+  await page.locator('#war-room-line').fill('Laptop collected from the finance office.')
+  await page.locator('#war-room-line').press('Enter')
+  const note = stream.getByRole('listitem').filter({ hasText: 'Laptop collected from the finance office.' })
+  await expect(note).toHaveCount(1)
+  await expect(page.locator('#war-room-line')).toHaveValue('')
+
+  // The chips keep one kind.
+  const show = page.getByRole('group', { name: 'Show' })
+  await show.getByRole('button', { name: 'Automation' }).click()
+  await expect(note).toHaveCount(0)
+  const step = stream.getByRole('listitem').filter({ hasText: 'playbook Ask then note' }).first()
+  await expect(step).toBeVisible()
+  // The inspector shows what the step was given and gave, and opens its run.
+  await step.getByRole('button').click()
+  const inspector = page.getByRole('complementary', { name: 'The chosen entry' })
+  await expect(inspector.getByRole('heading', { name: 'Result' })).toBeVisible()
+  await expect(inspector.getByRole('heading', { name: 'What it was given' })).toBeVisible()
+  await expect(inspector.getByRole('button', { name: 'Open the run' })).toBeVisible()
+  await inspector.getByRole('button', { name: 'Close the entry' }).click()
+
+  // An entry marked as evidence is found among the evidence.
+  await show.getByRole('button', { name: 'Notes' }).click()
+  await note.getByRole('button').click()
+  await inspector.getByRole('button', { name: 'Mark as evidence' }).click()
+  await expect(note).toContainText('evidence')
+  await show.getByRole('button', { name: 'Evidence' }).click()
+  await expect(stream.getByRole('listitem').filter({ hasText: /\S/ })).toHaveCount(1)
+  await expect(note).toHaveCount(1)
+  // It is a note of the incident like any other: the Summary shows it.
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.getByText('Laptop collected from the finance office.')).toBeVisible()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

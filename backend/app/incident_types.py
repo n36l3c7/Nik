@@ -33,6 +33,7 @@ COLOURS = ("slate", "red", "amber", "emerald", "cyan", "blue", "violet", "pink")
 TABS = (
     "summary",
     "timeline",
+    "war_room",
     "automation",
     "context",
     "iocs",

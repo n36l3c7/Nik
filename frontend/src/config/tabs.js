@@ -9,6 +9,7 @@ import {
   Link2,
   ListTree,
   Mail,
+  MessagesSquare,
   Network,
   ScrollText,
   TerminalSquare,
@@ -57,6 +58,7 @@ const NetworkAnalysisTab = lazy(() => import('../components/tabs/network/Network
 const UrlAnalysisTab = lazy(() => import('../components/tabs/urls/UrlAnalysisTab.jsx'))
 const AutomationTab = lazy(() => import('../components/tabs/automation/AutomationTab.jsx'))
 const ContextTab = lazy(() => import('../components/tabs/context/ContextTab.jsx'))
+const WarRoomTab = lazy(() => import('../components/tabs/warroom/WarRoomTab.jsx'))
 
 export const ANALYSIS_TABS = [
   {
@@ -80,6 +82,15 @@ export const ANALYSIS_TABS = [
     // The Timeline aggregates timestamped events from every other tab; it
     // stores no data of its own (this key just holds view preferences, if any).
     defaultData: {},
+  },
+  {
+    id: 'war_room',
+    label: 'War Room',
+    short: 'Room',
+    group: 'overview',
+    icon: MessagesSquare,
+    component: WarRoomTab,
+    // The log is the server's: notes stay in the incident, the rest is read when the tab opens.
   },
   {
     id: 'automation',
