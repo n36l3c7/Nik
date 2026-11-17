@@ -1,0 +1,23 @@
+name: DefangIndicators
+description: Make addresses and domains safe to paste in a message, so that nobody opens them by mistake.
+arguments:
+  - { name: values, type: any, required: true, description: "A value, or a list of values" }
+outputs:
+  - { name: defanged, type: list, description: "The values, defanged, in the same order" }
+  - { name: text, type: text, description: "The same, one per line" }
+test:
+  args: { values: ["http://evil.example/kit", "evil.example", "eve@evil.example", "185.220.101.47"] }
+  expect:
+    defanged: ["hxxp[://]evil[.]example/kit", "evil[.]example", "eve[@]evil[.]example", "185[.]220[.]101[.]47"]
+    text: "hxxp[://]evil[.]example/kit\nevil[.]example\neve[@]evil[.]example\n185[.]220[.]101[.]47"
+code: |
+  def defang(value):
+      text = str(value)
+      return text.replace("http", "hxxp").replace("://", "[://]").replace(".", "[.]").replace("@", "[@]")
+
+
+  def main(args):
+      given = args.get("values")
+      values = given if isinstance(given, list) else [given]
+      defanged = [defang(value) for value in values if value not in (None, "")]
+      return {"defanged": defanged, "text": "\n".join(defanged)}

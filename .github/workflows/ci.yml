@@ -34,7 +34,7 @@ jobs:
         run: ruff check . && ruff format --check .
       - name: Workers
         working-directory: workers
-        run: for d in analyzer capa docview browser pcap; do (cd "$d" && ruff check . && ruff format --check .) || exit 1; done
+        run: for d in analyzer capa docview browser pcap sandbox; do (cd "$d" && ruff check . && ruff format --check .) || exit 1; done
 
   backend-tests:
     runs-on: ubuntu-latest
@@ -57,6 +57,9 @@ jobs:
         run: python -m pytest -q tests
       - name: capa worker (tests on a recorded capa report)
         working-directory: workers/capa
+        run: python -m pytest -q tests
+      - name: Script sandbox (a script's result, and the limits it runs under)
+        working-directory: workers/sandbox
         run: python -m pytest -q tests
       # The tests of the other workers need LibreOffice, Chromium and tshark:
       # they run inside the images (e2e job).

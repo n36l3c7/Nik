@@ -20,6 +20,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
 from .artifacts import backfill as backfill_artifacts
@@ -169,6 +170,17 @@ def on_startup() -> None:
     # Automatic threat-intelligence lookups (one process at a time, see worker.py).
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
+    # The scripts Nik ships are in the library (a release may bring new versions).
+    if app_settings.AUTOMATION_WORKER != "off":
+        from .automation import scripts as automation_scripts
+
+        with SessionLocal() as db:
+            try:
+                if automation_scripts.seed(db):
+                    db.commit()
+            except IntegrityError:
+                # Another process of the server added them at the same moment.
+                db.rollback()
     # Playbooks: the loop runs here only when there is no automation container.
     if app_settings.AUTOMATION_WORKER == "inline":
         from .automation import worker as automation_worker

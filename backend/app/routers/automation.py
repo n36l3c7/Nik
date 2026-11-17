@@ -19,10 +19,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..automation import catalog, egress, engine, graph, guard, outbound, state, triggers
+from ..automation import catalog, egress, engine, graph, guard, outbound, scripts, state, triggers
 from ..core import audit, vault
+from ..core.config import settings as app_settings
 from ..core.db import get_db
-from ..core.models import Playbook, PlaybookVersion, Run, RunStep
+from ..core.models import Playbook, PlaybookVersion, Run, RunStep, Script, ScriptVersion
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, runner_principal
 
 router = APIRouter(prefix="/automation", tags=["automation"])
@@ -854,3 +855,298 @@ def put_settings(
         audit.record(db, caller.actor, "automation.settings", "Changed the automation settings: " + "; ".join(changes))
         db.commit()
     return _settings_out(db)
+
+
+# --------------------------------------------------------------------------- #
+# Scripts                                                                     #
+# --------------------------------------------------------------------------- #
+STARTER = {
+    "code": "def main(args):\n    # args holds the arguments declared below; return something JSON can hold.\n"
+    '    return {"greeting": "hello " + str(args.get("name", ""))}\n',
+    "arguments": [{"name": "name", "type": "text", "required": False, "description": "Who to greet"}],
+    "outputs": [{"name": "greeting", "type": "text", "description": "The greeting"}],
+    "test": {"args": {"name": "Nik"}, "expect": {"greeting": "hello Nik"}},
+}
+
+
+class ScriptIn(BaseModel):
+    name: str = Field(min_length=3, max_length=49)
+    description: str = Field(default="", max_length=2000)
+
+
+class ScriptPatch(BaseModel):
+    description: str | None = Field(default=None, max_length=2000)
+    draft: dict[str, Any] | None = None
+
+
+class ScriptTestIn(BaseModel):
+    """Test ``draft`` when given, the stored draft otherwise (the current version when there is none)."""
+
+    draft: dict[str, Any] | None = None
+
+
+class ScriptImportIn(BaseModel):
+    script: dict[str, Any]
+
+
+def _script(db: OrmSession, script_id: str) -> Script:
+    row = db.get(Script, script_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Script not found")
+    return row
+
+
+def _version_out(row: ScriptVersion | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "version": row.version,
+        "code": row.code,
+        "arguments": row.arguments or [],
+        "outputs": row.outputs or [],
+        "test": row.test or {},
+        "testResult": row.test_result or {},
+        "createdAt": row.created_at,
+        "createdBy": row.created_by,
+    }
+
+
+def _users_of(db: OrmSession, name: str) -> list[str]:
+    """The playbooks whose current version or draft has a node of this script."""
+    found = []
+    for playbook in db.scalars(select(Playbook).order_by(Playbook.name)):
+        version = db.get(PlaybookVersion, (playbook.id, playbook.current_version)) if playbook.current_version else None
+        shapes = [shape for shape in (version.graph if version else None, playbook.draft) if shape]
+        if any(
+            node.get("kind") == "script" and (node.get("config") or {}).get("script") == name
+            for shape in shapes
+            for node in graph.nodes_of(shape).values()
+        ):
+            found.append(playbook.name)
+    return found
+
+
+def _script_summary(db: OrmSession, row: Script) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+        "builtin": bool(row.builtin),
+        "version": row.current_version,
+        "hasDraft": row.draft is not None,
+        "inLibrary": row.current_version is not None,
+        "updatedAt": row.updated_at,
+        "updatedBy": row.updated_by,
+    }
+
+
+def _script_detail(db: OrmSession, row: Script) -> dict[str, Any]:
+    versions = db.scalars(
+        select(ScriptVersion).where(ScriptVersion.script_id == row.id).order_by(ScriptVersion.version.desc())
+    ).all()
+    return {
+        **_script_summary(db, row),
+        "current": _version_out(scripts.current(db, row)),
+        "draft": row.draft,
+        "versions": [{"version": v.version, "createdAt": v.created_at, "createdBy": v.created_by} for v in versions],
+        "usedBy": _users_of(db, row.name),
+    }
+
+
+def _cleaned(source: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return scripts.clean(source)
+    except scripts.ScriptError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+@router.get("/scripts")
+def list_scripts(_caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """Every script: those in the library (with a saved version) and those still a draft."""
+    rows = db.scalars(select(Script).order_by(func.lower(Script.name))).all()
+    return {"scripts": [_script_summary(db, row) for row in rows], "sandbox": bool(app_settings.SANDBOX_URL)}
+
+
+@router.post("/scripts", status_code=status.HTTP_201_CREATED)
+def create_script(
+    body: ScriptIn, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Create a script as a draft. Its name is how nodes and the command line call it:
+    a capital letter, then letters and digits (``GroupByField``)."""
+    name = body.name.strip()
+    if not scripts.NAME_RE.match(name):
+        raise HTTPException(
+            status_code=400, detail="A script's name starts with a capital letter and holds letters and digits only"
+        )
+    if db.scalars(select(Script).where(func.lower(Script.name) == name.lower())).first() is not None:
+        raise HTTPException(status_code=400, detail="A script with this name exists already")
+    now = now_iso()
+    row = Script(
+        id=engine.new_id(),
+        name=name,
+        description=body.description.strip(),
+        draft=dict(STARTER),
+        created_at=now,
+        created_by=caller.actor,
+        updated_at=now,
+        updated_by=caller.actor,
+    )
+    db.add(row)
+    audit.record(db, caller.actor, "script.create", f'Created the script "{name}"', target=name)
+    db.commit()
+    return _script_detail(db, row)
+
+
+@router.get("/scripts/{script_id}")
+def get_script(
+    script_id: str, _caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    return _script_detail(db, _script(db, script_id))
+
+
+@router.get("/scripts/{script_id}/versions/{number}")
+def get_script_version(
+    script_id: str, number: int, _caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    found = db.get(ScriptVersion, (_script(db, script_id).id, number))
+    if found is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return _version_out(found)
+
+
+@router.put("/scripts/{script_id}")
+def update_script(
+    script_id: str, body: ScriptPatch, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Save the draft (it need not run yet) and the description. Nothing a playbook
+    uses changes until a version is saved."""
+    row = _script(db, script_id)
+    if body.description is not None:
+        row.description = body.description.strip()
+    if body.draft is not None:
+        if len(str(body.draft)) > scripts.MAX_CODE * 2:
+            raise HTTPException(status_code=413, detail="The script is too large")
+        row.draft = body.draft
+        flag_modified(row, "draft")
+    row.updated_at = now_iso()
+    row.updated_by = caller.actor
+    db.commit()
+    return _script_detail(db, row)
+
+
+@router.delete("/scripts/{script_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_script(
+    script_id: str, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    """Delete a script with its versions. A built-in one, or one a playbook uses, is refused."""
+    row = _script(db, script_id)
+    if row.builtin:
+        raise HTTPException(status_code=400, detail="A built-in script cannot be deleted")
+    users = _users_of(db, row.name)
+    if users:
+        raise HTTPException(status_code=409, detail="Used by: " + ", ".join(users[:10]))
+    audit.record(db, caller.actor, "script.delete", f'Deleted the script "{row.name}"', target=row.name)
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/scripts/{script_id}/test")
+def test_script(
+    script_id: str, body: ScriptTestIn, _caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Run the stored test in the sandbox: ``{passed, result | error, stdout, durationMs}``."""
+    row = _script(db, script_id)
+    latest = scripts.current(db, row)
+    source = body.draft or row.draft or (_version_out(latest) if latest else None)
+    if source is None:
+        raise HTTPException(status_code=400, detail="There is nothing to test")
+    return scripts.run_test(_cleaned(source))
+
+
+@router.post("/scripts/{script_id}/versions", status_code=status.HTTP_201_CREATED, response_model=None)
+def save_script_version(
+    script_id: str, body: ScriptTestIn, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict | JSONResponse:
+    """Save the draft as the next version, **when its test passes** in the sandbox
+    (``422`` with the test's result otherwise). From then on the script is in the
+    library; playbooks stay on the version they were saved with."""
+    row = _script(db, script_id)
+    source = body.draft or row.draft
+    if source is None:
+        raise HTTPException(status_code=400, detail="There is no draft to save")
+    draft = _cleaned(source)
+    result = scripts.run_test(draft)
+    if not result["passed"]:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": "The test does not pass: " + str(result.get("error") or "see the result"),
+                "test": result,
+            },
+        )
+    before = scripts.current(db, row)
+    version = scripts.add_version(db, row, draft, result, caller.actor)
+    diff = scripts.code_diff(before.code if before else "", draft["code"])
+    audit.record(
+        db,
+        caller.actor,
+        "script.version",
+        f'Saved version {version.version} of the script "{row.name}"\n{diff}',
+        target=row.name,
+    )
+    db.commit()
+    return _script_detail(db, row)
+
+
+@router.get("/scripts/{script_id}/export")
+def export_script(
+    script_id: str, _caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    row = _script(db, script_id)
+    latest = scripts.current(db, row)
+    source = _version_out(latest) if latest else (row.draft or {})
+    return {
+        "app": "Nik",
+        "type": "script",
+        "version": 1,
+        "script": {
+            "name": row.name,
+            "description": row.description,
+            "code": source.get("code", ""),
+            "arguments": source.get("arguments", []),
+            "outputs": source.get("outputs", []),
+            "test": source.get("test", {}),
+        },
+    }
+
+
+@router.post("/scripts/import", status_code=status.HTTP_201_CREATED)
+def import_script(
+    body: ScriptImportIn, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Bring a script in from a file, as a draft: it enters the library when its test passes here."""
+    source = body.script
+    name = str(source.get("name") or "").strip()
+    if not scripts.NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="Not a script file")
+    draft = _cleaned(source)
+    base, counter = name, 2
+    while db.scalars(select(Script).where(func.lower(Script.name) == name.lower())).first() is not None:
+        name = f"{base[:46]}{counter}"
+        counter += 1
+    now = now_iso()
+    row = Script(
+        id=engine.new_id(),
+        name=name,
+        description=str(source.get("description") or "")[:2000],
+        draft=draft,
+        created_at=now,
+        created_by=caller.actor,
+        updated_at=now,
+        updated_by=caller.actor,
+    )
+    db.add(row)
+    audit.record(db, caller.actor, "script.import", f'Imported the script "{name}"', target=name)
+    db.commit()
+    return _script_detail(db, row)

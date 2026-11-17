@@ -433,3 +433,35 @@ def send_mail(
     record["status"] = "sent"
     record["refused"] = sorted(refused) if refused else []
     return record
+
+
+# --------------------------------------------------------------------------- #
+# The sandbox                                                                 #
+# --------------------------------------------------------------------------- #
+def sandbox_run(url: str, token: str, code: str, args: dict, timeout: int) -> dict:
+    """Ask the sandbox to run a script: ``{ok, result | error, stdout, duration_ms}``.
+    The sandbox is a container of the stack on an internal network: its address is
+    the one of the configuration, not something a playbook chooses."""
+    parts = urlsplit(url)
+    if parts.scheme != "http" or not parts.hostname:
+        raise EgressError("The address of the sandbox is not valid", refused=True)
+    payload = jsonlib.dumps({"code": code, "args": args, "timeout": timeout}).encode("utf-8")
+    connection = http.client.HTTPConnection(parts.hostname, parts.port or 80, timeout=timeout + 10)
+    try:
+        headers = {"Content-Type": "application/json", "X-Sandbox-Token": token}
+        connection.request("POST", "/run", body=payload, headers=headers)
+        answer = connection.getresponse()
+        content = answer.read(MAX_BODY + 1)
+        status = answer.status
+    except (OSError, http.client.HTTPException):
+        raise EgressError("The sandbox could not be reached") from None
+    finally:
+        connection.close()
+    if status == 503:
+        raise EgressError("The sandbox is busy: try again in a moment")
+    if status != 200:
+        raise EgressError("The sandbox refused the request")
+    try:
+        return jsonlib.loads(content.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        raise EgressError("The sandbox gave an answer that cannot be read") from None

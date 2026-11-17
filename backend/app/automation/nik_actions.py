@@ -24,12 +24,13 @@ from .. import ioc_library as lib
 from ..core import audit
 from ..core.locking import lock_incident
 from ..core.models import Artifact, Incident, IocList, IocListItem, Mail, Sample, UrlScan, User
+from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
 from ..iocs import TYPES, normalize
 from . import payloads, triggers
 from .actions import ActionError, Call, Result, action
 
-ACTOR = "nik-automation"
+ACTOR = SYSTEM_USER
 SEVERITIES = ("low", "medium", "high", "critical", "")
 STATUSES = ("open", "in_progress", "closed")
 FIELDS = ("ticketId", "title", "host", "username", "os", "severity", "status", "assignee")

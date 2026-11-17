@@ -25,7 +25,7 @@ from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Incident, User
 from ..core.models import Session as SessionModel
-from ..core.permissions import ADMIN, SYSTEM_ROLE, RoleError, clean_roles, legacy_role, stored_roles
+from ..core.permissions import ADMIN, SYSTEM_ROLE, SYSTEM_USER, RoleError, clean_roles, legacy_role, stored_roles
 from ..core.schemas import PasswordChange, UserCreate, UserEnvelope, UsersEnvelope, UserUpdate
 from ..core.security import (
     Principal,
@@ -81,6 +81,11 @@ def _active_admins(db: OrmSession, except_id: str | None = None) -> int:
     return sum(1 for user_id, roles in rows if user_id != except_id and "admin" in stored_roles(roles))
 
 
+def _people(db: OrmSession) -> int:
+    """How many accounts there are, not counting the automation engine's own."""
+    return db.scalar(select(func.count()).select_from(User).where(User.username != SYSTEM_USER)) or 0
+
+
 def revoke_sessions(db: OrmSession, user_id: str, keep: str | None = None) -> None:
     """Sign the user out everywhere (except the session ``keep``)."""
     stmt = delete(SessionModel).where(SessionModel.user_id == user_id)
@@ -114,7 +119,9 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
         raise HTTPException(status_code=400, detail="Username is required")
     _check_password(body.password)
 
-    user_count = db.scalar(select(func.count()).select_from(User)) or 0
+    if username.lower() == SYSTEM_USER:
+        raise HTTPException(status_code=400, detail="This name is the automation engine's: choose another")
+    user_count = _people(db)
     is_first_run = user_count == 0
 
     if is_first_run:
@@ -225,6 +232,8 @@ def update_user(
         username = body.username.strip()
         if not username:
             raise HTTPException(status_code=400, detail="Username is required")
+        if username.lower() == SYSTEM_USER:
+            raise HTTPException(status_code=400, detail="This name is the automation engine's: choose another")
         if _name_taken(db, username, except_id=target.id):
             raise HTTPException(status_code=400, detail="Username already exists")
         if username != target.username:
@@ -290,7 +299,7 @@ def delete_user(
     if admin.user is not None and target.id == admin.user.id:
         raise HTTPException(status_code=400, detail="You cannot delete yourself")
 
-    total = db.scalar(select(func.count()).select_from(User)) or 0
+    total = _people(db)
     if total <= 1:
         raise HTTPException(status_code=400, detail="Cannot delete the last user")
     if _is_admin(target) and not target.disabled and _active_admins(db, except_id=target.id) == 0:

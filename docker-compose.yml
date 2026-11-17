@@ -1,5 +1,6 @@
 # Nik — the full stack: nginx (static app + reverse proxy), the FastAPI
-# backend, PostgreSQL, the automation worker and the five analysis workers.
+# backend, PostgreSQL, the automation worker with its script sandbox and the
+# five analysis workers.
 #
 # Works with both `docker compose` and `podman-compose` (and `podman compose`).
 #
@@ -100,9 +101,14 @@ services:
       # Playbooks run in the `automation` container; `off` records no event and runs nothing.
       AUTOMATION_WORKER: ${AUTOMATION_WORKER:-container}
       AUTOMATION_MAX_ACTIVE_RUNS: ${AUTOMATION_MAX_ACTIVE_RUNS:-200}
+      # The script sandbox: the backend reaches it to run the test of a script being written.
+      SANDBOX_URL: http://sandbox:8750
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN:?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-10}
+      SANDBOX_MAX_TIMEOUT: ${SANDBOX_MAX_TIMEOUT:-60}
     volumes:
       - sample-store:/app/samples
-    networks: [default, analysis, browser-control]
+    networks: [default, analysis, browser-control, automation-internal]
     depends_on:
       db:
         condition: service_healthy
@@ -145,6 +151,11 @@ services:
       # The backend applies the migrations; this container waits for it and applies none.
       NIK_SKIP_MIGRATIONS: "1"
       SAMPLE_STORE: /app/samples
+      # The script sandbox, on its own internal network.
+      SANDBOX_URL: http://sandbox:8750
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN:?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-10}
+      SANDBOX_MAX_TIMEOUT: ${SANDBOX_MAX_TIMEOUT:-60}
       # How many steps run side by side, how many runs may be in progress at
       # once on the server, how many finished runs each playbook keeps.
       AUTOMATION_CONCURRENCY: ${AUTOMATION_CONCURRENCY:-4}
@@ -155,7 +166,7 @@ services:
       NO_PROXY: ${AUTOMATION_NO_PROXY:-}
     volumes:
       - sample-store:/app/samples:ro
-    networks: [default, automation-egress]
+    networks: [default, automation-egress, automation-internal]
     depends_on:
       api:
         condition: service_healthy
@@ -166,6 +177,31 @@ services:
     mem_limit: ${AUTOMATION_MEMORY:-1g}
     cpus: ${AUTOMATION_CPUS:-2}
     pids_limit: 256
+    logging: *logging
+    restart: unless-stopped
+
+  # Runs the Python scripts of playbooks (workers/sandbox): each in a process of
+  # its own under CPU, memory and time limits. The image holds Python and
+  # nothing else. Its only network is an internal one with no route outside,
+  # shared with the automation worker and the backend; it has a read-only
+  # filesystem, no capabilities, and reads no volume: a script computes on the
+  # arguments it is given and can reach nothing.
+  sandbox:
+    build: ./workers/sandbox
+    environment:
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN:?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-10}
+      SANDBOX_MAX_TIMEOUT: ${SANDBOX_MAX_TIMEOUT:-60}
+      SANDBOX_MEMORY_MB: ${SANDBOX_MEMORY_MB:-256}
+    networks: [automation-internal]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${SANDBOX_MEMORY:-512m}
+    cpus: ${SANDBOX_CPUS:-1}
+    pids_limit: 64
     logging: *logging
     restart: unless-stopped
 
@@ -344,3 +380,6 @@ networks:
   browser-egress:
   # The way out of what playbooks send (the automation container only).
   automation-egress:
+  # Automation worker and backend ↔ script sandbox only, no route outside.
+  automation-internal:
+    internal: true

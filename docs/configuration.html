@@ -254,6 +254,29 @@
               </td>
             </tr>
             <tr>
+              <td><code>SANDBOX_TOKEN</code></td>
+              <td>generated</td>
+              <td>
+                The shared secret of the script sandbox. <code>deploy/init-env.sh</code> writes it, and adds it to the
+                <code>.env</code> of an install made before 4.1.
+              </td>
+            </tr>
+            <tr>
+              <td><code>SANDBOX_TIMEOUT</code> · <code>SANDBOX_MAX_TIMEOUT</code></td>
+              <td><code>10</code> · <code>60</code></td>
+              <td>How long a script may run, in seconds: by default, and at most.</td>
+            </tr>
+            <tr>
+              <td><code>SANDBOX_MEMORY_MB</code></td>
+              <td><code>256</code></td>
+              <td>The memory one script may use, in MB.</td>
+            </tr>
+            <tr>
+              <td><code>SANDBOX_MEMORY</code> · <code>SANDBOX_CPUS</code></td>
+              <td><code>512m</code> · <code>1</code></td>
+              <td>The limits of the <code>sandbox</code> container.</td>
+            </tr>
+            <tr>
               <td><code>AUTOMATION_MEMORY</code> · <code>AUTOMATION_CPUS</code></td>
               <td><code>1g</code> · <code>2</code></td>
               <td>The limits of the <code>automation</code> container.</td>

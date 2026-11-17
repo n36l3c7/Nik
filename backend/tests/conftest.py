@@ -15,6 +15,9 @@ os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "100000/minute")
 os.environ.setdefault("SAMPLE_STORE", os.path.join(tempfile.mkdtemp(), "samples"))
 os.environ.setdefault("ENRICHMENT_WORKER", "false")
+# The script sandbox is "configured"; what answers is the `sandbox` fixture (or nothing).
+os.environ.setdefault("SANDBOX_URL", "http://sandbox.test:8750")
+os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -79,6 +82,7 @@ def no_network(monkeypatch):
 
     monkeypatch.setattr(egress, "_send", closed)
     monkeypatch.setattr(egress, "resolve", closed)
+    monkeypatch.setattr(egress, "sandbox_run", closed)
     monkeypatch.setattr(egress.smtplib, "SMTP", closed)
     monkeypatch.setattr(egress.smtplib, "SMTP_SSL", closed)
 
@@ -162,3 +166,29 @@ def outside(monkeypatch):
     monkeypatch.setattr(egress.smtplib, "SMTP", Smtp)
     monkeypatch.setattr(egress.smtplib, "SMTP_SSL", Smtp)
     return world
+
+
+@pytest.fixture()
+def sandbox(monkeypatch):
+    """The script sandbox for a test: the real runner of workers/sandbox, called in
+    place of the HTTP request to its container. Returns the list of what was run."""
+    import sys
+    from pathlib import Path
+
+    folder = Path(__file__).resolve().parents[2] / "workers" / "sandbox"
+    if not folder.is_dir() or sys.platform == "win32":
+        pytest.skip("the sandbox runner needs Linux and the workers/sandbox sources")
+    sys.path.insert(0, str(folder))
+    import runner
+
+    from app.automation import egress
+
+    calls: list[dict] = []
+
+    def run(url, token, code, args, timeout):
+        calls.append({"url": url, "token": token, "args": args, "timeout": timeout})
+        return runner.run(code, args, timeout)
+
+    monkeypatch.setattr(egress, "sandbox_run", run)
+    yield calls
+    sys.path.remove(str(folder))

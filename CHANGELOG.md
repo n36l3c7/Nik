@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always leave; every other class is held until an admin opens it for that
   playbook, by ticking a box and typing the playbook's name. Every opening
   and closing is in the audit log, with the hosts that can receive it.
+- **Scripts.** A library of Python scripts with typed arguments and
+  outputs, each a node of a playbook. A script is written as a draft and
+  enters the library when a version is saved, which needs its stored test to
+  pass. A playbook stays on the version it was saved with and is told when
+  a newer one exists. Seven ship with Nik: GroupByField, ExtractDomains,
+  DefangIndicators, BusinessHours, CsvToList, FilterList, VerdictChanges.
+- A new container, **`sandbox`**, runs the scripts: an image with Python
+  and nothing else, on a network with no route outside, a read-only
+  filesystem and no capabilities; each script in a process of its own with
+  limits on time, memory and output. A script gets the arguments of its
+  node and nothing more: no secrets, no database, no files of Nik.
 - A new container, **`automation`**, runs the playbooks: the backend's
   image with another command, unprivileged and read-only, the only one
   with a way out for what playbooks send.

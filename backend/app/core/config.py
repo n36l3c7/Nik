@@ -160,6 +160,11 @@ class Settings:
         self.AUTOMATION_CONCURRENCY: int = max(1, min(32, _get_int("AUTOMATION_CONCURRENCY", 4)))
         self.AUTOMATION_MAX_ACTIVE_RUNS: int = max(1, _get_int("AUTOMATION_MAX_ACTIVE_RUNS", 200))
         self.AUTOMATION_RUNS_KEPT: int = max(10, _get_int("AUTOMATION_RUNS_KEPT", 500))
+        # The script sandbox (workers/sandbox/). Empty URL = scripts say "not configured".
+        self.SANDBOX_URL: str = os.getenv("SANDBOX_URL", "").rstrip("/")
+        self.SANDBOX_TOKEN: str = os.getenv("SANDBOX_TOKEN", "")
+        self.SANDBOX_MAX_TIMEOUT: int = max(1, min(600, _get_int("SANDBOX_MAX_TIMEOUT", 60)))
+        self.SANDBOX_TIMEOUT: int = max(1, min(self.SANDBOX_MAX_TIMEOUT, _get_int("SANDBOX_TIMEOUT", 10)))
         # Previews of mail attachments: document viewer and isolated browser
         # (workers/docview/, workers/browser/). Empty URL = the buttons say "not configured".
         self.DOCVIEW_URL: str = os.getenv("DOCVIEW_URL", "").rstrip("/")

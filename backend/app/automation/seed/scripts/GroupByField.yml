@@ -1,0 +1,36 @@
+name: GroupByField
+description: Group a list of objects by the value of one of their fields.
+arguments:
+  - { name: items, type: list, required: true, description: The objects to group }
+  - { name: field, type: text, required: true, description: "The field to group by (a.b for a nested one)" }
+outputs:
+  - { name: groups, type: object, description: "The items of each value: {value: [items]}" }
+  - { name: counts, type: object, description: How many items each value has }
+  - { name: values, type: list, description: "The values, the most frequent first" }
+test:
+  args:
+    items: [{ name: Anna, office: Rome }, { name: Bob, office: Milan }, { name: Carla, office: Rome }, { name: Dan }]
+    field: office
+  expect:
+    groups:
+      Rome: [{ name: Anna, office: Rome }, { name: Carla, office: Rome }]
+      Milan: [{ name: Bob, office: Milan }]
+      "": [{ name: Dan }]
+    counts: { Rome: 2, Milan: 1, "": 1 }
+    values: [Rome, "", Milan]
+code: |
+  def value_of(item, field):
+      for part in field.split("."):
+          if not isinstance(item, dict) or part not in item:
+              return ""
+          item = item[part]
+      return "" if item is None else str(item)
+
+
+  def main(args):
+      groups = {}
+      for item in args.get("items") or []:
+          groups.setdefault(value_of(item, args["field"]), []).append(item)
+      counts = {value: len(items) for value, items in groups.items()}
+      values = sorted(counts, key=lambda value: (-counts[value], value))
+      return {"groups": groups, "counts": counts, "values": values}

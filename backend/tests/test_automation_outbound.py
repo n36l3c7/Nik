@@ -719,6 +719,11 @@ def test_the_system_account_cannot_sign_in_and_is_not_one_people_manage(admin: T
     assert [u["username"] for u in admin.get("/api/users").json()["users"]] == ["admin"]
     assert "nik-automation" not in admin.get("/api/users/names").json()["names"]
     assert [u["username"] for u in admin.get("/api/backup/export").json()["users"]] == ["admin"]
+    # Its name is taken: nobody signs changes as the engine.
+    for name in ("nik-automation", "NIK-Automation"):
+        assert admin.post("/api/users", json={"username": name, "password": "password1"}).status_code == 400
+    me = admin.get("/api/auth/me").json()["user"]["id"]
+    assert admin.patch(f"/api/users/{me}", json={"username": "nik-automation"}).status_code == 400
     # Its role is not one an admin can give.
     assert (
         admin.post("/api/users", json={"username": "bot", "password": "password1", "roles": ["automation"]}).status_code
@@ -734,3 +739,20 @@ def test_classes_of_what_nik_returns(admin: TestClient):
     assert ex.render("{{ x.incident.id }}", scope).classes == {"nik_id"}
     assert guard.check("i1", ex.render("{{ x.incident.id }}", scope).classes, [], CONTEXT).allowed
     assert not guard.check("WKS-1", ex.render("{{ x.incident }}", scope).classes, [], CONTEXT).allowed
+
+
+def test_the_system_account_is_not_a_first_user(client: TestClient):
+    """The worker makes its account when it starts, which may be before anyone signed up."""
+    from app.automation.nik_actions import system_user
+
+    with SessionLocal() as db:
+        system_user(db)
+        db.commit()
+    assert client.get("/api/auth/bootstrap").json() == {"hasUsers": False}
+    created = client.post("/api/users", json={"username": "admin", "password": "supersecret"})
+    assert created.status_code == 201 and created.json()["user"]["roles"] == ["admin"]  # still the first run
+    assert client.get("/api/auth/bootstrap").json() == {"hasUsers": True}
+    client.post("/api/auth/login", json={"username": "admin", "password": "supersecret"})
+    me = client.get("/api/auth/me").json()["user"]["id"]
+    # And it is not "another user" that would let the only person be deleted.
+    assert client.delete(f"/api/users/{me}").status_code == 400

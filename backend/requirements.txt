@@ -60,3 +60,6 @@ cryptography>=46.0.7
 croniter>=7.0.0,<8.0
 tzdata>=2026.1
 regex>=2026.1.1
+# The built-in scripts of the automation engine (and, from 4.2, connector files) are
+# YAML, read with safe_load only.
+PyYAML>=6.0.2,<7.0

@@ -52,6 +52,8 @@ ALL: frozenset[str] = frozenset(PERMISSIONS)
 # Roles -----------------------------------------------------------------------
 # The system account of the automation engine: never given to a person or a key.
 SYSTEM_ROLE = "automation"
+# Its name: what a playbook changes is signed with it, so nobody else may take it.
+SYSTEM_USER = "nik-automation"
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "viewer": frozenset({READ}),

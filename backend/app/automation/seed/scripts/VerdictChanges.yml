@@ -1,0 +1,57 @@
+name: VerdictChanges
+description: What changed between two checks of the same indicators, and a line that says it.
+arguments:
+  - { name: before, type: list, required: true, description: "The indicators as they were: [{type, value, verdict}]" }
+  - { name: after, type: list, required: true, description: The indicators as they are now }
+outputs:
+  - { name: changed, type: list, description: "The indicators whose verdict changed: {type, value, old, new}" }
+  - { name: worse, type: list, description: Those that became suspicious or malicious }
+  - { name: cleared, type: list, description: Those that are no longer flagged }
+  - { name: summary, type: text, description: The changes in a line }
+test:
+  args:
+    before:
+      - { type: ip, value: 185.220.101.47, verdict: suspicious }
+      - { type: domain, value: evil.example, verdict: malicious }
+      - { type: domain, value: old.example, verdict: null }
+    after:
+      - { type: ip, value: 185.220.101.47, verdict: malicious }
+      - { type: domain, value: evil.example, verdict: harmless }
+      - { type: domain, value: old.example, verdict: null }
+      - { type: url, value: "http://new.example/", verdict: suspicious }
+  expect:
+    changed:
+      - { type: ip, value: 185.220.101.47, old: suspicious, new: malicious }
+      - { type: domain, value: evil.example, old: malicious, new: harmless }
+      - { type: url, value: "http://new.example/", old: null, new: suspicious }
+    worse:
+      - { type: ip, value: 185.220.101.47, old: suspicious, new: malicious }
+      - { type: url, value: "http://new.example/", old: null, new: suspicious }
+    cleared:
+      - { type: domain, value: evil.example, old: malicious, new: harmless }
+    summary: "3 of 4 indicators changed verdict: 2 became suspicious or malicious, 1 was cleared."
+code: |
+  RANK = {None: 0, "": 0, "unknown": 0, "harmless": 1, "suspicious": 2, "malicious": 3}
+
+
+  def main(args):
+      old = {(item.get("type"), item.get("value")): item.get("verdict") for item in args.get("before") or []}
+      changed, worse, cleared = [], [], []
+      now = args.get("after") or []
+      for item in now:
+          key = (item.get("type"), item.get("value"))
+          before, after = old.get(key), item.get("verdict")
+          if (before or None) == (after or None):
+              continue
+          change = {"type": key[0], "value": key[1], "old": before or None, "new": after or None}
+          changed.append(change)
+          if RANK.get(after, 0) >= 2 and RANK.get(after, 0) > RANK.get(before, 0):
+              worse.append(change)
+          elif RANK.get(before, 0) >= 2 and RANK.get(after, 0) < 2:
+              cleared.append(change)
+      if not changed:
+          return {"changed": [], "worse": [], "cleared": [], "summary": "No verdict changed among %d indicators." % len(now)}
+      verb = "was" if len(cleared) == 1 else "were"
+      summary = "%d of %d indicators changed verdict: %d became suspicious or malicious, %d %s cleared." % (
+          len(changed), len(now), len(worse), len(cleared), verb)
+      return {"changed": changed, "worse": worse, "cleared": cleared, "summary": summary}
