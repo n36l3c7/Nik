@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import tasks, war_room
+from .. import tasks, war_room, work_plan
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Incident, Task, WarRoomEntry
@@ -108,6 +108,19 @@ def get_task(task_id: str, caller: Principal = Depends(reader_principal), db: Or
         )
         said = [war_room.out(entry) for entry in entries if (entry.body or {}).get("task") == row.id]
     return {**tasks.out(db, row, caller), "entries": said}
+
+
+@router.get("/incidents/{incident_id}/work-plan")
+def get_work_plan(
+    incident_id: str, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """The work plan of an incident: for each playbook that runs or ran on it, its nodes in order,
+    grouped by phase, with what happened to each and the task behind it; the graph, for a
+    read-only canvas; and the tasks added by hand. A node is shown by its name, never by its settings."""
+    incident = db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return work_plan.of(db, incident, caller)
 
 
 @router.post("/incidents/{incident_id}/tasks", status_code=status.HTTP_201_CREATED)

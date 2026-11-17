@@ -486,6 +486,12 @@ Content-Type: application/json
         is yes or no, and stays what gates a change outside Nik.
       </p>
       <p>
+        Any node but the trigger can name a <em>phase</em> (<em>Triage</em>, <em>Containment</em>…): the
+        <a href="guide.html#work-plan">work plan</a> of an incident lists the steps of a playbook under its phases, in
+        the order the playbook reaches them. The plan shows a node by its name and its kind, never by what it is given,
+        so whoever reads the incident can read it.
+      </p>
+      <p>
         A run that waits for a task or a question is <em>waiting</em>, and that time does not count against the longest
         run of the playbook. When the run ends for another reason, what was still asked is skipped. A dry run asks
         nobody: it takes <em>when done</em>, or the first choice. A task or a question cannot be inside a "for each".

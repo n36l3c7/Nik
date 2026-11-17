@@ -34,6 +34,7 @@ TABS = (
     "summary",
     "timeline",
     "war_room",
+    "work_plan",
     "automation",
     "context",
     "iocs",

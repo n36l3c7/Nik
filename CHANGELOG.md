@@ -22,8 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/task Call the user @anna due=2h` in the War Room), given to someone else,
   completed and skipped through `/api/tasks`. The War Room tells each step.
 
+- **The Work plan of an incident.** A tab with what the playbooks of the
+  incident do, step by step, under the phases a playbook names (a node can
+  name a *phase*), each step with what happened to it; the same plan as the
+  drawing of the playbook, read-only; and the tasks added by hand. A task or
+  a question opens there with its form.
+- **My tasks**, on the rail with a count: what waits for you across every
+  incident, the most pressing first, at `/tasks` and `/tasks/<id>`. The
+  instructions of a task are read as a small Markdown.
+
 ### Changed
 
+- The bar of the analysis tabs takes a second row when even the icons alone
+  do not fit in one.
 - A run that waits for a task or a question is *waiting*, like one that
   waits for an approval; that time does not count against its longest run.
 

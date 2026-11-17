@@ -1606,6 +1606,20 @@ export default function Inspector({
           )}
         </Field>
 
+        {node.kind !== 'trigger' && (
+          <Field label="Phase" hint="Groups this step in the work plan of an incident: Triage, Containment…">
+            {(id) => (
+              <TextInput
+                id={id}
+                value={node.config?.phase ?? ''}
+                disabled={readOnly}
+                maxLength={40}
+                onChange={(phase) => onConfig({ phase: phase || undefined })}
+              />
+            )}
+          </Field>
+        )}
+
         <KindSettings
           node={node}
           entry={entry}

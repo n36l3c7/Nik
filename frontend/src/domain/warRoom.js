@@ -61,6 +61,16 @@ export function entryLine(entry) {
         tone: body.answer === 'approved' ? 'ok' : 'ask',
       }
     }
+    case 'task': {
+      const title = String(body.title ?? 'A task')
+      if (body.state === 'asked') return { title, text: `a task for ${body.for ?? 'anyone'}`, tone: 'ask' }
+      if (body.state === 'given') return { title, text: `given to ${body.for ?? 'anyone'}`, tone: 'ask' }
+      if (body.state === 'skipped') {
+        return { title, text: body.comment ? `skipped: ${body.comment}` : 'skipped', tone: 'system' }
+      }
+      const said = [body.answer, body.comment].filter(Boolean).join(' · ')
+      return { title, text: said ? `done: ${said}` : 'done', tone: 'ok' }
+    }
     default:
       return { title: '', text: String(body.text ?? body.title ?? ''), tone: 'system' }
   }

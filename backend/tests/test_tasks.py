@@ -394,3 +394,60 @@ def test_a_graph_with_tasks_and_questions_is_checked(admin: TestClient):
     assert problems([loop, inside], [edge("start", "each"), edge("each", "t", "each")]) == [
         'A task or a question inside a "for each" is not supported: ask before the loop'
     ]
+
+
+def test_the_work_plan_of_an_incident_is_its_playbooks_step_by_step_and_its_tasks(admin: TestClient):
+    incident(admin)
+    nodes = [
+        echo("look", "looking", phase="Triage"),
+        node("collect", "task", title="Collect the laptop", assignee={"role": "analyst"}, phase="Containment"),
+        echo("hidden", "what an action is given stays in its run", phase="Triage"),
+        echo("report", "collected by {{ collect.by }}"),
+    ]
+    edges = [edge("start", "look"), edge("look", "collect"), edge("look", "hidden"), edge("collect", "report", "done")]
+    pb = playbook(admin, "Laptop", nodes, edges)
+    admin.post("/api/incidents/i1/tasks", json={"title": "Tell legal"})
+    go(admin, pb, objectKind="incident", objectId="i1", dryRun=True)  # a dry run is no plan
+    run = go(admin, pb, objectKind="incident", objectId="i1")
+
+    plan = admin.get("/api/incidents/i1/work-plan").json()
+    assert plan["counts"] == {"tasks": 2, "open": 2, "done": 0}
+    assert [task["title"] for task in plan["tasks"]] == ["Tell legal"]  # added by hand: no run behind it
+    (only,) = plan["plans"]
+    assert (only["runId"], only["playbook"], only["status"]) == (run["id"], "Laptop", "waiting")
+    # Phases in the order the plan first reaches them; a node with none is under no name.
+    assert [(phase["name"], [step["node"] for step in phase["steps"]]) for phase in only["phases"]] == [
+        ("Triage", ["look", "hidden"]),
+        ("Containment", ["collect"]),
+        ("", ["report"]),
+    ]
+    by_node = {step["node"]: step for phase in only["phases"] for step in phase["steps"]}
+    assert (by_node["look"]["status"], by_node["collect"]["status"], by_node["report"]["status"]) == (
+        "done",
+        "waiting",
+        "none",
+    )
+    assert by_node["collect"]["task"]["title"] == "Collect the laptop" and by_node["collect"]["task"]["mine"] is True
+    assert by_node["collect"]["summary"] == "for the role analyst" and by_node["look"]["task"] is None
+    # The graph is there for the canvas, without what the nodes are given.
+    shown = {item["id"]: item for item in only["graph"]["nodes"]}
+    assert shown["hidden"]["config"] == {"phase": "Triage"} and "args" not in str(only["graph"])
+    assert shown["collect"]["config"]["title"] == "Collect the laptop"
+    assert only["statuses"]["collect"] == "waiting" and len(only["graph"]["edges"]) == 4
+
+    task_id = by_node["collect"]["task"]["id"]
+    assert admin.post(f"/api/tasks/{task_id}/complete", json={}).status_code == 200
+    later(T0)
+    plan = admin.get("/api/incidents/i1/work-plan").json()
+    by_node = {step["node"]: step for phase in plan["plans"][0]["phases"] for step in phase["steps"]}
+    assert (by_node["collect"]["status"], by_node["collect"]["port"], by_node["report"]["status"]) == (
+        "done",
+        "done",
+        "done",
+    )
+    assert plan["plans"][0]["status"] == "done" and plan["counts"] == {"tasks": 2, "open": 1, "done": 1}
+
+    # Whoever reads the incident reads its plan.
+    viewer = make_key(admin, label="v", roles=["viewer"])
+    assert admin.get("/api/incidents/i1/work-plan", headers=viewer).status_code == 200
+    assert admin.get("/api/incidents/nope/work-plan").status_code == 404
