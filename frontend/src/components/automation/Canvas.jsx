@@ -14,6 +14,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { asksApproval, entryOf, headingOf, summaryOf } from '../../domain/automation/catalog.js'
 import {
+  KIND_LABELS,
   portLabel,
   portsOf,
   connect,
@@ -85,7 +86,10 @@ function handlePlaces(node) {
 }
 
 const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
-  const { node, entry, problems, status, approval, readOnly } = data
+  const { node, entry, problems, status, approval, readOnly, plain } = data
+  // A plain node (the work plan of an incident) is its kind and a few words given with it.
+  const heading = plain ? (KIND_LABELS[node.kind] ?? node.kind) : headingOf(node, entry)
+  const summary = plain ? (node.summary ?? '') : summaryOf(node, entry)
   const places = handlePlaces(node)
   const border = status ? (STATUS_BORDERS[status] ?? 'border-line') : problems ? 'border-high-line' : 'border-line'
   return (
@@ -106,7 +110,7 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
           HEADS[node.kind] ?? HEADS.end,
         ].join(' ')}
       >
-        <span className="truncate">{headingOf(node, entry)}</span>
+        <span className="truncate">{heading}</span>
         {approval && (
           <span className="shrink-0 normal-case tracking-normal text-med" title="Asks a person before it runs">
             asks first
@@ -122,8 +126,8 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
       <p className="truncate px-2 pt-1 font-medium" title={node.name || node.id}>
         {node.name || node.id}
       </p>
-      <p className="truncate px-2 pb-1.5 text-[11px] text-fg-muted" title={summaryOf(node, entry)}>
-        {summaryOf(node, entry)}
+      <p className="truncate px-2 pb-1.5 text-[11px] text-fg-muted" title={summary}>
+        {summary}
       </p>
       {places.below.map(({ port, left }) => (
         <Handle
@@ -168,6 +172,7 @@ function Flow({
   statuses,
   approvalDefault,
   readOnly,
+  plain = false,
   selection,
   onSelect,
   onChange,
@@ -214,10 +219,11 @@ function Flow({
             status: statuses ? (statuses[node.id] ?? 'pending') : null,
             approval: !statuses && asksApproval(node, entry, approvalDefault),
             readOnly,
+            plain,
           },
         }
       }),
-    [graph, catalog, chosen.nodes, counts, statuses, approvalDefault, readOnly, dragged, sizes],
+    [graph, catalog, chosen.nodes, counts, statuses, approvalDefault, readOnly, plain, dragged, sizes],
   )
 
   const edges = useMemo(
@@ -426,6 +432,7 @@ function Flow({
  *   statuses?: Record<string, string> | null,        // a run: node id → status
  *   approvalDefault?: boolean,
  *   readOnly?: boolean,
+ *   plain?: boolean,                                 // nodes by kind and `node.summary`, without the library
  *   selection?: { ids: string[] } | null,            // set by the page to select nodes
  *   onSelect?: (ids: string[]) => void,
  *   onChange?: (graph: object) => void,

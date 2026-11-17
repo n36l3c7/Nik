@@ -1143,6 +1143,19 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET /api/incidents/{id}/work-plan</code></td>
+              <td>
+                The work plan of the incident:
+                <code
+                  >{plans: [{runId, playbook, status, phases: [{name, steps: [{node, name, kind, summary, status, port,
+                  error, task}]}], graph, statuses}], tasks, counts: {tasks, open, done}}</code
+                >. One plan for each playbook that runs or ran on it (dry runs and commands of the War Room left out),
+                the newest first; <code>status</code> of a step is that of the run's step, or <code>none</code> when it
+                was not reached; <code>graph</code> is the playbook's, each node with its name, kind and phase and none
+                of its settings; <code>tasks</code> are those added by hand.
+              </td>
+            </tr>
+            <tr>
               <td>
                 <code>POST /api/incidents/{id}/tasks</code> ·
                 <code>PUT /api/tasks/{id}/assignee</code>

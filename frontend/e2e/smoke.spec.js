@@ -2476,6 +2476,136 @@ test('the command line of the War Room runs commands, asks before a change outsi
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
 })
 
+test('a playbook gives tasks and asks questions: My tasks, the work plan of the incident, a task added by hand', async () => {
+  test.setTimeout(240_000) // the worker takes a step every second or so
+  const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+
+  // A playbook that asks a question, then gives a task, then writes a note (made through the API).
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Laptop plan' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      {
+        id: 'encrypted',
+        kind: 'ask',
+        name: 'Encrypted?',
+        position: { x: 40, y: 160 },
+        config: {
+          question: 'Is the disk of {{ incident.name }} encrypted?',
+          choices: ['Yes', 'No'],
+          inputs: [{ name: 'serial', label: 'Serial number', type: 'text', required: true }],
+          assignee: { role: 'admin' },
+          phase: 'Triage',
+        },
+      },
+      {
+        id: 'collect',
+        kind: 'task',
+        name: 'Collect',
+        position: { x: 40, y: 280 },
+        config: {
+          title: 'Collect the laptop {{ encrypted.values.serial }}',
+          instructions: 'Bag it and **label** it.\n\n- seal the bag\n- sign the form',
+          assignee: { role: 'admin' },
+          due: '2h',
+          phase: 'Containment',
+        },
+      },
+      {
+        id: 'note',
+        kind: 'action',
+        name: 'Write it down',
+        position: { x: 40, y: 400 },
+        config: { action: 'nik.add-note', args: { text: 'Collected by {{ collect.by }}: {{ collect.comment }}' } },
+      },
+    ],
+    edges: [
+      { from: 'start', to: 'encrypted' },
+      { from: 'encrypted', port: 'yes', to: 'collect' },
+      { from: 'collect', port: 'done', to: 'note' },
+    ],
+  }
+  const saved = await page.request.post(`/api/automation/playbooks/${playbookId}/versions`, { data: { graph } })
+  expect(saved.status(), await saved.text()).toBe(201)
+  const started = await page.request.post(`/api/automation/playbooks/${playbookId}/run`, {
+    data: { objectKind: 'incident', objectId: incidentId },
+  })
+  expect(started.status(), await started.text()).toBe(201)
+  await expect
+    .poll(async () => (await (await page.request.get('/api/tasks/count')).json()).mine, { timeout: 30_000 })
+    .toBe(1)
+
+  // My tasks: the question waits there, with its form. It cannot be sent until it is filled.
+  await page.getByRole('button', { name: /^My tasks/ }).click()
+  await expect(page).toHaveURL(/\/tasks\/[0-9a-f]+$/)
+  const mine = page.getByRole('region', { name: 'My tasks' })
+  await expect(mine.getByRole('list', { name: 'Tasks' }).getByRole('listitem')).toHaveCount(1)
+  const card = mine.getByRole('article')
+  await expect(card.getByRole('heading', { level: 2 })).toHaveText(/^Is the disk of WKS-FINANCE-01.* encrypted\?$/)
+  await expect(card).toContainText('For the role admin')
+  const send = card.getByRole('button', { name: 'Send the answer' })
+  await expect(send).toBeDisabled()
+  await expect(card).toContainText('Still needed: a choice, Serial number')
+  await card.getByText('Yes', { exact: true }).click()
+  await card.getByLabel(/Serial number/).fill('PF-3X1')
+  await send.click()
+  await expect(card.getByRole('region', { name: 'What was answered' })).toContainText('Answer')
+  await expect(card.getByRole('region', { name: 'What was answered' })).toContainText('PF-3X1')
+  // The incident it belongs to is one click away.
+  await card.getByRole('button', { name: /WKS-FINANCE-01/ }).click()
+  await expect(page).toHaveURL(/\/incident\//)
+
+  // The work plan of the incident: the steps of the playbook under its phases, each with what happened.
+  await tabs.getByRole('button', { name: 'Work plan', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Plan of Laptop plan' })
+  await expect(plan.getByRole('group', { name: 'Triage' })).toContainText('answered')
+  const containment = plan.getByRole('group', { name: 'Containment' })
+  const open = containment.getByRole('button', { name: 'Open the task Collect the laptop PF-3X1' })
+  await expect(open).toBeVisible({ timeout: 30_000 })
+  await expect(open).toContainText('to do')
+  await expect(open).toContainText('due in 2 h')
+  await expect(plan.getByRole('group', { name: 'Other steps' })).toContainText('not reached')
+
+  // The same plan as the graph of the playbook, and back.
+  const how = page.getByRole('group', { name: 'Show the plan as' })
+  await how.getByRole('button', { name: 'Graph' }).click()
+  await expect(plan.getByTestId('playbook-canvas')).toContainText('Collect')
+  await expect(plan.getByTestId('playbook-canvas')).toContainText('for the role admin')
+  await how.getByRole('button', { name: 'List' }).click()
+
+  // The task is done from the plan: its instructions, a comment.
+  await open.click()
+  const dialog = page.getByRole('dialog', { name: 'Task' })
+  await expect(dialog.getByRole('region', { name: 'Instructions' }).locator('strong')).toHaveText('label')
+  await expect(dialog.getByRole('region', { name: 'Instructions' }).getByRole('listitem')).toHaveCount(2)
+  await dialog.getByLabel('Comment').fill('In the safe')
+  await dialog.getByRole('button', { name: 'Mark as done' }).click()
+  await expect(dialog.getByRole('region', { name: 'What was answered' })).toContainText('In the safe')
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  // The playbook goes on to its end.
+  await expect(plan).toContainText('3 of 3 steps', { timeout: 30_000 })
+  await expect(plan.getByRole('group', { name: 'Other steps' })).toContainText('done')
+
+  // A task added by hand, for the owner of the incident.
+  await page.getByRole('button', { name: 'Add a task' }).click()
+  const adding = page.getByRole('dialog', { name: 'Add a task' })
+  await adding.getByLabel(/What to do/).fill('Tell legal')
+  await adding.getByLabel('Due in').fill('3d')
+  await adding.getByRole('button', { name: 'Add the task' }).click()
+  const byHand = page.getByRole('region', { name: 'Tasks added by hand' })
+  await expect(byHand.getByRole('button', { name: 'Open the task Tell legal' })).toContainText('due in 3 d')
+
+  // The War Room tells it all, and the note of the playbook is there.
+  await tabs.getByRole('button', { name: 'War Room', exact: true }).click()
+  const stream = page.getByRole('list', { name: 'War Room' })
+  await expect(stream.getByRole('listitem').filter({ hasText: 'done: In the safe' })).toHaveCount(1)
+  await expect(stream.getByRole('listitem').filter({ hasText: /Collected by .*: In the safe/ })).toHaveCount(1)
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

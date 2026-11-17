@@ -14,14 +14,16 @@ import { visibleTabs } from '../../config/tabs.js'
  * separates the registry's groups (overview, threats, host).
  *
  * The bar never scrolls sideways while it can avoid it: when the full labels
- * do not fit it switches to the one-word labels, then to icons only. The
+ * do not fit it switches to the one-word labels, then to icons only, and
+ * when even the icons do not fit in one row it takes a second one. The
  * active tab always shows its full label, and every tab keeps its full name
  * for assistive technology and as a tooltip.
  */
 
 const FULL = 0
 const SHORT = 1
-const ICONS = 2
+// 2: icons only.
+const ROWS = 3
 
 /**
  * @param {{
@@ -61,14 +63,14 @@ export default function TabBar({ activeTabId, onChange, tabs: given = null }) {
   // …and steps down while the tabs still overflow.
   useLayoutEffect(() => {
     const nav = navRef.current
-    if (nav && density < ICONS && nav.scrollWidth > nav.clientWidth + 1) setDensity(density + 1)
+    if (nav && density < ROWS && nav.scrollWidth > nav.clientWidth + 1) setDensity(density + 1)
   }, [density, width, activeTabId])
 
   return (
     <nav
       ref={navRef}
       aria-label="Analysis tabs"
-      className="flex shrink-0 gap-1 overflow-x-auto border-b border-line bg-canvas px-6"
+      className={`flex shrink-0 gap-1 overflow-x-auto border-b border-line bg-canvas px-6 ${density === ROWS ? 'flex-wrap' : ''}`}
     >
       {tabs.map((tab, index) => {
         const Icon = tab.icon

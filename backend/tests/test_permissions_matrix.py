@@ -140,6 +140,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/tasks"): ("read",),
     ("GET", "/api/tasks/count"): ("read",),
     ("GET", "/api/tasks/{task_id}"): ("read",),
+    ("GET", "/api/incidents/{incident_id}/work-plan"): ("read",),
     ("POST", "/api/incidents/{incident_id}/tasks"): ("write",),
     ("POST", "/api/tasks/{task_id}/complete"): ("read",),
     ("POST", "/api/tasks/{task_id}/skip"): ("read",),
