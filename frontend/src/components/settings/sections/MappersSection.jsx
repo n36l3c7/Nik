@@ -486,6 +486,28 @@ export default function MappersSection() {
             className={`${INPUT} font-mono text-xs`}
           />
           {sample.problem && <span className="text-xs text-high-fg">{sample.problem}</span>}
+          {fetching.length > 0 && (
+            <span className="flex flex-wrap gap-2">
+              {fetching.map((connection) => (
+                <Button
+                  key={connection.id}
+                  variant="ghost"
+                  size="xs"
+                  onClick={async () => {
+                    try {
+                      const found = await api.get(`/fetch/${encodeURIComponent(connection.id)}/sample`)
+                      if (found.item) setPasted(JSON.stringify(found.item, null, 2))
+                      else setError(`${connection.name} has fetched nothing yet`)
+                    } catch (failure) {
+                      setError(failure.message)
+                    }
+                  }}
+                >
+                  Use the last item fetched by {connection.name}
+                </Button>
+              ))}
+            </span>
+          )}
         </label>
       ) : (
         <label className="flex max-w-md flex-col gap-1">

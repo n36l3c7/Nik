@@ -4,6 +4,7 @@ import {
   Cable,
   Clock,
   DatabaseBackup,
+  DownloadCloud,
   FileSearch,
   FileText,
   Filter,
@@ -46,6 +47,7 @@ import SlaSection from './sections/SlaSection.jsx'
 import PreprocessSection from './sections/PreprocessSection.jsx'
 import ListsSection from './sections/ListsSection.jsx'
 import MappersSection from './sections/MappersSection.jsx'
+import FetchStatusSection from './sections/FetchStatusSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
@@ -90,6 +92,7 @@ const SECTION_VIEWS = {
   connectors: { icon: Plug, Component: ConnectorsSection },
   connections: { icon: Cable, Component: ConnectionsSection },
   mappers: { icon: ArrowLeftRight, Component: MappersSection },
+  fetchStatus: { icon: DownloadCloud, Component: FetchStatusSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },
   automationSwitch: { icon: OctagonX, Component: AutomationSwitchSection },
   account: { icon: UserCog, Component: MyAccountSection },

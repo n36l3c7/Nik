@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   later and later; a connection that makes more than 500 incidents in an
   hour is paused with nothing lost. `/api/fetch` shows how each goes, turns
   it on and off, fetches now and lists what became of each item.
+- **Fetch status** (*Settings → Automation*): the connections that can
+  fetch, each with its state and why, what its last cycle found, the items
+  it fetched lately with what became of each, and the buttons to turn it on
+  and off, fetch now and let it go on. The mapper editor takes the last item
+  a connection fetched as its sample.
 - **Pre-processing rules** (*Settings → Incidents*): before a fetched item
   becomes an incident it can be dropped, linked to the open incident that is
   the same, made and closed as a duplicate, or left to a script to say. The

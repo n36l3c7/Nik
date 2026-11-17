@@ -167,6 +167,13 @@ export const SETTINGS_GROUPS = [
         keywords: 'mapping fields vendor incoming outgoing fetch alerts type classify sample expression',
       },
       {
+        id: 'fetchStatus',
+        slug: 'fetch-status',
+        label: 'Fetch status',
+        permission: 'connectors.manage',
+        keywords: 'alerts incoming polling failing paused items incomplete mirror queue turn on',
+      },
+      {
         id: 'automationNetwork',
         slug: 'network-and-data',
         label: 'Network and data',

@@ -1507,6 +1507,15 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         nothing fetches.
       </p>
 
+      <p id="fetch-status">
+        <strong>Fetch status</strong> (<em>Settings → Automation → Fetch status</em>) lists the connections that can
+        fetch: whether each does, when it last fetched and will next, what its last cycle found, and why it is failing
+        or paused. A connection is turned on and off there, made to fetch now, and let go on. Opened, a connection shows
+        what it fetched lately and what became of each item: an incident, an <em>incomplete</em> one with what its
+        mapper could not give, an item dropped, linked or closed as a duplicate by a rule. In the mapper editor,
+        <em>Use the last item fetched</em> takes the last item of a connection as the sample.
+      </p>
+
       <h4 id="preprocessing">Before an item becomes an incident</h4>
       <p>
         <strong>Pre-processing rules</strong> (<em>Settings → Incidents → Pre-processing rules</em>) are tried, in their

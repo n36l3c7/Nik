@@ -2838,6 +2838,45 @@ test('pre-processing rules say what becomes of a fetched item before it is an in
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
+test('Fetch status: a connection is told to fetch, says why it fails, and is let go on', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByText('Fetch status', { exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/automation\/fetch-status$/)
+  const row = settings
+    .getByRole('list', { name: 'Connections that can fetch' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme test' })
+  await expect(row).toContainText('off')
+  await expect(row).toContainText('It does not fetch.')
+
+  await row.getByRole('button', { name: 'Turn on' }).click()
+  await expect(settings.getByRole('status')).toContainText('Acme test fetches')
+  await expect(row).toContainText('fetching')
+  // There is no Acme Desk to answer: the cycle fails, and the page says why.
+  await row.getByRole('button', { name: 'Fetch now' }).click()
+  await expect(row).toContainText('failing', { timeout: 30_000 })
+  await expect(row.locator('.text-high-fg').first()).not.toBeEmpty()
+  await row.getByRole('button', { name: 'Let it go on' }).click()
+  await expect(settings.getByRole('status')).toContainText('Acme test goes on.')
+  // What it fetched lately: nothing yet.
+  await row.getByRole('button', { name: 'Show what Acme test fetched' }).click()
+  await expect(row).toContainText('Nothing fetched yet.')
+  await row.getByRole('button', { name: 'Turn off' }).click()
+  await expect(row).toContainText('It does not fetch.')
+  // Who is told when a connection fails: the bell holds it.
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: /^Notifications/ }).click()
+  const told = page.getByRole('dialog', { name: 'Notifications' })
+  await expect(told.getByRole('listitem').filter({ hasText: 'Fetching from Acme test fails' })).toHaveCount(1, {
+    timeout: 45_000,
+  })
+  await told.getByRole('button', { name: 'Close' }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()
