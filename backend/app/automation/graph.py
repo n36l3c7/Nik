@@ -436,6 +436,9 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
         allowed = set(ALWAYS) | dom.get(node_id, set())
         if node_id in in_body:
             allowed |= set(IN_LOOP)
+        # A wait that asks an action again and again reads its last answer as "poll".
+        if node["kind"] == "wait" and (node.get("config") or {}).get("poll"):
+            allowed.add("poll")
         # A result inside a loop is one per item: outside it, read the loop's results.
         allowed -= {other for other, loop in in_body.items() if loop != in_body.get(node_id)}
         try:

@@ -31,6 +31,8 @@ from .models import Session as SessionModel
 from .permissions import (
     ADMIN,
     AUDIT_READ,
+    AUTOMATION_EDIT,
+    AUTOMATION_RUN,
     PERMISSIONS,
     READ,
     RULES_MANAGE,
@@ -336,6 +338,9 @@ audit_principal = require(AUDIT_READ)
 rules_principal = require(RULES_MANAGE)
 # Rule sets are listed by whoever reads the analyses they produce or manages them.
 rules_reader_principal = require(READ, RULES_MANAGE)
+# Automation: run a playbook and read runs; build playbooks and scripts.
+runner_principal = require(AUTOMATION_RUN)
+editor_principal = require(AUTOMATION_EDIT)
 
 
 # ---------------------------------------------------------------------------

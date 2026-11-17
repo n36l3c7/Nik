@@ -21,7 +21,7 @@ cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
     "${COMPOSE[@]}" ps || true
-    "${COMPOSE[@]}" logs --tail 60 db api web || true
+    "${COMPOSE[@]}" logs --tail 60 db api web automation || true
   fi
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
   rm -f "$ENV_FILE"
@@ -49,7 +49,7 @@ if docker compose -p "$PROJECT-none" --env-file /dev/null config >/dev/null 2>&1
   fail "compose accepts a configuration with no secrets"
 fi
 
-"${COMPOSE[@]}" up -d --build --wait db api web
+"${COMPOSE[@]}" up -d --build --wait db api web automation
 
 base="https://127.0.0.1:$TLS_PORT"
 get() { curl -sk --max-time 20 "$@"; }
@@ -83,6 +83,24 @@ cookie=$(get -o /dev/null -D - -X POST "$base/api/auth/login" -H 'Content-Type: 
   -d '{"username":"admin","password":"smoke-test-password"}' | tr -d '\r' | grep -i '^set-cookie:')
 grep -qi 'HttpOnly' <<<"$cookie" || fail "the session cookie is not HttpOnly"
 grep -qi 'Secure' <<<"$cookie" || fail "the session cookie is not Secure"
+
+echo "== the automation worker is alive, unprivileged, and applies no migration"
+jar=$(mktemp)
+get -o /dev/null -c "$jar" -X POST "$base/api/auth/login" -H 'Content-Type: application/json'   -d '{"username":"admin","password":"smoke-test-password"}'
+alive=""
+for _ in $(seq 1 20); do
+  alive=$(get -b "$jar" "$base/api/automation/state")
+  grep -q '"workerAlive":true' <<<"$alive" && break
+  sleep 2
+done
+rm -f "$jar"
+grep -q '"workerAlive":true' <<<"$alive" || fail "the automation worker does not report in ($alive)"
+worker_container=$("${COMPOSE[@]}" ps -q automation)
+worker_status=$(docker exec "$worker_container" cat /proc/1/status)
+grep -q '^Uid:[[:space:]]*10001' <<<"$worker_status" || fail "the automation worker is not the unprivileged user"
+grep -q '^CapEff:[[:space:]]*0000000000000000' <<<"$worker_status" || fail "the automation worker holds capabilities"
+"${COMPOSE[@]}" logs automation 2>&1 | grep -q "alembic upgrade head" && fail "the automation worker applied migrations"
+
 codes=""
 # The limit (10 a minute) is counted by each backend process, and there are two:
 # thirty attempts are over it however they are shared out.

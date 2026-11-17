@@ -13,8 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   versions; a field of a node takes earlier results with `{{ node.path }}`
   and filters (`| default("…")`, `| join(", ")`, `| where(…)`); a graph is
   saved as a version only when it is valid (one trigger, no cycle, every
-  expression reading what is certain to have run before it). Not usable
-  yet: the engine and the canvas follow.
+  expression reading what is certain to have run before it).
+- **Automation, second part: the engine.** A run advances step by step and
+  survives a restart; branches, "for each" (500 items at most, five at a
+  time), waits, approvals, playbooks that run playbooks. A failed step is
+  tried again with growing waits, then follows its error line. Triggers:
+  an incident created or updated (with conditions), a schedule, by hand.
+  Limits per playbook: runs per hour, one run at a time for the same
+  object, a longest run. A general switch stops all automation at once.
+  Through the API only, for now (`/api/automation`): the canvas follows.
+- A new container, **`automation`**, runs the playbooks: the backend's
+  image with another command, unprivileged and read-only, the only one
+  with a way out for what playbooks send.
 
 ## [4.0.0] - 2026-11-17
 

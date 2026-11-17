@@ -1,0 +1,147 @@
+"""The registry of what an ``action`` node can do.
+
+An action has an id (``nik.add-note``, ``http.request``), a description of
+its arguments and outputs (what the canvas builds its form from) and a
+function. Modules register theirs when imported (``nik_actions``, the HTTP and
+e-mail nodes; connector commands in 4.2 are entries of the same registry,
+looked up by ``<connector>.<command>``).
+
+    @action("nik.add-note", group="Nik", name="Add a note", arguments=[…], outputs=[…])
+    def add_note(call: Call) -> Result: …
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from sqlalchemy.orm import Session as OrmSession
+
+from .expressions import Value
+
+
+class ActionError(Exception):
+    """An action that failed, with a sentence that is safe to show.
+
+    ``retry`` False: trying again cannot help (a refusal, a missing object).
+    ``unknown_outcome``: the request left and no answer came back.
+    """
+
+    def __init__(self, message: str, *, retry: bool = True, unknown_outcome: bool = False, request: dict | None = None):
+        super().__init__(message)
+        self.message = message
+        self.retry = retry
+        self.unknown_outcome = unknown_outcome
+        self.request = request
+
+
+@dataclass
+class Call:
+    """What an action is given."""
+
+    db: OrmSession
+    args: dict[str, Any]  # rendered arguments
+    classes: frozenset  # the classes of data the arguments hold together
+    arg_classes: dict[str, list]  # per argument: {"text": ["email_address"]}
+    dry_run: bool
+    run: Any  # the Run (read it, do not change it)
+    playbook: Any  # the Playbook (its egress and data settings)
+    step_id: str = ""
+    approved_by: str | None = None
+    now: float = 0.0
+
+
+@dataclass
+class Result:
+    """What an action gives back."""
+
+    output: Any = None
+    classes: dict[str, list] = field(default_factory=dict)  # of the output: {path: [class]}
+    request: dict | None = None  # what was sent, or would have been (dry run): method, host, path, held…
+    log: str | None = None
+
+
+@dataclass(frozen=True)
+class Spec:
+    id: str
+    group: str
+    name: str
+    description: str
+    arguments: tuple
+    outputs: tuple
+    changes_outside: bool
+    idempotent: bool
+    timeout: int
+    run: Callable[[Call], Result]
+
+    def entry(self) -> dict:
+        """The action as the catalog lists it."""
+        return {
+            "id": self.id,
+            "kind": "action",
+            "group": self.group,
+            "name": self.name,
+            "description": self.description,
+            "arguments": list(self.arguments),
+            "outputs": list(self.outputs),
+            "changesOutside": self.changes_outside,
+        }
+
+
+_REGISTRY: dict[str, Spec] = {}
+
+
+def action(
+    action_id: str,
+    *,
+    group: str,
+    name: str,
+    description: str = "",
+    arguments: list[dict] | None = None,
+    outputs: list[dict] | None = None,
+    changes_outside: bool = False,
+    idempotent: bool = True,
+    timeout: int = 60,
+):
+    def register(fn: Callable[[Call], Result]):
+        _REGISTRY[action_id] = Spec(
+            id=action_id,
+            group=group,
+            name=name,
+            description=description,
+            arguments=tuple(arguments or ()),
+            outputs=tuple(outputs or ()),
+            changes_outside=changes_outside,
+            idempotent=idempotent,
+            timeout=timeout,
+            run=fn,
+        )
+        return fn
+
+    return register
+
+
+def get(action_id: str) -> Spec | None:
+    return _REGISTRY.get(action_id)
+
+
+def all_specs() -> list[Spec]:
+    return sorted(_REGISTRY.values(), key=lambda spec: (spec.group, spec.name))
+
+
+def unregister(action_id: str) -> None:
+    """For tests that register an action of their own."""
+    _REGISTRY.pop(action_id, None)
+
+
+def argument_values(spec: Spec, rendered: Value) -> dict[str, Any]:
+    """The rendered arguments with the defaults of those left out."""
+    given = rendered.data if isinstance(rendered.data, dict) else {}
+    out = {}
+    for arg in spec.arguments:
+        value = given.get(arg["name"])
+        if value is None or value == "":
+            value = arg.get("default")
+        out[arg["name"]] = value
+    return out

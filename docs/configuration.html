@@ -222,6 +222,43 @@
               </td>
             </tr>
             <tr>
+              <td><code>AUTOMATION_WORKER</code></td>
+              <td><code>container</code></td>
+              <td>
+                Where the loop that makes playbooks run lives: <code>container</code> (the
+                <code>automation</code> service of the Compose stack), <code>inline</code> (a thread of the backend, for
+                an install without that container) or <code>off</code> (no event is recorded and nothing runs).
+              </td>
+            </tr>
+            <tr>
+              <td><code>AUTOMATION_CONCURRENCY</code></td>
+              <td><code>4</code></td>
+              <td>How many steps of playbooks run side by side (1 to 32).</td>
+            </tr>
+            <tr>
+              <td><code>AUTOMATION_MAX_ACTIVE_RUNS</code></td>
+              <td><code>200</code></td>
+              <td>How many runs may be in progress at once on the server; more are refused.</td>
+            </tr>
+            <tr>
+              <td><code>AUTOMATION_RUNS_KEPT</code></td>
+              <td><code>500</code></td>
+              <td>How many finished runs each playbook keeps; older ones are deleted with their steps.</td>
+            </tr>
+            <tr>
+              <td><code>AUTOMATION_HTTPS_PROXY</code> · <code>AUTOMATION_NO_PROXY</code></td>
+              <td>empty</td>
+              <td>
+                A proxy for what playbooks send outside, and the hosts reached without it. Leave empty when the server
+                has a direct or transparent way out.
+              </td>
+            </tr>
+            <tr>
+              <td><code>AUTOMATION_MEMORY</code> · <code>AUTOMATION_CPUS</code></td>
+              <td><code>1g</code> · <code>2</code></td>
+              <td>The limits of the <code>automation</code> container.</td>
+            </tr>
+            <tr>
               <td><code>RUN_CREATE_ALL</code></td>
               <td><code>true</code></td>
               <td>

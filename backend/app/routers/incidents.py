@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import query
+from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
 from ..core.config import settings
@@ -279,6 +280,8 @@ def create_incident(
     reindex_incident(db, incident)
 
     _audit(db, caller, "incident.create", f'Created incident "{doc.get("name") or incident_id}"', incident)
+    # For the playbooks: in the transaction of the change, so the event exists exactly when it does.
+    triggers.incident_changed(db, incident, "incident.created")
     db.commit()
     emit(db, background_tasks, "incident.created", {"id": incident_id, "name": doc.get("name")})
     response.headers["ETag"] = _etag(incident.rev)
@@ -356,6 +359,9 @@ def patch_incident(
     # What the patch means (a flag, a note, the status, an evidence file), one entry each.
     for action, details in audit.describe_patch(previous, merged, partial):
         _audit(db, caller, action, details, row)
+    changed = [key for key in partial if previous.get(key) != merged.get(key)]
+    if changed:
+        triggers.incident_changed(db, row, "incident.updated", changed)
     db.commit()
     emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": merged.get("name")})
     response.headers["ETag"] = _etag(row.rev)

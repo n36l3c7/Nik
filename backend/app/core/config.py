@@ -151,6 +151,15 @@ class Settings:
         # Automatic threat-intelligence lookups (Settings -> Threat
         # intelligence turns them on per type). false = no background thread.
         self.ENRICHMENT_WORKER: bool = _get_bool("ENRICHMENT_WORKER", True)
+        # Automation (app/automation). Where the loop that makes playbooks run lives:
+        # `container` (the automation service of the Compose stack, the default),
+        # `inline` (a thread of this process: tests, a single-container install)
+        # or `off` (no events are recorded and nothing runs).
+        worker = os.getenv("AUTOMATION_WORKER", "container").strip().lower()
+        self.AUTOMATION_WORKER: str = worker if worker in ("container", "inline", "off") else "container"
+        self.AUTOMATION_CONCURRENCY: int = max(1, min(32, _get_int("AUTOMATION_CONCURRENCY", 4)))
+        self.AUTOMATION_MAX_ACTIVE_RUNS: int = max(1, _get_int("AUTOMATION_MAX_ACTIVE_RUNS", 200))
+        self.AUTOMATION_RUNS_KEPT: int = max(10, _get_int("AUTOMATION_RUNS_KEPT", 500))
         # Previews of mail attachments: document viewer and isolated browser
         # (workers/docview/, workers/browser/). Empty URL = the buttons say "not configured".
         self.DOCVIEW_URL: str = os.getenv("DOCVIEW_URL", "").rstrip("/")
