@@ -12,9 +12,10 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import query
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import AuditEntry
@@ -46,11 +47,15 @@ def _entry_to_dict(entry: AuditEntry) -> dict:
 @router.get("", response_model=AuditEnvelope)
 def list_audit(
     response: Response,
-    _caller: Principal = Depends(audit_principal),
+    caller: Principal = Depends(audit_principal),
     db: OrmSession = Depends(get_db),
     limit: int | None = Query(None, ge=1, le=MAX_ENTRIES, description="Page size (default: up to MAX_ENTRIES)."),
     offset: int = Query(0, ge=0),
-    q: str | None = Query(None, description="Match actor/action/details/incident."),
+    q: str | None = Query(
+        None,
+        max_length=2000,
+        description="A query: `action:user.* at:>=yesterday`; plain words match actor, action, details, incident.",
+    ),
     actor: str | None = Query(None),
     incident_id: str | None = Query(None, alias="incidentId"),
 ) -> dict:
@@ -59,17 +64,9 @@ def list_audit(
     Backward compatible: with no params it returns up to ``MAX_ENTRIES`` entries.
     The total matching count is in the ``X-Total-Count`` header.
     """
-    conditions = []
-    if q:
-        like = f"%{q}%"
-        conditions.append(
-            or_(
-                AuditEntry.actor.ilike(like),
-                AuditEntry.action.ilike(like),
-                AuditEntry.details.ilike(like),
-                AuditEntry.incident_name.ilike(like),
-            )
-        )
+    conditions = query.sql("audit", q, caller) if q and q.strip() else []
+    if conditions:
+        query.statement_timeout(db)
     if actor:
         conditions.append(AuditEntry.actor.ilike(f"%{actor}%"))
     if incident_id:

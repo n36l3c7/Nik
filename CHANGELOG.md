@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was.
 - **Find a setting**: a box above the sections narrows them by name and by
   what they hold (*password*, *restore*, *domains*).
+- **A query language** over incidents, artifacts, indicators and the audit
+  log: `status:open severity:>=high owner:"" -host:srv-*`. Fields with
+  `:`, comparisons (`:>=`), ranges (`[a TO b]`), wildcards, `and` / `or` /
+  `not` / `-`, parentheses, empty (`field:""`) and filled (`field:*`)
+  fields, and dates as people say them (`today`, `now-7d`,
+  `"7 days ago"`). Plain words still search as before.
+  - It is what `q` takes on `GET /api/incidents`, `/api/artifacts`,
+    `/api/iocs` and `/api/audit`; the older filter parameters still work
+    and add to it. `POST /api/query` runs it on any of them,
+    `GET /api/query/schema` lists the fields.
+  - A query that cannot be read is answered `422` with where and why, and
+    a suggestion for a misspelt field or value.
+  - A query is compiled to bound parameters, never to SQL text, with limits
+    on its length, depth and running time; who may query an entity is
+    checked when it is compiled.
 
 ### Changed
 

@@ -19,6 +19,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import ioc_library as lib
+from .. import query
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
 from ..core.security import (
@@ -227,7 +228,11 @@ def _dates(*values: str | None) -> list[str | None]:
 # --------------------------------------------------------------------------- #
 @router.get("")
 def list_library(
-    q: str = Query("", max_length=200),
+    q: str = Query(
+        "",
+        max_length=2000,
+        description="A query: `verdict:>=suspicious type:ip -tag:test`; plain words match value, note, tags, lists.",
+    ),
     type: Type | None = Query(None),
     verdict: Literal["malicious", "suspicious", "harmless", "unknown", "none", "flagged"] | None = Query(None),
     origin: Literal["incident", "manual", "import", "artifact", "added"] | None = Query(None),
@@ -238,15 +243,19 @@ def list_library(
     dir: Literal["asc", "desc"] = Query("asc"),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    _caller: Principal = Depends(reader_principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Every indicator Nik knows: seen in an incident, added by hand, imported
     or kept in a list. ``counts`` are for the whole library, ``total`` for
     the filter."""
     rows = lib.library(db, read_settings(db))
+    # `q` is the query language (app/query); "#phish" is still read as the tag.
+    text = q.strip()
+    if text.startswith("#") and " " not in text and ":" not in text:
+        text = f'tag:"{text[1:]}"'
+    keep = query.rows("indicators", text, caller)
     filters = {
-        "q": q,
         "type": type,
         "verdict": verdict,
         "origin": origin,
@@ -254,7 +263,7 @@ def list_library(
         "expired": expired,
         "analysis": analysis,
     }
-    kept = lib.select_rows(rows, filters, sort, dir == "desc")
+    kept = lib.select_rows([row for row in rows if keep(row)], filters, sort, dir == "desc")
     return {
         "iocs": kept[offset : offset + limit],
         "total": len(kept),

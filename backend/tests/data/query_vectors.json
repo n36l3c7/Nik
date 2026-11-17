@@ -1,0 +1,1062 @@
+{
+ "vectors": [
+  {
+   "query": "",
+   "tree": null
+  },
+  {
+   "query": "   ",
+   "tree": null
+  },
+  {
+   "query": "open",
+   "tree": {
+    "text": {
+     "text": "open",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "status:open",
+   "tree": {
+    "field": "status",
+    "op": "=",
+    "value": {
+     "text": "open",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "Status:Open",
+   "tree": {
+    "field": "Status",
+    "op": "=",
+    "value": {
+     "text": "Open",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "status:open severity:>=high",
+   "tree": {
+    "and": [
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "severity",
+      "op": ">=",
+      "value": {
+       "text": "high",
+       "quoted": false
+      },
+      "position": 12
+     }
+    ]
+   }
+  },
+  {
+   "query": "status:open and severity:>=high",
+   "tree": {
+    "and": [
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "severity",
+      "op": ">=",
+      "value": {
+       "text": "high",
+       "quoted": false
+      },
+      "position": 16
+     }
+    ]
+   }
+  },
+  {
+   "query": "status:open AND severity:>=high",
+   "tree": {
+    "and": [
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "severity",
+      "op": ">=",
+      "value": {
+       "text": "high",
+       "quoted": false
+      },
+      "position": 16
+     }
+    ]
+   }
+  },
+  {
+   "query": "status:open or status:closed",
+   "tree": {
+    "or": [
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "closed",
+       "quoted": false
+      },
+      "position": 15
+     }
+    ]
+   }
+  },
+  {
+   "query": "a b or c d",
+   "tree": {
+    "or": [
+     {
+      "and": [
+       {
+        "text": {
+         "text": "a",
+         "quoted": false
+        },
+        "position": 0
+       },
+       {
+        "text": {
+         "text": "b",
+         "quoted": false
+        },
+        "position": 2
+       }
+      ]
+     },
+     {
+      "and": [
+       {
+        "text": {
+         "text": "c",
+         "quoted": false
+        },
+        "position": 7
+       },
+       {
+        "text": {
+         "text": "d",
+         "quoted": false
+        },
+        "position": 9
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "query": "a or b or c",
+   "tree": {
+    "or": [
+     {
+      "text": {
+       "text": "a",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "text": {
+       "text": "b",
+       "quoted": false
+      },
+      "position": 5
+     },
+     {
+      "text": {
+       "text": "c",
+       "quoted": false
+      },
+      "position": 10
+     }
+    ]
+   }
+  },
+  {
+   "query": "not status:closed",
+   "tree": {
+    "not": {
+     "field": "status",
+     "op": "=",
+     "value": {
+      "text": "closed",
+      "quoted": false
+     },
+     "position": 4
+    }
+   }
+  },
+  {
+   "query": "-status:closed",
+   "tree": {
+    "not": {
+     "field": "status",
+     "op": "=",
+     "value": {
+      "text": "closed",
+      "quoted": false
+     },
+     "position": 1
+    }
+   }
+  },
+  {
+   "query": "-labels:test owner:\"\"",
+   "tree": {
+    "and": [
+     {
+      "not": {
+       "field": "labels",
+       "op": "=",
+       "value": {
+        "text": "test",
+        "quoted": false
+       },
+       "position": 1
+      }
+     },
+     {
+      "field": "owner",
+      "op": "=",
+      "value": {
+       "text": "",
+       "quoted": true
+      },
+      "position": 13
+     }
+    ]
+   }
+  },
+  {
+   "query": "not not a",
+   "tree": {
+    "not": {
+     "not": {
+      "text": {
+       "text": "a",
+       "quoted": false
+      },
+      "position": 8
+     }
+    }
+   }
+  },
+  {
+   "query": "-(a or b)",
+   "tree": {
+    "not": {
+     "or": [
+      {
+       "text": {
+        "text": "a",
+        "quoted": false
+       },
+       "position": 2
+      },
+      {
+       "text": {
+        "text": "b",
+        "quoted": false
+       },
+       "position": 7
+      }
+     ]
+    }
+   }
+  },
+  {
+   "query": "(a or b) c",
+   "tree": {
+    "and": [
+     {
+      "or": [
+       {
+        "text": {
+         "text": "a",
+         "quoted": false
+        },
+        "position": 1
+       },
+       {
+        "text": {
+         "text": "b",
+         "quoted": false
+        },
+        "position": 6
+       }
+      ]
+     },
+     {
+      "text": {
+       "text": "c",
+       "quoted": false
+      },
+      "position": 9
+     }
+    ]
+   }
+  },
+  {
+   "query": "((a))",
+   "tree": {
+    "text": {
+     "text": "a",
+     "quoted": false
+    },
+    "position": 2
+   }
+  },
+  {
+   "query": "status:open (severity:high or severity:critical) -owner:\"\"",
+   "tree": {
+    "and": [
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "or": [
+       {
+        "field": "severity",
+        "op": "=",
+        "value": {
+         "text": "high",
+         "quoted": false
+        },
+        "position": 13
+       },
+       {
+        "field": "severity",
+        "op": "=",
+        "value": {
+         "text": "critical",
+         "quoted": false
+        },
+        "position": 30
+       }
+      ]
+     },
+     {
+      "not": {
+       "field": "owner",
+       "op": "=",
+       "value": {
+        "text": "",
+        "quoted": true
+       },
+       "position": 50
+      }
+     }
+    ]
+   }
+  },
+  {
+   "query": "name:\"lateral movement\"",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "lateral movement",
+     "quoted": true
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "\"lateral movement\"",
+   "tree": {
+    "text": {
+     "text": "lateral movement",
+     "quoted": true
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:\"say \\\"hi\\\" \\\\ now\"",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "say \"hi\" \\ now",
+     "quoted": true
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "created:>=\"7 days ago\"",
+   "tree": {
+    "field": "created",
+    "op": ">=",
+    "value": {
+     "text": "7 days ago",
+     "quoted": true
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "created:>now-7d",
+   "tree": {
+    "field": "created",
+    "op": ">",
+    "value": {
+     "text": "now-7d",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "created:<=2026-11-10",
+   "tree": {
+    "field": "created",
+    "op": "<=",
+    "value": {
+     "text": "2026-11-10",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "score:<5",
+   "tree": {
+    "field": "score",
+    "op": "<",
+    "value": {
+     "text": "5",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "owner:!anna",
+   "tree": {
+    "field": "owner",
+    "op": "!",
+    "value": {
+     "text": "anna",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "owner:*",
+   "tree": {
+    "field": "owner",
+    "op": "=",
+    "value": {
+     "text": "*",
+     "quoted": false,
+     "pattern": [
+      {
+       "wild": "*"
+      }
+     ]
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "owner:\"\"",
+   "tree": {
+    "field": "owner",
+    "op": "=",
+    "value": {
+     "text": "",
+     "quoted": true
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:wks-*",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "wks-*",
+     "quoted": false,
+     "pattern": [
+      "wks-",
+      {
+       "wild": "*"
+      }
+     ]
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:w?s",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "w?s",
+     "quoted": false,
+     "pattern": [
+      "w",
+      {
+       "wild": "?"
+      },
+      "s"
+     ]
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:a**b",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "a*b",
+     "quoted": false,
+     "pattern": [
+      "a",
+      {
+       "wild": "*"
+      },
+      "b"
+     ]
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:a\\*b",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "a*b",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "*evil*",
+   "tree": {
+    "text": {
+     "text": "*evil*",
+     "quoted": false,
+     "pattern": [
+      {
+       "wild": "*"
+      },
+      "evil",
+      {
+       "wild": "*"
+      }
+     ]
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "score:[10 TO 50]",
+   "tree": {
+    "field": "score",
+    "range": [
+     {
+      "text": "10",
+      "quoted": false
+     },
+     {
+      "text": "50",
+      "quoted": false
+     }
+    ],
+    "position": 0
+   }
+  },
+  {
+   "query": "created:[2026-11-01 TO now]",
+   "tree": {
+    "field": "created",
+    "range": [
+     {
+      "text": "2026-11-01",
+      "quoted": false
+     },
+     {
+      "text": "now",
+      "quoted": false
+     }
+    ],
+    "position": 0
+   }
+  },
+  {
+   "query": "created:[\"7 days ago\" TO *]",
+   "tree": {
+    "field": "created",
+    "range": [
+     {
+      "text": "7 days ago",
+      "quoted": true
+     },
+     null
+    ],
+    "position": 0
+   }
+  },
+  {
+   "query": "score:[* TO 5]",
+   "tree": {
+    "field": "score",
+    "range": [
+     null,
+     {
+      "text": "5",
+      "quoted": false
+     }
+    ],
+    "position": 0
+   }
+  },
+  {
+   "query": "score:[1 to 2]",
+   "tree": {
+    "field": "score",
+    "range": [
+     {
+      "text": "1",
+      "quoted": false
+     },
+     {
+      "text": "2",
+      "quoted": false
+     }
+    ],
+    "position": 0
+   }
+  },
+  {
+   "query": "http://evil.example/path?x=1",
+   "tree": {
+    "field": "http",
+    "op": "=",
+    "value": {
+     "text": "//evil.example/path?x=1",
+     "quoted": false,
+     "pattern": [
+      "//evil.example/path",
+      {
+       "wild": "?"
+      },
+      "x=1"
+     ]
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "fe80::1",
+   "tree": {
+    "field": "fe80",
+    "op": "=",
+    "value": {
+     "text": ":1",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "12:30",
+   "tree": {
+    "text": {
+     "text": "12:30",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "C:\\Users\\anna",
+   "tree": {
+    "field": "C",
+    "op": "=",
+    "value": {
+     "text": "\\Users\\anna",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "\\\\server\\share",
+   "tree": {
+    "text": {
+     "text": "\\\\server\\share",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "path:C:\\Temp\\*.exe",
+   "tree": {
+    "field": "path",
+    "op": "=",
+    "value": {
+     "text": "C:\\Temp*.exe",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:a\\ b",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "a b",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:\\(x\\)",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "(x)",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:a\\\\*",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "a\\*",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "context.Ticket.number:INC1",
+   "tree": {
+    "field": "context.Ticket.number",
+    "op": "=",
+    "value": {
+     "text": "INC1",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "tag:a,b",
+   "tree": {
+    "field": "tag",
+    "op": "=",
+    "value": {
+     "text": "a,b",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "name:foo(bar)",
+   "tree": {
+    "field": "name",
+    "op": "=",
+    "value": {
+     "text": "foo(bar)",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "(name:foo(bar) x)",
+   "tree": {
+    "and": [
+     {
+      "field": "name",
+      "op": "=",
+      "value": {
+       "text": "foo(bar)",
+       "quoted": false
+      },
+      "position": 1
+     },
+     {
+      "text": {
+       "text": "x",
+       "quoted": false
+      },
+      "position": 15
+     }
+    ]
+   }
+  },
+  {
+   "query": "android or notary",
+   "tree": {
+    "or": [
+     {
+      "text": {
+       "text": "android",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "text": {
+       "text": "notary",
+       "quoted": false
+      },
+      "position": 11
+     }
+    ]
+   }
+  },
+  {
+   "query": "a -",
+   "tree": {
+    "and": [
+     {
+      "text": {
+       "text": "a",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "text": {
+       "text": "-",
+       "quoted": false
+      },
+      "position": 2
+     }
+    ]
+   }
+  },
+  {
+   "query": "and",
+   "error": {
+    "code": "dangling_operator",
+    "position": 0
+   }
+  },
+  {
+   "query": "a and",
+   "error": {
+    "code": "dangling_operator",
+    "position": 2
+   }
+  },
+  {
+   "query": "a or",
+   "error": {
+    "code": "dangling_operator",
+    "position": 2
+   }
+  },
+  {
+   "query": "or a",
+   "error": {
+    "code": "dangling_operator",
+    "position": 0
+   }
+  },
+  {
+   "query": "a and or b",
+   "error": {
+    "code": "dangling_operator",
+    "position": 2
+   }
+  },
+  {
+   "query": "not",
+   "error": {
+    "code": "dangling_operator",
+    "position": 0
+   }
+  },
+  {
+   "query": "a (",
+   "error": {
+    "code": "unclosed_group",
+    "position": 2
+   }
+  },
+  {
+   "query": "(a",
+   "error": {
+    "code": "unclosed_group",
+    "position": 0
+   }
+  },
+  {
+   "query": "a)",
+   "error": {
+    "code": "unexpected_close",
+    "position": 1
+   }
+  },
+  {
+   "query": "()",
+   "error": {
+    "code": "empty_group",
+    "position": 0
+   }
+  },
+  {
+   "query": "status:",
+   "error": {
+    "code": "missing_value",
+    "position": 7
+   }
+  },
+  {
+   "query": "status: open",
+   "error": {
+    "code": "missing_value",
+    "position": 7
+   }
+  },
+  {
+   "query": "status:>=",
+   "error": {
+    "code": "missing_value",
+    "position": 9
+   }
+  },
+  {
+   "query": "name:\"open",
+   "error": {
+    "code": "unclosed_quote",
+    "position": 5
+   }
+  },
+  {
+   "query": "\"",
+   "error": {
+    "code": "unclosed_quote",
+    "position": 0
+   }
+  },
+  {
+   "query": "score:[1 2]",
+   "error": {
+    "code": "bad_range",
+    "position": 6
+   }
+  },
+  {
+   "query": "score:[1 TO",
+   "error": {
+    "code": "bad_range",
+    "position": 6
+   }
+  },
+  {
+   "query": "score:[1 TO 2",
+   "error": {
+    "code": "bad_range",
+    "position": 6
+   }
+  },
+  {
+   "query": "score:>[1 TO 2]",
+   "error": {
+    "code": "bad_range",
+    "position": 7
+   }
+  },
+  {
+   "query": "score:[]",
+   "error": {
+    "code": "bad_range",
+    "position": 6
+   }
+  },
+  {
+   "query": "((((((((((((((((((((((a))))))))))))))))))))))",
+   "error": {
+    "code": "too_deep",
+    "position": 21
+   }
+  },
+  {
+   "query": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a ",
+   "error": {
+    "code": "too_many_terms",
+    "position": 400
+   }
+  },
+  {
+   "query": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "error": {
+    "code": "too_long",
+    "position": 2000
+   }
+  }
+ ]
+}

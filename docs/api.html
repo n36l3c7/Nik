@@ -45,6 +45,7 @@
           <li><a href="#docs">Interactive documentation</a></li>
           <li><a href="#auth">Authentication</a></li>
           <li><a href="#endpoints">Endpoints</a></li>
+          <li><a href="#query">The query language</a></li>
           <li><a href="#uploads">Uploading files</a></li>
           <li><a href="#automation">Automation features</a></li>
         </ol>
@@ -163,10 +164,11 @@
             <tr>
               <td><code>GET /api/incidents</code></td>
               <td>
-                List incidents. Query: <code>limit</code> / <code>offset</code>, <code>q</code> / <code>host</code> /
-                <code>username</code>, <code>status</code> (<code>open</code>, <code>in_progress</code>,
-                <code>closed</code>), <code>assignee</code> (a username; empty for unassigned),
-                <code>view=summary</code> (light rows without the document body). Total in the
+                List incidents. Query: <code>q</code> (<a href="#query">the query language</a>:
+                <code>status:open severity:&gt;=high</code>; plain words match name, host, user and ticket),
+                <code>limit</code> / <code>offset</code>, <code>view=summary</code> (light rows without the document
+                body). The older <code>host</code>, <code>username</code>, <code>status</code> and
+                <code>assignee</code> parameters still work and add to <code>q</code>. Total in the
                 <code>X-Total-Count</code> header.
               </td>
             </tr>
@@ -229,7 +231,8 @@
               <td><code>GET /api/iocs</code></td>
               <td>
                 The IoC library: every indicator an incident holds, an analyst added or a list keeps, with its
-                reputation, lists, tags, TLP and expiry. Query: <code>q</code>, <code>type</code>,
+                reputation, lists, tags, TLP and expiry. Query: <code>q</code> (<a href="#query">the query language</a>:
+                <code>verdict:&gt;=suspicious -tag:test</code>), and the older <code>type</code>,
                 <code>verdict</code> (<code>malicious</code>, <code>suspicious</code>, <code>harmless</code>,
                 <code>flagged</code>, <code>none</code>), <code>origin</code>, <code>list</code>, <code>expired</code>,
                 <code>sort</code>, <code>dir</code>, <code>offset</code>, <code>limit</code>. Returns <code>iocs</code>,
@@ -305,6 +308,19 @@
                 <code>executiveSummary</code>, <code>detections</code> (SOC rule hits with ATT&amp;CK ids). Missing
                 options come from the incident's saved report settings. <code>scope</code>: <code>flagged</code> (the
                 default: only what the analysts flagged) or <code>all</code> (everything in the incident).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/query/schema</code> · <code>POST /api/query</code> · <code>POST /api/query/check</code>
+              </td>
+              <td>
+                <a href="#query">The query language</a>. <code>schema</code> (<code>?entity=</code> for one) lists the
+                entities the caller may query and their fields. <code>POST /api/query</code> takes
+                <code>{ entity, query, limit, offset }</code> (<code>incidents</code>, <code>artifacts</code>,
+                <code>indicators</code>, <code>audit</code>) and returns <code>{ entity, total, items }</code>.
+                <code>check</code> reads <code>{ entity, query }</code> without running it and returns its tree. Any
+                signed-in caller; the permission of the entity is checked.
               </td>
             </tr>
             <tr>
@@ -444,7 +460,8 @@
               <td>
                 The files, e-mails and captures analysed on their own or in incidents, newest first, each with the
                 incidents that reference it. Query: <code>kind</code> (<code>file</code>, <code>mail</code>,
-                <code>pcap</code>, <code>url</code>), <code>q</code>, <code>tag</code>, <code>mine</code>,
+                <code>pcap</code>, <code>url</code>), <code>q</code> (<a href="#query">the query language</a>:
+                <code>verdict:phishing created:&gt;=now-7d</code>), <code>tag</code>, <code>mine</code>,
                 <code>linked</code>, <code>limit</code> / <code>offset</code>. One artifact also lists its
                 <code>parents</code> and <code>children</code> (the e-mail an attachment came from, the objects taken
                 out of a capture). Ids are <code>file-&lt;sha256&gt;</code>, <code>mail-&lt;sha256&gt;</code>,
@@ -731,7 +748,8 @@
               <td><code>GET /api/audit</code></td>
               <td>
                 Audit log, newest first (<code>audit.read</code>): <code>limit</code>, <code>offset</code>,
-                <code>q</code>, <code>actor</code>, <code>incidentId</code>. The log is written by the server.
+                <code>q</code> (<a href="#query">the query language</a>: <code>action:user.* at:&gt;=yesterday</code>),
+                <code>actor</code>, <code>incidentId</code>. The log is written by the server.
               </td>
             </tr>
             <tr>
@@ -761,6 +779,102 @@
         role <code>admin</code>); the others need <code>read</code> to fetch and <code>write</code> to change, unless
         the row names another permission. A caller without it gets <code>403</code>. See
         <a href="#roles">Roles and permissions</a>.
+      </p>
+
+      <h2 id="query">The query language</h2>
+      <p>
+        One language asks incidents, artifacts, indicators and the audit log. It is what the <code>q</code> parameter of
+        their list endpoints takes, and what <code>POST /api/query</code> runs on any of them:
+      </p>
+      <pre><code>status:open severity:&gt;=high owner:"" -host:srv-*
+kind:mail verdict:phishing created:&gt;=now-7d
+verdict:&gt;=suspicious (type:ip or type:domain) -tag:test
+action:user.* at:[2026-11-01 TO today]</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Write</th>
+              <th>To ask for</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>word</code> · <code>"two words"</code></td>
+              <td>
+                The text, in any of the entity's text fields (incidents: name, host, user, ticket). An address or a path
+                with a colon in it (<code>http://…</code>, <code>C:\…</code>, an IPv6 address) is text too.
+              </td>
+            </tr>
+            <tr>
+              <td><code>field:value</code></td>
+              <td>
+                A text field <em>contains</em> the value; a keyword field (a status, a kind, a verdict) <em>is</em>
+                the value. Neither minds upper and lower case. Quote a value with spaces:
+                <code>name:"lateral movement"</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>field:!value</code></td>
+              <td>Not that value.</td>
+            </tr>
+            <tr>
+              <td><code>:&gt;</code> <code>:&gt;=</code> <code>:&lt;</code> <code>:&lt;=</code></td>
+              <td>
+                Comparisons, for numbers, dates and ordered fields: <code>score:&gt;=70</code>,
+                <code>severity:&gt;=high</code> (low &lt; medium &lt; high &lt; critical),
+                <code>verdict:&gt;=suspicious</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>field:[a TO b]</code></td>
+              <td>A range, both ends included; <code>*</code> leaves an end open: <code>score:[40 TO *]</code>.</td>
+            </tr>
+            <tr>
+              <td><code>*</code> · <code>?</code></td>
+              <td>
+                Wildcards in an unquoted value: any run of characters, one character. With a wildcard the value is
+                matched whole: <code>name:wks-*</code>, <code>action:incident.*</code>. A backslash takes one literally
+                (<code>\*</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>field:""</code> · <code>field:*</code></td>
+              <td>The field is empty · the field holds something. <code>owner:""</code> is an unassigned incident.</td>
+            </tr>
+            <tr>
+              <td><code>and</code> · <code>or</code> · <code>not</code> · <code>-</code> · <code>( )</code></td>
+              <td>
+                Conditions side by side must all hold (<code>and</code> may be written); <code>or</code> binds less
+                tightly; <code>not</code> or a leading <code>-</code> negates; parentheses group.
+              </td>
+            </tr>
+            <tr>
+              <td>Dates</td>
+              <td>
+                <code>2026-11-10</code> (that day), <code>2026-11</code> (that month), <code>2026-11-10T14:30</code>,
+                <code>today</code>, <code>yesterday</code>, <code>now</code>, <code>now-7d</code> (<code>m</code>,
+                <code>h</code>, <code>d</code>, <code>w</code>), <code>"7 days ago"</code>. Times are UTC.
+                <code>created:2026-11-10</code> is the whole day, <code>created:&gt;2026-11-10</code> after it.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <code>GET /api/query/schema</code> lists, for each entity the caller may query, its fields with their kind, the
+        other names they answer to (<code>owner</code> / <code>assignee</code>) and the values a keyword can take. A
+        query that cannot be read is answered <code>422</code> with a fixed sentence in <code>detail</code> and, in
+        <code>query</code>, the <code>position</code> of what is wrong, a <code>code</code> and, for a misspelt field or
+        value, a <code>suggestion</code>:
+      </p>
+      <pre><code>{ "detail": "\"stauts\" is not a field of incidents: did you mean \"status\"?",
+  "query": { "code": "unknown_field", "position": 16, "suggestion": "status", "message": "…" } }</code></pre>
+      <p>
+        Limits: 2 000 characters, 20 levels of parentheses, 200 conditions, 8 wildcards in a value, pages of at most 500
+        from <code>POST /api/query</code>, and ten seconds for the database to answer. A query is compiled to bound
+        parameters, never to SQL text; who may query an entity is checked when it is compiled (<code>audit</code> needs
+        <code>audit.read</code>, the others <code>read</code>).
       </p>
 
       <h2 id="uploads">Uploading files</h2>

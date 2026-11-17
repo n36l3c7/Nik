@@ -30,10 +30,11 @@ from fastapi import (
 )
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import query
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
 from ..core.config import settings
@@ -111,11 +112,15 @@ def _idempotent_save(db: OrmSession, key: str | None, status_code: int, body: An
 @router.get("")
 def list_incidents(
     response: Response,
-    _caller: Principal = Depends(reader_principal),
+    caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
     limit: int | None = Query(None, ge=1, le=1000, description="Page size (default: all)."),
     offset: int = Query(0, ge=0),
-    q: str | None = Query(None, description="Match name/host/username."),
+    q: str | None = Query(
+        None,
+        max_length=2000,
+        description='A query: `status:open severity:>=high owner:""`; plain words match name, host, user, ticket.',
+    ),
     host: str | None = Query(None),
     username: str | None = Query(None),
     state: str | None = Query(
@@ -128,6 +133,10 @@ def list_incidents(
 ) -> dict:
     """List incidents newest-updated first, filterable and paginated.
 
+    ``q`` takes the query language (``GET /api/query/schema?entity=incidents``
+    lists the fields); a query that cannot be read is answered ``422`` with
+    the position and the reason.
+
     ``view=summary`` returns light rows (id/name/host/username/os/ticketId/severity/
     status/assignee/hasMail/timestamps) WITHOUT
     the heavy document body — use it for lists at scale, then fetch a single
@@ -135,18 +144,11 @@ def list_incidents(
     with no params it returns every full document. Total count is also in the
     ``X-Total-Count`` header.
     """
-    conditions = []
-    if q:
-        # The wildcards of the text are searched for, not interpreted.
-        like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        conditions.append(
-            or_(
-                Incident.name.ilike(like, escape="\\"),
-                Incident.host.ilike(like, escape="\\"),
-                Incident.username.ilike(like, escape="\\"),
-                Incident.ticket_id.ilike(like, escape="\\"),
-            )
-        )
+    # `q` is the query language (app/query); the older parameters below are kept
+    # for API clients and add their conditions to it.
+    conditions = query.sql("incidents", q, caller) if q and q.strip() else []
+    if conditions:
+        query.statement_timeout(db)
     if host:
         conditions.append(Incident.host.ilike(f"%{host}%"))
     if username:
