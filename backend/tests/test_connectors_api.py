@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 
 from fastapi.testclient import TestClient
@@ -147,7 +148,7 @@ def test_the_test_of_a_connection_reaches_its_host_and_nothing_else(admin: TestC
     moved = admin.put(f"{BASE}/connections/{made['id']}", json={"config": {"url": "https://gone.example.com"}}).json()
     assert moved["lastTest"] is None and moved["host"] == "gone.example.com"
     failed = admin.post(f"{BASE}/connections/{made['id']}/test").json()
-    assert failed["ok"] is False and "gone.example.com" in failed["message"]
+    assert failed["ok"] is False and re.search(r"gone\.example\.com", failed["message"])
     assert admin.post(f"{BASE}/connections/nope/test").status_code == 404
 
 

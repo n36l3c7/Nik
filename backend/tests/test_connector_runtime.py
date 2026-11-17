@@ -300,7 +300,7 @@ def test_pages_are_read_to_the_end_or_to_the_limit():
     wire = Wire().answer(200, {"result": ["r1"]}, {"link": '<https://evil.example.net/rows>; rel="next"'})
     with pytest.raises(rt.CommandError) as caught:
         runtime(link, wire).run("list", {})
-    assert "evil.example.net" in caught.value.message
+    assert caught.value.message == "A request of this connector goes to evil.example.net, not to its connection"
 
 
 PUBLISH = """\

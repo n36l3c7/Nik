@@ -66,7 +66,7 @@ def _rotated(token: str | None) -> str | None:
         return None
 
 
-def _automation_secrets(db) -> int:
+def _rotate_automation(db) -> int:
     """The secrets of automation: the credentials of connections, the SMTP password."""
     from sqlalchemy.orm.attributes import flag_modified
 
@@ -110,7 +110,7 @@ def reencrypt(session_factory) -> int:
             if token:
                 row.keylog = token
                 moved += 1
-        moved += _automation_secrets(db)
+        moved += _rotate_automation(db)
         db.commit()
     if moved:
         _logger.info("re-encrypted %d stored secret(s) with the current SECRET_KEY", moved)
