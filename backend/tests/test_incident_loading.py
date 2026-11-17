@@ -35,6 +35,7 @@ def test_summary_view_includes_os_without_document_body(admin: TestClient):
             "status": "open",
             "assignee": "",
             "hasMail": False,
+            "type": "unclassified",
             "createdAt": "",
             "updatedAt": "",
         }

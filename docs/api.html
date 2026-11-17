@@ -220,6 +220,19 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET /api/incidents/{id}/context</code></td>
+              <td>
+                Needs <code>automation.run</code>. What a playbook reads of the incident: <code>incident</code> (its
+                fields by the names of the registry), <code>context</code> (the entities of the common schema and
+                <code>ext</code>), <code>provenance</code> (for each item, <code>{source, at}</code>: who set it last),
+                <code>schema</code> (each entity's keys and the keys an item is told apart by) and <code>version</code>.
+                Read only: the context is written by Nik's analysis and by what commands and scripts declare (<a
+                  href="automation.html#context"
+                  >Automation → The incident and its context</a
+                >).
+              </td>
+            </tr>
+            <tr>
               <td><code>PATCH /api/incidents/{id}/fields</code></td>
               <td>
                 <code>{changes: {name: value}, ifRev?}</code>; <code>null</code> clears a field. Every value is checked

@@ -242,7 +242,13 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         return actions.Result(again_at=answer.again_at, state=_seal(answer.state), request=record)
     # What comes back may repeat what was sent: it keeps the classes of what went out.
     classes = {"": sorted(call.classes)} if call.classes else {}
-    return actions.Result(output=answer.outputs, classes=classes, request=record)
+    return actions.Result(
+        output=answer.outputs,
+        classes=classes,
+        request=record,
+        context=answer.context,
+        context_source=f"connector:{connector_id}",
+    )
 
 
 def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:

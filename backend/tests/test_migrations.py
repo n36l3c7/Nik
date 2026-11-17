@@ -506,3 +506,33 @@ def test_migration_0028_adds_fields_and_types_and_leaves_incidents_as_they_are(t
         assert not set(FIELD_TABLES) & set(inspector.get_table_names())
         assert {c["name"] for c in inspector.get_columns("incidents")} == {"id", "name", "status", "doc"}
         assert conn.execute(sa.text("SELECT name FROM incidents WHERE id = 'i1'")).scalar() == "Kept"
+
+
+def test_migration_0029_adds_the_context_and_war_room_tables(tmp_path, monkeypatch):
+    from app.core.models import CONTEXT_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON)"))
+        conn.execute(sa.text('INSERT INTO incidents (id, doc) VALUES (\'i1\', \'{"notes": [{"text": "kept"}]}\')'))
+        # One of them is there already (a database the baseline created from the models).
+        conn.execute(sa.text("CREATE TABLE incident_context (incident_id VARCHAR PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0028_fields_types")
+    command.upgrade(cfg, "0029_context_war_room")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(CONTEXT_TABLES) <= set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("incident_context")} == {"incident_id"}  # left as it was
+        assert {c["name"] for c in inspector.get_columns("war_room_entries")} >= {"incident_id", "kind", "body", "tags"}
+        # The notes of an incident stay where they are.
+        assert "kept" in str(conn.execute(sa.text("SELECT doc FROM incidents")).scalar())
+    command.stamp(cfg, "0028_fields_types")
+    command.upgrade(cfg, "0029_context_war_room")  # again: nothing to do
+    command.downgrade(cfg, "0028_fields_types")
+    with engine.connect() as conn:
+        assert not set(CONTEXT_TABLES) & set(sa.inspect(conn).get_table_names())

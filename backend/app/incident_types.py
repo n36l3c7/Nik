@@ -34,6 +34,7 @@ TABS = (
     "summary",
     "timeline",
     "automation",
+    "context",
     "iocs",
     "mail",
     "malware",

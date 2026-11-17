@@ -268,8 +268,11 @@ test('the values a node can pick', () => {
   const tree = valueTree({ ...GRAPH, inputs: [{ name: 'reason', type: 'text' }] }, 'note', CATALOG)
   assert.deepEqual(
     tree.map((root) => root.name),
-    ['trigger', 'check', 'search', 'loop', 'item', 'index', 'inputs', 'run'],
+    ['trigger', 'check', 'search', 'loop', 'item', 'index', 'inputs', 'run', 'incident', 'context'],
   )
+  // The incident as it is when the step runs, and what is known of it.
+  assert.equal(tree[8].fields.find((field) => field.name === 'owner').path, 'incident.owner')
+  assert.equal(tree[9].fields.find((field) => field.name === 'Ticket').path, 'context.Ticket')
   assert.equal(tree[0].fields[0].path, 'trigger.incident.id')
   assert.deepEqual(tree[2].fields, [{ name: 'incident', type: 'object', path: 'search.incident' }])
   assert.equal(tree[4].fields[0].path, 'item')

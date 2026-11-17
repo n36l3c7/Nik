@@ -43,6 +43,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them. The type orders the tabs and hides those it does not need, and the
   tab last opened is remembered for each type. The type of an incident is
   changed from the panel.
+- **The context of an incident.** What is known of an incident is data a
+  playbook reads and writes: `{{ context.Ticket[0].Number }}`, in a common
+  schema of eleven entities (File, Mail, URL, IP, Domain, Host, Account,
+  Ticket, Alert, Process, Rule) with fixed keys, whatever product a value
+  came from; what a connector knows beyond it goes under `context.ext`.
+  `{{ incident.severity }}` reads the fields of the incident as they are
+  when the step runs. Nik's own analysis fills the files, e-mails and
+  addresses of the incident.
+- A command of a connector (`context:` in its file) and an output of a
+  script (`context_path`) say where a result goes, with a context path:
+  `Ticket` appends or merges by the entity's key,
+  `Ticket(val.Number == obj.Number)` merges by the key named,
+  `Ticket.Status` sets a key, `incident.<field>` sets a field through the
+  registry. Nothing is written in a dry run. For every item Nik keeps who
+  set it last.
+- **The Context tab** of an incident: the tree of what playbooks read, with
+  a search, the path of each value to copy and who set it.
+- Migration `0029_context_war_room`: the context of incidents, who set
+  each item, and the War Room entries.
 - An incident read through the API carries `type` and `fields`; sent back
   in a `POST` or a `PATCH`, they are checked by the registry.
 - Migration `0028_fields_types`: the tables of fields and of incident

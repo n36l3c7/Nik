@@ -54,6 +54,7 @@
           <li><a href="#outside">What a playbook may reach and send</a></li>
           <li><a href="#scripts">Scripts</a></li>
           <li><a href="#switch">The switch and the worker</a></li>
+          <li><a href="#context">The incident and its context</a></li>
           <li><a href="#connectors">Connectors</a></li>
           <li><a href="#shipped">The playbooks Nik ships</a></li>
           <li><a href="#files">Playbooks and scripts as files</a></li>
@@ -613,7 +614,10 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           A path starts with a name: <code>trigger</code>, the <strong>id of a node</strong> (shown in the inspector,
           and changed there: the expressions that read it follow), <code>item</code> and <code>index</code> inside a
           "for each", <code>inputs</code> (what the playbook was given), <code>run</code> (<code>id</code>,
-          <code>url</code>, <code>playbook</code>, <code>started_at</code>, <code>dry_run</code>).
+          <code>url</code>, <code>playbook</code>, <code>started_at</code>, <code>dry_run</code>), and for a run that
+          works on an incident <code>incident</code> and <code>context</code> (<a href="#context"
+            >The incident and its context</a
+          >).
         </li>
         <li>
           Then <code>.name</code>, <code>[0]</code> (<code>[-1]</code> is the last), <code>["a key"]</code>, or
@@ -936,6 +940,12 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           <em>See</em> on a version shows what the draft changes from it, line by line, and can put the version back
           into the draft. Each version is in the audit log with the difference in the code.
         </li>
+        <li>
+          An output can say where it goes in the <a href="#context">context</a> of the incident: in the file of a
+          script, <code>context_path</code> beside its <code>name</code> and <code>type</code> (<code
+            >{ name: hosts, type: list, context_path: "Host(val.Name == obj.Name)" }</code
+          >). The path is checked when the version is saved.
+        </li>
       </ul>
       <h3 id="sandbox">The box a script runs in</h3>
       <ul>
@@ -1008,6 +1018,184 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         stops, playbooks wait; the Automations area says so, and
         <a href="deployment.html#automation-containers">Deployment</a> says how to look at it.
       </p>
+
+      <h2 id="context">The incident and its context</h2>
+      <p>
+        A run that works on an incident reads two more names in its expressions, both as they are
+        <strong>when the step runs</strong>, so a step sees what the one before it changed:
+      </p>
+      <ul>
+        <li>
+          <code>{{ incident.… }}</code>: the fields of the incident by the names of the
+          <a href="guide.html#settings">registry</a>: <code>incident.severity</code>, <code>incident.owner</code>,
+          <code>incident.ticket</code>, a field of your own as <code>incident.business_unit</code>. (<code
+            >{{ trigger.incident.… }}</code
+          >
+          is the incident as it was when the run started.)
+        </li>
+        <li>
+          <code>{{ context.… }}</code>: what is known of the incident as data, in Nik's <strong>common schema</strong>:
+          lists of objects with fixed keys, whatever product a value came from.
+          <code>{{ context.Ticket[0].Number }}</code>, <code>{{ context.File[*].SHA256 }}</code>.
+        </li>
+      </ul>
+      <p>
+        The <strong>Context</strong> tab of an incident shows both as a tree, with a search. Choosing a value gives its
+        path as a playbook writes it (<code>{{ … }}</code>) and as the command line does (<code>${…}</code>), to copy,
+        and says who set it last.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Entity</th>
+              <th>Keys</th>
+              <th>Told apart by</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>File</code></td>
+              <td>
+                <code>Name</code>, <code>Size</code>, <code>Type</code>, <code>MD5</code>, <code>SHA1</code>,
+                <code>SHA256</code>, <code>Path</code>, <code>Verdict</code>, <code>Score</code>
+              </td>
+              <td><code>SHA256</code></td>
+            </tr>
+            <tr>
+              <td><code>Mail</code></td>
+              <td>
+                <code>MessageID</code>, <code>Subject</code>, <code>From</code>, <code>To</code>, <code>Date</code>,
+                <code>Verdict</code>, <code>Score</code>, <code>Recipients</code>
+              </td>
+              <td><code>MessageID</code></td>
+            </tr>
+            <tr>
+              <td><code>URL</code></td>
+              <td><code>Data</code> (the address), <code>Host</code>, <code>Verdict</code>, <code>Score</code></td>
+              <td><code>Data</code></td>
+            </tr>
+            <tr>
+              <td><code>IP</code></td>
+              <td>
+                <code>Address</code>, <code>ASN</code>, <code>Geo</code>, <code>Verdict</code>, <code>Score</code>
+              </td>
+              <td><code>Address</code></td>
+            </tr>
+            <tr>
+              <td><code>Domain</code></td>
+              <td>
+                <code>Name</code>, <code>Registrar</code>, <code>Created</code>, <code>Verdict</code>,
+                <code>Score</code>
+              </td>
+              <td><code>Name</code></td>
+            </tr>
+            <tr>
+              <td><code>Host</code></td>
+              <td>
+                <code>Name</code>, <code>IP</code>, <code>OS</code>, <code>Domain</code>, <code>AgentID</code>,
+                <code>Isolated</code>
+              </td>
+              <td><code>Name</code></td>
+            </tr>
+            <tr>
+              <td><code>Account</code></td>
+              <td><code>Username</code>, <code>Email</code>, <code>DisplayName</code>, <code>Disabled</code></td>
+              <td><code>Username</code></td>
+            </tr>
+            <tr>
+              <td><code>Ticket</code></td>
+              <td><code>ID</code>, <code>Number</code>, <code>System</code>, <code>URL</code>, <code>Status</code></td>
+              <td><code>ID</code></td>
+            </tr>
+            <tr>
+              <td><code>Alert</code></td>
+              <td>
+                <code>ID</code>, <code>Name</code>, <code>Severity</code>, <code>Source</code>, <code>URL</code>,
+                <code>Time</code>
+              </td>
+              <td><code>ID</code></td>
+            </tr>
+            <tr>
+              <td><code>Process</code></td>
+              <td>
+                <code>Name</code>, <code>PID</code>, <code>CommandLine</code>, <code>Host</code>, <code>SHA256</code>
+              </td>
+              <td><code>PID</code> and <code>Host</code></td>
+            </tr>
+            <tr>
+              <td><code>Rule</code></td>
+              <td><code>Name</code>, <code>ID</code></td>
+              <td><code>Name</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A key that is not in this table is refused: the schema is Nik's, so that a playbook written for one ticketing
+        system reads another's tickets the same way. What a connector knows beyond it goes under
+        <code>context.ext.&lt;connector&gt;.&lt;name&gt;</code>.
+      </p>
+      <h3 id="context-paths">Who writes it, and where</h3>
+      <p>
+        Nik's own analysis fills <code>File</code>, <code>Mail</code> and <code>URL</code> with the files, e-mails and
+        addresses analysed for the incident. Everything else comes from what a command of a connector or a script
+        <strong>declares</strong>, with a <strong>context path</strong>. There are three forms, and nothing else is
+        parsed:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>Ticket</code></td>
+              <td>
+                Adds the object (each object of a list). When it has the key its entity is told apart by, it is merged
+                over the item that has the same one: the new keys over the old, lists replaced.
+              </td>
+            </tr>
+            <tr>
+              <td><code>Ticket(val.Number == obj.Number)</code></td>
+              <td>
+                The same, told apart by the key you name; several joined by <code>&amp;&amp;</code>. The expression is
+                exactly <code>val.&lt;Key&gt; == obj.&lt;Key&gt;</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>Ticket.Status</code></td>
+              <td>Sets one key on the item, when there is exactly one; an error otherwise.</td>
+            </tr>
+            <tr>
+              <td><code>ext.&lt;connector&gt;.&lt;name&gt;</code></td>
+              <td>A value of that connector's own. A connector writes only under its own id.</td>
+            </tr>
+            <tr>
+              <td><code>incident.&lt;field&gt;</code></td>
+              <td>Sets a field of the incident, through the registry, which checks the value.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>
+          Nothing is written in a dry run, or by a run that works on no incident. A write that is refused (a key the
+          schema does not have, a context over 4 MB) fails the step and says why.
+        </li>
+        <li>
+          For every item of an entity and every <code>ext</code> value Nik keeps <strong>who set it last</strong>: its
+          own analysis, a connector, a person, a run. A connector that later brings the same item again replaces what it
+          or another connector set, and leaves alone what a person or Nik's analysis set.
+        </li>
+        <li>
+          What is read from the context carries its class of data to the guard as everything else does: a
+          <code>Mail.From</code> is an e-mail address, a <code>Host.Name</code> an internal name.
+        </li>
+      </ul>
 
       <h2 id="connectors">Connectors</h2>
       <p>
@@ -1438,6 +1626,20 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 What the node gives: a name and a template over the answer for each. One the answer does not hold is
                 empty, not an error. With no <code>outputs</code> the node gives <code>response</code>, the answer as it
                 came. Secrets cannot be read here, and a value equal to a secret is blanked wherever it appears.
+              </td>
+            </tr>
+            <tr>
+              <td><code>context</code></td>
+              <td>
+                What goes to the <a href="#context">context</a> of the incident the playbook works on: a list of
+                <code>{path, value}</code>, at most 20. <code>path</code> is a context path (<code
+                  >Ticket(val.ID == obj.ID)</code
+                >, <code>ext.&lt;this connector's id&gt;.&lt;name&gt;</code>, <code>incident.&lt;field&gt;</code>);
+                <code>value</code> a template over the answer, for an entity an object with its keys:
+                <code
+                  >{ ID: "{{ response.result.sys_id }}", Number: "{{ response.result.number }}", System: ServiceNow
+                  }</code
+                >. A value the answer does not hold is left out. Secrets cannot be read here.
               </td>
             </tr>
             <tr>

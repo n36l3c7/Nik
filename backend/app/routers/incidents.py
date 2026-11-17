@@ -444,6 +444,12 @@ def delete_incident(
         # What only this incident references goes with it; shared artifacts stay.
         remove_incident_artifacts(db, incident_id)
         remove_incident_captures(db, incident_id)
+        # Its context and its War Room go with it.
+        from .. import context as incident_context
+        from ..core.models import WarRoomEntry
+
+        incident_context.forget(db, incident_id)
+        db.execute(delete(WarRoomEntry).where(WarRoomEntry.incident_id == incident_id))
         db.delete(row)
         db.commit()
         emit(db, background_tasks, "incident.deleted", {"id": incident_id, "name": name})

@@ -66,6 +66,10 @@ class Result:
     # "Call me again at this time": the step waits without holding a worker (a command that polls).
     again_at: float | None = None
     state: dict | None = None  # given back in ``Call.state`` at that time
+    # What goes to the context of the incident the run works on: (context path, value). The engine
+    # writes it (never in a dry run), with ``context_source`` as who set it (the run when left out).
+    context: list[tuple[str, Any]] = field(default_factory=list)
+    context_source: str = ""
 
 
 @dataclass(frozen=True)

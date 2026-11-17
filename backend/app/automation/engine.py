@@ -42,7 +42,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..core.models import Approval, Playbook, PlaybookVersion, Run, RunStep
+from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep
+from ..core.permissions import SYSTEM_USER
 from . import actions, graph
 from . import expressions as ex
 
@@ -142,11 +143,25 @@ def _outputs(run: Run, loop: str | None, index: int | None) -> dict:
     return run.context.setdefault("__each", {}).setdefault(loop, {}).setdefault(str(index), {})
 
 
-def scope_of(run: Run, shape: dict, node_id: str, index: int | None) -> ex.Scope:
+def scope_of(run: Run, shape: dict, node_id: str, index: int | None, db: OrmSession | None = None) -> ex.Scope:
     """What the expressions of a node can read."""
     trigger = graph.trigger_of(shape)
     values = {key: value for key, value in run.context.items() if not key.startswith("__")}
     classes = {key: value for key, value in (run.context_classes or {}).items() if not key.startswith("__")}
+    # The incident the run works on, as it is now: its fields by the names of the registry, and
+    # its context. Read at each step, so a step sees what the one before it wrote.
+    values["incident"], values["context"] = {}, {}
+    if db is not None and run.incident_id:
+        from .. import context as incident_context
+        from .. import fields as field_registry
+        from . import payloads
+
+        incident = db.get(Incident, run.incident_id)
+        if incident is not None:
+            values["incident"] = field_registry.read(db, incident)
+            classes["incident"] = payloads.registry_classes()
+            values["context"] = incident_context.read(db, incident.id)
+            classes["context"] = incident_context.classes()
     if trigger is not None:
         values[trigger["id"]] = values.get("trigger")
         classes[trigger["id"]] = classes.get("trigger") or {}
@@ -632,7 +647,7 @@ def _perform(
 ) -> Outcome:
     kind = node["kind"]
     config = node.get("config") or {}
-    scope = scope_of(run, shape, node["id"], step.item_index)
+    scope = scope_of(run, shape, node["id"], step.item_index, db)
     waiting = step.waiting or {}
 
     if kind == "condition":
@@ -727,9 +742,10 @@ def _perform(
                 wait={"kind": "again", "state": result.state or {}, "approved_by": approved_by},
                 next_at=max(now + 1, float(result.again_at)), request=result.request, log=result.log, input=shown,
             )  # fmt: skip
+        wrote = _to_context(db, run, result.context, result.context_source)
         return Outcome(
             port="out", output=result.output, classes=result.classes or _inherit(rendered.classes),
-            request=result.request, log=result.log, input=shown,
+            request=result.request, log=_with(result.log, wrote), input=shown,
         )  # fmt: skip
 
     if kind == "script":
@@ -738,6 +754,8 @@ def _perform(
         rendered = ex.render(config.get("args") or {}, scope)
         args = rendered.data if isinstance(rendered.data, dict) else {}
         output, log = script_runner(db, str(config.get("script")), config.get("script_version"), args, run)
+        # The outputs the script declares a context path for go to the context of the incident.
+        log = _with(log, _to_context(db, run, script_context(db, config, output), ""))
         # A script cannot launder data: what comes out has the classes of all that went in.
         return Outcome(
             port="out", output=output, classes=_inherit(rendered.classes), log=log, input={"args": _cut(args)}
@@ -773,6 +791,45 @@ def _perform(
         return Outcome(end={"status": config.get("status", "done"), "message": message})
 
     raise StepFailed("Unknown kind of node", retry=False)
+
+
+def script_context(db: OrmSession, config: dict, output: Any) -> list[tuple[str, Any]]:
+    """(context path, value) for each output of a script node that declares where it goes."""
+    from ..core.models import Script, ScriptVersion
+
+    if not isinstance(output, dict):
+        return []
+    script = db.scalars(select(Script).where(Script.name == str(config.get("script")))).first()
+    version = config.get("script_version")
+    row = db.get(ScriptVersion, (script.id, version)) if script is not None and isinstance(version, int) else None
+    return [
+        (item["context_path"], output[item["name"]])
+        for item in (row.outputs if row is not None else None) or []
+        if item.get("context_path") and output.get(item["name"]) not in (None, "", [], {})
+    ]
+
+
+def _to_context(db: OrmSession, run: Run, writes: list, source: str) -> list[str]:
+    """Write what a step declared to the context of the run's incident. Nothing in a dry run, and
+    nothing for a run that works on no incident. A write that is refused fails the step."""
+    if not writes or run.dry_run or not run.incident_id:
+        return []
+    from .. import context as incident_context
+
+    incident = db.get(Incident, run.incident_id)
+    if incident is None:
+        return []
+    try:
+        return incident_context.apply(db, incident, list(writes), source or f"run:{run.id}", SYSTEM_USER)
+    except incident_context.ContextError as error:
+        raise StepFailed(f"Context: {error.message}", retry=False) from None
+
+
+def _with(log: str | None, wrote: list[str]) -> str | None:
+    if not wrote:
+        return log
+    line = "[nik] written to the context: " + ", ".join(wrote[:20])
+    return f"{log}\n{line}" if log else line
 
 
 def _inherit(classes: frozenset) -> dict:

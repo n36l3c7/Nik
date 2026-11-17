@@ -386,6 +386,10 @@ def reindex_incident(db: OrmSession, row: Incident, alerts: bool = True) -> int:
     ]
     urls = {u.id: u for u in db.scalars(select(UrlScan).where(UrlScan.id.in_(scan_ids)))} if scan_ids else {}
     artifacts.sync_links(db, row, samples, mails, captures, names, urls)
+    # What Nik analysed for the incident is in its context too, for playbooks to read.
+    from . import context as incident_context
+
+    incident_context.sync_analysis(db, row, samples, mails, urls, names)
     items = extract(doc, samples, mails, captures, urls)
     before = (
         {(t, v) for t, v in db.execute(select(IocEntry.type, IocEntry.value).where(IocEntry.incident_id == row.id))}

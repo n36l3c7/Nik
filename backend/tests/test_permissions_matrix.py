@@ -129,6 +129,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/incident-types/{type_id}"): ("read",),
     ("PUT", "/api/incident-types/{type_id}"): ("incidents.configure",),
     ("DELETE", "/api/incident-types/{type_id}"): ("incidents.configure",),
+    ("GET", "/api/incidents/{incident_id}/context"): ("automation.run",),
     ("GET", "/api/automation/connectors"): ("connectors.manage",),
     ("POST", "/api/automation/connectors"): ("connectors.manage",),
     ("POST", "/api/automation/connectors/check"): ("connectors.manage",),

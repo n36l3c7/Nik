@@ -49,6 +49,7 @@ from .routers import (
     backup,
     capa_rules,
     connectors,
+    context,
     enrichment,
     fields,
     flirt,
@@ -259,6 +260,7 @@ app.include_router(connectors.router, prefix="/api")
 app.include_router(fields.router, prefix="/api")
 app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")
+app.include_router(context.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

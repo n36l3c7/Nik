@@ -67,7 +67,7 @@ EVENTS = (
 )
 
 # Names an expression may read besides the nodes before it.
-ALWAYS = ("trigger", "run", "inputs")
+ALWAYS = ("trigger", "run", "inputs", "context", "incident")
 IN_LOOP = ("item", "index")
 
 WAIT_MIN, WAIT_MAX = 60, 2_592_000
@@ -386,7 +386,7 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
         seen.add(node["id"])
         if node.get("kind") not in KINDS:
             return [Problem("Unknown kind of node", node["id"], "kind")]
-        if node["id"] in ALWAYS + IN_LOOP + ("context", "incident", "args", "config", "response", "steps", "secret"):
+        if node["id"] in ALWAYS + IN_LOOP + ("args", "config", "response", "steps", "secret"):
             problems.append(
                 Problem(f'"{node["id"]}" is a name of the expressions: give the node another id', node["id"])
             )

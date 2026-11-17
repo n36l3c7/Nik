@@ -10,7 +10,7 @@
 # Jira's wiki markup if you want it.
 name: Jira Data Center
 id: jira-datacenter
-version: 1
+version: 2
 description: Issues, comments and transitions in Jira Data Center.
 api_version: "Jira Data Center REST API v2 (/rest/api/2), 11.3"
 verified: false
@@ -54,6 +54,14 @@ commands:
       key: "{{ response.key }}"
       id: "{{ response.id }}"
       url: "{{ config.url }}/browse/{{ response.key }}"
+    # The ticket, in the context of the incident the playbook works on.
+    context:
+      - path: Ticket(val.ID == obj.ID)
+        value:
+          ID: "{{ response.id }}"
+          Number: "{{ response.key }}"
+          System: Jira
+          URL: "{{ config.url }}/browse/{{ response.key }}"
     sample: { key: SEC-1, id: "10000", url: "https://jira.example.org/browse/SEC-1" }
 
   - name: get-issue

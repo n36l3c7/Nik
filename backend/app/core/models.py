@@ -1049,6 +1049,58 @@ class IncidentType(Base):
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
+class IncidentContext(Base):
+    """What is known of an incident, as data playbooks read and write (see ``context.py``).
+
+    One document per incident; ``version`` is one more at every write, and a
+    write replaces the document only if the version is still the one it read.
+    """
+
+    __tablename__ = "incident_context"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    data: Mapped[dict[str, Any]] = mapped_column(FIELDS_JSON, nullable=False, default=dict)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class IncidentContextMeta(Base):
+    """Who last set an item of the context (``Ticket:<its key>``, ``ext.<connector>.<name>``)."""
+
+    __tablename__ = "incident_context_meta"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    path_key: Mapped[str] = mapped_column(String(400), primary_key=True)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)  # nik | connector:<id> | user:<name> | run:<id>
+    at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class WarRoomEntry(Base):
+    """One line of the War Room of an incident: a note, a command and its result, what a playbook did.
+
+    ``body`` is text (markdown) for a note and JSON for a result. An entry
+    with a ``parent_id`` belongs under another (the result of a command).
+    """
+
+    __tablename__ = "war_room_entries"
+    __table_args__ = (Index("ix_war_room_incident_at", "incident_id", "at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    at: Mapped[str] = mapped_column(String, nullable=False)
+    author: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # note | command | result | error | task | approval | mirror | file | system
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, default="note")
+    body: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    parent_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
+
+# Created by migration 0029_context_war_room where missing, in this order.
+CONTEXT_TABLES = ("incident_context", "incident_context_meta", "war_room_entries")
+
 # Created by migration 0028_fields_types where missing, in this order.
 FIELD_TABLES = ("fields", "incident_types")
 

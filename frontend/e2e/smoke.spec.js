@@ -2337,6 +2337,39 @@ test('a type of incident is built with a field of its own, and closing asks for 
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })
 
+test('the Context tab shows what playbooks read of the incident, with the path of each value', async () => {
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'Context', exact: true }).click()
+  const tree = page.getByRole('tree', { name: 'Context of the incident' })
+  // Two roots: the fields of the incident, and what the analysis found for it.
+  await expect(tree.getByRole('treeitem', { name: /^incident/ }).first()).toBeVisible()
+  await expect(tree.getByRole('treeitem', { name: /^File \d+ items?$/ })).toBeVisible()
+  await tree
+    .getByRole('treeitem', { name: /^File \d+ items?$/ })
+    .getByRole('button')
+    .click()
+  await tree
+    .getByRole('treeitem', { name: /^File \d+ items?$/ })
+    .getByRole('button')
+    .click()
+  await tree
+    .getByRole('treeitem', { name: /^0 \d+$/ })
+    .first()
+    .getByRole('button')
+    .click()
+  const hash = tree.getByRole('treeitem', { name: /^SHA256 [0-9a-f]{64}$/ }).first()
+  await hash.getByRole('button').click()
+  const chosen = page.getByLabel('The chosen value')
+  await expect(chosen).toContainText('{{ context.File[0].SHA256 }}')
+  await expect(chosen).toContainText('${context.File[0].SHA256}')
+  await expect(chosen).toContainText("Set by Nik's analysis")
+  // A search keeps what matches, with what leads to it.
+  await page.getByPlaceholder('Find a key or a value…').fill('WKS-FINANCE-01')
+  await expect(tree.getByRole('treeitem', { name: /^host WKS-FINANCE-01$/ })).toBeVisible()
+  await expect(tree.getByRole('treeitem', { name: /^SHA256/ })).toHaveCount(0)
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()
