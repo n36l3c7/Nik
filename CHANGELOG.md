@@ -43,8 +43,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task given, a reminder, a task overdue, an approval that waits, a mention
   (`@name`) in a War Room, an SLA past its time.
 
+- **Lists.** What features and playbooks read by a name, in *Settings →
+  Lists*: values, keys with values, or one document; edited there, imported
+  and exported as CSV or JSON, each with where it is used. Playbooks read
+  them with *Read a list* and *Is it in a list?*, write to those that allow
+  it with *Add to a list*, *Remove from a list* and *Set a list*, and ask
+  `{{ value | in_list('name') }}` in any expression. The watch lists of the
+  IoC library are read the same way.
+
 ### Changed
 
+- **What the settings kept as fixed lists are lists now**: the IoC
+  allowlist (`ioc_allowlist`), your organisation's domains
+  (`internal_domains`), the trusted mail servers
+  (`mail_trusted_auth_servers`), the suspicious keywords
+  (`suspicious_keywords`), the business hours (`business_hours`) and the
+  hosts every playbook may reach (`automation_hosts`). Migration
+  `0031_lists` moves them once, as they are. Each section of Settings shows
+  which list it reads and lets another be chosen; the allowlist, the mail
+  domains and servers and the hosts are edited in Lists, the keywords and
+  the business hours keep their forms. `GET` and `PUT /api/settings` give
+  and take the same arrays as before.
+- `PUT /api/settings` keeps what is stored for a key that is not sent
+  (`keywords` and `businessHours` were emptied before).
 - A field of type *timer* is started and stopped, never written: the
   registry refuses a value for it.
 - The bar of the analysis tabs takes a second row when even the icons alone

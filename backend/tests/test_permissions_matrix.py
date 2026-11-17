@@ -148,6 +148,18 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     # SLA timers of an incident, and what an account was told.
     ("GET", "/api/incidents/{incident_id}/timers"): ("read",),
     ("POST", "/api/incidents/{incident_id}/timers/{field}/{what}"): ("write",),
+    # Lists: read by whoever reads incidents, changed by whoever manages lists.
+    ("GET", "/api/lists"): ("read",),
+    ("GET", "/api/lists/{name}"): ("read",),
+    ("GET", "/api/lists/{name}/export"): ("read",),
+    ("POST", "/api/lists"): ("lists.manage",),
+    ("PUT", "/api/lists/pointers"): ("lists.manage",),
+    ("PUT", "/api/lists/{name}"): ("lists.manage",),
+    ("DELETE", "/api/lists/{name}"): ("lists.manage",),
+    ("PUT", "/api/lists/{name}/items"): ("lists.manage",),
+    ("POST", "/api/lists/{name}/items"): ("lists.manage",),
+    ("DELETE", "/api/lists/{name}/items"): ("lists.manage",),
+    ("POST", "/api/lists/{name}/import"): ("lists.manage",),
     ("GET", "/api/notifications"): ("read",),
     ("POST", "/api/notifications/read"): ("read",),
     ("GET", "/api/automation/connectors"): ("connectors.manage",),

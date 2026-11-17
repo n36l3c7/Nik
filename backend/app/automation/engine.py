@@ -143,6 +143,20 @@ def _outputs(run: Run, loop: str | None, index: int | None) -> dict:
     return run.context.setdefault("__each", {}).setdefault(loop, {}).setdefault(str(index), {})
 
 
+def _in_list(db: OrmSession | None):
+    """What answers ``| in_list('name')``: None where there is no database to read the lists from."""
+    if db is None:
+        return None
+    from .. import lists
+
+    def held(name: str, value: Any) -> bool:
+        if isinstance(value, (list, tuple)):
+            return any(lists.contains(db, name, item) for item in value)
+        return lists.contains(db, name, value)
+
+    return held
+
+
 def scope_of(run: Run, shape: dict, node_id: str, index: int | None, db: OrmSession | None = None) -> ex.Scope:
     """What the expressions of a node can read."""
     trigger = graph.trigger_of(shape)
@@ -181,7 +195,7 @@ def scope_of(run: Run, shape: dict, node_id: str, index: int | None, db: OrmSess
         values["item"] = each["items"][index]
         values["index"] = index
         classes["item"] = {"": each.get("classes") or []}
-    return ex.Scope(values=values, classes=classes)
+    return ex.Scope(values=values, classes=classes, in_list=_in_list(db))
 
 
 # --------------------------------------------------------------------------- #

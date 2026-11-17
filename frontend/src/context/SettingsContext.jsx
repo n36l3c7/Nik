@@ -79,6 +79,9 @@ function factorySettings() {
   }
 }
 
+// The keys PUT /api/settings takes: one left out keeps what the server has.
+const SENT_KEYS = ['keywords', 'businessHours', 'iocAllowlist', 'report', 'mail', 'enrichment']
+
 /** Normalize a settings document coming from the server. */
 function normalizeSettings(doc) {
   return {
@@ -115,6 +118,9 @@ export function SettingsProvider({ children }) {
   // decided to proceed offline). Prevents clobbering the shared settings with
   // the factory defaults during the initial render, before GET /settings.
   const canPersist = useRef(false)
+  // What the server is known to hold: only the keys that differ from it are sent, so a list
+  // changed elsewhere (Settings → Lists, a playbook) is not written over with what this page read.
+  const synced = useRef(null)
 
   // Load the shared settings whenever the user becomes authenticated.
   useEffect(() => {
@@ -127,7 +133,9 @@ export function SettingsProvider({ children }) {
       .get('/settings')
       .then((doc) => {
         if (cancelled) return
-        setSettings(normalizeSettings(doc))
+        const next = normalizeSettings(doc)
+        synced.current = next
+        setSettings(next)
       })
       .catch(() => {
         /* keep whatever is in state (factory defaults or prior values) */
@@ -143,10 +151,30 @@ export function SettingsProvider({ children }) {
   // Mirror every change to the server (optimistic, fire-and-forget).
   useEffect(() => {
     if (!canPersist.current) return
-    api.put('/settings', settings).catch(() => {
+    const before = synced.current ?? {}
+    const changed = Object.fromEntries(
+      SENT_KEYS.filter((key) => JSON.stringify(settings[key]) !== JSON.stringify(before[key])).map((key) => [
+        key,
+        settings[key],
+      ]),
+    )
+    if (Object.keys(changed).length === 0) return
+    synced.current = settings
+    api.put('/settings', changed).catch(() => {
       /* optimistic: local state is the source of truth for this session */
     })
   }, [settings])
+
+  /** Read the settings again: a list they are filled from was changed elsewhere. */
+  const reload = useCallback(async () => {
+    try {
+      const next = normalizeSettings(await api.get('/settings'))
+      synced.current = next
+      setSettings(next)
+    } catch {
+      /* what is in state stays */
+    }
+  }, [])
 
   /** Adds a new keyword rule (id generated if missing). */
   const addKeyword = useCallback((rule) => {
@@ -261,6 +289,7 @@ export function SettingsProvider({ children }) {
       setReportBranding,
       setMailSettings,
       setEnrichment,
+      reload,
     }),
     [
       settings,
@@ -273,6 +302,7 @@ export function SettingsProvider({ children }) {
       setReportBranding,
       setMailSettings,
       setEnrichment,
+      reload,
     ],
   )
 

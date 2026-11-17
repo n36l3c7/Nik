@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Mail, Save } from 'lucide-react'
-import { Button } from '../../ui/index.js'
+import { Mail } from 'lucide-react'
 import { useSettings } from '../../../context/SettingsContext.jsx'
+import ListPicker from '../ListPicker.jsx'
 
 /*
  * Mail Analysis settings, shared by every analyst:
@@ -11,50 +10,20 @@ import { useSettings } from '../../../context/SettingsContext.jsx'
  *     Mimecast…): only their Authentication-Results headers are believed,
  *     since anyone can write such a header into a message. Their hops are
  *     also skipped when looking for the sending server.
+ * Both are lists (Settings → Lists): this section says which list each reads.
  * Re-analyse a message to apply a change to it.
  */
 
-const toText = (list) => (list ?? []).join('\n')
-const toList = (text) =>
-  text
-    .split(/[\s,]+/)
-    .map((d) => d.trim())
-    .filter(Boolean)
-
-function DomainList({ id, label, hint, value, onChange, disabled, placeholder }) {
+function Held({ title, values }) {
   return (
-    <label htmlFor={id} className="block space-y-1.5">
-      <span className="block text-sm font-semibold text-fg">{label}</span>
-      <span className="block text-xs text-fg-muted">{hint}</span>
-      <textarea
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        rows={6}
-        spellCheck={false}
-        placeholder={disabled ? 'Loading…' : placeholder}
-        className="w-full border border-line bg-canvas p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      />
-    </label>
+    <p className="text-xs text-fg-muted">
+      {title}: {values?.length ? <span className="font-mono text-fg">{values.join(', ')}</span> : <em>none yet</em>}
+    </p>
   )
 }
 
 export default function MailSettingsSection() {
-  const { mailSettings, setMailSettings } = useSettings()
-  const loaded = mailSettings !== null
-  const [domains, setDomains] = useState(() => toText(mailSettings?.orgDomains))
-  const [servers, setServers] = useState(() => toText(mailSettings?.trustedAuthServers))
-
-  useEffect(() => {
-    setDomains(toText(mailSettings?.orgDomains))
-    setServers(toText(mailSettings?.trustedAuthServers))
-  }, [mailSettings])
-
-  const dirty =
-    toList(domains).join('\n') !== toText(mailSettings?.orgDomains) ||
-    toList(servers).join('\n') !== toText(mailSettings?.trustedAuthServers)
-
+  const { mailSettings } = useSettings()
   return (
     <section className="space-y-4">
       <div>
@@ -63,36 +32,26 @@ export default function MailSettingsSection() {
           Mail analysis
         </h3>
         <p className="mt-1 text-xs text-fg-muted">
-          One domain per line. A domain also covers its subdomains. Changes apply to messages analysed from now on;
-          re-analyse a message to apply them to it.
+          A domain also covers its subdomains. Changes apply to messages analysed from now on; re-analyse a message to
+          apply them to it.
         </p>
       </div>
-      <DomainList
-        id="mail-org-domains"
-        label="Your organisation's domains"
-        hint="Messages claiming to come from them must pass authentication; look-alike domains are flagged."
-        value={domains}
-        onChange={setDomains}
-        disabled={!loaded}
-        placeholder="contoso.com"
-      />
-      <DomainList
-        id="mail-trusted-servers"
-        label="Your mail servers and gateways"
-        hint="Only Authentication-Results headers written by these hosts are trusted (e.g. protection.outlook.com, mx.google.com, pphosted.com, mimecast.com)."
-        value={servers}
-        onChange={setServers}
-        disabled={!loaded}
-        placeholder="protection.outlook.com"
-      />
-      <Button
-        icon={Save}
-        size="sm"
-        disabled={!loaded || !dirty}
-        onClick={() => setMailSettings({ orgDomains: toList(domains), trustedAuthServers: toList(servers) })}
-      >
-        Save
-      </Button>
+      <div className="space-y-1.5">
+        <ListPicker
+          setting="mail.orgDomains"
+          label="Your organisation's domains"
+          hint="Messages claiming to come from them must pass authentication; look-alike domains are flagged."
+        />
+        <Held title="It holds" values={mailSettings?.orgDomains} />
+      </div>
+      <div className="space-y-1.5">
+        <ListPicker
+          setting="mail.trustedAuthServers"
+          label="Your mail servers and gateways"
+          hint="Only Authentication-Results headers written by these hosts are trusted (e.g. protection.outlook.com, mx.google.com, pphosted.com, mimecast.com)."
+        />
+        <Held title="It holds" values={mailSettings?.trustedAuthServers} />
+      </div>
     </section>
   )
 }

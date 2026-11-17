@@ -1,32 +1,22 @@
-import { useEffect, useState } from 'react'
-import { RotateCcw, Save, ShieldCheck } from 'lucide-react'
+import { RotateCcw, ShieldCheck } from 'lucide-react'
 import { Button } from '../../ui/index.js'
 import { useSettings } from '../../../context/SettingsContext.jsx'
+import ListPicker from '../ListPicker.jsx'
 
 /*
  * IOC allowlist: well-known values hidden by default in the IOCs tab and left
  * out of the CSV / STIX / MISP exports. Shared by every analyst. The index
  * keeps everything, so a change applies at once to every incident.
+ *
+ * The allowlist is a list (Settings → Lists): this section says which list
+ * is read, and puts the factory entries back. An indicator is still added to
+ * it from its right-click menu.
  */
-
-const toText = (list) => (list ?? []).join('\n')
 
 export default function IocAllowlistSection() {
   const { iocAllowlist, iocAllowlistDefault, setIocAllowlist } = useSettings()
-  const [draft, setDraft] = useState(() => toText(iocAllowlist))
   const loaded = Array.isArray(iocAllowlist)
-
-  useEffect(() => {
-    setDraft(toText(iocAllowlist))
-  }, [iocAllowlist])
-
-  const entries = draft.split('\n')
-  const dirty =
-    toText(iocAllowlist) !==
-    entries
-      .map((e) => e.trim())
-      .filter(Boolean)
-      .join('\n')
+  const entries = (iocAllowlist ?? []).filter((entry) => entry.trim() && !entry.trim().startsWith('#'))
 
   return (
     <section className="space-y-4">
@@ -36,25 +26,17 @@ export default function IocAllowlistSection() {
           IOC allowlist
         </h3>
         <p className="mt-1 text-xs text-fg-muted">
-          One entry per line: a domain (also matches its subdomains, and URLs and e-mail addresses on it), an IP address
-          or CIDR network (<code>10.0.0.0/8</code>), or an exact value such as a hash. Lines starting with{' '}
-          <code>#</code> are comments. Matching indicators are hidden by default in the IOCs tab and never exported.
+          An entry is a domain (also matches its subdomains, and URLs and e-mail addresses on it), an IP address or CIDR
+          network (<code>10.0.0.0/8</code>), or an exact value such as a hash. An item starting with <code>#</code> is a
+          comment. Matching indicators are hidden by default in the IOCs tab and never exported.
         </p>
       </div>
-      <textarea
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        disabled={!loaded}
-        rows={16}
-        spellCheck={false}
-        aria-label="IOC allowlist entries"
-        className="w-full border border-line bg-canvas p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        placeholder={loaded ? 'example.com' : 'Loading…'}
+      <ListPicker
+        setting="iocAllowlist"
+        label="Allowlist"
+        hint="Its entries are edited in Lists; right-click an indicator to add it from where you see it."
       />
       <div className="flex flex-wrap items-center gap-2">
-        <Button icon={Save} size="sm" onClick={() => setIocAllowlist(entries)} disabled={!loaded || !dirty}>
-          Save
-        </Button>
         <Button
           variant="secondary"
           icon={RotateCcw}
@@ -64,9 +46,7 @@ export default function IocAllowlistSection() {
         >
           Restore defaults
         </Button>
-        <span className="text-xs text-fg-muted">
-          {entries.filter((e) => e.trim() && !e.trim().startsWith('#')).length} entries
-        </span>
+        <span className="text-xs text-fg-muted">{loaded ? `${entries.length} entries` : 'Loading…'}</span>
       </div>
     </section>
   )

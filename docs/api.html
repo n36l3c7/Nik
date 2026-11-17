@@ -1160,6 +1160,39 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/lists</code> · <code>GET /api/lists/{name}</code> ·
+                <code>GET /api/lists/{name}/export?format=csv|json</code>
+              </td>
+              <td>
+                Every list, with how many items it holds and where it is used, and <code>pointers</code>: which list
+                each feature reads (<code>{iocAllowlist: {list, default, kind}, …}</code>) · one list with its
+                <code>entries</code> (<code>{key, value, note, addedAt, addedBy, expiresAt}</code>) or its
+                <code>document</code> · the list as a file. <code>kind</code> is <code>values</code>,
+                <code>key_value</code>, <code>json</code>, or <code>indicators</code> for a watch list of the IoC
+                library, which is read here and changed where indicators are.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/lists</code> · <code>PUT</code> · <code>DELETE /api/lists/{name}</code> ·
+                <code>PUT</code> · <code>POST</code> · <code>DELETE /api/lists/{name}/items</code> ·
+                <code>POST /api/lists/{name}/import</code> · <code>PUT /api/lists/pointers</code>
+              </td>
+              <td>
+                (<strong>lists.manage</strong>) Make a list (<code
+                  >{name, label, description, kind, itemType, writableByAutomation}</code
+                >; the name and the kind do not change afterwards) · change it · delete one of yours that nothing uses ·
+                replace its items (<code>{entries}</code>, or <code>{document}</code>) · add one (<code
+                  >{key, value, note, expiresAt}</code
+                >) · remove one (<code>?key=</code>) · replace them from a file (<code>{format, text}</code>) · choose
+                which list a feature reads (<code>{pointers: {iocAllowlist: "my_allowlist"}}</code>): it must be of the
+                kind the feature takes. <code>GET</code> and <code>PUT /api/settings</code> go on giving and taking the
+                arrays they always did, read from and written to the lists; a key left out of a <code>PUT</code> keeps
+                what is stored.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
               <td>
                 What the caller was told, the newest first:

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, Plus, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react'
 import { Badge, Button } from '../../ui/index.js'
 import { useSettings, isValidRegex } from '../../../context/SettingsContext.jsx'
+import ListPicker from '../ListPicker.jsx'
 import {
   DEFAULT_COMMAND_KEYWORDS,
   DEFAULT_EVENTLOG_RULES,
@@ -133,6 +134,12 @@ export default function DetectionRulesSection() {
           use <span className="font-mono">\b</span> for short words (e.g. <span className="font-mono">\btor\b</span>).
         </p>
       </div>
+
+      <ListPicker
+        setting="keywords"
+        label="Keywords"
+        hint="The table below edits the list that is chosen; it can also be imported and exported in Lists."
+      />
 
       <div className="overflow-x-auto border border-line">
         <table className="w-full min-w-[640px] text-left">
