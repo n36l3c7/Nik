@@ -15,7 +15,11 @@
 export const AUTOMATION_ROOT = '/automation'
 
 /** The areas, in the order of the tabs, with the permission each needs. */
-export const AUTOMATION_AREAS = [{ id: 'playbooks', label: 'Playbooks', permission: 'automation.run' }]
+export const AUTOMATION_AREAS = [
+  { id: 'playbooks', label: 'Playbooks', permission: 'automation.run' },
+  { id: 'runs', label: 'Runs', permission: 'automation.run' },
+  { id: 'approvals', label: 'Approvals', permission: 'automation.run' },
+]
 
 export const PLAYBOOK_TABS = ['canvas', 'runs', 'versions', 'settings']
 

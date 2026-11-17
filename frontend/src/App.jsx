@@ -15,7 +15,7 @@ import { useAuth } from './context/AuthContext.jsx'
 import { useArtifacts } from './context/ArtifactContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
 import { useToast } from './context/ToastContext.jsx'
-import { ANALYSIS_TABS, getTabById } from './config/tabs.js'
+import { ANALYSIS_TABS, getTabById, visibleTabs } from './config/tabs.js'
 import { AsciiSkull, Button, EmptyState, ErrorBoundary, MicroSkull, Modal } from './components/ui/index.js'
 import Rail from './components/layout/Rail.jsx'
 import Sidebar from './components/layout/Sidebar.jsx'
@@ -49,6 +49,9 @@ import { detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import SessionExpiredDialog from './components/auth/SessionExpiredDialog.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
+import { useAutomation } from './context/AutomationContext.jsx'
+import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
+import RunPlaybookDialog from './components/automation/RunPlaybookDialog.jsx'
 
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
@@ -456,6 +459,11 @@ export default function App() {
     if (!automation) automationReturn.current = null
   }, [automation])
   const canAutomate = can('automation.run')
+  const { approvals: waitingApprovals, waiting: approvalsWaiting } = useAutomation()
+  // The approvals that wait on a run of the incident that is open.
+  const incidentApprovals = activeIncidentId
+    ? waitingApprovals.filter((approval) => approval.incidentId === activeIncidentId)
+    : []
   const automationShown = Boolean(automation) && canAutomate && !settings
 
   // The list of keyboard shortcuts ("?" or the header button).
@@ -508,7 +516,9 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const activeTab = getTabById(activeTabId) ?? ANALYSIS_TABS[0]
+  // A tab the account may not see (its roles changed, a link named it) falls back to the first.
+  const shownTabs = visibleTabs(can)
+  const activeTab = shownTabs.find((tab) => tab.id === activeTabId) ?? getTabById(ANALYSIS_TABS[0].id)
   const ActiveTabComponent = activeTab.component
 
   // ---- Boot gate (session probe / server reachability) ----
@@ -592,7 +602,7 @@ export default function App() {
         ]
       : []),
     ...(activeIncident
-      ? ANALYSIS_TABS.map((tab) => ({
+      ? shownTabs.map((tab) => ({
           id: `tab:${tab.id}`,
           label: `Go to ${tab.label}`,
           icon: tab.icon,
@@ -668,6 +678,7 @@ export default function App() {
           artifacts: Object.values(artifacts.counts).reduce((sum, n) => sum + n, 0),
           iocs: library.counts.all,
           alerts: library.alerts,
+          approvals: canAutomate ? approvalsWaiting : 0,
         }}
         can={can}
         onSearch={() => setPaletteOpen(true)}
@@ -703,6 +714,7 @@ export default function App() {
             onNavigate={openAutomation}
             onClose={closeAutomation}
             onOpenSettings={openSettings}
+            onOpenIncident={openIncident}
           />
         </Suspense>
       )}
@@ -729,7 +741,18 @@ export default function App() {
           artifactView={artifactOpen}
           libraryView={libraryOpen}
         />
-        {canRead && !artifactOpen && !libraryOpen && <TabBar activeTabId={activeTabId} onChange={setActiveTabId} />}
+        {canRead && !artifactOpen && !libraryOpen && <TabBar activeTabId={activeTab.id} onChange={setActiveTabId} />}
+        {canRead && !artifactOpen && !libraryOpen && incidentApprovals.length > 0 && (
+          <div className="flex shrink-0 flex-col gap-2 border-b border-line px-6 py-3">
+            {incidentApprovals.map((approval) => (
+              <ApprovalBanner
+                key={approval.id}
+                approval={approval}
+                onOpenRun={(runId) => openAutomation('runs', runId)}
+              />
+            ))}
+          </div>
+        )}
 
         {storageError && (
           <div
@@ -879,6 +902,8 @@ export default function App() {
           artifacts.openArtifact(scan.artifactId)
         }}
       />
+
+      {canAutomate && <RunPlaybookDialog onStarted={(run) => openAutomation('runs', run.id)} />}
 
       <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <SessionExpiredDialog unsavedChanges={unsavedChanges} />

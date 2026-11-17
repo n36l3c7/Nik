@@ -1763,6 +1763,131 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })
 
+test('a playbook runs on an incident: the approval is asked where the incident is, the run shows what happened', async () => {
+  test.setTimeout(120_000) // the worker takes a step every second or so, and the story has many
+  const before = page.url()
+  const incidentId = decodeURIComponent(new URL(before).pathname.split('/')[2])
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+
+  // A playbook that asks a person, then writes a note (made through the API: the canvas has its own test).
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Ask then note' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      {
+        id: 'ask',
+        kind: 'approval',
+        name: 'Ask first',
+        position: { x: 40, y: 160 },
+        config: { question: 'Add a note to {{ trigger.incident.name }}?', detail: { why: 'a test' } },
+      },
+      {
+        id: 'note',
+        kind: 'action',
+        name: 'Add a note',
+        position: { x: 40, y: 280 },
+        config: { action: 'nik.add-note', args: { text: 'Approved by {{ ask.by }}: {{ ask.comment }}' } },
+      },
+    ],
+    edges: [
+      { from: 'start', to: 'ask' },
+      { from: 'ask', port: 'approved', to: 'note' },
+    ],
+  }
+  const saved = await page.request.post(`/api/automation/playbooks/${playbookId}/versions`, { data: { graph } })
+  expect(saved.status()).toBe(201)
+
+  // Run by hand, from the incident's own menu.
+  await page
+    .locator('aside nav[aria-label="Incidents"] li')
+    .filter({ hasText: 'WKS-FINANCE-01' })
+    .click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Run a playbook…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Run a playbook' })
+  await expect(dialog.locator('#run-incident')).toHaveValue(incidentId)
+  await dialog.locator('#run-playbook').selectOption(playbookId)
+  await dialog.getByRole('button', { name: 'Run', exact: true }).click()
+
+  // The run: the same canvas, each node by what happened to it; it waits for a person.
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  const area = page.getByRole('region', { name: 'Automations' })
+  const status = area.getByRole('status', { name: 'Status of the run' })
+  await expect(status).toHaveText('waiting for approval', { timeout: 15_000 })
+  await expect(area.getByTestId('rf__node-ask')).toContainText('waiting')
+  await expect(area.getByTestId('rf__node-note')).toContainText('pending')
+  await expect(area.getByRole('region', { name: /^Approval asked: Add a note to WKS-FINANCE-01/ })).toContainText(
+    'a test',
+  )
+
+  // The rail counts what waits, and the incident shows the question above its tabs.
+  await area.getByRole('button', { name: 'Close automations' }).click()
+  await expect(page.getByRole('button', { name: 'Automations (1 approval waits)' })).toBeVisible()
+  const banner = page.getByRole('region', { name: /^Approval asked: Add a note to WKS-FINANCE-01/ })
+  await banner.getByLabel('A comment with the answer').fill('looks right')
+  await banner.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByText('Approved: the run goes on.')).toBeVisible()
+  await expect(banner).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Automations', exact: true })).toBeVisible()
+
+  // The incident's Automation tab lists its runs; a run opens on its page.
+  await tabs.getByRole('button', { name: 'Automation', exact: true }).click()
+  const onIncident = page.getByRole('table', { name: 'Runs on this incident' })
+  await expect(onIncident.getByRole('row').filter({ hasText: 'Ask then note' })).toContainText('done', {
+    timeout: 15_000,
+  })
+  await onIncident.getByRole('button', { name: 'Ask then note' }).click()
+  await expect(status).toHaveText('done')
+  const steps = area.getByRole('complementary', { name: 'Steps of the run' })
+  await expect(steps).toContainText('“looks right”')
+  await steps.getByRole('button', { name: /Add a note/ }).click()
+  await expect(steps.getByText('Came out')).toBeVisible()
+  await expect(steps.getByText('Went in')).toBeVisible()
+
+  // From the playbook's page: a dry run asks nobody and writes nothing.
+  await area.getByRole('button', { name: 'version 1' }).click()
+  await expect(area.getByRole('heading', { name: 'Ask then note' })).toBeVisible()
+  await area.getByRole('button', { name: 'Run…' }).click()
+  await dialog.locator('#run-incident').selectOption(incidentId)
+  await dialog.getByRole('checkbox').check()
+  await dialog.getByRole('button', { name: 'Start the dry run' }).click()
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  await expect(area.getByText('dry run', { exact: true })).toBeVisible()
+  await expect(status).toHaveText('done', { timeout: 15_000 })
+  await steps.getByRole('button', { name: /Ask first/ }).click()
+  await expect(steps).toContainText('"by": "dry run"')
+
+  // Every run, newest first; then the approvals answered lately.
+  await area.getByRole('button', { name: 'All runs' }).click()
+  const all = area.getByRole('table', { name: 'Runs' })
+  await expect(all.getByRole('row')).toHaveCount(3)
+  await expect(all.getByRole('row').nth(1)).toContainText('dry run')
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Approvals' }).click()
+  await expect(area.getByText('Nothing waits for an answer')).toBeVisible()
+  await expect(area.getByRole('region', { name: 'Answered lately' })).toContainText('looks right')
+
+  // A trigger: the playbook drawn on the canvas waits for incidents of high severity.
+  const created = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-automation', name: 'E2E high', severity: 'high', data: {} },
+  })
+  expect(created.status()).toBe(201)
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Runs' }).click()
+  const triggered = all.getByRole('row').filter({ hasText: 'Note on high' })
+  await expect(async () => {
+    await area.getByRole('button', { name: 'Refresh' }).click()
+    await expect(triggered).toContainText('done', { timeout: 1000 })
+  }).toPass({ timeout: 20_000 })
+  await expect(triggered).toContainText('incident.created')
+  expect((await page.request.delete('/api/incidents/e2e-automation')).status()).toBe(204)
+
+  // Back on the incident: the note the playbook wrote is marked, the dry run wrote none.
+  await page.goto(before)
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.getByText('Approved by admin: looks right')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'automation', exact: true })).toHaveCount(1)
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

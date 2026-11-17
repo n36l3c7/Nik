@@ -1,7 +1,7 @@
-"""Automation: playbooks, their versions, runs and the general switch.
+"""Automation: playbooks, their versions, runs, approvals and the general switch.
 
-Who may do what (``core/permissions.py``): running a playbook, reading runs
-and stopping one need ``automation.run`` (analysts have it); building
+Who may do what (``core/permissions.py``): running a playbook, reading runs,
+stopping one and answering an approval need ``automation.run`` (analysts have it); building
 playbooks needs ``automation.edit``; the general switch is the admin's.
 Every body is validated with explicit limits and every error is a fixed
 sentence.
@@ -23,10 +23,12 @@ from ..automation import catalog, egress, engine, graph, guard, outbound, script
 from ..core import audit, vault
 from ..core.config import settings as app_settings
 from ..core.db import get_db
-from ..core.models import Playbook, PlaybookVersion, Run, RunStep, Script, ScriptVersion
+from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep, Script, ScriptVersion
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, runner_principal
 
 router = APIRouter(prefix="/automation", tags=["automation"])
+# What automation adds to an incident (its runs), under the incident's own address.
+incident_router = APIRouter(prefix="/incidents", tags=["automation"])
 
 MAX_GRAPH_BYTES = 1_000_000
 
@@ -202,6 +204,30 @@ def _step(step: RunStep) -> dict[str, Any]:
         "nextAt": step.next_at,
         "startedAt": step.started_at,
         "finishedAt": step.finished_at,
+    }
+
+
+def _approval(db: OrmSession, approval: Approval) -> dict[str, Any]:
+    run = db.get(Run, approval.run_id)
+    step = db.get(RunStep, approval.step_id)
+    return {
+        "id": approval.id,
+        "runId": approval.run_id,
+        "playbookId": run.playbook_id if run else None,
+        "playbook": (run.trigger or {}).get("playbook", "") if run else "",
+        "incidentId": run.incident_id if run else None,
+        "node": step.node_id if step else None,
+        # Asked by an approval node, or before a node that changes something outside.
+        "inline": bool(step and step.kind != "approval"),
+        "question": approval.question,
+        "detail": approval.detail or {},
+        "status": approval.status,
+        "onExpire": approval.on_expire,
+        "askedAt": approval.asked_at,
+        "expiresAt": engine.iso(approval.expires_at) if approval.expires_at else None,
+        "answeredAt": approval.answered_at,
+        "answeredBy": approval.answered_by,
+        "comment": approval.comment,
     }
 
 
@@ -623,7 +649,13 @@ def get_run(run_id: str, _caller: Principal = Depends(runner_principal), db: Orm
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     steps = db.scalars(select(RunStep).where(RunStep.run_id == run.id).order_by(RunStep.seq)).all()
-    return {**_run_summary(run), "graph": engine.graph_of(db, run), "steps": [_step(step) for step in steps]}
+    approvals = db.scalars(select(Approval).where(Approval.run_id == run.id).order_by(Approval.asked_epoch)).all()
+    return {
+        **_run_summary(run),
+        "graph": engine.graph_of(db, run),
+        "steps": [_step(step) for step in steps],
+        "approvals": [_approval(db, approval) for approval in approvals],
+    }
 
 
 @router.post("/runs/{run_id}/stop")
@@ -638,6 +670,81 @@ def stop_run(run_id: str, caller: Principal = Depends(runner_principal), db: Orm
     db.commit()
     db.refresh(run)
     return _run_summary(run)
+
+
+class AnswerIn(BaseModel):
+    answer: Literal["approved", "refused"]
+    comment: str = Field(default="", max_length=1000)
+
+
+@router.get("/approvals")
+def list_approvals(
+    approval_status: str = Query("waiting", alias="status", pattern="^(waiting|approved|refused|expired|all)$"),
+    incident: str | None = Query(None, max_length=200),
+    limit: int = Query(100, ge=1, le=200),
+    _caller: Principal = Depends(runner_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """The approvals: those waiting for an answer (oldest first) unless ``status``
+    says otherwise. ``waiting`` is how many wait in all, for the count on the rail."""
+    query = select(Approval)
+    if approval_status != "all":
+        query = query.where(Approval.status == approval_status)
+    if incident:
+        query = query.join(Run, Run.id == Approval.run_id).where(Run.incident_id == incident)
+    order = Approval.asked_epoch if approval_status == "waiting" else Approval.asked_epoch.desc()
+    rows = db.scalars(query.order_by(order).limit(limit)).all()
+    waiting = db.scalar(select(func.count()).select_from(Approval).where(Approval.status == "waiting")) or 0
+    return {"approvals": [_approval(db, row) for row in rows], "waiting": waiting}
+
+
+@router.post("/approvals/{approval_id}")
+def answer_approval(
+    approval_id: str, body: AnswerIn, caller: Principal = Depends(runner_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Answer an approval: the run goes on by the answer. ``409`` when someone
+    answered first (or the wait ended). Who answered is in the audit log and on the run."""
+    approval = db.get(Approval, approval_id)
+    if approval is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    if not engine.answer(db, approval, body.answer, caller.actor, body.comment.strip(), time.time()):
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This approval has been answered already")
+    run = db.get(Run, approval.run_id)
+    name = (run.trigger or {}).get("playbook", "") if run else ""
+    word = "Approved" if body.answer == "approved" else "Refused"
+    audit.record(
+        db,
+        caller.actor,
+        "playbook.approve" if body.answer == "approved" else "playbook.refuse",
+        f'{word} "{approval.question}" in a run of the playbook "{name}"',
+        db.get(Incident, run.incident_id) if run and run.incident_id else None,
+        target=name,
+    )
+    db.commit()
+    return _approval(db, approval)
+
+
+@incident_router.get("/{incident_id}/runs")
+def incident_runs(
+    incident_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    _caller: Principal = Depends(runner_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """The runs that worked on an incident, newest first, and the approvals of theirs that wait."""
+    if db.get(Incident, incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    rows = db.scalars(
+        select(Run).where(Run.incident_id == incident_id).order_by(Run.started_at.desc()).limit(limit)
+    ).all()
+    waiting = db.scalars(
+        select(Approval)
+        .join(Run, Run.id == Approval.run_id)
+        .where(Run.incident_id == incident_id, Approval.status == "waiting")
+        .order_by(Approval.asked_epoch)
+    ).all()
+    return {"runs": [_run_summary(run) for run in rows], "approvals": [_approval(db, row) for row in waiting]}
 
 
 @router.get("/state")

@@ -7,16 +7,26 @@ import { useAuth } from './AuthContext.jsx'
  * AUTOMATION — what the whole app knows about it
  * ============================================================================
  *
- * Two things more than one screen needs: whether automation is on and its
- * worker alive (the banner of the Automations area, the switch in Settings),
- * and the library of nodes (the canvas, the inspector, a run). Both are read
- * when first asked for, by an account that may run playbooks; playbooks, runs
- * and scripts are loaded by the pages that show them.
+ * What more than one screen needs:
+ *
+ *   state      whether automation is on and its worker alive (the banner of
+ *              the Automations area, the switch in Settings);
+ *   catalog    the library of nodes (the canvas, the inspector, a run);
+ *   approvals  the questions that wait for an answer: the count on the rail,
+ *              the banner on the incident a run works on, the Approvals
+ *              screen. Read when the app opens and again every little while,
+ *              while the window is in view;
+ *   runRequest "Run a playbook…" asked from anywhere (an incident's menu, a
+ *              playbook's page): one dialog, drawn by App.
+ *
+ * All of it is for an account that may run playbooks; playbooks, runs and
+ * scripts are loaded by the pages that show them.
  */
 
 const AutomationContext = createContext(null)
 
 const EMPTY_CATALOG = { nodes: [], events: [], operators: [], ports: {} }
+const APPROVALS_EVERY_MS = 20_000
 
 export function AutomationProvider({ children }) {
   const { isAuthenticated, can } = useAuth()
@@ -24,6 +34,9 @@ export function AutomationProvider({ children }) {
   const [state, setState] = useState(null) // { enabled, workerAlive }
   const [catalog, setCatalog] = useState(null)
   const catalogRequest = useRef(null)
+  const [approvals, setApprovals] = useState([])
+  const [waiting, setWaiting] = useState(0)
+  const [runRequest, setRunRequest] = useState(null)
 
   const refreshState = useCallback(async () => {
     if (!allowed) return null
@@ -57,11 +70,60 @@ export function AutomationProvider({ children }) {
     [allowed],
   )
 
+  /** Read the approvals that wait. Quiet when it fails: the next round asks again. */
+  const refreshApprovals = useCallback(async () => {
+    if (!allowed) return
+    try {
+      const found = await api.get('/automation/approvals')
+      setApprovals(found.approvals)
+      setWaiting(found.waiting)
+    } catch {
+      /* a session that ended is reported by the API client */
+    }
+  }, [allowed])
+
+  useEffect(() => {
+    if (!allowed) return undefined
+    refreshApprovals()
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshApprovals()
+    }, APPROVALS_EVERY_MS)
+    const onVisible = () => document.visibilityState === 'visible' && refreshApprovals()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [allowed, refreshApprovals])
+
+  /** Answer an approval ('approved' | 'refused'); throws with the server's sentence when it cannot be. */
+  const answerApproval = useCallback(
+    async (id, answer, comment = '') => {
+      try {
+        return await api.post(`/automation/approvals/${encodeURIComponent(id)}`, { answer, comment })
+      } finally {
+        refreshApprovals()
+      }
+    },
+    [refreshApprovals],
+  )
+
+  /**
+   * Open "Run a playbook…". `target` may name the incident to run on
+   * (`{ incidentId, incidentName }`), the playbook (`{ playbookId }`) and
+   * whether a dry run is proposed (`{ dryRun }`).
+   */
+  const askRun = useCallback((target = {}) => setRunRequest({ ...target }), [])
+  const closeRun = useCallback(() => setRunRequest(null), [])
+
   // Another account signed in: what the last one read is not theirs.
   useEffect(() => {
     if (allowed) return
     setState(null)
     setCatalog(null)
+    setApprovals([])
+    setWaiting(0)
+    setRunRequest(null)
     catalogRequest.current = null
   }, [allowed])
 
@@ -74,8 +136,28 @@ export function AutomationProvider({ children }) {
       catalog: catalog ?? EMPTY_CATALOG,
       catalogLoaded: catalog !== null,
       loadCatalog,
+      approvals,
+      waiting,
+      refreshApprovals,
+      answerApproval,
+      runRequest,
+      askRun,
+      closeRun,
     }),
-    [allowed, state, refreshState, catalog, loadCatalog],
+    [
+      allowed,
+      state,
+      refreshState,
+      catalog,
+      loadCatalog,
+      approvals,
+      waiting,
+      refreshApprovals,
+      answerApproval,
+      runRequest,
+      askRun,
+      closeRun,
+    ],
   )
   return <AutomationContext.Provider value={value}>{children}</AutomationContext.Provider>
 }

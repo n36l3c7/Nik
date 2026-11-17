@@ -67,6 +67,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The role **Playbooks** can now be given to an account or a key: it
   builds playbooks and scripts. Analysts run playbooks and see them
   read-only.
+- **Runs.** Every run has a page: the canvas of the version it used,
+  read-only, each node coloured by what happened to it, and the steps in
+  the order they were taken with what went in, what came out, what was
+  sent and the tries. *Runs* lists them all, a playbook's *Runs* tab its
+  own; a run in progress can be stopped.
+- **Approvals.** A run that asks a person shows the question on the run, in
+  *Approvals* (`/automation/approvals`) and above the tabs of the incident
+  it works on; the rail counts what waits. Whoever may run playbooks
+  answers, with a comment if they want; the answer is in the audit log.
+- **Run a playbook by hand**: from an incident's right-click menu, from its
+  new **Automation** tab (the runs that worked on that incident) and from a
+  playbook's page. A **dry run** sends nothing outside Nik and changes
+  nothing in it: each step shows what it would have done.
+- A note written by a playbook is marked *automation* and opens its run.
 - A new container, **`sandbox`**, runs the scripts: an image with Python
   and nothing else, on a network with no route outside, a read-only
   filesystem and no capabilities; each script in a process of its own with

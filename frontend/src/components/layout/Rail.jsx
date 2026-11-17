@@ -53,7 +53,7 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
  * @param {{
  *   panel: 'incidents' | 'artifacts' | 'iocs' | null,   // the open side panel
  *   onPanel: (panel: string | null) => void,
- *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number },
+ *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number, approvals: number },
  *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
@@ -127,8 +127,16 @@ export default function Rail({
       {can('automation.run') && (
         <RailButton
           icon={Workflow}
-          label={automationOpen ? 'Close automations' : 'Automations'}
+          label={
+            automationOpen
+              ? 'Close automations'
+              : counts.approvals
+                ? `Automations (${counts.approvals} ${counts.approvals === 1 ? 'approval waits' : 'approvals wait'})`
+                : 'Automations'
+          }
           active={automationOpen}
+          count={counts.approvals}
+          alert={counts.approvals > 0}
           onClick={onAutomation}
         />
       )}

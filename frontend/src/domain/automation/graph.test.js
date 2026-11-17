@@ -313,6 +313,15 @@ test('the addresses of the Automations area', () => {
     tab: 'canvas',
   })
   assert.deepEqual(automationFromPath('/automation/nowhere/1'), { area: 'playbooks', id: null, tab: null })
+  assert.deepEqual(automationFromPath('/automation/runs'), { area: 'runs', id: null, tab: null })
+  assert.deepEqual(automationFromPath('/automation/runs/r1'), { area: 'runs', id: 'r1', tab: null })
+  assert.deepEqual(automationFromPath('/automation/approvals/x'), { area: 'approvals', id: null, tab: null })
+  assert.deepEqual(automationFromPath('/automation/playbooks/ab12/runs'), {
+    area: 'playbooks',
+    id: 'ab12',
+    tab: 'runs',
+  })
+  assert.equal(automationPath('runs', 'r1'), '/automation/runs/r1')
   assert.equal(automationPath(), '/automation/playbooks')
   assert.equal(automationPath('playbooks', 'a b'), '/automation/playbooks/a%20b')
   assert.equal(automationPath('playbooks', 'ab12', 'canvas'), '/automation/playbooks/ab12')

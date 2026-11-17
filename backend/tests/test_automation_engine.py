@@ -1076,3 +1076,85 @@ def test_with_the_worker_off_nothing_is_recorded(admin: TestClient, monkeypatch)
         assert state.worker_alive(db, T0) is False
         state.beat(db, T0)
         assert state.worker_alive(db, T0 + 30) is True and state.worker_alive(db, T0 + 61) is False
+
+
+# --------------------------------------------------------------------------- #
+# Approvals and the runs of an incident, through the API                      #
+# --------------------------------------------------------------------------- #
+def test_approvals_are_listed_and_answered_through_the_api(admin: TestClient):
+    incident(admin, "inc-ask")
+    pb = ask_playbook(admin, "Asks on an incident")
+    run_id = start(admin, pb, objectKind="incident", objectId="inc-ask", inputs={"host": "evil.example"})
+    other = start(admin, pb, inputs={"host": "other.example"})
+    worker.drain(T0)
+
+    listed = admin.get("/api/automation/approvals").json()
+    assert listed["waiting"] == 2 and len(listed["approvals"]) == 2
+    mine = next(item for item in listed["approvals"] if item["runId"] == run_id)
+    assert (mine["question"], mine["detail"], mine["status"], mine["incidentId"], mine["node"], mine["inline"]) == (
+        "Block evil.example?",
+        {"host": "evil.example"},
+        "waiting",
+        "inc-ask",
+        "ask",
+        False,
+    )
+    assert mine["playbook"] == "Asks on an incident" and mine["expiresAt"] is None
+    # Those of one incident; the run shows its own; the incident shows its runs and what waits.
+    assert [item["id"] for item in admin.get("/api/automation/approvals?incident=inc-ask").json()["approvals"]] == [
+        mine["id"]
+    ]
+    assert [item["id"] for item in run_of(admin, run_id)["approvals"]] == [mine["id"]]
+    on_incident = admin.get("/api/incidents/inc-ask/runs").json()
+    assert [run["id"] for run in on_incident["runs"]] == [run_id]
+    assert [item["id"] for item in on_incident["approvals"]] == [mine["id"]]
+    assert admin.get("/api/incidents/nope/runs").status_code == 404
+
+    # An answer is approved or refused, once; the run goes on by it.
+    assert admin.post(f"/api/automation/approvals/{mine['id']}", json={"answer": "maybe"}).status_code == 422
+    assert admin.post("/api/automation/approvals/nope", json={"answer": "approved"}).status_code == 404
+    answered = admin.post(f"/api/automation/approvals/{mine['id']}", json={"answer": "approved", "comment": " go "})
+    assert answered.status_code == 200, answered.text
+    assert (answered.json()["status"], answered.json()["answeredBy"], answered.json()["comment"]) == (
+        "approved",
+        "admin",
+        "go",
+    )
+    again = admin.post(f"/api/automation/approvals/{mine['id']}", json={"answer": "refused"})
+    assert again.status_code == 409 and "answered already" in again.json()["detail"]
+    worker.drain(T0 + 1)
+    run = run_of(admin, run_id)
+    assert run["status"] == "done" and steps(run)["yes"]["output"]["text"] == "approved by admin: go"
+
+    assert admin.get("/api/automation/approvals").json()["waiting"] == 1
+    assert [item["status"] for item in admin.get("/api/automation/approvals?status=approved").json()["approvals"]] == [
+        "approved"
+    ]
+    assert len(admin.get("/api/automation/approvals?status=all").json()["approvals"]) == 2
+    # Who answered is in the audit log, on the incident.
+    entries = admin.get("/api/audit").json()["entries"]
+    approved = next(entry for entry in entries if entry["action"] == "playbook.approve")
+    assert approved["actor"] == "admin" and approved["incidentId"] == "inc-ask"
+    assert 'Approved "Block evil.example?"' in approved["details"]
+
+    # Refusing is the other answer.
+    waiting = admin.get("/api/automation/approvals").json()["approvals"][0]
+    assert admin.post(f"/api/automation/approvals/{waiting['id']}", json={"answer": "refused"}).status_code == 200
+    worker.drain(T0 + 2)
+    assert steps(run_of(admin, other))["no"]["output"]["text"] == "refused"
+
+
+def test_answering_an_approval_needs_the_right_to_run_playbooks(admin: TestClient):
+    pb = ask_playbook(admin, "Asks a viewer")
+    run_id = start(admin, pb, inputs={"host": "x"})
+    worker.drain(T0)
+    approval_id = approvals(admin, run_id)[0].id
+    viewer = make_key(admin, roles=["viewer"])
+    analyst = make_key(admin, roles=["analyst"])
+    with TestClient(fastapi_app) as other:
+        assert other.get("/api/automation/approvals", headers=viewer).status_code == 403
+        refused = other.post(f"/api/automation/approvals/{approval_id}", json={"answer": "approved"}, headers=viewer)
+        assert refused.status_code == 403
+        assert other.get("/api/automation/approvals", headers=analyst).json()["waiting"] == 1
+        done = other.post(f"/api/automation/approvals/{approval_id}", json={"answer": "approved"}, headers=analyst)
+        assert done.status_code == 200 and done.json()["answeredBy"] == "api:test"

@@ -1,3 +1,5 @@
+import { automationPath } from '../../../domain/automationNav.js'
+import { setPath } from '../../../lib/location.js'
 import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
 import { Button } from '../../ui/index.js'
@@ -15,7 +17,7 @@ import { formatDateTime } from '../../../lib/time.js'
  * flag cards on the incident timeline.
  *
  * @param {{
- *   note: { id, text, createdAt, updatedAt, author },
+ *   note: { id, text, createdAt, updatedAt, author, automation? },   // automation: { run, playbook } when a playbook wrote it
  *   onSave: (text: string) => void,
  *   onRemove: () => void,
  * }} props
@@ -76,6 +78,16 @@ export default function NoteBlock({ note, onSave, onRemove }) {
               {note.author || 'unknown'} · {formatDateTime(Date.parse(note.createdAt))}
               {wasEdited && ' · edited'}
             </span>
+            {note.automation && (
+              <button
+                type="button"
+                title={`Written by the playbook "${note.automation.playbook}": open the run`}
+                onClick={() => setPath(automationPath('runs', note.automation.run))}
+                className="shrink-0 border border-info-line bg-info-soft/40 px-1.5 font-mono text-[11px] leading-4 text-info hover:bg-info-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                automation
+              </button>
+            )}
             {/* Actions appear on hover to keep the card calm at rest. */}
             <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/note:opacity-100 focus-within:opacity-100">
               <button

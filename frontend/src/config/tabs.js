@@ -11,6 +11,7 @@ import {
   Network,
   ScrollText,
   TerminalSquare,
+  Workflow,
 } from 'lucide-react'
 import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
 import { buildDefaultShellsMap, SHELLS } from './shells.js'
@@ -33,7 +34,10 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
  *  - component:   React component (lazy-loaded => automatic code-splitting).
  *                 Receives the `incident` prop (the active incident).
  *  - dataKey:     key under `incident.data` where the tab stores its data
+ *                 (left out by a tab that keeps nothing in the incident)
  *  - defaultData: initial data structure for a new incident
+ *  - permission:  shown only to the accounts that hold it (every reader
+ *                 sees a tab that names none)
  *
  * To add a tab: create the component under src/components/tabs/ and add an
  * entry below, in its group. See README.md § "Add a new analysis tab".
@@ -50,6 +54,7 @@ const IocsTab = lazy(() => import('../components/tabs/iocs/IocsTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkAnalysisTab = lazy(() => import('../components/tabs/network/NetworkAnalysisTab.jsx'))
 const UrlAnalysisTab = lazy(() => import('../components/tabs/urls/UrlAnalysisTab.jsx'))
+const AutomationTab = lazy(() => import('../components/tabs/automation/AutomationTab.jsx'))
 
 export const ANALYSIS_TABS = [
   {
@@ -73,6 +78,16 @@ export const ANALYSIS_TABS = [
     // The Timeline aggregates timestamped events from every other tab; it
     // stores no data of its own (this key just holds view preferences, if any).
     defaultData: {},
+  },
+  {
+    id: 'automation',
+    label: 'Automation',
+    short: 'Auto',
+    group: 'overview',
+    icon: Workflow,
+    component: AutomationTab,
+    // The runs are the server's: nothing of this tab is kept in the incident.
+    permission: 'automation.run',
   },
   {
     id: 'iocs',
@@ -219,8 +234,13 @@ export const ANALYSIS_TABS = [
  * tab does NOT require changes to IncidentContext.
  */
 export function buildDefaultIncidentData() {
-  return Object.fromEntries(ANALYSIS_TABS.map((tab) => [tab.dataKey, structuredClone(tab.defaultData)]))
+  return Object.fromEntries(
+    ANALYSIS_TABS.filter((tab) => tab.dataKey).map((tab) => [tab.dataKey, structuredClone(tab.defaultData)]),
+  )
 }
+
+/** The tabs an account sees, given its `can(permission)`. */
+export const visibleTabs = (can) => ANALYSIS_TABS.filter((tab) => !tab.permission || can(tab.permission))
 
 /** Return a tab definition from its id. */
 export function getTabById(tabId) {

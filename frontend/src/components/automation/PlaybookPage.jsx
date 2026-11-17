@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, LayoutGrid, List, Redo2, Undo2 } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, List, Play, Redo2, Undo2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -33,6 +33,7 @@ import Inspector from './Inspector.jsx'
 import NodeLibrary from './NodeLibrary.jsx'
 import PlaybookSettingsTab from './PlaybookSettingsTab.jsx'
 import PlaybookVersionsTab from './PlaybookVersionsTab.jsx'
+import RunsPage from './RunsPage.jsx'
 import { Seg, Switch } from './fields.jsx'
 
 /*
@@ -51,8 +52,7 @@ import { Seg, Switch } from './fields.jsx'
  */
 
 const TAB_LABELS = { canvas: 'Canvas', runs: 'Runs', versions: 'Versions', settings: 'Settings' }
-// The tabs this release has (the runs of a playbook come with the runs screen).
-const TABS = PLAYBOOK_TABS.filter((tab) => tab !== 'runs')
+const TABS = PLAYBOOK_TABS
 const SAVE_DELAY_MS = 900
 
 const SAVE_TEXT = {
@@ -131,12 +131,14 @@ function NodeList({ graph, catalog, problems, selected, onSelect }) {
  *   onBack: () => void,
  *   onDeleted: () => void,
  *   onChanged?: () => void,   // the list of playbooks should be read again
+ *   onOpenRun: (id: string) => void,
+ *   onOpenIncident?: (id: string) => void,
  * }} props
  */
-export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChanged }) {
+export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChanged, onOpenRun, onOpenIncident }) {
   const { can } = useAuth()
   const canEdit = can('automation.edit')
-  const { catalog, loadCatalog } = useAutomation()
+  const { catalog, loadCatalog, askRun } = useAutomation()
   const { showToast } = useToast()
 
   const [detail, setDetail] = useState(null)
@@ -456,6 +458,20 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
             />
             {detail.enabled ? 'on' : 'off'}
           </label>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Play}
+            disabled={!detail.version}
+            title={
+              detail.version
+                ? 'Run version ' + detail.version + ' by hand, or try it as a dry run'
+                : 'Save a version first: a run uses a version, not the draft'
+            }
+            onClick={() => askRun({ playbookId: detail.id, dryRun: !detail.triggerConfig?.manual })}
+          >
+            Run…
+          </Button>
           {canEdit && (
             <Button
               size="sm"
@@ -563,6 +579,12 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
             onSelectNode={(nodeId) => select([nodeId])}
             onRemove={(nodeId) => remove([nodeId])}
           />
+        </div>
+      )}
+
+      {activeTab === 'runs' && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <RunsPage playbookId={detail.id} onOpenRun={onOpenRun} onOpenIncident={onOpenIncident} />
         </div>
       )}
 

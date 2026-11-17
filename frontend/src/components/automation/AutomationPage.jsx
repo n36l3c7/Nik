@@ -8,6 +8,9 @@ import { useLayer } from '../../lib/layers.js'
 import { Button, ErrorBoundary } from '../ui/index.js'
 import PlaybookPage from './PlaybookPage.jsx'
 import PlaybooksPage from './PlaybooksPage.jsx'
+import ApprovalsPage from './ApprovalsPage.jsx'
+import RunPage from './RunPage.jsx'
+import RunsPage from './RunsPage.jsx'
 
 /*
  * ============================================================================
@@ -29,11 +32,12 @@ import PlaybooksPage from './PlaybooksPage.jsx'
  *   onNavigate: (area: string, id?: string | null, tab?: string | null, options?: { replace?: boolean }) => void,
  *   onClose: () => void,
  *   onOpenSettings: (section: string) => void,
+ *   onOpenIncident: (id: string) => void,
  * }} props
  */
-export default function AutomationPage({ route, onNavigate, onClose, onOpenSettings }) {
+export default function AutomationPage({ route, onNavigate, onClose, onOpenSettings, onOpenIncident }) {
   const { can } = useAuth()
-  const { state, setState } = useAutomation()
+  const { state, setState, waiting } = useAutomation()
   const areas = visibleAreas(can)
   const [playbooks, setPlaybooks] = useState(null)
   const [error, setError] = useState(null)
@@ -82,6 +86,12 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
                   ].join(' ')}
                 >
                   {item.label}
+                  {item.id === 'approvals' && waiting > 0 && (
+                    <span className="ml-1.5 bg-med-line px-1 font-mono text-[11px] text-canvas">
+                      {waiting}
+                      <span className="sr-only"> waiting</span>
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>
@@ -131,7 +141,25 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
                 onNavigate('playbooks', null, null, { replace: true })
               }}
               onChanged={reload}
+              onOpenRun={(runId) => onNavigate('runs', runId)}
+              onOpenIncident={onOpenIncident}
             />
+          ) : area?.id === 'runs' && route.id ? (
+            <RunPage
+              key={route.id}
+              id={route.id}
+              onBack={() => onNavigate('runs')}
+              onOpenPlaybook={(playbookId) => onNavigate('playbooks', playbookId)}
+              onOpenIncident={onOpenIncident}
+            />
+          ) : area?.id === 'runs' ? (
+            <RunsPage
+              playbooks={playbooks ?? []}
+              onOpenRun={(runId) => onNavigate('runs', runId)}
+              onOpenIncident={onOpenIncident}
+            />
+          ) : area?.id === 'approvals' ? (
+            <ApprovalsPage onOpenRun={(runId) => onNavigate('runs', runId)} />
           ) : (
             <PlaybooksPage
               playbooks={playbooks}
