@@ -1132,7 +1132,7 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
   // The sections are in groups; the one shown is marked.
-  await expect(sections.getByRole('group')).toHaveCount(6)
+  await expect(sections.getByRole('group')).toHaveCount(7)
   await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
     'YARA rules',
     'capa rules',
@@ -1208,7 +1208,15 @@ test('an incident has a status and an assignee, set from the panel and filtered 
   await expect(page.getByRole('banner')).toContainText('assigned to admin')
   await page.locator('#incident-status').selectOption('closed')
   await page.getByRole('button', { name: 'Save', exact: true }).click()
+  // Closing asks how: a reason among those of the incident's type, and notes.
+  const closing = page.getByRole('dialog', { name: 'Close the incident' })
+  await expect(closing).toContainText('Unclassified')
+  await closing.locator('#close-reason').selectOption('False positive')
+  await closing.locator('#close-notes').fill('A test of the scanner.')
+  await closing.getByRole('button', { name: 'Close the incident' }).click()
+  await expect(closing).toHaveCount(0)
   await expect(row).toContainText('closed')
+  await expect(page.locator('#incident-status')).toHaveValue('closed')
 
   // The filters of the panel.
   await panel.getByLabel('Status filter').selectOption('open')
@@ -2192,6 +2200,106 @@ test('a playbook is run on an artifact from its menu, and started from outside a
   for (const id of [onFile, onMail, outside]) {
     expect((await page.request.delete(`/api/automation/playbooks/${id}`)).status()).toBe(204)
   }
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a type of incident is built with a field of its own, and closing asks for what it wants', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  const incidentId = decodeURIComponent(new URL(before).pathname.split('/')[2])
+  const was = (await (await page.request.get(`/api/incidents/${incidentId}/fields`)).json()).fields.status
+
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Types', { exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/incidents\/types$/)
+  // The types Nik ships; every incident that was given none is Unclassified.
+  const types = settings.getByRole('table', { name: 'Incident types' })
+  await expect(types.getByRole('row')).toHaveCount(8)
+  await expect(types.getByRole('row').nth(1)).toContainText('Unclassified')
+
+  await settings.getByRole('button', { name: 'New type' }).click()
+  const create = page.getByRole('dialog', { name: 'New type' })
+  await create.locator('#new-type-name').fill('E2E outage')
+  await create.getByRole('button', { name: 'Create the type' }).click()
+  await expect(settings.locator('#type-name')).toHaveValue('E2E outage')
+
+  // A field of its own, made from the side list: it lands in the section that is being added to.
+  const offered = settings.getByRole('region', { name: 'Fields to add' })
+  await offered.getByRole('button', { name: 'New field' }).click()
+  const field = page.getByRole('dialog', { name: 'New field' })
+  await field.locator('#field-label').fill('Root cause')
+  await expect(field.locator('#field-name')).toHaveValue('root_cause')
+  await field.locator('#field-type').selectOption('long_text')
+  await field.getByRole('button', { name: 'Create the field' }).click()
+  const about = settings.getByRole('region', { name: 'Section What it is about' })
+  const placed = about.getByRole('listitem').filter({ hasText: 'Root cause' })
+  await expect(placed).toHaveCount(1)
+  await placed.getByLabel('to close').check()
+  // A field of the registry is added with a click, and moved with the arrows.
+  await offered.getByPlaceholder('Find a field…').fill('due')
+  await offered.getByRole('button', { name: /^Due/ }).click()
+  await expect(about.getByRole('listitem').last()).toContainText('Due')
+  await about.getByRole('button', { name: 'Move Due up' }).click()
+  await expect(about.getByRole('listitem').last()).toContainText('Root cause')
+  // A section of its own, made the side panel in place of the first.
+  await settings.getByRole('button', { name: 'Add a section' }).click()
+  const added = settings.getByRole('region', { name: 'Section New section' })
+  await added.getByLabel('Title of the section').fill('Impact')
+  await settings.locator('#type-reasons').fill('Fixed\nNot ours')
+  await expect(settings.getByText('not saved')).toBeVisible()
+  await settings.getByRole('button', { name: 'Save the type' }).click()
+  await expect(settings.getByText('not saved')).toHaveCount(0)
+  const saved = await (await page.request.get('/api/incident-types/e2e-outage')).json()
+  expect(saved.fields).toEqual([{ name: 'root_cause', required: false, requiredOnClose: true }])
+  expect(saved.closeReasons).toEqual(['Fixed', 'Not ours'])
+  expect(saved.layout.sections.map((section) => section.title)).toEqual(['Key facts', 'What it is about', 'Impact'])
+  expect(saved.layout.sections[1].fields.slice(-2)).toEqual(['due', 'root_cause'])
+
+  // The registry as a whole: the new field is there, with where it is used.
+  await sections.getByText('All fields', { exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/incidents\/all-fields$/)
+  await settings.getByPlaceholder('Find a field…').fill('root')
+  const all = settings.getByRole('table', { name: 'All fields' })
+  await expect(all.getByRole('row')).toHaveCount(2)
+  await all.getByRole('button', { name: 'Edit the field Root cause' }).click()
+  const edit = page.getByRole('dialog', { name: 'Field root_cause' })
+  await expect(edit).toContainText('Listed by: E2E outage.')
+  await edit.getByRole('button', { name: 'Cancel' }).click()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+
+  // An incident of that type cannot be closed without what the type wants: the form asks for it.
+  const opened = await page.request.patch(`/api/incidents/${incidentId}/fields`, {
+    data: { changes: { type: 'e2e-outage', status: 'open' } },
+  })
+  expect(opened.status(), await opened.text()).toBe(200)
+  await page.goto(before)
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.locator('#incident-status')).toHaveValue('open')
+  await page.locator('#incident-status').selectOption('closed')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  const closing = page.getByRole('dialog', { name: 'Close the incident' })
+  await expect(closing).toContainText('E2E outage')
+  await expect(closing.locator('#close-reason').locator('option')).toHaveText(['(not set)', 'Fixed', 'Not ours'])
+  await closing.locator('#close-reason').selectOption('Fixed')
+  await closing.getByRole('button', { name: 'Close the incident' }).click()
+  await expect(closing.getByRole('alert')).toHaveText('Root cause is needed to close')
+  await closing.locator('#close-field-root_cause').fill('A rule written too wide.')
+  await closing.getByRole('button', { name: 'Close the incident' }).click()
+  await expect(closing).toHaveCount(0)
+  await expect(page.locator('#incident-status')).toHaveValue('closed')
+  const held = (await (await page.request.get(`/api/incidents/${incidentId}/fields`)).json()).fields
+  expect([held.status, held.close_reason, held.root_cause]).toEqual(['closed', 'Fixed', 'A rule written too wide.'])
+  expect(held.closed).toBeTruthy()
+
+  // Left as it was for what follows, with no type; the type is deleted and its incident keeps its values.
+  expect((await page.request.delete('/api/incident-types/e2e-outage')).status()).toBe(204)
+  const again = await page.request.patch(`/api/incidents/${incidentId}/fields`, {
+    data: { changes: { status: was } },
+  })
+  expect(again.status()).toBe(200)
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })

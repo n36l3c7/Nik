@@ -605,6 +605,11 @@ export function IncidentProvider({ children }) {
     setReloadToken((token) => token + 1)
   }, [])
 
+  // "Close the incident" asked from anywhere (the Summary, the menu of the list): one dialog, drawn by App.
+  const [closeRequest, setCloseRequest] = useState(null)
+  const askClose = useCallback((incidentId) => setCloseRequest(incidentId), [])
+  const endClose = useCallback(() => setCloseRequest(null), [])
+
   const activeIncident = activeIncidentId ? (documents[activeIncidentId] ?? null) : null
   const activeSummary = useMemo(
     () => incidents.find((i) => i.id === activeIncidentId) ?? null,
@@ -1481,6 +1486,9 @@ export function IncidentProvider({ children }) {
     activeLoadProgress,
     retryActiveIncident,
     refreshIncidents,
+    closeRequest,
+    askClose,
+    endClose,
     setEventLogChannels,
     clearEventLogs,
     updateReportSettings,

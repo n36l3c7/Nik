@@ -12,6 +12,8 @@ import {
   Mail,
   OctagonX,
   Plug,
+  Shapes,
+  TextCursorInput,
   Radar,
   ScrollText,
   Search,
@@ -34,6 +36,8 @@ import AutomationSwitchSection from './sections/AutomationSwitchSection.jsx'
 import BackupSection from './sections/BackupSection.jsx'
 import CapaRulesSection from './sections/CapaRulesSection.jsx'
 import ConnectionsSection from './sections/ConnectionsSection.jsx'
+import FieldsSection from './sections/FieldsSection.jsx'
+import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
@@ -70,6 +74,8 @@ const SECTION_VIEWS = {
   yara: { icon: FileSearch, Component: YaraRulesSection },
   capa: { icon: Radar, Component: CapaRulesSection },
   flirt: { icon: Fingerprint, Component: FlirtSignaturesSection },
+  incidentTypes: { icon: Shapes, Component: IncidentTypesSection },
+  fields: { icon: TextCursorInput, Component: FieldsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
   connections: { icon: Cable, Component: ConnectionsSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },

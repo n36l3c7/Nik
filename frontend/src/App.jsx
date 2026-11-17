@@ -52,6 +52,7 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 import { useAutomation } from './context/AutomationContext.jsx'
 import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
 import RunPlaybookDialog from './components/automation/RunPlaybookDialog.jsx'
+import CloseIncidentDialog from './components/fields/CloseIncidentDialog.jsx'
 
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
@@ -904,6 +905,7 @@ export default function App() {
       />
 
       {canAutomate && <RunPlaybookDialog onStarted={(run) => openAutomation('runs', run.id)} />}
+      <CloseIncidentDialog />
 
       <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <SessionExpiredDialog unsavedChanges={unsavedChanges} />
