@@ -3,8 +3,8 @@
  *
  * Prefers `crypto.randomUUID()` (a v4 UUID), but that API requires a secure
  * context, so on plain HTTP over a LAN IP it is undefined. There we build a v4
- * from `crypto.getRandomValues` (available in insecure contexts too), and only
- * as a last resort fall back to a `Math.random`-based v4.
+ * from `crypto.getRandomValues` (available in insecure contexts too). There
+ * is no fallback on `Math.random`: an id is never made from a guessable source.
  */
 export function generateId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -29,10 +29,6 @@ export function generateId() {
     )
   }
 
-  // Non-crypto last resort (kept only for very old/exotic environments).
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0
-    const v = c === 'x' ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
+  // Every browser Nik runs in has one of the two: an id is never made from a guessable source.
+  throw new Error('This browser cannot make a random id: it has no crypto API.')
 }

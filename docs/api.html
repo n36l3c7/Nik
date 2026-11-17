@@ -249,15 +249,14 @@
             <tr>
               <td><code>POST /api/incidents/{id}/war-room/command</code></td>
               <td>
-                What is typed in the War Room: <code>{line, confirm?}</code>. Plain text and <code>/note</code> write
-                a note; <code>/assign @user</code> changes the owner; <code>/close</code> answers
+                What is typed in the War Room: <code>{line, confirm?}</code>. Plain text and <code>/note</code> write a
+                note; <code>/assign @user</code> changes the owner; <code>/close</code> answers
                 <code>{action: "close"}</code>; <code>!name arg=value …</code> runs a command as a run of one node
                 (needs <code>automation.run</code>) and answers its entry with <code>runId</code>: the result is the
                 entry whose <code>parentId</code> is this one. <code>400</code> with what is wrong in the line;
                 <code>409</code> with <code>needsConfirm</code> for a command that changes something outside, until
-                <code>confirm: true</code> is sent. <code>GET /api/automation/catalog?prefix=</code> lists the
-                commands with their arguments
-                (<a href="automation.html#command-line">Automation → The command line</a>).
+                <code>confirm: true</code> is sent. <code>GET /api/automation/catalog?prefix=</code> lists the commands
+                with their arguments (<a href="automation.html#command-line">Automation → The command line</a>).
               </td>
             </tr>
             <tr>
