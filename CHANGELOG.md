@@ -7,6 +7,121 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-11-17
+
+Connectors: other products reached through files anyone can read and write,
+with twelve of them shipped; playbooks started by what Nik analyses or by a
+request from outside; five playbooks ready to turn on. Nothing that existed
+changes, and nothing new runs or sends until someone makes a connection and
+turns a playbook on.
+
+**Upgrading from 4.1.0**: nothing more than the usual two commands.
+
+```
+git pull
+podman compose up -d --build
+```
+
+The migration `0027_connectors` runs at start and adds the tables of
+connectors and connections. Afterwards, give the role **Connectors** to the
+people who will hold the credentials of other systems. The whole of it is
+described in `docs/automation.html`.
+
+**Not verified on real systems**: no shipped connector has been run against
+the product it talks to; each is tested against answers recorded from the
+vendor's documentation and is marked *not verified* in the list of
+connectors. Sending e-mail through a real SMTP server and reaching a system
+outside from the `automation` container under rootless Podman have not been
+tried either.
+
+### Added
+
+- **Connectors.** A connector is one YAML file that says how to talk to a
+  product, without code: what a connection needs (an address, credentials)
+  and commands, each a request built from templates in the playbooks' own
+  expression language. Every command of an installed connector is a node of
+  the canvas. A file is checked when it is read, and refused with every
+  problem and the line it is on.
+- Credentials of five kinds (basic, bearer, a named header, OAuth2 client
+  credentials, a session opened with a login) and the sign-in of Zscaler's
+  API; lists read page by page (offset, page, cursor, link); commands made
+  of several requests that feed each other; commands that wait for the
+  other side by asking again later, without holding a worker.
+- **Settings → Automation → Connectors**: add a connector from its file
+  (what is wrong is listed with its line, and nothing is installed until
+  the file is right), read its commands and its file, download the shipped
+  ones as samples. **Connections**: a connector plus an address and
+  credentials, in a form built from what the connector asks for, with
+  "Test". Credentials are stored encrypted and never shown again, here or
+  in the API. Both are for the role **Connectors**, which can now be given.
+- On the canvas a connector is a group of the library, and a node of it
+  names the connection it sends through. A version is not saved while a
+  node names a connection that does not exist.
+- **Twelve connector files ship with Nik**, for nine products, as files
+  that can be read and changed: **Check Point Firewall** (hosts, groups and domain objects on a
+  Security Management server, published and installed; R81 to R82, with the
+  API version as a setting), **Check Point Harmony SASE** (lists of
+  addresses, the Internet Access rules), **Zscaler ZIA** (URL categories,
+  look-up, activation), **SentinelOne EDR** (agents, isolation, threats,
+  the blocklist, Deep Visibility) and **SentinelOne SIEM** (PowerQuery in
+  the Data Lake, alerts), **ServiceNow** (incidents and comments),
+  **Jira** (issues, comments, transitions), **Confluence** (pages made and
+  added to) and **Bitbucket** (a file read and written with a commit, for
+  a block list other systems fetch). Jira, Confluence and Bitbucket each
+  have a file for Cloud and one for Data Center, which sign in and write
+  texts differently. Each was written from what the vendor publishes
+  and is tested against exchanges recorded from it; none has been run
+  against a real system yet, and each is marked *not verified* until
+  someone does.
+- A new filter of the expression language, `| add(1)`: a number plus a
+  number (the next version of a page).
+- A command never sends anywhere but to the host of its connection, goes
+  through the same data guard as the HTTP node, and records what it sent
+  with every secret replaced. In a dry run it sends nothing and gives the
+  sample its file declares.
+- **More events start a playbook**: an e-mail analysed
+  (`mail.analysed`), a file analysed (`file.analysed`), an address scanned
+  (`url.analysed`), the verdict of an indicator that changes
+  (`ioc.verdict_changed`), an incident that comes to hold a watched
+  indicator (`ioc.watch_hit`), the disk nearly full (`storage.low`, once a
+  day under 10 % free). Each carries its fields to `{{ trigger.… }}` with
+  the class of data of each, so the data guard knows a sender's address
+  from a hash. The inspector lists the events by what they mean and starts
+  the filter from a field the event has.
+- **A playbook can be started from outside.** A trigger set to "From
+  outside" gets an address in the playbook's Settings: a URL with a random
+  token, shown once and stored as its hash. A POST to it starts the
+  playbook with the request as `trigger.body`, `trigger.query` and
+  `trigger.headers`. No account is asked and no cookie or API key is read;
+  256 kB a request, 60 requests a minute for each address, one answer for
+  every address that starts nothing.
+- **Run a playbook on an e-mail, a file, an address or an indicator**:
+  "Run a playbook…" is in their right-click menus, wherever they are shown,
+  and on an artifact's page, which now lists the runs that worked on it.
+  The playbooks offered are those whose event is about that kind of object,
+  and those with no event.
+- The five new events can also be sent as signed webhooks
+  (`POST /api/webhooks`).
+- **Five playbooks ship with Nik**, in the list from the first start and
+  **off**: *Phishing triage* (an e-mail found to be phishing gets an
+  incident, a note with where its links lead, and a question about watching
+  the sender), *Weekly re-check of the watched lists* (the sources are asked
+  again and a message says what changed), *Malicious indicator to a block
+  list* (a file in a Bitbucket repository, committed after approval),
+  *Incident to ticketing* (ServiceNow) and *Disk almost full notice*. Those
+  that need a connection are drafts that say what to choose. They are yours
+  from then on: an upgrade does not overwrite one that was changed or bring
+  back one that was deleted. Each is also a file that can be imported.
+- Two nodes for them: **Get the lists** and **Check a list again**, which
+  runs the library's bulk check on a list and waits for it without holding
+  a worker.
+- Connector files: a request can say `answer: text` so that what comes back
+  is never read as JSON (a file fetched from a repository). The Bitbucket
+  `get-file` commands use it.
+- A playbook file whose script nodes name no version takes, on import, the
+  version each script has here.
+
+
 ## [4.1.0] - 2026-11-17
 
 Nik's own automation: playbooks drawn on a canvas and run by Nik, scripts in
@@ -1985,7 +2100,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.2.0...HEAD
+[4.2.0]: https://github.com/n36l3c7/Nik/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/n36l3c7/Nik/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/n36l3c7/Nik/compare/v3.8.0...v4.0.0
 [3.8.0]: https://github.com/n36l3c7/Nik/compare/v3.7.0...v3.8.0

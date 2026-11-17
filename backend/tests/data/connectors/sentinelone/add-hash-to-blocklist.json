@@ -1,0 +1,47 @@
+{
+  "args": {
+    "hash": "3395856ce81f2b7382dee72602f798b642f14140",
+    "description": "Dropper of INC-2026-0412"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/restrictions",
+        "json": {
+          "data": {
+            "value": "3395856ce81f2b7382dee72602f798b642f14140",
+            "type": "black_hash",
+            "osType": "windows",
+            "description": "Dropper of INC-2026-0412",
+            "source": "Nik"
+          },
+          "filter": {
+            "tenant": true
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "9876543210987654321",
+              "value": "3395856ce81f2b7382dee72602f798b642f14140",
+              "type": "black_hash",
+              "osType": "windows"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ids": [
+      "9876543210987654321"
+    ]
+  }
+}

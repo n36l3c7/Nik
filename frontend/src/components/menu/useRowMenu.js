@@ -1,10 +1,12 @@
 import { useCallback } from 'react'
-import { Braces, Copy, Crosshair, ListTree, Search, ShieldCheck } from 'lucide-react'
+import { Braces, Copy, Crosshair, ListTree, Play, Search, ShieldCheck } from 'lucide-react'
+import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useIocLookup } from '../../context/IocLookupContext.jsx'
 import { useNavigation } from '../../context/NavigationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
+import { artifactTarget, indicatorTarget } from '../../domain/automation/runs.js'
 import { defang, indicatorFlaggable } from '../../domain/iocs.js'
 import { formatDateTime } from '../../lib/time.js'
 import { flagItems } from './flagItems.js'
@@ -19,11 +21,13 @@ import { flagItems } from './flagItems.js'
  * is, and the menu is built from the sections that apply:
  *
  *   actions    what the item itself offers (Open, Open as artifact, …)
+ *   artifact   { id, kind, name }: "Run a playbook…" on an analysed e-mail,
+ *              file or address, for who may run playbooks
  *   flaggable  flag / unflag and comment, when an incident is open: the
  *              payload the item's flag button passes to toggleFlag()
- *   ioc        { type, value }: where it was seen, search, copy, copy
- *              defanged, the allowlist; flaggable by hand when no
- *              `flaggable` is given
+ *   ioc        { type, value }: where it was seen, search, run a playbook
+ *              on it, copy, copy defanged, the allowlist; flaggable by hand
+ *              when no `flaggable` is given
  *   text       "Copy as text"
  *   copy       [{ label, text }]: more things to copy (a hash, a path…)
  *   record     "Copy as JSON" (the row's own fields)
@@ -58,10 +62,16 @@ export function useItemMenu(incident) {
   const { openIoc, openAllowlist } = useIocLookup()
   const { goTo, openSearch } = useNavigation()
   const { showToast } = useToast()
+  const { allowed: canAutomate, askRun } = useAutomation()
 
   return useCallback(
     (event, spec) => {
-      const { actions = [], ioc = null, text = '', copy = [], record = null, timeline = false, danger = [] } = spec
+      const { ioc = null, text = '', copy = [], record = null, timeline = false, danger = [] } = spec
+      const target = canAutomate ? artifactTarget(spec.artifact) : null
+      const actions = [
+        ...(spec.actions ?? []),
+        target && { label: 'Run a playbook…', icon: Play, onSelect: () => askRun({ object: target }) },
+      ]
       const canFlag = Boolean(incident?.id)
       const flaggable = spec.flaggable ?? (ioc ? indicatorFlaggable(ioc.type, ioc.value) : null)
       const notify = async (content, what) =>
@@ -83,6 +93,12 @@ export function useItemMenu(incident) {
           ? [
               { label: 'Where else was this seen?', icon: Crosshair, onSelect: () => openIoc(ioc.type, ioc.value) },
               { label: 'Search for it', icon: Search, hint: 'ctrl k', onSelect: () => openSearch(String(ioc.value)) },
+              canAutomate &&
+                !target && {
+                  label: 'Run a playbook…',
+                  icon: Play,
+                  onSelect: () => askRun({ object: indicatorTarget(ioc.type, ioc.value) }),
+                },
             ]
           : [],
         [
@@ -129,7 +145,20 @@ export function useItemMenu(incident) {
       const items = sections.flatMap((section, index) => (index === 0 ? section : ['separator', ...section]))
       return openMenu(event, { title: spec.title ?? flaggable?.title ?? String(ioc?.value ?? ''), items })
     },
-    [incident, openMenu, askText, toggleFlag, addFlagComment, openIoc, openAllowlist, goTo, openSearch, showToast],
+    [
+      incident,
+      openMenu,
+      askText,
+      toggleFlag,
+      addFlagComment,
+      openIoc,
+      openAllowlist,
+      goTo,
+      openSearch,
+      showToast,
+      canAutomate,
+      askRun,
+    ],
   )
 }
 

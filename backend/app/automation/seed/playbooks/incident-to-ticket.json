@@ -1,0 +1,116 @@
+{
+  "app": "Nik",
+  "type": "playbook",
+  "version": 1,
+  "playbook": {
+    "name": "Incident to ticketing",
+    "description": "A new incident of high or critical severity that has no ticket yet gets one in ServiceNow; its number is written in the incident's ticket field and a note links to it. Before turning it on: make a ServiceNow connection (Settings, Connections) and choose it in the node \"Open a ticket\"; an admin opens \"Incident names and tickets\" in this playbook's Settings, since the ticket carries the incident's name. For Jira, replace the node with \"Create an issue\".",
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "trigger",
+          "name": "A serious incident",
+          "position": {
+            "x": 60,
+            "y": 40
+          },
+          "config": {
+            "event": "incident.created",
+            "manual": true,
+            "conditions": {
+              "all": [
+                {
+                  "left": "{{ trigger.incident.severity }}",
+                  "op": "in",
+                  "right": [
+                    "high",
+                    "critical"
+                  ]
+                },
+                {
+                  "left": "{{ trigger.incident.ticket }}",
+                  "op": "empty"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "ticket",
+          "kind": "action",
+          "name": "Open a ticket",
+          "position": {
+            "x": 60,
+            "y": 170
+          },
+          "config": {
+            "action": "servicenow.create-incident",
+            "connection": "",
+            "approval": {
+              "ask": false
+            },
+            "args": {
+              "short_description": "{{ trigger.incident.name }}",
+              "description": "Opened by Nik for the incident {{ trigger.incident.id }} (severity {{ trigger.incident.severity }}).",
+              "urgency": "{{ trigger.incident.severity | map(critical='1', high='2', else='3') }}",
+              "impact": "{{ trigger.incident.severity | map(critical='1', high='2', else='3') }}"
+            }
+          }
+        },
+        {
+          "id": "number",
+          "kind": "action",
+          "name": "Write its number in the incident",
+          "position": {
+            "x": 60,
+            "y": 300
+          },
+          "config": {
+            "action": "nik.set-incident-field",
+            "args": {
+              "incident": "{{ trigger.incident.id }}",
+              "field": "ticketId",
+              "value": "{{ ticket.number }}"
+            }
+          }
+        },
+        {
+          "id": "note",
+          "kind": "action",
+          "name": "Link to it in a note",
+          "position": {
+            "x": 60,
+            "y": 430
+          },
+          "config": {
+            "action": "nik.add-note",
+            "args": {
+              "incident": "{{ trigger.incident.id }}",
+              "text": "ServiceNow {{ ticket.number }}: {{ ticket.url }}"
+            }
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "ticket"
+        },
+        {
+          "from": "ticket",
+          "to": "number"
+        },
+        {
+          "from": "number",
+          "to": "note"
+        }
+      ],
+      "inputs": []
+    },
+    "maxRunsPerHour": 30,
+    "onePerObject": true,
+    "maxSeconds": 86400,
+    "approvalDefault": true
+  }
+}

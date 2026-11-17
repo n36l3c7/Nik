@@ -1,0 +1,10 @@
+{
+  "config": {
+    "cloud": "zscalerthree.net"
+  },
+  "secrets": {
+    "username": "nik@acme.example",
+    "password": "zs-Passw0rd-123",
+    "api_key": "abcdefghijklmnopqrstuvwxyz012345"
+  }
+}

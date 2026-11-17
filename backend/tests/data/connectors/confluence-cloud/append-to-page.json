@@ -1,0 +1,72 @@
+{
+  "args": {
+    "page_id": "98765",
+    "html": "<p>One more.</p>"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/wiki/api/v2/pages/98765",
+        "query": {
+          "body-format": "storage"
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "98765",
+          "title": "Weekly report",
+          "version": {
+            "number": 4
+          },
+          "body": {
+            "storage": {
+              "representation": "storage",
+              "value": "<p>3 indicators changed.</p>"
+            }
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/wiki/api/v2/pages/98765",
+        "json": {
+          "id": "98765",
+          "status": "current",
+          "title": "Weekly report",
+          "body": {
+            "representation": "storage",
+            "value": "<p>3 indicators changed.</p><p>One more.</p>"
+          },
+          "version": {
+            "number": 5,
+            "message": "Added by Nik"
+          }
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "98765",
+          "title": "Weekly report",
+          "version": {
+            "number": 5
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "98765",
+    "version": 5
+  }
+}

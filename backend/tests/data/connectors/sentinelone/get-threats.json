@@ -1,0 +1,62 @@
+{
+  "args": {
+    "content_hash": "3395856ce81f2b7382dee72602f798b642f14140",
+    "resolved": false
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats",
+        "query": {
+          "contentHashes": "3395856ce81f2b7382dee72602f798b642f14140",
+          "resolved": "False",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "5555555555555555555",
+              "threatInfo": {
+                "threatName": "dropper.exe",
+                "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+                "mitigationStatus": "not_mitigated"
+              },
+              "agentRealtimeInfo": {
+                "agentComputerName": "WKS-FINANCE-01"
+              }
+            }
+          ],
+          "pagination": {
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "threats": [
+      {
+        "id": "5555555555555555555",
+        "threatInfo": {
+          "threatName": "dropper.exe",
+          "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+          "mitigationStatus": "not_mitigated"
+        },
+        "agentRealtimeInfo": {
+          "agentComputerName": "WKS-FINANCE-01"
+        }
+      }
+    ],
+    "ids": [
+      "5555555555555555555"
+    ],
+    "count": 1
+  }
+}

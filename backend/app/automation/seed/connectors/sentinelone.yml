@@ -1,0 +1,221 @@
+# SentinelOne Singularity, the management console (EDR), through its API v2.1.
+#
+# SentinelOne's API reference is inside the console, behind a sign-in: this
+# file was written from what is public, the integrations other products
+# publish (Cortex XSOAR and Splunk SOAR, both open source) and SentinelOne's
+# own code on GitHub. The calls are those the two integrations make. Not run
+# against a real console: see "verified" below.
+#
+# The token is one of a service user (Settings, Users, Service Users), with a
+# role that may do what the commands do: viewing is enough for the "get"
+# ones; isolating, mitigating and the blocklist need more.
+name: SentinelOne EDR
+id: sentinelone
+version: 1
+description: Agents, threats, the blocklist and Deep Visibility in the SentinelOne console.
+api_version: "Management API v2.1 (/web/api/v2.1)"
+verified: false
+configuration:
+  - name: url
+    label: Console address
+    type: url
+    required: true
+    help: "https://your-tenant.sentinelone.net"
+  - name: credentials
+    type: header
+    header: Authorization
+    prefix: "ApiToken "
+base_url: "{{ config.url }}/web/api/v2.1"
+test:
+  request: { method: GET, path: /agents, query: { limit: 1 } }
+commands:
+  - name: get-agent
+    description: The agents whose computer name holds a text (or those with the ids given).
+    arguments:
+      - { name: computer_name, type: text, description: A part of the computer name }
+      - { name: ids, type: text, description: "Agent ids, separated by commas" }
+    request:
+      method: GET
+      path: /agents
+      query:
+        computerName__like: "{{ args.computer_name }}"
+        ids: "{{ args.ids }}"
+    pagination:
+      type: cursor
+      param: cursor
+      limit_param: limit
+      limit: 100
+      items: "{{ response.data }}"
+      next: "{{ response.pagination.nextCursor }}"
+      max_pages: 5
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      agents: "{{ response.items }}"
+      ids: "{{ response.items | pluck('id') }}"
+      count: "{{ response.items | length }}"
+
+  - name: isolate-agent
+    description: Cut an endpoint off the network (it keeps talking to SentinelOne).
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: agent_id, type: text, required: true, description: The id of the agent }
+    request:
+      method: POST
+      path: /agents/actions/disconnect
+      json: { filter: { ids: ["{{ args.agent_id }}"] } }
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      affected: "{{ response.data.affected }}"
+    sample: { affected: 1 }
+
+  - name: reconnect-agent
+    description: Put an isolated endpoint back on the network.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: agent_id, type: text, required: true, description: The id of the agent }
+    request:
+      method: POST
+      path: /agents/actions/connect
+      json: { filter: { ids: ["{{ args.agent_id }}"] } }
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      affected: "{{ response.data.affected }}"
+    sample: { affected: 1 }
+
+  - name: add-hash-to-blocklist
+    description: Put the SHA-1 of a file in the blocklist, for the whole tenant or for some sites.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: hash, type: text, required: true, description: The SHA-1 of the file }
+      - { name: os_type, type: choice, choices: [windows, macos, linux], default: windows, description: The operating system }
+      - { name: description, type: text, description: Why it is blocked }
+      - { name: site_ids, type: list, description: "The sites it is blocked on (the whole tenant when empty)" }
+    request:
+      method: POST
+      path: /restrictions
+      json:
+        data:
+          value: "{{ args.hash }}"
+          type: black_hash
+          osType: "{{ args.os_type }}"
+          description: "{{ args.description }}"
+          source: Nik
+        filter:
+          siteIds: "{{ args.site_ids }}"
+          # The whole tenant when no site is named.
+          tenant: "{{ args.site_ids | default('all') | map(all=true, else=null) }}"
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      ids: "{{ response.data[*].id }}"
+    sample: { ids: ["0000000000000000000"] }
+
+  - name: get-threats
+    description: Threats, by their ids, by the hash of the file, or those not resolved yet.
+    arguments:
+      - { name: ids, type: text, description: "Threat ids, separated by commas" }
+      - { name: content_hash, type: text, description: The SHA-1 of the file }
+      - { name: resolved, type: bool, description: Only resolved ones (true) or only those still open (false) }
+    request:
+      method: GET
+      path: /threats
+      query:
+        ids: "{{ args.ids }}"
+        contentHashes: "{{ args.content_hash }}"
+        resolved: "{{ args.resolved }}"
+    pagination:
+      type: cursor
+      param: cursor
+      limit_param: limit
+      limit: 100
+      items: "{{ response.data }}"
+      next: "{{ response.pagination.nextCursor }}"
+      max_pages: 5
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      threats: "{{ response.items }}"
+      ids: "{{ response.items | pluck('id') }}"
+      count: "{{ response.items | length }}"
+
+  - name: mitigate-threat
+    description: "Act on a threat: kill, quarantine, remediate, roll back, or take out of quarantine."
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: threat_id, type: text, required: true, description: The id of the threat }
+      - name: action
+        type: choice
+        choices: [kill, quarantine, remediate, rollback-remediation, un-quarantine]
+        required: true
+        description: What to do
+    request:
+      method: POST
+      path: "/threats/mitigate/{{ args.action }}"
+      json: { filter: { ids: ["{{ args.threat_id }}"] } }
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      affected: "{{ response.data.affected }}"
+    sample: { affected: 1 }
+
+  - name: add-note
+    description: Write a note on a threat.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: threat_id, type: text, required: true, description: The id of the threat }
+      - { name: text, type: text, required: true, description: The note }
+    request:
+      method: POST
+      path: /threats/notes
+      json:
+        data: { text: "{{ args.text }}" }
+        filter: { ids: ["{{ args.threat_id }}"] }
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      affected: "{{ response.data.affected }}"
+    sample: { affected: 1 }
+
+  - name: search-deep-visibility
+    description: Run a Deep Visibility query over a time range and read its events.
+    timeout: 120
+    arguments:
+      - { name: query, type: text, required: true, description: "The query: SrcProcName = \"powershell.exe\"" }
+      - { name: from_date, type: text, required: true, description: "From when, ISO 8601: 2026-11-16T00:00:00Z" }
+      - { name: to_date, type: text, required: true, description: "To when, ISO 8601" }
+      - { name: limit, type: number, default: 100, description: How many events to read (1000 at most) }
+    steps:
+      - name: start
+        request:
+          method: POST
+          path: /dv/init-query
+          json:
+            query: "{{ args.query }}"
+            fromDate: "{{ args.from_date }}"
+            toDate: "{{ args.to_date }}"
+        error: { message: "{{ response.errors[0].detail }}" }
+      - name: ready
+        request:
+          method: GET
+          path: /dv/query-status
+          query: { queryId: "{{ steps.start.response.data.queryId }}" }
+        poll:
+          until: { all: [{ left: "{{ response.data.responseState }}", op: eq, right: FINISHED }] }
+          fail_when:
+            any:
+              - { left: "{{ response.data.responseState }}", op: in, right: [FAILED, ERROR, TIMED_OUT, QUERY_CANCELLED] }
+          every: 5
+          timeout: 600
+      - name: events
+        request:
+          method: GET
+          path: /dv/events
+          query:
+            queryId: "{{ steps.start.response.data.queryId }}"
+            limit: "{{ args.limit }}"
+        error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      query_id: "{{ steps.start.response.data.queryId }}"
+      events: "{{ steps.events.response.data }}"
+      count: "{{ steps.events.response.data | length }}"

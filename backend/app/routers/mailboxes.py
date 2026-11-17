@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts, mailboxes
+from ..automation import triggers as automation_triggers
 from ..core.config import settings
 from ..core.db import SessionLocal, get_db
 from ..core.models import Artifact, AuditEntry, Incident, Mail, Mailbox, MailboxMessage
@@ -303,6 +304,7 @@ def import_messages(mailbox_id: str, seqs: list[int], actor: str) -> None:
             try:
                 data = mailboxes.read_message(path, item.offset, item.length)
                 mail = db.get(Mail, item.sha256)
+                new = mail is None
                 if mail is None:
                     result = mail_routes._analyse(db, data)
                     mail = Mail(sha256=item.sha256, created_at=now_iso(), created_by=actor)
@@ -315,6 +317,8 @@ def import_messages(mailbox_id: str, seqs: list[int], actor: str) -> None:
                 db.flush()
                 entry = artifacts.register_mail(db, mail, item.subject or f"{item.sha256[:12]}.eml")
                 artifacts.relate(db, parent, entry.id, "message")
+                if new:
+                    automation_triggers.mail_analysed(db, mail, None, row.id)
                 done += 1
             except (MailError, OSError, ValueError) as exc:
                 db.rollback()

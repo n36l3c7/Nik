@@ -12,6 +12,7 @@ import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import AsIndicator from './AsIndicator.jsx'
 import MailboxPage from './MailboxPage.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
+import ArtifactRuns from '../automation/ArtifactRuns.jsx'
 
 /*
  * ============================================================================
@@ -300,6 +301,8 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
               ))
             )}
           </Row>
+
+          <ArtifactRuns artifact={artifact} />
 
           <Row label="TAGS">
             {tagsDraft === null ? (

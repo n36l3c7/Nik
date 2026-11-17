@@ -1,0 +1,30 @@
+{
+  "args": {
+    "key": "SEC-12",
+    "transition_id": "31"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/3/issue/SEC-12/transitions",
+        "json": {
+          "transition": {
+            "id": "31"
+          }
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "key": "SEC-12",
+    "transition_id": "31"
+  }
+}

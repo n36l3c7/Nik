@@ -1,0 +1,627 @@
+"""Connectors: one YAML file per product, read and checked here.
+
+A connector says how to talk to a product without any code: what a
+connection needs (an address, credentials), and commands, each a request
+built from templates in the playbooks' own expression language. Each command
+becomes an action of the canvas, ``<connector id>.<command>``.
+
+    name: ServiceNow
+    id: servicenow
+    version: 1
+    configuration:
+      - { name: url, type: url, required: true }
+      - { name: credentials, type: basic }
+    base_url: "{{ config.url }}"
+    commands:
+      - name: get-incident
+        arguments: [{ name: number, type: text, required: true }]
+        request: { method: GET, path: /api/now/table/incident, query: { sysparm_query: "number={{ args.number }}" } }
+        outputs: { sys_id: "{{ response.result[0].sys_id }}" }
+
+This module only reads and validates (``load``): a file is refused with every
+problem and the **line** each is on, because these files are written by hand.
+Running a command is ``connector_runtime.py``; the format is documented key by
+key in ``docs/automation.html``.
+
+Templates may read ``config`` (the connection's values), ``args``,
+``steps`` (the answers of earlier steps of the same command) and, where an
+answer exists, ``response``, ``status`` and ``headers``. Secrets are read as ``secret.<name>`` and only
+in what is sent, never in ``outputs``.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any, Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from . import expressions as ex
+
+MAX_BYTES = 256_000
+ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
+NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+COMMAND_RE = re.compile(r"^[a-z][a-z0-9-]{1,48}$")
+METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+OPERATORS = ("eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "exists", "empty")
+
+# What a connection is asked for. The first six are plain values; the others are credentials.
+VALUE_TYPES = ("url", "text", "number", "bool", "choice", "secret")
+AUTH_TYPES = ("basic", "bearer", "header", "oauth2_client", "session", "zscaler")
+ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice")
+
+MAX_PAGES = 100
+MAX_STEPS = 12
+POLL_MIN, POLL_MAX_TIMEOUT = 2, 3600
+
+
+class _Strict(BaseModel):
+    """Unknown keys are errors: a typo in a hand-written file must not pass silently."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class Comparison(_Strict):
+    left: Any
+    op: Literal["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "exists", "empty"]
+    right: Any = None
+
+
+class Conditions(_Strict):
+    """``all`` or ``any`` of comparisons, as in a condition node."""
+
+    all: list[Comparison] | None = None
+    any: list[Comparison] | None = None
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.all is None) == (self.any is None) or not (self.all or self.any):
+            raise ValueError('needs "all" or "any" with at least one comparison')
+        return self
+
+
+class RequestSpec(_Strict):
+    """One HTTP request. ``path`` is added to the connector's ``base_url`` (a full address is taken as it is)."""
+
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
+    path: str = Field(min_length=1, max_length=2000)
+    query: dict[str, Any] | None = None
+    headers: dict[str, str] | None = None
+    json_body: Any = Field(default=None, alias="json")
+    form: dict[str, Any] | None = None
+    multipart: dict[str, Any] | None = None
+    body: str | None = None
+    # How the answer is read: "auto" as JSON when it is JSON, as text otherwise ({{ response.text }});
+    # "text" always as text, for a file whose content may happen to be JSON.
+    answer: Literal["auto", "text"] = "auto"
+
+    @model_validator(mode="after")
+    def _one_body(self):
+        given = [name for name in ("json_body", "form", "multipart", "body") if getattr(self, name) is not None]
+        if len(given) > 1:
+            raise ValueError("a request has one of json, form, multipart, body")
+        if given and self.method == "GET":
+            raise ValueError("a GET request has no body")
+        return self
+
+
+class Success(_Strict):
+    status: list[int] | int | None = None
+    when: Conditions | None = None  # besides the status: what the answer must say
+
+    def statuses(self) -> set[int] | None:
+        if self.status is None:
+            return None
+        return {self.status} if isinstance(self.status, int) else set(self.status)
+
+
+class ErrorSpec(_Strict):
+    message: str = Field(min_length=1, max_length=1000)
+
+
+class Pagination(_Strict):
+    """How a list that comes in pages is read to the end (or to ``max_pages``)."""
+
+    type: Literal["offset", "page", "cursor", "link"]
+    items: str = Field(min_length=1, max_length=500)  # "{{ response.result }}"
+    param: str | None = None  # offset / page / cursor: the query parameter that moves
+    limit_param: str | None = None
+    limit: int = Field(default=100, ge=1, le=1000)
+    next: str | None = None  # cursor: "{{ response.pagination.nextCursor }}"
+    max_pages: int = Field(default=10, ge=1, le=MAX_PAGES)
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if self.type in ("offset", "page") and not self.param:
+            raise ValueError(f'"{self.type}" pagination needs "param"')
+        if self.type == "cursor" and not (self.param and self.next):
+            raise ValueError('"cursor" pagination needs "param" and "next"')
+        return self
+
+
+class Poll(_Strict):
+    """Send the request again until the answer says so. Between tries the run waits; no worker is held."""
+
+    until: Conditions
+    every: int = Field(default=5, ge=POLL_MIN, le=600)
+    timeout: int = Field(default=300, ge=POLL_MIN, le=POLL_MAX_TIMEOUT)
+    fail_when: Conditions | None = None
+
+
+class Step(_Strict):
+    """One request of a command that needs several (change, publish, install)."""
+
+    name: str
+    request: RequestSpec
+    success: Success | None = None
+    error: ErrorSpec | None = None
+    poll: Poll | None = None
+    when: Conditions | None = None  # skipped unless it holds
+
+    @model_validator(mode="after")
+    def _name(self):
+        if not NAME_RE.match(self.name):
+            raise ValueError("a step's name is a lower-case letter, then letters, digits or _")
+        return self
+
+
+class Argument(_Strict):
+    name: str
+    type: Literal["text", "number", "bool", "list", "object", "any", "choice"] = "text"
+    required: bool = False
+    default: Any = None
+    choices: list[str] | None = None
+    description: str = Field(default="", max_length=300)
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if not NAME_RE.match(self.name):
+            raise ValueError("an argument's name is a lower-case letter, then letters, digits or _")
+        if self.type == "choice" and not self.choices:
+            raise ValueError('a "choice" argument needs "choices"')
+        return self
+
+
+class Command(_Strict):
+    name: str
+    description: str = Field(default="", max_length=500)
+    changes_outside: bool = False
+    idempotent: bool = True
+    arguments: list[Argument] = Field(default_factory=list, max_length=40)
+    request: RequestSpec | None = None
+    steps: list[Step] | None = Field(default=None, max_length=MAX_STEPS)
+    success: Success | None = None
+    error: ErrorSpec | None = None
+    pagination: Pagination | None = None
+    poll: Poll | None = None
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    sample: dict[str, Any] | None = None
+    timeout: int = Field(default=60, ge=1, le=300)
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if not COMMAND_RE.match(self.name):
+            raise ValueError("a command's name is lower-case letters, digits and -: create-incident")
+        if (self.request is None) == (self.steps is None):
+            raise ValueError('a command has "request" or "steps"')
+        if self.steps is not None:
+            if not self.steps:
+                raise ValueError('"steps" is empty')
+            if self.pagination or self.poll or self.success:
+                raise ValueError('with "steps", pagination, poll and success belong to each step')
+            names = [step.name for step in self.steps]
+            if len(set(names)) != len(names):
+                raise ValueError("two steps have the same name")
+        if self.pagination and self.poll:
+            raise ValueError("a command pages through a list or polls, not both")
+        seen = set()
+        for argument in self.arguments:
+            if argument.name in seen:
+                raise ValueError(f'two arguments are called "{argument.name}"')
+            seen.add(argument.name)
+        return self
+
+
+class Login(_Strict):
+    """``session`` credentials: how a session is opened, where its token is, how it is sent."""
+
+    request: RequestSpec
+    token: str = Field(min_length=1, max_length=500)  # "{{ response.sid }}"
+    header: str = Field(min_length=1, max_length=100)  # X-chkp-sid, Authorization
+    prefix: str = Field(default="", max_length=40)  # "Bearer "
+    success: Success | None = None
+
+
+class Logout(_Strict):
+    request: RequestSpec
+
+
+class ConfigParam(_Strict):
+    """One thing a connection is asked for."""
+
+    name: str
+    label: str = Field(default="", max_length=100)
+    type: Literal[
+        "url", "text", "number", "bool", "choice", "secret", "basic", "bearer", "header", "oauth2_client", "session",
+        "zscaler",
+    ] = "text"  # fmt: skip
+    required: bool = False
+    default: Any = None
+    choices: list[str] | None = None
+    help: str = Field(default="", max_length=500)
+    # header: the name of the header the secret goes in, and what precedes it.
+    header: str | None = Field(default=None, max_length=100)
+    prefix: str = Field(default="", max_length=40)
+    # oauth2_client
+    token_url: str | None = Field(default=None, max_length=2000)
+    scope: str = Field(default="", max_length=500)
+    auth_style: Literal["form", "basic"] = "form"
+    # session
+    login: Login | None = None
+    logout: Logout | None = None
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if not NAME_RE.match(self.name):
+            raise ValueError("a name is a lower-case letter, then letters, digits or _")
+        if self.type == "choice" and not self.choices:
+            raise ValueError('a "choice" needs "choices"')
+        if self.type == "header" and not self.header:
+            raise ValueError('"header" credentials need "header": the name of the header')
+        if self.type == "oauth2_client" and not self.token_url:
+            raise ValueError('"oauth2_client" credentials need "token_url"')
+        if self.type == "session" and self.login is None:
+            raise ValueError('"session" credentials need "login"')
+        if self.type != "session" and (self.login or self.logout):
+            raise ValueError('"login" and "logout" belong to "session" credentials')
+        return self
+
+    @property
+    def is_auth(self) -> bool:
+        return self.type in AUTH_TYPES
+
+
+class TestSpec(_Strict):
+    """What "Test the connection" sends, and what a good answer is."""
+
+    request: RequestSpec
+    expect: Success | None = None
+
+
+class ConnectorFile(_Strict):
+    name: str = Field(min_length=1, max_length=80)
+    id: str
+    version: int = Field(ge=1, le=1_000_000)
+    description: str = Field(default="", max_length=1000)
+    api_version: str = Field(default="", max_length=200)  # the vendor's API this was written against
+    verified: bool = False  # run against a real system by someone
+    configuration: list[ConfigParam] = Field(default_factory=list, max_length=30)
+    base_url: str = Field(min_length=1, max_length=2000)
+    headers: dict[str, str] = Field(default_factory=dict)
+    test: TestSpec | None = None
+    commands: list[Command] = Field(min_length=1, max_length=100)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str) -> str:
+        # On the field, so that it is reported together with the problems of other fields.
+        if not ID_RE.match(value):
+            raise ValueError("id: a lower-case letter, then lower-case letters, digits or - (2 to 41)")
+        return value
+
+    @model_validator(mode="after")
+    def _shape(self):
+        names = [param.name for param in self.configuration]
+        if len(set(names)) != len(names):
+            raise ValueError("two configuration entries have the same name")
+        if sum(1 for param in self.configuration if param.is_auth) > 1:
+            raise ValueError("a connector has one set of credentials at most")
+        commands = [command.name for command in self.commands]
+        if len(set(commands)) != len(commands):
+            raise ValueError("two commands have the same name")
+        return self
+
+    @property
+    def auth(self) -> ConfigParam | None:
+        return next((param for param in self.configuration if param.is_auth), None)
+
+    def command(self, name: str) -> Command | None:
+        return next((command for command in self.commands if command.name == name), None)
+
+
+@dataclass(frozen=True)
+class Problem:
+    """What is wrong with a connector file, and on which line (1-based; 0 when it is the file itself)."""
+
+    line: int
+    message: str
+    where: str = ""
+
+    def as_dict(self) -> dict:
+        return {"line": self.line, "message": self.message, "where": self.where}
+
+
+class ConnectorError(ValueError):
+    """A file that cannot be a connector: every problem found."""
+
+    def __init__(self, problems: list[Problem]):
+        self.problems = problems
+        super().__init__(problems[0].message if problems else "Not a connector")
+
+
+# --------------------------------------------------------------------------- #
+# Lines                                                                       #
+# --------------------------------------------------------------------------- #
+def _lines(node: yaml.Node | None, path: tuple = (), out: dict | None = None) -> dict[tuple, int]:
+    """path → line, for every mapping key and list item of the document."""
+    out = {} if out is None else out
+    if node is None:
+        return out
+    out[path] = node.start_mark.line + 1
+    if isinstance(node, yaml.MappingNode):
+        for key, value in node.value:
+            name = key.value if isinstance(key, yaml.ScalarNode) else str(key)
+            out[(*path, name)] = key.start_mark.line + 1
+            _lines(value, (*path, name), out)
+            out[(*path, name)] = key.start_mark.line + 1
+    elif isinstance(node, yaml.SequenceNode):
+        for index, item in enumerate(node.value):
+            _lines(item, (*path, index), out)
+    return out
+
+
+def _line_of(lines: dict[tuple, int], loc: tuple) -> int:
+    """The line of the deepest part of ``loc`` the document has (aliases are tried under both names)."""
+    path = tuple("json" if part == "json_body" else part for part in loc)
+    while path:
+        if path in lines:
+            return lines[path]
+        path = path[:-1]
+    return lines.get((), 0)
+
+
+def _where(loc: tuple) -> str:
+    out = ""
+    for part in loc:
+        part = "json" if part == "json_body" else part
+        out += f"[{part}]" if isinstance(part, int) else (f".{part}" if out else str(part))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Templates                                                                   #
+# --------------------------------------------------------------------------- #
+# The names a template may read, by where it is.
+_SENT = frozenset({"config", "args", "steps", "secret"})
+_ANSWER = frozenset({"config", "args", "steps", "response", "status", "headers"})
+
+
+def _check_templates(value: Any, allowed: frozenset, loc: tuple, lines: dict, problems: list[Problem]) -> None:
+    """Every template under ``value`` parses and reads only the names it may read there."""
+    if isinstance(value, str):
+        if "{{" not in value:
+            return
+        try:
+            found = ex.references(value)
+        except ex.ExpressionError as error:
+            problems.append(Problem(_line_of(lines, loc), f"{error.message} (in {value[:80]!r})", _where(loc)))
+            return
+        for name, _position in found:
+            if name not in allowed:
+                where = "what is sent" if "secret" in allowed else "what is read from the answer"
+                names = ", ".join(sorted(allowed))
+                problems.append(
+                    Problem(_line_of(lines, loc), f'"{name}" cannot be read in {where}: only {names}', _where(loc))
+                )
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str) and "{{" in key:
+                # The name of a form field may be a template: it is checked like a value.
+                _check_templates(key, allowed, (*loc, key), lines, problems)
+            _check_templates(item, allowed, (*loc, key), lines, problems)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _check_templates(item, allowed, (*loc, index), lines, problems)
+
+
+def _request_templates(raw: Any, loc: tuple, lines: dict, problems: list[Problem]) -> None:
+    if isinstance(raw, dict):
+        _check_templates(raw, _SENT, loc, lines, problems)
+
+
+def _check_command(raw: dict, loc: tuple, lines: dict, problems: list[Problem]) -> None:
+    """The templates of one command (the document as parsed, so that lines can be named)."""
+    answer = _ANSWER
+    for key in ("request",):
+        _request_templates(raw.get(key), (*loc, key), lines, problems)
+    for key in ("outputs", "error", "success", "poll"):
+        _check_templates(raw.get(key), answer, (*loc, key), lines, problems)
+    pagination = raw.get("pagination")
+    if isinstance(pagination, dict):
+        _check_templates(pagination, answer, (*loc, "pagination"), lines, problems)
+    for index, step in enumerate(raw.get("steps") or []):
+        if not isinstance(step, dict):
+            continue
+        here = (*loc, "steps", index)
+        _request_templates(step.get("request"), (*here, "request"), lines, problems)
+        for key in ("error", "success", "poll"):
+            _check_templates(step.get(key), answer, (*here, key), lines, problems)
+        _check_templates(
+            step.get("when"), _ANSWER - {"response", "status", "headers"}, (*here, "when"), lines, problems
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Loading                                                                     #
+# --------------------------------------------------------------------------- #
+def load(text: str | bytes) -> ConnectorFile:
+    """Read and check a connector file. Raises ``ConnectorError`` with every problem and its line."""
+    if isinstance(text, bytes):
+        try:
+            text = text.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ConnectorError([Problem(0, "The file is not UTF-8 text")]) from None
+    if len(text.encode("utf-8")) > MAX_BYTES:
+        raise ConnectorError([Problem(0, f"The file is larger than {MAX_BYTES // 1000} kB")])
+    try:
+        node = yaml.compose(text, Loader=yaml.SafeLoader)
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None)
+        what = getattr(error, "problem", None) or "The file is not valid YAML"
+        raise ConnectorError([Problem(mark.line + 1 if mark else 0, f"Not valid YAML: {what}")]) from None
+    if not isinstance(raw, dict):
+        raise ConnectorError([Problem(1, "A connector is a mapping: name, id, version, base_url, commands")])
+    lines = _lines(node)
+
+    problems: list[Problem] = []
+    connector: ConnectorFile | None = None
+    try:
+        connector = ConnectorFile.model_validate(raw)
+    except ValidationError as error:
+        for item in error.errors():
+            loc = tuple(item["loc"])
+            message = item["msg"].removeprefix("Value error, ")
+            if item["type"] == "extra_forbidden":
+                message = f'"{loc[-1]}" is not a key that is known here'
+            elif item["type"] == "missing":
+                message = f'"{loc[-1]}" is missing'
+                loc = loc[:-1]
+            problems.append(Problem(_line_of(lines, loc), message, _where(tuple(item["loc"]))))
+
+    # Templates: checked on the document as written, so that each problem has its line.
+    _check_templates(raw.get("base_url"), frozenset({"config"}), ("base_url",), lines, problems)
+    _check_templates(raw.get("headers"), _SENT - {"steps", "args"}, ("headers",), lines, problems)
+    test = raw.get("test")
+    if isinstance(test, dict):
+        _request_templates(test.get("request"), ("test", "request"), lines, problems)
+    for index, param in enumerate(raw.get("configuration") or []):
+        if not isinstance(param, dict):
+            continue
+        for key in ("login", "logout"):
+            part = param.get(key)
+            if isinstance(part, dict):
+                _request_templates(part.get("request"), ("configuration", index, key, "request"), lines, problems)
+                _check_templates(part.get("token"), _ANSWER, ("configuration", index, key, "token"), lines, problems)
+        _check_templates(param.get("token_url"), frozenset({"config"}), ("configuration", index), lines, problems)
+    for index, command in enumerate(raw.get("commands") or []):
+        if isinstance(command, dict):
+            _check_command(command, ("commands", index), lines, problems)
+
+    if connector is not None and not problems:
+        # What a template names must exist: a configuration entry, an argument, an earlier step.
+        problems += _check_names(connector, raw, lines)
+    if problems or connector is None:
+        seen: set[tuple[int, str]] = set()
+        unique = []
+        for problem in sorted(problems, key=lambda found: (found.line, found.message)):
+            if (problem.line, problem.message) not in seen:
+                seen.add((problem.line, problem.message))
+                unique.append(problem)
+        raise ConnectorError(unique or [Problem(0, "Not a connector")])
+    return connector
+
+
+def _paths(value: Any, root: str) -> set[str]:
+    """The first names read under ``root`` by the templates of a value: ``config.url`` → ``url``."""
+    found: set[str] = set()
+    if isinstance(value, str) and "{{" in value:
+        for part in ex.parse(value):
+            if isinstance(part, ex.Expr) and part.root == root and part.steps and isinstance(part.steps[0], str):
+                found.add(part.steps[0])
+    elif isinstance(value, dict):
+        for item in value.values():
+            found |= _paths(item, root)
+    elif isinstance(value, list):
+        for item in value:
+            found |= _paths(item, root)
+    return found
+
+
+def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Problem]:
+    problems: list[Problem] = []
+    plain = {param.name for param in connector.configuration if not param.is_auth and param.type != "secret"}
+    secret = {param.name for param in connector.configuration if param.type == "secret"}
+    auth = connector.auth
+    if auth is not None and auth.type in ("session", "zscaler", "basic"):
+        # What a session logs in with: the parts of the credentials.
+        secret |= {"username", "password", "api_key"}
+    for name in sorted(_paths(raw, "config") - plain):
+        if name in secret:
+            problems.append(Problem(0, f'"{name}" is a secret: read it as {{{{ secret.{name} }}}}', "config"))
+        else:
+            problems.append(Problem(0, f'"config.{name}" is not in the configuration', "config"))
+    for name in sorted(_paths(raw, "secret") - secret):
+        problems.append(Problem(0, f'"secret.{name}" is not a secret of the configuration', "secret"))
+    for index, command in enumerate(connector.commands):
+        declared = {argument.name for argument in command.arguments}
+        body = raw["commands"][index]
+        for name in sorted(_paths(body, "args") - declared):
+            problems.append(
+                Problem(
+                    _line_of(lines, ("commands", index)),
+                    f'the command "{command.name}" reads "args.{name}", which is not among its arguments',
+                    f"commands[{index}]",
+                )
+            )
+        earlier: set[str] = set()
+        for position, step in enumerate(command.steps or []):
+            here = body["steps"][position]
+            for name in sorted(_paths({"r": here.get("request"), "w": here.get("when")}, "steps") - earlier):
+                problems.append(
+                    Problem(
+                        _line_of(lines, ("commands", index, "steps", position)),
+                        f'the step "{step.name}" reads "steps.{name}", which is not an earlier step',
+                        f"commands[{index}].steps[{position}]",
+                    )
+                )
+            earlier.add(step.name)
+        for name in sorted(_paths(body.get("outputs"), "steps") - {step.name for step in command.steps or []}):
+            problems.append(
+                Problem(
+                    _line_of(lines, ("commands", index, "outputs")),
+                    f'the outputs of "{command.name}" read "steps.{name}", which is not a step',
+                    f"commands[{index}].outputs",
+                )
+            )
+        if _paths(body.get("outputs"), "secret"):
+            problems.append(
+                Problem(_line_of(lines, ("commands", index, "outputs")), "A secret cannot be an output", "outputs")
+            )
+    return problems
+
+
+def summary(connector: ConnectorFile) -> dict[str, Any]:
+    """What the lists show of a connector."""
+    return {
+        "id": connector.id,
+        "name": connector.name,
+        "version": connector.version,
+        "description": connector.description,
+        "apiVersion": connector.api_version,
+        "verified": connector.verified,
+        "commands": [
+            {
+                "name": command.name,
+                "description": command.description,
+                "changesOutside": command.changes_outside,
+                "arguments": [argument.model_dump(exclude_none=True) for argument in command.arguments],
+                "outputs": sorted(command.outputs),
+            }
+            for command in connector.commands
+        ],
+        "configuration": [
+            {
+                "name": param.name,
+                "label": param.label or param.name.replace("_", " ").capitalize(),
+                "type": param.type,
+                "required": param.required,
+                "default": param.default,
+                "choices": param.choices or [],
+                "help": param.help,
+            }
+            for param in connector.configuration
+        ],
+    }

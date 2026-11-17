@@ -1,0 +1,56 @@
+{
+  "app": "Nik",
+  "type": "playbook",
+  "version": 1,
+  "playbook": {
+    "name": "Disk almost full notice",
+    "description": "When the disk that holds the evidence has less than a tenth free, a message says how much is left; Nik says it once a day while it stays so. To send it: set the SMTP server (Settings, Automation), put your address in the node \"Send the notice\" and list its domain among the hosts this playbook may reach.",
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "trigger",
+          "name": "The disk is nearly full",
+          "position": {
+            "x": 60,
+            "y": 40
+          },
+          "config": {
+            "event": "storage.low",
+            "manual": true
+          }
+        },
+        {
+          "id": "notice",
+          "kind": "action",
+          "name": "Send the notice",
+          "position": {
+            "x": 60,
+            "y": 170
+          },
+          "config": {
+            "action": "email.send",
+            "args": {
+              "to": [
+                "soc@example.org"
+              ],
+              "subject": "Nik: {{ trigger.disk.free_percent | default('little') }}% of the evidence disk is free",
+              "text": "The disk that holds Nik's evidence is nearly full: {{ trigger.disk.free | default(0) }} bytes free of {{ trigger.disk.total | default(0) }} ({{ trigger.disk.free_percent | default('?') }}%).\n\nSettings, Storage shows what fills it: samples, captures, mailboxes, backups. Uploads fail when it is full."
+            }
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "notice"
+        }
+      ],
+      "inputs": []
+    },
+    "maxRunsPerHour": 4,
+    "onePerObject": true,
+    "maxSeconds": 86400,
+    "approvalDefault": true
+  }
+}

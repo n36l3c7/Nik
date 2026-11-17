@@ -1,0 +1,158 @@
+{
+  "app": "Nik",
+  "type": "playbook",
+  "version": 1,
+  "playbook": {
+    "name": "Weekly re-check of the watched lists",
+    "description": "Every Monday at 06:30 (UTC) the reputation sources are asked again about every indicator of each watched list, within the quota of each source. For a list where a verdict changed, a message says what became suspicious or malicious and what is no longer flagged. To send it: set the SMTP server (Settings, Automation), put your address in the node \"Send the report\" and list its domain among the hosts this playbook may reach.",
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "trigger",
+          "name": "Monday 06:30",
+          "position": {
+            "x": 60,
+            "y": 40
+          },
+          "config": {
+            "cron": "30 6 * * 1",
+            "timezone": "UTC",
+            "manual": true
+          }
+        },
+        {
+          "id": "lists",
+          "kind": "action",
+          "name": "The watched lists",
+          "position": {
+            "x": 60,
+            "y": 170
+          },
+          "config": {
+            "action": "nik.get-ioc-lists",
+            "args": {
+              "watched": true
+            }
+          }
+        },
+        {
+          "id": "each",
+          "kind": "for_each",
+          "name": "For each list",
+          "position": {
+            "x": 60,
+            "y": 300
+          },
+          "config": {
+            "items": "{{ lists.names }}",
+            "max": 100
+          }
+        },
+        {
+          "id": "check",
+          "kind": "action",
+          "name": "Ask the sources again",
+          "position": {
+            "x": 60,
+            "y": 430
+          },
+          "config": {
+            "action": "nik.recheck-list",
+            "args": {
+              "list": "{{ item }}",
+              "force": true,
+              "wait_minutes": 180
+            }
+          }
+        },
+        {
+          "id": "changes",
+          "kind": "script",
+          "name": "What changed",
+          "position": {
+            "x": 60,
+            "y": 560
+          },
+          "config": {
+            "script": "VerdictChanges",
+            "args": {
+              "before": "{{ check.before }}",
+              "after": "{{ check.after }}"
+            }
+          }
+        },
+        {
+          "id": "changed",
+          "kind": "condition",
+          "name": "Did anything change?",
+          "position": {
+            "x": 60,
+            "y": 690
+          },
+          "config": {
+            "all": [
+              {
+                "left": "{{ changes.changed | length }}",
+                "op": "gt",
+                "right": 0
+              }
+            ]
+          }
+        },
+        {
+          "id": "report",
+          "kind": "action",
+          "name": "Send the report",
+          "position": {
+            "x": 60,
+            "y": 820
+          },
+          "config": {
+            "action": "email.send",
+            "args": {
+              "to": [
+                "soc@example.org"
+              ],
+              "subject": "Nik: the watched list \"{{ check.list }}\" changed",
+              "text": "The weekly check of the watched list \"{{ check.list }}\" ({{ check.total }} indicators) found changes.\n\n{{ changes.summary }}\n\nBecame suspicious or malicious ({{ changes.worse | length }}):\n{{ changes.worse | pluck('value') | defang | join('\\n') }}\n\nNo longer flagged ({{ changes.cleared | length }}):\n{{ changes.cleared | pluck('value') | defang | join('\\n') }}\n"
+            }
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "lists"
+        },
+        {
+          "from": "lists",
+          "to": "each"
+        },
+        {
+          "from": "each",
+          "to": "check",
+          "port": "each"
+        },
+        {
+          "from": "check",
+          "to": "changes"
+        },
+        {
+          "from": "changes",
+          "to": "changed"
+        },
+        {
+          "from": "changed",
+          "to": "report",
+          "port": "yes"
+        }
+      ],
+      "inputs": []
+    },
+    "maxRunsPerHour": 4,
+    "onePerObject": true,
+    "maxSeconds": 86400,
+    "approvalDefault": true
+  }
+}

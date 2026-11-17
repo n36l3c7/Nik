@@ -1,0 +1,33 @@
+{
+  "args": {
+    "sys_id": "9d385017c611228701d22104cc95c371",
+    "text": "Blocked on the firewall by Nik"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/api/now/table/incident/9d385017c611228701d22104cc95c371",
+        "json": {
+          "comments": "Blocked on the firewall by Nik"
+        },
+        "headers": {
+          "Authorization": "Basic bmlrLmludGVncmF0aW9uOnNuLVBhc3N3MHJkLTEyMw=="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "result": {
+            "number": "INC0010001",
+            "sys_id": "9d385017c611228701d22104cc95c371"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "number": "INC0010001",
+    "sys_id": "9d385017c611228701d22104cc95c371"
+  }
+}

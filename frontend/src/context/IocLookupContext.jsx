@@ -7,6 +7,7 @@ import {
   Link2,
   Maximize2,
   Minimize2,
+  Play,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -18,7 +19,9 @@ import { ANALYSABLE, analysisActions, iocFromLocation, iocPath } from '../domain
 import { api } from '../services/api.js'
 import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable } from '../domain/iocs.js'
 import { flagItems } from '../components/menu/flagItems.js'
+import { indicatorTarget } from '../domain/automation/runs.js'
 import { useArtifacts } from './ArtifactContext.jsx'
+import { useAutomation } from './AutomationContext.jsx'
 import { useAuth } from './AuthContext.jsx'
 import { useContextMenu } from './ContextMenuContext.jsx'
 import { useIncidents } from './IncidentContext.jsx'
@@ -219,6 +222,7 @@ export function IocLookupProvider({ children }) {
   const { openMenu, askText } = useContextMenu()
   const { openSearch } = useNavigation()
   const { showToast } = useToast()
+  const { allowed: canAutomate, askRun } = useAutomation()
   // An indicator is flagged in the incident on screen (none while an artifact is open on its own).
   const { activeIncident, activeIncidentId, toggleFlag, addFlagComment } = useIncidents()
   const { currentId: artifactOpen, scanUrl, openArtifact } = useArtifacts()
@@ -346,6 +350,15 @@ export function IocLookupProvider({ children }) {
           })),
           { label: 'Where else was this seen?', icon: Crosshair, onSelect: () => openIoc(type, text) },
           { label: 'Search for it', icon: Search, hint: 'ctrl k', onSelect: () => openSearch(text) },
+          ...(canAutomate
+            ? [
+                {
+                  label: 'Run a playbook…',
+                  icon: Play,
+                  onSelect: () => askRun({ object: indicatorTarget(type, text) }),
+                },
+              ]
+            : []),
           'separator',
           { label: 'Copy', icon: Copy, onSelect: () => copy(text, 'Value') },
           { label: 'Copy defanged', icon: Copy, hint: '[.]', onSelect: () => copy(defang(text), 'Defanged value') },
@@ -365,6 +378,8 @@ export function IocLookupProvider({ children }) {
       addFlagComment,
       askText,
       runAnalysis,
+      canAutomate,
+      askRun,
     ],
   )
 

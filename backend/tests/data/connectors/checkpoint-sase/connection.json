@@ -1,0 +1,8 @@
+{
+  "config": {
+    "region": "eu"
+  },
+  "secrets": {
+    "api_key": "sase-api-key-0123456789"
+  }
+}

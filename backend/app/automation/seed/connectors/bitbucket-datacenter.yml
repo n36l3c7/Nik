@@ -1,0 +1,86 @@
+# Bitbucket Data Center (and Server), through its REST API.
+#
+# Written against the REST API of Bitbucket Data Center 10.5
+# (developer.atlassian.com/server/bitbucket/rest). For bitbucket.org use
+# "Bitbucket Cloud". Not run against a real server: see "verified" below.
+#
+# What it is for: a file in a repository that other systems read, such as a
+# list of blocked addresses a firewall fetches. "get-file" reads it,
+# "create-file-commit" writes it again with a commit.
+#
+# The connection signs in with an HTTP access token of a user (your profile,
+# HTTP access tokens) with write permission on the repository. A token of a
+# project or of a repository cannot write a file: Bitbucket wants a user
+# behind the commit.
+name: Bitbucket Data Center
+id: bitbucket-datacenter
+version: 1
+description: A file in a Bitbucket Data Center repository, read and written with a commit.
+api_version: "Bitbucket Data Center REST API (/rest/api/latest), 10.5"
+verified: false
+configuration:
+  - name: url
+    label: Server address
+    type: url
+    required: true
+    help: "https://bitbucket.example.org (with the context path, if it has one)"
+  - name: credentials
+    type: bearer
+base_url: "{{ config.url }}/rest/api/latest"
+test:
+  # Asks for the repositories the token can see: unlike the server's properties, it needs the token to be good.
+  request: { method: GET, path: /repos, query: { limit: 1 } }
+commands:
+  - name: get-file
+    description: The text of a file, at a commit or at the tip of a branch.
+    arguments:
+      - { name: project, type: text, required: true, description: "The key of the project: SEC" }
+      - { name: repository, type: text, required: true, description: The repository (its slug) }
+      - { name: path, type: text, required: true, description: "The path of the file: lists/blocked.txt" }
+      - { name: ref, type: text, description: A commit or a branch (the default branch when empty) }
+    request:
+      method: GET
+      path: "/projects/{{ args.project }}/repos/{{ args.repository }}/raw/{{ args.path }}"
+      query: { at: "{{ args.ref }}" }
+      # The file as it is, also when its content happens to be JSON.
+      answer: text
+    error: { message: "{{ response.text }}" }
+    outputs:
+      content: "{{ response.text }}"
+      lines: "{{ response.text | split('\n') }}"
+
+  - name: create-file-commit
+    description: Write a file (new, or again) with a commit on a branch.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: project, type: text, required: true, description: "The key of the project: SEC" }
+      - { name: repository, type: text, required: true, description: The repository (its slug) }
+      - { name: path, type: text, required: true, description: "The path of the file: lists/blocked.txt" }
+      - { name: content, type: text, required: true, description: The whole text of the file }
+      - { name: message, type: text, default: Updated by Nik, description: The commit message }
+      - { name: branch, type: text, default: master, description: The branch to commit on }
+    steps:
+      # To write a file that exists, Bitbucket wants the commit it was last changed in: it is looked up
+      # first. A file that is not there yet has none, and is created.
+      - name: last
+        request:
+          method: GET
+          path: "/projects/{{ args.project }}/repos/{{ args.repository }}/commits"
+          query: { path: "{{ args.path }}", until: "{{ args.branch }}", limit: 1 }
+        success: { status: [200, 404] }
+      - name: write
+        request:
+          method: PUT
+          path: "/projects/{{ args.project }}/repos/{{ args.repository }}/browse/{{ args.path }}"
+          multipart:
+            content: "{{ args.content }}"
+            message: "{{ args.message }}"
+            branch: "{{ args.branch }}"
+            sourceCommitId: "{{ steps.last.response.values[0].id | default(null) }}"
+        error: { message: "{{ response.errors[0].message }}" }
+    outputs:
+      commit: "{{ steps.write.response.id }}"
+      short: "{{ steps.write.response.displayId }}"
+      path: "{{ args.path }}"
+    sample: { commit: 0000000000000000000000000000000000000000, short: "00000000000", path: lists/blocked.txt }

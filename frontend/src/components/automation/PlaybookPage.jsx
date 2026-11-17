@@ -568,6 +568,7 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
             nodeId={selectedId}
             catalog={catalog.nodes}
             events={catalog.events}
+            connections={catalog.connections ?? {}}
             playbooks={playbookNames}
             problems={problems}
             updates={detail.updates ?? []}

@@ -1,0 +1,30 @@
+{
+  "args": {
+    "key": "SEC-12",
+    "text": "Blocked on the firewall by Nik"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/2/issue/SEC-12/comment",
+        "json": {
+          "body": "Blocked on the firewall by Nik"
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "id": "10100",
+          "self": "https://jira.acme.example/rest/api/2/issue/10000/comment/10100"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "10100"
+  }
+}

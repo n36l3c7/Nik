@@ -1,0 +1,8 @@
+{
+  "config": {
+    "url": "https://acme.sentinelone.net"
+  },
+  "secrets": {
+    "token": "s1-console-token-0123456789"
+  }
+}

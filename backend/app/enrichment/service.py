@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import threading
 import time
 import uuid
@@ -392,6 +393,7 @@ def results(db: OrmSession, kind: str, value: str, cfg: dict[str, Any] | None = 
 # What a verdict is worth in the overall score.
 # Nik's own analysis of the value (the scan of a URL, the file with that
 # hash) among the sources of its reputation: see ``analysis_links``.
+logger = logging.getLogger("nik.enrichment")
 NIK, NIK_WEIGHT = "nik", 3
 VERDICT_VALUE = {"malicious": 1.0, "suspicious": 0.5, "harmless": 0.0, "unknown": 0.0}
 MALICIOUS_SCORE, SUSPICIOUS_SCORE = 50, 20
@@ -479,9 +481,12 @@ def lookup_one(
     error). Returns the row and the outcome: ``ok``, ``rate``, ``auth`` or
     ``error``. An answer that replaces an earlier one goes to the history."""
     row = db.get(Enrichment, (kind, value, provider.id))
+    before = _verdict_of(db, kind, value)
     if row is None:
         row = Enrichment(type=kind, value=value, provider=provider.id, data={}, checked_at=now_iso())
         db.add(row)
+    # An answer being asked for again still counts until the new one is in.
+    was_done = row.status == "done"
     row.status, row.checked_at = "running", now_iso()
     db.commit()
     limiter.take(provider, key)
@@ -511,8 +516,38 @@ def lookup_one(
     row.checked_at = now_iso()
     if row.status == "done":
         _remember(db, row)
+        _announce_verdict(db, kind, value, before)
+    elif was_done:
+        # The provider did not answer this time: what it said before is no longer counted.
+        _announce_verdict(db, kind, value, before)
     db.commit()
     return row, outcome
+
+
+def _verdict_of(db: OrmSession, kind: str, value: str) -> str:
+    """The indicator's overall verdict from what is stored ("" when nobody answered)."""
+    summary = summaries(db, [(kind, value)]).get((kind, value))
+    return summary["verdict"] if summary else ""
+
+
+def _announce_verdict(db: OrmSession, kind: str, value: str, before: str) -> None:
+    """Tell the playbooks when the overall verdict of an indicator changed (in the caller's
+    transaction). A first answer that says nothing ("unknown") is not a change."""
+    db.flush()
+    after = _verdict_of(db, kind, value)
+    if after == before or (not before and after in ("", "unknown")):
+        return
+    from ..automation import triggers
+
+    sources = db.scalars(
+        select(Enrichment.provider).where(
+            Enrichment.type == kind, Enrichment.value == value, Enrichment.status == "done"
+        )
+    ).all()
+    try:
+        triggers.verdict_changed(db, kind, value, before, after, list(sources))
+    except Exception:  # noqa: BLE001 - a lookup must not fail because of what listens to it
+        logger.exception("The change of verdict of %s %s was not announced", kind, value)
 
 
 def _bounded(raw: Any) -> Any:

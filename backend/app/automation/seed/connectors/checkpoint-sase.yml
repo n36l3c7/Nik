@@ -1,0 +1,139 @@
+# Check Point Harmony SASE (formerly Perimeter 81), through its public API.
+#
+# Written against "Check Point - SASE Public API" 3.0.2 (OpenAPI, published on
+# SwaggerHub as Check-Point/SASE-API) and the SASE administration guide.
+# Not run against a real tenant: see "verified" below.
+#
+# What this connector does not do, on purpose. The API has no call that adds
+# one rule: the Internet Access policy is written whole
+# (POST /v3/ia/access/policy replaces every rule), and a list of addresses
+# that a rule already uses cannot be changed in place. Rewriting a whole
+# policy from a playbook is not something to ship as a ready-made command.
+# So: make a list of addresses here ("custom URLs"), and have a rule that
+# uses the list made once, by a person, in the SASE portal. To change a list
+# that a rule uses, the API wants the rule changed first.
+#
+# The API key is made in the portal: Settings, API Keys, with the permission
+# "Custom URL objects" (and "Firewall rules" to read the policy).
+name: Check Point Harmony SASE
+id: checkpoint-sase
+version: 1
+description: Lists of addresses (custom URLs) and the Internet Access rules of Check Point Harmony SASE.
+api_version: "SASE Public API 3.0.2 (v3)"
+verified: false
+configuration:
+  - name: region
+    label: Region
+    type: choice
+    choices: [us, eu, au, in, ca]
+    default: us
+    help: The region of your tenant, as in the address of the portal.
+  - name: credentials
+    type: session
+    login:
+      request:
+        method: POST
+        path: /v3/auth/authorize
+        json: { grantType: api_key, apiKey: "{{ secret.api_key }}" }
+      token: "{{ response.data.accessToken }}"
+      header: Authorization
+      prefix: "Bearer "
+base_url: "https://public-apigw.{{ config.region }}.sase.checkpoint.com"
+test:
+  request: { method: GET, path: /v3/objects/custom-urls, query: { limit: 1 } }
+commands:
+  - name: list-url-lists
+    description: The lists of addresses (custom URL objects) of the tenant.
+    arguments:
+      - { name: search, type: text, description: Only those whose name holds this }
+    request:
+      method: GET
+      path: /v3/objects/custom-urls
+      query: { search: "{{ args.search }}" }
+    pagination: { type: page, param: page, limit_param: limit, limit: 500, items: "{{ response.data }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      lists: "{{ response.items }}"
+      names: "{{ response.items | pluck('name') }}"
+
+  - name: get-url-list
+    description: One list of addresses, with what it holds.
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the list }
+    request: { method: GET, path: "/v3/objects/custom-urls/{{ args.id }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      urls: "{{ response.urls }}"
+      controlled_by: "{{ response.controlledBy }}"
+
+  - name: create-url-list
+    description: Make a list of addresses. A rule that uses it is made in the portal.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: name, type: text, required: true, description: "Its name (2 to 100 characters, not used yet)" }
+      - name: urls
+        type: list
+        required: true
+        description: "Hosts without a protocol: bad.example, or *.bad.example for its sub-domains too"
+      - { name: description, type: text, description: What the list is for }
+    request:
+      method: POST
+      path: /v3/objects/custom-urls
+      json:
+        name: "{{ args.name }}"
+        urls: "{{ args.urls }}"
+        description: "{{ args.description }}"
+    success: { status: [200, 201] }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+    sample: { id: 00000000-0000-0000-0000-000000000000, name: Blocked by Nik }
+
+  - name: replace-url-list
+    description: Write a list of addresses again, whole. Refused by SASE while a rule uses the list.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the list }
+      - { name: name, type: text, required: true, description: Its name }
+      - { name: urls, type: list, required: true, description: Every host the list holds from now on }
+      - { name: description, type: text, description: What the list is for }
+    request:
+      method: PUT
+      path: "/v3/objects/custom-urls/{{ args.id }}"
+      json:
+        name: "{{ args.name }}"
+        urls: "{{ args.urls }}"
+        description: "{{ args.description }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      urls: "{{ response.urls }}"
+    sample: { id: 00000000-0000-0000-0000-000000000000, urls: [] }
+
+  - name: delete-url-list
+    description: Delete a list of addresses. Refused by SASE while a rule uses it.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the list }
+    request: { method: DELETE, path: "/v3/objects/custom-urls/{{ args.id }}" }
+    success: { status: [200, 204] }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      deleted: "{{ args.id }}"
+    sample: { deleted: 00000000-0000-0000-0000-000000000000 }
+
+  - name: list-rules
+    description: The rules of the Internet Access policy, in their order.
+    arguments: []
+    request: { method: GET, path: /v3/ia/access/policy }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      rules: "{{ response.data.webRules }}"
+      names: "{{ response.data.webRules | pluck('name') }}"
+      controlled_by: "{{ response.data.controlledBy }}"

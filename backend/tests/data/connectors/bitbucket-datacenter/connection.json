@@ -1,0 +1,8 @@
+{
+  "config": {
+    "url": "https://bitbucket.acme.example"
+  },
+  "secrets": {
+    "token": "NDc2-personal-access-token-0123456789"
+  }
+}

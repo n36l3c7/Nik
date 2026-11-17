@@ -1,0 +1,156 @@
+# Jira Cloud, through its REST API v3.
+#
+# Written against the Jira Cloud platform REST API v3
+# (developer.atlassian.com/cloud/jira/platform/rest/v3). For a Jira you host
+# yourself use "Jira Data Center": the two differ in how they sign in and in
+# how a text is written. Not run against a real site: see "verified" below.
+#
+# The connection signs in with the e-mail address of an Atlassian account
+# and an API token of that account (id.atlassian.com, Security, API tokens).
+# Texts go as plain paragraphs: Jira Cloud wants them in its document format,
+# and this file wraps them in one paragraph.
+name: Jira Cloud
+id: jira-cloud
+version: 1
+description: Issues, comments and transitions in Jira Cloud.
+api_version: "Jira Cloud platform REST API v3 (/rest/api/3)"
+verified: false
+configuration:
+  - name: url
+    label: Site address
+    type: url
+    required: true
+    help: "https://your-site.atlassian.net"
+  - name: credentials
+    type: basic
+base_url: "{{ config.url }}"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /rest/api/3/myself }
+commands:
+  - name: create-issue
+    description: Open an issue.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: project, type: text, required: true, description: "The key of the project: SEC" }
+      - { name: issue_type, type: text, default: Task, description: "The name of the issue type: Task, Bug, Incident" }
+      - { name: summary, type: text, required: true, description: The title }
+      - { name: description, type: text, description: What it is about }
+      - { name: labels, type: list, description: Labels to put on it }
+    request:
+      method: POST
+      path: /rest/api/3/issue
+      json:
+        fields:
+          project: { key: "{{ args.project }}" }
+          issuetype: { name: "{{ args.issue_type }}" }
+          summary: "{{ args.summary }}"
+          labels: "{{ args.labels }}"
+          description:
+            type: doc
+            version: 1
+            content:
+              - type: paragraph
+                content:
+                  - { type: text, text: "{{ args.description | default(' ') }}" }
+    success: { status: [200, 201] }
+    error: { message: "{{ response.errorMessages | join('; ') }} {{ response.errors | json }}" }
+    outputs:
+      key: "{{ response.key }}"
+      id: "{{ response.id }}"
+      url: "{{ config.url }}/browse/{{ response.key }}"
+    sample: { key: SEC-1, id: "10000", url: "https://your-site.atlassian.net/browse/SEC-1" }
+
+  - name: get-issue
+    description: An issue, by its key.
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+    request:
+      method: GET
+      path: "/rest/api/3/issue/{{ args.key }}"
+      query: { fields: "summary,status,assignee,priority,labels,created,updated" }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      key: "{{ response.key }}"
+      summary: "{{ response.fields.summary }}"
+      status: "{{ response.fields.status.name }}"
+      assignee: "{{ response.fields.assignee.displayName }}"
+      labels: "{{ response.fields.labels }}"
+      issue: "{{ response }}"
+
+  - name: update-issue
+    description: Change fields of an issue.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+      - name: fields
+        type: object
+        required: true
+        description: "The fields to change, as Jira names them: {\"summary\": \"New title\", \"labels\": [\"phishing\"]}"
+    request:
+      method: PUT
+      path: "/rest/api/3/issue/{{ args.key }}"
+      json: { fields: "{{ args.fields }}" }
+    success: { status: [200, 204] }
+    error: { message: "{{ response.errorMessages | join('; ') }} {{ response.errors | json }}" }
+    outputs:
+      key: "{{ args.key }}"
+    sample: { key: SEC-1 }
+
+  - name: add-comment
+    description: Write a comment on an issue.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+      - { name: text, type: text, required: true, description: The comment }
+    request:
+      method: POST
+      path: "/rest/api/3/issue/{{ args.key }}/comment"
+      json:
+        body:
+          type: doc
+          version: 1
+          content:
+            - type: paragraph
+              content:
+                - { type: text, text: "{{ args.text }}" }
+    success: { status: [200, 201] }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      id: "{{ response.id }}"
+    sample: { id: "10001" }
+
+  - name: list-transitions
+    description: "The transitions an issue offers now, each with its id and its name."
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+    request: { method: GET, path: "/rest/api/3/issue/{{ args.key }}/transitions" }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      transitions: "{{ response.transitions }}"
+      names: "{{ response.transitions | pluck('name') }}"
+
+  - name: transition-issue
+    # The id is the one "list-transitions" gives; in a playbook:
+    #   {{ transitions.transitions | where('name', 'eq', 'Done') | first | get('id') }}
+    description: "Move an issue along its workflow, by the id of the transition (list-transitions gives the ids)."
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+      - { name: transition_id, type: text, required: true, description: The id of the transition }
+    request:
+      method: POST
+      path: "/rest/api/3/issue/{{ args.key }}/transitions"
+      json:
+        transition: { id: "{{ args.transition_id }}" }
+    success: { status: [200, 204] }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      key: "{{ args.key }}"
+      transition_id: "{{ args.transition_id }}"
+    sample: { key: SEC-1, transition_id: "31" }

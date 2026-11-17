@@ -437,6 +437,30 @@ const isRawIp = isRawIpUrl(entry.url)
           if another module of the package opens a socket.
         </li>
         <li>
+          <strong>A connector</strong>: a YAML file in <code>backend/app/automation/seed/connectors/</code>, in the
+          format of <a href="automation.html#connector-format">Automation → The connector file</a>. For each command, a
+          file <code>backend/tests/data/connectors/&lt;id&gt;/&lt;command&gt;.json</code> records the exchange:
+          <code>args</code>, <code>exchanges</code> (each the <code>request</code> expected and the
+          <code>response</code> to give) and the <code>outputs</code> that must come out;
+          <code>connection.json</code> holds the values and secrets of the connection the test uses.
+          <code>tests/test_shipped_connectors.py</code>
+          runs every command of every shipped file against its recording, and fails for a command that has none. Keep
+          <code>verified: false</code> until the file has been run against the product.
+        </li>
+        <li>
+          <strong>A shipped playbook</strong>: a JSON file in <code>backend/app/automation/seed/playbooks/</code>, as
+          <em>Export</em> writes it, with script nodes that name no version. It is added once to an install, off
+          (<code>shipped.py</code>). <code>tests/test_shipped_playbooks.py</code> walks each one to its end in a dry
+          run.
+        </li>
+        <li>
+          <strong>An event</strong>: a builder in <code>payloads.py</code> that returns what the event carries and the
+          class of each field, a function in <code>triggers.py</code> that writes it to the outbox, called in the
+          transaction of the change; the name goes in <code>graph.EVENTS</code>, in
+          <code>events.KNOWN_EVENTS</code> and, with its fields, in
+          <code>frontend/src/domain/automation/catalog.js</code>.
+        </li>
+        <li>
           <strong>A shipped script</strong>: a YAML file in <code>backend/app/automation/seed/scripts/</code> with
           <code>name</code>, <code>description</code>, <code>code</code>, <code>arguments</code>,
           <code>outputs</code> and <code>test</code>. The suite runs every shipped test through the real runner.

@@ -1,0 +1,50 @@
+{
+  "args": {
+    "space": "SOC",
+    "title": "Weekly report",
+    "html": "<p>3 indicators changed.</p>"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/rest/api/content",
+        "json": {
+          "type": "page",
+          "title": "Weekly report",
+          "space": {
+            "key": "SOC"
+          },
+          "body": {
+            "storage": {
+              "value": "<p>3 indicators changed.</p>",
+              "representation": "storage"
+            }
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "98765",
+          "type": "page",
+          "title": "Weekly report",
+          "version": {
+            "number": 1
+          },
+          "_links": {
+            "webui": "/display/SOC/Weekly+report"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "98765",
+    "title": "Weekly report",
+    "url": "https://confluence.acme.example/display/SOC/Weekly+report"
+  }
+}

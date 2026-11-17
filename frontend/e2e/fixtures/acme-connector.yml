@@ -1,0 +1,28 @@
+name: Acme Desk
+id: acme
+version: 1
+description: Tickets in Acme Desk (a connector made for the tests).
+configuration:
+  - { name: url, label: Instance address, type: url, required: true }
+  - { name: credentials, type: basic }
+base_url: "{{ config.url }}"
+test:
+  request: { method: GET, path: /me }
+commands:
+  - name: get-ticket
+    description: Read a ticket.
+    arguments:
+      - { name: number, type: text, required: true }
+    request: { method: GET, path: "/tickets/{{ args.number }}" }
+    outputs: { state: "{{ response.state }}" }
+  - name: create-ticket
+    description: Open a ticket.
+    changes_outside: true
+    arguments:
+      - { name: title, type: text, required: true }
+    request:
+      method: POST
+      path: /tickets
+      json: { title: "{{ args.title }}" }
+    outputs: { number: "{{ response.number }}" }
+    sample: { number: T-0000 }

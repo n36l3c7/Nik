@@ -1624,7 +1624,12 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await page.getByRole('button', { name: 'Automations', exact: true }).click()
   const area = page.getByRole('region', { name: 'Automations' })
   await expect(page).toHaveURL(/\/automation\/playbooks$/)
-  await expect(area.getByText('No playbook yet')).toBeVisible()
+  // The playbooks Nik ships are there from the first start, off: nothing runs until someone turns one on.
+  const shipped = area.getByRole('row').filter({ hasText: 'shipped with Nik' })
+  await expect(shipped).toHaveCount(5)
+  await expect(shipped.filter({ hasText: 'Phishing triage' })).toHaveCount(1)
+  const listed = (await (await page.request.get('/api/automation/playbooks')).json()).playbooks
+  expect(listed.filter((playbook) => playbook.enabled)).toEqual([])
 
   await area.getByRole('button', { name: 'New playbook' }).first().click()
   const create = page.getByRole('dialog', { name: 'New playbook' })
@@ -1990,6 +1995,203 @@ test('a script is written, tested in the sandbox, saved as a version and offered
     await expect(area.getByRole('row').filter({ hasText: 'CountWords' })).toContainText('draft · not usable yet')
   }
 
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a connector is added from its file, a connection is made, and its commands are nodes', async () => {
+  test.setTimeout(180_000)
+  const before = page.url()
+  const source = readFileSync(new URL('./fixtures/acme-connector.yml', import.meta.url), 'utf8')
+  const file = (text) => ({ name: 'acme.yml', mimeType: 'text/yaml', buffer: Buffer.from(text) })
+
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Connectors').click()
+  await expect(page).toHaveURL(/\/settings\/automation\/connectors$/)
+
+  // A file with a mistake is not installed: the problem comes with its line.
+  const wrong = source.replace(
+    'request: { method: GET, path: "/tickets/{{ args.number }}" }',
+    'request: { method: FETCH, path: "/tickets/{{ args.nmber }}" }',
+  )
+  await settings.getByLabel('Connector file to add').setInputFiles(file(wrong))
+  const add = page.getByRole('dialog', { name: 'Add acme.yml' })
+  const problems = add.getByRole('list', { name: 'Problems of the file' })
+  await expect(problems.getByRole('listitem')).toHaveCount(1)
+  await expect(problems).toContainText('line 16')
+  await expect(add.getByRole('button', { name: 'Install' })).toBeDisabled()
+  await add.getByRole('button', { name: 'Cancel' }).click()
+
+  await settings.getByLabel('Connector file to add').setInputFiles(file(source))
+  await expect(add).toContainText('version 1: 2 commands')
+  await expect(add).toContainText('a user name and a password')
+  await add.getByRole('button', { name: 'Install' }).click()
+  await expect(settings.getByRole('status')).toContainText('Acme Desk is installed: version 1, 2 commands.')
+  const installed = settings
+    .getByRole('table', { name: 'Installed connectors' })
+    .getByRole('row')
+    .filter({ hasText: 'Acme Desk' })
+  await expect(installed).toContainText('no connection')
+  await expect(installed).toContainText('not verified')
+  // Its commands and its file can be read.
+  await installed.getByRole('button', { name: 'Acme Desk' }).click()
+  const shown = page.getByRole('dialog', { name: 'Acme Desk' })
+  await expect(shown.getByRole('table', { name: 'Commands of Acme Desk' }).getByRole('row')).toHaveCount(3)
+  await shown.getByText('The file', { exact: true }).click()
+  await expect(shown.getByLabel('The file of Acme Desk')).toContainText('base_url: "{{ config.url }}"')
+  await shown.getByRole('button', { name: 'Close', exact: true }).last().click()
+
+  // A connection: the form is the connector's; credentials are written and never shown again.
+  await sections.getByText('Connections').click()
+  await settings.getByRole('button', { name: 'New connection' }).click()
+  const form = page.getByRole('dialog', { name: 'New connection' })
+  await form.getByLabel('Connector').selectOption('acme')
+  await form.locator('#connection-name').fill('Acme test')
+  await form.getByLabel('Instance address').fill('desk.example.invalid')
+  await expect(form.getByRole('button', { name: 'Create' })).toBeDisabled() // not an https:// address
+  await form.getByLabel('Instance address').fill('https://desk.example.invalid/api')
+  await form.getByLabel('User name').fill('svc')
+  await form.getByLabel('Password').fill('s3cret-pass')
+  await form.getByRole('button', { name: 'Create' }).click()
+  const row = settings.getByRole('table', { name: 'Connections' }).getByRole('row').filter({ hasText: 'Acme test' })
+  await expect(row).toContainText('desk.example.invalid')
+  await expect(row).toContainText('not tested')
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  const edit = page.getByRole('dialog', { name: 'Connection: Acme test' })
+  await expect(edit.getByLabel(/^Password/)).toHaveValue('')
+  await expect(edit.getByLabel(/^Password/)).toHaveAttribute('placeholder', 'stored: type to replace it')
+  await edit.getByRole('button', { name: 'Cancel' }).click()
+  // The test reaches the host of the connection: this one does not exist, and the row says so.
+  await row.getByRole('button', { name: 'Test the connection Acme test' }).click()
+  await expect(settings.getByRole('alert')).toContainText('Acme test: ', { timeout: 30_000 })
+  await expect(row).toContainText('failed')
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+
+  // On the canvas the connector is a group of the library; a node of it names its connection.
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('button', { name: 'Note on high' }).click()
+  const library = area.getByRole('complementary', { name: 'Node library' })
+  await library.getByLabel('Search nodes').fill('acme')
+  await expect(library.getByRole('button', { name: /^create-ticket/ })).toContainText('changes')
+  await library.getByRole('button', { name: 'get-ticket', exact: true }).click()
+  const inspector = area.getByRole('complementary', { name: 'Inspector' })
+  await expect(inspector.getByRole('heading', { name: /Acme Desk/ })).toBeVisible()
+  await expect(inspector.getByLabel(/^Connection/)).toHaveValue('')
+  await inspector.getByLabel(/^Connection/).selectOption('Acme test')
+  await inspector.getByLabel(/^number/).fill('T-1')
+  await expect(area.getByText('draft saved')).toBeVisible()
+  // The playbook is left as it was.
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await expect(area.getByTestId('playbook-canvas').locator('.react-flow__node')).toHaveCount(4)
+  await expect(area.getByText('draft saved')).toBeVisible()
+
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a playbook is run on an artifact from its menu, and started from outside at its own address', async ({
+  request,
+}) => {
+  test.setTimeout(180_000)
+  const before = page.url()
+  const menu = page.getByRole('menu')
+  const look = (name, value) => ({
+    id: 'look',
+    kind: 'action',
+    name,
+    position: { x: 40, y: 160 },
+    config: { action: 'nik.get-indicator', args: { value } },
+  })
+  const make = async (name, trigger, node) => {
+    const made = await page.request.post('/api/automation/playbooks', { data: { name } })
+    expect(made.status()).toBe(201)
+    const id = (await made.json()).id
+    const graph = {
+      nodes: [{ id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: trigger }, node],
+      edges: [{ from: 'start', to: 'look' }],
+    }
+    const saved = await page.request.post(`/api/automation/playbooks/${id}/versions`, { data: { graph } })
+    expect(saved.status(), await saved.text()).toBe(201)
+    return id
+  }
+  const onFile = await make(
+    'Look up a file',
+    { event: 'file.analysed', manual: true },
+    look('Look up its hash', '{{ trigger.file.sha256 }}'),
+  )
+  const onMail = await make(
+    'Triage a mail',
+    { event: 'mail.analysed', manual: true },
+    look('Look up the sender', '{{ trigger.mail.sender_domain }}'),
+  )
+  const outside = await make(
+    'From outside',
+    { webhook: true },
+    look('Look up what was sent', '{{ trigger.body.value }}'),
+  )
+
+  // The menu of an artifact offers the playbooks that run on it: one about e-mails is not among them.
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel.getByRole('navigation', { name: 'Artifacts' }).getByText('dropper.bin').click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Run a playbook…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Run a playbook' })
+  await expect(dialog.locator('#run-object')).toContainText('a file · dropper.bin')
+  const choice = dialog.locator('#run-playbook')
+  await expect(choice.locator(`option[value="${onFile}"]`)).toHaveCount(1)
+  await expect(choice.locator(`option[value="${onMail}"]`)).toHaveCount(0)
+  await choice.selectOption(onFile)
+  await dialog.getByRole('button', { name: 'Run', exact: true }).click()
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  const area = page.getByRole('region', { name: 'Automations' })
+  await expect(area.getByRole('status', { name: 'Status of the run' })).toHaveText('done', { timeout: 20_000 })
+
+  // The artifact's own page lists the run.
+  await area.getByRole('button', { name: 'Close automations' }).click()
+  await panel.getByRole('navigation', { name: 'Artifacts' }).getByText('dropper.bin').click()
+  const strip = page.getByLabel('Playbook runs on this artifact')
+  await expect(strip.getByRole('button', { name: /Look up a file/ })).toContainText('done')
+  await expect(strip.getByRole('button', { name: 'Run a playbook…' })).toBeVisible()
+
+  // A playbook that starts from outside gets an address in its Settings, shown once.
+  await page.goto(`/automation/playbooks/${outside}/settings`)
+  const hook = area.getByRole('region', { name: 'Address for requests from outside' })
+  await expect(hook).toContainText('It has no address yet.')
+  await hook.getByRole('button', { name: 'Create the address' }).click()
+  const address = (await hook.locator('#hook-address').textContent()).trim()
+  expect(address).toMatch(/\/api\/automation\/hooks\/[\w-]{40,}$/)
+
+  // Off, it answers as an address that does not exist; on, a request with no session starts it.
+  const send = () => request.post(new URL(address).pathname, { data: { value: '185.220.101.47' } })
+  expect((await send()).status()).toBe(404)
+  expect(
+    (await page.request.put(`/api/automation/playbooks/${outside}/enabled`, { data: { enabled: true } })).status(),
+  ).toBe(200)
+  const taken = await send()
+  expect(taken.status()).toBe(202)
+  expect(await taken.json()).toEqual({ accepted: true })
+  await expect(async () => {
+    const runs = await (await page.request.get(`/api/automation/runs?playbook=${outside}`)).json()
+    expect(runs.runs.map((run) => [run.trigger, run.status])).toEqual([['webhook', 'done']])
+  }).toPass({ timeout: 20_000 })
+
+  // Read again, the page no longer shows it; replaced, the old one stops working.
+  await page.reload()
+  await expect(hook).toContainText('Nik keeps only its hash')
+  await expect(hook.locator('#hook-address')).toHaveCount(0)
+  await hook.getByRole('button', { name: 'Replace the address' }).click()
+  await page.getByRole('dialog', { name: 'Replace the address?' }).getByRole('button', { name: 'Replace' }).click()
+  await expect(hook.locator('#hook-address')).not.toHaveText(address)
+  expect((await send()).status()).toBe(404)
+
+  for (const id of [onFile, onMail, outside]) {
+    expect((await page.request.delete(`/api/automation/playbooks/${id}`)).status()).toBe(204)
+  }
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })

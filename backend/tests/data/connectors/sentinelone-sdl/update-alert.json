@@ -1,0 +1,49 @@
+{
+  "args": {
+    "id": "0195-aaaa",
+    "status": "IN_PROGRESS"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/unifiedalerts/graphql",
+        "json": {
+          "query": "mutation SetStatus($id: String!, $status: String!) { alertTriggerActions(filter: { or: [ { and: [ { fieldId: \"id\", stringEqual: { value: $id } } ] } ] }, actions: [ { id: \"S1/alert/statusUpdate\", payload: { status: { value: $status } } } ]) { actions { actionId alertCount success { id } failure { id errorMessage } } } }",
+          "variables": {
+            "id": "0195-aaaa",
+            "status": "IN_PROGRESS"
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "alertTriggerActions": {
+              "actions": [
+                {
+                  "actionId": "S1/alert/statusUpdate",
+                  "alertCount": 1,
+                  "success": [
+                    {
+                      "id": "0195-aaaa"
+                    }
+                  ],
+                  "failure": []
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "updated": 1,
+    "failed": 0
+  }
+}

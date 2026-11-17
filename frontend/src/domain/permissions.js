@@ -42,7 +42,7 @@ export const ROLES = [
     label: 'Connectors',
     description: 'Manages connectors and their connections.',
     permissions: ['connectors.manage'],
-    shown: false,
+    shown: true,
   },
   {
     id: 'rules',

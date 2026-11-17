@@ -1,0 +1,66 @@
+{
+  "args": {
+    "project": "SEC",
+    "repository": "blocklists",
+    "path": "lists/blocked.txt",
+    "content": "bad.example\nevil.example\n",
+    "message": "Block evil.example"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rest/api/latest/projects/SEC/repos/blocklists/commits",
+        "query": {
+          "path": "lists/blocked.txt",
+          "until": "master",
+          "limit": 1
+        },
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "values": [
+            {
+              "id": "5636641a50b6e9bb4e1f1b2b4d3c0f8a7e6d5c4b",
+              "displayId": "5636641a50b"
+            }
+          ],
+          "size": 1,
+          "isLastPage": false
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/rest/api/latest/projects/SEC/repos/blocklists/browse/lists/blocked.txt",
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        },
+        "body_has": [
+          "name=\"content\"\r\n\r\nbad.example\nevil.example\n\r\n",
+          "name=\"message\"\r\n\r\nBlock evil.example\r\n",
+          "name=\"branch\"\r\n\r\nmaster\r\n",
+          "name=\"sourceCommitId\"\r\n\r\n5636641a50b6e9bb4e1f1b2b4d3c0f8a7e6d5c4b\r\n"
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "abcdef0123456789abcdef0123456789abcdef01",
+          "displayId": "abcdef01234",
+          "message": "Block evil.example"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "commit": "abcdef0123456789abcdef0123456789abcdef01",
+    "short": "abcdef01234",
+    "path": "lists/blocked.txt"
+  }
+}

@@ -54,6 +54,8 @@
           <li><a href="#outside">What a playbook may reach and send</a></li>
           <li><a href="#scripts">Scripts</a></li>
           <li><a href="#switch">The switch and the worker</a></li>
+          <li><a href="#connectors">Connectors</a></li>
+          <li><a href="#shipped">The playbooks Nik ships</a></li>
           <li><a href="#files">Playbooks and scripts as files</a></li>
           <li><a href="#later">What this release does not do yet</a></li>
         </ol>
@@ -183,12 +185,12 @@
 
       <h2 id="nodes">The nodes</h2>
       <h3 id="trigger">Trigger</h3>
-      <p>Every playbook has exactly one. It can start the playbook in three ways, alone or together:</p>
+      <p>Every playbook has exactly one. It can start the playbook in four ways, alone or together:</p>
       <ul>
         <li>
-          <strong>On an event</strong> of Nik: <code>incident.created</code> or <code>incident.updated</code>. The run
-          works on that incident. <em>Only when the event matches</em> adds comparisons, the same as a condition node:
-          <code>{{ trigger.incident.severity }}</code> is one of <code>high, critical</code>.
+          <strong>On an event</strong> of Nik (the table below). The run works on what the event is about: an incident,
+          an analysed e-mail, file or address, an indicator. <em>Only when the event matches</em> adds comparisons, the
+          same as a condition node: <code>{{ trigger.mail.verdict }}</code> equals <code>phishing</code>.
         </li>
         <li>
           <strong>On a schedule</strong>: five fields as in cron (<code>0 8 * * 1-5</code> is 08:00 from Monday to
@@ -197,11 +199,103 @@
           down are not made up for one by one (the schedule fires once when it is back).
         </li>
         <li>
-          <strong>By hand</strong>: <em>Run a playbook…</em> in an incident's right-click menu, on its
-          <em>Automation</em> tab, or <em>Run…</em> on the playbook's page.
+          <strong>From outside</strong>: a request another system sends to the playbook's own address. See
+          <a href="#inbound">Starting a playbook from outside</a>.
+        </li>
+        <li>
+          <strong>By hand</strong>: <em>Run a playbook…</em> in the right-click menu of an incident, of an analysed
+          e-mail, file or address, and of an indicator; on an incident's <em>Automation</em> tab; on an artifact's page;
+          or <em>Run…</em> on the playbook's page. A playbook whose event is about one kind of object is offered on that
+          kind only (one that waits for e-mails is not offered on a file); a playbook with no event is offered
+          everywhere, and reads whatever it was run on.
         </li>
       </ul>
-      <p>What <code>{{ trigger.… }}</code> holds depends on what started the run:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>When</th>
+              <th>What <code>{{ trigger.… }}</code> holds</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>incident.created</code><br /><code>incident.updated</code></td>
+              <td>An incident is created; one of its fields changes.</td>
+              <td>
+                <code>incident.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>,
+                <code>.status</code>, <code>.severity</code>, <code>.assignee</code>, <code>.host</code>,
+                <code>.username</code>, <code>.os</code>, <code>.created</code>, <code>.modified</code>; for
+                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed.
+              </td>
+            </tr>
+            <tr>
+              <td><code>mail.analysed</code></td>
+              <td>
+                An e-mail is analysed: uploaded on its own or in an incident, analysed again, or imported from a
+                mailbox.
+              </td>
+              <td>
+                <code>mail.sha256</code>, <code>.subject</code>, <code>.sender</code>, <code>.sender_domain</code>,
+                <code>.sender_sha256</code>, <code>.verdict</code> (<code>phishing</code>, <code>suspicious</code>,
+                <code>clean</code>), <code>.score</code>, <code>.urls</code> (where its links lead),
+                <code>.attachments</code> (each with <code>name</code>, <code>sha256</code>, <code>size</code>),
+                <code>.artifact_id</code>, <code>.url</code>; <code>from_mailbox</code> (the mailbox's id, or empty);
+                the <code>incident.…</code> fields when it was analysed in one.
+              </td>
+            </tr>
+            <tr>
+              <td><code>file.analysed</code></td>
+              <td>The analysis of a file ends: uploaded, taken out of an e-mail or a capture, or analysed again.</td>
+              <td>
+                <code>file.sha256</code>, <code>.name</code>, <code>.size</code>, <code>.type</code>,
+                <code>.verdict</code> (<code>high</code>, <code>medium</code> or empty), <code>.yara</code> (the names
+                of the rules that matched), <code>.artifact_id</code>, <code>.url</code>; the
+                <code>incident.…</code> fields when it was analysed in one.
+              </td>
+            </tr>
+            <tr>
+              <td><code>url.analysed</code></td>
+              <td>The scan of an address ends.</td>
+              <td>
+                <code>scan.id</code>, <code>.url</code>, <code>.final_url</code>, <code>.host</code>,
+                <code>.verdict</code>, <code>.score</code>, <code>.artifact_id</code>, <code>.page</code> (its address
+                in Nik).
+              </td>
+            </tr>
+            <tr>
+              <td><code>ioc.verdict_changed</code></td>
+              <td>
+                What the sources say of an indicator, taken together, changes (a first answer that says nothing is not a
+                change).
+              </td>
+              <td>
+                <code>ioc.kind</code>, <code>.value</code>, <code>.old</code>, <code>.new</code>, <code>.sources</code>,
+                <code>.score</code>, <code>.tlp</code>, <code>.tags</code>, <code>.lists</code>,
+                <code>.incidents</code>, <code>.private</code>, <code>.allowlisted</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>ioc.watch_hit</code></td>
+              <td>An incident comes to hold an indicator of a watched list. The run works on the incident.</td>
+              <td>
+                <code>ioc.…</code> and <code>list.id</code>, <code>list.name</code> of the first hit; <code>hits</code>,
+                every hit (each with <code>type</code>, <code>value</code>, <code>list</code>, <code>incident</code>);
+                the <code>incident.…</code> fields.
+              </td>
+            </tr>
+            <tr>
+              <td><code>storage.low</code></td>
+              <td>The disk that holds the evidence has less than a tenth free. Said once a day while it stays so.</td>
+              <td>
+                <code>disk.total</code>, <code>.used</code>, <code>.free</code> (bytes), <code>.free_percent</code>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The other ways to start give:</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -212,32 +306,77 @@
           </thead>
           <tbody>
             <tr>
-              <td>An event</td>
-              <td>
-                <code>incident.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>,
-                <code>.status</code>, <code>.severity</code>, <code>.assignee</code>, <code>.host</code>,
-                <code>.username</code>, <code>.os</code>, <code>.created</code>, <code>.modified</code>; for
-                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed.
-              </td>
-            </tr>
-            <tr>
               <td>A person</td>
               <td>
-                <code>actor</code> (who started it) and, when it was run on an incident, the same
-                <code>incident.…</code> fields.
+                <code>actor</code> (who started it) and the fields of what it was run on: <code>incident.…</code>,
+                <code>mail.…</code>, <code>file.…</code>, <code>scan.…</code> or <code>ioc.…</code>, as in the table
+                above.
               </td>
             </tr>
             <tr>
               <td>A schedule</td>
               <td><code>at</code> (when it fired) and <code>cron</code>.</td>
             </tr>
+            <tr>
+              <td>A request from outside</td>
+              <td>
+                <code>body</code> (an object when the request is JSON, text otherwise), <code>headers</code> (content
+                type, user agent and the sender's own <code>X-</code> headers), <code>query</code>.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
       <p>
-        A change a playbook makes to an incident can start other playbooks, three deep at most: beyond that the event is
-        dropped, so two playbooks cannot keep waking each other.
+        A change a playbook makes can start other playbooks, three deep at most: beyond that the event is dropped, so
+        two playbooks cannot keep waking each other. An import of a large mailbox writes one event for each new message:
+        the runs an hour of the playbook are what bounds it.
       </p>
+      <p>
+        The same events can be sent to an address of yours as signed webhooks (<a href="api.html#webhooks"
+          >API → Webhooks</a
+        >): that is Nik telling another system, with no playbook involved.
+      </p>
+
+      <h4 id="inbound">Starting a playbook from outside</h4>
+      <p>
+        Turn on <em>From outside</em> in the trigger, save a version, then open the playbook's <em>Settings</em> and
+        choose <em>Create the address</em>. Nik shows a URL that ends with a long random token:
+      </p>
+      <pre><code>POST https://nik.example.org/api/automation/hooks/&lt;token&gt;
+Content-Type: application/json
+
+{"alert": "beacon", "host": "WKS-12"}</code></pre>
+      <ul>
+        <li>
+          <strong>The address is the credential.</strong> Whoever has it can start the playbook, with no account and no
+          API key; a session cookie or a key sent along is not read. Nik shows it once and keeps only its SHA-256: an
+          address that was lost is replaced, not read again. <em>Replace the address</em> and
+          <em>Remove the address</em> stop the old one at once.
+        </li>
+        <li>
+          <strong>What the playbook reads.</strong> <code>{{ trigger.body }}</code>,
+          <code>{{ trigger.query }}</code> and <code>{{ trigger.headers }}</code>. Of the headers only the content type,
+          the user agent and the sender's own <code>X-</code> headers are kept; anything that looks like a credential, a
+          signature or what a proxy added is dropped.
+        </li>
+        <li>
+          <strong>Limits.</strong> 256 kB a request, 60 requests a minute for each address, and the playbook's own runs
+          an hour. Nothing that arrives has a class of its own: what the playbook may send on is decided by the same
+          guard as everything else.
+        </li>
+        <li>
+          <strong>Answers.</strong> <code>202 {"accepted": true}</code> when the run started; <code>404</code> for an
+          address that does not exist, a playbook that is off or whose trigger does not start from outside, and while
+          automation is stopped (one answer for all, so that it says nothing of what exists); <code>413</code> for a
+          body too large; <code>400</code> for JSON that cannot be read; <code>429</code> beyond the limits. The answer
+          never says what the playbook did.
+        </li>
+        <li>
+          The address must be reachable by the sender: it is under the same origin as the rest of Nik, behind the same
+          reverse proxy.
+        </li>
+      </ul>
 
       <h3 id="condition">Condition</h3>
       <p>
@@ -393,6 +532,27 @@
               <td>Add to a list · Remove from a list</td>
               <td><code>list</code> (the name of a watch list; made if there is none), <code>indicators</code></td>
               <td><code>added</code> · <code>removed</code></td>
+            </tr>
+            <tr>
+              <td>Get the lists</td>
+              <td><code>watched</code> (only the watched ones)</td>
+              <td>
+                <code>lists</code> (each with <code>id</code>, <code>name</code>, <code>description</code>,
+                <code>watched</code>, <code>tlp</code>, <code>count</code>), <code>names</code>, <code>count</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Check a list again</td>
+              <td>
+                <code>list</code>, <code>force</code> (ask also about what was checked lately; on by default),
+                <code>wait_minutes</code> (120)
+              </td>
+              <td>
+                <code>before</code> and <code>after</code> (the indicators with their verdict, as they were and as they
+                are, for the script <em>VerdictChanges</em>), <code>total</code>, <code>asked</code>,
+                <code>finished</code>, <code>check</code>. The step waits for the sources without holding a worker, and
+                goes on with what is there when the time is up.
+              </td>
             </tr>
             <tr>
               <td>Get an indicator</td>
@@ -849,6 +1009,782 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         <a href="deployment.html#automation-containers">Deployment</a> says how to look at it.
       </p>
 
+      <h2 id="connectors">Connectors</h2>
+      <p>
+        A <strong>connector</strong> is one YAML file that says how to talk to a product: what a connection to it needs
+        (an address, credentials) and <strong>commands</strong>, each a request built from templates in the same
+        expression language as the playbooks. There is no code in it. Every command of an installed connector is a node
+        of the canvas, in a group of the library named after the connector.
+      </p>
+      <p>
+        A <strong>connection</strong> is a connector plus an address and credentials: "ServiceNow, production". A node
+        of a connector names the connection it sends through, so the same playbook can be pointed at a test instance
+        first. Both are under <em>Settings → Automation</em>, for the role <em>Connectors</em> (an admin has it):
+      </p>
+      <ul>
+        <li>
+          <strong>Connectors</strong>: <em>Add a connector</em> takes a file. It is checked as it is read: what is wrong
+          is listed with the line it is on, and nothing is installed until the file is right. Adding a file with the id
+          of an installed connector replaces it, and its version must be higher. A connector shows its commands and its
+          file; <em>Download the samples</em> gives the shipped files in a zip, as something to start from. A connector
+          a playbook uses cannot be removed.
+        </li>
+        <li>
+          <strong>Connections</strong>: the form is built from what the connector asks for. <em>Test</em> sends the
+          connector's test request with the credentials and says what came back. Credentials are stored encrypted with
+          the vault key and are never shown again, in the screen or in the API: to change one, type it again.
+        </li>
+        <li>
+          On the canvas, a node of a connector has a <em>Connection</em> field. A version is not saved while a node
+          names no connection, or one that does not exist.
+        </li>
+      </ul>
+      <p>
+        A command that changes something outside (<code>changes_outside: true</code>) asks a person first, like every
+        node that does (<a href="#approvals">Approvals</a>). In a dry run nothing is sent: the step shows the request
+        that would have left and gives the command's <code>sample</code> as its result, so the nodes after it can be
+        read. What a command sends goes through the same two gates as the HTTP node: the
+        <a href="#network">network</a> rule (the host of the node's connection is one the playbook may reach, without
+        being listed) and the <a href="#data-guard">data guard</a>.
+      </p>
+
+      <h3 id="shipped-connectors">The connectors Nik ships</h3>
+      <p>
+        Twelve files for nine products. Each was written from what the vendor publishes about its API and is tested
+        against answers recorded from that documentation, <strong>not against a real system</strong>: each says
+        <code>verified: false</code>, and the list of connectors marks it <em>not verified</em>. Test the connection and
+        try each command in a dry run, then on something harmless, before a playbook relies on it.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Connector</th>
+              <th>Signs in with</th>
+              <th>Commands</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Check Point Firewall (Security Management, R81 to R82; the API version is a setting)</td>
+              <td>a user and a password, or an API key; a session opened and closed for each command</td>
+              <td>
+                hosts, groups and domain objects added, read and removed; every change is published, and the policy
+                installed when asked, waiting for the task to end
+              </td>
+            </tr>
+            <tr>
+              <td>Check Point Harmony SASE</td>
+              <td>an API key</td>
+              <td>lists of addresses read and written; the Internet Access rules read</td>
+            </tr>
+            <tr>
+              <td>Zscaler ZIA (the classic API)</td>
+              <td>a user, a password and the API key, in Zscaler's own way</td>
+              <td>URL categories read and changed, an address looked up, the changes activated</td>
+            </tr>
+            <tr>
+              <td>SentinelOne EDR</td>
+              <td>an API token</td>
+              <td>
+                agents found, isolated and reconnected; threats read and resolved; hashes added to the blocklist; a Deep
+                Visibility query run and waited for
+              </td>
+            </tr>
+            <tr>
+              <td>SentinelOne SIEM (Singularity Data Lake)</td>
+              <td>an API token</td>
+              <td>a PowerQuery run; alerts read and their status set</td>
+            </tr>
+            <tr>
+              <td>ServiceNow</td>
+              <td>a user and a password</td>
+              <td>incidents opened, read and updated; comments and work notes added</td>
+            </tr>
+            <tr>
+              <td>Jira Cloud · Jira Data Center</td>
+              <td>an e-mail address and an API token · a personal access token</td>
+              <td>issues created, read and updated; comments; the transitions of an issue listed and made</td>
+            </tr>
+            <tr>
+              <td>Confluence Cloud · Confluence Data Center</td>
+              <td>an e-mail address and an API token · a personal access token</td>
+              <td>pages created, read, and added to</td>
+            </tr>
+            <tr>
+              <td>Bitbucket Cloud · Bitbucket Data Center</td>
+              <td>an e-mail address and an API token · an HTTP access token</td>
+              <td>a file read, and written with a commit: a block list other systems fetch</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Jira, Confluence and Bitbucket each have one file for Cloud and one for Data Center, which sign in and write
+        texts differently. The comments at the top of each file say what it was written against and what the connection
+        needs.
+      </p>
+
+      <h3 id="connector-format">The connector file, key by key</h3>
+      <p>
+        A file is YAML, at most 256 kB. <strong>A key the format does not know is an error</strong>, so a typo is told
+        and not ignored. Texts between <code>{{ }}</code> are <a href="#expressions">expressions</a>; what they can read
+        depends on where they are:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Holds</th>
+              <th>Read where</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>config</code></td>
+              <td>the plain values of the connection (<code>config.url</code>)</td>
+              <td>everywhere</td>
+            </tr>
+            <tr>
+              <td><code>args</code></td>
+              <td>the arguments of the command; one not given is <code>null</code> (or its <code>default</code>)</td>
+              <td>everywhere in a command</td>
+            </tr>
+            <tr>
+              <td><code>steps</code></td>
+              <td>
+                the answers of the earlier steps of the same command: <code>steps.&lt;name&gt;.response</code>,
+                <code>.status</code>, <code>.headers</code>
+              </td>
+              <td>in a command made of steps</td>
+            </tr>
+            <tr>
+              <td><code>secret</code></td>
+              <td>the secrets of the connection (<code>secret.password</code>)</td>
+              <td>
+                only in what is sent (a request); never in <code>outputs</code>, <code>error</code> or a condition
+              </td>
+            </tr>
+            <tr>
+              <td><code>response</code>, <code>status</code>, <code>headers</code></td>
+              <td>
+                the answer: the parsed JSON when the answer says it is JSON, otherwise an object with
+                <code>text</code>; the status code; the headers, lower case
+              </td>
+              <td>
+                where there is an answer: <code>outputs</code>, <code>success</code>, <code>error</code>,
+                <code>pagination</code>, <code>poll</code>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 id="connector-top">The connector</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>What it is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code> (required)</td>
+              <td>What people read: the group of the library, the list of connectors. Up to 80 characters.</td>
+            </tr>
+            <tr>
+              <td><code>id</code> (required)</td>
+              <td>
+                What playbooks refer to: a lower-case letter, then lower-case letters, digits or <code>-</code> (2 to
+                41). A command is the node <code>&lt;id&gt;.&lt;command&gt;</code>. Do not change it once playbooks use
+                it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>version</code> (required)</td>
+              <td>
+                A whole number, raised each time the file changes: an installed connector is replaced only by a higher
+                one.
+              </td>
+            </tr>
+            <tr>
+              <td><code>description</code>, <code>api_version</code></td>
+              <td>What it is for, and the vendor's API it was written against. Shown with the connector.</td>
+            </tr>
+            <tr>
+              <td><code>verified</code></td>
+              <td>
+                <code>true</code> once someone ran it against a real system. <code>false</code> (the default) marks it
+                <em>not verified</em>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>configuration</code></td>
+              <td>
+                What a connection is asked for: a list of entries (below), 30 at most, one set of credentials at most.
+              </td>
+            </tr>
+            <tr>
+              <td><code>base_url</code> (required)</td>
+              <td>
+                Where every request starts, usually from the connection's address:
+                <code>"{{ config.url }}/api/v2"</code>. Its host is <strong>the</strong> host of the connection: no
+                request of the connector goes anywhere else.
+              </td>
+            </tr>
+            <tr>
+              <td><code>headers</code></td>
+              <td>
+                Headers sent with every request (<code>Accept: application/json</code>). Templates may read
+                <code>config</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>test</code></td>
+              <td>
+                What <em>Test</em> sends: <code>request</code> (a request, below) and, optionally,
+                <code>expect</code> (as <code>success</code>). Choose something that needs the credentials to be good
+                and changes nothing.
+              </td>
+            </tr>
+            <tr>
+              <td><code>commands</code> (required)</td>
+              <td>The commands (below): at least one, 100 at most.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 id="connector-configuration">An entry of <code>configuration</code></h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>What it is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code> (required)</td>
+              <td>
+                How templates read it: <code>config.&lt;name&gt;</code>. A lower-case letter, then letters, digits or
+                <code>_</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>label</code>, <code>help</code></td>
+              <td>What the form of a connection shows beside the field, and under it.</td>
+            </tr>
+            <tr>
+              <td><code>type</code></td>
+              <td>
+                A plain value: <code>url</code>, <code>text</code> (the default), <code>number</code>,
+                <code>bool</code>, <code>choice</code> (with <code>choices</code>), or <code>secret</code> (stored
+                encrypted, read as <code>secret.&lt;name&gt;</code>). Or the credentials, of one of the kinds below.
+              </td>
+            </tr>
+            <tr>
+              <td><code>required</code>, <code>default</code>, <code>choices</code></td>
+              <td>As they say. A value left empty in the connection takes the default.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The credentials, by <code>type</code>, with the secrets a connection is asked for and how they are sent:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><code>type</code></th>
+              <th>Secrets</th>
+              <th>Sent as</th>
+              <th>More keys</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>basic</code></td>
+              <td><code>username</code>, <code>password</code></td>
+              <td><code>Authorization: Basic …</code></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td><code>bearer</code></td>
+              <td><code>token</code></td>
+              <td><code>Authorization: Bearer …</code></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td><code>header</code></td>
+              <td><code>value</code></td>
+              <td>the header you name</td>
+              <td>
+                <code>header</code> (required: its name), <code>prefix</code> (what precedes the value:
+                <code>"ApiToken "</code>)
+              </td>
+            </tr>
+            <tr>
+              <td><code>oauth2_client</code></td>
+              <td><code>client_id</code>, <code>client_secret</code></td>
+              <td>
+                a token asked for with the client credentials grant, then <code>Authorization: Bearer …</code>. The
+                token is kept in memory until a minute before it expires, never in the database.
+              </td>
+              <td>
+                <code>token_url</code> (required; may read <code>config</code>), <code>scope</code>,
+                <code>auth_style</code>: <code>form</code> (the default: id and secret in the form) or
+                <code>basic</code> (in the Authorization header). A token endpoint on another host than the connection
+                must be among the hosts the playbook may reach.
+              </td>
+            </tr>
+            <tr>
+              <td><code>session</code></td>
+              <td><code>username</code>, <code>password</code>, <code>api_key</code> (those the login reads)</td>
+              <td>a session opened before the command and closed after it, its token in the header you name</td>
+              <td>
+                <code>login</code>: <code>request</code>, <code>token</code> (where it is in the answer:
+                <code>"{{ response.sid }}"</code>), <code>header</code>, <code>prefix</code>, <code>success</code>;
+                <code>logout</code>: <code>request</code>
+              </td>
+            </tr>
+            <tr>
+              <td><code>zscaler</code></td>
+              <td><code>username</code>, <code>password</code>, <code>api_key</code></td>
+              <td>the sign-in of Zscaler's classic API (the key obfuscated with the time, a session cookie)</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 id="connector-command">A command</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>What it is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code> (required)</td>
+              <td>
+                Lower-case letters, digits and <code>-</code>: <code>create-incident</code>. The node is
+                <code>&lt;id&gt;.&lt;name&gt;</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>description</code></td>
+              <td>What the library shows under the name.</td>
+            </tr>
+            <tr>
+              <td><code>changes_outside</code></td>
+              <td>
+                <code>true</code> when the command changes something on the other side: the node asks a person first
+                (unless that is turned off for it) and is never sent in a dry run. Default <code>false</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>idempotent</code></td>
+              <td>
+                <code>false</code> when sending it twice does it twice (opening a ticket): after a failure whose outcome
+                is unknown, such a command is not tried again by itself. Default <code>true</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>arguments</code></td>
+              <td>
+                What the node asks for, 40 at most. Each: <code>name</code>, <code>type</code> (<code>text</code>,
+                <code>number</code>, <code>bool</code>, <code>list</code>, <code>object</code>, <code>any</code>,
+                <code>choice</code> with <code>choices</code>), <code>required</code>, <code>default</code>,
+                <code>description</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>request</code> <em>or</em> <code>steps</code></td>
+              <td>One request (below), or several that feed each other (below). A command has one of the two.</td>
+            </tr>
+            <tr>
+              <td><code>success</code></td>
+              <td>
+                What a good answer is: <code>status</code> (a code or a list; any 2xx when left out) and, optionally,
+                <code>when</code>: conditions on the answer, for an API that says 200 and an error inside.
+              </td>
+            </tr>
+            <tr>
+              <td><code>error</code></td>
+              <td>
+                <code>message</code>: where the other side's explanation is (<code>"{{ response.error.message }}"</code
+                >). The step fails with "<em>name</em> answered <em>status</em>: <em>message</em>". 429 and 5xx are
+                tried again; other refusals are not.
+              </td>
+            </tr>
+            <tr>
+              <td><code>pagination</code></td>
+              <td>How a list that comes in pages is read to its end (below).</td>
+            </tr>
+            <tr>
+              <td><code>poll</code></td>
+              <td>Send the request again until the answer says so (below).</td>
+            </tr>
+            <tr>
+              <td><code>outputs</code></td>
+              <td>
+                What the node gives: a name and a template over the answer for each. One the answer does not hold is
+                empty, not an error. With no <code>outputs</code> the node gives <code>response</code>, the answer as it
+                came. Secrets cannot be read here, and a value equal to a secret is blanked wherever it appears.
+              </td>
+            </tr>
+            <tr>
+              <td><code>sample</code></td>
+              <td>What a dry run gives in place of the outputs, so that the nodes after it can be read.</td>
+            </tr>
+            <tr>
+              <td><code>timeout</code></td>
+              <td>Seconds a request may take: 60 by default, 300 at most.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 id="connector-request">A request</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>What it is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>method</code></td>
+              <td>
+                <code>GET</code> (the default), <code>POST</code>, <code>PUT</code>, <code>PATCH</code>,
+                <code>DELETE</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>path</code> (required)</td>
+              <td>
+                Added to <code>base_url</code>. A full address is taken as it is, and must be on the connection's host:
+                a request to any other host is refused.
+              </td>
+            </tr>
+            <tr>
+              <td><code>query</code>, <code>headers</code></td>
+              <td>Names and templates. A query value that comes out empty is not sent.</td>
+            </tr>
+            <tr>
+              <td><code>json</code>, <code>form</code>, <code>multipart</code>, <code>body</code></td>
+              <td>
+                The body, one of the four (none for a GET): JSON, a URL-encoded form, a multipart form, or a text sent
+                as it is. In the first three a key whose value comes out empty is left out, so an optional argument
+                needs no special case; the name of a form field may itself be a template.
+              </td>
+            </tr>
+            <tr>
+              <td><code>answer</code></td>
+              <td>
+                <code>auto</code> (the default): the answer is read as JSON when it says it is JSON, as text otherwise
+                (<code>response.text</code>). <code>text</code>: always as text, for a file whose content may itself be
+                JSON.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 id="connector-pagination">Pages, steps and polls</h4>
+      <p>
+        <strong><code>pagination</code></strong> sends the request again for each page and gives the command
+        <code>response.items</code> (every item, 5 000 at most), <code>response.pages</code> and
+        <code>response.truncated</code> (it stopped at a limit). Its keys:
+      </p>
+      <ul>
+        <li>
+          <code>type</code>: <code>offset</code> (<code>param</code> counts the items already read),
+          <code>page</code> (<code>param</code> counts the pages, from 1), <code>cursor</code> (<code>param</code> is
+          sent with what <code>next</code> read from the last answer, until it is empty), <code>link</code> (follows the
+          <code>Link: …; rel="next"</code> header);
+        </li>
+        <li><code>items</code>: where the items of a page are (<code>"{{ response.result }}"</code>);</li>
+        <li>
+          <code>limit_param</code> and <code>limit</code>: the name of the parameter that sets the size of a page, and
+          the size (100 by default);
+        </li>
+        <li><code>max_pages</code>: 10 by default, 100 at most.</li>
+      </ul>
+      <p>
+        <strong><code>steps</code></strong> is a list of up to 12 requests sent in order, for an API where one action is
+        several calls (change, publish, install). Each step has a <code>name</code>, a <code>request</code> and its own
+        <code>success</code>, <code>error</code> and <code>poll</code>; <code>when</code> (conditions on
+        <code>config</code>, <code>args</code> and the earlier steps) skips it unless it holds. A later step and the
+        command's <code>outputs</code> read an earlier one as <code>steps.&lt;name&gt;.response</code>.
+      </p>
+      <p>
+        <strong><code>poll</code></strong> sends a request again until the answer says the work is done:
+        <code>until</code> (conditions on the answer), <code>fail_when</code> (conditions that mean it failed),
+        <code>every</code> (seconds between tries: 5 by default, 2 to 600) and <code>timeout</code> (300 by default, an
+        hour at most). Between tries the run waits without holding a worker: a playbook can wait for a policy to install
+        while others run.
+      </p>
+      <p>
+        Conditions are written as in a condition node:
+        <code>{ all: [{ left: "{{ response.state }}", op: eq, right: finished }] }</code>, with <code>all</code> or
+        <code>any</code> and the operators <code>eq</code>, <code>ne</code>, <code>gt</code>, <code>gte</code>,
+        <code>lt</code>, <code>lte</code>, <code>contains</code>, <code>in</code>, <code>exists</code>,
+        <code>empty</code>.
+      </p>
+
+      <h4 id="connector-samples">Two complete files</h4>
+      <p>
+        A REST API with a user and a password: a ticketing system, with a command that changes something, one that only
+        reads, and a test of the connection.
+      </p>
+      <pre><code class="language-yaml"># Acme Desk: tickets, through its REST API. Signs in with a user and a password.
+name: Acme Desk
+id: acme-desk
+version: 1
+description: Tickets in Acme Desk, opened, read and commented.
+api_version: "Acme Desk REST API v2"
+verified: false
+configuration:
+  - name: url
+    label: Address
+    type: url
+    required: true
+    help: "https://desk.example.org"
+  - name: queue
+    label: Queue
+    type: text
+    default: SOC
+    help: The queue new tickets go to
+  - name: credentials
+    type: basic
+base_url: "{{ config.url }}/api/v2"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /me }
+  expect: { status: 200 }
+commands:
+  - name: create-ticket
+    description: Open a ticket.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: title, type: text, required: true, description: The title of the ticket }
+      - { name: text, type: text, description: What happened }
+      - { name: priority, type: choice, choices: [low, normal, high], default: normal }
+    request:
+      method: POST
+      path: /tickets
+      json:
+        queue: "{{ config.queue }}"
+        title: "{{ args.title }}"
+        body: "{{ args.text }}"
+        priority: "{{ args.priority }}"
+    success: { status: 201 }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      number: "{{ response.number }}"
+      url: "{{ config.url }}/tickets/{{ response.number }}"
+    sample: { number: T-1000, url: "https://desk.example.org/tickets/T-1000" }
+
+  - name: get-ticket
+    description: Read a ticket.
+    arguments:
+      - { name: number, type: text, required: true, description: "The number of the ticket: T-1000" }
+    request: { method: GET, path: "/tickets/{{ args.number }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      state: "{{ response.state }}"
+      assignee: "{{ response.assignee.name }}"
+
+  - name: add-comment
+    description: Add a comment to a ticket.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: number, type: text, required: true, description: The number of the ticket }
+      - { name: text, type: text, required: true, description: The comment }
+    request:
+      method: POST
+      path: "/tickets/{{ args.number }}/comments"
+      json: { body: "{{ args.text }}" }
+    success: { status: [200, 201] }
+    outputs:
+      id: "{{ response.id }}"</code></pre>
+      <p>
+        OAuth2 client credentials, a list read page by page with a cursor, and a command made of two requests, the
+        second asked again until the job is finished.
+      </p>
+      <pre><code class="language-yaml"># Acme EDR: alerts and hosts. Signs in with OAuth2 client credentials; reads a
+# list page by page; one command is two requests, the second asked again
+# until the job is finished.
+name: Acme EDR
+id: acme-edr
+version: 1
+description: Alerts and hosts of Acme EDR.
+api_version: "Acme EDR API 2026-01"
+verified: false
+configuration:
+  - { name: url, label: API address, type: url, required: true, help: "https://api.edr.example.com" }
+  - name: credentials
+    type: oauth2_client
+    token_url: "{{ config.url }}/oauth/token"
+    scope: "alerts:read hosts:write"
+    auth_style: basic
+base_url: "{{ config.url }}/v1"
+test:
+  request: { method: GET, path: /alerts, query: { limit: 1 } }
+commands:
+  - name: list-alerts
+    description: The alerts raised since a moment, read page by page.
+    arguments:
+      - { name: since, type: text, description: "An ISO date; empty for the last day" }
+      - { name: severity, type: choice, choices: ["", low, medium, high], default: "" }
+    request:
+      method: GET
+      path: /alerts
+      query:
+        since: "{{ args.since }}"
+        severity: "{{ args.severity }}"
+    pagination:
+      type: cursor
+      items: "{{ response.alerts }}"
+      param: cursor
+      next: "{{ response.next_cursor }}"
+      limit_param: limit
+      limit: 200
+      max_pages: 20
+    outputs:
+      alerts: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: isolate-host
+    description: Cut a host off the network, and wait until the agent says it is done.
+    changes_outside: true
+    arguments:
+      - { name: host_id, type: text, required: true, description: The id of the host }
+    steps:
+      - name: ask
+        request: { method: POST, path: "/hosts/{{ args.host_id }}/isolate", json: {} }
+        success: { status: [200, 202] }
+        error: { message: "{{ response.message }}" }
+      - name: done
+        request: { method: GET, path: "/jobs/{{ steps.ask.response.job_id }}" }
+        poll:
+          until: { all: [{ left: "{{ response.state }}", op: eq, right: finished }] }
+          fail_when: { all: [{ left: "{{ response.state }}", op: eq, right: failed }] }
+          every: 10
+          timeout: 600
+    outputs:
+      job: "{{ steps.ask.response.job_id }}"
+      state: "{{ steps.done.response.state }}"
+    sample: { job: j-0000, state: finished }</code></pre>
+      <p>
+        Both are in the repository (<code>backend/tests/data/connector_samples/</code>) and are loaded and run by the
+        tests, so what is printed here is a file Nik accepts. When you write one of your own: start from the shipped
+        file closest to it, raise <code>version</code> at each change, give every command that changes something a
+        <code>sample</code>, and keep <code>verified: false</code> until you have seen each command work.
+      </p>
+
+      <h2 id="shipped">The playbooks Nik ships</h2>
+      <p>
+        Five playbooks are in the list from the first start, marked <em>shipped with Nik</em> and <strong>off</strong>:
+        nothing runs until you turn one on. They are playbooks like any other: read them on the canvas, change them,
+        rename them, delete them. One you deleted does not come back, and one you changed is not overwritten by an
+        upgrade. The same five are files in <code>backend/app/automation/seed/playbooks/</code>, to bring in again with
+        <em>Import</em>. Try each with a dry run before turning it on.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Playbook</th>
+              <th>Starts</th>
+              <th>What it does</th>
+              <th>Before turning it on</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Phishing triage</td>
+              <td>
+                <code>mail.analysed</code>, when the verdict is phishing or suspicious and the e-mail was analysed on
+                its own (not in an incident, not from a mailbox)
+              </td>
+              <td>
+                Opens an incident, puts the e-mail in it, writes in a note the hosts its links lead to (defanged) and
+                its attachments, then asks whether the sender's domain goes in the watched list
+                <em>Phishing senders</em>. Nothing leaves Nik.
+              </td>
+              <td>Nothing.</td>
+            </tr>
+            <tr>
+              <td>Weekly re-check of the watched lists</td>
+              <td>Monday 06:30 UTC</td>
+              <td>
+                For each watched list, asks the reputation sources again about every indicator (the library's bulk
+                check, within the quota of each source), waits for the answers, and sends a message for each list where
+                a verdict changed: what became suspicious or malicious, what is no longer flagged.
+              </td>
+              <td>
+                Set the SMTP server (Settings → Automation), write your address in <em>Send the report</em>, list its
+                domain among the hosts of the playbook.
+              </td>
+            </tr>
+            <tr>
+              <td>Malicious indicator to a block list</td>
+              <td>
+                <code>ioc.verdict_changed</code>, when an address or a domain becomes malicious and is neither private
+                nor allowlisted
+              </td>
+              <td>
+                Reads a file of blocked addresses in a Bitbucket repository (the kind of list a firewall fetches); if
+                the value is not there, adds it with a commit, after a person approves, and puts it in the list
+                <em>Blocked</em> in Nik.
+              </td>
+              <td>
+                Make a Bitbucket connection, choose it in the two Bitbucket nodes, name the repository and the file
+                (which must exist). It is a draft until then.
+              </td>
+            </tr>
+            <tr>
+              <td>Incident to ticketing</td>
+              <td><code>incident.created</code>, for high or critical severity with no ticket yet</td>
+              <td>
+                Opens an incident in ServiceNow, writes its number in the incident's ticket field and links to it in a
+                note.
+              </td>
+              <td>
+                Make a ServiceNow connection and choose it in <em>Open a ticket</em>; an admin opens
+                <em>Incident names and tickets</em> for the playbook, since the ticket carries the incident's name. For
+                Jira, replace the node with <em>create-issue</em>. It is a draft until then.
+              </td>
+            </tr>
+            <tr>
+              <td>Disk almost full notice</td>
+              <td><code>storage.low</code></td>
+              <td>Sends a message that says how much of the evidence disk is free.</td>
+              <td>As for the weekly re-check: SMTP, your address, its domain.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The two that send a message ship with <code>soc@example.org</code> as the recipient: a dry run tells you that
+        <code>example.org</code> is not among the hosts the playbook may reach, which is the reminder to put your own.
+      </p>
+
       <h2 id="files">Playbooks and scripts as files</h2>
       <p>
         <strong>Export</strong> (a playbook's Settings, a script's page) gives a JSON file; <strong>Import</strong> on
@@ -997,15 +1933,14 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       <h2 id="later">What this release does not do yet</h2>
       <ul>
         <li>
-          Triggers are the two incident events, a schedule and a person. Events of e-mails, files, addresses and
-          indicators, and inbound webhooks, come with the releases that follow; so do the nodes that analyse an address
-          or check indicators again.
+          A connector sends commands: it does not yet bring alerts in from the other side as incidents, or keep an
+          incident and a ticket in step. Both come with a later release.
         </li>
         <li>
-          Outside Nik a playbook has the HTTP request and the e-mail. Connectors for other products (a ticketing system,
-          an EDR, a firewall), written as files, come in 4.2.
+          No shipped connector has been run against a real system (<a href="#shipped-connectors"
+            >the connectors Nik ships</a
+          >).
         </li>
-        <li>A playbook is run by hand on an incident or on nothing: not yet on an artifact or an indicator.</li>
         <li>
           On the canvas, a wait "until a condition" compares what the run already holds; it cannot yet ask another
           system again.

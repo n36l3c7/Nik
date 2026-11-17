@@ -120,10 +120,15 @@
               <td><code>automation.run</code> and <code>automation.edit</code>: build playbooks and scripts (4.1).</td>
             </tr>
             <tr>
-              <td><code>connectors</code> · <code>dashboards</code></td>
+              <td><code>connectors</code></td>
               <td>
-                Accepted and stored now; what they grant (<code>connectors.manage</code>,
-                <code>dashboards.share</code>…) is used by features of later 4.x releases.
+                <code>connectors.manage</code>: install connectors, make connections and hold their credentials (4.2).
+              </td>
+            </tr>
+            <tr>
+              <td><code>dashboards</code></td>
+              <td>
+                Accepted and stored now; what it grants (<code>dashboards.share</code>) is used by a later 4.x release.
               </td>
             </tr>
           </tbody>
@@ -849,17 +854,99 @@
             <tr>
               <td><code>POST /api/automation/playbooks/{id}/run</code></td>
               <td>
-                Run it by hand: <code>{objectKind: "" | "incident", objectId, dryRun, inputs}</code>.
-                <code>201</code> with the run; <code>400</code> when the playbook is not meant to be run by hand (a dry
-                run always can); <code>409</code> when automation is stopped; <code>429</code> with the limit that
-                refused it.
+                Run it by hand: <code>{objectKind, objectId, dryRun, inputs}</code>, where <code>objectKind</code> is
+                empty, <code>incident</code>, <code>artifact</code> (an analysed e-mail, file or address, by its
+                artifact id) or <code>indicator</code> (<code>objectId</code> is <code>type:value</code>, as in
+                <code>domain:evil.example</code>). <code>201</code> with the run; <code>400</code> when the playbook is
+                not meant to be run by hand (a dry run always can) or its event is about another kind of object;
+                <code>404</code> when the object does not exist; <code>409</code> when automation is stopped;
+                <code>429</code> with the limit that refused it.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/automation/playbooks/{id}/hook</code> ·
+                <code>DELETE /api/automation/playbooks/{id}/hook</code>
+              </td>
+              <td>
+                Give the playbook an address to be started at from outside, or a new one · remove it. The answer of
+                <code>POST</code> holds <code>token</code> and <code>path</code>, and is the only place they appear: Nik
+                keeps the token's SHA-256. The playbook's detail says <code>hook: {since}</code> or <code>null</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/hooks/{token}</code></td>
+              <td>
+                <strong>No authentication</strong>: the token is the credential, and cookies and API keys are not read.
+                Starts the playbook the token belongs to, with the request as <code>trigger.body</code>,
+                <code>trigger.query</code> and <code>trigger.headers</code>. At most 256 kB and 60 requests a minute for
+                each token. <code>202 {"accepted": true}</code>; <code>404</code> whenever the token starts nothing;
+                <code>413</code>, <code>400</code> (unreadable JSON), <code>429</code>. See
+                <a href="automation.html#inbound">Starting a playbook from outside</a>.
               </td>
             </tr>
             <tr>
               <td><code>GET /api/automation/playbooks/{id}/export</code> · <code>POST …/playbooks/import</code></td>
               <td>
                 The playbook as a file (never what it may reach or send) · bring one in (<code>{playbook}</code>) as a
-                draft, off; the answer lists what is missing here as <code>problems</code>.
+                draft, off; the answer lists what is missing here as <code>problems</code>. A script node that names no
+                version takes the version the script has here.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/connectors</code></td>
+              <td>
+                The installed connectors: <code>id</code>, <code>name</code>, <code>version</code>,
+                <code>verified</code>, <code>apiVersion</code>, how many commands and connections, whether Nik ships it.
+                Needs <code>connectors.manage</code>, like every route of this group but the list of connections.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/connectors</code> · <code>POST …/connectors/check</code></td>
+              <td>
+                <code>{source}</code>: the text of a connector file. Installs it, or replaces the connector with the
+                same id when its version is higher (<code>201</code>) · only checks it. A file that is not right answers
+                <code>422</code> with <code>problems: [{line, message, where}]</code>, every problem at once.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/automation/connectors/{id}</code> ·
+                <code>DELETE /api/automation/connectors/{id}</code>
+              </td>
+              <td>
+                The connector with its file, what a connection is asked for, its commands and the playbooks that use it
+                · remove it with its connections (<code>409</code> while a playbook uses it).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/connectors/samples</code></td>
+              <td>The connector files Nik ships, in a zip.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/connections</code></td>
+              <td>
+                The connections. With <code>connectors.manage</code>: their values, <strong>which</strong> secrets are
+                set (never the secrets), the last test. With <code>automation.run</code> or
+                <code>automation.edit</code>: names and connectors only, to choose one in a node.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/automation/connections</code> · <code>PUT /api/automation/connections/{id}</code> ·
+                <code>DELETE …/connections/{id}</code>
+              </td>
+              <td>
+                <code>{name, connector, config, secrets}</code>. <code>config</code> is checked against what the
+                connector asks for. On <code>PUT</code> a secret left out stays as it is and an empty one is removed. A
+                connection a playbook uses is not deleted (<code>409</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/connections/{id}/test</code></td>
+              <td>
+                Sends the connector's test request with the stored credentials, to the connection's host only:
+                <code>{ok, status, message, at}</code>. Always <code>200</code>: a refusal is an answer.
               </td>
             </tr>
             <tr>
@@ -1136,9 +1223,14 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           <code>GET /api/jobs/{jobId}</code>.
         </li>
         <li>
-          <strong>Webhooks</strong>: <code>incident.created/updated/deleted</code>, <code>note.added</code>,
-          <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an indicator of a watched list);
-          each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>).
+          <strong id="webhooks">Webhooks</strong>: <code>incident.created/updated/deleted</code>,
+          <code>note.added</code>, <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an
+          indicator of a watched list), <code>mail.analysed</code>, <code>file.analysed</code>,
+          <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>; the last five carry
+          what a playbook's trigger reads for the same event (<a href="automation.html#trigger">Automation → Trigger</a
+          >). Each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds
+          to the address an admin gave, without the checks a playbook's nodes go through: subscribe an address you trust
+          with senders, subjects and file names.
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

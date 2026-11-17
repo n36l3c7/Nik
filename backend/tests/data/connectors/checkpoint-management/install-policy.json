@@ -1,0 +1,120 @@
+{
+  "args": {
+    "targets": [
+      "corporate-gateway"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/login",
+        "json": {
+          "user": "nik-api",
+          "password": "cp-Passw0rd-123",
+          "session-name": "Nik"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM",
+          "uid": "7a13a360-9b24-40d7-acd3-5b50247be33e",
+          "session-timeout": 600,
+          "api-server-version": "1.9"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/install-policy",
+        "json": {
+          "policy-package": "standard",
+          "targets": [
+            "corporate-gateway"
+          ],
+          "access": true,
+          "threat-prevention": false
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-task",
+        "json": {
+          "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tasks": [
+            {
+              "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3",
+              "status": "in progress",
+              "progress-percentage": 40
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-task",
+        "json": {
+          "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tasks": [
+            {
+              "task-id": "aabbccdd-89ab-cdef-a930-8c37a59972b3",
+              "status": "succeeded",
+              "progress-percentage": 100
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/logout",
+        "json": {},
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "message": "OK"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "task": "aabbccdd-89ab-cdef-a930-8c37a59972b3",
+    "status": "succeeded"
+  }
+}

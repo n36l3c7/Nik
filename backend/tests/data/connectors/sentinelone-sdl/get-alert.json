@@ -1,0 +1,55 @@
+{
+  "args": {
+    "id": "0195-aaaa"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/unifiedalerts/graphql",
+        "json": {
+          "query": "query Alert($id: ID!) { alert(id: $id) { id name description severity status analystVerdict classification confidenceLevel detectedAt createdAt updatedAt storylineId asset { id name agentUuid osType } } }",
+          "variables": {
+            "id": "0195-aaaa"
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "alert": {
+              "id": "0195-aaaa",
+              "name": "Suspicious PowerShell",
+              "severity": "HIGH",
+              "status": "NEW",
+              "analystVerdict": "UNDEFINED",
+              "asset": {
+                "id": "a-1",
+                "name": "WKS-FINANCE-01"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "alert": {
+      "id": "0195-aaaa",
+      "name": "Suspicious PowerShell",
+      "severity": "HIGH",
+      "status": "NEW",
+      "analystVerdict": "UNDEFINED",
+      "asset": {
+        "id": "a-1",
+        "name": "WKS-FINANCE-01"
+      }
+    },
+    "status": "NEW",
+    "severity": "HIGH"
+  }
+}

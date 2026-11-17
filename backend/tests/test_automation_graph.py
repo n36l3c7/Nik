@@ -287,8 +287,8 @@ def test_each_kind_of_node_is_checked():
     def trigger(**config):
         return problems({"nodes": [node("start", "trigger", **config)], "edges": []})
 
-    assert trigger() == ["A trigger needs an event, a schedule or to be run by hand"]
-    assert trigger(event="mail.analysed")[0].startswith("Unknown event")
+    assert trigger() == ["A trigger needs an event, a schedule, a webhook or to be run by hand"]
+    assert trigger(event="note.added")[0].startswith("Unknown event")
     assert trigger(cron="30 6 * * 1", timezone="Europe/Rome") == []
     assert trigger(cron="* * * * *") == ["A schedule fires every five minutes at most"]
     assert trigger(cron="nope") == ["A schedule is five fields: minute, hour, day of the month, month, day of the week"]

@@ -1,0 +1,135 @@
+{
+  "args": {
+    "domain": ".bad.example",
+    "group": "Blocked by Nik",
+    "comments": "Phishing, INC-2026-0412"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/login",
+        "json": {
+          "user": "nik-api",
+          "password": "cp-Passw0rd-123",
+          "session-name": "Nik"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM",
+          "uid": "7a13a360-9b24-40d7-acd3-5b50247be33e",
+          "session-timeout": 600,
+          "api-server-version": "1.9"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/add-dns-domain",
+        "json": {
+          "name": ".bad.example",
+          "is-sub-domain": false,
+          "comments": "Phishing, INC-2026-0412",
+          "ignore-warnings": true
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "uid": "c5c5c5c5-0000-4000-8000-000000000002",
+          "name": ".bad.example",
+          "type": "dns-domain",
+          "is-sub-domain": false
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/set-group",
+        "json": {
+          "name": "Blocked by Nik",
+          "members": {
+            "add": ".bad.example"
+          }
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "uid": "2a2a2a2a-0000-4000-8000-000000000001",
+          "name": "Blocked by Nik"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/publish",
+        "json": {},
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "task-id": "01234567-89ab-cdef-a930-8c37a59972b3"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/show-task",
+        "json": {
+          "task-id": "01234567-89ab-cdef-a930-8c37a59972b3"
+        },
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tasks": [
+            {
+              "task-id": "01234567-89ab-cdef-a930-8c37a59972b3",
+              "status": "succeeded",
+              "progress-percentage": 100
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web_api/v1.9/logout",
+        "json": {},
+        "headers": {
+          "X-chkp-sid": "97BVpRfN4j81ogN-V2XqGYmw3DDwIhoSn0og8PiKDiM"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "message": "OK"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "uid": "c5c5c5c5-0000-4000-8000-000000000002",
+    "published": "succeeded"
+  }
+}

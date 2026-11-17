@@ -1,0 +1,113 @@
+{
+  "args": {
+    "query": "SrcProcName = \"powershell.exe\"",
+    "from_date": "2026-11-16T00:00:00Z",
+    "to_date": "2026-11-17T00:00:00Z",
+    "limit": 50
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/dv/init-query",
+        "json": {
+          "query": "SrcProcName = \"powershell.exe\"",
+          "fromDate": "2026-11-16T00:00:00Z",
+          "toDate": "2026-11-17T00:00:00Z"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "queryId": "q1a2b3c4"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/dv/query-status",
+        "query": {
+          "queryId": "q1a2b3c4"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "responseState": "RUNNING",
+            "progressStatus": 40
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/dv/query-status",
+        "query": {
+          "queryId": "q1a2b3c4"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "responseState": "FINISHED",
+            "progressStatus": 100
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/dv/events",
+        "query": {
+          "queryId": "q1a2b3c4",
+          "limit": 50
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "eventType": "Process Creation",
+              "srcProcName": "powershell.exe",
+              "endpointName": "WKS-FINANCE-01"
+            }
+          ],
+          "pagination": {
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "query_id": "q1a2b3c4",
+    "events": [
+      {
+        "eventType": "Process Creation",
+        "srcProcName": "powershell.exe",
+        "endpointName": "WKS-FINANCE-01"
+      }
+    ],
+    "count": 1
+  }
+}

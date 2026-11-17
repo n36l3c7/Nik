@@ -80,6 +80,12 @@ test('the search box narrows the sections by label, group and keywords', () => {
   assert.deepEqual(ids(filterSettings(all, 'api keys')), ['intel', 'apikeys'])
   assert.deepEqual(ids(filterSettings(all, 'restore')), ['backup'])
   assert.deepEqual(ids(filterSettings(all, 'smtp')), ['automationNetwork'])
-  assert.deepEqual(ids(filterSettings(all, 'automation')), ['automationNetwork', 'automationSwitch'])
+  assert.deepEqual(ids(filterSettings(all, 'automation')), [
+    'connectors',
+    'connections',
+    'automationNetwork',
+    'automationSwitch',
+  ])
+  assert.deepEqual(ids(filterSettings(all, 'credentials')), ['connections'])
   assert.deepEqual(filterSettings(all, 'zzz'), [])
 })

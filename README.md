@@ -31,13 +31,18 @@ every action is attributed to a named analyst in the audit log.
   redirects, the page's forms and a phishing verdict with its reasons.
 - **Host evidence** — browser and shell history, endpoint artifacts and
   Windows event logs, parsed in the analyst's browser where possible.
-- **Automation** — playbooks drawn on a canvas and run by Nik: triggers,
+- **Automation** — playbooks drawn on a canvas and run by Nik: triggers
+  (what Nik analyses, a schedule, a request from outside, a person),
   conditions, approvals, Python scripts in a sandbox with no network, and a
   guard on where a playbook connects and what it sends.
+- **Connectors** — other products reached through YAML files anyone can read
+  and write, with no code: Check Point, Zscaler, SentinelOne, ServiceNow,
+  Jira, Confluence and Bitbucket ship (written from the vendors' public
+  documentation, not yet run against real systems).
 - **Reporting and API** — a PDF/HTML incident report, a REST API with
   API keys, webhooks and a Cortex XSOAR integration.
 - **Roles and queries** — accounts and API keys hold one or more roles
-  (viewer, analyst, playbooks, rules, audit, admin), and one query language filters
+  (viewer, analyst, playbooks, connectors, rules, audit, admin), and one query language filters
   incidents, artifacts and indicators:
   `status:open severity:>=high owner:""`.
 
@@ -138,18 +143,18 @@ the incident JSON format.
 
 The 4.x series is being built release by release. 4.0 brought roles as tags,
 Settings as a page and the query language; 4.1 Nik's own automation engine,
-with a canvas of playbooks and a sandbox for scripts. Still to come:
-connectors written as YAML files, incident types with their fields and
-layouts, a War Room per incident, tasks and SLA timers, lists, fetching and
-mirroring of alerts, dashboards and content packs.
+with a canvas of playbooks and a sandbox for scripts; 4.2 connectors written
+as YAML files (twelve ship, for nine products), playbooks started by what Nik
+analyses or by a request from outside, and five playbooks ready to turn on.
+Still to come: incident types with their fields and layouts, a War Room per
+incident, tasks and SLA timers, lists, fetching and mirroring of alerts,
+dashboards and content packs.
 
 Also planned, not built yet:
 
 - **Editable script signatures.** The signatures the Scripts tab of URL
   Analysis checks are built in (`backend/app/jsanalysis.py`); adding, changing
   and disabling them from Settings, as YARA and capa rules are managed.
-- **Scheduled re-check of a list** of indicators (for example every week),
-  within the sources' quotas.
 - **History of a list**: how many of its indicators changed verdict since the
   last check.
 - **Tags on a selection** of indicators at once.

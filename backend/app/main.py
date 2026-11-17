@@ -48,6 +48,7 @@ from .routers import (
     automation,
     backup,
     capa_rules,
+    connectors,
     enrichment,
     flirt,
     incidents,
@@ -132,7 +133,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="4.1.0",
+    version="4.2.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -170,13 +171,20 @@ def on_startup() -> None:
     # Automatic threat-intelligence lookups (one process at a time, see worker.py).
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
-    # The scripts Nik ships are in the library (a release may bring new versions).
+    # The scripts and the connectors Nik ships are there (a release may bring new versions),
+    # and the playbooks it ships were added once.
     if app_settings.AUTOMATION_WORKER != "off":
+        from .automation import connector_actions, shipped
         from .automation import scripts as automation_scripts
 
         with SessionLocal() as db:
             try:
-                if automation_scripts.seed(db):
+                # All three, so that none is skipped when another has nothing new. The playbooks
+                # last: they are checked against the scripts and the connectors that are there.
+                changed = automation_scripts.seed(db) + connector_actions.seed(db)
+                db.flush()
+                changed += shipped.seed(db)
+                if changed:
                     db.commit()
             except IntegrityError:
                 # Another process of the server added them at the same moment.
@@ -234,6 +242,7 @@ app.include_router(search.router, prefix="/api")
 app.include_router(query.router, prefix="/api")
 app.include_router(automation.router, prefix="/api")
 app.include_router(automation.incident_router, prefix="/api")
+app.include_router(connectors.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

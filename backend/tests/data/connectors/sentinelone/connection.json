@@ -1,0 +1,8 @@
+{
+  "config": {
+    "url": "https://acme.sentinelone.net"
+  },
+  "secrets": {
+    "value": "s1-service-user-token-0123456789"
+  }
+}

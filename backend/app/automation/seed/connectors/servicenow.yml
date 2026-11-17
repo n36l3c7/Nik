@@ -1,0 +1,123 @@
+# ServiceNow, through its Table API.
+#
+# Written against the Table API reference of the "Australia" release
+# (servicenow.com/docs, REST API reference, Table API). Not run against a
+# real instance: see "verified" below.
+#
+# The account of the connection is a ServiceNow user with basic
+# authentication and the roles that let it read and write incidents (for
+# example "itil"). An instance that only takes OAuth is not served by this
+# file yet.
+#
+# The fields of an incident differ from one company to another. The commands
+# name the common ones; any other is set with "update-incident", which takes
+# the fields to change as an object: {"u_site": "Milan", "state": "2"}.
+name: ServiceNow
+id: servicenow
+version: 1
+description: Incidents and their comments in ServiceNow.
+api_version: "Table API (/api/now/table), release Australia"
+verified: false
+configuration:
+  - name: url
+    label: Instance address
+    type: url
+    required: true
+    help: "https://your-instance.service-now.com"
+  - name: credentials
+    type: basic
+base_url: "{{ config.url }}"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /api/now/table/incident, query: { sysparm_limit: 1, sysparm_fields: sys_id } }
+commands:
+  - name: create-incident
+    description: Open an incident.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: short_description, type: text, required: true, description: The title of the incident }
+      - { name: description, type: text, description: What happened }
+      - { name: urgency, type: choice, choices: ["1", "2", "3"], default: "3", description: "1 is high, 3 is low" }
+      - { name: impact, type: choice, choices: ["1", "2", "3"], default: "3", description: "1 is high, 3 is low" }
+      - { name: category, type: text, description: The category }
+      - { name: assignment_group, type: text, description: The group it goes to (its name or its sys_id) }
+      - { name: caller_id, type: text, description: Who it is opened for (a user name or a sys_id) }
+    request:
+      method: POST
+      path: /api/now/table/incident
+      json:
+        short_description: "{{ args.short_description }}"
+        description: "{{ args.description }}"
+        urgency: "{{ args.urgency }}"
+        impact: "{{ args.impact }}"
+        category: "{{ args.category }}"
+        assignment_group: "{{ args.assignment_group }}"
+        caller_id: "{{ args.caller_id }}"
+    success: { status: [200, 201] }
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      number: "{{ response.result.number }}"
+      sys_id: "{{ response.result.sys_id }}"
+      url: "{{ config.url }}/nav_to.do?uri=incident.do?sys_id={{ response.result.sys_id }}"
+    sample:
+      number: INC0000001
+      sys_id: 00000000000000000000000000000000
+      url: "https://your-instance.service-now.com/nav_to.do?uri=incident.do?sys_id=00000000000000000000000000000000"
+
+  - name: get-incident
+    description: An incident, by its number.
+    arguments:
+      - { name: number, type: text, required: true, description: "The number of the incident: INC0010001" }
+    request:
+      method: GET
+      path: /api/now/table/incident
+      query:
+        sysparm_query: "number={{ args.number }}"
+        sysparm_limit: 1
+        sysparm_display_value: "true"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      found: "{{ response.result | length | bool }}"
+      sys_id: "{{ response.result[0].sys_id }}"
+      number: "{{ response.result[0].number }}"
+      state: "{{ response.result[0].state }}"
+      short_description: "{{ response.result[0].short_description }}"
+      assigned_to: "{{ response.result[0].assigned_to }}"
+      incident: "{{ response.result[0] }}"
+
+  - name: update-incident
+    description: Change fields of an incident.
+    changes_outside: true
+    idempotent: true
+    arguments:
+      - { name: sys_id, type: text, required: true, description: "The sys_id of the incident (get-incident gives it)" }
+      - { name: fields, type: object, required: true, description: "The fields to change, by their name: {\"state\": \"2\"}" }
+    request:
+      method: PATCH
+      path: "/api/now/table/incident/{{ args.sys_id }}"
+      json: "{{ args.fields }}"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      number: "{{ response.result.number }}"
+      sys_id: "{{ response.result.sys_id }}"
+      state: "{{ response.result.state }}"
+    sample: { number: INC0000001, sys_id: 00000000000000000000000000000000, state: "2" }
+
+  - name: add-comment
+    description: Write a comment on an incident (seen by the person who opened it).
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: sys_id, type: text, required: true, description: "The sys_id of the incident (get-incident gives it)" }
+      - { name: text, type: text, required: true, description: The comment }
+    request:
+      method: PATCH
+      path: "/api/now/table/incident/{{ args.sys_id }}"
+      json: { comments: "{{ args.text }}" }
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      number: "{{ response.result.number }}"
+      sys_id: "{{ response.result.sys_id }}"
+    sample: { number: INC0000001, sys_id: 00000000000000000000000000000000 }

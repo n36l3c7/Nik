@@ -1,0 +1,79 @@
+{
+  "args": {
+    "search": "Nik"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/auth/authorize",
+        "json": {
+          "grantType": "api_key",
+          "apiKey": "sase-api-key-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "tokenType": "bearer",
+            "accessToken": "eyJhbGciOiJIUzI1NiJ9.sase-access-token.signature",
+            "accessTokenExpire": 1800003600,
+            "tenantId": "t-1"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/objects/custom-urls",
+        "query": {
+          "search": "Nik",
+          "limit": 500,
+          "page": 1
+        },
+        "headers": {
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.sase-access-token.signature"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "cu-1",
+              "name": "Blocked by Nik",
+              "description": "Made by a playbook",
+              "urls": [
+                "bad.example",
+                "*.worse.example"
+              ],
+              "controlledBy": "hsase"
+            }
+          ],
+          "page": 1,
+          "totalPage": 1,
+          "itemsTotal": 1
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "lists": [
+      {
+        "id": "cu-1",
+        "name": "Blocked by Nik",
+        "description": "Made by a playbook",
+        "urls": [
+          "bad.example",
+          "*.worse.example"
+        ],
+        "controlledBy": "hsase"
+      }
+    ],
+    "names": [
+      "Blocked by Nik"
+    ]
+  }
+}

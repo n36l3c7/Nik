@@ -1,0 +1,55 @@
+{
+  "args": {
+    "computer_name": "WKS-FINANCE"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/agents",
+        "query": {
+          "computerName__like": "WKS-FINANCE",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "1234567890123456789",
+              "computerName": "WKS-FINANCE-01",
+              "networkStatus": "connected",
+              "infected": true,
+              "osName": "Windows 11 Pro",
+              "siteName": "Milan"
+            }
+          ],
+          "pagination": {
+            "nextCursor": null,
+            "totalItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "agents": [
+      {
+        "id": "1234567890123456789",
+        "computerName": "WKS-FINANCE-01",
+        "networkStatus": "connected",
+        "infected": true,
+        "osName": "Windows 11 Pro",
+        "siteName": "Milan"
+      }
+    ],
+    "ids": [
+      "1234567890123456789"
+    ],
+    "count": 1
+  }
+}

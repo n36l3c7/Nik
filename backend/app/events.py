@@ -31,6 +31,11 @@ KNOWN_EVENTS = (
     "note.added",
     "upload.completed",
     "ioc.watch_hit",
+    "mail.analysed",
+    "file.analysed",
+    "url.analysed",
+    "ioc.verdict_changed",
+    "storage.low",
 )
 
 

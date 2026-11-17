@@ -1,0 +1,59 @@
+{
+  "args": {
+    "key": "SEC-12"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rest/api/2/issue/SEC-12/transitions",
+        "headers": {
+          "Authorization": "Bearer NDc2-personal-access-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "transitions": [
+            {
+              "id": "21",
+              "name": "In Progress",
+              "to": {
+                "name": "In Progress"
+              }
+            },
+            {
+              "id": "31",
+              "name": "Done",
+              "to": {
+                "name": "Done"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "transitions": [
+      {
+        "id": "21",
+        "name": "In Progress",
+        "to": {
+          "name": "In Progress"
+        }
+      },
+      {
+        "id": "31",
+        "name": "Done",
+        "to": {
+          "name": "Done"
+        }
+      }
+    ],
+    "names": [
+      "In Progress",
+      "Done"
+    ]
+  }
+}

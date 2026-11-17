@@ -427,6 +427,9 @@ def _announce(db: OrmSession, row: Incident, before: set, after: set) -> None:
             target=hit["value"],
         )
     if hits:
+        from .automation import triggers
+
+        triggers.watch_hit(db, row, hits)
         emit_detached(db, "ioc.watch_hit", {"incident": hits[0]["incident"], "hits": hits[:200]})
 
 

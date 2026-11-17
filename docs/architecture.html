@@ -245,7 +245,7 @@
 │   │                               #   re-encryption after SECRET_KEY changes (SECRET_KEY_PREVIOUS)
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
-├── automation/                     # Playbooks (4.1): see "The automation engine" below
+├── automation/                     # Playbooks (4.1), connectors (4.2): see "The automation engine" below
 │   ├── graph.py                    # The shape of a playbook and what makes it valid
 │   ├── expressions.py              # The {{ }} language; classes of data travel with values
 │   ├── engine.py                   # A run, step by step, with its state in the database
@@ -255,6 +255,11 @@
 │   ├── outbound.py, egress.py      # HTTP and e-mail nodes; the one module that opens connections
 │   ├── guard.py                    # The data guard: classes, what may leave, the scan of what does
 │   ├── scripts.py, seed/scripts/   # Scripts, their versions, the sandbox client; the shipped scripts
+│   ├── connectors.py               # The connector file: its format, read and checked (problems with their line)
+│   ├── connector_runtime.py        # A command run: requests from templates, credentials, pages, steps, polls
+│   ├── connector_actions.py        # Connectors and connections in the database; commands as actions
+│   ├── seed/connectors/            # The connector files Nik ships (*.yml)
+│   ├── shipped.py, seed/playbooks/ # The playbooks Nik ships (*.json), added once and off
 │   └── catalog.py, state.py        # The library of nodes; the switch, the worker's heartbeat
 ├── workers/                        # Clients of the analysis workers
 │   ├── analyzer.py                 # rizin worker client + disassembly job
@@ -1085,7 +1090,9 @@
           opened), <code>playbook_versions</code>, <code>scripts</code>, <code>script_versions</code>,
           <code>automation_events</code> (the outbox), <code>runs</code>, <code>run_steps</code>,
           <code>approvals</code>, <code>automation_schedules</code>. Migration <code>0026_automation</code> creates
-          those that are missing.
+          those that are missing; <code>0027_connectors</code> adds <code>connectors</code> (each with its file as text)
+          and <code>connections</code> (plain values, and the secrets encrypted), and to <code>playbooks</code> the hash
+          of the token a playbook is started at from outside.
         </li>
         <li>
           <strong>The outbox.</strong> A change to an incident writes an event in the same transaction as the change;
@@ -1126,6 +1133,25 @@
         </li>
       </ul>
 
+      <p>
+        <strong>Connectors.</strong> A connector is a row of <code>connectors</code> that holds its YAML file as text; a
+        connection is a row of <code>connections</code> with its plain values and, encrypted with the vault key, its
+        secrets. <code>connectors.py</code> turns the text into typed models (pydantic, unknown keys refused) and checks
+        every template for the names it may read; it remembers the line of every key, so a problem is reported where it
+        is. <code>connector_runtime.py</code> runs one command: it renders the request, adds the credentials, sends it
+        through <code>egress</code> to the connection's host and no other, reads pages, and for a command that polls
+        gives the step back to the engine with the time to call it again (the run waits; no worker does).
+        <code>connector_actions.py</code> registers a provider with the registry of actions, so that
+        <code>servicenow.create-incident</code> is found like an action written in code, as long as the connector is
+        installed.
+      </p>
+      <p>
+        <strong>Events.</strong> Beside incidents, the analysis of an e-mail, a file and an address, a change of an
+        indicator's overall verdict, a watched indicator found in an incident and a disk nearly full each write a row of
+        the outbox in the transaction of what they tell of. A request to
+        <code>POST /api/automation/hooks/&lt;token&gt;</code> starts a run directly: the token is looked up by its
+        SHA-256, which is all that is stored of it.
+      </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>
         A browser history of a few hundred thousand visits has to stay usable, so the Browser tab keeps its per-row work

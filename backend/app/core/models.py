@@ -742,6 +742,9 @@ class Playbook(Base):
     max_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=86400)
     approval_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # The address a request from outside starts the playbook at: the SHA-256 of its token (never the token).
+    hook_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True)
+    hook_created_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -914,6 +917,56 @@ class AutomationSchedule(Base):
     next_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+
+class Connector(Base):
+    """A connector: the YAML file that says how to talk to a product (automation/connectors.py).
+
+    ``source`` is the file as it was uploaded or shipped; it is parsed when a
+    command runs. ``builtin`` ones come with Nik (``seed/connectors``) and are
+    replaced when a release changes them; one uploaded under the same id is
+    the admin's and is left alone.
+    """
+
+    __tablename__ = "connectors"
+
+    id: Mapped[str] = mapped_column(String(41), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class Connection(Base):
+    """A connector plus an address and credentials: one system a playbook can talk to.
+
+    ``config`` holds the plain values (the address, a region); ``secrets`` the
+    credentials, encrypted with the vault key and never returned by the API.
+    The host of a connection is one its playbooks may reach: making the
+    connection is the permission.
+    """
+
+    __tablename__ = "connections"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    connector_id: Mapped[str] = mapped_column(
+        String(41), ForeignKey("connectors.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    secrets: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    last_test: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+# Created by migration 0027_connectors where missing, in this order.
+CONNECTOR_TABLES = ("connectors", "connections")
 
 AUTOMATION_TABLES = (
     "playbooks",

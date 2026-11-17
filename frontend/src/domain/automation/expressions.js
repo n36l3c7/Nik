@@ -497,6 +497,10 @@ const FILTERS = {
     args: [1, 2],
     run: (v, old, fresh = '') => (text(old) ? text(v).replaceAll(text(old), text(fresh)) : fail()),
   },
+  add: {
+    args: [0, 1],
+    run: (v, amount = 1) => (typeof v === 'number' && typeof amount === 'number' ? v + amount : fail()),
+  },
   int: { args: [0, 0], run: toInt },
   float: { args: [0, 0], run: toFloat },
   bool: { args: [0, 0], run: (v) => !falsy(v) && !['false', 'no', '0', 'off'].includes(text(v).toLowerCase()) },

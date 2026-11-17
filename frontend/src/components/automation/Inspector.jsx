@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/index.js'
-import { asksApproval, entryOf, headingOf, valueTree } from '../../domain/automation/catalog.js'
+import {
+  asksApproval,
+  entryOf,
+  eventLabel,
+  headingOf,
+  objectName,
+  runsOn,
+  sampleFilter,
+  valueTree,
+} from '../../domain/automation/catalog.js'
 import {
   OPERATORS,
   PORTS,
@@ -428,7 +437,18 @@ function Pairs({ value, onChange, tree, disabled }) {
 }
 
 /** The settings that depend on the kind of node. */
-function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, disabled, onConfig, problemAt }) {
+function KindSettings({
+  node,
+  entry,
+  tree,
+  events,
+  playbooks,
+  connections,
+  approvalDefault,
+  disabled,
+  onConfig,
+  problemAt,
+}) {
   const config = node.config ?? {}
   switch (node.kind) {
     case 'trigger': {
@@ -438,7 +458,11 @@ function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, d
           <SectionTitle>Starts</SectionTitle>
           <Field
             label="On an event"
-            hint="The playbook runs when this happens in Nik, on the incident it happened to."
+            hint={
+              config.event && runsOn(config)
+                ? `The playbook runs when this happens in Nik, on ${objectName(runsOn(config))}.`
+                : 'The playbook runs when this happens in Nik.'
+            }
             problem={problemAt('event')}
           >
             {(id) => (
@@ -447,11 +471,12 @@ function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, d
                 value={config.event ?? ''}
                 disabled={disabled}
                 onChange={(event) =>
-                  onConfig({ event: event || undefined, ...(event ? {} : { conditions: undefined }) })
+                  // A filter written for one event reads fields another does not have.
+                  onConfig({ event: event || undefined, conditions: undefined })
                 }
                 options={[
                   { value: '', label: '(no event)' },
-                  ...events.map((event) => ({ value: event, label: event })),
+                  ...events.map((event) => ({ value: event, label: eventLabel(event) })),
                 ]}
               />
             )}
@@ -466,9 +491,7 @@ function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, d
                   disabled={disabled}
                   onChange={(on) =>
                     onConfig({
-                      conditions: on
-                        ? { all: [{ left: '{{ trigger.incident.severity }}', op: 'eq', right: 'high' }] }
-                        : undefined,
+                      conditions: on ? sampleFilter(config.event) : undefined,
                     })
                   }
                 />
@@ -513,7 +536,23 @@ function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, d
             </Field>
           )}
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-fg-muted">Can be run by hand (from an incident, or on nothing)</span>
+            <span className="text-xs text-fg-muted">
+              From outside: a request to the playbook’s own address (created in its Settings)
+            </span>
+            <Switch
+              label="Starts from outside"
+              checked={Boolean(config.webhook)}
+              disabled={disabled}
+              onChange={(webhook) => onConfig({ webhook: webhook || undefined })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-fg-muted">
+              Can be run by hand
+              {runsOn(config)
+                ? ` (on ${objectName(runsOn(config))})`
+                : ' (on an incident, an artifact, an indicator, or on nothing)'}
+            </span>
             <Switch
               label="Can be run by hand"
               checked={Boolean(config.manual)}
@@ -711,6 +750,44 @@ function KindSettings({ node, entry, tree, events, playbooks, approvalDefault, d
       return (
         <>
           {entry.description && <p className="text-xs text-fg-muted">{entry.description}</p>}
+          {entry.needsConnection && (
+            <Field
+              label="Connection"
+              required
+              hint={
+                (connections[entry.connector] ?? []).length === 0
+                  ? `No connection to ${entry.group} yet: one is made in Settings → Automation → Connections.`
+                  : 'The system this node talks to. The playbook may reach its host.'
+              }
+              problem={problemAt('connection')}
+            >
+              {(id) => (
+                <SelectInput
+                  id={id}
+                  value={config.connection ?? ''}
+                  disabled={disabled}
+                  onChange={(connection) => onConfig({ connection: connection || undefined })}
+                  options={[
+                    {
+                      value: '',
+                      label:
+                        (connections[entry.connector] ?? []).length === 1 ? '(the only one)' : '(choose a connection)',
+                    },
+                    ...(connections[entry.connector] ?? []).map((connection) => ({
+                      value: connection.name,
+                      label: connection.name,
+                    })),
+                    ...(config.connection &&
+                    !(connections[entry.connector] ?? []).some((connection) =>
+                      [connection.name, connection.id].includes(config.connection),
+                    )
+                      ? [{ value: config.connection, label: `${config.connection} (missing)` }]
+                      : []),
+                  ]}
+                />
+              )}
+            </Field>
+          )}
           {entry.arguments.length > 0 && <SectionTitle>Arguments</SectionTitle>}
           {entry.arguments.map((argument) => (
             <ArgumentField
@@ -1033,6 +1110,7 @@ function PlaybookSettings({ graph, disabled, onGraph, problems }) {
  *   nodeId: string | null,
  *   catalog: object[],
  *   events: string[],                 // what a trigger can wait for
+ *   connections: Record<string, Array<{ id: string, name: string }>>,  // by connector
  *   playbooks: string[],              // the names a "run another playbook" node can choose
  *   problems: Array<{ message: string, node: string | null, field: string | null }>,
  *   updates: Array<{ node: string, script: string, from: number, to: number }>,
@@ -1051,6 +1129,7 @@ export default function Inspector({
   catalog,
   events,
   playbooks,
+  connections,
   problems,
   updates,
   approvalDefault,
@@ -1082,7 +1161,8 @@ export default function Inspector({
   const problemAt = (field) => mine.find((problem) => problem.field === field)?.message ?? null
   const elsewhere = mine.filter(
     (problem) =>
-      !problem.field || !/^(args\.|event$|cron$|items$|max$|seconds$|timeout$|question$|playbook$)/.test(problem.field),
+      !problem.field ||
+      !/^(args\.|event$|cron$|items$|max$|seconds$|timeout$|question$|playbook$|connection$)/.test(problem.field),
   )
   const notReadable = unreadable(graph, node.id)
   const update = updates.find((item) => item.node === node.id)
@@ -1190,6 +1270,7 @@ export default function Inspector({
           tree={tree}
           events={events}
           playbooks={playbooks}
+          connections={connections}
           approvalDefault={approvalDefault}
           disabled={readOnly}
           onConfig={onConfig}

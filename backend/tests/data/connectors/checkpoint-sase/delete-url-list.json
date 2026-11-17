@@ -1,0 +1,44 @@
+{
+  "args": {
+    "id": "cu-1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/auth/authorize",
+        "json": {
+          "grantType": "api_key",
+          "apiKey": "sase-api-key-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "tokenType": "bearer",
+            "accessToken": "eyJhbGciOiJIUzI1NiJ9.sase-access-token.signature",
+            "accessTokenExpire": 1800003600,
+            "tenantId": "t-1"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/v3/objects/custom-urls/cu-1",
+        "headers": {
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.sase-access-token.signature"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "deleted": "cu-1"
+  }
+}

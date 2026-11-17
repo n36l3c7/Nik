@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import artifacts, jsanalysis
+from .automation import triggers as automation_triggers
 from .core.config import settings
 from .core.db import SessionLocal
 from .core.locking import relock
@@ -409,6 +410,7 @@ def run_scan(scan: str, actor: str) -> None:
             row.status, row.error, row.scanned_at, row.capture_id = "done", None, stamp, session_id
             db.flush()
             entry = artifacts.register_url(db, row)
+            automation_triggers.url_analysed(db, row)
             db.commit()
             try:
                 previews.close_session(actor, session_id)
