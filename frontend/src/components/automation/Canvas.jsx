@@ -175,6 +175,9 @@ function Flow({
   // While a node is dragged: where the pointer has it, before the graph is told.
   const [dragged, setDragged] = useState(null)
   const draggedRef = useRef(null)
+  // What xyflow measured of each node. It is given back with the nodes: a node without its
+  // measure is hidden until it is measured again, which a redraw would cause every time.
+  const [sizes, setSizes] = useState({})
 
   // The page chose nodes (a new node, a row of the node list): the canvas follows.
   useEffect(() => {
@@ -196,6 +199,7 @@ function Flow({
           id: node.id,
           type: 'playbook',
           position: dragged?.[node.id] ?? node.position,
+          measured: sizes[node.id],
           selected: chosen.nodes.has(node.id),
           deletable: node.kind !== 'trigger',
           ariaLabel: `${headingOf(node, entry)}: ${node.name || node.id}`,
@@ -209,7 +213,7 @@ function Flow({
           },
         }
       }),
-    [graph, catalog, chosen.nodes, counts, statuses, approvalDefault, readOnly, dragged],
+    [graph, catalog, chosen.nodes, counts, statuses, approvalDefault, readOnly, dragged, sizes],
   )
 
   const edges = useMemo(
@@ -252,7 +256,13 @@ function Flow({
       let moving = null
       let settled = false
       let picked = null
+      let measured = null
       for (const change of changes.toArray()) {
+        if (change.type === 'dimensions' && change.dimensions) {
+          measured ??= {}
+          measured[change.id] = { width: change.dimensions.width, height: change.dimensions.height }
+          continue
+        }
         if (change.type === 'position' && !readOnly) {
           if (change.position) {
             moving ??= {}
@@ -264,6 +274,14 @@ function Flow({
           picked ??= new Map()
           picked.set(change.id, change.selected)
         }
+      }
+      if (measured) {
+        setSizes((before) => {
+          const same = Object.entries(measured).every(
+            ([id, size]) => before[id]?.width === size.width && before[id]?.height === size.height,
+          )
+          return same ? before : { ...before, ...measured }
+        })
       }
       if (moving) {
         draggedRef.current = { ...draggedRef.current, ...moving }

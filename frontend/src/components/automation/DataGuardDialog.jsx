@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Button, Modal } from '../ui/index.js'
 import { INPUT } from './fields.jsx'
 
@@ -22,7 +22,15 @@ import { INPUT } from './fields.jsx'
  *   onClose: () => void,
  * }} props
  */
-export default function DataGuardDialog({
+/**
+ * The dialog lives only while it is open, so every opening starts clean: the box
+ * unticked, the name empty. (A reset by an effect could run after a quick first click.)
+ */
+export default function DataGuardDialog(props) {
+  return props.open ? <OpenDialog {...props} /> : null
+}
+
+function OpenDialog({
   open,
   title,
   warning,
@@ -38,12 +46,6 @@ export default function DataGuardDialog({
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  useEffect(() => {
-    if (!open) return
-    setTicked(false)
-    setTyped('')
-    setError(null)
-  }, [open])
 
   const ready = ticked && typed === playbookName && !busy
   const submit = async (event) => {

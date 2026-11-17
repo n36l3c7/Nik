@@ -28,28 +28,26 @@ const FIELD =
  */
 export default function RunPlaybookDialog({ onStarted }) {
   const { runRequest, closeRun } = useAutomation()
+  // The dialog lives only while it is open: every request starts from its own choices.
+  return runRequest ? <OpenDialog runRequest={runRequest} closeRun={closeRun} onStarted={onStarted} /> : null
+}
+
+function OpenDialog({ runRequest, closeRun, onStarted }) {
   const { incidents } = useIncidents()
   const { showToast } = useToast()
-  const open = runRequest !== null
+  const open = true
 
   const [playbooks, setPlaybooks] = useState(null)
-  const [playbookId, setPlaybookId] = useState('')
-  const [incidentId, setIncidentId] = useState('')
-  const [dryRun, setDryRun] = useState(false)
+  const [playbookId, setPlaybookId] = useState(runRequest.playbookId ?? '')
+  const [incidentId, setIncidentId] = useState(runRequest.incidentId ?? '')
+  const [dryRun, setDryRun] = useState(Boolean(runRequest.dryRun))
   const [inputs, setInputs] = useState([]) // what the chosen playbook declares
   const [typed, setTyped] = useState({})
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (!runRequest) return undefined
     let alive = true
-    setPlaybooks(null)
-    setError(null)
-    setTyped({})
-    setDryRun(Boolean(runRequest.dryRun))
-    setPlaybookId(runRequest.playbookId ?? '')
-    setIncidentId(runRequest.incidentId ?? '')
     api
       .get('/automation/playbooks')
       .then((found) => alive && setPlaybooks(found.playbooks))
@@ -57,7 +55,7 @@ export default function RunPlaybookDialog({ onStarted }) {
     return () => {
       alive = false
     }
-  }, [runRequest])
+  }, [])
 
   const choices = useMemo(() => runnable(playbooks, { dry: dryRun }), [playbooks, dryRun])
   // The choice follows what can be chosen: the first one when none is, none when it is no longer there.
