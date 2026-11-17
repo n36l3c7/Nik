@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Automation, first part: the data.** Playbooks are graphs of nodes with
+  versions; a field of a node takes earlier results with `{{ node.path }}`
+  and filters (`| default("…")`, `| join(", ")`, `| where(…)`); a graph is
+  saved as a version only when it is valid (one trigger, no cycle, every
+  expression reading what is certain to have run before it). Not usable
+  yet: the engine and the canvas follow.
+
 ## [4.0.0] - 2026-11-17
 
 The first release of the 4.x series: roles as tags, Settings as a page, and

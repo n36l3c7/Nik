@@ -54,3 +54,9 @@ pillow>=13.0.0
 # from SECRET_KEY with HKDF). Already pulled in by oletools; listed because
 # Nik imports it directly.
 cryptography>=46.0.7
+# Automation (app/automation): cron schedules of playbooks, with the time-zone
+# database (the slim image has none); user-written patterns matched with a
+# timeout, which the standard library's re does not have.
+croniter>=7.0.0,<8.0
+tzdata>=2026.1
+regex>=2026.1.1

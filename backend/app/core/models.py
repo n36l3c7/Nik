@@ -711,3 +711,218 @@ class MailboxMessage(Base):
     recipients: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     date_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     attachments: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+
+
+# --------------------------------------------------------------------------- #
+# Automation (app/automation): playbooks, scripts, runs                       #
+# --------------------------------------------------------------------------- #
+class Playbook(Base):
+    """A playbook: a graph of nodes that a trigger starts.
+
+    Every save is a version (``playbook_versions``); ``draft`` is the canvas
+    as it is being edited, which may not be valid yet. What the playbook may
+    reach and send is set on the playbook, not on its nodes: ``egress_mode``
+    (the hosts in ``egress_hosts`` and those of its connections, or any) and
+    ``data_allow`` (the classes of data opened for it, see automation/guard.py).
+    """
+
+    __tablename__ = "playbooks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    current_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    draft: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    egress_mode: Mapped[str] = mapped_column(String(8), nullable=False, default="listed")  # listed | any
+    egress_hosts: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    data_allow: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    max_runs_per_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    one_per_object: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    max_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=86400)
+    approval_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class PlaybookVersion(Base):
+    """A saved, valid graph of a playbook. A run finishes with the version it started with."""
+
+    __tablename__ = "playbook_versions"
+
+    playbook_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("playbooks.id", ondelete="CASCADE"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    graph: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class Script(Base):
+    """A script of the library: Python with typed arguments and outputs, run in
+    the sandbox. It is in the library once a version with a passing test exists."""
+
+    __tablename__ = "scripts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    current_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    draft: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class ScriptVersion(Base):
+    __tablename__ = "script_versions"
+
+    script_id: Mapped[str] = mapped_column(String(32), ForeignKey("scripts.id", ondelete="CASCADE"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+    arguments: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    outputs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    test: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    test_result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class AutomationEvent(Base):
+    """The outbox of what happened in Nik, written in the transaction of the
+    change itself; the automation worker turns the events into runs."""
+
+    __tablename__ = "automation_events"
+    __table_args__ = (Index("ix_automation_events_pending", "done", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    object_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    object_id: Mapped[str] = mapped_column(String(1100), nullable=False, default="")
+    # {"data": the payload, "classes": {path: [class]}, "caused_by_run", "depth"}
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    claimed_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+
+
+class Run(Base):
+    """One execution of a version of a playbook: queued → running ⇄ waiting → done | failed | stopped."""
+
+    __tablename__ = "runs"
+    __table_args__ = (
+        Index("ix_runs_playbook", "playbook_id", "started_at"),
+        Index("ix_runs_status", "status"),
+        Index("ix_runs_incident", "incident_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    playbook_id: Mapped[str] = mapped_column(String(32), ForeignKey("playbooks.id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="queued")
+    trigger: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    object_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    object_id: Mapped[str] = mapped_column(String(1100), nullable=False, default="")
+    incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    artifact_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # {node id: result}, the classes of what it holds, and which edges were taken or are dead.
+    context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    context_classes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    started_at: Mapped[str] = mapped_column(String, nullable=False)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    deadline: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    waited_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    started_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    parent_run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    parent_step_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class RunStep(Base):
+    """One node of a run being executed (several for a node inside a "for each")."""
+
+    __tablename__ = "run_steps"
+    __table_args__ = (Index("ix_run_steps_due", "status", "next_at"), Index("ix_run_steps_run", "run_id", "seq"))
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(32), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    node_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    next_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    claimed_by: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    claimed_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    timeout_s: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    input: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    output: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    request: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    port: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)  # the port it left by
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    item_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # What the step waits for while it is `waiting`: {"kind": "approval" | "wait" | "run" | "each", ...}
+    waiting: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
+
+class Approval(Base):
+    """A question a run stops at until someone who may run playbooks answers."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (Index("ix_approvals_status", "status"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(32), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    step_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    question: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="waiting")
+    on_expire: Mapped[str] = mapped_column(String(8), nullable=False, default="skip")
+    asked_at: Mapped[str] = mapped_column(String, nullable=False)
+    asked_epoch: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    expires_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    answered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    answered_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    comment: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+
+
+class AutomationSchedule(Base):
+    """When a playbook with a schedule trigger fires next."""
+
+    __tablename__ = "automation_schedules"
+
+    playbook_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("playbooks.id", ondelete="CASCADE"), primary_key=True
+    )
+    node_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    cron: Mapped[str] = mapped_column(String(120), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    next_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+AUTOMATION_TABLES = (
+    "playbooks",
+    "playbook_versions",
+    "scripts",
+    "script_versions",
+    "automation_events",
+    "runs",
+    "run_steps",
+    "approvals",
+    "automation_schedules",
+)
