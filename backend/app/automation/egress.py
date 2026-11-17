@@ -48,6 +48,9 @@ MAX_URL = 8000
 # Headers that carry a credential: never recorded, never sent on to another host.
 CREDENTIAL_HEADERS = ("authorization", "cookie", "proxy-authorization", "x-api-key", "x-auth-token", "x-chkp-sid")
 METADATA = ipaddress.ip_network("169.254.169.254/32")
+# Carrier-grade NAT: shared between a provider and its customers, never the open internet
+# (some clouds keep their metadata service there).
+SHARED = ipaddress.ip_network("100.64.0.0/10")
 
 
 class EgressError(Exception):
@@ -154,6 +157,7 @@ def is_inside(address: str) -> bool:
         or ip.is_private
         or ip.is_reserved
         or ip in METADATA
+        or (ip.version == 4 and ip in SHARED)
         or any(ip in network for network in _LOCAL)
     )
 

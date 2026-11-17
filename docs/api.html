@@ -19,6 +19,7 @@
         <nav class="site-nav" aria-label="Documentation">
           <a href="./">Overview</a>
           <a href="guide.html">User guide</a>
+          <a href="automation.html">Automation</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
           <a href="security.html">Security</a>
@@ -45,9 +46,10 @@
           <li><a href="#docs">Interactive documentation</a></li>
           <li><a href="#auth">Authentication</a></li>
           <li><a href="#endpoints">Endpoints</a></li>
+          <li><a href="#automation-engine">Automation: playbooks, runs, approvals, scripts</a></li>
           <li><a href="#query">The query language</a></li>
           <li><a href="#uploads">Uploading files</a></li>
-          <li><a href="#automation">Automation features</a></li>
+          <li><a href="#automation">Features for clients of the API</a></li>
         </ol>
       </nav>
 
@@ -114,11 +116,14 @@
               </td>
             </tr>
             <tr>
-              <td><code>playbooks</code> · <code>connectors</code> · <code>dashboards</code></td>
+              <td><code>playbooks</code></td>
+              <td><code>automation.run</code> and <code>automation.edit</code>: build playbooks and scripts (4.1).</td>
+            </tr>
+            <tr>
+              <td><code>connectors</code> · <code>dashboards</code></td>
               <td>
-                Accepted and stored now; what they grant (<code>automation.edit</code>,
-                <code>connectors.manage</code>, <code>dashboards.share</code>…) is used by features of later 4.x
-                releases.
+                Accepted and stored now; what they grant (<code>connectors.manage</code>,
+                <code>dashboards.share</code>…) is used by features of later 4.x releases.
               </td>
             </tr>
           </tbody>
@@ -781,6 +786,177 @@
         <a href="#roles">Roles and permissions</a>.
       </p>
 
+      <h2 id="automation-engine">Automation: playbooks, runs, approvals, scripts</h2>
+      <p>
+        Everything the Automations area does is under <code>/api/automation</code>.
+        <a href="automation.html">Automation</a> explains the playbook format, the nodes and the expressions.
+        <code>automation.run</code> (analysts) reads, runs, stops and answers; <code>automation.edit</code> (the role
+        <code>playbooks</code>) builds; the rows marked <strong>admin</strong> decide what leaves the server.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Method &amp; path</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>GET /api/automation/playbooks</code></td>
+              <td>
+                Every playbook with its trigger, last run, a week of counts and what to watch (<code>any host</code>,
+                <code>data opened</code>, <code>updates available</code>); also whether automation is on and the worker
+                alive.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/playbooks</code></td>
+              <td>
+                Create one (<code>{name, description}</code>): off, with a draft that holds a trigger.
+                <code>automation.edit</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>PUT</code> · <code>DELETE /api/automation/playbooks/{id}</code></td>
+              <td>
+                The playbook with its current <code>graph</code>, its <code>draft</code>, its limits and what it may
+                reach and send · save the <code>draft</code> (it need not be valid), the name, the description and the
+                limits (<code>maxRunsPerHour</code>, <code>onePerObject</code>, <code>maxSeconds</code>,
+                <code>approvalDefault</code>) · delete it with its versions and runs (<code>409</code> while a run is in
+                progress). Changes need <code>automation.edit</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/playbooks/{id}/validate</code></td>
+              <td>
+                What keeps a graph (<code>{graph}</code>, or the draft) from being a version:
+                <code>{problems: [{message, node, field}]}</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>POST /api/automation/playbooks/{id}/versions</code></td>
+              <td>
+                The versions · save the next one from <code>{graph}</code> or from the draft: <code>201</code>, or
+                <code>422</code> with every problem. <code>GET …/versions/{n}</code> is one version;
+                <code>POST …/versions/{n}/restore</code> saves it again as a new one.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/automation/playbooks/{id}/enabled</code></td>
+              <td><code>{enabled}</code>: on or off. A playbook needs a version to be turned on.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/playbooks/{id}/run</code></td>
+              <td>
+                Run it by hand: <code>{objectKind: "" | "incident", objectId, dryRun, inputs}</code>.
+                <code>201</code> with the run; <code>400</code> when the playbook is not meant to be run by hand (a dry
+                run always can); <code>409</code> when automation is stopped; <code>429</code> with the limit that
+                refused it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/playbooks/{id}/export</code> · <code>POST …/playbooks/import</code></td>
+              <td>
+                The playbook as a file (never what it may reach or send) · bring one in (<code>{playbook}</code>) as a
+                draft, off; the answer lists what is missing here as <code>problems</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/automation/playbooks/{id}/egress</code></td>
+              <td>
+                <strong>admin</strong>. <code>{mode: "listed" | "any", hosts}</code>. Switching to <code>any</code> also
+                needs <code>acknowledged: true</code> and <code>confirmName</code> equal to the playbook's name.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/automation/playbooks/{id}/data-allow</code></td>
+              <td>
+                <strong>admin</strong>. <code>{class, allow}</code>: open or close a class of data. Opening needs the
+                same two confirmations. <code>GET /api/automation/data-classes</code> lists the classes.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/catalog</code></td>
+              <td>
+                The library of nodes: every action and script with its arguments and outputs, the events, the operators,
+                the ports.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/runs</code></td>
+              <td>
+                Runs, newest first. Query: <code>playbook</code>, <code>status</code> (running, waiting, done, failed,
+                stopped), <code>incident</code>, <code>limit</code>, <code>offset</code>.
+                <code>GET /api/incidents/{id}/runs</code> is the runs of one incident with the approvals that wait on
+                them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/runs/{id}</code> · <code>POST …/stop</code></td>
+              <td>
+                A run with the graph of its version, every step (input, output, what was sent, tries, error, log) and
+                its approvals · stop it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/approvals</code> · <code>POST …/approvals/{id}</code></td>
+              <td>
+                Those waiting, oldest first (<code>status=approved|refused|expired|all</code> for the others;
+                <code>incident</code> narrows), with <code>waiting</code>, how many wait in all · answer:
+                <code>{answer: "approved" | "refused", comment}</code>; <code>409</code> when it was answered already.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>PUT /api/automation/state</code></td>
+              <td>
+                Whether automation is on and its worker alive · the general switch,
+                <code>{enabled}</code> (<strong>admin</strong>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>PUT /api/automation/settings</code></td>
+              <td>
+                <strong>admin</strong>. The <code>hosts</code> every playbook may reach and the <code>smtp</code> server
+                (<code>host</code>, <code>port</code>, <code>security</code>, <code>username</code>,
+                <code>sender</code>, <code>caPem</code>; <code>password</code> is write-only: left out it is kept, empty
+                it is removed).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>POST /api/automation/scripts</code></td>
+              <td>
+                The scripts, and whether a sandbox is configured · create one as a draft (<code
+                  >{name, description}</code
+                >). All script routes need <code>automation.edit</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>PUT</code> · <code>DELETE /api/automation/scripts/{id}</code></td>
+              <td>
+                The script with its current version, its draft, its versions and the playbooks that use it · save the
+                <code>draft</code> (<code>{code, arguments, outputs, test}</code>) or the description · delete it (<code
+                  >409</code
+                >
+                while a playbook uses it; a shipped one is refused).
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/scripts/{id}/test</code> · <code>POST …/versions</code></td>
+              <td>
+                Run the stored test in the sandbox: <code>{passed, result, error, stdout, durationMs}</code> · save the
+                draft as the next version when its test passes (<code>422</code> with the test's result otherwise).
+                <code>GET …/versions/{n}</code> is one version.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/automation/scripts/{id}/export</code> · <code>POST …/scripts/import</code></td>
+              <td>The script as a file · bring one in as a draft.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <h2 id="query">The query language</h2>
       <p>
         One language asks incidents, artifacts, indicators and the audit log. It is what the <code>q</code> parameter of
@@ -924,7 +1100,7 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
         </li>
       </ul>
 
-      <h2 id="automation">Automation features</h2>
+      <h2 id="automation">Features for clients of the API</h2>
       <ul>
         <li>
           <strong>Pagination and filtering</strong> on <code>GET /incidents</code> and <code>/audit</code>;

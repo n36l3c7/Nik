@@ -19,6 +19,7 @@
         <nav class="site-nav" aria-label="Documentation">
           <a href="./">Overview</a>
           <a href="guide.html">User guide</a>
+          <a href="automation.html">Automation</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
           <a href="security.html">Security</a>
@@ -43,6 +44,7 @@
           <li><a href="#local-development-setup">Local development setup</a></li>
           <li><a href="#add-a-new-analysis-tab">Add a new analysis tab</a></li>
           <li><a href="#extend-the-soc-detection-rules">Extend the SOC detection rules</a></li>
+          <li><a href="#extend-automation">Extend automation</a></li>
           <li><a href="#browsers-parsers-and-formats">Browsers, parsers and formats</a></li>
           <li><a href="#ui-kit-reference">UI kit reference</a></li>
           <li><a href="#incident-export-import-json">Incident export / import (JSON)</a></li>
@@ -416,6 +418,46 @@ const isRawIp = isRawIpUrl(entry.url)
         If the new signal should appear in the StatCards, update <code>computeSocStats</code> accordingly; optionally
         add an option to the detection filter in the events section.
       </p>
+      <h2 id="extend-automation">Extend automation</h2>
+      <p>
+        <a href="automation.html">Automation</a> describes playbooks from the outside,
+        <a href="architecture.html#automation-engine">Architecture</a> the engine. To add to it:
+      </p>
+      <ul>
+        <li>
+          <strong>An action inside Nik</strong>: a function in <code>backend/app/automation/nik_actions.py</code> under
+          <code>@action("nik.&lt;verb&gt;", group="Nik", name=…, arguments=[…], outputs=[…])</code>. It receives a
+          <code>Call</code> (the database session, the rendered arguments and their classes, the run, whether it is a
+          dry run) and returns a <code>Result</code>. In a dry run it must change nothing and say what it would have
+          done. The canvas builds the node's form from <code>arguments</code>: nothing to add in the frontend.
+        </li>
+        <li>
+          <strong>Anything that connects</strong> goes through <code>automation/egress.py</code> with the playbook's
+          policy, and gives what it sends to <code>guard.check</code> first (see <code>outbound.py</code>). A test fails
+          if another module of the package opens a socket.
+        </li>
+        <li>
+          <strong>A shipped script</strong>: a YAML file in <code>backend/app/automation/seed/scripts/</code> with
+          <code>name</code>, <code>description</code>, <code>code</code>, <code>arguments</code>,
+          <code>outputs</code> and <code>test</code>. The suite runs every shipped test through the real runner.
+        </li>
+        <li>
+          <strong>A filter of the expression language</strong> is added twice, in
+          <code>backend/app/automation/expressions.py</code> and in
+          <code>frontend/src/domain/automation/expressions.js</code>, with vectors in
+          <code>backend/tests/data/expressions.json</code> that both suites read.
+        </li>
+        <li>
+          <strong>A route</strong> needs a line in <code>backend/tests/test_permissions_matrix.py</code>: the suite
+          walks every route with a key of each role.
+        </li>
+      </ul>
+      <p>
+        The engine's tests move the clock themselves (<code>worker.drain(now)</code>) and need no worker running;
+        <code>AUTOMATION_WORKER=inline</code> runs the loop inside the API process for local work and for the E2E suite,
+        which starts the sandbox image in CI.
+      </p>
+
       <h2 id="browsers-parsers-and-formats">Browsers, parsers and formats</h2>
       <p>
         <strong>Add a browser.</strong> Browsers are a registry in <code>frontend/src/config/browsers.js</code>: adding

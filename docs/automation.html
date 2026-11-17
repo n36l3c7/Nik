@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Playbooks in Nik: the canvas, every kind of node, expressions, approvals, runs, scripts, and what a playbook may reach and send."
+    />
+    <title>Nik — Automation</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a class="brand" href="./">nik <span>· docs</span></a>
+        <nav class="site-nav" aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="guide.html">User guide</a>
+          <a href="automation.html" aria-current="page">Automation</a>
+          <a href="deployment.html">Deployment</a>
+          <a href="configuration.html">Configuration</a>
+          <a href="security.html">Security</a>
+          <a href="api.html">API</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="internals.html">Internals</a>
+          <a href="developer.html">Developers</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="https://github.com/n36l3c7/Nik">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <h1>Automation</h1>
+      <p class="lead">
+        A playbook is a drawing of what to do when something happens: nodes joined by lines, started by an event, a
+        schedule or a person. Nik runs it step by step, asks a person where you said it should, and keeps what every
+        step got and gave. This page is the whole of it: the canvas, each kind of node, expressions, approvals, runs,
+        scripts, and what a playbook may reach and send.
+      </p>
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#words">The words</a></li>
+          <li><a href="#who">Who may do what</a></li>
+          <li><a href="#canvas">The canvas</a></li>
+          <li><a href="#nodes">The nodes</a></li>
+          <li><a href="#expressions">Expressions</a></li>
+          <li><a href="#failures">When a step fails</a></li>
+          <li><a href="#approvals">Approvals</a></li>
+          <li><a href="#runs">Runs, dry runs and limits</a></li>
+          <li><a href="#outside">What a playbook may reach and send</a></li>
+          <li><a href="#scripts">Scripts</a></li>
+          <li><a href="#switch">The switch and the worker</a></li>
+          <li><a href="#files">Playbooks and scripts as files</a></li>
+          <li><a href="#later">What this release does not do yet</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="words">The words</h2>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr>
+              <td><strong>Playbook</strong></td>
+              <td>
+                A graph: one <em>trigger</em>, then nodes joined by edges. It has a name, limits, and two choices that
+                belong to an admin: the hosts it may reach and the classes of data it may send.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Draft</strong> and <strong>version</strong></td>
+              <td>
+                The canvas edits a draft, which saves itself and may be anything. <em>Save as version</em> has the
+                server check the draft; when nothing is wrong it becomes the next version, and that is what runs from
+                then on. Versions are never rewritten: restoring an old one saves it again as a new one.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Run</strong></td>
+              <td>
+                One execution of a version. It is kept in the database step by step, so a restart of the server loses
+                nothing: the run goes on from where it was.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Step</strong></td>
+              <td>
+                One node taken by one run (once per item inside a "for each"). A step keeps what went in, what came out,
+                what was sent, its tries and its log.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Script</strong></td>
+              <td>
+                A piece of Python with named arguments and outputs, written once and used as a node in any playbook.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="who">Who may do what</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>To…</th>
+              <th>You need</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>See playbooks and runs, run a playbook by hand, stop a run, answer an approval</td>
+              <td><em>Analyst</em>, <em>Playbooks</em> or <em>Admin</em></td>
+            </tr>
+            <tr>
+              <td>Create and change playbooks and scripts, turn a playbook on or off, change its limits</td>
+              <td><em>Playbooks</em> or <em>Admin</em></td>
+            </tr>
+            <tr>
+              <td>
+                Choose the hosts a playbook may reach, let it reach any host, open a class of data, set the SMTP server,
+                stop all automation
+              </td>
+              <td><em>Admin</em></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A <em>Viewer</em> does not see the Automations area. What a playbook changes in Nik is signed
+        <code>nik-automation</code>, an account that cannot sign in, and written to the audit log with the run and with
+        whoever approved the step.
+      </p>
+
+      <h2 id="canvas">The canvas</h2>
+      <p>
+        Open <strong>Automations</strong> on the rail (or <code>/automation/playbooks</code>), create a playbook or open
+        one. The screen has three parts:
+      </p>
+      <ul>
+        <li>
+          <strong>The library</strong>, on the left: every node there is, in groups (<em>Flow</em>, <em>Nik</em>,
+          <em>HTTP</em>, <em>E-mail</em>, <em>Scripts</em>). Drag a node onto the canvas, or click it: it lands after
+          the selected node, joined to it when that node's line is free. A node marked <em>changes</em> does something
+          outside Nik and asks for approval by default.
+        </li>
+        <li>
+          <strong>The playbook</strong>, in the middle. Drag from the square under a node to another node to draw an
+          edge; a condition has two squares (<em>yes</em>, <em>no</em>), an approval two (<em>approved</em>,
+          <em>refused</em>), and the nodes that can fail have one on their right side for the <em>on error</em> line.
+          <strong>Tidy up</strong> puts the nodes in order; the minimap and the zoom buttons are in the corners.
+        </li>
+        <li>
+          <strong>The inspector</strong>, on the right: the settings of the selected node, where it goes next, what it
+          gives to the nodes after it, and what is still to fix. With no node selected it shows the playbook itself: its
+          inputs and outputs.
+        </li>
+      </ul>
+      <p>
+        Every change is saved a moment after it is made (<em>draft saved</em>). <strong>Save as version</strong> sends
+        the draft to the server, which checks it: one trigger, no circle, every required argument filled, every
+        expression reading something that is certain to have run before it. What is wrong is shown on the nodes (<em
+          >2 to fix</em
+        >) and, in words, in the inspector. Undo and redo are <kbd>Ctrl</kbd>+<kbd>Z</kbd> and
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>; <kbd>Ctrl</kbd>+<kbd>C</kbd> and <kbd>Ctrl</kbd>+<kbd>V</kbd>
+        copy and paste the selected nodes with the edges between them.
+      </p>
+      <p>
+        <strong>Without a pointer.</strong> <kbd>Tab</kbd> moves through the nodes, <kbd>Enter</kbd> selects one, the
+        arrow keys move it, <kbd>Delete</kbd> removes it. Edges are drawn in the inspector, under <em>Goes to</em>:
+        choose the node an edge leads to, port by port. <strong>Node list</strong> shows the same playbook as a table:
+        each node, where it goes, what is to fix.
+      </p>
+      <p>
+        A playbook also has <strong>Runs</strong> (its own runs), <strong>Versions</strong> (restore an older one) and
+        <strong>Settings</strong> (its name, limits, <a href="#outside">network and data</a>, export, delete). The
+        switch in its header turns it <em>on</em>: a playbook that is off is started by nothing but a person.
+      </p>
+
+      <h2 id="nodes">The nodes</h2>
+      <h3 id="trigger">Trigger</h3>
+      <p>Every playbook has exactly one. It can start the playbook in three ways, alone or together:</p>
+      <ul>
+        <li>
+          <strong>On an event</strong> of Nik: <code>incident.created</code> or <code>incident.updated</code>. The run
+          works on that incident. <em>Only when the event matches</em> adds comparisons, the same as a condition node:
+          <code>{{ trigger.incident.severity }}</code> is one of <code>high, critical</code>.
+        </li>
+        <li>
+          <strong>On a schedule</strong>: five fields as in cron (<code>0 8 * * 1-5</code> is 08:00 from Monday to
+          Friday), in the time zone you name (UTC when empty). A schedule cannot fire more often than every five
+          minutes. A firing that finds the run of the last one still going is skipped; times missed while the server was
+          down are not made up for one by one (the schedule fires once when it is back).
+        </li>
+        <li>
+          <strong>By hand</strong>: <em>Run a playbook…</em> in an incident's right-click menu, on its
+          <em>Automation</em> tab, or <em>Run…</em> on the playbook's page.
+        </li>
+      </ul>
+      <p>What <code>{{ trigger.… }}</code> holds depends on what started the run:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Started by</th>
+              <th>Fields</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>An event</td>
+              <td>
+                <code>incident.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>,
+                <code>.status</code>, <code>.severity</code>, <code>.assignee</code>, <code>.host</code>,
+                <code>.username</code>, <code>.os</code>, <code>.created</code>, <code>.modified</code>; for
+                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed.
+              </td>
+            </tr>
+            <tr>
+              <td>A person</td>
+              <td>
+                <code>actor</code> (who started it) and, when it was run on an incident, the same
+                <code>incident.…</code> fields.
+              </td>
+            </tr>
+            <tr>
+              <td>A schedule</td>
+              <td><code>at</code> (when it fired) and <code>cron</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A change a playbook makes to an incident can start other playbooks, three deep at most: beyond that the event is
+        dropped, so two playbooks cannot keep waking each other.
+      </p>
+
+      <h3 id="condition">Condition</h3>
+      <p>
+        <em>All of</em> or <em>any of</em> a list of comparisons; the run leaves by <em>yes</em> or by <em>no</em>. Each
+        comparison has a left side (usually an expression), an operator and, for most, a right side.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Operator</th>
+              <th>Holds when</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><em>is</em> · <em>is not</em></td>
+              <td>The two are equal. Text is compared without regard to case; <code>"82"</code> is <code>82</code>.</td>
+            </tr>
+            <tr>
+              <td><em>is more than</em> · <em>at least</em> · <em>less than</em> · <em>at most</em></td>
+              <td>As numbers when both read as numbers, as text otherwise.</td>
+            </tr>
+            <tr>
+              <td><em>contains</em></td>
+              <td>A text holds the other text, or a list holds an item equal to it.</td>
+            </tr>
+            <tr>
+              <td><em>is one of</em></td>
+              <td>The left side equals one of the values on the right (separated by commas, or a list).</td>
+            </tr>
+            <tr>
+              <td><em>matches the pattern</em></td>
+              <td>
+                A regular expression of 500 characters at most, searched in the text. A pattern that takes too long is
+                stopped and counts as not matching.
+              </td>
+            </tr>
+            <tr>
+              <td><em>is there</em> · <em>is empty</em></td>
+              <td>The value exists and is not null · it is missing, null, an empty text, list or object.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="for-each">For each</h3>
+      <p>
+        Does the same steps for every item of a list: what leaves its <em>for each item</em> square is the body, done
+        once per item, five items at a time; the run goes on from <em>when done</em>. Inside the body
+        <code>{{ item }}</code> is the item and <code>{{ index }}</code> its position from 0. After the loop the node
+        gives <code>count</code>, <code>failed</code> and <code>results</code> (what the body's last step gave for each
+        item, in order). A list longer than <em>At most</em> (500 is the ceiling) is cut. With
+        <em>Go on with the other items when one fails</em> a failing item is counted and the loop continues; without it
+        the loop fails.
+      </p>
+      <p>
+        A "for each" cannot hold another "for each" (run another playbook from the body instead) or an approval (ask
+        once, before the loop). A step of the body cannot be read after the loop: read the loop's
+        <code>results</code>.
+      </p>
+
+      <h3 id="wait">Wait</h3>
+      <p>
+        <em>For a time</em>, between one minute and thirty days, or <em>until a condition</em> holds, looked at again
+        every so often, up to a limit; then the run goes on and the node's <code>timed_out</code> says whether the
+        condition never held. A waiting run holds no worker: it is a row in the database with a time on it.
+      </p>
+
+      <h3 id="approval-node">Approval</h3>
+      <p>
+        Stops and asks a person the <em>question</em> you write, with a <em>detail</em> under it; the run leaves by
+        <em>approved</em> or <em>refused</em>. It waits without limit unless you set a time; when the time ends the run
+        goes on as refused, or stops, as you choose. An approval nobody answered is never taken as given. See
+        <a href="#approvals">Approvals</a>.
+      </p>
+
+      <h3 id="playbook-node">Run another playbook</h3>
+      <p>
+        Starts another playbook at its current version, with the inputs you give it, and (unless you turn
+        <em>Wait for it to finish</em> off) waits and reads its outputs as <code>{{ node.result.… }}</code>. Playbooks
+        may call each other five deep; a circle is refused when the version is saved. The inputs a playbook takes and
+        the outputs it gives back are set on the canvas with no node selected.
+      </p>
+
+      <h3 id="end">End</h3>
+      <p>
+        Ends the run here, as <em>done</em> or as <em>failed</em>, with a message shown on the run. A run also ends,
+        done, when no step is left to take.
+      </p>
+
+      <h3 id="nik-actions">What a playbook does in Nik</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Takes</th>
+              <th>Gives</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Get an incident</td>
+              <td><code>incident</code> (its id; the run's incident when empty)</td>
+              <td><code>incident</code>: id, name, status, severity, assignee, url</td>
+            </tr>
+            <tr>
+              <td>Add a note</td>
+              <td><code>incident</code>, <code>text</code></td>
+              <td><code>note</code>, its id. The note is marked <em>automation</em> and opens the run.</td>
+            </tr>
+            <tr>
+              <td>Set the status</td>
+              <td><code>incident</code>, <code>status</code>: open, in_progress, closed</td>
+              <td><code>incident</code></td>
+            </tr>
+            <tr>
+              <td>Assign the incident</td>
+              <td><code>incident</code>, <code>assignee</code> (empty takes it from whoever has it)</td>
+              <td><code>incident</code></td>
+            </tr>
+            <tr>
+              <td>Set a field of the incident</td>
+              <td>
+                <code>incident</code>, <code>field</code> (ticketId, title, host, username, os, severity, status,
+                assignee), <code>value</code>
+              </td>
+              <td><code>incident</code></td>
+            </tr>
+            <tr>
+              <td>Create an incident</td>
+              <td>
+                <code>title</code>, <code>ticketId</code>, <code>host</code>, <code>username</code>,
+                <code>severity</code>
+              </td>
+              <td><code>incident</code></td>
+            </tr>
+            <tr>
+              <td>Add indicators</td>
+              <td>
+                <code>indicators</code> (a list of values, of <code>{type, value}</code> objects, or a text that holds
+                them), <code>tags</code>, <code>note</code>
+              </td>
+              <td><code>added</code>, <code>known</code></td>
+            </tr>
+            <tr>
+              <td>Tag indicators</td>
+              <td><code>indicators</code>, <code>tags</code></td>
+              <td><code>tagged</code></td>
+            </tr>
+            <tr>
+              <td>Add to a list · Remove from a list</td>
+              <td><code>list</code> (the name of a watch list; made if there is none), <code>indicators</code></td>
+              <td><code>added</code> · <code>removed</code></td>
+            </tr>
+            <tr>
+              <td>Get an indicator</td>
+              <td><code>value</code>, <code>type</code> (guessed when empty)</td>
+              <td>
+                <code>found</code>, <code>verdict</code>, <code>score</code>, <code>tags</code>, <code>lists</code>,
+                <code>incidents</code>, <code>allowlisted</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Link an artifact</td>
+              <td>
+                <code>artifact</code> (<code>file-…</code>, <code>mail-…</code>, <code>url-…</code>),
+                <code>incident</code>
+              </td>
+              <td><code>linked</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="http-node">HTTP request</h3>
+      <p>
+        Sends a request to an address <a href="#outside">the playbook may reach</a> and reads the answer:
+        <code>method</code> (GET, POST, PUT, PATCH, DELETE), <code>url</code>, <code>headers</code>, <code>query</code>,
+        a <code>json</code> body or a <code>body</code> as text, <code>timeout</code> (60 seconds; 300 at most) and
+        <code>fail_on_error</code> (an answer of 400 or more is a failure, unless you turn it off). It gives
+        <code>status</code>, <code>ok</code>, <code>json</code> (when the answer is JSON) and <code>text</code>. An
+        answer larger than 5 MB is refused; three redirects are followed, each checked like the first address. Anything
+        but a GET changes something on the other side, and <a href="#approvals">asks first</a> by default.
+      </p>
+
+      <h3 id="email-node">Send an e-mail</h3>
+      <p>
+        Sends a plain-text message through the SMTP server an admin sets in
+        <strong>Settings → Automation → Network and data</strong>: <code>to</code> (a list, or addresses separated by
+        commas; fifty at most), <code>subject</code>, <code>text</code>. The domain of every recipient must be among the
+        hosts the playbook may reach. Without a server the node fails and says so. It does not ask for approval by
+        default: turn <em>Approval before this node</em> on if a person should see the message first.
+      </p>
+
+      <h2 id="expressions">Expressions</h2>
+      <p>
+        Every text field of a node takes values from the run with <code>{{ }}</code>. Type them, or use
+        <strong>Pick a value</strong> (the <code>{ }</code> button beside the field), which lists what this node can
+        read and writes the expression where the caret is.
+      </p>
+      <pre><code>{{ trigger.incident.name }}
+{{ search.recipients[*].office | unique | join(", ") }}
+{{ args.urgency | default("3") }}
+Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
+      <ul>
+        <li>
+          An expression is a <strong>path</strong> and, after <code>|</code>, <strong>filters</strong>. There is no
+          arithmetic, no comparison and no code: logic belongs to condition nodes and to scripts.
+        </li>
+        <li>
+          A path starts with a name: <code>trigger</code>, the <strong>id of a node</strong> (shown in the inspector,
+          and changed there: the expressions that read it follow), <code>item</code> and <code>index</code> inside a
+          "for each", <code>inputs</code> (what the playbook was given), <code>run</code> (<code>id</code>,
+          <code>url</code>, <code>playbook</code>, <code>started_at</code>, <code>dry_run</code>).
+        </li>
+        <li>
+          Then <code>.name</code>, <code>[0]</code> (<code>[-1]</code> is the last), <code>["a key"]</code>, or
+          <code>[*]</code>: every item of a list, so <code>recipients[*].office</code> is the list of offices.
+        </li>
+        <li>
+          A field that is <strong>exactly one expression</strong> keeps the type of what it names (a number stays a
+          number, a list a list). Mixed with text it becomes text; a list or an object is then written as JSON.
+        </li>
+        <li>
+          A path that leads nowhere <strong>fails the step</strong>, unless <code>| default(…)</code> follows it. That
+          is on purpose: a ticket opened with an empty title is worse than a run that stops and says why.
+        </li>
+        <li>
+          A node reads only what is <strong>certain to have run before it</strong>: the trigger and the nodes every path
+          to it passes through. After a condition, the nodes of one branch cannot be read where the branches meet: the
+          other branch may have been taken.
+        </li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Filter</th>
+              <th>Gives</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>default("x")</code></td>
+              <td>The value, or <code>x</code> when it is missing or null.</td>
+            </tr>
+            <tr>
+              <td><code>length</code></td>
+              <td>How many items a list has, characters a text has, keys an object has.</td>
+            </tr>
+            <tr>
+              <td><code>first</code> · <code>last</code> · <code>unique</code> · <code>sort</code></td>
+              <td>Of a list.</td>
+            </tr>
+            <tr>
+              <td><code>join(", ")</code> · <code>split(",")</code></td>
+              <td>A list as one text · a text as a list (parts trimmed, empty ones dropped).</td>
+            </tr>
+            <tr>
+              <td><code>pluck("name")</code></td>
+              <td>The <code>name</code> of every item of a list.</td>
+            </tr>
+            <tr>
+              <td><code>where("vip")</code> · <code>where("size", "gt", 100)</code></td>
+              <td>
+                The items whose field is set · whose field compares so (the operators of a condition:
+                <code>eq</code>, <code>ne</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>,
+                <code>contains</code>, <code>in</code>, <code>exists</code>, <code>empty</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>get("a.b")</code> · <code>keys</code> · <code>values</code></td>
+              <td>A field of an object by its path (null when absent) · its keys · its values.</td>
+            </tr>
+            <tr>
+              <td><code>lower</code> · <code>upper</code> · <code>trim</code> · <code>replace("a", "b")</code></td>
+              <td>Of a text.</td>
+            </tr>
+            <tr>
+              <td><code>map(high="1", low="3", else="2")</code></td>
+              <td>
+                Another value for each value named; <code>else</code> for the rest (the value itself when left out).
+              </td>
+            </tr>
+            <tr>
+              <td><code>int</code> · <code>float</code> · <code>bool</code></td>
+              <td>
+                The value as a number or as true/false (<code>"no"</code>, <code>"0"</code>, <code>"off"</code> are
+                false).
+              </td>
+            </tr>
+            <tr>
+              <td><code>json</code></td>
+              <td>The value written as JSON.</td>
+            </tr>
+            <tr>
+              <td><code>date</code> · <code>date("%d/%m/%Y")</code></td>
+              <td>An ISO date, or seconds since 1970, as text in UTC (<code>2026-11-17 08:30</code> by default).</td>
+            </tr>
+            <tr>
+              <td><code>defang</code></td>
+              <td>
+                <code>hxxp[://]evil[.]example</code>: an address made safe to paste in a message. On a list, each item.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The server and the canvas read expressions with the same rules, checked against the same list of examples
+        (<code>backend/tests/data/expressions.json</code>): what the canvas accepts as you type is what the server will
+        run.
+      </p>
+
+      <h2 id="failures">When a step fails</h2>
+      <p>The nodes that can fail (actions, scripts, "run another playbook") have <strong>If it fails</strong>:</p>
+      <ul>
+        <li><strong>Stop at once</strong>: the step failed.</li>
+        <li>
+          <strong>Try again</strong>, up to 100 times, waiting longer each time: about 5 seconds, 15, 45, and so on up
+          to 15 minutes. A failure that trying again cannot cure (a missing argument, an address that is refused, a
+          script that raised an error) is not tried again.
+        </li>
+      </ul>
+      <p>
+        When the step has failed for good the run follows the <strong>on error</strong> line, if one is drawn from the
+        node (from the square on its right side); the node that line leads to can read the failure, write a note, tell
+        someone. With no such line the run ends as <em>failed</em>.
+      </p>
+      <p>
+        One case is not tried again by itself: an HTTP request that changes something and whose answer never came. Nik
+        cannot know whether the other side did it, so the step fails and says so, rather than doing it twice.
+      </p>
+
+      <h2 id="approvals">Approvals</h2>
+      <p>A run asks a person in two ways:</p>
+      <ul>
+        <li>at an <strong>approval node</strong>, with the question you wrote;</li>
+        <li>
+          <strong>before a node that changes something outside Nik</strong> (an HTTP request that is not a GET). The
+          question is the node's name and the detail is what would be sent. This is the default of every playbook (<em
+            >Settings → Ask before what changes something outside Nik</em
+          >) and can be turned off or on for each node, in the inspector.
+        </li>
+      </ul>
+      <p>
+        The question is shown on the run, in <strong>Automations → Approvals</strong> and above the tabs of the incident
+        the run works on; the rail counts what waits. Anyone who may run playbooks answers, <em>Approve</em> or
+        <em>Refuse</em>, with a comment if they want. Who answered, when and what they wrote is on the run and in the
+        audit log.
+      </p>
+      <ul>
+        <li>The time a run spends waiting for a person does not count against its longest duration.</li>
+        <li>
+          A refused approval node sends the run down its <em>refused</em> line. A refused approval before a node fails
+          that node: the run follows its <em>on error</em> line, or stops.
+        </li>
+        <li>
+          With a time limit, what happens at the end is your choice: go on as refused (or skip the node), or stop the
+          run. Never as approved.
+        </li>
+      </ul>
+
+      <h2 id="runs">Runs, dry runs and limits</h2>
+      <p>
+        <strong>Automations → Runs</strong> lists every run; a playbook's <em>Runs</em> tab and an incident's
+        <em>Automation</em> tab list their own. A run opens on its page: the canvas of the version it used, each node
+        coloured by what happened to it (done, running, waiting, failed, skipped, not reached), and the steps in the
+        order they were taken. Select a step, or its node, to see what went in, what came out, what was sent, the tries
+        and the log. <strong>Stop the run</strong> skips what is still to do; a step already talking to another system
+        finishes and what it gives is discarded.
+      </p>
+      <p>
+        <strong>A dry run</strong> (tick <em>Dry run</em> when running by hand) sends nothing outside Nik and changes
+        nothing in it. Each action shows what it would have done; approvals are taken as given, so the path of a yes can
+        be read to the end. An HTTP node gives no answer in a dry run, so a later step that reads the answer fails
+        there: that is the end of what a dry run can show. Any playbook with a version can be tried this way, also one
+        that is not meant to be run by hand.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Limit</th>
+              <th>Default</th>
+              <th>Where</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Runs an hour, per playbook</td>
+              <td>60</td>
+              <td>The playbook's Settings</td>
+            </tr>
+            <tr>
+              <td>One run at a time on the same object</td>
+              <td>on</td>
+              <td>The playbook's Settings</td>
+            </tr>
+            <tr>
+              <td>Longest run (approvals not counted)</td>
+              <td>24 hours</td>
+              <td>The playbook's Settings (7 days at most)</td>
+            </tr>
+            <tr>
+              <td>Runs in progress, all playbooks together</td>
+              <td>200</td>
+              <td><code>AUTOMATION_MAX_ACTIVE_RUNS</code></td>
+            </tr>
+            <tr>
+              <td>Steps taken at the same time</td>
+              <td>4</td>
+              <td><code>AUTOMATION_CONCURRENCY</code></td>
+            </tr>
+            <tr>
+              <td>Finished runs kept per playbook</td>
+              <td>500</td>
+              <td><code>AUTOMATION_RUNS_KEPT</code></td>
+            </tr>
+            <tr>
+              <td>Nodes · edges in a playbook</td>
+              <td>200 · 600</td>
+              <td>fixed</td>
+            </tr>
+            <tr>
+              <td>What one step gives</td>
+              <td>1 MB as JSON</td>
+              <td>fixed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A trigger refused by a limit starts nothing and is not queued: the next event that matches starts a run again.
+        The variables are described in <a href="configuration.html">Configuration</a>.
+      </p>
+
+      <h2 id="outside">What a playbook may reach and send</h2>
+      <p>
+        Two choices decide what a playbook can do outside Nik. Both are in its <strong>Settings</strong> tab, both
+        belong to an admin, and opening either beyond the default asks twice: a box to tick, and the playbook's name
+        typed as it is written. Every opening and closing is in the audit log.
+      </p>
+      <h3 id="network">Network</h3>
+      <ul>
+        <li>
+          <strong>Listed hosts only</strong> (the default): the HTTP and e-mail nodes reach the hosts listed for this
+          playbook and those listed for every playbook in <strong>Settings → Automation → Network and data</strong>. A
+          host is a name or an address, with a port when it is not the usual one; a name does not cover its subdomains.
+        </li>
+        <li><strong>Any host</strong>: any address on the internet. Behind the double check.</li>
+        <li>
+          In either mode an address <strong>inside the network</strong> is refused: loopback, private, link-local and
+          carrier-grade ranges, the containers of the stack, cloud metadata. To reach an internal system, list it by
+          name: the listing is the permission.
+        </li>
+        <li>
+          The address is checked after the name is resolved, the connection goes to the address that was checked, and
+          every redirect is checked again. A playbook cannot be led inside by a name that changes its answer.
+        </li>
+      </ul>
+      <h3 id="data-guard">Data</h3>
+      <p>
+        Values carry the <strong>class</strong> of what they are from where they are read to where they would leave: the
+        name of an incident is still the name of an incident after a filter, inside a longer text, or returned by a
+        script. Before a node sends anything, Nik looks at the classes of what is about to go.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Class</th>
+              <th>By default</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Hashes · public domains, URLs and addresses · verdicts · Nik's own ids</td>
+              <td>Always leave</td>
+            </tr>
+            <tr>
+              <td>
+                Incident names and tickets · e-mail addresses · e-mail subjects · internal names and addresses ·
+                allowlisted indicators · file and attachment names · results of scripts
+              </td>
+              <td>Closed; an admin can open each for a playbook</td>
+            </tr>
+            <tr>
+              <td>E-mail bodies · attachments · samples · TLP:RED data</td>
+              <td>Never leave, in any playbook</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A node that would send something closed is stopped before it sends, and its step says what was held back and
+        which class to open. What is sent is also read as text: a private address, an internal name or an allowlisted
+        value typed into a field by hand is caught in the same way. <em>Internal</em> is what your allowlist marks as
+        yours and what sits in private address ranges.
+      </p>
+      <p>
+        Results of scripts are a class of their own because a script can turn one thing into another: what it returns
+        carries the classes of everything it was given, and that one besides.
+      </p>
+
+      <h2 id="scripts">Scripts</h2>
+      <p>
+        <strong>Automations → Scripts</strong> (role <em>Playbooks</em>) is a library of Python blocks. A script is a
+        function:
+      </p>
+      <pre><code class="language-python">def main(args):
+    groups = {}
+    for item in args["items"]:
+        groups.setdefault(item.get(args["field"], ""), []).append(item)
+    return {"groups": groups, "count": len(groups)}</code></pre>
+      <ul>
+        <li>
+          <code>args</code> is a dictionary with the <strong>arguments</strong> you declare (name, type, required,
+          description). What the function returns must be something JSON can hold; the <strong>outputs</strong> you
+          declare are what later nodes pick with <code>{{ node.groups }}</code>. What it prints is kept as the step's
+          log.
+        </li>
+        <li>
+          The <strong>test</strong> is kept with the script: the arguments to call it with and, if you fill it, what it
+          must return. <em>Run the test</em> runs the draft; <em>Save as version</em> runs it again and saves the
+          version only when it passes. An empty expectation passes when the script does not fail.
+        </li>
+        <li>
+          A script with no version is a draft: it is in the list, not in the library of nodes. A playbook keeps the
+          <strong>version</strong> of a script it was saved with; when a newer one exists the playbook is marked
+          <em>updates available</em> and the node offers <em>Update to version N</em>.
+        </li>
+        <li>
+          <em>See</em> on a version shows what the draft changes from it, line by line, and can put the version back
+          into the draft. Each version is in the audit log with the difference in the code.
+        </li>
+      </ul>
+      <h3 id="sandbox">The box a script runs in</h3>
+      <ul>
+        <li>
+          Its own container, <code>sandbox</code>, on a network with <strong>no route outside</strong>, whatever the
+          playbook may reach; a read-only filesystem, no capabilities, not root, no volume.
+        </li>
+        <li>
+          A <strong>new process for each run</strong>, with an empty environment: no secrets, no database, no files of
+          Nik. A script gets the arguments of its node and nothing else.
+        </li>
+        <li>
+          <strong>Limits</strong> it cannot raise: 10 seconds (<code>SANDBOX_TIMEOUT</code>), 256 MB of memory, 16 open
+          files, no other process, 1 MB of result.
+        </li>
+        <li>
+          The <strong>standard library of Python 3.12</strong> only. The modules that open connections or start
+          processes are refused when imported; that is a second line, the container is the first.
+        </li>
+      </ul>
+      <p>Seven scripts ship with Nik, each with its test:</p>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr>
+              <td><code>GroupByField</code></td>
+              <td>Group a list of objects by the value of one of their fields.</td>
+            </tr>
+            <tr>
+              <td><code>FilterList</code></td>
+              <td>Keep the items of a list whose field compares as asked.</td>
+            </tr>
+            <tr>
+              <td><code>ExtractDomains</code></td>
+              <td>The host names found in a text or in a list of addresses and e-mail addresses, once each.</td>
+            </tr>
+            <tr>
+              <td><code>DefangIndicators</code></td>
+              <td>Make addresses and domains safe to paste in a message.</td>
+            </tr>
+            <tr>
+              <td><code>BusinessHours</code></td>
+              <td>Whether a moment falls in working hours, from the days and hours given.</td>
+            </tr>
+            <tr>
+              <td><code>CsvToList</code></td>
+              <td>Read CSV text into a list of objects, one per row, named by the header row.</td>
+            </tr>
+            <tr>
+              <td><code>VerdictChanges</code></td>
+              <td>What changed between two checks of the same indicators, and a line that says it.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A shipped script can be changed like any other; a later release of Nik that changes it adds its own version on
+        top, and playbooks stay on the version they use.
+      </p>
+
+      <h2 id="switch">The switch and the worker</h2>
+      <p>
+        <strong>Settings → Automation → Stop all</strong> is one switch for every playbook. Stopped, nothing starts and
+        no step is taken; runs in progress keep their place and go on when automation is started again. The same section
+        shows whether the <strong>worker</strong> is alive.
+      </p>
+      <p>
+        Playbooks are run by a container of their own, <code>automation</code>: the backend's image with another
+        command. It is the only part of the stack with a way out for what playbooks send, and it holds no port. If it
+        stops, playbooks wait; the Automations area says so, and
+        <a href="deployment.html#automation-containers">Deployment</a> says how to look at it.
+      </p>
+
+      <h2 id="files">Playbooks and scripts as files</h2>
+      <p>
+        <strong>Export</strong> (a playbook's Settings, a script's page) gives a JSON file; <strong>Import</strong> on
+        the list brings one in. An imported playbook arrives as a <strong>draft, off</strong>, reaching only listed
+        hosts and sending no class of data: what it may reach and send is never in the file, and is opened again by an
+        admin where it is imported. An imported script arrives as a draft and enters the library when its test passes
+        there.
+      </p>
+      <pre><code class="language-json">{
+  "app": "Nik", "type": "playbook", "version": 1,
+  "playbook": {
+    "name": "Note on high",
+    "description": "",
+    "maxRunsPerHour": 60, "onePerObject": true, "maxSeconds": 86400, "approvalDefault": true,
+    "graph": {
+      "nodes": [
+        { "id": "start", "kind": "trigger", "name": "Trigger", "position": { "x": 40, "y": 40 },
+          "config": { "event": "incident.created", "manual": true } },
+        { "id": "check", "kind": "condition", "name": "High?", "position": { "x": 40, "y": 150 },
+          "config": { "all": [{ "left": "{{ trigger.incident.severity }}", "op": "in", "right": ["high", "critical"] }] } },
+        { "id": "note", "kind": "action", "name": "Add a note", "position": { "x": 40, "y": 260 },
+          "config": { "action": "nik.add-note", "args": { "text": "Severity {{ trigger.incident.severity }}" } } }
+      ],
+      "edges": [
+        { "from": "start", "to": "check" },
+        { "from": "check", "port": "yes", "to": "note" }
+      ],
+      "inputs": [], "outputs": []
+    }
+  }
+}</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>nodes[].id</code></td>
+              <td>
+                What expressions call the node: a lower-case letter, then letters, digits or <code>_</code>, 32 at most.
+                Not a name of the language (<code>trigger</code>, <code>run</code>, <code>inputs</code>,
+                <code>item</code>, <code>index</code>…).
+              </td>
+            </tr>
+            <tr>
+              <td><code>nodes[].kind</code></td>
+              <td>
+                <code>trigger</code>, <code>condition</code>, <code>for_each</code>, <code>wait</code>,
+                <code>approval</code>, <code>action</code>, <code>script</code>, <code>playbook</code>,
+                <code>end</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nodes[].name</code> · <code>position</code></td>
+              <td>What the canvas shows (80 characters at most) · where.</td>
+            </tr>
+            <tr>
+              <td><code>config</code> of a trigger</td>
+              <td>
+                <code>event</code>, <code>conditions</code> (<code>{"all" | "any": [{left, op, right}]}</code>),
+                <code>cron</code>, <code>timezone</code>, <code>manual</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>of a condition</td>
+              <td>
+                <code>all</code> or <code>any</code>: a list of <code>{left, op, right}</code>; <code>op</code> is one
+                of <code>eq</code>, <code>ne</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>,
+                <code>lte</code>, <code>contains</code>, <code>in</code>, <code>matches</code>, <code>exists</code>,
+                <code>empty</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>of a for_each</td>
+              <td>
+                <code>items</code> (an expression), <code>max</code> (1 to 500), <code>continue_on_item_error</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>of a wait</td>
+              <td>
+                <code>seconds</code> (60 to 2 592 000), or <code>until</code> (comparisons), <code>every</code>,
+                <code>timeout</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>of an approval</td>
+              <td>
+                <code>question</code>, <code>detail</code>, <code>wait_seconds</code>,
+                <code>on_expire</code> (<code>skip</code>, <code>refuse</code>, <code>stop</code>).
+              </td>
+            </tr>
+            <tr>
+              <td>of an action</td>
+              <td>
+                <code>action</code> (its id: <code>nik.add-note</code>, <code>http.request</code>,
+                <code>email.send</code>…), <code>args</code>, <code>on_error</code> (<code>{"mode": "stop"}</code> or
+                <code>{"mode": "retry", "times": 3}</code>), <code>approval</code> (<code
+                  >{"ask": true, "wait_seconds": 3600, "on_expire": "skip" | "stop"}</code
+                >).
+              </td>
+            </tr>
+            <tr>
+              <td>of a script</td>
+              <td>
+                <code>script</code> (its name), <code>script_version</code>, <code>args</code>, <code>on_error</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>of a playbook node</td>
+              <td><code>playbook</code> (its name), <code>args</code>, <code>wait</code>, <code>on_error</code>.</td>
+            </tr>
+            <tr>
+              <td>of an end</td>
+              <td><code>status</code> (<code>done</code>, <code>failed</code>), <code>message</code>.</td>
+            </tr>
+            <tr>
+              <td><code>edges[]</code></td>
+              <td>
+                <code>from</code>, <code>to</code> and <code>port</code>: <code>out</code> (left out for the plain
+                "then"), <code>yes</code> / <code>no</code>, <code>each</code> / <code>done</code>,
+                <code>approved</code> / <code>refused</code>, <code>error</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>inputs[]</code> · <code>outputs[]</code></td>
+              <td>
+                <code>{name, type, required}</code>: what the playbook takes when it is run by hand or by another ·
+                <code>{name, from}</code>: what it gives back, <code>from</code> being an expression.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A script file has <code>"type": "script"</code> and, under <code>script</code>, <code>name</code>,
+        <code>description</code>, <code>code</code>, <code>arguments</code>, <code>outputs</code> and
+        <code>test</code> (<code>args</code> and, optionally, <code>expect</code>). Everything on this page is also in
+        the API: see <a href="api.html#automation-engine">API → Automation</a>.
+      </p>
+
+      <h2 id="later">What this release does not do yet</h2>
+      <ul>
+        <li>
+          Triggers are the two incident events, a schedule and a person. Events of e-mails, files, addresses and
+          indicators, and inbound webhooks, come with the releases that follow; so do the nodes that analyse an address
+          or check indicators again.
+        </li>
+        <li>
+          Outside Nik a playbook has the HTTP request and the e-mail. Connectors for other products (a ticketing system,
+          an EDR, a firewall), written as files, come in 4.2.
+        </li>
+        <li>A playbook is run by hand on an incident or on nothing: not yet on an artifact or an indicator.</li>
+        <li>
+          On the canvas, a wait "until a condition" compares what the run already holds; it cannot yet ask another
+          system again.
+        </li>
+      </ul>
+    </main>
+
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Nik · MIT licence</span>
+        <a href="https://github.com/n36l3c7/Nik">Source on GitHub</a>
+        <span class="cursor" aria-hidden="true">▍</span>
+      </div>
+    </footer>
+  </body>
+</html>

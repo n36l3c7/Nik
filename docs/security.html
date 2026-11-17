@@ -19,6 +19,7 @@
         <nav class="site-nav" aria-label="Documentation">
           <a href="./">Overview</a>
           <a href="guide.html">User guide</a>
+          <a href="automation.html">Automation</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
           <a href="security.html" aria-current="page">Security</a>
@@ -46,6 +47,7 @@
           <li><a href="#hostile-input">Limits on what a file can make the server do</a></li>
           <li><a href="#analyst-browser">What reaches the analyst's browser</a></li>
           <li><a href="#outbound">What leaves the server</a></li>
+          <li><a href="#automation">Playbooks and scripts</a></li>
           <li><a href="#accounts">Accounts, sessions and the audit log</a></li>
           <li><a href="#secrets">Secrets and backups</a></li>
           <li><a href="#checklist">Hardening checklist</a></li>
@@ -253,10 +255,86 @@
               <td>when an admin subscribed a URL through the API</td>
               <td>the event (an incident created, an upload finished), signed</td>
             </tr>
+            <tr>
+              <td>Playbooks: the HTTP request and e-mail nodes</td>
+              <td>when a run reaches the node, after the approval if one is asked</td>
+              <td>
+                what the node was given, to a host the playbook may reach, if the classes of data it holds may leave (<a
+                  href="#automation"
+                  >below</a
+                >)
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
       <p>The app's own pages load nothing from outside: no CDN, no fonts, no telemetry.</p>
+
+      <h2 id="automation">Playbooks and scripts</h2>
+      <p>
+        A playbook is code that people of your team write and that runs by itself, so three things are kept apart: who
+        may write it, where it may connect, and what it may send. The user's view is in
+        <a href="automation.html#outside">Automation</a>; this is what stands behind it.
+      </p>
+      <ul>
+        <li>
+          <strong>Who.</strong> Building playbooks and scripts is the role <em>Playbooks</em>; running one and answering
+          an approval is <em>Analyst</em>. Only an <em>Admin</em> chooses the hosts a playbook reaches, lets it reach
+          any host, opens a class of data, or sets the SMTP server. A playbook brought in from a file arrives off, with
+          nothing opened.
+        </li>
+        <li>
+          <strong>One way out.</strong> Playbooks run in the <code>automation</code> container, which publishes no port;
+          the API container does not take their steps. A single module opens connections for them
+          (<code>backend/app/automation/egress.py</code>; a test fails if another file of the package imports a socket
+          or an HTTP client). It resolves the name, checks the address, connects to the address it checked, and checks
+          every redirect again, three at most.
+        </li>
+        <li>
+          <strong>Where.</strong> By default a playbook reaches only the hosts listed for it and for every playbook. In
+          either mode loopback, private, link-local and carrier-grade ranges, the containers of the stack and the cloud
+          metadata address are refused, unless that host is listed by name: listing an internal system is the permission
+          to reach it. Letting a playbook reach <em>any host</em> needs the double check and is in the audit log.
+        </li>
+        <li>
+          <strong>What.</strong> Values carry a class from where they are read (an incident's name, an e-mail address, a
+          mail body) through filters, texts and scripts to where they would leave. A node sends only when every class in
+          what it holds is one that always leaves, or one an admin opened for that playbook. E-mail bodies, attachments,
+          samples and TLP:RED data cannot be opened. What leaves is also read as text for private addresses, internal
+          names and allowlisted values typed by hand.
+        </li>
+        <li>
+          <strong>Approvals.</strong> A node that changes something outside asks a person first unless someone turned
+          that off for the node or the playbook. An approval that nobody answers is never an approval.
+        </li>
+        <li>
+          <strong>Scripts are free Python, made safe by where they run.</strong> The <code>sandbox</code> container
+          holds Python and nothing else (no pip, no compiler), on an internal network with no route outside, with a
+          read-only filesystem, no capabilities, an unprivileged user and no volume. Each script runs in a new process
+          with an empty environment and limits it cannot raise (time, 256 MB of memory, 16 open files, no other process,
+          1 MB of result). It receives the arguments of its node and nothing else: no secret, no connection, no file of
+          Nik. An import hook refuses the modules that reach out; that is a second line, not the boundary.
+        </li>
+        <li>
+          <strong>What a script returns is not trusted more than what went in</strong>: it carries the classes of
+          everything it was given, so a script cannot launder data past the guard.
+        </li>
+        <li>
+          <strong>Secrets.</strong> The SMTP password is stored encrypted with the vault key and never returned by the
+          API. Run steps record what was sent, not credentials.
+        </li>
+        <li>
+          <strong>The record.</strong> What a playbook changes in Nik is signed <code>nik-automation</code>, an account
+          that cannot sign in, with the run and whoever approved the step. Versions of playbooks and scripts (with the
+          difference in a script's code), openings of network and data, approvals and the general switch are all in the
+          audit log.
+        </li>
+        <li>
+          <strong>Loops and floods.</strong> A playbook's changes can start other playbooks three deep; each playbook
+          has a ceiling of runs an hour and, by default, one run at a time on the same object; the whole server has a
+          ceiling of runs in progress. One switch stops everything.
+        </li>
+      </ul>
 
       <h2 id="accounts">Accounts, sessions and the audit log</h2>
       <ul>
@@ -333,6 +411,15 @@
           Rules, not Admin.
         </li>
         <li>
+          Give the <em>Playbooks</em> role to the people who should write automation, and to nobody else: a playbook
+          acts with Nik's own hands. Read the audit log for <code>automation.egress.open</code> and
+          <code>automation.data.open</code>: they say which playbook was let reach further or send more, and by whom.
+        </li>
+        <li>
+          Keep the <code>automation-egress</code> network away from what playbooks have no business reaching, on the
+          host firewall, as for the browser's. The engine already refuses internal addresses that are not listed.
+        </li>
+        <li>
           Update: <code>git pull</code> and <code>compose up -d --build</code> rebuild the images with the current fixes
           of LibreOffice, Wireshark and Chromium, which is where the next vulnerability will be.
         </li>
@@ -358,6 +445,19 @@
           <code>deploy/backup.sh</code> is the backup. Backups are not encrypted by Nik.
         </li>
         <li>Analysts can read every incident: there is no per-incident access control.</li>
+        <li>
+          A script can read what its own container holds, which includes the token the engine presents to the sandbox
+          (in <code>/proc</code>). With it a script could ask the sandbox to run another script, which it already is:
+          the token opens nothing else, and the container reaches nothing.
+        </li>
+        <li>
+          The data guard knows the class of what Nik gave a playbook. It cannot know what a person types into a field,
+          beyond the patterns it scans for, nor what another system answers and a playbook forwards.
+        </li>
+        <li>
+          A playbook that may reach <em>any host</em> with a class of data opened can send that data anywhere a node
+          says. That is what the double check is for; it does not make the choice safe.
+        </li>
       </ul>
 
       <h2 id="reporting">Reporting a vulnerability</h2>

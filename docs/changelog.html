@@ -16,6 +16,7 @@
         <nav class="site-nav" aria-label="Documentation">
           <a href="./">Overview</a>
           <a href="guide.html">User guide</a>
+          <a href="automation.html">Automation</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
           <a href="security.html">Security</a>
@@ -37,6 +38,44 @@
         <a href="https://github.com/n36l3c7/Nik/blob/main/CHANGELOG.md">CHANGELOG.md</a> in the repository, and every
         version is published under <a href="https://github.com/n36l3c7/Nik/releases">Releases</a>.
       </p>
+
+      <section class="release">
+        <h3>4.1.0 <span class="date">2026-11-17</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Automation.</strong> Playbooks drawn on a canvas and run by Nik
+            itself: triggers (an incident created or updated, a schedule, a person), conditions, "for each", waits,
+            approvals, playbooks that run playbooks. See <a href="automation.html">Automation</a>.
+          </li>
+          <li>
+            <span class="tag added">added</span> Nodes that act in Nik (notes, status, assignee, incidents, indicators
+            and lists, artifacts), an HTTP request node and an e-mail node.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>A playbook reaches only the hosts listed for it</strong> and
+            sends only the classes of data an admin opened for it; opening either asks twice and is in the audit log.
+            Samples, attachments, mail bodies and TLP:RED data never leave.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Scripts</strong>: Python with typed arguments and outputs, a
+            stored test and versions, run in a new <code>sandbox</code> container with no network. Seven ship with Nik.
+          </li>
+          <li>
+            <span class="tag added">added</span> Runs with a page each (the canvas coloured by what happened, every
+            step's input and output), dry runs, approvals asked on the incident and counted on the rail, an
+            <em>Automation</em> tab on every incident.
+          </li>
+          <li>
+            <span class="tag added">added</span> The role <em>Playbooks</em>; Settings → Automation (network and data,
+            the switch that stops everything).
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Two new containers, <code>automation</code> and
+            <code>sandbox</code>, and a new secret: run <code>deploy/init-env.sh</code> before
+            <code>compose up -d --build</code> (<a href="deployment.html#upgrading-to-41">Upgrading to 4.1</a>).
+          </li>
+        </ul>
+      </section>
 
       <section class="release">
         <h3>4.0.0 <span class="date">2026-11-17</span></h3>

@@ -91,6 +91,8 @@ def test_a_listed_playbook_reaches_its_hosts_and_no_other(outside):
         "fc00::1",
         "::ffff:10.0.0.1",
         "224.0.0.1",
+        "100.64.0.1",
+        "100.100.100.200",
     ],
 )
 def test_an_address_inside_is_never_reached_by_accident(outside, address):
