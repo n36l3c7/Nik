@@ -53,6 +53,7 @@
           <li><a href="#host-tabs">Endpoint, Event Logs, Browser, Commands</a></li>
           <li><a href="#flags">Flags, comments and the right-click menu</a></li>
           <li><a href="#shortcuts">Keyboard shortcuts</a></li>
+          <li><a href="#queries">Filter the lists with a query</a></li>
           <li><a href="#search">Search</a></li>
           <li><a href="#report">The incident report</a></li>
           <li><a href="#share">Export, import and backup</a></li>
@@ -96,8 +97,8 @@
         Every incident has a <strong>status</strong> (open, in progress or closed) and can be
         <strong>assigned</strong> to an analyst. Set them from the Summary tab, or right-click an incident in the panel:
         <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>. The panel
-        shows the status and the assignee under the name, and filters the list by status or to the incidents that are
-        <strong>mine</strong>. Both are stated in the report.
+        shows the status and the assignee under the name, and filters the list by status, to the incidents that are
+        <strong>mine</strong>, or by any <a href="#queries">query</a>. Both are stated in the report.
       </p>
       <h3 id="saving">Saving, and working on the same incident</h3>
       <p>
@@ -752,6 +753,105 @@
           </tbody>
         </table>
       </div>
+
+      <h2 id="queries">Filter the lists with a query</h2>
+      <p>
+        The incidents panel, the artifacts panel and the IoC library each have a filter box that takes a
+        <strong>query</strong>. Plain words work as they always did (<code>wks-finance</code>,
+        <code>evil.example</code>); a query says more:
+      </p>
+      <pre><code>status:open severity:&gt;=high owner:""           open, high or critical, nobody has them
+host:wks-* -status:closed created:&gt;=now-7d      this week's incidents on the workstations
+kind:mail verdict:phishing tag:campaign           the phishing e-mails of a campaign
+verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domains</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Write</th>
+              <th>To find</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>field:value</code></td>
+              <td>
+                A name, a host, a note <em>contain</em> the value; a status, a kind, a verdict <em>is</em> the value.
+                Capitals do not matter. Quote two words: <code>name:"lateral movement"</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>-</code> or <code>not</code> · <code>field:!value</code></td>
+              <td>Not that: <code>-status:closed</code>, <code>tag:!test</code>.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>:&gt;=</code> <code>:&gt;</code> <code>:&lt;=</code> <code>:&lt;</code> · <code>[a TO b]</code>
+              </td>
+              <td>
+                More, less, between: <code>score:&gt;=70</code>, <code>severity:&gt;=high</code>,
+                <code>created:[2026-11-01 TO today]</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>*</code> · <code>?</code></td>
+              <td>Any characters, one character: <code>host:srv-*</code>. The value is then matched whole.</td>
+            </tr>
+            <tr>
+              <td><code>field:""</code> · <code>field:*</code></td>
+              <td>Empty, or holding something: <code>owner:""</code> is unassigned, <code>tags:*</code> is tagged.</td>
+            </tr>
+            <tr>
+              <td><code>or</code> · <code>( )</code></td>
+              <td>
+                Conditions side by side must all hold; <code>or</code> is either one; parentheses group:
+                <code>status:open (severity:high or severity:critical)</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>Dates</td>
+              <td>
+                <code>today</code>, <code>yesterday</code>, <code>now-7d</code>, <code>now-12h</code>,
+                <code>"7 days ago"</code>, <code>2026-11-10</code>, <code>2026-11</code> (the month). Times are UTC.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>
+          <strong>It completes as you type.</strong> Start a word and the fields of the list are offered, each with what
+          it is; after the colon come the values a field can take (<code>status:</code> offers open, in progress,
+          closed). Arrows choose, Enter or Tab takes; <kbd>Ctrl</kbd>+<kbd>Space</kbd> lists every field.
+        </li>
+        <li>
+          <strong>It is coloured, and says what is wrong</strong>: a parenthesis left open, a field that does not exist
+          (<em>did you mean "status"?</em>), a value a field cannot take. The list stays as it was until the query can
+          be read.
+        </li>
+        <li>
+          <strong>The builder</strong> (the sliders button next to the box) shows the same query as rows of field,
+          operator and value, to build one without typing. The text stays what is kept: a query the rows cannot show
+          (one that nests groups, say) is edited as text.
+        </li>
+        <li>
+          <strong>The filters write the query.</strong> The status picker and <em>mine</em> of the incidents panel,
+          <em>mine</em> of the artifacts panel, the type, verdict and origin pickers of the IoC library add their
+          condition to the box, where you can see it and change it.
+        </li>
+      </ul>
+      <p>
+        The fields of incidents: <code>name</code>, <code>ticket</code>, <code>host</code>, <code>user</code>,
+        <code>os</code>, <code>severity</code>, <code>status</code>, <code>owner</code>, <code>hasMail</code>,
+        <code>created</code>, <code>modified</code>. Of artifacts: <code>kind</code>, <code>name</code>,
+        <code>hash</code>, <code>verdict</code>, <code>score</code>, <code>detail</code>, <code>size</code>,
+        <code>tags</code>, <code>created</code>, <code>createdBy</code>, <code>linked</code>, <code>incident</code>. Of
+        indicators: <code>type</code>, <code>value</code>, <code>verdict</code>, <code>score</code>,
+        <code>origin</code>, <code>incidents</code>, <code>tags</code>, <code>note</code>, <code>tlp</code>,
+        <code>list</code>, <code>expired</code>, <code>expires</code>, <code>firstSeen</code>, <code>checked</code>,
+        <code>allowlisted</code>, <code>analysed</code>, <code>addedBy</code>. The same language is in the
+        <a href="api.html#query">API</a>.
+      </p>
 
       <h2 id="search">Search</h2>
       <p>

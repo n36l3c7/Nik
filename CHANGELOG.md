@@ -34,9 +34,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A query is compiled to bound parameters, never to SQL text, with limits
     on its length, depth and running time; who may query an entity is
     checked when it is compiled.
+- **The filter boxes of the incidents panel, the artifacts panel and the
+  IoC library take a query.** As it is typed it is coloured, completed (the
+  fields of the list, then the values a field can take) and checked: what
+  cannot be read is underlined and explained, with a suggestion for a
+  misspelt field. A **builder** shows the same query as rows of field,
+  operator and value; the text stays what is kept.
+- The incidents panel has a filter box (it had only the status picker and
+  *mine*).
 
 ### Changed
 
+- The status picker and *mine* of the incidents panel, *mine* of the
+  artifacts panel and the type, verdict and origin pickers of the IoC
+  library now write their condition into the query, where it can be seen
+  and changed, instead of filtering on their own.
+- Export, bulk check and "make a list" of the IoC library's current filter
+  read its text as a query, as the table does.
 - The **full backup** is a section of the settings (System → Backup)
   instead of a dialog of its own; the rail's shortcut opens it there.
 

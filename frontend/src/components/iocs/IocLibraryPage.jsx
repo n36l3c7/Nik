@@ -35,6 +35,9 @@ import {
 import SortHeader from '../tabs/network/SortHeader.jsx'
 import { Badge, Button, EmptyState, MicroSkull, Modal, Select, StatCard } from '../ui/index.js'
 import EditIocDialog from './EditIocDialog.jsx'
+import QueryInput from '../ui/QueryInput.jsx'
+import { useQuerySchema } from '../../services/querySchema.js'
+import { conditionOn, withCondition } from '../../domain/query/builder.js'
 
 /*
  * The IoC library in the main area: every indicator Nik knows (or one list),
@@ -44,8 +47,6 @@ import EditIocDialog from './EditIocDialog.jsx'
  */
 
 const PAGE = 100
-const INPUT =
-  'h-8 border border-line bg-canvas px-2.5 font-mono text-xs text-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 const key = (row) => `${row.type}\n${row.value}`
 const pair = (row) => ({ type: row.type, value: row.value })
 
@@ -157,6 +158,22 @@ function Alerts({ onOpenIncident }) {
 }
 
 /** @param {{ onOpenIncident: (id: string) => void }} props */
+// What each choice of the pickers writes into the query.
+const TYPE_CONDITIONS = Object.fromEntries(Object.keys(IOC_TYPES).map((type) => [type, `type:${type}`]))
+const VERDICT_CONDITIONS = {
+  flagged: 'verdict:>=suspicious',
+  malicious: 'verdict:malicious',
+  suspicious: 'verdict:suspicious',
+  harmless: 'verdict:harmless',
+  none: 'verdict:""',
+}
+const ORIGIN_CONDITIONS = {
+  incident: 'origin:incident',
+  artifact: 'origin:artifact',
+  manual: 'origin:manual',
+  import: 'origin:import',
+}
+
 export default function IocLibraryPage({ onOpenIncident }) {
   const library = useIocLibrary()
   const { view, quick, version, refresh, lists, checks, openView, openAdd, openExport, openCheck, openListForm } =
@@ -174,6 +191,16 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const [data, setData] = useState(null) // { iocs, total }
   const [detail, setDetail] = useState(null) // the list's counts
   const [error, setError] = useState(null)
+  // What the server said of the query in `filters.q`, when it could not read it.
+  const [queryError, setQueryError] = useState(null)
+  const schema = useQuerySchema('indicators')
+  // The type, verdict and origin pickers write their condition into the query, and show what it says.
+  const picked = (field, choices) => {
+    const condition = conditionOn(filters.q, field, schema)
+    return Object.keys(choices).find((key) => choices[key] === condition) ?? ''
+  }
+  const pick = (field, choices, key) =>
+    setFilters({ ...filters, q: withCondition(filters.q, field, choices[key] ?? '', schema) })
   const [selected, setSelected] = useState(() => new Map())
   const [wholeFilter, setWholeFilter] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -203,8 +230,13 @@ export default function IocLibraryPage({ onOpenIncident }) {
       () => {
         api
           .get(`/iocs?${libraryQuery({ filters: effective, list: listId, sort, offset, limit: PAGE })}`)
-          .then((res) => id === requestRef.current && (setData(res), setError(null)))
-          .catch((err) => id === requestRef.current && setError(err.message))
+          .then((res) => id === requestRef.current && (setData(res), setError(null), setQueryError(null)))
+          .catch((err) => {
+            if (id !== requestRef.current) return
+            // A query that cannot be read is said next to the input; the table stays.
+            if (err.query) setQueryError(err.query)
+            else setError(err.message)
+          })
       },
       filters.q ? 250 : 0,
     )
@@ -412,18 +444,18 @@ export default function IocLibraryPage({ onOpenIncident }) {
         </div>
       )}
 
+      <QueryInput
+        entity="indicators"
+        label="Filter indicators"
+        placeholder="value, tag, note, list… or verdict:>=suspicious -tag:test"
+        value={filters.q}
+        onChange={(q) => setFilters({ ...filters, q })}
+        error={queryError}
+      />
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="search"
-          aria-label="Filter indicators"
-          placeholder="filter by value, tag, note, list…"
-          value={filters.q}
-          onChange={(event) => setFilters({ ...filters, q: event.target.value })}
-          className={`${INPUT} min-w-0 flex-1 sm:max-w-xs`}
-        />
         <Select
-          value={filters.type}
-          onChange={(type) => setFilters({ ...filters, type })}
+          value={picked('type', TYPE_CONDITIONS)}
+          onChange={(type) => pick('type', TYPE_CONDITIONS, type)}
           options={[
             { value: '', label: 'All types' },
             ...Object.entries(IOC_TYPES).map(([value, meta]) => ({ value, label: meta.label })),
@@ -431,8 +463,8 @@ export default function IocLibraryPage({ onOpenIncident }) {
         />
         {!quickFilters.verdict && (
           <Select
-            value={filters.verdict}
-            onChange={(verdict) => setFilters({ ...filters, verdict })}
+            value={picked('verdict', VERDICT_CONDITIONS)}
+            onChange={(verdict) => pick('verdict', VERDICT_CONDITIONS, verdict)}
             options={[
               { value: '', label: 'Any verdict' },
               { value: 'flagged', label: 'Malicious or suspicious' },
@@ -445,8 +477,8 @@ export default function IocLibraryPage({ onOpenIncident }) {
         )}
         {!quickFilters.origin && (
           <Select
-            value={filters.origin}
-            onChange={(origin) => setFilters({ ...filters, origin })}
+            value={picked('origin', ORIGIN_CONDITIONS)}
+            onChange={(origin) => pick('origin', ORIGIN_CONDITIONS, origin)}
             options={[
               { value: '', label: 'Any origin' },
               { value: 'incident', label: 'From an incident' },

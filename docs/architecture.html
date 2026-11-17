@@ -343,6 +343,9 @@
 │   └── url.js                      # extractDomain, extractSearchQuery, topDomains…
 │
 ├── domain/                         # Forensic logic, pure and unit-tested (+ .test.js)
+│   ├── query/                      # The query language in the browser: parse (the twin of the server's
+│   │                               #   parser, same test vectors), tokenize (colours), complete, builder
+│   ├── permissions.js              # Roles and can(permission); settingsNav.js: the Settings page's addresses
 │   ├── events.js                   # buildEvents, historyEventType, redirect helpers
 │   ├── browserProfiles.js          # browser profiles: normalize, order, names, labels
 │   ├── commands.js                 # buildCommandEvents, extractBinary, topBinaries

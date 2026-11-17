@@ -19,7 +19,6 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import ioc_library as lib
-from .. import query
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
 from ..core.security import (
@@ -94,7 +93,7 @@ class PairIn(BaseModel):
 
 
 class Filters(BaseModel):
-    q: str = ""
+    q: str = Field(default="", max_length=2000)  # the query language, as on GET /iocs
     type: Type | None = None
     verdict: Literal["malicious", "suspicious", "harmless", "unknown", "none", "flagged"] | None = None
     origin: Literal["incident", "manual", "import", "artifact", "added"] | None = None
@@ -243,19 +242,16 @@ def list_library(
     dir: Literal["asc", "desc"] = Query("asc"),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    caller: Principal = Depends(reader_principal),
+    _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Every indicator Nik knows: seen in an incident, added by hand, imported
     or kept in a list. ``counts`` are for the whole library, ``total`` for
     the filter."""
     rows = lib.library(db, read_settings(db))
-    # `q` is the query language (app/query); "#phish" is still read as the tag.
-    text = q.strip()
-    if text.startswith("#") and " " not in text and ":" not in text:
-        text = f'tag:"{text[1:]}"'
-    keep = query.rows("indicators", text, caller)
+    # `q` is the query language (app/query), read by lib.select_rows.
     filters = {
+        "q": q,
         "type": type,
         "verdict": verdict,
         "origin": origin,
@@ -263,7 +259,7 @@ def list_library(
         "expired": expired,
         "analysis": analysis,
     }
-    kept = lib.select_rows([row for row in rows if keep(row)], filters, sort, dir == "desc")
+    kept = lib.select_rows(rows, filters, sort, dir == "desc")
     return {
         "iocs": kept[offset : offset + limit],
         "total": len(kept),

@@ -519,16 +519,25 @@ def matches(row: dict[str, Any], filters: dict[str, Any]) -> bool:
         return False
     if analysis == "none" and (row.get("analysis") or not row.get("canAnalyse")):
         return False
-    text = str(filters.get("q") or "").strip().lower().lstrip("#")
-    if text:
-        haystack = [row["value"].lower(), row["note"].lower(), *row["tags"], *(e["name"].lower() for e in row["lists"])]
-        if not any(text in part for part in haystack):
-            return False
     return True
 
 
+def text_query(text: Any):
+    """The predicate of the ``q`` of a filter: the query language (app/query).
+    ``#phish`` alone is still read as the tag, as the search box always did."""
+    from . import query
+
+    wanted = str(text or "").strip()
+    if wanted.startswith("#") and " " not in wanted and ":" not in wanted:
+        wanted = f'tag:"{wanted[1:]}"'
+    return query.rows("indicators", wanted)
+
+
 def select_rows(rows: list[dict[str, Any]], filters: dict[str, Any], sort: str = "", descending: bool = False):
-    kept = [row for row in rows if matches(row, filters)]
+    """The rows a filter keeps, sorted. ``filters["q"]`` is a query; a query
+    that cannot be read raises ``QueryError`` (the API answers 422)."""
+    keep = text_query(filters.get("q"))
+    kept = [row for row in rows if matches(row, filters) and keep(row)]
     key = SORTS.get(sort)
     if key:
         kept.sort(key=lambda r: (r["type"], r["value"]))

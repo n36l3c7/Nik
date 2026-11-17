@@ -1227,6 +1227,113 @@ test('an incident has a status and an assignee, set from the panel and filtered 
   await expect(row).not.toContainText('closed')
 })
 
+test('a query filters the lists: typed, completed, built from rows; the filters write it', async () => {
+  const panel = page.locator('aside[aria-label="Incidents panel"]')
+  const list = panel.locator('nav[aria-label="Incidents"]')
+  const filter = panel.getByRole('combobox', { name: 'Filter incidents' })
+  const status = panel.getByLabel('Status filter')
+
+  // Plain words, then a field with a wildcard: the server reads the query.
+  await filter.fill('wks-finance')
+  await expect(list.locator('li')).toHaveCount(1)
+  await expect(list).toContainText('WKS-FINANCE-01')
+  await filter.fill('host:nowhere-*')
+  await expect(list).toContainText('No incident matches the filters.')
+  await filter.fill('host:wks-* -host:nowhere')
+  await expect(list).toContainText('WKS-FINANCE-01')
+
+  // Autocomplete: the fields at the start of a condition, the values after the colon.
+  await filter.fill('')
+  await filter.pressSequentially('stat')
+  const suggestions = panel.getByRole('listbox', { name: 'Suggestions' })
+  await expect(suggestions.getByRole('option')).toHaveCount(1)
+  await expect(suggestions.getByRole('option').first()).toContainText('status')
+  await page.keyboard.press('Enter')
+  await expect(filter).toHaveValue('status:')
+  await expect(suggestions.getByRole('option')).toHaveText(['open', 'in_progress', 'closed'])
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Tab')
+  await expect(filter).toHaveValue('status:closed ')
+  await expect(filter).toBeFocused()
+  // The status picker shows what the query says, and writes into it; so does "mine".
+  await expect(status).toHaveValue('closed')
+  await status.selectOption('open')
+  await expect(filter).toHaveValue('status:open')
+  await panel.getByRole('button', { name: 'mine' }).click()
+  await expect(filter).toHaveValue(`status:open owner:${ADMIN.username}`)
+  await expect(panel.getByRole('button', { name: 'mine' })).toHaveAttribute('aria-pressed', 'true')
+
+  // The builder: the same query as rows; a change of a row rewrites the text.
+  await panel.getByRole('button', { name: 'Query builder' }).click()
+  await expect(panel.getByLabel('Condition 1: field')).toHaveValue('status')
+  await expect(panel.getByLabel('Condition 2: field')).toHaveValue('owner')
+  await panel.getByLabel('Condition 1: value').selectOption('closed')
+  await expect(filter).toHaveValue(`status:closed owner:${ADMIN.username}`)
+  await panel.getByRole('button', { name: 'Remove Condition 2' }).click()
+  await expect(filter).toHaveValue('status:closed')
+  await panel.getByRole('button', { name: 'Add a condition' }).click()
+  await panel.getByLabel('Condition 2: field').selectOption('severity')
+  await panel.getByLabel('Condition 2: operator').selectOption('>=')
+  await panel.getByLabel('Condition 2: value').selectOption('high')
+  await expect(filter).toHaveValue('status:closed severity:>=high')
+  await panel.getByLabel('How the conditions combine').selectOption('or')
+  await expect(filter).toHaveValue('status:closed or severity:>=high')
+  // What it cannot show, it says; the text stays the query.
+  await filter.fill('-(wks or srv)')
+  await expect(panel.getByText('Edit it as text.')).toBeVisible()
+  await panel.getByRole('button', { name: 'Query builder' }).click()
+
+  // What cannot be read is said where it goes wrong, at once or by the server.
+  await filter.fill('(status:open')
+  await expect(panel.getByText('A parenthesis is not closed: add the closing )')).toBeVisible()
+  await filter.fill('stauts:open')
+  await expect(panel.getByText('"stauts" is not a field of incidents: did you mean "status"?')).toBeVisible()
+  await expect(filter).toHaveAttribute('aria-invalid', 'true')
+  await filter.fill('')
+  await expect(filter).not.toHaveAttribute('aria-invalid', 'true')
+  await expect(list).toContainText('WKS-FINANCE-01')
+
+  // The artifacts: the same language; "mine" writes its condition.
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const artifacts = page.getByRole('complementary', { name: 'Artifacts panel' })
+  const artifactFilter = artifacts.getByRole('combobox', { name: 'Filter artifacts' })
+  await artifactFilter.fill('kind:file dropper')
+  await expect(artifacts.getByRole('navigation', { name: 'Artifacts' })).toContainText('dropper.bin')
+  await artifacts.getByRole('button', { name: 'mine' }).click()
+  await expect(artifactFilter).toHaveValue(`kind:file dropper createdBy:${ADMIN.username}`)
+  await artifactFilter.fill('kind:file size:<1')
+  await expect(artifacts.getByRole('navigation', { name: 'Artifacts' })).toContainText(
+    'No artifact matches these filters.',
+  )
+  await artifactFilter.fill('knid:file')
+  await expect(artifacts.getByText('did you mean "kind"?')).toBeVisible()
+  await artifactFilter.fill('')
+
+  // The IoC library: its pickers write the query too.
+  await page.getByRole('button', { name: /^IoC library/ }).click()
+  await page
+    .getByRole('complementary', { name: 'IoCs panel' })
+    .getByRole('button', { name: /^All indicators/ })
+    .click()
+  const indicatorFilter = page.getByRole('combobox', { name: 'Filter indicators' })
+  await indicatorFilter.fill('type:ip 185.220.*')
+  await expect(page.locator('main tbody tr').first()).toContainText('185.220.101.47')
+  await page.locator('main').getByRole('combobox').filter({ hasText: 'All types' }).selectOption('domain')
+  await expect(indicatorFilter).toHaveValue('185.220.* type:domain')
+  await page.locator('main').getByRole('combobox').filter({ hasText: 'Any verdict' }).selectOption('flagged')
+  await expect(indicatorFilter).toHaveValue('185.220.* type:domain verdict:>=suspicious')
+  await indicatorFilter.fill('')
+
+  // Back to the incident.
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: 'Incidents', exact: true })
+    .click()
+  await list.locator('li', { hasText: 'WKS-FINANCE-01' }).getByRole('button').first().click()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
 test('keyboard shortcuts: F flags the row under the pointer, C comments, ? lists them', async () => {
   const tabs = page.locator('nav[aria-label="Analysis tabs"]')
   await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()

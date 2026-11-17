@@ -526,6 +526,23 @@ def test_the_artifact_list_and_the_audit_log_take_a_query(admin: TestClient, sto
     assert admin.get("/api/audit", params={"q": "actoin:x"}).json()["query"]["suggestion"] == "action"
 
 
+def test_a_filter_of_the_library_reads_its_text_as_a_query_wherever_it_is_used():
+    """The list and the scopes of export, bulk check and lists share select_rows."""
+    from app import ioc_library as lib
+
+    def values(q):
+        return sorted(row["value"] for row in lib.select_rows(INDICATORS, {"q": q}))
+
+    assert values("type:domain -tag:phish") == ["intranet.corp"]
+    assert values("#phish") == ["evil.example"]  # the older way to ask for a tag
+    assert values("evil") == ["evil.example"] and len(values("")) == 4
+    assert values("type:domain") == sorted(
+        row["value"] for row in lib.select_rows(INDICATORS, {"q": "", "type": "domain"})
+    )
+    with pytest.raises(QueryError):
+        lib.select_rows(INDICATORS, {"q": "tpye:ip"})
+
+
 def test_the_indicator_library_takes_a_query(admin: TestClient):
     added = admin.post(
         "/api/iocs", json={"text": "185.220.101.47\nevil.example.org\nhttp://evil.example.org/kit", "tags": ["phish"]}
