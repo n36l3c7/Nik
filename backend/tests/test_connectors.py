@@ -232,3 +232,177 @@ def test_credentials_have_their_own_keys():
     ).replace("Accept: application/json", 'X-Token: "{{ config.api_token }}"')
     assert (0, '"api_token" is a secret: read it as {{ secret.api_token }}') in problems(plain)
     assert cn.load(plain.replace("config.api_token", "secret.api_token")).headers["X-Token"] == "{{ secret.api_token }}"
+
+
+FETCHING = GOOD + textwrap.dedent(
+    """\
+      - name: get-incident
+        arguments: [{ name: sys_id, type: text, required: true }]
+        request: { method: GET, path: "/api/now/table/incident/{{ args.sys_id }}" }
+        outputs: { incident: "{{ response.result }}" }
+      - name: update-incident
+        changes_outside: true
+        arguments:
+          - { name: sys_id, type: text, required: true }
+          - { name: fields, type: object }
+        request: { method: PATCH, path: "/api/now/table/incident/{{ args.sys_id }}", json: "{{ args.fields }}" }
+        outputs: { incident: "{{ response.result }}" }
+      - name: get-comments
+        arguments: [{ name: sys_id, type: text, required: true }]
+        request: { method: GET, path: /api/now/table/sys_journal_field, query: { element_id: "{{ args.sys_id }}" } }
+        outputs: { comments: "{{ response.result }}" }
+      - name: add-comment
+        changes_outside: true
+        arguments:
+          - { name: sys_id, type: text, required: true }
+          - { name: text, type: text, required: true }
+        request:
+          method: PATCH
+          path: "/api/now/table/incident/{{ args.sys_id }}"
+          json: { comments: "{{ args.text }}" }
+    fetch:
+      interval_seconds: 120
+      first_fetch: 3 days
+      request:
+        method: GET
+        path: /api/now/table/incident
+        query:
+          sysparm_query: "sys_created_on>{{ state.last_time }}"
+      pagination:
+        type: offset
+        param: sysparm_offset
+        limit_param: sysparm_limit
+        limit: 100
+        items: "{{ response.result }}"
+        max_pages: 20
+      item_id: "{{ item.sys_id }}"
+      occurred: "{{ item.sys_created_on }}"
+      first_state:
+        last_time: "{{ first.iso }}"
+      next_state:
+        last_time: "{{ items | last | get('sys_created_on') }}"
+    schema:
+      incoming:
+        - { name: short_description, type: text }
+        - { name: sys_created_on, type: date, description: When it was opened }
+      outgoing:
+        - { name: short_description, type: text }
+    ext_fields:
+      - { name: assignment_group, type: text }
+    mirror:
+      interval_seconds: 300
+      get: { command: get-incident }
+      update:
+        command: update-incident
+        args: { sys_id: "{{ mirror.id }}", fields: "{{ fields }}" }
+      comments:
+        list: { command: get-comments }
+        items: "{{ result.comments }}"
+        id: "{{ item.sys_id }}"
+        text: "{{ item.value }}"
+        author: "{{ item.sys_created_by }}"
+        at: "{{ item.sys_created_on }}"
+        add:
+          command: add-comment
+          args: { sys_id: "{{ mirror.id }}", text: "{{ comment.text }}" }
+    """
+)
+
+
+def _raised(text: str) -> list[cn.Problem]:
+    with pytest.raises(cn.ConnectorError) as caught:
+        cn.load(text)
+    return caught.value.problems
+
+
+def test_a_connector_says_how_it_brings_alerts_in_and_keeps_an_object_in_step():
+    connector = cn.load(FETCHING)
+    fetch = connector.fetch
+    assert (fetch.interval_seconds, fetch.first_seconds, fetch.pagination.max_pages) == (120, 3 * 86400, 20)
+    assert fetch.item_id == "{{ item.sys_id }}" and list(fetch.next_state) == ["last_time"]
+    assert fetch.first_state == {"last_time": "{{ first.iso }}"}
+    assert [item.name for item in connector.schema_.incoming] == ["short_description", "sys_created_on"]
+    assert connector.ext_fields[0].name == "assignment_group"
+    mirror = connector.mirror
+    assert (mirror.get.command, mirror.update.command, mirror.interval_seconds) == (
+        "get-incident",
+        "update-incident",
+        300,
+    )
+    assert mirror.comments.add.args == {"sys_id": "{{ mirror.id }}", "text": "{{ comment.text }}"}
+    assert [where for where, _call in connector.mirror_calls()] == [
+        "mirror.get",
+        "mirror.update",
+        "mirror.comments.list",
+        "mirror.comments.add",
+    ]
+    shown = cn.summary(connector)
+    assert shown["fetch"] == {"intervalSeconds": 120, "firstFetch": "3 days"}
+    assert shown["mirror"] == {"intervalSeconds": 300, "out": True, "comments": True, "commentsOut": True}
+    assert shown["schema"]["incoming"][1] == {
+        "name": "sys_created_on",
+        "type": "date",
+        "description": "When it was opened",
+    }
+    assert shown["extFields"] == [{"name": "assignment_group", "type": "text", "description": ""}]
+    # A connector with none of them says so.
+    plain = cn.summary(cn.load(GOOD))
+    assert plain["fetch"] is None and plain["mirror"] is None and plain["schema"] == {"incoming": [], "outgoing": []}
+
+    assert cn.first_fetch_seconds("30 minutes") == 1800 and cn.first_fetch_seconds("1 hour") == 3600
+    assert cn.first_fetch_seconds("soon") is None and cn.first_fetch_seconds("90 days") is None
+
+
+def test_what_is_wrong_with_a_fetch_or_a_mirror_is_said():
+    def messages(text: str) -> list[str]:
+        return [problem.message for problem in _raised(text)]
+
+    # The request of a fetch reads the state and the first moment, never an answer or an argument.
+    early = FETCHING.replace("{{ state.last_time }}", "{{ response.x }}")
+    assert messages(early) == ['"response" cannot be read in what is sent: only config, first, now, secret, state']
+    assert any(
+        '"state" cannot be read' in message
+        for message in messages(FETCHING.replace('last_time: "{{ first.iso }}"', 'last_time: "{{ state.x }}"'))
+    )
+    # One item is told apart by what it holds.
+    assert '"item_id" is a template over the item: "{{ item.id }}"' in messages(
+        FETCHING.replace('item_id: "{{ item.sys_id }}"', "item_id: sys_id")
+    )
+    assert any(
+        '"response" cannot be read' in message
+        for message in messages(FETCHING.replace('item_id: "{{ item.sys_id }}"', 'item_id: "{{ response.id }}"'))
+    )
+    assert '"first_fetch" is a length of time: 30 minutes, 12 hours, 3 days' in messages(
+        FETCHING.replace("first_fetch: 3 days", "first_fetch: a while")
+    )
+    # Where the items are is said once: by the pagination, or by "items".
+    twice = FETCHING.replace(
+        '  item_id: "{{ item.sys_id }}"', '  items: "{{ response.result }}"\n  item_id: "{{ item.sys_id }}"'
+    )
+    assert any("a fetch says where its items are" in message for message in messages(twice))
+    too_often = _raised(FETCHING.replace("  interval_seconds: 120", "  interval_seconds: 5"))
+    assert any("interval_seconds" in problem.where for problem in too_often)
+
+    # Mirroring runs commands of the file, with arguments they take.
+    assert messages(FETCHING.replace("get: { command: get-incident }", "get: { command: read-incident }")) == [
+        'mirror.get names "read-incident", which is not a command'
+    ]
+    wrong_args = FETCHING.replace(
+        'args: { sys_id: "{{ mirror.id }}", fields: "{{ fields }}" }', 'args: { id: "{{ mirror.id }}" }'
+    )
+    assert sorted(messages(wrong_args)) == [
+        'mirror.update does not give "sys_id", which "update-incident" needs',
+        'mirror.update gives "id", which "update-incident" does not take',
+    ]
+    quiet = FETCHING.replace("  - name: update-incident\n    changes_outside: true", "  - name: update-incident")
+    assert messages(quiet) == ["mirror.update changes the other side: its command says changes_outside: true"]
+    assert any(
+        '"args" cannot be read in what mirroring gives' in message
+        for message in messages(FETCHING.replace('text: "{{ comment.text }}" }', 'text: "{{ args.text }}" }'))
+    )
+    # Names of ext fields are given once.
+    doubled = FETCHING.replace(
+        "  - { name: assignment_group, type: text }",
+        "  - { name: assignment_group, type: text }\n  - { name: assignment_group, type: text }",
+    )
+    assert "two ext fields have the same name" in messages(doubled)

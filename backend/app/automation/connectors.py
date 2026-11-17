@@ -53,6 +53,19 @@ AUTH_TYPES = ("basic", "bearer", "header", "oauth2_client", "session", "zscaler"
 ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice")
 
 MAX_PAGES = 100
+FETCH_MIN_INTERVAL = 30
+_FIRST_FETCH = re.compile(r"^\s*(\d{1,4})\s*(minute|hour|day)s?\s*$")
+
+
+def first_fetch_seconds(text: str) -> int | None:
+    """``3 days`` as seconds; None when it is not a length of time (a month at most)."""
+    found = _FIRST_FETCH.match(str(text).lower())
+    if found is None:
+        return None
+    seconds = int(found.group(1)) * {"minute": 60, "hour": 3600, "day": 86400}[found.group(2)]
+    return seconds if 0 < seconds <= 31 * 86400 else None
+
+
 MAX_STEPS = 12
 POLL_MIN, POLL_MAX_TIMEOUT = 2, 3600
 
@@ -239,6 +252,105 @@ class Command(_Strict):
         return self
 
 
+class FetchSpec(_Strict):
+    """How a connection brings alerts in: one request, read to the end of its pages, again and again.
+
+    The request reads ``state``: what the last cycle left in ``next_state``, and before the first
+    cycle what ``first_state`` says, which reads ``first`` (the moment ``first_fetch`` ago, as
+    ``first.iso``, ``first.epoch``, ``first.epoch_ms``). Each item of the answer is told apart by
+    ``item_id``: one seen before is skipped."""
+
+    interval_seconds: int = Field(default=120, ge=FETCH_MIN_INTERVAL, le=86_400)
+    first_fetch: str = Field(default="3 days", max_length=40)
+    request: RequestSpec
+    success: Success | None = None
+    error: ErrorSpec | None = None
+    pagination: Pagination | None = None
+    # Where the items are in the answer, when it does not come in pages (pagination says it otherwise).
+    items: str | None = Field(default=None, max_length=500)
+    item_id: str = Field(min_length=1, max_length=500)  # "{{ item.id }}"
+    occurred: str | None = Field(default=None, max_length=500)  # "{{ item.createdAt }}"
+    first_state: dict[str, Any] = Field(default_factory=dict)  # { last_time: "{{ first.iso }}" }
+    next_state: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if first_fetch_seconds(self.first_fetch) is None:
+            raise ValueError('"first_fetch" is a length of time: 30 minutes, 12 hours, 3 days')
+        if (self.pagination is None) == (self.items is None):
+            raise ValueError('a fetch says where its items are: "items", or the "items" of its "pagination"')
+        if "{{" not in self.item_id:
+            raise ValueError('"item_id" is a template over the item: "{{ item.id }}"')
+        if len(self.next_state) > 20 or len(self.first_state) > 20:
+            raise ValueError("the state of a fetch holds 20 values at most")
+        return self
+
+    @property
+    def first_seconds(self) -> int:
+        return first_fetch_seconds(self.first_fetch) or 0
+
+
+class SchemaField(_Strict):
+    """A field of the other product, by the name the product gives it."""
+
+    name: str = Field(min_length=1, max_length=200)
+    type: Literal["text", "number", "bool", "date", "list", "object"] = "text"
+    description: str = Field(default="", max_length=300)
+
+
+class SchemaSpec(_Strict):
+    """The names the other product uses: what a fetched item holds, what a create or update takes.
+    The mapper editor offers them."""
+
+    incoming: list[SchemaField] = Field(default_factory=list, max_length=300)
+    outgoing: list[SchemaField] = Field(default_factory=list, max_length=300)
+
+
+class ExtField(_Strict):
+    """A field this connector adds to the context of an incident, under ``ext.<connector id>``."""
+
+    name: str
+    type: Literal["text", "number", "bool", "date", "list", "object"] = "text"
+    description: str = Field(default="", max_length=300)
+
+    @model_validator(mode="after")
+    def _name(self):
+        if not NAME_RE.match(self.name):
+            raise ValueError("an ext field's name is a lower-case letter, then letters, digits or _")
+        return self
+
+
+class MirrorCall(_Strict):
+    """A command of this connector that mirroring runs, and what it is given.
+
+    ``args`` are templates: ``mirror.id`` (the id of the object on the other side), ``fields``
+    (what the outgoing mapper gave, for an update), ``comment`` (the text of a note to send),
+    ``since`` (the last comment that came in). With no ``args``, the id goes to the first argument."""
+
+    command: str = Field(min_length=1, max_length=50)
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+class MirrorComments(_Strict):
+    list: MirrorCall
+    # Where the comments are in the result of ``list``, and what one is.
+    items: str = Field(default="{{ result.comments }}", max_length=500)
+    id: str = Field(default="{{ item.id }}", max_length=500)
+    text: str = Field(default="{{ item.text }}", max_length=500)
+    author: str = Field(default="{{ item.author }}", max_length=500)
+    at: str = Field(default="{{ item.created }}", max_length=500)
+    add: MirrorCall | None = None
+
+
+class MirrorSpec(_Strict):
+    """Keeping an incident and one object of the other product in step."""
+
+    get: MirrorCall
+    update: MirrorCall | None = None
+    comments: MirrorComments | None = None
+    interval_seconds: int = Field(default=120, ge=FETCH_MIN_INTERVAL, le=86_400)
+
+
 class Login(_Strict):
     """``session`` credentials: how a session is opened, where its token is, how it is sent."""
 
@@ -317,6 +429,11 @@ class ConnectorFile(_Strict):
     headers: dict[str, str] = Field(default_factory=dict)
     test: TestSpec | None = None
     commands: list[Command] = Field(min_length=1, max_length=100)
+    # Bringing alerts in, the names the product uses, what it adds to the context, two-way sync.
+    fetch: FetchSpec | None = None
+    schema_: SchemaSpec | None = Field(default=None, alias="schema")
+    ext_fields: list[ExtField] = Field(default_factory=list, max_length=100)
+    mirror: MirrorSpec | None = None
 
     @field_validator("id")
     @classmethod
@@ -336,7 +453,27 @@ class ConnectorFile(_Strict):
         commands = [command.name for command in self.commands]
         if len(set(commands)) != len(commands):
             raise ValueError("two commands have the same name")
+        ext = [item.name for item in self.ext_fields]
+        if len(set(ext)) != len(ext):
+            raise ValueError("two ext fields have the same name")
+        for side in ("incoming", "outgoing"):
+            listed = [item.name for item in getattr(self.schema_, side)] if self.schema_ is not None else []
+            if len(set(listed)) != len(listed):
+                raise ValueError(f"the {side} schema names a field twice")
         return self
+
+    def mirror_calls(self) -> list[tuple[str, MirrorCall]]:
+        """The commands mirroring runs, each with where it is named in the file."""
+        if self.mirror is None:
+            return []
+        calls = [("mirror.get", self.mirror.get)]
+        if self.mirror.update is not None:
+            calls.append(("mirror.update", self.mirror.update))
+        if self.mirror.comments is not None:
+            calls.append(("mirror.comments.list", self.mirror.comments.list))
+            if self.mirror.comments.add is not None:
+                calls.append(("mirror.comments.add", self.mirror.comments.add))
+        return calls
 
     @property
     def auth(self) -> ConfigParam | None:
@@ -411,6 +548,13 @@ def _where(loc: tuple) -> str:
 # The names a template may read, by where it is.
 _SENT = frozenset({"config", "args", "steps", "secret"})
 _ANSWER = frozenset({"config", "args", "steps", "response", "status", "headers"})
+# A fetch: what its request reads, what is read from its answer, what is read of one item.
+_FETCH_SENT = frozenset({"config", "secret", "state", "first", "now"})
+_FETCH_ANSWER = frozenset({"config", "state", "first", "now", "response", "status", "headers", "items"})
+_FETCH_ITEM = frozenset({"config", "state", "item"})
+# Mirroring: what a call is given, and what is read of a comment.
+_MIRROR_ARGS = frozenset({"mirror", "fields", "comment", "since", "incident", "context"})
+_MIRROR_COMMENT = frozenset({"result", "item"})
 
 
 def _check_templates(value: Any, allowed: frozenset, loc: tuple, lines: dict, problems: list[Problem]) -> None:
@@ -425,7 +569,13 @@ def _check_templates(value: Any, allowed: frozenset, loc: tuple, lines: dict, pr
             return
         for name, _position in found:
             if name not in allowed:
-                where = "what is sent" if "secret" in allowed else "what is read from the answer"
+                where = (
+                    "what is sent"
+                    if "secret" in allowed
+                    else "what mirroring gives"
+                    if "mirror" in allowed or "result" in allowed
+                    else "what is read from the answer"
+                )
                 names = ", ".join(sorted(allowed))
                 problems.append(
                     Problem(_line_of(lines, loc), f'"{name}" cannot be read in {where}: only {names}', _where(loc))
@@ -527,6 +677,29 @@ def load(text: str | bytes) -> ConnectorFile:
     for index, command in enumerate(raw.get("commands") or []):
         if isinstance(command, dict):
             _check_command(command, ("commands", index), lines, problems)
+    fetch = raw.get("fetch")
+    if isinstance(fetch, dict):
+        _check_templates(fetch.get("request"), _FETCH_SENT, ("fetch", "request"), lines, problems)
+        for key in ("pagination", "items", "next_state", "success", "error"):
+            _check_templates(fetch.get(key), _FETCH_ANSWER, ("fetch", key), lines, problems)
+        for key in ("item_id", "occurred"):
+            _check_templates(fetch.get(key), _FETCH_ITEM, ("fetch", key), lines, problems)
+        _check_templates(
+            fetch.get("first_state"), frozenset({"config", "first", "now"}), ("fetch", "first_state"), lines, problems
+        )
+    mirror = raw.get("mirror")
+    if isinstance(mirror, dict):
+        comments = mirror.get("comments") if isinstance(mirror.get("comments"), dict) else {}
+        for where, call in (
+            (("mirror", "get"), mirror.get("get")),
+            (("mirror", "update"), mirror.get("update")),
+            (("mirror", "comments", "list"), comments.get("list")),
+            (("mirror", "comments", "add"), comments.get("add")),
+        ):
+            if isinstance(call, dict):
+                _check_templates(call.get("args"), _MIRROR_ARGS, (*where, "args"), lines, problems)
+        for key in ("items", "id", "text", "author", "at"):
+            _check_templates(comments.get(key), _MIRROR_COMMENT, ("mirror", "comments", key), lines, problems)
 
     if connector is not None and not problems:
         # What a template names must exist: a configuration entry, an argument, an earlier step.
@@ -621,6 +794,44 @@ def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Probl
             problems.append(
                 Problem(_line_of(lines, ("commands", index, "outputs")), "A secret cannot be an output", "outputs")
             )
+    # Mirroring runs commands of this file, and gives them arguments they declare.
+    for where, call in connector.mirror_calls():
+        loc = tuple(where.split("."))
+        command = connector.command(call.command)
+        if command is None:
+            problems.append(
+                Problem(_line_of(lines, loc), f'{where} names "{call.command}", which is not a command', where)
+            )
+            continue
+        declared = {argument.name for argument in command.arguments}
+        for name in sorted(set(call.args) - declared):
+            problems.append(
+                Problem(_line_of(lines, loc), f'{where} gives "{name}", which "{call.command}" does not take', where)
+            )
+        missing = [
+            argument.name
+            for argument in command.arguments
+            if argument.required and argument.default is None and argument.name not in call.args
+        ]
+        if call.args and missing:
+            problems.append(
+                Problem(
+                    _line_of(lines, loc), f'{where} does not give "{missing[0]}", which "{call.command}" needs', where
+                )
+            )
+        if not call.args and not command.arguments:
+            problems.append(
+                Problem(_line_of(lines, loc), f'{where}: "{call.command}" takes no argument to be given the id', where)
+            )
+    if connector.mirror is not None and connector.mirror.update is not None:
+        if not connector.command(connector.mirror.update.command or "").changes_outside:  # type: ignore[union-attr]
+            problems.append(
+                Problem(
+                    _line_of(lines, ("mirror", "update")),
+                    "mirror.update changes the other side: its command says changes_outside: true",
+                    "mirror.update",
+                )
+            )
     return problems
 
 
@@ -633,6 +844,31 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
         "description": connector.description,
         "apiVersion": connector.api_version,
         "verified": connector.verified,
+        # What it can do besides commands: bring alerts in, keep an object in step.
+        "fetch": (
+            {"intervalSeconds": connector.fetch.interval_seconds, "firstFetch": connector.fetch.first_fetch}
+            if connector.fetch is not None
+            else None
+        ),
+        "mirror": (
+            {
+                "intervalSeconds": connector.mirror.interval_seconds,
+                "out": connector.mirror.update is not None,
+                "comments": connector.mirror.comments is not None,
+                "commentsOut": connector.mirror.comments is not None and connector.mirror.comments.add is not None,
+            }
+            if connector.mirror is not None
+            else None
+        ),
+        "schema": (
+            {
+                "incoming": [item.model_dump() for item in connector.schema_.incoming],
+                "outgoing": [item.model_dump() for item in connector.schema_.outgoing],
+            }
+            if connector.schema_ is not None
+            else {"incoming": [], "outgoing": []}
+        ),
+        "extFields": [item.model_dump() for item in connector.ext_fields],
         "commands": [
             {
                 "name": command.name,

@@ -1611,6 +1611,36 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td><code>commands</code> (required)</td>
               <td>The commands (below): at least one, 100 at most.</td>
             </tr>
+            <tr>
+              <td><code>fetch</code></td>
+              <td>
+                How a connection brings alerts in as incidents (<a href="#connector-fetch">below</a>). A connector
+                without it only sends commands.
+              </td>
+            </tr>
+            <tr>
+              <td><code>schema</code></td>
+              <td>
+                The names the product uses: <code>incoming</code> (what a fetched item holds) and
+                <code>outgoing</code> (what a create or an update takes), each a list of
+                <code>{ name, type, description }</code> with <code>type</code> one of <code>text</code>,
+                <code>number</code>, <code>bool</code>, <code>date</code>, <code>list</code>, <code>object</code>. The
+                mapper editor offers them; nothing is checked against them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>ext_fields</code></td>
+              <td>
+                What this connector adds to the context of an incident under <code>ext.&lt;id&gt;</code>: a list of
+                <code>{ name, type, description }</code>, so that what is there has a name and a type.
+              </td>
+            </tr>
+            <tr>
+              <td><code>mirror</code></td>
+              <td>
+                How an incident and one object of the product are kept in step (<a href="#connector-fetch">below</a>).
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -1921,6 +1951,51 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         <code>any</code> and the operators <code>eq</code>, <code>ne</code>, <code>gt</code>, <code>gte</code>,
         <code>lt</code>, <code>lte</code>, <code>contains</code>, <code>in</code>, <code>exists</code>,
         <code>empty</code>.
+      </p>
+
+      <h4 id="connector-fetch">Fetching and mirroring</h4>
+      <p>
+        <strong><code>fetch</code></strong> is one request, sent again and again, whose answer is a list of alerts. Its
+        keys:
+      </p>
+      <ul>
+        <li>
+          <code>interval_seconds</code> (120 by default, 30 at least) and <code>first_fetch</code>: how far back the
+          first cycle looks, as <code>30 minutes</code>, <code>12 hours</code> or <code>3 days</code> (a month at most);
+        </li>
+        <li>
+          <code>request</code>, with <code>success</code> and <code>error</code> as in a command. Its templates read
+          <code>config</code>, <code>secret</code> and <code>state</code>, never an argument: nobody gives a fetch any;
+        </li>
+        <li>
+          <code>pagination</code> (as in a command), or <code>items</code> when the answer is one page: where the alerts
+          are, <code>"{{ response.data }}"</code>;
+        </li>
+        <li>
+          <code>item_id</code>: what tells one alert from another, <code>"{{ item.id }}"</code>. An alert whose id was
+          seen on this connection is skipped; <code>occurred</code>: when it happened,
+          <code>"{{ item.createdAt }}"</code>;
+        </li>
+        <li>
+          <code>first_state</code> and <code>next_state</code>: the <code>state</code> the request reads. Before the
+          first cycle it is what <code>first_state</code> says, which reads <code>first</code>, the moment
+          <code>first_fetch</code> ago (<code>first.iso</code>, <code>first.epoch</code>, <code>first.epoch_ms</code>);
+          after each cycle it is what <code>next_state</code> says, which reads the answer and <code>items</code>, every
+          alert of the cycle: <code>last_time: "{{ items | last | get('createdAt') }}"</code>. It is saved only when the
+          whole cycle was read.
+        </li>
+      </ul>
+      <p>
+        <strong><code>mirror</code></strong> names the commands of this same file that keep one object in step:
+        <code>get</code> (read it), <code>update</code> (change it: its command says
+        <code>changes_outside: true</code>), and <code>comments</code> with <code>list</code> and <code>add</code>. Each
+        is <code>{ command, args }</code>; <code>args</code> are templates over <code>mirror.id</code> (the id of the
+        object on the other side), <code>fields</code> (what the outgoing mapper gave), <code>comment.text</code> and
+        <code>since</code>, and must be arguments the command takes. With no <code>args</code> the id goes to the
+        command's first argument. <code>comments</code> also says where the comments are in the result of
+        <code>list</code> (<code>items</code>, <code>"{{ result.comments }}"</code> by default) and what one is
+        (<code>id</code>, <code>text</code>, <code>author</code>, <code>at</code>, over <code>item</code>).
+        <code>interval_seconds</code> is how often the other side is read (120 by default).
       </p>
 
       <h4 id="connector-samples">Two complete files</h4>

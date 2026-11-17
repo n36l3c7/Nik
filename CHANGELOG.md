@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A connector file can say how it brings alerts in and keeps an object in
+  step**: `fetch` (a request sent again and again, its pages, what tells one
+  alert from another, the state it carries from a cycle to the next),
+  `schema` (the names the product uses, for the mapper), `ext_fields` (what
+  it adds to the context) and `mirror` (the commands that read, change and
+  comment one object). Each is checked when the file is read, with the line
+  of what is wrong.
+
 ## [4.4.0] - 2026-11-17
 
 People in the loop: playbooks give tasks and ask questions, each incident has
