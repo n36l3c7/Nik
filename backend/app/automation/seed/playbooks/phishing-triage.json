@@ -1,0 +1,180 @@
+{
+  "app": "Nik",
+  "type": "playbook",
+  "version": 1,
+  "playbook": {
+    "name": "Phishing triage",
+    "description": "An e-mail analysed on its own and found to be phishing or suspicious gets an incident: the message is linked to it, the hosts its links lead to are written in a note, and a person is asked whether the sender's domain goes in the watched list \"Phishing senders\". It does nothing outside Nik. Messages imported from a mailbox, and those analysed inside an incident, are left alone.",
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "trigger",
+          "name": "A reported e-mail",
+          "position": {
+            "x": 60,
+            "y": 40
+          },
+          "config": {
+            "event": "mail.analysed",
+            "manual": true,
+            "conditions": {
+              "all": [
+                {
+                  "left": "{{ trigger.mail.verdict }}",
+                  "op": "in",
+                  "right": [
+                    "phishing",
+                    "suspicious"
+                  ]
+                },
+                {
+                  "left": "{{ trigger.from_mailbox }}",
+                  "op": "empty"
+                },
+                {
+                  "left": "{{ trigger.incident.id }}",
+                  "op": "empty"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "open",
+          "kind": "action",
+          "name": "Open an incident",
+          "position": {
+            "x": 60,
+            "y": 170
+          },
+          "config": {
+            "action": "nik.create-incident",
+            "args": {
+              "title": "Phishing: {{ trigger.mail.subject | default('(no subject)') }}",
+              "severity": "{{ trigger.mail.verdict | map(phishing='high', else='medium') }}"
+            }
+          }
+        },
+        {
+          "id": "link",
+          "kind": "action",
+          "name": "Put the e-mail in it",
+          "position": {
+            "x": 60,
+            "y": 300
+          },
+          "config": {
+            "action": "nik.link-artifact",
+            "args": {
+              "artifact": "{{ trigger.mail.artifact_id }}",
+              "incident": "{{ open.incident.id }}"
+            }
+          }
+        },
+        {
+          "id": "hosts",
+          "kind": "script",
+          "name": "Where its links lead",
+          "position": {
+            "x": 60,
+            "y": 430
+          },
+          "config": {
+            "script": "ExtractDomains",
+            "args": {
+              "text": "{{ trigger.mail.urls }}"
+            }
+          }
+        },
+        {
+          "id": "note",
+          "kind": "action",
+          "name": "Write what was found",
+          "position": {
+            "x": 60,
+            "y": 560
+          },
+          "config": {
+            "action": "nik.add-note",
+            "args": {
+              "incident": "{{ open.incident.id }}",
+              "text": "Reported e-mail from {{ trigger.mail.sender | defang }}: {{ trigger.mail.verdict }}, score {{ trigger.mail.score }}.\nIts links lead to {{ hosts.count }} host(s): {{ hosts.domains | defang | join(', ') }}\nAttachments ({{ trigger.mail.attachments | length }}): {{ trigger.mail.attachments | pluck('name') | join(', ') }}"
+            }
+          }
+        },
+        {
+          "id": "ask",
+          "kind": "approval",
+          "name": "Watch the sender?",
+          "position": {
+            "x": 60,
+            "y": 690
+          },
+          "config": {
+            "question": "Watch the sender's domain {{ trigger.mail.sender_domain }}?",
+            "detail": {
+              "why": "A watched domain raises an alert when another incident holds it. Refuse for a mail provider many people use.",
+              "subject": "{{ trigger.mail.subject }}"
+            },
+            "wait_seconds": 259200,
+            "on_expire": "skip"
+          }
+        },
+        {
+          "id": "watch",
+          "kind": "action",
+          "name": "Add it to Phishing senders",
+          "position": {
+            "x": 60,
+            "y": 820
+          },
+          "config": {
+            "action": "nik.add-to-ioc-list",
+            "args": {
+              "list": "Phishing senders",
+              "indicators": [
+                {
+                  "type": "domain",
+                  "value": "{{ trigger.mail.sender_domain }}"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "open"
+        },
+        {
+          "from": "open",
+          "to": "link"
+        },
+        {
+          "from": "link",
+          "to": "hosts"
+        },
+        {
+          "from": "hosts",
+          "to": "note"
+        },
+        {
+          "from": "note",
+          "to": "ask"
+        },
+        {
+          "from": "ask",
+          "to": "watch",
+          "port": "approved"
+        }
+      ],
+      "inputs": []
+    },
+    "maxRunsPerHour": 60,
+    "onePerObject": true,
+    "maxSeconds": 86400,
+    "approvalDefault": true
+  }
+}

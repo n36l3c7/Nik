@@ -171,15 +171,19 @@ def on_startup() -> None:
     # Automatic threat-intelligence lookups (one process at a time, see worker.py).
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
-    # The scripts and the connectors Nik ships are there (a release may bring new versions).
+    # The scripts and the connectors Nik ships are there (a release may bring new versions),
+    # and the playbooks it ships were added once.
     if app_settings.AUTOMATION_WORKER != "off":
-        from .automation import connector_actions
+        from .automation import connector_actions, shipped
         from .automation import scripts as automation_scripts
 
         with SessionLocal() as db:
             try:
-                # Both, so that neither is skipped when the other has nothing new.
+                # All three, so that none is skipped when another has nothing new. The playbooks
+                # last: they are checked against the scripts and the connectors that are there.
                 changed = automation_scripts.seed(db) + connector_actions.seed(db)
+                db.flush()
+                changed += shipped.seed(db)
                 if changed:
                     db.commit()
             except IntegrityError:

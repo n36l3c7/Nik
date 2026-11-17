@@ -54,6 +54,7 @@
           <li><a href="#outside">What a playbook may reach and send</a></li>
           <li><a href="#scripts">Scripts</a></li>
           <li><a href="#switch">The switch and the worker</a></li>
+          <li><a href="#shipped">The playbooks Nik ships</a></li>
           <li><a href="#files">Playbooks and scripts as files</a></li>
           <li><a href="#later">What this release does not do yet</a></li>
         </ol>
@@ -532,6 +533,27 @@ Content-Type: application/json
               <td><code>added</code> · <code>removed</code></td>
             </tr>
             <tr>
+              <td>Get the lists</td>
+              <td><code>watched</code> (only the watched ones)</td>
+              <td>
+                <code>lists</code> (each with <code>id</code>, <code>name</code>, <code>description</code>,
+                <code>watched</code>, <code>tlp</code>, <code>count</code>), <code>names</code>, <code>count</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Check a list again</td>
+              <td>
+                <code>list</code>, <code>force</code> (ask also about what was checked lately; on by default),
+                <code>wait_minutes</code> (120)
+              </td>
+              <td>
+                <code>before</code> and <code>after</code> (the indicators with their verdict, as they were and as
+                they are, for the script <em>VerdictChanges</em>), <code>total</code>, <code>asked</code>,
+                <code>finished</code>, <code>check</code>. The step waits for the sources without holding a worker,
+                and goes on with what is there when the time is up.
+              </td>
+            </tr>
+            <tr>
               <td>Get an indicator</td>
               <td><code>value</code>, <code>type</code> (guessed when empty)</td>
               <td>
@@ -984,6 +1006,94 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         command. It is the only part of the stack with a way out for what playbooks send, and it holds no port. If it
         stops, playbooks wait; the Automations area says so, and
         <a href="deployment.html#automation-containers">Deployment</a> says how to look at it.
+      </p>
+
+      <h2 id="shipped">The playbooks Nik ships</h2>
+      <p>
+        Five playbooks are in the list from the first start, marked <em>shipped with Nik</em> and
+        <strong>off</strong>: nothing runs until you turn one on. They are playbooks like any other: read them on the
+        canvas, change them, rename them, delete them. One you deleted does not come back, and one you changed is not
+        overwritten by an upgrade. The same five are files in <code>backend/app/automation/seed/playbooks/</code>, to
+        bring in again with <em>Import</em>. Try each with a dry run before turning it on.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Playbook</th>
+              <th>Starts</th>
+              <th>What it does</th>
+              <th>Before turning it on</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Phishing triage</td>
+              <td>
+                <code>mail.analysed</code>, when the verdict is phishing or suspicious and the e-mail was analysed on
+                its own (not in an incident, not from a mailbox)
+              </td>
+              <td>
+                Opens an incident, puts the e-mail in it, writes in a note the hosts its links lead to (defanged) and
+                its attachments, then asks whether the sender's domain goes in the watched list
+                <em>Phishing senders</em>. Nothing leaves Nik.
+              </td>
+              <td>Nothing.</td>
+            </tr>
+            <tr>
+              <td>Weekly re-check of the watched lists</td>
+              <td>Monday 06:30 UTC</td>
+              <td>
+                For each watched list, asks the reputation sources again about every indicator (the library's bulk
+                check, within the quota of each source), waits for the answers, and sends a message for each list
+                where a verdict changed: what became suspicious or malicious, what is no longer flagged.
+              </td>
+              <td>
+                Set the SMTP server (Settings → Automation), write your address in <em>Send the report</em>, list its
+                domain among the hosts of the playbook.
+              </td>
+            </tr>
+            <tr>
+              <td>Malicious indicator to a block list</td>
+              <td>
+                <code>ioc.verdict_changed</code>, when an address or a domain becomes malicious and is neither private
+                nor allowlisted
+              </td>
+              <td>
+                Reads a file of blocked addresses in a Bitbucket repository (the kind of list a firewall fetches); if
+                the value is not there, adds it with a commit, after a person approves, and puts it in the list
+                <em>Blocked</em> in Nik.
+              </td>
+              <td>
+                Make a Bitbucket connection, choose it in the two Bitbucket nodes, name the repository and the file
+                (which must exist). It is a draft until then.
+              </td>
+            </tr>
+            <tr>
+              <td>Incident to ticketing</td>
+              <td><code>incident.created</code>, for high or critical severity with no ticket yet</td>
+              <td>
+                Opens an incident in ServiceNow, writes its number in the incident's ticket field and links to it in a
+                note.
+              </td>
+              <td>
+                Make a ServiceNow connection and choose it in <em>Open a ticket</em>; an admin opens
+                <em>Incident names and tickets</em> for the playbook, since the ticket carries the incident's name.
+                For Jira, replace the node with <em>create-issue</em>. It is a draft until then.
+              </td>
+            </tr>
+            <tr>
+              <td>Disk almost full notice</td>
+              <td><code>storage.low</code></td>
+              <td>Sends a message that says how much of the evidence disk is free.</td>
+              <td>As for the weekly re-check: SMTP, your address, its domain.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The two that send a message ship with <code>soc@example.org</code> as the recipient: a dry run tells you that
+        <code>example.org</code> is not among the hosts the playbook may reach, which is the reminder to put your own.
       </p>
 
       <h2 id="files">Playbooks and scripts as files</h2>

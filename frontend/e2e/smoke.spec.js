@@ -1624,7 +1624,12 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await page.getByRole('button', { name: 'Automations', exact: true }).click()
   const area = page.getByRole('region', { name: 'Automations' })
   await expect(page).toHaveURL(/\/automation\/playbooks$/)
-  await expect(area.getByText('No playbook yet')).toBeVisible()
+  // The playbooks Nik ships are there from the first start, off: nothing runs until someone turns one on.
+  const shipped = area.getByRole('row').filter({ hasText: 'shipped with Nik' })
+  await expect(shipped).toHaveCount(5)
+  await expect(shipped.filter({ hasText: 'Phishing triage' })).toHaveCount(1)
+  const listed = (await (await page.request.get('/api/automation/playbooks')).json()).playbooks
+  expect(listed.filter((playbook) => playbook.enabled)).toEqual([])
 
   await area.getByRole('button', { name: 'New playbook' }).first().click()
   const create = page.getByRole('dialog', { name: 'New playbook' })

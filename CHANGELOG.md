@@ -32,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and those with no event.
 - The five new events can also be sent as signed webhooks
   (`POST /api/webhooks`).
+- **Five playbooks ship with Nik**, in the list from the first start and
+  **off**: *Phishing triage* (an e-mail found to be phishing gets an
+  incident, a note with where its links lead, and a question about watching
+  the sender), *Weekly re-check of the watched lists* (the sources are asked
+  again and a message says what changed), *Malicious indicator to a block
+  list* (a file in a Bitbucket repository, committed after approval),
+  *Incident to ticketing* (ServiceNow) and *Disk almost full notice*. Those
+  that need a connection are drafts that say what to choose. They are yours
+  from then on: an upgrade does not overwrite one that was changed or bring
+  back one that was deleted. Each is also a file that can be imported.
+- Two nodes for them: **Get the lists** and **Check a list again**, which
+  runs the library's bulk check on a list and waits for it without holding
+  a worker.
+- Connector files: a request can say `answer: text` so that what comes back
+  is never read as JSON (a file fetched from a repository). The Bitbucket
+  `get-file` commands use it.
+- A playbook file whose script nodes name no version takes, on import, the
+  version each script has here.
 
 - **Connectors.** A connector is one YAML file that says how to talk to a
   product, without code: what a connection needs (an address, credentials)

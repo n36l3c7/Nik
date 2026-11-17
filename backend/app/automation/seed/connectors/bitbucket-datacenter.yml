@@ -42,7 +42,9 @@ commands:
       method: GET
       path: "/projects/{{ args.project }}/repos/{{ args.repository }}/raw/{{ args.path }}"
       query: { at: "{{ args.ref }}" }
-    error: { message: "{{ response.errors[0].message }}" }
+      # The file as it is, also when its content happens to be JSON.
+      answer: text
+    error: { message: "{{ response.text }}" }
     outputs:
       content: "{{ response.text }}"
       lines: "{{ response.text | split('\n') }}"

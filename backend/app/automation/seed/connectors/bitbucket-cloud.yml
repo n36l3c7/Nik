@@ -39,7 +39,9 @@ commands:
     request:
       method: GET
       path: "/repositories/{{ config.workspace }}/{{ args.repository }}/src/{{ args.ref }}/{{ args.path }}"
-    error: { message: "{{ response.error.message }}" }
+      # The file as it is, also when its content happens to be JSON.
+      answer: text
+    error: { message: "{{ response.text }}" }
     outputs:
       content: "{{ response.text }}"
       lines: "{{ response.text | split('\n') }}"

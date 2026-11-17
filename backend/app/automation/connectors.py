@@ -93,6 +93,9 @@ class RequestSpec(_Strict):
     form: dict[str, Any] | None = None
     multipart: dict[str, Any] | None = None
     body: str | None = None
+    # How the answer is read: "auto" as JSON when it is JSON, as text otherwise ({{ response.text }});
+    # "text" always as text, for a file whose content may happen to be JSON.
+    answer: Literal["auto", "text"] = "auto"
 
     @model_validator(mode="after")
     def _one_body(self):

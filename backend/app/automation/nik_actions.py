@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -418,6 +418,183 @@ def remove_from_list(call: Call) -> Result:
         call.db, ACTOR, "ioc.list", f'Removed {removed} indicators from the list "{target.name}"' + signature(call)
     )
     return Result(output={"removed": removed})
+
+
+@action(
+    "nik.get-ioc-lists",
+    group="Nik",
+    name="Get the lists",
+    description="The lists of indicators of the library: all of them, or those that are watched.",
+    arguments=[
+        {"name": "watched", "type": "bool", "default": False, "description": "Only the lists that are watched"},
+    ],
+    outputs=[
+        {"name": "lists", "type": "list", "description": "Each list: {id, name, description, watched, tlp, count}"},
+        {"name": "names", "type": "list", "description": "Their names"},
+        {"name": "count", "type": "number", "description": "How many lists"},
+    ],
+)
+def get_lists(call: Call) -> Result:
+    query = select(IocList).order_by(IocList.name)
+    if _truthy(call.args.get("watched")):
+        query = query.where(IocList.watch.is_(True))
+    counts = dict(call.db.execute(select(IocListItem.list_id, func.count()).group_by(IocListItem.list_id)).all())
+    lists = [
+        {
+            "id": row.id,
+            "name": row.name,
+            "description": row.description,
+            "watched": bool(row.watch),
+            "tlp": row.tlp,
+            "count": counts.get(row.id, 0),
+        }
+        for row in call.db.scalars(query)
+    ]
+    # The name of a list has no class of its own (it is not the name of an incident): like any text
+    # with none, the guard reads it for internal names and addresses where it would leave.
+    return Result(
+        output={"lists": lists, "names": [item["name"] for item in lists], "count": len(lists)},
+        classes={"lists.id": ["nik_id"]},
+    )
+
+
+RECHECK_EVERY = 30
+RECHECK_ITEMS = 2000
+
+
+def _truthy(value: Any) -> bool:
+    return value is True or str(value).strip().lower() in ("true", "yes", "1", "on")
+
+
+def _verdicts(db: OrmSession, pairs: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    from ..enrichment import service
+
+    found = service.summaries(db, pairs)
+    return [
+        {"type": kind, "value": value, "verdict": (found.get((kind, value)) or {}).get("verdict") or ""}
+        for kind, value in pairs
+    ]
+
+
+@action(
+    "nik.recheck-list",
+    group="Nik",
+    name="Check a list again",
+    description=(
+        "Ask the reputation sources again about every indicator of a list, and wait for the answers. "
+        "Gives the verdicts as they were and as they are, for a script to compare. The check is the same "
+        "as the library's bulk check: it keeps to the quota of each source."
+    ),
+    arguments=[
+        LIST_ARG,
+        {
+            "name": "force",
+            "type": "bool",
+            "default": True,
+            "description": "Ask also about what was checked lately (off: only what is due)",
+        },
+        {
+            "name": "wait_minutes",
+            "type": "number",
+            "default": 120,
+            "description": "How long to wait for the answers before going on with what is there",
+        },
+    ],
+    outputs=[
+        {"name": "list", "type": "text", "description": "The name of the list"},
+        {"name": "before", "type": "list", "description": "The indicators as they were: [{type, value, verdict}]"},
+        {"name": "after", "type": "list", "description": "The same indicators as they are now"},
+        {"name": "total", "type": "number", "description": "How many indicators the list has"},
+        {"name": "asked", "type": "number", "description": "About how many the sources were asked"},
+        {"name": "finished", "type": "bool", "description": "Every answer came in the time given"},
+        {"name": "check", "type": "text", "description": "The id of the bulk check"},
+    ],
+)
+def recheck_list(call: Call) -> Result:
+    from ..core.models import IocCheck
+    from ..enrichment import service
+    from ..routers.settings import read_settings
+
+    name = str(call.args.get("list") or "").strip()
+    target = call.db.scalars(select(IocList).where(IocList.name == name)).first()
+    if target is None:
+        raise ActionError("There is no list with this name", retry=False)
+    every = [
+        (kind, value)
+        for kind, value in call.db.execute(
+            select(IocListItem.type, IocListItem.value)
+            .where(IocListItem.list_id == target.id)
+            .order_by(IocListItem.type, IocListItem.value)
+        )
+    ]
+    shown = every[:RECHECK_ITEMS]
+    held: set[str] = set()
+    for kind, value in shown[:200]:
+        held.update(payloads.indicator_data(call.db, kind, value)[1])
+    # Beyond the first, the guard's scan of what leaves decides.
+    value_classes = sorted(held - {"public_indicator"}) or (["public_indicator"] if len(shown) <= 200 else [])
+    classes = {
+        "check": ["nik_id"],
+        "before.value": value_classes,
+        "after.value": value_classes,
+        "before.verdict": ["verdict"],
+        "after.verdict": ["verdict"],
+        "before.type": ["verdict"],
+        "after.type": ["verdict"],
+    }
+
+    def done(before: list, asked: int, finished: bool, check_id: str) -> Result:
+        return Result(
+            output={
+                "list": target.name,
+                "before": before,
+                "after": _verdicts(call.db, shown),
+                "total": len(every),
+                "asked": asked,
+                "finished": finished,
+                "check": check_id,
+            },
+            classes=classes,
+        )
+
+    state = call.state or {}
+    if not state:
+        before = _verdicts(call.db, shown)
+        plan = service.plan_check(call.db, every, read_settings(call.db), force=_truthy(call.args.get("force")))
+        if call.dry_run:
+            would = {"would": f'check the list "{target.name}" again', "count": plan["toAsk"]}
+            result = done(before, 0, True, "")
+            result.request = would
+            return result
+        check = service.start_check(call.db, plan, target.name, ACTOR)
+        audit.record(
+            call.db,
+            ACTOR,
+            "ioc.check",
+            f"Bulk check of {plan['toAsk']} indicator(s)" + signature(call),
+            target=target.name,
+        )
+        if check.status == "done":
+            return done(before, 0, True, check.id)
+        try:
+            minutes = max(1.0, min(float(call.args.get("wait_minutes") or 120), 24 * 60))
+        except (TypeError, ValueError):
+            minutes = 120.0
+        return Result(
+            again_at=call.now + RECHECK_EVERY,
+            state={"check": check.id, "before": before, "until": call.now + minutes * 60, "asked": plan["toAsk"]},
+            log=f"Asking the sources about {plan['toAsk']} indicator(s)",
+        )
+    check = call.db.get(IocCheck, str(state.get("check") or ""))
+    before = state.get("before") or []
+    asked = int(state.get("asked") or 0)
+    if check is None:
+        return done(before, asked, False, "")
+    if check.status in ("running", "waiting") and call.now < float(state.get("until") or 0):
+        return Result(
+            again_at=call.now + RECHECK_EVERY, state=state, log=f"{check.done} of {check.total} asked ({check.status})"
+        )
+    return done(before, asked, check.status == "done", check.id)
 
 
 @action(

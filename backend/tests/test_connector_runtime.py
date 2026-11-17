@@ -445,3 +445,31 @@ def test_a_multipart_body_is_built_for_the_apis_that_want_one():
         f"--{boundary}--\r\n"
     )  # three fields: the empty one is left out
     assert 'name="content"\r\n\r\n1.2.3.4\n5.6.7.8\r\n' in body and 'name="branch"\r\n\r\nmain\r\n' in body
+
+
+def test_an_answer_read_as_text_is_never_taken_for_json():
+    found = connector(
+        """        - name: get-file
+          request: { method: GET, path: /raw/list.json, answer: text }
+          error: { message: "{{ response.text }}" }
+          outputs:
+            content: "{{ response.text }}"
+        - name: get-any
+          request: { method: GET, path: /raw/list.json }
+          outputs:
+            content: "{{ response.text }}"
+            first: "{{ response[0] }}"
+        """
+    )
+    names = ["evil.example", "worse.example"]
+    listed = json.dumps(names)
+    # A file that is JSON, served as JSON, is still the file.
+    wire = Wire().answer(200, names).answer(200, names).answer(404, {"error": "no such file"})
+    assert runtime(found, wire).run("get-file", {}).outputs == {"content": listed}
+    assert runtime(found, wire).run("get-any", {}).outputs == {"content": None, "first": "evil.example"}
+    with pytest.raises(rt.CommandError) as refused:
+        runtime(found, wire).run("get-file", {})
+    assert refused.value.message == 'Acme answered 404: {"error": "no such file"}'
+    with pytest.raises(cn.ConnectorError) as wrong:
+        connector("        - name: x\n          request: { method: GET, path: /x, answer: xml }\n")
+    assert any("answer" in str(problem.where) or "answer" in problem.message for problem in wrong.value.problems)

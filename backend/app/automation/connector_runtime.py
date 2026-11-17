@@ -282,7 +282,7 @@ class Runtime:
                 self.records.append(record)
             raise CommandError(error.message, retry=not error.refused, sent=error.sent, record=record) from None
         self.records.append(_redact(dict(answer.record), self._hidden))
-        parsed = answer.json()
+        parsed = answer.json() if spec.answer == "auto" else None
         return {
             "response": parsed if parsed is not None else {"text": answer.text[:200_000]},
             "status": answer.status,

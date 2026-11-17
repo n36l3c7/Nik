@@ -1,0 +1,154 @@
+{
+  "app": "Nik",
+  "type": "playbook",
+  "version": 1,
+  "playbook": {
+    "name": "Malicious indicator to a block list",
+    "description": "When the verdict of an address or a domain becomes malicious, it is added to a file of blocked addresses in a Bitbucket repository, the kind of list a firewall fetches, and to the list \"Blocked\" in Nik. The commit asks a person first. Private addresses, internal names and allowlisted values are never proposed. Before turning it on: make a Bitbucket connection (Settings, Connections), choose it in the two Bitbucket nodes and name the repository and the file there (the file must exist).",
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "trigger",
+          "name": "A verdict becomes malicious",
+          "position": {
+            "x": 60,
+            "y": 40
+          },
+          "config": {
+            "event": "ioc.verdict_changed",
+            "manual": true,
+            "conditions": {
+              "all": [
+                {
+                  "left": "{{ trigger.ioc.new }}",
+                  "op": "eq",
+                  "right": "malicious"
+                },
+                {
+                  "left": "{{ trigger.ioc.kind }}",
+                  "op": "in",
+                  "right": [
+                    "ip",
+                    "domain"
+                  ]
+                },
+                {
+                  "left": "{{ trigger.ioc.private }}",
+                  "op": "eq",
+                  "right": false
+                },
+                {
+                  "left": "{{ trigger.ioc.allowlisted }}",
+                  "op": "eq",
+                  "right": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "read",
+          "kind": "action",
+          "name": "Read the block list",
+          "position": {
+            "x": 60,
+            "y": 170
+          },
+          "config": {
+            "action": "bitbucket-cloud.get-file",
+            "connection": "",
+            "args": {
+              "repository": "",
+              "path": "lists/blocked.txt",
+              "ref": "main"
+            }
+          }
+        },
+        {
+          "id": "listed",
+          "kind": "condition",
+          "name": "Is it there already?",
+          "position": {
+            "x": 60,
+            "y": 300
+          },
+          "config": {
+            "all": [
+              {
+                "left": "{{ read.lines }}",
+                "op": "contains",
+                "right": "{{ trigger.ioc.value }}"
+              }
+            ]
+          }
+        },
+        {
+          "id": "write",
+          "kind": "action",
+          "name": "Add it with a commit",
+          "position": {
+            "x": 60,
+            "y": 430
+          },
+          "config": {
+            "action": "bitbucket-cloud.create-file-commit",
+            "connection": "",
+            "args": {
+              "repository": "",
+              "path": "lists/blocked.txt",
+              "branch": "main",
+              "content": "{{ read.content | trim }}\n{{ trigger.ioc.value }}\n",
+              "message": "Block {{ trigger.ioc.value }} (malicious for {{ trigger.ioc.sources | default('an analyst') | join(', ') }})"
+            }
+          }
+        },
+        {
+          "id": "keep",
+          "kind": "action",
+          "name": "Add it to Blocked in Nik",
+          "position": {
+            "x": 60,
+            "y": 560
+          },
+          "config": {
+            "action": "nik.add-to-ioc-list",
+            "args": {
+              "list": "Blocked",
+              "indicators": [
+                {
+                  "type": "{{ trigger.ioc.kind }}",
+                  "value": "{{ trigger.ioc.value }}"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "read"
+        },
+        {
+          "from": "read",
+          "to": "listed"
+        },
+        {
+          "from": "listed",
+          "to": "write",
+          "port": "no"
+        },
+        {
+          "from": "write",
+          "to": "keep"
+        }
+      ],
+      "inputs": []
+    },
+    "maxRunsPerHour": 30,
+    "onePerObject": true,
+    "maxSeconds": 86400,
+    "approvalDefault": true
+  }
+}

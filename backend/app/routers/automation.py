@@ -28,7 +28,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..automation import catalog, egress, engine, graph, guard, outbound, payloads, scripts, state, triggers
+from ..automation import (
+    catalog,
+    egress,
+    engine,
+    graph,
+    guard,
+    outbound,
+    payloads,
+    scripts,
+    shipped,
+    state,
+    triggers,
+)
 from ..core import audit, vault
 from ..core.config import settings as app_settings
 from ..core.db import get_db
@@ -713,6 +725,8 @@ def import_playbook(
     if not name or not isinstance(shape, dict):
         raise HTTPException(status_code=400, detail="Not a playbook file")
     _size_ok(shape)
+    # A script node that names no version (the files Nik ships) takes the one the script has here.
+    shape = shipped.with_script_versions(db, shape)
     base, counter = name, 2
     while _name_taken(db, name):
         name = f"{base} ({counter})"[:120]
