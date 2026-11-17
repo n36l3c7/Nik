@@ -50,7 +50,9 @@ from .routers import (
     capa_rules,
     connectors,
     enrichment,
+    fields,
     flirt,
+    incident_types,
     incidents,
     ioc_library,
     iocs,
@@ -168,6 +170,17 @@ def on_startup() -> None:
     backfill_iocs(SessionLocal)
     # Samples, e-mails and captures stored before 2.19.0 have no artifact entry yet.
     backfill_artifacts(SessionLocal)
+    # The system fields of the registry (a release may add some).
+    from . import fields as field_registry
+    from . import incident_types as type_registry
+
+    with SessionLocal() as db:
+        try:
+            # The types Nik ships too, each added once.
+            if field_registry.seed(db) + type_registry.seed(db):
+                db.commit()
+        except IntegrityError:
+            db.rollback()  # another process of the server added them at the same moment
     # Automatic threat-intelligence lookups (one process at a time, see worker.py).
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
@@ -243,6 +256,9 @@ app.include_router(query.router, prefix="/api")
 app.include_router(automation.router, prefix="/api")
 app.include_router(automation.incident_router, prefix="/api")
 app.include_router(connectors.router, prefix="/api")
+app.include_router(fields.router, prefix="/api")
+app.include_router(fields.incident_router, prefix="/api")
+app.include_router(incident_types.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

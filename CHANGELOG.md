@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A registry of fields.** Every field an incident can hold has one name,
+  a label and a type, whoever sets it: a person, a playbook, later a
+  connector. The fields Nik always had (name, status, severity, owner,
+  ticket, host…) are in it as system fields and stay where they were;
+  custom fields are made through `POST /api/fields` with one of fifteen
+  types (text, number, date, choice, user, tags, a list with columns…).
+- `PATCH /api/incidents/{id}/fields` sets fields by name. Each value is
+  checked against its field and stored as its type says; a name the
+  registry does not know is refused, which is what keeps one name for one
+  thing. `GET /api/incidents/{id}/fields` reads them.
+- **Types of incident.** A type says which fields its incidents have,
+  how the Summary is arranged in sections, and with which reasons one is
+  closed. Seven ship: *Unclassified* (the type of every incident that was
+  given none, so nothing that exists changes), *Phishing*, *Malware*,
+  *Network intrusion*, *Data leak*, *Access abuse*, *Vulnerability*. An
+  incident can change type: what the new type does not show is kept,
+  hidden, and shown again if the type comes back.
+- **Settings → Incidents → Types**: a builder with the registry as a list
+  to search on one side and the sections of the page on the other. Fields
+  are added with a click or by dragging and reordered with the arrows; a
+  field of your own can be required, or required before closing. **All
+  fields** lists the registry as a whole, with where each field is used.
+- **Closing asks how.** Setting an incident to closed opens a form: a
+  reason among those of its type, notes, and the fields the type wants
+  filled first. The server checks the same, so an incident closed through
+  the API or by a playbook is held to it too.
+- An incident read through the API carries `type` and `fields`; sent back
+  in a `POST` or a `PATCH`, they are checked by the registry.
+- Migration `0028_fields_types`: the tables of fields and of incident
+  types, and on incidents the type, the custom fields (indexed on
+  PostgreSQL), when it occurred, how it was closed. Incidents that exist
+  keep everything they hold.
+
 ## [4.2.0] - 2026-11-17
 
 Connectors: other products reached through files anyone can read and write,
