@@ -348,3 +348,160 @@ def test_the_worker_fetches_the_connections_whose_time_has_come(admin: TestClien
     requests_before = len(outside.requests)
     worker.tick(T0 + 1000)
     assert len(outside.requests) == requests_before
+
+
+# --------------------------------------------------------------------------- #
+# Pre-processing rules                                                        #
+# --------------------------------------------------------------------------- #
+def rule(admin: TestClient, **body) -> dict:
+    made = admin.post("/api/preprocess-rules", json=body)
+    assert made.status_code == 201, made.text
+    return made.json()
+
+
+def test_rules_decide_what_becomes_of_an_item_before_it_is_an_incident(admin: TestClient, outside):
+    connection = radar(admin, outside)
+    mapped(admin)
+    admin.put(f"/api/fetch/{connection['id']}", json={"enabled": True})
+    # An incident that is there already, open, about the same host as the second alert.
+    from app.core.security import now_iso
+
+    old = {"id": "old", "name": "Old case", "host": "wks-02", "createdAt": now_iso()}
+    assert admin.post("/api/incidents", json=old).status_code == 201
+
+    scan = rule(
+        admin,
+        name="Port scans are noise",
+        when={"all": [{"left": "{{ item.title }}", "op": "contains", "right": "Port scan"}]},
+        action="drop",
+    )
+    same_host = rule(
+        admin,
+        name="Same host, same case",
+        when={"all": [{"left": "{{ incident.severity }}", "op": "ne", "right": "critical"}]},
+        action="link_to_existing",
+        params={"same": ["host"], "within_hours": 48},
+    )
+    assert [item["name"] for item in admin.get("/api/preprocess-rules").json()["rules"]] == [
+        "Port scans are noise",
+        "Same host, same case",
+    ]
+    # What would become of a sample, without doing it.
+    tried = admin.post("/api/preprocess-rules/try", json={"connectionId": connection["id"], "item": ALERTS[1]}).json()
+    assert tried["incident"]["host"] == "WKS-02" and tried["incident"]["type"] == "unclassified"
+    assert tried["decision"] == {
+        "rule": "Same host, same case",
+        "action": "link_to_existing",
+        "incident": {"id": "old", "name": "Old case"},
+    }
+    assert admin.post("/api/preprocess-rules/try", json={"connectionId": connection["id"], "item": ALERTS[0]}).json()[
+        "decision"
+    ] == {"rule": None, "action": "create", "incident": None}
+
+    done = run(admin, connection)["result"]
+    assert (done["new"], done["created"], done["linked"], done["dropped"]) == (3, 1, 1, 1)
+    # The critical alert is an incident; the scan is nothing; the other is a line of the case it belongs to.
+    assert sorted(incidents(admin)) == ["Emotet on WKS-01", "Old case"]
+    room = admin.get("/api/incidents/old/war-room").json()["entries"]
+    assert (
+        room[-1]["body"]["text"] == "Another alert of the same came in from Radar SOC: Phishing page opened (item A-2)"
+    )
+    assert room[-1]["body"]["item"] == ALERTS[1]
+    items = {item["itemId"]: item for item in admin.get(f"/api/fetch/{connection['id']}/items").json()["items"]}
+    assert (items["A-2"]["outcome"], items["A-2"]["incidentId"]) == ("linked", "old")
+    assert (items["A-3"]["outcome"], items["A-3"]["note"]) == ("dropped", 'Dropped by the rule "Port scans are noise"')
+    # Dropped or linked, an item does not come back.
+    with SessionLocal() as db:
+        db.get(Connection, connection["id"]).fetch_state = None
+        db.commit()
+    assert run(admin, connection)["result"]["new"] == 0
+
+    # A rule turned off decides nothing; the order of the rules is theirs to change.
+    off = admin.put(f"/api/preprocess-rules/{scan['id']}", json={**scan, "enabled": False})
+    assert off.status_code == 200 and off.json()["enabled"] is False
+    ordered = admin.put("/api/preprocess-rules/order", json={"ids": [same_host["id"], scan["id"]]})
+    assert [item["name"] for item in ordered.json()["rules"]] == ["Same host, same case", "Port scans are noise"]
+    assert admin.delete(f"/api/preprocess-rules/{scan['id']}").status_code == 204
+    assert admin.delete(f"/api/preprocess-rules/{scan['id']}").status_code == 404
+
+    def refused(**body) -> str:
+        answer = admin.post("/api/preprocess-rules", json=body)
+        assert answer.status_code == 400, answer.text
+        return answer.json()["detail"]
+
+    assert refused(name="x", action="explode").startswith("A rule does one of")
+    assert refused(name="x", action="link_to_existing").startswith("Say which fields are the same")
+    assert refused(name="x", action="close_duplicate", params={"same": ["colour"]}).startswith("Say which fields")
+    assert refused(name="x", action="run_script", params={"script": "nope"}).startswith("Choose a script")
+    assert refused(name="x", action="drop", when={"all": [{"left": "{{ trigger.x }}", "op": "eq", "right": 1}]}) == (
+        'The condition: "trigger" cannot be read here, only incident, item'
+    )
+    analyst = make_key(admin, label="a", roles=["analyst"])
+    assert admin.get("/api/preprocess-rules", headers=analyst).status_code == 403
+
+
+def test_a_duplicate_is_made_and_closed_at_once_and_a_script_can_decide(admin: TestClient, outside, monkeypatch):
+    connection = radar(admin, outside, ALERTS[:2])
+    mapped(admin)
+    admin.put(f"/api/fetch/{connection['id']}", json={"enabled": True})
+    assert admin.post("/api/incidents", json={"id": "old", "name": "Emotet on WKS-01"}).status_code == 201
+    rule(admin, name="Same name twice", action="close_duplicate", params={"same": ["name"]})
+
+    done = run(admin, connection)["result"]
+    assert (done["new"], done["created"], done["duplicate"]) == (2, 1, 1)
+    with SessionLocal() as db:
+        twin = db.scalars(select(Incident).where(Incident.name == "Emotet on WKS-01", Incident.id != "old")).one()
+        assert (twin.status, twin.close_reason, twin.close_notes) == (
+            "closed",
+            "Duplicate",
+            'Duplicate of "Emotet on WKS-01" (old)',
+        )
+        twin_id = twin.id
+    assert admin.get(f"/api/incidents/{twin_id}").json()["fields"]["related_incidents"] == ["old"]
+    room = admin.get("/api/incidents/old/war-room").json()["entries"]
+    assert room[-1]["body"]["text"] == '"Emotet on WKS-01" came in and was closed as a duplicate of this incident'
+    items = {item["itemId"]: item for item in admin.get(f"/api/fetch/{connection['id']}/items").json()["items"]}
+    assert (items["A-1"]["outcome"], items["A-1"]["incidentId"]) == ("duplicate", twin_id)
+
+    # A script of the library decides: here it drops what scores under fifty.
+    from app.automation import scripts
+    from app.core.models import Script, ScriptVersion
+
+    with SessionLocal() as db:
+        db.add(Script(id="s1", name="LowScore", description="", current_version=1, created_at="x", updated_at="x"))
+        db.add(
+            ScriptVersion(
+                script_id="s1",
+                version=1,
+                code="def main(item, incident): ...",
+                arguments=[],
+                outputs=[],
+                created_at="x",
+                created_by="admin",
+            )  # fmt: skip
+        )
+        db.commit()
+    seen = []
+
+    def execute(code, args, timeout=None):
+        seen.append(args)
+        return {"ok": True, "result": {"action": "drop" if args["item"]["score"] < 50 else "create"}}
+
+    monkeypatch.setattr(scripts, "execute", execute)
+    rule(admin, name="Ask the script", action="run_script", params={"script": "LowScore"})
+    served = [
+        {"id": "B-1", "title": "Low thing", "score": 12, "created": "2026-11-16T12:00:00Z", "host": "X"},
+        {"id": "B-2", "title": "High thing", "score": 88, "created": "2026-11-16T13:00:00Z", "host": "Y"},
+    ]
+    outside.answers.clear()
+    outside.answers.append(
+        lambda method, host, target, _h, _b: (
+            200,
+            {"content-type": "application/json"},
+            json.dumps({"data": served, "next": ""}).encode(),
+        )
+    )
+    done = run(admin, connection)["result"]
+    assert (done["new"], done["created"], done["dropped"]) == (2, 1, 1)
+    assert seen[0]["incident"]["name"] == "Low thing" and seen[0]["item"]["id"] == "B-1"
+    assert "High thing" in incidents(admin) and "Low thing" not in incidents(admin)

@@ -1242,6 +1242,22 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET</code> · <code>POST /api/preprocess-rules</code> · <code>PUT</code> ·
+                <code>DELETE /api/preprocess-rules/{id}</code> · <code>PUT /api/preprocess-rules/order</code> ·
+                <code>POST /api/preprocess-rules/try</code>
+              </td>
+              <td>
+                (<strong>incidents.configure</strong>) The rules in the order they are tried · add one:
+                <code>{name, enabled, when, action, params}</code>, with <code>when</code> a condition over
+                <code>incident</code> and <code>item</code> (left out for always), <code>action</code> one of
+                <code>drop</code>, <code>link_to_existing</code>, <code>close_duplicate</code>, <code>run_script</code>,
+                and <code>params</code> <code>{same: ["host"], within_hours}</code> or <code>{script}</code> · change ·
+                delete · put them in the order of <code>{ids}</code> · which rule would decide for
+                <code>{connectionId, item}</code>, doing nothing.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
               <td>
                 What the caller was told, the newest first:

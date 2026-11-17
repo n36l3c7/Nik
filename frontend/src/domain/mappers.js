@@ -207,3 +207,107 @@ export function conditionText(when) {
   const group = when?.[key] ?? []
   return `${key} of ${group.length}: ${group.map((item) => `${text(item.left)} ${item.op} ${text(item.right)}`.trim()).join('; ')}`
 }
+
+/* ------------------------------------------------------ pre-processing rules */
+
+export const RULE_ACTIONS = [
+  { id: 'drop', label: 'Drop it', hint: 'No incident is made; the item does not come back.' },
+  {
+    id: 'link_to_existing',
+    label: 'Link it to an open incident',
+    hint: 'No incident is made: the item becomes a line of the War Room of the incident that is the same.',
+  },
+  {
+    id: 'close_duplicate',
+    label: 'Close it as a duplicate',
+    hint: 'The incident is made and closed at once as a duplicate of the incident that is the same.',
+  },
+  { id: 'run_script', label: 'Ask a script', hint: 'A script of the library returns which of these, or to go on.' },
+]
+
+/** The condition of a rule as one row: `{ left, op, right, kept }`; empty for "always". */
+export function conditionRow(when) {
+  const group = when?.all ?? when?.any ?? []
+  if (group.length === 0) return { left: '', op: 'eq', right: '', kept: null }
+  if (group.length === 1) return { left: text(group[0].left), op: group[0].op, right: text(group[0].right), kept: null }
+  return { left: '', op: 'eq', right: '', kept: when }
+}
+
+/** The condition a row gives back: null for "always". */
+export function conditionOf(row) {
+  if (row?.kept) return row.kept
+  const left = String(row?.left ?? '').trim()
+  if (!left) return null
+  if (UNARY.has(row.op)) return { all: [{ left, op: row.op }] }
+  return { all: [{ left, op: row.op, right: row.op === 'matches' ? String(row.right) : typed(row.right) }] }
+}
+
+/** A rule as its form edits it. */
+export function ruleForm(rule) {
+  return {
+    id: rule?.id ?? null,
+    name: rule?.name ?? '',
+    enabled: rule?.enabled ?? true,
+    condition: conditionRow(rule?.when),
+    action: rule?.action ?? 'drop',
+    same: [...(rule?.params?.same ?? [])],
+    withinHours: rule?.params?.within_hours ? String(rule.params.within_hours) : '',
+    script: rule?.params?.script ?? '',
+  }
+}
+
+/** What POST and PUT /api/preprocess-rules take, from the form. */
+export function ruleBody(form) {
+  const params = {}
+  if (form.action === 'run_script') params.script = form.script.trim()
+  if (form.action === 'link_to_existing' || form.action === 'close_duplicate') {
+    params.same = form.same
+    if (/^\d+$/.test(String(form.withinHours).trim())) params.within_hours = Number(form.withinHours)
+  }
+  return {
+    name: form.name.trim(),
+    enabled: form.enabled,
+    when: conditionOf(form.condition),
+    action: form.action,
+    params,
+  }
+}
+
+/** Why the form cannot be saved (a sentence), or null. */
+export function ruleProblem(form) {
+  if (!form.name.trim()) return 'Give the rule a name'
+  if (form.action === 'run_script' && !form.script.trim()) return 'Say which script decides'
+  if ((form.action === 'link_to_existing' || form.action === 'close_duplicate') && form.same.length === 0) {
+    return 'Say which fields are the same in the incident to look for'
+  }
+  return null
+}
+
+/** What a rule does, in a line. */
+export function ruleText(rule) {
+  const same = (rule.params?.same ?? []).join(' and ')
+  const within = rule.params?.within_hours ? ` made in the last ${rule.params.within_hours} h` : ''
+  switch (rule.action) {
+    case 'drop':
+      return 'drop it'
+    case 'link_to_existing':
+      return `link it to the open incident with the same ${same}${within}`
+    case 'close_duplicate':
+      return `close it as a duplicate of the open incident with the same ${same}${within}`
+    case 'run_script':
+      return `ask the script ${rule.params?.script ?? ''}`
+    default:
+      return rule.action
+  }
+}
+
+/** The ids of the rules with one moved a place up or down. */
+export function moved(ids, id, by) {
+  const at = ids.indexOf(id)
+  const to = at + by
+  if (at < 0 || to < 0 || to >= ids.length) return ids
+  const next = [...ids]
+  next.splice(at, 1)
+  next.splice(to, 0, id)
+  return next
+}

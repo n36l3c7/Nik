@@ -2796,6 +2796,48 @@ test('a mapper says how the names of a product become those of Nik, tried on a s
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
+test('pre-processing rules say what becomes of a fetched item before it is an incident', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByText('Pre-processing rules', { exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/incidents\/pre-processing$/)
+  await expect(settings.getByText('No rule yet: every new item becomes an incident.')).toBeVisible()
+
+  // A rule that drops noise.
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  const dialog = page.getByRole('dialog', { name: 'New rule' })
+  await expect(dialog.getByRole('status')).toHaveText('Give the rule a name')
+  await dialog.getByLabel('Name').fill('Port scans are noise')
+  await dialog.getByLabel('What to compare').fill('{{ item.title }}')
+  await dialog.getByLabel('How it compares').selectOption('contains')
+  await dialog.getByLabel('With what').fill('Port scan')
+  await dialog.getByRole('button', { name: 'Save the rule' }).click()
+  // One that needs to know which incident is the same.
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  await dialog.getByLabel('Name').fill('Same host, same case')
+  await dialog.getByLabel('Then').selectOption('link_to_existing')
+  await expect(dialog.getByRole('status')).toHaveText('Say which fields are the same in the incident to look for')
+  await dialog.getByLabel('host', { exact: true }).check()
+  await dialog.getByLabel(/Made in the last hours/).fill('48')
+  await dialog.getByRole('button', { name: 'Save the rule' }).click()
+
+  const rules = settings.getByRole('list', { name: 'Pre-processing rules' })
+  await expect(rules.getByRole('listitem')).toHaveText([
+    /Port scans are noise.*when all of 1: \{\{ item\.title \}\} contains Port scan: drop it/,
+    /Same host, same case.*always: link it to the open incident with the same host made in the last 48 h/,
+  ])
+  // Their order is theirs to change; a rule is deleted.
+  await rules.getByRole('button', { name: 'Move Same host, same case up' }).click()
+  await expect(rules.getByRole('listitem').first()).toContainText('Same host, same case')
+  await rules.getByRole('button', { name: 'Delete Same host, same case' }).click()
+  await rules.getByRole('button', { name: 'Delete Port scans are noise' }).click()
+  await expect(settings.getByText('No rule yet: every new item becomes an incident.')).toBeVisible()
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

@@ -65,6 +65,7 @@ from .routers import (
     mails,
     mappers,
     network,
+    preprocess,
     previews,
     query,
     report,
@@ -273,6 +274,7 @@ app.include_router(tasks.router, prefix="/api")
 app.include_router(lists.router, prefix="/api")
 app.include_router(mappers.router, prefix="/api")
 app.include_router(fetch.router, prefix="/api")
+app.include_router(preprocess.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

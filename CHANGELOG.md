@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   later and later; a connection that makes more than 500 incidents in an
   hour is paused with nothing lost. `/api/fetch` shows how each goes, turns
   it on and off, fetches now and lists what became of each item.
+- **Pre-processing rules** (*Settings → Incidents*): before a fetched item
+  becomes an incident it can be dropped, linked to the open incident that is
+  the same, made and closed as a duplicate, or left to a script to say. The
+  rules are tried in order and *try* says which would decide for a sample.
 - **The mapper editor**, in *Settings → Automation → Classifiers and
   mappers*: a table with one row for each field of Nik (those the type needs
   first), the expression that gives it its value with a picker of the

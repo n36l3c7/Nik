@@ -119,6 +119,13 @@ export const SETTINGS_GROUPS = [
         permission: 'incidents.configure',
         keywords: 'timer time to assign contain close minutes severity business hours breach deadline',
       },
+      {
+        id: 'preprocess',
+        slug: 'pre-processing',
+        label: 'Pre-processing rules',
+        permission: 'incidents.configure',
+        keywords: 'fetch alerts drop duplicate link existing dedup noise script before incident',
+      },
     ],
   },
   {

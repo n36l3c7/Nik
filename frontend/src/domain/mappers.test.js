@@ -4,6 +4,13 @@ import {
   cellText,
   classifierRows,
   classifierRules,
+  conditionOf,
+  conditionRow,
+  moved,
+  ruleBody,
+  ruleForm,
+  ruleProblem,
+  ruleText,
   conditionText,
   extraRows,
   fieldsOfSample,
@@ -129,4 +136,64 @@ test('the rules of a classifier as rows, and back', () => {
     { when: { all: [{ left: '{{ item.x }}', op: 'exists' }] }, type: 't' },
   ])
   assert.equal(conditionText(rules[2].when), 'any of 2: {{ item.a }} eq 1; {{ item.b }} exists')
+})
+
+test('a pre-processing rule as its form, and back', () => {
+  const rule = {
+    id: 'r1',
+    name: 'Same host, same case',
+    enabled: true,
+    when: { all: [{ left: '{{ incident.severity }}', op: 'ne', right: 'critical' }] },
+    action: 'link_to_existing',
+    params: { same: ['host'], within_hours: 48 },
+  }
+  const form = ruleForm(rule)
+  assert.deepEqual(form.condition, { left: '{{ incident.severity }}', op: 'ne', right: 'critical', kept: null })
+  assert.deepEqual([form.same, form.withinHours], [['host'], '48'])
+  assert.equal(ruleProblem(form), null)
+  assert.deepEqual(ruleBody(form), {
+    name: 'Same host, same case',
+    enabled: true,
+    when: rule.when,
+    action: 'link_to_existing',
+    params: { same: ['host'], within_hours: 48 },
+  })
+  assert.equal(ruleText(rule), 'link it to the open incident with the same host made in the last 48 h')
+  assert.equal(
+    ruleText({ action: 'close_duplicate', params: { same: ['name', 'host'] } }),
+    'close it as a duplicate of the open incident with the same name and host',
+  )
+  assert.equal(ruleText({ action: 'run_script', params: { script: 'LowScore' } }), 'ask the script LowScore')
+
+  // A new rule: always, drop. What is missing is said.
+  const fresh = ruleForm(null)
+  assert.equal(ruleProblem(fresh), 'Give the rule a name')
+  assert.deepEqual(ruleBody({ ...fresh, name: ' Noise ' }), {
+    name: 'Noise',
+    enabled: true,
+    when: null,
+    action: 'drop',
+    params: {},
+  })
+  assert.equal(
+    ruleProblem({ ...fresh, name: 'x', action: 'close_duplicate' }),
+    'Say which fields are the same in the incident to look for',
+  )
+  assert.equal(ruleProblem({ ...fresh, name: 'x', action: 'run_script' }), 'Say which script decides')
+  // A condition of several comparisons is kept as it was written.
+  const several = {
+    any: [
+      { left: 'a', op: 'eq', right: 1 },
+      { left: 'b', op: 'exists' },
+    ],
+  }
+  assert.deepEqual(conditionOf(conditionRow(several)), several)
+  assert.equal(conditionOf(conditionRow(null)), null)
+  assert.deepEqual(conditionOf({ left: '{{ item.x }}', op: 'gte', right: '80' }), {
+    all: [{ left: '{{ item.x }}', op: 'gte', right: 80 }],
+  })
+
+  assert.deepEqual(moved(['a', 'b', 'c'], 'c', -1), ['a', 'c', 'b'])
+  assert.deepEqual(moved(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c'])
+  assert.deepEqual(moved(['a', 'b', 'c'], 'a', 1), ['b', 'a', 'c'])
 })

@@ -6,6 +6,7 @@ import {
   DatabaseBackup,
   FileSearch,
   FileText,
+  Filter,
   Fingerprint,
   Globe,
   HardDrive,
@@ -42,6 +43,7 @@ import ConnectionsSection from './sections/ConnectionsSection.jsx'
 import FieldsSection from './sections/FieldsSection.jsx'
 import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import SlaSection from './sections/SlaSection.jsx'
+import PreprocessSection from './sections/PreprocessSection.jsx'
 import ListsSection from './sections/ListsSection.jsx'
 import MappersSection from './sections/MappersSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
@@ -83,6 +85,7 @@ const SECTION_VIEWS = {
   incidentTypes: { icon: Shapes, Component: IncidentTypesSection },
   fields: { icon: TextCursorInput, Component: FieldsSection },
   sla: { icon: Timer, Component: SlaSection },
+  preprocess: { icon: Filter, Component: PreprocessSection },
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
   connections: { icon: Cable, Component: ConnectionsSection },

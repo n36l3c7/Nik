@@ -1507,6 +1507,38 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         nothing fetches.
       </p>
 
+      <h4 id="preprocessing">Before an item becomes an incident</h4>
+      <p>
+        <strong>Pre-processing rules</strong> (<em>Settings → Incidents → Pre-processing rules</em>) are tried, in their
+        order, on every new item, before anything is written. A rule has a condition, the kind a classifier has, over
+        <code>incident</code> (what the item would become: its type and the fields its mapper gave) and
+        <code>item</code> (what came); nothing for <em>always</em>. The first rule that decides wins:
+      </p>
+      <ul>
+        <li><strong>Drop it</strong>: no incident. The item is remembered, so it does not come back;</li>
+        <li>
+          <strong>Link it to an open incident</strong>: no incident; the item becomes a line of the War Room of the open
+          incident that has the <em>same</em> values in the fields the rule names (<code>name</code>, <code>host</code>,
+          <code>username</code>, <code>ticket</code>, <code>severity</code>, <code>source_id</code>, <code>type</code>),
+          made in the last so many hours if the rule says so;
+        </li>
+        <li>
+          <strong>Close it as a duplicate</strong>: the incident is made, and closed at once with the reason
+          <em>Duplicate</em> and the incident it is a duplicate of;
+        </li>
+        <li>
+          <strong>Ask a script</strong>: a script of the library is given <code>item</code> and
+          <code>incident</code> and returns <code>{"action": "drop"}</code>,
+          <code>{"action": "link_to_existing", "same": ["host"]}</code>,
+          <code>{"action": "close_duplicate", "same": ["name"]}</code>, or anything else to go on.
+        </li>
+      </ul>
+      <p>
+        A rule that finds no incident that is the same decides nothing, and the next is tried. With no rule that
+        decides, the item becomes an incident. <em>Try on a sample</em> says which rule would decide for an item of a
+        connection, and does nothing.
+      </p>
+
       <h3 id="shipped-connectors">The connectors Nik ships</h3>
       <p>
         Twelve files for nine products. Each was written from what the vendor publishes about its API and is tested

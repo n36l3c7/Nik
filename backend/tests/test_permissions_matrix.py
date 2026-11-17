@@ -176,6 +176,13 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/fetch/{connection_id}/resume"): ("connectors.manage",),
     ("GET", "/api/fetch/{connection_id}/items"): ("connectors.manage",),
     ("GET", "/api/fetch/{connection_id}/sample"): ("connectors.manage",),
+    # Pre-processing rules: whoever configures incidents.
+    ("GET", "/api/preprocess-rules"): ("incidents.configure",),
+    ("POST", "/api/preprocess-rules"): ("incidents.configure",),
+    ("PUT", "/api/preprocess-rules/order"): ("incidents.configure",),
+    ("POST", "/api/preprocess-rules/try"): ("incidents.configure",),
+    ("PUT", "/api/preprocess-rules/{rule_id}"): ("incidents.configure",),
+    ("DELETE", "/api/preprocess-rules/{rule_id}"): ("incidents.configure",),
     ("GET", "/api/notifications"): ("read",),
     ("POST", "/api/notifications/read"): ("read",),
     ("GET", "/api/automation/connectors"): ("connectors.manage",),
