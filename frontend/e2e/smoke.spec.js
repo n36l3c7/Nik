@@ -2877,6 +2877,39 @@ test('Fetch status: a connection is told to fetch, says why it fails, and is let
   await told.getByRole('button', { name: 'Close' }).click()
 })
 
+test('an incident is mirrored with an object of another product, read now, and stopped', async () => {
+  const mirror = page.getByRole('region', { name: 'Mirroring' })
+  await mirror.getByRole('button', { name: 'Mirror with…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Mirror this incident' })
+  await expect(dialog.getByRole('status')).toHaveText('Say which object of the other side this incident is')
+  await dialog.getByLabel('The id of the object on the other side').fill('T-77')
+  // Acme Desk is read, not written to: it cannot be mirrored out.
+  await dialog.getByRole('radio', { name: /^Both ways/ }).check()
+  await expect(dialog.getByRole('status')).toHaveText('Acme Desk is read, not written to: mirror in')
+  await expect(dialog.getByRole('button', { name: 'Start mirroring' })).toBeDisabled()
+  await dialog.getByRole('radio', { name: /^In/ }).check()
+  await dialog.getByRole('button', { name: 'Start mirroring' }).click()
+  await expect(mirror).toContainText('Acme test')
+  await expect(mirror).toContainText('T-77 · read from there')
+  await expect(mirror).toContainText('Not read yet')
+
+  // There is no Acme Desk to answer: reading now says why it could not.
+  await mirror.getByRole('button', { name: 'Read now' }).click()
+  await expect(mirror.getByRole('alert')).not.toBeEmpty({ timeout: 30_000 })
+  // The War Room tells who started it.
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'War Room', exact: true }).click()
+  await expect(
+    page
+      .getByRole('list', { name: 'War Room' })
+      .getByRole('listitem')
+      .filter({ hasText: 'started mirroring with Acme test' }),
+  ).toHaveCount(1)
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await mirror.getByRole('button', { name: 'Stop' }).click()
+  await expect(mirror.getByRole('button', { name: 'Mirror with…' })).toBeVisible()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

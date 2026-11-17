@@ -79,3 +79,42 @@ export function limitText(connection) {
 /** The connections that need someone: failing or paused. */
 export const needingCare = (connections) =>
   (connections ?? []).filter((connection) => connection.state === 'failing' || connection.state === 'paused')
+
+/* ------------------------------------------------------------------ mirroring */
+
+export const DIRECTIONS = [
+  { id: 'in', label: 'In', hint: 'What changes on the other side comes here. Nothing is sent.' },
+  { id: 'out', label: 'Out', hint: 'What changes here is sent to the other side.' },
+  { id: 'both', label: 'Both ways', hint: 'Each side follows the other.' },
+]
+
+/** The direction of a mirror, in words. */
+export function directionText(direction) {
+  if (direction === 'in') return 'read from there'
+  if (direction === 'out') return 'sent from here'
+  return direction === 'both' ? 'both ways' : String(direction ?? '')
+}
+
+/** Why a mirror cannot be started as the form stands (a sentence), or null. */
+export function mirrorProblem({ connection, mirrorId, direction, canSend }) {
+  if (!connection) return 'Choose a connection'
+  if (!String(mirrorId ?? '').trim()) return 'Say which object of the other side this incident is'
+  if (direction !== 'in' && !connection.out) return `${connection.connector} is read, not written to: mirror in`
+  if (direction !== 'in' && !canSend) return 'Sending to another system needs the permission to run playbooks'
+  return null
+}
+
+/** What waits to be sent, or could not be, in a line. */
+export function jobText(job, now = Date.now()) {
+  const what = job.kind === 'comment' ? 'a comment' : 'the fields that changed'
+  if (job.status === 'failed') return `${what}: given up after ${job.attempts} tries`
+  if (!job.attempts) return `${what}: waits for the worker`
+  const seconds = Math.round(Number(job.nextAt) - now / 1000)
+  const again =
+    seconds <= 0
+      ? 'at the next turn of the worker'
+      : seconds < 90
+        ? `in ${seconds} s`
+        : `in ${Math.round(seconds / 60)} min`
+  return `${what}: tried ${job.attempts} time${job.attempts === 1 ? '' : 's'}, again ${again}`
+}

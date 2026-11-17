@@ -1258,6 +1258,33 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET</code> · <code>POST</code> · <code>DELETE /api/incidents/{id}/mirror</code> ·
+                <code>POST /api/incidents/{id}/mirror/sync</code>
+              </td>
+              <td>
+                Whether the incident is mirrored:
+                <code
+                  >{mirrored, connection, id, direction, dataAllow, startedBy, lastSync, error, waiting,
+                  connections}</code
+                >, with the connections it can be mirrored with · start (<strong>write</strong>):
+                <code>{connectionId, mirrorId, direction: "in" | "out" | "both", dataAllow}</code>. <code>out</code> and
+                <code>both</code> also need <strong>automation.run</strong>, and a class of data in
+                <code>dataAllow</code> needs <strong>automation.open</strong> · stop · read the other side now:
+                <code>{changed, kept, comments, problems}</code>, where <code>kept</code> are the fields a person set
+                that were left as they are (<code>502</code> when the other side cannot be read).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/mirror/queue</code> · <code>POST /api/mirror/queue/{id}/retry</code></td>
+              <td>
+                (<strong>connectors.manage</strong>) What waits to be sent to the other side of mirrored incidents and
+                what could not be:
+                <code>{jobs: [{id, incidentId, incident, connection, kind, status, attempts, error, nextAt}]}</code> ·
+                try one again at the next turn of the worker.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
               <td>
                 What the caller was told, the newest first:

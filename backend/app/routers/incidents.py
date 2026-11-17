@@ -417,6 +417,20 @@ def patch_incident(
     flag_modified(row, "doc")
     _sync_columns(row)
     _timers(db, row)
+    # Who set each field of the document last, for what a fetch or a mirror may write over.
+    edited = [
+        name
+        for key, name in field_registry.DOC_FIELDS.items()
+        if name not in ("created", "modified") and previous.get(key) != merged.get(key)
+    ]
+    if edited:
+        import time
+
+        from .. import mirror
+
+        db.flush()
+        field_registry.note_source(db, row, edited, f"user:{caller.actor}")
+        mirror.on_fields_changed(db, row, edited, f"user:{caller.actor}", time.time())
     if row.status == "closed" and not was_closed:
         problem = field_registry.closing_problem(db, row)
         if problem:

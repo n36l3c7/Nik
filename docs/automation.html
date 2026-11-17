@@ -1548,6 +1548,40 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         connection, and does nothing.
       </p>
 
+      <h3 id="mirroring">Mirroring: an incident and a ticket in step</h3>
+      <p>
+        An incident can be kept in step with one object of another product, a ticket or an issue, through a connection
+        whose connector has a <a href="#connector-fetch"><code>mirror</code></a
+        >. It is started from the panel of the incident (<em>Mirror with…</em>: the connection, the id of the object on
+        the other side, and which way), or by a mapper that sets <code>mirror_id</code> and
+        <code>mirror_direction</code> on what it fetches. The fields <code>mirror_id</code>,
+        <code>mirror_direction</code> and <code>mirror_last_sync</code> of the incident say how it stands.
+      </p>
+      <ul>
+        <li>
+          <strong>In.</strong> The worker reads the object every <code>interval_seconds</code> of the connector, and the
+          <a href="#mappers">incoming mapper</a> turns it into fields. A field a person set in Nik is
+          <strong>kept</strong>: the other side writes over it only when the mapper marks it <em>authoritative</em> (<em
+            >Wins over edits</em
+          >). What the connector itself wrote, or nobody set, follows the other side. Comments not seen before become
+          lines of the War Room. A closed incident is read for a day more, then left alone.
+        </li>
+        <li>
+          <strong>Out.</strong> When a field the <a href="#mappers">outgoing mapper</a> reads changes in Nik, the
+          incident is sent as that mapper writes it; a note tagged <code>mirror</code> is sent as a comment. Sending is
+          done by the worker from a queue: one that fails is tried again later and later, eight times, and is listed in
+          <em>Fetch status</em> with why, where it can be sent again.
+        </li>
+      </ul>
+      <p>
+        Starting a mirror that sends is a <strong>standing permission</strong>: from then on what changes is sent
+        without asking again. It needs the permission to run playbooks, it is written in the War Room and in the audit
+        log with who gave it, and what is sent passes the <a href="#data-guard">data guard</a> with no class of data
+        opened unless one was opened for this mirror, which needs the permission that opens classes for playbooks. It
+        reaches the host of its connection and nothing else. A loop is not possible: what the mirror's own connector
+        wrote is never sent back, and a comment Nik sent is recognised when it comes back.
+      </p>
+
       <h3 id="shipped-connectors">The connectors Nik ships</h3>
       <p>
         Twelve files for nine products. Each was written from what the vendor publishes about its API and is tested
@@ -2138,7 +2172,9 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         command's first argument. <code>comments</code> also says where the comments are in the result of
         <code>list</code> (<code>items</code>, <code>"{{ result.comments }}"</code> by default) and what one is
         (<code>id</code>, <code>text</code>, <code>author</code>, <code>at</code>, over <code>item</code>).
-        <code>interval_seconds</code> is how often the other side is read (120 by default).
+        <code>interval_seconds</code> is how often the other side is read (120 by default). <code>item</code> says where
+        the object is in what <code>get</code> gave (<code>"{{ result.ticket }}"</code>; the whole result by default):
+        it must have the shape a fetched item has, since the same incoming mapper reads both.
       </p>
 
       <h4 id="connector-samples">Two complete files</h4>

@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   later and later; a connection that makes more than 500 incidents in an
   hour is paused with nothing lost. `/api/fetch` shows how each goes, turns
   it on and off, fetches now and lists what became of each item.
+- **Mirroring.** An incident is kept in step with a ticket or an issue of
+  another product: what the other side says comes in through the incoming
+  mapper, with what a person set in Nik kept unless the mapper marks the
+  field authoritative, and its comments become lines of the War Room; what
+  changes in Nik and the notes tagged `mirror` go out from a queue, tried
+  again when a send fails. Started from the panel of the incident or by a
+  mapper; a mirror that sends is a standing permission, recorded, and what
+  it sends passes the data guard.
+- Who set each field of an incident last is remembered (a person, a
+  playbook, a connector): it is what decides what a fetch or a mirror may
+  write over.
 - **Fetch status** (*Settings → Automation*): the connections that can
   fetch, each with its state and why, what its last cycle found, the items
   it fetched lately with what became of each, and the buttons to turn it on

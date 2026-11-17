@@ -238,6 +238,15 @@ def create_incident(
         {"text": f"Fetched from {connection.name} ({connector.name}), item {item_id}", "item": _cut(item)},
         source,
     )
+    # A mapper that says which object of the other side this is, and which way, starts the mirror.
+    held = incident.fields if isinstance(incident.fields, dict) else {}
+    if held.get("mirror_id") and held.get("mirror_direction"):
+        from . import mirror
+
+        try:
+            mirror.start(db, incident, connection, held["mirror_id"], str(held["mirror_direction"]), source, now)
+        except mirror.MirrorError as error:
+            problems.append(error.message)
     timers.sync(db, incident, now)
     audit.record(db, source, "incident.create", f'Fetched the incident "{name}" from {connection.name}', incident)
     return incident, problems

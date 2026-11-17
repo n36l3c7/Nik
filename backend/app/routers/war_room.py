@@ -105,6 +105,12 @@ def add_note(
     from .. import tasks
 
     tasks.notify_mentions(db, incident, text, caller.actor)
+    # A note tagged "mirror" on an incident mirrored out goes to the other side as a comment.
+    import time
+
+    from .. import mirror
+
+    mirror.on_note(db, incident, text, war_room.clean_tags(body.tags), caller.actor, time.time())
     db.commit()
     emit(db, background_tasks, "note.added", {"incidentId": incident_id, "noteId": note["id"]})
     return next(item for item in war_room.entries(db, incident, limit=1000) if item["id"] == row.id)

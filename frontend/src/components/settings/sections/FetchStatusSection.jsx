@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Download, Play, Power, RefreshCw } from 'luc
 import { api } from '../../../services/api.js'
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
-import { OUTCOMES, lastText, limitText, nextText, outcomeBadge, stateBadge } from '../../../domain/fetch.js'
+import { OUTCOMES, jobText, lastText, limitText, nextText, outcomeBadge, stateBadge } from '../../../domain/fetch.js'
 import { Badge, Button } from '../../ui/index.js'
 
 /*
@@ -90,6 +90,7 @@ function Items({ connectionId }) {
 
 export default function FetchStatusSection() {
   const [connections, setConnections] = useState(null)
+  const [jobs, setJobs] = useState([])
   const [error, setError] = useState(null)
   const [said, setSaid] = useState(null)
   const [open, setOpen] = useState(null)
@@ -97,7 +98,9 @@ export default function FetchStatusSection() {
 
   const load = useCallback(async () => {
     try {
-      setConnections((await api.get('/fetch')).connections)
+      const [status, waiting] = await Promise.all([api.get('/fetch'), api.get('/mirror/queue')])
+      setConnections(status.connections)
+      setJobs(waiting.jobs)
       setError(null)
     } catch (failure) {
       setError(failure.message)
@@ -260,6 +263,53 @@ export default function FetchStatusSection() {
           })}
         </ul>
       )}
+
+      <section aria-label="Mirroring: what waits to be sent" className="flex flex-col gap-2">
+        <h3 className="text-sm font-semibold text-fg">Mirroring: what waits to be sent</h3>
+        {jobs.length === 0 ? (
+          <p className="text-sm text-fg-muted">
+            Nothing waits. What changes in an incident mirrored out is sent by the worker; what it could not send is
+            listed here with why.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-line-soft border border-line">
+            {jobs.map((job) => (
+              <li key={job.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <Badge color={job.status === 'failed' ? 'red' : job.attempts ? 'amber' : 'slate'}>
+                  {job.status === 'failed' ? 'not sent' : 'waiting'}
+                </Badge>
+                <span className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => setPath(`/incident/${encodeURIComponent(job.incidentId)}`)}
+                    className="text-left text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    {job.incident || job.incidentId}
+                  </button>
+                  <span className="block text-xs text-fg-muted">
+                    to {job.connection} · {jobText(job)}
+                  </span>
+                  {job.error && <span className="block text-xs text-high-fg">{job.error}</span>}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  onClick={async () => {
+                    setError(null)
+                    try {
+                      setJobs((await api.post(`/mirror/queue/${encodeURIComponent(job.id)}/retry`)).jobs)
+                    } catch (failure) {
+                      setError(failure.message)
+                    }
+                  }}
+                >
+                  Send again
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

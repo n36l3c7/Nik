@@ -264,13 +264,28 @@ def tick(now: float | None = None, *, pool: ThreadPoolExecutor | None = None, ho
         from .. import fetch
 
         fetching = [found for found in fetch.due(db, now) if found not in _fetching]
+        from .. import mirror
+
+        # Mirrored incidents to read, and what waits to be sent to the other side.
+        reading = [found for found in mirror.due(db, now) if f"in:{found}" not in _fetching]
+        sending = [found for found in mirror.jobs_due(db, now) if f"out:{found}" not in _fetching]
     done["steps"] = len(claimed)
     if pool is None:
         for step_id in claimed:
             run_step(step_id, now)
         for connection_id in fetching:
             fetch.run(connection_id, now)
+        for incident_id in reading:
+            mirror.run_pull(incident_id, now)
+        for job_id in sending:
+            mirror.run_push(job_id, now)
         return done
+    for key, work, wanted in (
+        *((f"in:{found}", mirror.run_pull, found) for found in reading),
+        *((f"out:{found}", mirror.run_push, found) for found in sending),
+    ):
+        _fetching.add(key)
+        pool.submit(work, wanted).add_done_callback(lambda _future, done_key=key: _fetching.discard(done_key))
     for connection_id in fetching:
         _fetching.add(connection_id)
         pool.submit(fetch.run, connection_id).add_done_callback(

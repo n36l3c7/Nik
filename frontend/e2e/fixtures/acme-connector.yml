@@ -34,3 +34,5 @@ fetch:
   item_id: "{{ item.number }}"
   first_state: { last_time: "{{ first.iso }}" }
   next_state: { last_time: "{{ items | last | get('created') }}" }
+mirror:
+  get: { command: get-ticket }

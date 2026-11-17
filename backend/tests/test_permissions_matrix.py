@@ -183,6 +183,13 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/preprocess-rules/try"): ("incidents.configure",),
     ("PUT", "/api/preprocess-rules/{rule_id}"): ("incidents.configure",),
     ("DELETE", "/api/preprocess-rules/{rule_id}"): ("incidents.configure",),
+    # Mirroring. Starting one that sends also needs automation.run (checked in the route).
+    ("GET", "/api/incidents/{incident_id}/mirror"): ("read",),
+    ("POST", "/api/incidents/{incident_id}/mirror"): ("write",),
+    ("DELETE", "/api/incidents/{incident_id}/mirror"): ("write",),
+    ("POST", "/api/incidents/{incident_id}/mirror/sync"): ("write",),
+    ("GET", "/api/mirror/queue"): ("connectors.manage",),
+    ("POST", "/api/mirror/queue/{job_id}/retry"): ("connectors.manage",),
     ("GET", "/api/notifications"): ("read",),
     ("POST", "/api/notifications/read"): ("read",),
     ("GET", "/api/automation/connectors"): ("connectors.manage",),

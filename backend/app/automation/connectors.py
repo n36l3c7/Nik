@@ -346,6 +346,8 @@ class MirrorSpec(_Strict):
     """Keeping an incident and one object of the other product in step."""
 
     get: MirrorCall
+    # The object in what ``get`` gave, in the shape a fetched item has: the incoming mapper reads it as ``item``.
+    item: str = Field(default="{{ result }}", max_length=500)
     update: MirrorCall | None = None
     comments: MirrorComments | None = None
     interval_seconds: int = Field(default=120, ge=FETCH_MIN_INTERVAL, le=86_400)
@@ -700,6 +702,7 @@ def load(text: str | bytes) -> ConnectorFile:
                 _check_templates(call.get("args"), _MIRROR_ARGS, (*where, "args"), lines, problems)
         for key in ("items", "id", "text", "author", "at"):
             _check_templates(comments.get(key), _MIRROR_COMMENT, ("mirror", "comments", key), lines, problems)
+        _check_templates(mirror.get("item"), frozenset({"result"}), ("mirror", "item"), lines, problems)
 
     if connector is not None and not problems:
         # What a template names must exist: a configuration entry, an argument, an earlier step.

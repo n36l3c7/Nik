@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { lastText, limitText, needingCare, nextText, outcomeBadge, stateBadge } from './fetch.js'
+import {
+  directionText,
+  jobText,
+  lastText,
+  limitText,
+  mirrorProblem,
+  needingCare,
+  nextText,
+  outcomeBadge,
+  stateBadge,
+} from './fetch.js'
 
 const NOW = Date.parse('2026-11-17T10:00:00Z')
 
@@ -48,4 +58,43 @@ test('what became of an item', () => {
   assert.equal(outcomeBadge('incomplete').color, 'amber')
   assert.equal(outcomeBadge('linked').label, 'linked')
   assert.equal(outcomeBadge('other').label, 'other')
+})
+
+test('mirroring: which way, why it cannot start, what waits to be sent', () => {
+  assert.equal(directionText('in'), 'read from there')
+  assert.equal(directionText('both'), 'both ways')
+  const desk = { id: 'c1', name: 'Desk prod', connector: 'Desk', out: true }
+  const readOnly = { ...desk, connector: 'Read only', out: false }
+  assert.equal(
+    mirrorProblem({ connection: null, mirrorId: 'T-9', direction: 'in', canSend: true }),
+    'Choose a connection',
+  )
+  assert.equal(
+    mirrorProblem({ connection: desk, mirrorId: ' ', direction: 'in', canSend: true }),
+    'Say which object of the other side this incident is',
+  )
+  assert.equal(mirrorProblem({ connection: desk, mirrorId: 'T-9', direction: 'both', canSend: true }), null)
+  assert.equal(
+    mirrorProblem({ connection: readOnly, mirrorId: 'T-9', direction: 'out', canSend: true }),
+    'Read only is read, not written to: mirror in',
+  )
+  assert.equal(mirrorProblem({ connection: readOnly, mirrorId: 'T-9', direction: 'in', canSend: false }), null)
+  assert.equal(
+    mirrorProblem({ connection: desk, mirrorId: 'T-9', direction: 'out', canSend: false }),
+    'Sending to another system needs the permission to run playbooks',
+  )
+
+  const at = (seconds) => NOW / 1000 + seconds
+  assert.equal(
+    jobText({ kind: 'update', status: 'pending', attempts: 0 }, NOW),
+    'the fields that changed: waits for the worker',
+  )
+  assert.equal(
+    jobText({ kind: 'comment', status: 'pending', attempts: 2, nextAt: at(240) }, NOW),
+    'a comment: tried 2 times, again in 4 min',
+  )
+  assert.equal(
+    jobText({ kind: 'update', status: 'failed', attempts: 8 }, NOW),
+    'the fields that changed: given up after 8 tries',
+  )
 })
