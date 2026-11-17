@@ -143,3 +143,46 @@ body {
 ::selection {
   @apply bg-accent/30;
 }
+
+/* ---- The playbook canvas (@xyflow/react) in Nik's colours ---- */
+.nik-flow .react-flow {
+  --xy-background-color: var(--color-canvas);
+  --xy-edge-stroke: var(--color-fg-subtle);
+  --xy-edge-stroke-selected: var(--color-accent);
+  --xy-connectionline-stroke: var(--color-accent);
+  --xy-handle-background-color: var(--color-raised);
+  --xy-handle-border-color: var(--color-line);
+  --xy-selection-background-color: color-mix(in srgb, var(--color-accent-soft) 40%, transparent);
+  --xy-selection-border: 1px dashed var(--color-accent);
+  --xy-controls-button-background-color: var(--color-panel);
+  --xy-controls-button-background-color-hover: var(--color-raised);
+  --xy-controls-button-color: var(--color-fg-muted);
+  --xy-controls-button-color-hover: var(--color-fg);
+  --xy-controls-button-border-color: var(--color-line);
+  --xy-controls-box-shadow: none;
+  --xy-minimap-background-color: var(--color-sunken);
+  --xy-attribution-background-color: transparent;
+  font-family: var(--font-sans);
+}
+.nik-flow .react-flow__controls {
+  border: 1px solid var(--color-line);
+}
+.nik-flow .react-flow__minimap {
+  border: 1px solid var(--color-line);
+}
+.nik-flow .react-flow__attribution a {
+  color: var(--color-fg-subtle);
+}
+.nik-flow .react-flow__node:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+/* ---- The code editor (CodeMirror 6): its height; its colours are in CodeEditor.jsx ---- */
+.nik-code .cm-editor {
+  min-height: var(--nik-code-min, 8rem);
+  max-height: var(--nik-code-max, 60vh);
+}
+.nik-code .cm-scroller {
+  overflow: auto;
+}

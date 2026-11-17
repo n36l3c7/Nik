@@ -10,7 +10,8 @@
  * On any non-2xx response the wrapper throws `Error(payload.detail)` so callers
  * can surface the server's message directly (the backend returns
  * `{ "detail": "<message>" }` on errors — FastAPI's default shape). The error
- * carries the HTTP `status`; a network failure has none.
+ * carries the HTTP `status` and, as `data`, the whole answer; a network
+ * failure has neither.
  *
  * A 401 outside `/auth/*` means the session ended while the app was open: the
  * handler registered with `onUnauthorized` (AuthContext) asks to sign in again.
@@ -99,7 +100,8 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
       (payload && typeof payload.detail === 'string' && payload.detail) || `Request failed (${response.status})`
     reportUnauthorized(response.status, path)
     // `query`: for a query that cannot be read, where and why (position, code, suggestion).
-    throw Object.assign(new Error(detail), { status: response.status, query: payload?.query ?? null })
+    // `data`: whatever else the server said (the problems of a playbook, the result of a script's test).
+    throw Object.assign(new Error(detail), { status: response.status, query: payload?.query ?? null, data: payload })
   }
 
   return payload

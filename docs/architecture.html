@@ -19,6 +19,7 @@
         <nav class="site-nav" aria-label="Documentation">
           <a href="./">Overview</a>
           <a href="guide.html">User guide</a>
+          <a href="automation.html">Automation</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
           <a href="security.html">Security</a>
@@ -60,7 +61,11 @@
 │  └─ REST client (/api)    │     │        ├─▶ sample store (a volume)          │
 └───────────────────────────┘     │        ├─▶ analyzer, capa, docview, pcap    │
                                   │        │     (workers with no route outside)│
-                                  │        └─▶ browser ──▶ internet, filtered   │
+                                  │        ├─▶ browser ──▶ internet, filtered   │
+                                  │        └─▶ sandbox (scripts; no route out)  │
+                                  │  automation: the playbooks' worker          │
+                                  │        ├─▶ db, sandbox                      │
+                                  │        └─▶ the hosts playbooks may reach    │
                                   └─────────────────────────────────────────────┘
 </code></pre>
       <p>The split is deliberate:</p>
@@ -91,7 +96,7 @@
         </li>
       </ul>
       <p>
-        The REST API is one FastAPI application with a router per area (<code>backend/app/routers/</code>, 24 of them),
+        The REST API is one FastAPI application with a router per area (<code>backend/app/routers/</code>, 28 of them),
         all under <code>/api</code>. The <a href="api.html">API page</a> lists the endpoints; Swagger UI at
         <code>/api/docs</code> has every request and response shape.
       </p>
@@ -206,13 +211,17 @@
 │   │                               #   nik_browser.py (sessions, tabs, viewport), egress.py (the
 │   │                               #   filtering proxy that is Chromium's only route), netlog.py
 │   │                               #   (the DevTools-like request log), server.py, tests/
-│   └── pcap/                       # packet capture: Dockerfile (tshark, sharkd),
-│                                   #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
+│   ├── pcap/                       # packet capture: Dockerfile (tshark, sharkd),
+│   │                               #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
+│   └── sandbox/                    # scripts of playbooks: Dockerfile (Python and nothing else),
+│                                   #   harness.py (the child a script runs in), runner.py (the limits),
+│                                   #   server.py, tests/
 ├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, upgrade-postgres.sh,
 │                                   #   install-systemd.sh + systemd/, check-images.sh
 ├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
-├── docker-compose.yml              # db + api + analyzer + capa + docview + browser + pcap + web
+├── docker-compose.yml              # db + api + automation + sandbox + analyzer + capa + docview +
+│                                   #   browser + pcap + web
 ├── .env.example                    # Compose configuration template
 └── ruff.toml                       # Ruff settings for every Python component
 </code></pre>
@@ -236,6 +245,17 @@
 │   │                               #   re-encryption after SECRET_KEY changes (SECRET_KEY_PREVIOUS)
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
+├── automation/                     # Playbooks (4.1): see "The automation engine" below
+│   ├── graph.py                    # The shape of a playbook and what makes it valid
+│   ├── expressions.py              # The {{ }} language; classes of data travel with values
+│   ├── engine.py                   # A run, step by step, with its state in the database
+│   ├── worker.py                   # The loop of the automation container (lease, claim, reclaim, prune)
+│   ├── triggers.py, payloads.py    # Events (an outbox), schedules, limits; what an event carries
+│   ├── actions.py, nik_actions.py  # The registry of actions; what a playbook does inside Nik
+│   ├── outbound.py, egress.py      # HTTP and e-mail nodes; the one module that opens connections
+│   ├── guard.py                    # The data guard: classes, what may leave, the scan of what does
+│   ├── scripts.py, seed/scripts/   # Scripts, their versions, the sandbox client; the shipped scripts
+│   └── catalog.py, state.py        # The library of nodes; the switch, the worker's heartbeat
 ├── workers/                        # Clients of the analysis workers
 │   ├── analyzer.py                 # rizin worker client + disassembly job
 │   ├── capa.py                     # capa worker client + capabilities job (one at a time)
@@ -350,6 +370,9 @@
 │   ├── query/                      # The query language in the browser: parse (the twin of the server's
 │   │                               #   parser, same test vectors), tokenize (colours), complete, builder
 │   ├── permissions.js              # Roles and can(permission); settingsNav.js: the Settings page's addresses
+│   ├── automation/                 # Playbooks in the browser: graph (edits, undo), expressions (the twin
+│   │                               #   of the server's parser), catalog, layout, runs, scripts, hosts;
+│   │                               #   automationNav.js beside it: the area's addresses
 │   ├── events.js                   # buildEvents, historyEventType, redirect helpers
 │   ├── browserProfiles.js          # browser profiles: normalize, order, names, labels
 │   ├── commands.js                 # buildCommandEvents, extractBinary, topBinaries
@@ -385,10 +408,16 @@
     │                               #   SourceDetails (what each provider returned)
     ├── auth/                       # AuthLayout (banner + live status), FirstRunSetup, LoginScreen,
     │                               #   SessionExpiredDialog (sign in again over the app)
+    ├── automation/                 # The Automations area, loaded on first use: AutomationPage, the
+    │                               #   playbooks (PlaybooksPage, PlaybookPage, Canvas, NodeLibrary,
+    │                               #   Inspector, ExpressionInput, settings and versions tabs,
+    │                               #   DataGuardDialog), runs (RunsPage, RunPage), approvals
+    │                               #   (ApprovalsPage, ApprovalBanner), RunPlaybookDialog, scripts
+    │                               #   (ScriptsPage, ScriptPage, CodeEditor)
     ├── settings/                   # SettingsPage (a page with an address per section, in groups, with a
     │                               #   search box), RolePicker, and sections/ (detection rules, business
     │                               #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
-    │                               #   FLIRT signatures, capa rules, storage, backup, audit log)
+    │                               #   FLIRT signatures, capa rules, automation network and switch, storage, backup, audit log)
     ├── search/                     # CommandPalette (Ctrl/Cmd+K: nik&gt; search and &gt; actions)
     ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog
     ├── menu/                       # useItemMenu (the right-click menu of any item, built from the parts
@@ -1044,6 +1073,59 @@
           decides what a query matches.
         </li>
       </ul>
+      <h3 id="automation-engine">The automation engine</h3>
+      <p>
+        Playbooks are run by Nik itself (<code>backend/app/automation/</code>), not by another product. The design
+        follows from one rule: <strong>a run is rows in the database</strong>, never something a process holds in
+        memory.
+      </p>
+      <ul>
+        <li>
+          <strong>Tables</strong>: <code>playbooks</code> (with the draft, the limits, the hosts and the classes of data
+          opened), <code>playbook_versions</code>, <code>scripts</code>, <code>script_versions</code>,
+          <code>automation_events</code> (the outbox), <code>runs</code>, <code>run_steps</code>,
+          <code>approvals</code>, <code>automation_schedules</code>. Migration <code>0026_automation</code> creates
+          those that are missing.
+        </li>
+        <li>
+          <strong>The outbox.</strong> A change to an incident writes an event in the same transaction as the change;
+          the worker reads the events and starts the playbooks whose trigger matches. An event is never lost to a crash
+          between the change and the start, and a playbook's own changes carry the depth of what started them.
+        </li>
+        <li>
+          <strong>Steps.</strong> A run is advanced one step at a time: the worker claims the steps that are due (<code
+            >FOR UPDATE SKIP LOCKED</code
+          >
+          on PostgreSQL), takes each in a transaction of its own, and writes what comes next. Where branches meet, a
+          node waits for every branch that can still reach it; a branch not taken is marked dead and does not hold it. A
+          step claimed by a worker that died is taken back after a grace time.
+        </li>
+        <li>
+          <strong>Waiting costs nothing.</strong> A wait, a retry and an approval are a step with a time on it (or
+          none); no thread sleeps.
+        </li>
+        <li>
+          <strong>One worker at a time</strong> holds a lease in the database and renews it; the container can be
+          restarted, or a second one started, without a run being taken twice. The API container takes no step unless
+          <code>AUTOMATION_WORKER=inline</code> (development and tests).
+        </li>
+        <li>
+          <strong>Classes of data</strong> travel beside values: each step stores, with its output, a map from the paths
+          of that output to the classes they hold, and an expression that reads a path carries them on.
+          <code>guard.py</code> decides on them when something is about to leave.
+        </li>
+        <li>
+          <strong>Scripts</strong> are sent to the <code>sandbox</code> worker over the internal network and run there
+          in a child process (<code>workers/sandbox/</code>).
+        </li>
+        <li>
+          <strong>In the browser</strong> the graph is plain data edited by pure functions
+          (<code>frontend/src/domain/automation/graph.js</code>), which is what undo and redo are; the canvas
+          (<code>@xyflow/react</code>) draws it and reports edits. The expression parser exists twice, in Python and in
+          JavaScript, and both are tested on the same vectors.
+        </li>
+      </ul>
+
       <h2 id="large-data-sets">Large data sets</h2>
       <p>
         A browser history of a few hundred thousand visits has to stay usable, so the Browser tab keeps its per-row work

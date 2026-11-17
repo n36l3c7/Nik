@@ -1,0 +1,25 @@
+name: CsvToList
+description: Read CSV text into a list of objects, one per row, named by the header row.
+arguments:
+  - { name: text, type: text, required: true, description: The CSV }
+  - { name: delimiter, type: text, default: ",", description: The separator of the columns }
+outputs:
+  - { name: rows, type: list, description: "One object per row: {column: value}" }
+  - { name: columns, type: list, description: The names of the columns }
+  - { name: count, type: number, description: How many rows }
+test:
+  args: { text: "name,office\nAnna,Rome\n\"Rossi, Bob\",Milan\n" }
+  expect:
+    rows: [{ name: Anna, office: Rome }, { name: "Rossi, Bob", office: Milan }]
+    columns: [name, office]
+    count: 2
+code: |
+  import csv
+  import io
+
+
+  def main(args):
+      delimiter = str(args.get("delimiter") or ",")[:1] or ","
+      reader = csv.DictReader(io.StringIO(str(args.get("text") or "")), delimiter=delimiter)
+      rows = [{str(key).strip(): (value or "").strip() for key, value in row.items() if key} for row in reader]
+      return {"rows": rows, "columns": [name.strip() for name in reader.fieldnames or []], "count": len(rows)}

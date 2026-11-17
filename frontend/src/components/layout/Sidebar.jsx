@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Link,
   Mail,
+  Play,
   Plus,
   Trash2,
   Upload,
@@ -18,6 +19,7 @@ import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
+import { useAutomation } from '../../context/AutomationContext.jsx'
 import { api } from '../../services/api.js'
 import { useQuerySchema } from '../../services/querySchema.js'
 import { tryParse } from '../../domain/query/parse.js'
@@ -145,6 +147,7 @@ export default function Sidebar({
   const selectIncident = onSelectIncident
   const { openMenu } = useContextMenu()
   const { showToast } = useToast()
+  const { allowed: canAutomate, askRun } = useAutomation()
 
   // Incident pending deletion confirmation (null = modal closed).
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -298,6 +301,15 @@ export default function Sidebar({
                             }
                           },
                         },
+                        ...(canAutomate
+                          ? [
+                              {
+                                label: 'Run a playbook…',
+                                icon: Play,
+                                onSelect: () => askRun({ incidentId: incident.id, incidentName: incident.name }),
+                              },
+                            ]
+                          : []),
                         'separator',
                         ...STATUSES.filter((s) => s.value !== incident.status).map((s) => ({
                           label: `Mark as ${s.label}`,

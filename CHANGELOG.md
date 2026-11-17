@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-17
+
+Nik's own automation: playbooks drawn on a canvas and run by Nik, scripts in
+a sandbox, and a guard on where a playbook connects and what it sends.
+Nothing that existed changes; everything is additive.
+
+**Upgrading from 4.0.0**: this release adds two containers and one secret.
+
+```
+git pull
+deploy/init-env.sh
+podman compose up -d --build
+```
+
+`deploy/init-env.sh` adds `SANDBOX_TOKEN` to `.env` and changes nothing
+else; without it the stack does not start, and says so. The migration
+`0026_automation` runs at start and creates the tables of playbooks.
+Afterwards, give the role **Playbooks** to the people who will build
+automation. The whole of it is described in `docs/automation.html`.
+
+### Added
+
+- **Playbooks.** A playbook is a graph of nodes with versions: one trigger,
+  then conditions, "for each" (500 items at most, five at a time), waits,
+  approvals, actions, scripts, playbooks that run playbooks, ends. It is
+  saved as a version only when it is valid (one trigger, no circle, every
+  expression reading what is certain to have run before it). A run advances
+  step by step, is kept in the database and survives a restart. A failed
+  step is tried again with growing waits, then follows its error line.
+- **Triggers**: an incident created or updated (with conditions), a
+  schedule, a person. Limits per playbook: runs an hour, one run at a time
+  on the same object, a longest run. A general switch stops all automation.
+- **Expressions.** A field of a node takes earlier results with
+  `{{ node.path }}` and filters (`| default("…")`, `| join(", ")`,
+  `| where(…)`, `| defang`…). Only paths and filters: no code. The canvas
+  and the server read them with the same rules, tested on the same vectors.
+- **What a playbook does in Nik**: a note, the status, the assignee, a
+  field, a new incident, indicators, tags and lists, linking an artifact.
+  What it changes is signed `nik-automation` and written to the audit log
+  with the run and with who approved it. Outside Nik: an **HTTP request**
+  node and an **e-mail** node.
+- **A playbook reaches only the hosts listed for it**, unless an admin lets
+  it reach any host. An address inside the network (loopback, private,
+  link-local, carrier-grade, the containers, cloud metadata) is refused in
+  either mode unless that host is listed by name.
+- **The data guard.** What is about to leave is judged by classes of data:
+  e-mail addresses, subjects, internal names and addresses, allowlisted
+  indicators, incident names, file names, results of scripts, mail bodies,
+  attachments, samples, TLP:RED. Hashes, public indicators, verdicts and
+  Nik's ids always leave; mail bodies, attachments, samples and TLP:RED
+  never do; every other class is held until an admin opens it for that
+  playbook, by ticking a box and typing the playbook's name. Every opening
+  and closing is in the audit log, with the hosts that can receive it.
+- **Approvals.** A node that changes something outside Nik asks a person
+  first by default, and a playbook can ask wherever it wants. The question
+  is shown on the run, in *Approvals* and above the tabs of the incident
+  the run works on; the rail counts what waits. An approval nobody answers
+  is never taken as given.
+- **Scripts.** A library of Python scripts with typed arguments and
+  outputs, each a node of a playbook. A script is written as a draft and
+  enters the library when a version is saved, which needs its stored test to
+  pass. A playbook stays on the version it was saved with and is told when
+  a newer one exists. Seven ship with Nik: GroupByField, ExtractDomains,
+  DefangIndicators, BusinessHours, CsvToList, FilterList, VerdictChanges.
+- **The canvas.** A new area, **Automations** (the rail, or
+  `/automation/playbooks`): the library of nodes on the left, the playbook
+  in the middle, the settings of the selected node on the right. A field
+  takes a value typed, or picked from what the node can read; an expression
+  that cannot be read says why as it is typed. The canvas edits a draft
+  that saves itself; **Save as version** has the server check it and shows
+  what is to fix on the nodes. Undo and redo, copy and paste, "Tidy up", a
+  minimap. Everything is reachable from the keyboard: nodes take the focus,
+  edges are drawn from the inspector, and "Node list" shows the same
+  playbook as a table.
+- A playbook has **Runs**, **Versions** (an older one is restored as a new
+  version) and **Settings**: its limits, the hosts it may reach and the
+  classes of data it may send. Playbooks and scripts are exported and
+  imported as files; an imported playbook arrives as a draft, off, reaching
+  and sending nothing more than the default.
+- **Runs.** Every run has a page: the canvas of the version it used, each
+  node coloured by what happened to it, and the steps in order with what
+  went in, what came out, what was sent and the tries. A run in progress
+  can be stopped. A **dry run** sends nothing outside Nik and changes
+  nothing in it: each step shows what it would have done.
+- **Run a playbook by hand** from an incident's right-click menu, from its
+  new **Automation** tab (the runs that worked on that incident) and from a
+  playbook's page. A note written by a playbook is marked *automation* and
+  opens its run.
+- **The screens of scripts** (*Automations → Scripts*): an editor with
+  syntax colours and line numbers, the arguments and outputs as tables, the
+  stored test, "Run the test", and the versions with what the draft changes
+  from each, line by line.
+- **Settings → Automation**: *Network and data* (the hosts every playbook
+  may reach, the SMTP server of the e-mail node) and *Stop all* (the
+  general switch, with the state of the worker).
+- The role **Playbooks** can be given to an account or a key: it builds
+  playbooks and scripts. Analysts run playbooks, stop a run and answer
+  approvals, and see playbooks read-only.
+- A new container, **`automation`**, runs the playbooks: the backend's
+  image with another command, unprivileged and read-only, the only one
+  with a way out for what playbooks send.
+- A new container, **`sandbox`**, runs the scripts: an image with Python
+  and nothing else, on a network with no route outside, a read-only
+  filesystem and no capabilities; each script in a process of its own with
+  limits on time, memory and output. A script gets the arguments of its
+  node and nothing more: no secrets, no database, no files of Nik.
+- Documentation: a new page, `docs/automation.html`; the API, security,
+  architecture, deployment and developer pages cover the engine.
+
+### Changed
+
+- `.env` needs `SANDBOX_TOKEN` (written by `deploy/init-env.sh`).
+- New settings, all optional: `AUTOMATION_WORKER`,
+  `AUTOMATION_CONCURRENCY`, `AUTOMATION_MAX_ACTIVE_RUNS`,
+  `AUTOMATION_RUNS_KEPT`, `AUTOMATION_HTTPS_PROXY`, `AUTOMATION_NO_PROXY`,
+  `SANDBOX_TIMEOUT`, `SANDBOX_MAX_TIMEOUT`, `SANDBOX_MEMORY_MB` and the
+  memory and CPU limits of the two containers.
+- New dependencies: croniter, tzdata, regex and PyYAML (backend);
+  @xyflow/react and CodeMirror 6 (frontend).
+
 ## [4.0.0] - 2026-11-17
 
 The first release of the 4.x series: roles as tags, Settings as a page, and
@@ -1865,7 +1985,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/n36l3c7/Nik/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/n36l3c7/Nik/compare/v3.8.0...v4.0.0
 [3.8.0]: https://github.com/n36l3c7/Nik/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/n36l3c7/Nik/compare/v3.6.0...v3.7.0

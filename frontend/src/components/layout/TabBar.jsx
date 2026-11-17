@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
-import { ANALYSIS_TABS } from '../../config/tabs.js'
+import { visibleTabs } from '../../config/tabs.js'
 
 /*
  * ============================================================================
@@ -27,6 +28,9 @@ const ICONS = 2
  */
 export default function TabBar({ activeTabId, onChange }) {
   const { activeSummary } = useIncidents()
+  const { can } = useAuth()
+  // A tab that needs a permission is shown to the accounts that hold it.
+  const tabs = visibleTabs(can)
   // Without an active incident there is nothing to analyze: tabs are disabled.
   // They stay usable while the selected incident is still loading.
   const disabled = !activeSummary
@@ -62,10 +66,10 @@ export default function TabBar({ activeTabId, onChange }) {
       aria-label="Analysis tabs"
       className="flex shrink-0 gap-1 overflow-x-auto border-b border-line bg-canvas px-6"
     >
-      {ANALYSIS_TABS.map((tab, index) => {
+      {tabs.map((tab, index) => {
         const Icon = tab.icon
         const isActive = tab.id === activeTabId
-        const newGroup = index > 0 && tab.group !== ANALYSIS_TABS[index - 1].group
+        const newGroup = index > 0 && tab.group !== tabs[index - 1].group
         const text = isActive || density === FULL ? tab.label : density === SHORT ? tab.short : null
         return [
           newGroup && (

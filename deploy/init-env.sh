@@ -138,7 +138,7 @@ elif is_placeholder "$current"; then
     changed=1
 fi
 
-for name in ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN; do
+for name in ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN; do
     if is_placeholder "$(value_of "$name")"; then
         set_value "$name" "$(random)"
         changed=1

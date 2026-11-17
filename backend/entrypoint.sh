@@ -23,7 +23,11 @@ python -m app.preflight
 # `alembic upgrade head` is idempotent — on a fresh database it creates the
 # schema and stamps it; on an already-migrated one it is a no-op. The baseline
 # also adopts a database whose tables were created by an earlier create_all.
-echo "entrypoint: applying database migrations (alembic upgrade head)…" >&2
-alembic upgrade head
+# The automation container shares this image: the backend applies the
+# migrations, and two containers applying them at once would trip over each other.
+if [ "${NIK_SKIP_MIGRATIONS:-}" != "1" ]; then
+    echo "entrypoint: applying database migrations (alembic upgrade head)…" >&2
+    alembic upgrade head
+fi
 
 exec "$@"

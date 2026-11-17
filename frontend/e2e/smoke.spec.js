@@ -1132,7 +1132,7 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
   // The sections are in groups; the one shown is marked.
-  await expect(sections.getByRole('group')).toHaveCount(5)
+  await expect(sections.getByRole('group')).toHaveCount(6)
   await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
     'YARA rules',
     'capa rules',
@@ -1618,6 +1618,382 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
+test('a playbook is drawn on the canvas, checked by the server and saved as a version', async () => {
+  test.setTimeout(240_000) // a long story, and the runners of CI are slower than a desk
+  const before = page.url()
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  await expect(area.getByText('No playbook yet')).toBeVisible()
+
+  await area.getByRole('button', { name: 'New playbook' }).first().click()
+  const create = page.getByRole('dialog', { name: 'New playbook' })
+  await create.getByLabel('Name').fill('Note on high')
+  await create.getByRole('button', { name: 'Create' }).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks\/[0-9a-f]+$/)
+  await expect(area.getByRole('heading', { name: 'Note on high' })).toBeVisible()
+  await expect(area.getByText('playbook · no version yet')).toBeVisible()
+
+  const canvas = area.getByTestId('playbook-canvas')
+  const library = area.getByRole('complementary', { name: 'Node library' })
+  const inspector = area.getByRole('complementary', { name: 'Inspector' })
+  const nodes = canvas.locator('.react-flow__node')
+  await expect(nodes).toHaveCount(1)
+  await expect(nodes.first()).toContainText('by hand')
+
+  // The trigger: an event of Nik, besides being run by hand.
+  await nodes.first().click()
+  await inspector.getByLabel('On an event').selectOption('incident.created')
+  await expect(nodes.first()).toContainText('incident.created · by hand')
+
+  // A node added from the library comes after the selected one, joined to it.
+  await library.getByLabel('Search nodes').fill('condit')
+  await library.getByRole('button', { name: 'Condition', exact: true }).click()
+  await library.getByLabel('Search nodes').fill('')
+  await expect(nodes).toHaveCount(2)
+  await expect(canvas.locator('.react-flow__edge')).toHaveCount(1)
+  // "Pick a value" writes the expression; what is typed wrong says where.
+  await inspector.getByRole('button', { name: 'Pick a value for Comparison 1: what to compare' }).click()
+  await page
+    .getByRole('dialog', { name: 'Pick a value' })
+    .getByText('trigger.incident.severity', { exact: true })
+    .click()
+  await expect(inspector.getByRole('textbox', { name: 'Comparison 1: what to compare' })).toHaveValue(
+    '{{ trigger.incident.severity }}',
+  )
+  await inspector.getByRole('textbox', { name: 'Comparison 1: with what' }).fill('{{ trigger.incident.severity ')
+  await expect(inspector.getByText('The expression is not closed: add }}')).toBeVisible()
+  await inspector.getByRole('textbox', { name: 'Comparison 1: with what' }).fill('high')
+
+  await library.getByRole('button', { name: 'Add a note', exact: true }).click()
+  await expect(nodes).toHaveCount(3)
+  await expect(canvas.locator('.react-flow__edge')).toHaveCount(2)
+  await expect(inspector.getByRole('group', { name: 'Port then' })).toBeVisible()
+
+  // The draft saves itself: a reload finds the three nodes.
+  await expect(area.getByText('draft saved')).toBeVisible()
+  await page.reload()
+  await expect(nodes).toHaveCount(3)
+
+  // Not a version yet: the note has no text. The server says what and where.
+  await area.getByRole('button', { name: 'Save as version 1' }).click()
+  await expect(page.getByText('One thing to fix before this can be a version.')).toBeVisible()
+  await expect(inspector.getByText('"text" is required')).toBeVisible()
+  await expect(nodes.filter({ hasText: 'Add a note' })).toContainText('1 to fix')
+  await inspector
+    .getByLabel(/^text/)
+    .fill('Severity is {{ trigger.incident.severity }}: look at {{ trigger.incident.name }}')
+
+  // An "End" on the other branch, drawn from the inspector without a pointer; then undo and redo.
+  await library.getByRole('button', { name: 'End', exact: true }).click()
+  await expect(nodes).toHaveCount(4)
+  await area.getByRole('button', { name: 'Node list' }).click()
+  const table = area.getByRole('table', { name: 'The nodes of the playbook' })
+  await expect(table.getByRole('row')).toHaveCount(5)
+  await table.getByRole('button', { name: 'Condition' }).click()
+  await inspector.getByLabel('Draw an edge "no" to').selectOption({ label: 'End' })
+  await expect(table.getByRole('row', { name: /^Condition/ })).toContainText('no → End')
+  await area.getByRole('button', { name: 'Undo' }).click()
+  await expect(table.getByRole('row', { name: /^Condition/ })).not.toContainText('no → End')
+  await area.getByRole('button', { name: 'Redo' }).click()
+  await expect(table.getByRole('row', { name: /^Condition/ })).toContainText('no → End')
+  await area.getByRole('button', { name: 'Tidy up' }).click()
+  await area.getByRole('button', { name: 'Node list' }).click()
+
+  await area.getByRole('button', { name: 'Save as version 1' }).click()
+  await expect(page.getByText('Version 1 saved: it is what runs from now on.')).toBeVisible()
+  await expect(area.getByText('playbook · version 1')).toBeVisible()
+  await expect(area.getByRole('button', { name: 'Save as version 2' })).toBeDisabled()
+
+  // Versions; then what the playbook may reach, behind the double check.
+  await area.getByRole('radio', { name: 'Versions' }).click()
+  await expect(page).toHaveURL(/\/versions$/)
+  await expect(area.getByRole('table', { name: 'Versions of Note on high' }).getByRole('row')).toHaveCount(2)
+  await area.getByRole('radio', { name: 'Settings' }).click()
+  const network = area.getByRole('region', { name: 'Network' })
+  await network.getByLabel('Add a host').fill('https://Hooks.Example.org/path')
+  await network.getByRole('button', { name: 'Add' }).click()
+  await expect(network.getByRole('listitem').filter({ hasText: 'hooks.example.org' })).toBeVisible()
+  await network.getByRole('radio', { name: 'Any host' }).click()
+  const check = page.getByRole('dialog', { name: 'Let this playbook reach any host?' })
+  const allow = check.getByRole('button', { name: 'Allow any host' })
+  await expect(allow).toBeDisabled()
+  await check.getByRole('checkbox').check()
+  await check.locator('#data-guard-name').fill('note on high')
+  await expect(allow).toBeDisabled() // the name, exactly as it is written
+  await check.locator('#data-guard-name').fill('Note on high')
+  await allow.click()
+  await expect(check).toBeHidden()
+  await expect(network.getByText('any host', { exact: true })).toBeVisible()
+  await network.getByRole('radio', { name: 'Listed hosts only' }).click()
+  await expect(network.getByText('any host', { exact: true })).toBeHidden()
+  // A class of data is opened the same way, and closed with one click.
+  const data = area.getByRole('region', { name: 'Data that may leave' })
+  await data.getByRole('button', { name: 'Open: E-mail addresses' }).click()
+  const open = page.getByRole('dialog', { name: 'Let e-mail addresses leave Nik in this playbook?' })
+  await expect(open).toContainText('hooks.example.org')
+  await open.getByRole('checkbox').check()
+  await open.locator('#data-guard-name').fill('Note on high')
+  await open.getByRole('button', { name: 'Allow e-mail addresses' }).click()
+  await expect(data.getByText('may leave', { exact: true })).toBeVisible()
+  await data.getByRole('button', { name: 'Close: E-mail addresses' }).click()
+  await expect(data.getByText('may leave', { exact: true })).toBeHidden()
+
+  // The list: on, with its trigger and version. Settings has the switch for everything.
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  const row = area.getByRole('row').filter({ hasText: 'Note on high' })
+  await expect(row).toContainText('incident.created')
+  await row.getByRole('switch').click()
+  await expect(row.getByRole('switch')).toBeChecked()
+  await area.getByRole('button', { name: 'Close automations' }).click()
+  await expect(area).toBeHidden()
+
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Stop all').click()
+  await expect(page).toHaveURL(/\/settings\/automation\/stop-all$/)
+  await expect(settings.getByText('running')).toBeVisible()
+  await expect(settings.getByText('alive')).toBeVisible()
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Network and data').click()
+  await settings.getByLabel('Add a host').fill('intel.example.org')
+  await settings.getByRole('button', { name: 'Add' }).click()
+  await expect(settings.getByText('intel.example.org can be reached by every playbook.')).toBeVisible()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  // The area was reloaded on its own address: back to the incident the next steps work on.
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a playbook runs on an incident: the approval is asked where the incident is, the run shows what happened', async () => {
+  test.setTimeout(240_000) // the worker takes a step every second or so, and the story has many
+  const before = page.url()
+  const incidentId = decodeURIComponent(new URL(before).pathname.split('/')[2])
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+
+  // A playbook that asks a person, then writes a note (made through the API: the canvas has its own test).
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Ask then note' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      {
+        id: 'ask',
+        kind: 'approval',
+        name: 'Ask first',
+        position: { x: 40, y: 160 },
+        config: { question: 'Add a note to {{ trigger.incident.name }}?', detail: { why: 'a test' } },
+      },
+      {
+        id: 'note',
+        kind: 'action',
+        name: 'Add a note',
+        position: { x: 40, y: 280 },
+        config: { action: 'nik.add-note', args: { text: 'Approved by {{ ask.by }}: {{ ask.comment }}' } },
+      },
+    ],
+    edges: [
+      { from: 'start', to: 'ask' },
+      { from: 'ask', port: 'approved', to: 'note' },
+    ],
+  }
+  const saved = await page.request.post(`/api/automation/playbooks/${playbookId}/versions`, { data: { graph } })
+  expect(saved.status()).toBe(201)
+
+  // Run by hand, from the incident's own menu.
+  await page
+    .locator('aside nav[aria-label="Incidents"] li')
+    .filter({ hasText: 'WKS-FINANCE-01' })
+    .click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Run a playbook…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Run a playbook' })
+  await expect(dialog.locator('#run-incident')).toHaveValue(incidentId)
+  await dialog.locator('#run-playbook').selectOption(playbookId)
+  await dialog.getByRole('button', { name: 'Run', exact: true }).click()
+
+  // The run: the same canvas, each node by what happened to it; it waits for a person.
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  const area = page.getByRole('region', { name: 'Automations' })
+  const status = area.getByRole('status', { name: 'Status of the run' })
+  await expect(status).toHaveText('waiting for approval', { timeout: 15_000 })
+  await expect(area.getByTestId('rf__node-ask')).toContainText('waiting')
+  await expect(area.getByTestId('rf__node-note')).toContainText('pending')
+  await expect(area.getByRole('region', { name: /^Approval asked: Add a note to WKS-FINANCE-01/ })).toContainText(
+    'a test',
+  )
+
+  // The rail counts what waits, and the incident shows the question above its tabs.
+  await area.getByRole('button', { name: 'Close automations' }).click()
+  await expect(page.getByRole('button', { name: 'Automations (1 approval waits)' })).toBeVisible()
+  const banner = page.getByRole('region', { name: /^Approval asked: Add a note to WKS-FINANCE-01/ })
+  await banner.getByLabel('A comment with the answer').fill('looks right')
+  await banner.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByText('Approved: the run goes on.')).toBeVisible()
+  await expect(banner).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Automations', exact: true })).toBeVisible()
+
+  // The incident's Automation tab lists its runs; a run opens on its page.
+  await tabs.getByRole('button', { name: 'Automation', exact: true }).click()
+  const onIncident = page.getByRole('table', { name: 'Runs on this incident' })
+  await expect(onIncident.getByRole('row').filter({ hasText: 'Ask then note' })).toContainText('done', {
+    timeout: 15_000,
+  })
+  await onIncident.getByRole('button', { name: 'Ask then note' }).click()
+  await expect(status).toHaveText('done')
+  const steps = area.getByRole('complementary', { name: 'Steps of the run' })
+  await expect(steps).toContainText('“looks right”')
+  await steps.getByRole('button', { name: /Add a note/ }).click()
+  await expect(steps.getByText('Came out')).toBeVisible()
+  await expect(steps.getByText('Went in')).toBeVisible()
+
+  // From the playbook's page: a dry run asks nobody and writes nothing.
+  await area.getByRole('button', { name: 'version 1' }).click()
+  await expect(area.getByRole('heading', { name: 'Ask then note' })).toBeVisible()
+  await area.getByRole('button', { name: 'Run…' }).click()
+  await dialog.locator('#run-incident').selectOption(incidentId)
+  await dialog.getByRole('checkbox').check()
+  await dialog.getByRole('button', { name: 'Start the dry run' }).click()
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  await expect(area.getByText('dry run', { exact: true })).toBeVisible()
+  await expect(status).toHaveText('done', { timeout: 15_000 })
+  await steps.getByRole('button', { name: /Ask first/ }).click()
+  await expect(steps).toContainText('"by": "dry run"')
+
+  // Every run, newest first; then the approvals answered lately.
+  await area.getByRole('button', { name: 'All runs' }).click()
+  const all = area.getByRole('table', { name: 'Runs' })
+  await expect(all.getByRole('row')).toHaveCount(3)
+  await expect(all.getByRole('row').nth(1)).toContainText('dry run')
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Approvals' }).click()
+  await expect(area.getByText('Nothing waits for an answer')).toBeVisible()
+  await expect(area.getByRole('region', { name: 'Answered lately' })).toContainText('looks right')
+
+  // A trigger: the playbook drawn on the canvas waits for incidents of high severity.
+  const created = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-automation', name: 'E2E high', severity: 'high', data: {} },
+  })
+  expect(created.status()).toBe(201)
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Runs' }).click()
+  const triggered = all.getByRole('row').filter({ hasText: 'Note on high' })
+  await expect(async () => {
+    await area.getByRole('button', { name: 'Refresh' }).click()
+    await expect(triggered).toContainText('done', { timeout: 1000 })
+  }).toPass({ timeout: 20_000 })
+  await expect(triggered).toContainText('incident.created')
+  expect((await page.request.delete('/api/incidents/e2e-automation')).status()).toBe(204)
+
+  // Back on the incident: the note the playbook wrote is marked, the dry run wrote none.
+  await page.goto(before)
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.getByText('Approved by admin: looks right')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'automation', exact: true })).toHaveCount(1)
+})
+
+test('a script is written, tested in the sandbox, saved as a version and offered as a node', async () => {
+  test.setTimeout(240_000) // a long story, and the runners of CI are slower than a desk
+  const before = page.url()
+  // The sandbox runs in CI (and wherever E2E_SANDBOX_URL names one); without it, what needs one is checked to be refused.
+  const sandbox = Boolean(process.env.E2E_SANDBOX_URL)
+  /** Replace what a code editor holds. */
+  const write = async (editor, text) => {
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+a')
+    await page.keyboard.insertText(text)
+  }
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Scripts' }).click()
+  await expect(page).toHaveURL(/\/automation\/scripts$/)
+  const shipped = area.getByRole('table', { name: 'Scripts' }).getByRole('row').filter({ hasText: 'GroupByField' })
+  await expect(shipped).toContainText('in the library')
+  await expect(shipped).toContainText('shipped with Nik')
+
+  // A name is how nodes call the script: a capital letter, letters and digits.
+  await area.getByRole('button', { name: 'New script' }).click()
+  const create = page.getByRole('dialog', { name: 'New script' })
+  await create.getByLabel('Name').fill('count words')
+  await expect(create.getByRole('alert')).toContainText('A capital letter')
+  await expect(create.getByRole('button', { name: 'Create' })).toBeDisabled()
+  await create.getByLabel('Name').fill('CountWords')
+  await create.getByLabel('Description').fill('How many words a text has')
+  await create.getByRole('button', { name: 'Create' }).click()
+  await expect(page).toHaveURL(/\/automation\/scripts\/[0-9a-f]+$/)
+  await expect(area.getByRole('heading', { name: 'CountWords' })).toBeVisible()
+  await expect(area.getByText('no version yet: not in the library')).toBeVisible()
+
+  // The code, what it takes and gives, and its test.
+  const code = area.getByRole('textbox', { name: 'Code of the script' })
+  await write(code, 'print("no function here")\n')
+  await expect(area.getByRole('alert', { name: 'Before the script can be tested' })).toContainText('def main(args)')
+  await expect(area.getByRole('button', { name: 'Run the test' })).toBeDisabled()
+  await write(
+    code,
+    'def main(args):\n    words = str(args.get("text", "")).split()\n    print("counting", len(words))\n    return {"count": len(words)}\n',
+  )
+  await area.getByLabel('Argument 1: name').fill('text')
+  await area.getByLabel('Output 1: name').fill('count')
+  await area.getByLabel('Output 1: type').selectOption('number')
+  await write(area.getByRole('textbox', { name: 'Arguments of the test' }), '{"text": "one two three"')
+  await expect(area.getByRole('alert', { name: 'Before the script can be tested' })).toContainText('Not JSON')
+  await write(area.getByRole('textbox', { name: 'Arguments of the test' }), '{"text": "one two three"}')
+  await write(area.getByRole('textbox', { name: 'What the test expects' }), '{"count": 2}')
+  await expect(area.getByText('draft saved')).toBeVisible()
+  // The draft is the server's: a reload finds the code.
+  await page.reload()
+  await expect(code).toContainText('counting')
+
+  if (sandbox) {
+    const result = area.getByRole('status', { name: 'Result of the test' })
+    // The test runs the draft: it returns 3, the test expected 2.
+    await area.getByRole('button', { name: 'Run the test' }).click()
+    await expect(result).toContainText('failed')
+    await expect(result).toContainText('did not return what the test expects')
+    await expect(result).toContainText('counting 3')
+    // A version needs the test to pass.
+    await area.getByRole('button', { name: 'Save as version 1' }).click()
+    await expect(page.getByText(/^The test does not pass/)).toBeVisible()
+    await write(area.getByRole('textbox', { name: 'What the test expects' }), '{"count": 3}')
+    await area.getByRole('button', { name: 'Run the test' }).click()
+    await expect(result).toContainText('passed')
+    await area.getByRole('button', { name: 'Save as version 1' }).click()
+    await expect(page.getByText('Version 1 saved: CountWords is in the library of nodes.')).toBeVisible()
+    await expect(area.getByText('script · version 1')).toBeVisible()
+    await expect(area.getByRole('button', { name: 'Save as version 2' })).toBeDisabled()
+
+    // What the draft changes from a version, line by line; the version can be put back.
+    await write(
+      code,
+      'def main(args):\n    words = str(args.get("text", "")).split()\n    return {"count": len(words)}\n',
+    )
+    await expect(area.getByText('draft changed')).toBeVisible()
+    await area.getByRole('button', { name: 'See version 1' }).click()
+    const version = page.getByRole('dialog', { name: 'Version 1' })
+    await expect(version).toContainText('0 lines added, 1 removed')
+    await expect(version.getByLabel('What the draft changes from version 1')).toContainText(
+      '-     print("counting", len(words))',
+    )
+    await version.getByRole('button', { name: 'Put version 1 back into the draft' }).click()
+    await expect(code).toContainText('counting')
+
+    // The script is now a node of the library.
+    await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Playbooks' }).click()
+    await area.getByRole('button', { name: 'Note on high' }).click()
+    const library = area.getByRole('complementary', { name: 'Node library' })
+    await library.getByLabel('Search nodes').fill('countwords')
+    await expect(library.getByRole('button', { name: 'CountWords' })).toBeVisible()
+  } else {
+    await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Scripts' }).click()
+    await expect(area.getByRole('region', { name: 'The box every script runs in' }).getByRole('alert')).toContainText(
+      'The sandbox is not configured',
+    )
+    await expect(area.getByRole('row').filter({ hasText: 'CountWords' })).toContainText('draft · not usable yet')
+  }
+
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()
@@ -1648,6 +2024,8 @@ test('single-key shortcuts can be turned off and on again', async () => {
   await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
   const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
   const flag = sample.getByLabel('Flagged')
+  // The row first: its flag is counted once the list is there.
+  await expect(sample).toBeVisible()
   const before = await flag.count()
 
   await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()

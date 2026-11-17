@@ -12,6 +12,7 @@ from ..core import audit
 from ..core.db import get_db
 from ..core.models import Session as SessionModel
 from ..core.models import User
+from ..core.permissions import SYSTEM_USER
 from ..core.ratelimit import limiter
 from ..core.schemas import BootstrapOut, LoginIn, UserEnvelope
 from ..core.security import (
@@ -50,7 +51,8 @@ def _locked_for(user: User, now: datetime) -> int:
 @router.get("/bootstrap", response_model=BootstrapOut)
 def bootstrap(db: OrmSession = Depends(get_db)) -> dict:
     """Public endpoint: report whether any users exist yet (first-run gate)."""
-    count = db.scalar(select(func.count()).select_from(User)) or 0
+    # The system account of the automation engine is not somebody who can sign in.
+    count = db.scalar(select(func.count()).select_from(User).where(User.username != SYSTEM_USER)) or 0
     return {"hasUsers": count > 0}
 
 

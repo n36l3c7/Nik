@@ -31,10 +31,13 @@ every action is attributed to a named analyst in the audit log.
   redirects, the page's forms and a phishing verdict with its reasons.
 - **Host evidence** — browser and shell history, endpoint artifacts and
   Windows event logs, parsed in the analyst's browser where possible.
-- **Reporting and automation** — a PDF/HTML incident report, a REST API with
+- **Automation** — playbooks drawn on a canvas and run by Nik: triggers,
+  conditions, approvals, Python scripts in a sandbox with no network, and a
+  guard on where a playbook connects and what it sends.
+- **Reporting and API** — a PDF/HTML incident report, a REST API with
   API keys, webhooks and a Cortex XSOAR integration.
 - **Roles and queries** — accounts and API keys hold one or more roles
-  (viewer, analyst, rules, audit, admin), and one query language filters
+  (viewer, analyst, playbooks, rules, audit, admin), and one query language filters
   incidents, artifacts and indicators:
   `status:open severity:>=high owner:""`.
 
@@ -98,7 +101,7 @@ screen.
 ```
 frontend/      React single-page app, its Dockerfile and nginx configuration, E2E tests
 backend/       FastAPI API, Alembic migrations, tests
-workers/       Isolated analysis workers: analyzer (rizin), capa, docview, browser, pcap
+workers/       Isolated workers: analyzer (rizin), capa, docview, browser, pcap, sandbox (scripts)
 deploy/        Database entrypoint, backups, systemd units, upgrade scripts
 integrations/  Cortex XSOAR integration pack
 docs/          GitHub Pages site
@@ -134,8 +137,8 @@ the incident JSON format.
 ## Roadmap
 
 The 4.x series is being built release by release. 4.0 brought roles as tags,
-Settings as a page and the query language; still to come: Nik's own
-automation engine with a canvas of playbooks and a sandbox for scripts,
+Settings as a page and the query language; 4.1 Nik's own automation engine,
+with a canvas of playbooks and a sandbox for scripts. Still to come:
 connectors written as YAML files, incident types with their fields and
 layouts, a War Room per incident, tasks and SLA timers, lists, fetching and
 mirroring of alerts, dashboards and content packs.

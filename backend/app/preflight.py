@@ -27,7 +27,7 @@ KNOWN_SECRET_KEYS = {
 }
 PLACEHOLDER_PREFIXES = ("please-change-this", "change-this")
 MIN_SECRET_LENGTH = 16
-WORKERS = ("ANALYZER", "CAPA", "DOCVIEW", "BROWSER", "PCAP")
+WORKERS = ("ANALYZER", "CAPA", "DOCVIEW", "BROWSER", "PCAP", "SANDBOX")
 
 MISSING, EXAMPLE, SHORT = "missing", "example", "short"
 REASONS = {

@@ -69,7 +69,7 @@ jobs:
   # The images as they are built today, with today's base images and system
   # packages (LibreOffice, Wireshark, Chromium: where the next vulnerability
   # will be). Fails on a critical vulnerability that has a fix, and lists the
-  # high ones. Weekly and on demand: seven image builds are too slow for every
+  # high ones. Weekly and on demand: eight image builds are too slow for every
   # pull request, and nothing in a pull request changes what a base image holds.
   images:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -85,6 +85,7 @@ jobs:
           - { name: docview, context: workers/docview }
           - { name: browser, context: workers/browser }
           - { name: pcap, context: workers/pcap }
+          - { name: sandbox, context: workers/sandbox }
     env:
       # The scanner is an image pinned to a version, not a third-party action.
       TRIVY: docker.io/aquasec/trivy:0.76.2

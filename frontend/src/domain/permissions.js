@@ -35,7 +35,7 @@ export const ROLES = [
     label: 'Playbooks',
     description: 'Builds playbooks and scripts.',
     permissions: ['automation.run', 'automation.edit', 'automation.debug', 'lists.manage'],
-    shown: false,
+    shown: true,
   },
   {
     id: 'connectors',

@@ -80,7 +80,10 @@ def export_backup(caller: Principal = Depends(admin_principal), db: OrmSession =
     The envelope contains password hashes: treat the downloaded file as a
     secret, like any database dump.
     """
-    users = db.scalars(select(User).order_by(User.created_at)).all()
+    # The system account of the automation engine is made again where it is needed.
+    users = [
+        u for u in db.scalars(select(User).order_by(User.created_at)).all() if stored_roles(u.roles) != ["automation"]
+    ]
     incidents = db.scalars(select(Incident).order_by(Incident.updated_at.desc())).all()
     audit = db.scalars(select(AuditEntry).order_by(AuditEntry.at.desc())).all()
     setting_row = db.get(Setting, SETTINGS_ID)

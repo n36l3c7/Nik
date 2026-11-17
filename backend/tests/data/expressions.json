@@ -1,0 +1,506 @@
+{
+ "scope": {
+  "trigger": {
+   "mail": {
+    "subject": "Invoice 2026",
+    "sender": "Eve <eve@evil.example>",
+    "score": 82,
+    "verdict": "phishing",
+    "urls": [
+     "http://evil.example/a",
+     "http://evil.example/b"
+    ],
+    "attachments": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "tags": [
+       "pdf",
+       "doc"
+      ]
+     },
+     {
+      "name": "b.exe",
+      "size": 2048,
+      "tags": [
+       "exe"
+      ]
+     }
+    ],
+    "received": "2026-11-17T08:30:00Z",
+    "empty": "",
+    "nothing": null,
+    "flag": true
+   }
+  },
+  "search": {
+   "recipients": [
+    {
+     "name": "Anna",
+     "office": "Rome",
+     "vip": true
+    },
+    {
+     "name": "Bob",
+     "office": "Milan",
+     "vip": false
+    },
+    {
+     "name": "Carla",
+     "office": "Rome",
+     "vip": false
+    }
+   ],
+   "count": 3,
+   "nested": [
+    [
+     1,
+     2
+    ],
+    [
+     3
+    ]
+   ],
+   "text": "  Hello World  ",
+   "csv": "a, b,,c",
+   "odd key": {
+    "x-y": 1
+   },
+   "epoch": 1794000000
+  },
+  "run": {
+   "id": "r1",
+   "playbook": "Phishing triage"
+  },
+  "item": {
+   "name": "one"
+  },
+  "index": 2
+ },
+ "vectors": [
+  {
+   "template": "plain text",
+   "result": "plain text"
+  },
+  {
+   "template": "",
+   "result": ""
+  },
+  {
+   "template": "{{ trigger.mail.subject }}",
+   "result": "Invoice 2026"
+  },
+  {
+   "template": "{{trigger.mail.score}}",
+   "result": 82
+  },
+  {
+   "template": "{{ trigger.mail.flag }}",
+   "result": true
+  },
+  {
+   "template": "{{ trigger.mail.nothing }}",
+   "result": null
+  },
+  {
+   "template": "{{ trigger.mail.urls }}",
+   "result": [
+    "http://evil.example/a",
+    "http://evil.example/b"
+   ]
+  },
+  {
+   "template": "{{ trigger.mail }}",
+   "result": {
+    "subject": "Invoice 2026",
+    "sender": "Eve <eve@evil.example>",
+    "score": 82,
+    "verdict": "phishing",
+    "urls": [
+     "http://evil.example/a",
+     "http://evil.example/b"
+    ],
+    "attachments": [
+     {
+      "name": "a.pdf",
+      "size": 10,
+      "tags": [
+       "pdf",
+       "doc"
+      ]
+     },
+     {
+      "name": "b.exe",
+      "size": 2048,
+      "tags": [
+       "exe"
+      ]
+     }
+    ],
+    "received": "2026-11-17T08:30:00Z",
+    "empty": "",
+    "nothing": null,
+    "flag": true
+   }
+  },
+  {
+   "template": "Subject: {{ trigger.mail.subject }} ({{ trigger.mail.score }})",
+   "result": "Subject: Invoice 2026 (82)"
+  },
+  {
+   "template": "{{ trigger.mail.urls }} and {{ trigger.mail.flag }} and {{ trigger.mail.nothing }}.",
+   "result": "[\"http://evil.example/a\",\"http://evil.example/b\"] and true and ."
+  },
+  {
+   "template": "{{ trigger.mail.urls[0] }}",
+   "result": "http://evil.example/a"
+  },
+  {
+   "template": "{{ trigger.mail.urls[-1] }}",
+   "result": "http://evil.example/b"
+  },
+  {
+   "template": "{{ trigger.mail.attachments[1].name }}",
+   "result": "b.exe"
+  },
+  {
+   "template": "{{ trigger.mail.attachments[*].name }}",
+   "result": [
+    "a.pdf",
+    "b.exe"
+   ]
+  },
+  {
+   "template": "{{ trigger.mail.attachments[*].tags }}",
+   "result": [
+    "pdf",
+    "doc",
+    "exe"
+   ]
+  },
+  {
+   "template": "{{ search.nested[*] }}",
+   "result": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "template": "{{ search[\"odd key\"][\"x-y\"] }}",
+   "result": 1
+  },
+  {
+   "template": "{{ search['odd key'] }}",
+   "result": {
+    "x-y": 1
+   }
+  },
+  {
+   "template": "{{ item.name }} #{{ index }} of {{ run.playbook }}",
+   "result": "one #2 of Phishing triage"
+  },
+  {
+   "template": "{{ search.recipients[*].office | unique | join(', ') }}",
+   "result": "Rome, Milan"
+  },
+  {
+   "template": "{{ search.recipients | length }}",
+   "result": 3
+  },
+  {
+   "template": "{{ trigger.mail.subject | length }}",
+   "result": 12
+  },
+  {
+   "template": "{{ trigger.mail.subject | lower }}",
+   "result": "invoice 2026"
+  },
+  {
+   "template": "{{ trigger.mail.subject | upper }}",
+   "result": "INVOICE 2026"
+  },
+  {
+   "template": "{{ search.text | trim }}",
+   "result": "Hello World"
+  },
+  {
+   "template": "{{ search.recipients | first | get('name') }}",
+   "result": "Anna"
+  },
+  {
+   "template": "{{ search.recipients | last | get('office') }}",
+   "result": "Rome"
+  },
+  {
+   "template": "{{ search.recipients | pluck('name') | sort | join('/') }}",
+   "result": "Anna/Bob/Carla"
+  },
+  {
+   "template": "{{ search.recipients | where('office', 'eq', 'rome') | pluck('name') }}",
+   "result": [
+    "Anna",
+    "Carla"
+   ]
+  },
+  {
+   "template": "{{ search.recipients | where('vip') | length }}",
+   "result": 1
+  },
+  {
+   "template": "{{ search.recipients | where('vip', 'eq', true) | pluck('name') }}",
+   "result": [
+    "Anna"
+   ]
+  },
+  {
+   "template": "{{ trigger.mail.attachments | where('size', 'gt', 100) | pluck('name') }}",
+   "result": [
+    "b.exe"
+   ]
+  },
+  {
+   "template": "{{ search.csv | split }}",
+   "result": [
+    "a",
+    "b",
+    "c"
+   ]
+  },
+  {
+   "template": "{{ search.csv | split(',') | length }}",
+   "result": 3
+  },
+  {
+   "template": "{{ trigger.mail.subject | replace('Invoice', 'Bill') }}",
+   "result": "Bill 2026"
+  },
+  {
+   "template": "{{ trigger.mail.subject | replace(' ') }}",
+   "result": "Invoice2026"
+  },
+  {
+   "template": "{{ trigger.mail.urls | defang }}",
+   "result": [
+    "hxxp[://]evil[.]example/a",
+    "hxxp[://]evil[.]example/b"
+   ]
+  },
+  {
+   "template": "{{ trigger.mail.sender | defang }}",
+   "result": "Eve <eve[@]evil[.]example>"
+  },
+  {
+   "template": "{{ trigger.mail.received | date }}",
+   "result": "2026-11-17 08:30"
+  },
+  {
+   "template": "{{ trigger.mail.received | date('%d/%m/%Y') }}",
+   "result": "17/11/2026"
+  },
+  {
+   "template": "{{ search.epoch | date('%Y-%m-%d') }}",
+   "result": "2026-11-06"
+  },
+  {
+   "template": "{{ trigger.mail | keys | length }}",
+   "result": 10
+  },
+  {
+   "template": "{{ run | values }}",
+   "result": [
+    "r1",
+    "Phishing triage"
+   ]
+  },
+  {
+   "template": "{{ run | json }}",
+   "result": "{\"id\":\"r1\",\"playbook\":\"Phishing triage\"}"
+  },
+  {
+   "template": "{{ trigger.mail.score | int }}",
+   "result": 82
+  },
+  {
+   "template": "{{ search.count | float }}",
+   "result": 3.0
+  },
+  {
+   "template": "{{ trigger.mail.empty | bool }}",
+   "result": false
+  },
+  {
+   "template": "{{ trigger.mail.verdict | map(phishing='high', spam='low', else='none') }}",
+   "result": "high"
+  },
+  {
+   "template": "{{ trigger.mail.subject | map(phishing='high', else='none') }}",
+   "result": "none"
+  },
+  {
+   "template": "{{ trigger.mail.subject | map(phishing='high') }}",
+   "result": "Invoice 2026"
+  },
+  {
+   "template": "{{ trigger.mail.missing | default('n/a') }}",
+   "result": "n/a"
+  },
+  {
+   "template": "{{ trigger.mail.nothing | default(0) }}",
+   "result": 0
+  },
+  {
+   "template": "{{ trigger.mail.missing | default }}",
+   "result": ""
+  },
+  {
+   "template": "{{ trigger.mail.subject | default('n/a') | upper }}",
+   "result": "INVOICE 2026"
+  },
+  {
+   "template": "{{ trigger.mail.missing.deeper | default('x') | upper }}",
+   "result": "X"
+  },
+  {
+   "template": "{{ trigger.mail.urls[9] | default('none') }}",
+   "result": "none"
+  },
+  {
+   "template": "{{ search.recipients[*].missing }}",
+   "result": []
+  },
+  {
+   "template": "a {{ trigger.mail.subject }",
+   "error": {
+    "position": 26
+   },
+   "message": "}} is expected here"
+  },
+  {
+   "template": "{{ }}",
+   "error": {
+    "position": 3
+   },
+   "message": "A name is expected here"
+  },
+  {
+   "template": "{{ trigger. }}",
+   "error": {
+    "position": 11
+   },
+   "message": "A name is expected here"
+  },
+  {
+   "template": "{{ trigger.mail.urls[ }}",
+   "error": {
+    "position": 22
+   },
+   "message": "A number, * or a text in quotes is expected between the brackets"
+  },
+  {
+   "template": "{{ trigger.mail.urls[x] }}",
+   "error": {
+    "position": 21
+   },
+   "message": "A number, * or a text in quotes is expected between the brackets"
+  },
+  {
+   "template": "{{ trigger.mail.subject | nope }}",
+   "error": {
+    "position": 26
+   },
+   "message": "There is no filter \"nope\""
+  },
+  {
+   "template": "{{ trigger.mail.subject | join( }}",
+   "error": {
+    "position": 32
+   },
+   "message": "A text in quotes, a number, true, false or null is expected here"
+  },
+  {
+   "template": "{{ trigger.mail.subject | replace('a' 'b') }}",
+   "error": {
+    "position": 38
+   },
+   "message": "A comma or a closing parenthesis is expected here"
+  },
+  {
+   "template": "{{ trigger.mail.subject | replace('a }}",
+   "error": {
+    "position": 34
+   },
+   "message": "A quote is not closed"
+  },
+  {
+   "template": "{{ trigger.mail.missing }}",
+   "error": {
+    "position": 0
+   },
+   "message": "There is nothing at trigger.mail.missing: add | default(…) if it may be absent"
+  },
+  {
+   "template": "{{ trigger.mail.urls[9] }}",
+   "error": {
+    "position": 0
+   },
+   "message": "There is nothing at trigger.mail.urls[9]: add | default(…) if it may be absent"
+  },
+  {
+   "template": "{{ unknown.field }}",
+   "error": {
+    "position": 0
+   },
+   "message": "\"unknown\" is not a name that can be read here"
+  },
+  {
+   "template": "{{ trigger.mail.subject | date }}",
+   "error": {
+    "position": 26
+   },
+   "message": "The filter \"date\" cannot be applied to this value"
+  },
+  {
+   "template": "{{ trigger.mail.subject | int }}",
+   "error": {
+    "position": 26
+   },
+   "message": "The filter \"int\" cannot be applied to this value"
+  },
+  {
+   "template": "{{ trigger.mail.subject | get }}",
+   "error": {
+    "position": 26
+   },
+   "message": "The filter \"get\" cannot be applied to this value"
+  },
+  {
+   "template": "{{ trigger.mail.subject trailing }}",
+   "error": {
+    "position": 24
+   },
+   "message": "}} is expected here"
+  },
+  {
+   "template": "{{ 1 + 1 }}",
+   "error": {
+    "position": 3
+   },
+   "message": "A name is expected here"
+  },
+  {
+   "template": "{{ trigger.mail.score > 5 }}",
+   "error": {
+    "position": 22
+   },
+   "message": "}} is expected here"
+  },
+  {
+   "template": "{{ __import__('os') }}",
+   "error": {
+    "position": 13
+   },
+   "message": "}} is expected here"
+  }
+ ]
+}

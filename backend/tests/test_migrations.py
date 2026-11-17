@@ -394,3 +394,30 @@ def test_migration_0025_gives_accounts_and_keys_their_roles(tmp_path, monkeypatc
         assert {"roles", "session_epoch"}.isdisjoint({c["name"] for c in sa.inspect(conn).get_columns("users")})
         assert "roles" not in {c["name"] for c in sa.inspect(conn).get_columns("api_keys")}
         assert conn.execute(sa.text("SELECT role FROM users WHERE username = 'root'")).scalar() == "admin"
+
+
+def test_migration_0026_adds_the_automation_tables_and_leaves_existing_ones(tmp_path, monkeypatch):
+    from app.core.models import AUTOMATION_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
+        # One of them is there already (a database the baseline created from the models).
+        conn.execute(sa.text("CREATE TABLE scripts (id VARCHAR(32) PRIMARY KEY, name VARCHAR(50) NOT NULL)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0025_roles")
+    command.upgrade(cfg, "0026_automation")
+    with engine.connect() as conn:
+        tables = set(sa.inspect(conn).get_table_names())
+        assert set(AUTOMATION_TABLES) <= tables
+        assert {c["name"] for c in sa.inspect(conn).get_columns("scripts")} == {"id", "name"}  # left as it was
+        assert {c["name"] for c in sa.inspect(conn).get_columns("run_steps")} >= {"claimed_by", "next_at", "waiting"}
+    command.stamp(cfg, "0025_roles")
+    command.upgrade(cfg, "0026_automation")  # again: nothing to do
+    command.downgrade(cfg, "0025_roles")
+    with engine.connect() as conn:
+        assert not set(AUTOMATION_TABLES) & set(sa.inspect(conn).get_table_names())

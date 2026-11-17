@@ -1,0 +1,32 @@
+name: ExtractDomains
+description: The host names found in a text or in a list of addresses and e-mail addresses, once each.
+arguments:
+  - { name: text, type: any, required: true, description: "A text, or a list of URLs, addresses or e-mail addresses" }
+outputs:
+  - { name: domains, type: list, description: "The host names, lower case, in the order found" }
+  - { name: count, type: number, description: How many }
+test:
+  args:
+    text: "See https://Evil.Example/kit?x=1 and hxxp://cdn[.]evil.example/a, write to eve@mail.evil.example. Not a host: 10.0.0.1 version 1.2.3"
+  expect:
+    domains: [evil.example, cdn.evil.example, mail.evil.example]
+    count: 3
+code: |
+  import re
+
+  HOST = re.compile(r"(?<![A-Za-z0-9-])((?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24})(?![A-Za-z0-9-])")
+
+
+  def refang(text):
+      return text.replace("[.]", ".").replace("(.)", ".").replace("hxxp", "http").replace("[://]", "://")
+
+
+  def main(args):
+      given = args.get("text")
+      text = " ".join(str(item) for item in given) if isinstance(given, list) else str(given or "")
+      found = []
+      for host in HOST.findall(refang(text)):
+          host = host.lower()
+          if host not in found:
+              found.append(host)
+      return {"domains": found, "count": len(found)}

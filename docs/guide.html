@@ -19,6 +19,7 @@
         <nav class="site-nav" aria-label="Documentation">
           <a href="./">Overview</a>
           <a href="guide.html" aria-current="page">User guide</a>
+          <a href="automation.html">Automation</a>
           <a href="deployment.html">Deployment</a>
           <a href="configuration.html">Configuration</a>
           <a href="security.html">Security</a>
@@ -57,6 +58,7 @@
           <li><a href="#search">Search</a></li>
           <li><a href="#report">The incident report</a></li>
           <li><a href="#share">Export, import and backup</a></li>
+          <li><a href="#automations">Automations</a></li>
           <li><a href="#settings">Settings</a></li>
           <li><a href="#accounts">Accounts</a></li>
         </ol>
@@ -927,6 +929,38 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         </li>
       </ul>
 
+      <h2 id="automations">Automations</h2>
+      <p>
+        The <strong>Automations</strong> entry of the rail opens the playbooks: drawings of what to do when something
+        happens, run by Nik step by step. Like Settings it is a page next to the rail with addresses of its own
+        (<code>/automation/playbooks</code>, <code>/automation/runs</code>, <code>/automation/approvals</code>), and
+        what was open before is there when you leave it. <a href="automation.html">Automation</a> is its full guide;
+        what an analyst meets every day is this:
+      </p>
+      <ul>
+        <li>
+          <strong>An approval that waits.</strong> When a run asks a person, the question appears above the tabs of the
+          incident it works on, and the rail counts what waits. <em>Approve</em> or <em>Refuse</em>, with a comment if
+          you want: the run goes on by your answer, and your name is on it.
+        </li>
+        <li>
+          <strong>Run a playbook…</strong> in the right-click menu of an incident, or on its
+          <strong>Automation</strong> tab, starts one by hand on that incident. Tick <em>Dry run</em> to see what it
+          would do without anything being sent or changed.
+        </li>
+        <li>
+          <strong>The Automation tab</strong> of an incident lists the runs that worked on it. A run opens on its own
+          page: the playbook as it went, each node coloured by what happened, with what every step got and gave.
+        </li>
+        <li>
+          A note written by a playbook is marked <em>automation</em> and signed <code>nik-automation</code>; the mark
+          opens the run that wrote it.
+        </li>
+      </ul>
+      <p>
+        Building playbooks and scripts needs the <a href="#roles">Playbooks</a> role; an analyst sees them read-only.
+      </p>
+
       <h2 id="settings">Settings</h2>
       <p>
         The gear at the bottom of the rail opens the settings: a page of their own, next to the rail, with the sections
@@ -998,6 +1032,24 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             <tr>
               <td>YARA rules · capa rules · FLIRT signatures</td>
               <td>Your own rules and signatures for Malware Analysis (the Rules role, or an admin).</td>
+            </tr>
+            <tr>
+              <th colspan="2" scope="colgroup">Automation</th>
+            </tr>
+            <tr>
+              <td>Network and data <em>(admins)</em></td>
+              <td>
+                The hosts every playbook may reach, and the SMTP server the e-mail node sends through (its password is
+                stored encrypted and never shown again). What one playbook may reach or send beyond this is chosen on
+                the playbook: see <a href="automation.html#outside">Automation</a>.
+              </td>
+            </tr>
+            <tr>
+              <td>Stop all <em>(admins)</em></td>
+              <td>
+                One switch for every playbook, and whether the worker that runs them is alive. Stopped, nothing starts
+                and no step is taken; runs in progress go on when it is started again.
+              </td>
             </tr>
             <tr>
               <th colspan="2" scope="colgroup">Access</th>
@@ -1092,7 +1144,14 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>Analyst</td>
               <td>
                 Read and work: create and edit incidents, upload and analyse, manage indicators, change the detection
-                rules, business hours and allowlist.
+                rules, business hours and allowlist. Run playbooks, stop a run, answer an approval.
+              </td>
+            </tr>
+            <tr>
+              <td>Playbooks</td>
+              <td>
+                Build playbooks and scripts, turn a playbook on or off, change its limits. It does not read incidents by
+                itself: give it with Analyst or Viewer.
               </td>
             </tr>
             <tr>
@@ -1107,7 +1166,8 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>Admin</td>
               <td>
                 Everything, and alone: accounts and their roles, API keys, webhooks, storage, backup, the report header,
-                the mail settings and threat intelligence (what leaves the server), clearing the audit log.
+                the mail settings and threat intelligence (what leaves the server), clearing the audit log, and for
+                playbooks: the hosts they may reach, the classes of data they may send, the switch that stops them all.
               </td>
             </tr>
           </tbody>

@@ -1,4 +1,14 @@
-import { Boxes, DatabaseBackup, Fingerprint, FolderClosed, ScrollText, Search, Settings, Users } from 'lucide-react'
+import {
+  Boxes,
+  DatabaseBackup,
+  Fingerprint,
+  FolderClosed,
+  ScrollText,
+  Search,
+  Settings,
+  Users,
+  Workflow,
+} from 'lucide-react'
 
 /*
  * ============================================================================
@@ -43,11 +53,13 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
  * @param {{
  *   panel: 'incidents' | 'artifacts' | 'iocs' | null,   // the open side panel
  *   onPanel: (panel: string | null) => void,
- *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number },
+ *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number, approvals: number },
  *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
  *   settingsOpen?: boolean,                        // the Settings page is shown
+ *   onAutomation: () => void,
+ *   automationOpen?: boolean,                      // the Automations area is shown
  * }} props
  */
 export default function Rail({
@@ -61,9 +73,11 @@ export default function Rail({
   onBackup,
   onSettings,
   settingsOpen = false,
+  onAutomation,
+  automationOpen = false,
 }) {
-  // With the Settings page open no panel is shown, and an entry leaves the page for its panel.
-  const open = settingsOpen ? null : panel
+  // With Settings or Automations open no panel is shown, and an entry leaves the page for its panel.
+  const open = settingsOpen || automationOpen ? null : panel
   const toggle = (name) => onPanel(open === name ? null : name)
   const canRead = can('read')
   return (
@@ -109,6 +123,22 @@ export default function Rail({
           />
           <RailButton icon={Search} label="Search (Ctrl+K)" onClick={onSearch} />
         </>
+      )}
+      {can('automation.run') && (
+        <RailButton
+          icon={Workflow}
+          label={
+            automationOpen
+              ? 'Close automations'
+              : counts.approvals
+                ? `Automations (${counts.approvals} ${counts.approvals === 1 ? 'approval waits' : 'approvals wait'})`
+                : 'Automations'
+          }
+          active={automationOpen}
+          count={counts.approvals}
+          alert={counts.approvals > 0}
+          onClick={onAutomation}
+        />
       )}
       <span className="flex-1" />
       {can('audit.read') && <RailButton icon={ScrollText} label="Audit log" onClick={onAudit} />}

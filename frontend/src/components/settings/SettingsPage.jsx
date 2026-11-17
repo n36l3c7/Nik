@@ -5,9 +5,11 @@ import {
   FileSearch,
   FileText,
   Fingerprint,
+  Globe,
   HardDrive,
   KeyRound,
   Mail,
+  OctagonX,
   Radar,
   ScrollText,
   Search,
@@ -25,6 +27,8 @@ import BusinessHoursSection from './sections/BusinessHoursSection.jsx'
 import AccountsSection from './sections/AccountsSection.jsx'
 import ApiKeysSection from './sections/ApiKeysSection.jsx'
 import AuditLogSection from './sections/AuditLogSection.jsx'
+import AutomationNetworkSection from './sections/AutomationNetworkSection.jsx'
+import AutomationSwitchSection from './sections/AutomationSwitchSection.jsx'
 import BackupSection from './sections/BackupSection.jsx'
 import CapaRulesSection from './sections/CapaRulesSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
@@ -62,6 +66,8 @@ const SECTION_VIEWS = {
   yara: { icon: FileSearch, Component: YaraRulesSection },
   capa: { icon: Radar, Component: CapaRulesSection },
   flirt: { icon: Fingerprint, Component: FlirtSignaturesSection },
+  automationNetwork: { icon: Globe, Component: AutomationNetworkSection },
+  automationSwitch: { icon: OctagonX, Component: AutomationSwitchSection },
   account: { icon: UserCog, Component: MyAccountSection },
   accounts: { icon: Users, Component: AccountsSection },
   apikeys: { icon: KeyRound, Component: ApiKeysSection },

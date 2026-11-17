@@ -63,10 +63,10 @@ test('can() asks the permissions the server sent, or the roles when it sent none
 test('the picker offers the roles in use now, and keeps one an account already holds', () => {
   assert.deepEqual(
     offeredRoles().map((role) => role.id),
-    ['viewer', 'analyst', 'rules', 'audit', 'admin'],
+    ['viewer', 'analyst', 'playbooks', 'rules', 'audit', 'admin'],
   )
   assert.deepEqual(
-    offeredRoles(['playbooks']).map((role) => role.id),
-    ['viewer', 'analyst', 'playbooks', 'rules', 'audit', 'admin'],
+    offeredRoles(['connectors']).map((role) => role.id),
+    ['viewer', 'analyst', 'playbooks', 'connectors', 'rules', 'audit', 'admin'],
   )
 })

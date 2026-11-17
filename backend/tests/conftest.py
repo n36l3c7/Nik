@@ -15,6 +15,9 @@ os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "100000/minute")
 os.environ.setdefault("SAMPLE_STORE", os.path.join(tempfile.mkdtemp(), "samples"))
 os.environ.setdefault("ENRICHMENT_WORKER", "false")
+# The script sandbox is "configured"; what answers is the `sandbox` fixture (or nothing).
+os.environ.setdefault("SANDBOX_URL", "http://sandbox.test:8750")
+os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -69,3 +72,123 @@ def no_network(monkeypatch):
     monkeypatch.setattr(providers, "_request", refuse)
     monkeypatch.setattr(registration, "_whois", refuse)
     registration.reset_cache()
+
+    # Nor does a playbook: its way out (app/automation/egress.py) is closed unless a
+    # test opens it with answers of its own (the `outside` fixture below).
+    from app.automation import egress
+
+    def closed(*args, **kwargs):
+        raise AssertionError("a test tried to reach the network through the automation egress")
+
+    monkeypatch.setattr(egress, "_send", closed)
+    monkeypatch.setattr(egress, "resolve", closed)
+    monkeypatch.setattr(egress, "sandbox_run", closed)
+    monkeypatch.setattr(egress.smtplib, "SMTP", closed)
+    monkeypatch.setattr(egress.smtplib, "SMTP_SSL", closed)
+
+
+class Outside:
+    """The world outside for a test: names that resolve, and what answers there."""
+
+    def __init__(self):
+        self.names: dict[str, list[str]] = {}
+        self.answers: list = []  # callables (method, host, path, headers, body) -> (status, headers, body) | None
+        self.requests: list[dict] = []
+        self.mails: list[dict] = []
+
+    def host(self, name: str, *addresses: str) -> None:
+        self.names[name] = list(addresses) or ["93.184.215.10"]
+
+    def answer(
+        self, host: str, status: int = 200, json=None, body: bytes = b"", headers: dict | None = None, path=None
+    ):
+        import json as jsonlib
+
+        payload = jsonlib.dumps(json).encode() if json is not None else body
+        sent = {"content-type": "application/json"} if json is not None else {}
+
+        def reply(method, to, target, _headers, _body):
+            if to != host or (path is not None and target.split("?")[0] != path):
+                return None
+            return status, {**sent, **(headers or {})}, payload
+
+        self.answers.append(reply)
+
+
+@pytest.fixture()
+def outside(monkeypatch):
+    """Open the automation egress onto a fake outside: `outside.host(...)`, `outside.answer(...)`."""
+    from app.automation import egress
+
+    world = Outside()
+
+    def resolve(host, port):
+        if host not in world.names:
+            raise OSError("unknown host")
+        return world.names[host]
+
+    def send(scheme, host, port, path, address, method, headers, body, timeout, ca_pem, max_body):
+        world.requests.append(
+            {"scheme": scheme, "host": host, "port": port, "path": path, "address": address, "method": method,
+             "headers": dict(headers), "body": body}
+        )  # fmt: skip
+        for reply in reversed(world.answers):
+            found = reply(method, host, path, headers, body)
+            if found is not None:
+                return found
+        return 404, {}, b""
+
+    class Smtp:
+        def __init__(self, host, port, timeout=None, context=None):
+            self.host, self.port = host, port
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def starttls(self, context=None):
+            self.tls = True
+
+        def login(self, username, password):
+            self.login_as = (username, password)
+
+        def send_message(self, message):
+            world.mails.append(
+                {"host": self.host, "port": self.port, "from": message["From"], "to": message["To"],
+                 "subject": message["Subject"], "text": message.get_content(), "login": getattr(self, "login_as", None)}
+            )  # fmt: skip
+            return {}
+
+    monkeypatch.setattr(egress, "resolve", resolve)
+    monkeypatch.setattr(egress, "_send", send)
+    monkeypatch.setattr(egress.smtplib, "SMTP", Smtp)
+    monkeypatch.setattr(egress.smtplib, "SMTP_SSL", Smtp)
+    return world
+
+
+@pytest.fixture()
+def sandbox(monkeypatch):
+    """The script sandbox for a test: the real runner of workers/sandbox, called in
+    place of the HTTP request to its container. Returns the list of what was run."""
+    import sys
+    from pathlib import Path
+
+    folder = Path(__file__).resolve().parents[2] / "workers" / "sandbox"
+    if not folder.is_dir() or sys.platform == "win32":
+        pytest.skip("the sandbox runner needs Linux and the workers/sandbox sources")
+    sys.path.insert(0, str(folder))
+    import runner
+
+    from app.automation import egress
+
+    calls: list[dict] = []
+
+    def run(url, token, code, args, timeout):
+        calls.append({"url": url, "token": token, "args": args, "timeout": timeout})
+        return runner.run(code, args, timeout)
+
+    monkeypatch.setattr(egress, "sandbox_run", run)
+    yield calls
+    sys.path.remove(str(folder))

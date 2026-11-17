@@ -1,0 +1,73 @@
+name: FilterList
+description: Keep the items of a list whose field compares as asked.
+arguments:
+  - { name: items, type: list, required: true, description: The list }
+  - { name: field, type: text, description: "The field to look at (a.b for a nested one); empty for the item itself" }
+  - { name: op, type: text, default: eq, description: "eq, ne, gt, gte, lt, lte, contains, in, exists or empty" }
+  - { name: value, type: any, description: What to compare with }
+outputs:
+  - { name: kept, type: list, description: The items that pass }
+  - { name: dropped, type: list, description: The others }
+  - { name: count, type: number, description: How many passed }
+test:
+  args:
+    items: [{ name: a.pdf, size: 10 }, { name: b.exe, size: 2048 }, { name: c.EXE, size: 5 }]
+    field: name
+    op: contains
+    value: .exe
+  expect:
+    kept: [{ name: b.exe, size: 2048 }, { name: c.EXE, size: 5 }]
+    dropped: [{ name: a.pdf, size: 10 }]
+    count: 2
+code: |
+  OPS = ("eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "exists", "empty")
+
+
+  def value_of(item, field):
+      if not field:
+          return item
+      for part in field.split("."):
+          if not isinstance(item, dict) or part not in item:
+              return None
+          item = item[part]
+      return item
+
+
+  def text(value):
+      return "" if value is None else str(value).casefold()
+
+
+  def number(value):
+      try:
+          return float(value)
+      except (TypeError, ValueError):
+          return None
+
+
+  def passes(found, op, wanted):
+      if op == "exists":
+          return found is not None
+      if op == "empty":
+          return found in (None, "", [], {})
+      if op in ("eq", "ne"):
+          return (text(found) == text(wanted)) == (op == "eq")
+      if op == "contains":
+          if isinstance(found, list):
+              return any(text(item) == text(wanted) for item in found)
+          return text(wanted) in text(found)
+      if op == "in":
+          return any(text(found) == text(item) for item in (wanted if isinstance(wanted, list) else [wanted]))
+      a, b = number(found), number(wanted)
+      if a is None or b is None:
+          a, b = text(found), text(wanted)
+      return {"gt": a > b, "gte": a >= b, "lt": a < b, "lte": a <= b}[op]
+
+
+  def main(args):
+      op = str(args.get("op") or "eq")
+      if op not in OPS:
+          raise ValueError("Unknown operator: " + op)
+      kept, dropped = [], []
+      for item in args.get("items") or []:
+          (kept if passes(value_of(item, args.get("field")), op, args.get("value")) else dropped).append(item)
+      return {"kept": kept, "dropped": dropped, "count": len(kept)}

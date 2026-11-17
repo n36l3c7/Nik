@@ -1,0 +1,34 @@
+name: BusinessHours
+description: Whether a moment falls in working hours, from the days and hours given (UTC unless an offset is given).
+arguments:
+  - { name: at, type: text, required: true, description: "The moment, as ISO 8601 (2026-11-17T08:30:00Z)" }
+  - { name: start, type: text, default: "09:00", description: When the working day starts }
+  - { name: end, type: text, default: "18:00", description: When it ends }
+  - { name: days, type: list, default: [1, 2, 3, 4, 5], description: "The working days, 1 for Monday to 7 for Sunday" }
+  - { name: offset_minutes, type: number, default: 0, description: "Minutes to add to UTC for local time (60 for CET)" }
+outputs:
+  - { name: working, type: bool, description: It falls in working hours }
+  - { name: local, type: text, description: The moment in local time }
+  - { name: day, type: number, description: "The day of the week, 1 for Monday" }
+test:
+  args: { at: "2026-11-17T08:30:00Z", start: "09:00", end: "18:00", offset_minutes: 60 }
+  expect: { working: true, local: "2026-11-17T09:30:00", day: 2 }
+code: |
+  from datetime import datetime, timedelta, timezone
+
+
+  def minutes(text):
+      hours, _, rest = str(text).partition(":")
+      return int(hours) * 60 + int(rest or 0)
+
+
+  def main(args):
+      moment = datetime.fromisoformat(str(args["at"]).replace("Z", "+00:00"))
+      if moment.tzinfo is None:
+          moment = moment.replace(tzinfo=timezone.utc)
+      local = moment.astimezone(timezone.utc) + timedelta(minutes=int(args.get("offset_minutes") or 0))
+      days = args.get("days") or [1, 2, 3, 4, 5]
+      now = local.hour * 60 + local.minute
+      start, end = minutes(args.get("start") or "09:00"), minutes(args.get("end") or "18:00")
+      working = local.isoweekday() in days and start <= now < end
+      return {"working": working, "local": local.strftime("%Y-%m-%dT%H:%M:%S"), "day": local.isoweekday()}

@@ -95,6 +95,26 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
+    id: 'automation',
+    label: 'Automation',
+    sections: [
+      {
+        id: 'automationNetwork',
+        slug: 'network-and-data',
+        label: 'Network and data',
+        permission: 'admin',
+        keywords: 'playbooks hosts egress allowed smtp e-mail server what leaves',
+      },
+      {
+        id: 'automationSwitch',
+        slug: 'stop-all',
+        label: 'Stop all',
+        permission: 'admin',
+        keywords: 'playbooks switch kill pause worker running',
+      },
+    ],
+  },
+  {
     id: 'access',
     label: 'Access',
     sections: [

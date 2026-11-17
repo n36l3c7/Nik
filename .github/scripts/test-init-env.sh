@@ -27,7 +27,7 @@ run() { PATH="$work/bin:$PATH" COMPOSE_PROJECT_NAME=nik deploy/init-env.sh "$@" 
 
 echo "== a new install: everything is generated"
 VOLUMES="other_db-data-18 nikola_db-data" run "$work/new.env"
-for name in SECRET_KEY DB_PASSWORD ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN; do
+for name in SECRET_KEY DB_PASSWORD ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN; do
   [ "$(value "$work/new.env" "$name" | wc -c)" -eq 65 ] || fail "new install: $name is not a 64-character random value"
 done
 grep -q '^SECRET_KEY_PREVIOUS=' "$work/new.env" && fail "new install: a previous key was written"
@@ -51,6 +51,8 @@ printf 'DB_PASSWORD=my-own-password\nSECRET_KEY=change-this-to-a-long-random-str
 VOLUMES="" run "$work/partial.env"
 [ "$(value "$work/partial.env" DB_PASSWORD)" = "my-own-password" ] || fail "partial: DB_PASSWORD was changed"
 [ "$(value "$work/partial.env" ANALYZER_TOKEN)" = "kept" ] || fail "partial: a token that was set was changed"
+# An .env written by a release before 4.1 has no SANDBOX_TOKEN: the upgrade adds it.
+[ "$(value "$work/partial.env" SANDBOX_TOKEN | wc -c)" -eq 65 ] || fail "partial: the token of a new worker was not added"
 [ "$(value "$work/partial.env" SECRET_KEY_PREVIOUS)" = "change-this-to-a-long-random-string" ] ||
   fail "partial: the key that was in use is not kept as SECRET_KEY_PREVIOUS"
 printf 'SECRET_KEY=%s\n' "$(printf 'k%.0s' $(seq 1 40))" >"$work/nodb.env"
