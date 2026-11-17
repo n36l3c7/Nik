@@ -259,6 +259,16 @@
               </td>
             </tr>
             <tr>
+              <td>Playbooks: the nodes of connectors</td>
+              <td>
+                when a run reaches the node, after the approval if one is asked; when "Test" is pressed on a connection
+              </td>
+              <td>
+                the command's request, with the connection's credentials, to the connection's host only, under the same
+                rules as the HTTP node
+              </td>
+            </tr>
+            <tr>
               <td>Playbooks: the HTTP request and e-mail nodes</td>
               <td>when a run reaches the node, after the approval if one is asked</td>
               <td>
@@ -323,8 +333,22 @@
           everything it was given, so a script cannot launder data past the guard.
         </li>
         <li>
-          <strong>Secrets.</strong> The SMTP password is stored encrypted with the vault key and never returned by the
-          API. Run steps record what was sent, not credentials.
+          <strong>Secrets.</strong> The SMTP password and the credentials of connections are stored encrypted with the
+          vault key and never returned by the API: a connection says which secrets are set, not what they are. Run steps
+          record what was sent, not credentials, and a value equal to a secret is blanked wherever it would be shown.
+          Tokens obtained with OAuth2 and sessions opened by a connector live in memory, or encrypted in the state of a
+          step that waits; never in a table in the clear.
+        </li>
+        <li id="connectors">
+          <strong>Connectors are data, not code.</strong> A connector is a YAML file read with a safe loader and checked
+          against a fixed format, where an unknown key is an error; its templates are the playbooks' expression
+          language, which has no code, no loop and no way to read a file or the environment. Installing one is the role
+          <em>Connectors</em>. What a connector can do is send requests: every one of them goes to the host of the
+          connection it runs on, and a path that names another host is refused, so a file cannot be written to carry a
+          connection's credentials elsewhere. Its requests pass through the same egress module and the same data guard
+          as every other node. A secret can be read only in what is sent, never in what a command returns. The shipped
+          connectors were written from public documentation and are marked <em>not verified</em> until someone has run
+          them against a real system.
         </li>
         <li>
           <strong>The record.</strong> What a playbook changes in Nik is signed <code>nik-automation</code>, an account
@@ -335,17 +359,17 @@
         <li id="inbound-hook">
           <strong>One address that asks for no account.</strong>
           <code>POST /api/automation/hooks/&lt;token&gt;</code> starts a playbook whose trigger says
-          <em>From outside</em>, and is the only route added by automation that answers without signing in. The token
-          is 32 random bytes, made by the server, shown once to whoever builds the playbook and stored as its SHA-256:
-          a copy of the database does not give the addresses. The route never reads a cookie or an API key, so a page
-          open in an analyst's browser cannot use their session through it. A request carries at most 256 kB; each
-          token has 60 requests a minute, and the playbook its runs an hour. Every reason a token starts nothing (it
-          does not exist, the playbook is off, automation is stopped) gives the same <code>404</code>, and a request
-          that is taken is told only <code>accepted</code>. What arrives is data from outside: it has no class of its
-          own, credentials and proxy headers are dropped before the playbook sees the rest, and what the playbook may
-          send on is decided by the guard above. Treat the address as a password: it appears in the sender's
-          configuration and may appear in the access log of a proxy in front of Nik. Replace it when in doubt; creating,
-          replacing and removing one are in the audit log.
+          <em>From outside</em>, and is the only route added by automation that answers without signing in. The token is
+          32 random bytes, made by the server, shown once to whoever builds the playbook and stored as its SHA-256: a
+          copy of the database does not give the addresses. The route never reads a cookie or an API key, so a page open
+          in an analyst's browser cannot use their session through it. A request carries at most 256 kB; each token has
+          60 requests a minute, and the playbook its runs an hour. Every reason a token starts nothing (it does not
+          exist, the playbook is off, automation is stopped) gives the same <code>404</code>, and a request that is
+          taken is told only <code>accepted</code>. What arrives is data from outside: it has no class of its own,
+          credentials and proxy headers are dropped before the playbook sees the rest, and what the playbook may send on
+          is decided by the guard above. Treat the address as a password: it appears in the sender's configuration and
+          may appear in the access log of a proxy in front of Nik. Replace it when in doubt; creating, replacing and
+          removing one are in the audit log.
         </li>
         <li>
           <strong>Loops and floods.</strong> A playbook's changes can start other playbooks three deep; each playbook

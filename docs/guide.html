@@ -945,8 +945,16 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         </li>
         <li>
           <strong>Run a playbook…</strong> in the right-click menu of an incident, or on its
-          <strong>Automation</strong> tab, starts one by hand on that incident. Tick <em>Dry run</em> to see what it
-          would do without anything being sent or changed.
+          <strong>Automation</strong> tab, starts one by hand on that incident. The same entry is in the menu of an
+          analysed e-mail, file or address and of an indicator, wherever they are shown, and offers the playbooks made
+          for that kind of object. Tick <em>Dry run</em> to see what it would do without anything being sent or changed.
+        </li>
+        <li><strong>An artifact's page</strong> lists the playbooks that ran on it, each opening its run.</li>
+        <li>
+          <strong>Five playbooks are there from the start</strong>, marked <em>shipped with Nik</em> and off: phishing
+          triage, the weekly re-check of the watched lists, a malicious indicator to a block list, an incident to
+          ticketing, the notice of a disk almost full. <a href="automation.html#shipped">Automation</a> says what each
+          needs before it is turned on.
         </li>
         <li>
           <strong>The Automation tab</strong> of an incident lists the runs that worked on it. A run opens on its own
@@ -1042,6 +1050,20 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 The hosts every playbook may reach, and the SMTP server the e-mail node sends through (its password is
                 stored encrypted and never shown again). What one playbook may reach or send beyond this is chosen on
                 the playbook: see <a href="automation.html#outside">Automation</a>.
+              </td>
+            </tr>
+            <tr>
+              <td>Connectors <em>(the Connectors role)</em></td>
+              <td>
+                The products playbooks can talk to, each a file: add one, read its commands, download the shipped ones
+                as samples. See <a href="automation.html#connectors">Automation → Connectors</a>.
+              </td>
+            </tr>
+            <tr>
+              <td>Connections <em>(the Connectors role)</em></td>
+              <td>
+                A connector plus an address and credentials, with <em>Test</em>. Credentials are stored encrypted and
+                never shown again.
               </td>
             </tr>
             <tr>
@@ -1152,6 +1174,13 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>
                 Build playbooks and scripts, turn a playbook on or off, change its limits. It does not read incidents by
                 itself: give it with Analyst or Viewer.
+              </td>
+            </tr>
+            <tr>
+              <td>Connectors</td>
+              <td>
+                Install connectors and make connections to other products, with their credentials. It does not build
+                playbooks by itself: give it with Playbooks to who does both.
               </td>
             </tr>
             <tr>

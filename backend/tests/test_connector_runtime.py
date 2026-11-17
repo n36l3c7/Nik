@@ -473,3 +473,67 @@ def test_an_answer_read_as_text_is_never_taken_for_json():
     with pytest.raises(cn.ConnectorError) as wrong:
         connector("        - name: x\n          request: { method: GET, path: /x, answer: xml }\n")
     assert any("answer" in str(problem.where) or "answer" in problem.message for problem in wrong.value.problems)
+
+
+# --------------------------------------------------------------------------- #
+# The two samples of the documentation                                        #
+# --------------------------------------------------------------------------- #
+SAMPLES = __import__("pathlib").Path(__file__).parent / "data" / "connector_samples"
+
+
+def test_the_basic_sample_of_the_documentation_is_a_connector_that_works():
+    found = cn.load((SAMPLES / "acme-desk.yml").read_text(encoding="utf-8"))
+    assert (found.id, found.auth.type, [command.name for command in found.commands]) == (
+        "acme-desk",
+        "basic",
+        ["create-ticket", "get-ticket", "add-comment"],
+    )
+    policy = egress.Policy(mode="listed", hosts=frozenset({"desk.example.org"}))
+    wire = Wire().answer(201, {"number": "T-1042"}).answer(200, {"state": "open", "assignee": {"name": "Anna"}})
+    config, secrets = {"url": "https://desk.example.org", "queue": "SOC"}, {"username": "nik", "password": "pw-123456"}
+    desk = rt.Runtime(found, config, secrets, policy, send=wire, clock=lambda: 1000.0)
+    made = desk.run("create-ticket", {"title": "Phishing", "text": None, "priority": "high"})
+    assert made.outputs == {"number": "T-1042", "url": "https://desk.example.org/tickets/T-1042"}
+    sent = wire.sent[0]
+    assert (sent["method"], sent["url"]) == ("POST", "https://desk.example.org/api/v2/tickets")
+    assert sent["json"] == {"queue": "SOC", "title": "Phishing", "priority": "high"}  # the empty text is left out
+    assert sent["headers"]["Accept"] == "application/json"
+    assert sent["headers"]["Authorization"] == "Basic " + base64.b64encode(b"nik:pw-123456").decode()
+    read = rt.Runtime(found, config, secrets, policy, send=wire, clock=lambda: 1000.0).run(
+        "get-ticket", {"number": "T-1042"}
+    )
+    assert read.outputs == {"state": "open", "assignee": "Anna"}
+
+
+def test_the_oauth_sample_of_the_documentation_pages_and_polls():
+    found = cn.load((SAMPLES / "acme-edr.yml").read_text(encoding="utf-8"))
+    assert found.auth.type == "oauth2_client" and found.command("list-alerts").pagination.type == "cursor"
+    policy = egress.Policy(mode="listed", hosts=frozenset({"api.edr.example.com"}))
+    config, secrets = {"url": "https://api.edr.example.com"}, {"client_id": "nik", "client_secret": "cs-123456"}
+    now = [1000.0]
+
+    def edr(wire):
+        return rt.Runtime(found, config, secrets, policy, send=wire, clock=lambda: now[0])
+
+    rt.forget_tokens()
+    wire = Wire().answer(200, {"access_token": "AT-9-secret", "expires_in": 3600})
+    wire.answer(200, {"alerts": [{"id": 1}, {"id": 2}], "next_cursor": "c2"}).answer(200, {"alerts": [{"id": 3}]})
+    listed = edr(wire).run("list-alerts", {"since": "2026-11-01", "severity": ""})
+    assert listed.outputs == {"alerts": [{"id": 1}, {"id": 2}, {"id": 3}], "count": 3, "truncated": False}
+    token, first, second = wire.sent
+    assert token["url"] == "https://api.edr.example.com/oauth/token"
+    assert token["headers"]["Authorization"] == "Basic " + base64.b64encode(b"nik:cs-123456").decode()
+    assert token["form"] == {"grant_type": "client_credentials", "scope": "alerts:read hosts:write"}
+    assert first["headers"]["Authorization"] == "Bearer AT-9-secret"
+    assert first["query"] == {"since": "2026-11-01", "limit": 200}  # the empty severity is not sent
+    assert second["query"] == {"since": "2026-11-01", "limit": 200, "cursor": "c2"}
+
+    # Two requests; the second is asked again later, without waiting here.
+    wire = Wire().answer(202, {"job_id": "j-7"}).answer(200, {"state": "running"})
+    waiting = edr(wire).run("isolate-host", {"host_id": "h-1"})
+    assert not waiting.done and waiting.again_at == 1010.0
+    now[0] = 1010.0
+    wire = Wire().answer(200, {"state": "finished"})
+    done = edr(wire).run("isolate-host", {"host_id": "h-1"}, waiting.state)
+    assert done.done and done.outputs == {"job": "j-7", "state": "finished"}
+    rt.forget_tokens()

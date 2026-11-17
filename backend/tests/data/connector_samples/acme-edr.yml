@@ -1,0 +1,65 @@
+# Acme EDR: alerts and hosts. Signs in with OAuth2 client credentials; reads a
+# list page by page; one command is two requests, the second asked again
+# until the job is finished.
+name: Acme EDR
+id: acme-edr
+version: 1
+description: Alerts and hosts of Acme EDR.
+api_version: "Acme EDR API 2026-01"
+verified: false
+configuration:
+  - { name: url, label: API address, type: url, required: true, help: "https://api.edr.example.com" }
+  - name: credentials
+    type: oauth2_client
+    token_url: "{{ config.url }}/oauth/token"
+    scope: "alerts:read hosts:write"
+    auth_style: basic
+base_url: "{{ config.url }}/v1"
+test:
+  request: { method: GET, path: /alerts, query: { limit: 1 } }
+commands:
+  - name: list-alerts
+    description: The alerts raised since a moment, read page by page.
+    arguments:
+      - { name: since, type: text, description: "An ISO date; empty for the last day" }
+      - { name: severity, type: choice, choices: ["", low, medium, high], default: "" }
+    request:
+      method: GET
+      path: /alerts
+      query:
+        since: "{{ args.since }}"
+        severity: "{{ args.severity }}"
+    pagination:
+      type: cursor
+      items: "{{ response.alerts }}"
+      param: cursor
+      next: "{{ response.next_cursor }}"
+      limit_param: limit
+      limit: 200
+      max_pages: 20
+    outputs:
+      alerts: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: isolate-host
+    description: Cut a host off the network, and wait until the agent says it is done.
+    changes_outside: true
+    arguments:
+      - { name: host_id, type: text, required: true, description: The id of the host }
+    steps:
+      - name: ask
+        request: { method: POST, path: "/hosts/{{ args.host_id }}/isolate", json: {} }
+        success: { status: [200, 202] }
+        error: { message: "{{ response.message }}" }
+      - name: done
+        request: { method: GET, path: "/jobs/{{ steps.ask.response.job_id }}" }
+        poll:
+          until: { all: [{ left: "{{ response.state }}", op: eq, right: finished }] }
+          fail_when: { all: [{ left: "{{ response.state }}", op: eq, right: failed }] }
+          every: 10
+          timeout: 600
+    outputs:
+      job: "{{ steps.ask.response.job_id }}"
+      state: "{{ steps.done.response.state }}"
+    sample: { job: j-0000, state: finished }

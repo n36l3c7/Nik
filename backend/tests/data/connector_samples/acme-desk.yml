@@ -1,0 +1,74 @@
+# Acme Desk: tickets, through its REST API. Signs in with a user and a password.
+name: Acme Desk
+id: acme-desk
+version: 1
+description: Tickets in Acme Desk, opened, read and commented.
+api_version: "Acme Desk REST API v2"
+verified: false
+configuration:
+  - name: url
+    label: Address
+    type: url
+    required: true
+    help: "https://desk.example.org"
+  - name: queue
+    label: Queue
+    type: text
+    default: SOC
+    help: The queue new tickets go to
+  - name: credentials
+    type: basic
+base_url: "{{ config.url }}/api/v2"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /me }
+  expect: { status: 200 }
+commands:
+  - name: create-ticket
+    description: Open a ticket.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: title, type: text, required: true, description: The title of the ticket }
+      - { name: text, type: text, description: What happened }
+      - { name: priority, type: choice, choices: [low, normal, high], default: normal }
+    request:
+      method: POST
+      path: /tickets
+      json:
+        queue: "{{ config.queue }}"
+        title: "{{ args.title }}"
+        body: "{{ args.text }}"
+        priority: "{{ args.priority }}"
+    success: { status: 201 }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      number: "{{ response.number }}"
+      url: "{{ config.url }}/tickets/{{ response.number }}"
+    sample: { number: T-1000, url: "https://desk.example.org/tickets/T-1000" }
+
+  - name: get-ticket
+    description: Read a ticket.
+    arguments:
+      - { name: number, type: text, required: true, description: "The number of the ticket: T-1000" }
+    request: { method: GET, path: "/tickets/{{ args.number }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      state: "{{ response.state }}"
+      assignee: "{{ response.assignee.name }}"
+
+  - name: add-comment
+    description: Add a comment to a ticket.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: number, type: text, required: true, description: The number of the ticket }
+      - { name: text, type: text, required: true, description: The comment }
+    request:
+      method: POST
+      path: "/tickets/{{ args.number }}/comments"
+      json: { body: "{{ args.text }}" }
+    success: { status: [200, 201] }
+    outputs:
+      id: "{{ response.id }}"

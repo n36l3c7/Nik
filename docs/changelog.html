@@ -40,6 +40,53 @@
       </p>
 
       <section class="release">
+        <h3>4.2.0 <span class="date">2026-11-17</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Connectors.</strong> One YAML file per product says how to talk
+            to it, with no code: what a connection needs and commands, each a request built from templates. Every
+            command is a node of the canvas. See <a href="automation.html#connectors">Automation → Connectors</a>.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Twelve connectors ship</strong>, for nine products: Check Point
+            Firewall and Harmony SASE, Zscaler ZIA, SentinelOne EDR and SIEM, ServiceNow, Jira, Confluence and Bitbucket
+            (Cloud and Data Center). Written from the vendors' public documentation and marked <em>not verified</em>:
+            none has been run against a real system yet.
+          </li>
+          <li>
+            <span class="tag added">added</span> Settings → Automation → <em>Connectors</em> (add a file, with what is
+            wrong told line by line) and <em>Connections</em> (an address and credentials, stored encrypted and never
+            shown again, with <em>Test</em>), for the role <em>Connectors</em>.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>More events start a playbook</strong>: an e-mail, a file or an
+            address analysed, an indicator's verdict that changes, a watched indicator in an incident, the disk nearly
+            full. The same events can be sent as webhooks.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>A playbook can be started from outside</strong>, by a request
+            to an address of its own that holds a random token: no account asked, 256 kB a request, limited for each
+            address (<a href="automation.html#inbound">Starting a playbook from outside</a>).
+          </li>
+          <li>
+            <span class="tag added">added</span> <em>Run a playbook…</em> on an analysed e-mail, file or address and on
+            an indicator, from their right-click menus; an artifact's page lists the runs that worked on it.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Five playbooks ship, off</strong>: phishing triage, the weekly
+            re-check of the watched lists, a malicious indicator to a block list, an incident to ticketing, the notice
+            of a disk almost full (<a href="automation.html#shipped">The playbooks Nik ships</a>).
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Nothing to do when upgrading but the usual two commands (<a
+              href="deployment.html#upgrading-to-42"
+              >Upgrading to 4.2</a
+            >).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>4.1.0 <span class="date">2026-11-17</span></h3>
         <ul>
           <li>
