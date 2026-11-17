@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-11-17
+
+Incidents your way: a registry of fields, types of incident with a page
+laid out for each, the context of an incident as data playbooks read and
+write, and a War Room with a command line. Every incident that exists is of
+the type *Unclassified* and keeps everything it holds.
+
+**Upgrading from 4.2.0**: nothing more than the usual two commands.
+
+```
+git pull
+podman compose up -d --build
+```
+
+The migrations `0028_fields_types` and `0029_context_war_room` run at start
+and only add tables and columns. Types and fields are in *Settings →
+Incidents*, for admins.
+
+**Not verified on real systems**: the commands of connectors typed in the
+War Room, and the tickets the ServiceNow and Jira connectors write to the
+context, were tried against recorded answers only, like the connectors
+themselves.
+
 ### Added
 
 - **A registry of fields.** Every field an incident can hold has one name,
@@ -69,6 +92,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is a note of the incident. The notes an incident already had are listed
   as they are: nothing is moved, and the Summary and the report keep
   showing them.
+- **A command line in the War Room.** `!name arg=value` runs one command
+  on the incident, now: a command of a connector
+  (`!servicenow-get-incident number=INC001`), an action of Nik, a script.
+  `${context.Host[0].Name}` reads the incident and its context;
+  `using=` picks the connection, `raw=true` shows JSON, `extend=` keeps the
+  result out of the context. `/note`, `/assign @user` and `/close` do what
+  they say. The name of a command is completed while it is typed, its
+  arguments are hinted, and ↑ brings back the lines typed before.
+- A command is a run of one node on the automation engine: the same
+  permission, egress rules, data guard (with nothing opened) and audit as
+  a playbook. One that changes something outside asks for confirmation
+  first.
+- **Reputation commands**: `!ip`, `!domain`, `!url`, `!file` and `!email`
+  put together Nik's reputation sources and every connector command that
+  declares `reputation: <kind>` in its file, in one verdict with each
+  source beside it.
 - Migration `0029_context_war_room`: the context of incidents, who set
   each item, and the War Room entries.
 - An incident read through the API carries `type` and `fields`; sent back
@@ -77,6 +116,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   types, and on incidents the type, the custom fields (indexed on
   PostgreSQL), when it occurred, how it was closed. Incidents that exist
   keep everything they hold.
+
+### Changed
+
+- Setting an incident to closed from the screens asks for a reason. An API
+  client that sets `status` keeps working; a type that wants fields filled
+  before closing refuses until they are.
+- An imported incident starts *Unclassified*: its type and its custom
+  fields are those of the Nik it came from.
+- The connector files of ServiceNow, Jira Cloud and Jira Data Center are
+  version 2: the commands that open a ticket write it to the context of the
+  incident.
+- Expressions of a playbook have two more names, `incident` and `context`:
+  a node can no longer have one of them as its id.
 
 ## [4.2.0] - 2026-11-17
 
@@ -2171,7 +2223,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/n36l3c7/Nik/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/n36l3c7/Nik/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/n36l3c7/Nik/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/n36l3c7/Nik/compare/v3.8.0...v4.0.0

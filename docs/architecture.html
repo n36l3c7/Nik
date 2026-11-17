@@ -280,6 +280,13 @@
 │                                   #   links, content (nh3, QR, pressure), attachments, analyze
 ├── parsing/                        # malware.py (hashes, type, entropy, strings, IOC), executables.py
 │                                   #   (PE, ELF, Mach-O), eventlog.py (.evtx), browser/shell/artifact ports
+├── fields.py                       # The field registry: system and custom fields, the one writer of an
+│                                   #   incident's fields (checks, coerces, audits, tells the playbooks)
+├── incident_types.py               # Types of incident: their fields, layout, close reasons; the shipped ones
+├── context.py                      # The context of an incident: the common schema, context paths, the merge
+│                                   #   by key, provenance (who set each item last)
+├── war_room.py                     # The War Room: entries, the read adapter over an incident's notes
+├── commands.py                     # The command line of the War Room: its grammar, a command as a run of one node
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
 ├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
 │                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
@@ -1151,6 +1158,45 @@
         the outbox in the transaction of what they tell of. A request to
         <code>POST /api/automation/hooks/&lt;token&gt;</code> starts a run directly: the token is looked up by its
         SHA-256, which is all that is stored of it.
+      </p>
+      <h3 id="incident-model">Fields, types, context and the War Room (4.3)</h3>
+      <p>
+        An incident is still one JSON document (<code>incidents.doc</code>) with a few of its values mirrored to columns
+        for the lists. Release 4.3 adds four things <strong>beside</strong> the document, so that nothing that reads it
+        had to change:
+      </p>
+      <ul>
+        <li>
+          <strong>The field registry</strong> (<code>fields</code>, <code>fields.py</code>). Every field has one name.
+          The system fields Nik always had are only <em>named</em> there: <code>SYSTEM_FIELDS</code> says where each
+          lives (a key of the document, a column, or <code>incidents.fields</code>). Custom fields live in
+          <code>incidents.fields</code> (JSONB with a GIN index on PostgreSQL). <code>fields.update</code> is the only
+          writer: the routes, the playbooks' actions and the context all go through it.
+        </li>
+        <li>
+          <strong>Types</strong> (<code>incident_types</code>). <code>incidents.type_id</code> is null for
+          <em>Unclassified</em>. A type holds the list of its custom fields with their flags and its layout: sections of
+          field names, one of which is the side panel, and the order of the tabs. The page is drawn from it
+          (<code>frontend/src/domain/fields.js</code>).
+        </li>
+        <li>
+          <strong>The context</strong> (<code>incident_context</code>, one document per incident, and
+          <code>incident_context_meta</code>, who set each item). It is replaced with a compare-and-swap on its version.
+          The engine gives it to expressions as <code>context</code> and writes what a step declared after the step
+          (<code>engine._to_context</code>).
+        </li>
+        <li>
+          <strong>The War Room</strong> (<code>war_room_entries</code>). The engine adds a line for each step that did
+          something on an incident, pointing at the step. Notes stay in the document: the War Room reads them through an
+          adapter, and writes a new one to both. A command typed there is a run of one node of a hidden playbook
+          (<code>commands.py</code>).
+        </li>
+      </ul>
+      <p>
+        The incident as the API gives it carries <code>type</code> and <code>fields</code>, added on the way out
+        (<code>routers/incidents.py</code>) and taken out on the way in, where they go through the registry. Migrations
+        <code>0028_fields_types</code> and <code>0029_context_war_room</code> add the tables and columns where they are
+        missing.
       </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>

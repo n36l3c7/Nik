@@ -981,6 +981,14 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           the evidence.
         </li>
         <li>
+          <strong>Commands.</strong> The same line runs a command when it starts with <code>!</code>:
+          <code>!ip 185.220.101.47</code> asks what is known of an address,
+          <code>!servicenow-get-incident number=INC0012345</code> reads a ticket. <code>/assign @anna</code> gives the
+          incident to someone and <code>/close</code> closes it. The name of a command is completed while you type and
+          its arguments are hinted; a command that changes something outside asks first.
+          <a href="automation.html#command-line">Automation</a> has the whole of it.
+        </li>
+        <li>
           <strong>The Context tab</strong> shows what playbooks read of the incident, as a tree to search: its fields,
           and the files, e-mails, addresses, tickets and hosts known for it. Choosing a value gives the path to write in
           a playbook, and says who set it: Nik's analysis, a connector, a run.

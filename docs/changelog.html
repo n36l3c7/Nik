@@ -40,6 +40,41 @@
       </p>
 
       <section class="release">
+        <h3>4.3.0 <span class="date">2026-11-17</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>A registry of fields.</strong> Every field an incident can hold
+            has one name, a label and a type; the fields Nik always had are in it, and fields of your own are made in
+            Settings, of fifteen types. Every value is checked against its field when it is written.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Types of incident</strong>: which fields its incidents have,
+            how their page is arranged, with which reasons one is closed. Seven ship; every incident that exists is
+            <em>Unclassified</em> and keeps what it holds. A builder in Settings → Incidents.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The incident page follows its type</strong>: a panel beside the
+            tabs with the key facts, the sections of the type in the Summary, the tabs in its order.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The context of an incident</strong>: what is known of it as
+            data, in a common schema, read by playbooks as <code>{{ context.… }}</code> and written by what commands and
+            scripts declare (<a href="automation.html#context">The incident and its context</a>). A Context tab shows it
+            as a tree.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The War Room</strong>: one log of what was said and done on an
+            incident, with what was marked as evidence, and <a href="automation.html#command-line">a command line</a>:
+            <code>!ip 185.220.101.47</code>, <code>!servicenow-get-incident number=…</code>, <code>/assign @anna</code>.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Closing an incident asks for a reason. Nothing to do when upgrading
+            but the usual two commands (<a href="deployment.html#upgrading-to-43">Upgrading to 4.3</a>).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>4.2.0 <span class="date">2026-11-17</span></h3>
         <ul>
           <li>
