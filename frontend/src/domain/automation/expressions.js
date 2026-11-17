@@ -449,6 +449,69 @@ function toInt(value) {
   return Math.trunc(number)
 }
 
+const SEVERITY_WORDS = {
+  informational: 'low',
+  info: 'low',
+  none: 'low',
+  low: 'low',
+  minor: 'low',
+  trivial: 'low',
+  lowest: 'low',
+  medium: 'medium',
+  moderate: 'medium',
+  warning: 'medium',
+  normal: 'medium',
+  high: 'high',
+  major: 'high',
+  important: 'high',
+  critical: 'critical',
+  severe: 'critical',
+  highest: 'critical',
+  blocker: 'critical',
+  urgent: 'critical',
+  fatal: 'critical',
+}
+
+/** A severity of another product as Nik's (the server's `_severity`): words, 1 to 5, 0 to 100. */
+function severity(value, scale = '') {
+  const word = text(value).trim().toLowerCase()
+  if (!word) return ''
+  if (Object.hasOwn(SEVERITY_WORDS, word)) return SEVERITY_WORDS[word]
+  const first = word.split(' ')[0].replace(/^[p-]+|[p-]+$/g, '')
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/.test(first)) return ''
+  const number = Number(first)
+  if (!Number.isFinite(number) || number < 0) return ''
+  const inverse = text(scale).trim().toLowerCase() === 'inverse'
+  if (number <= 5) {
+    // As Python rounds: a half goes to the even number.
+    const floor = Math.floor(number)
+    const rounded = number - floor === 0.5 ? (floor % 2 === 0 ? floor : floor + 1) : Math.round(number)
+    const step = Math.max(1, Math.min(5, rounded || 1))
+    const up = ['low', 'low', 'medium', 'high', 'critical']
+    const down = ['critical', 'high', 'medium', 'low', 'low']
+    return (inverse ? down : up)[step - 1]
+  }
+  return number < 25 ? 'low' : number < 50 ? 'medium' : number < 75 ? 'high' : 'critical'
+}
+
+/** The part of a text a pattern finds, or a group of it; '' when it finds none. */
+function regexExtract(value, pattern, group = 0) {
+  const source = text(pattern)
+  if (!source || source.length > 500) fail()
+  let found
+  try {
+    // The server's patterns are Python's: a named group is (?P<name>…) there, (?<name>…) here.
+    found = new RegExp(source.replace(/\(\?P</g, '(?<')).exec(text(value).slice(0, 100_000))
+  } catch {
+    fail()
+  }
+  if (!found) return ''
+  const part = typeof group === 'string' ? found.groups?.[group] : found[Math.trunc(Number(group))]
+  if (typeof group === 'string' ? !found.groups || !(group in found.groups) : !(Math.trunc(Number(group)) in found))
+    fail()
+  return part ?? ''
+}
+
 const length = (value) =>
   typeof value === 'string'
     ? [...value].length
@@ -467,6 +530,8 @@ const FILTERS = {
   default: { args: [0, 1], run: null },
   // Whether the value is in a list by its name: only the server holds the lists, so a preview says no.
   in_list: { args: [1, 1], run: () => false },
+  severity: { args: [0, 1], run: severity },
+  regex_extract: { args: [1, 2], run: regexExtract },
   length: { args: [0, 0], run: length },
   join: { args: [0, 1], run: (v, sep = ', ') => listed(v).map(text).join(text(sep)) },
   lower: { args: [0, 0], run: (v) => text(v).toLowerCase() },

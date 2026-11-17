@@ -1193,6 +1193,35 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET</code> · <code>PUT /api/mappers</code> · <code>DELETE /api/mappers/{id}</code> ·
+                <code>GET /api/mappers/targets?type=</code> · <code>POST /api/mappers/try</code>
+              </td>
+              <td>
+                (<strong>connectors.manage</strong>) The mappers (<code>?connector=</code> for one connector) · save the
+                mapper of <code>{connectorId, direction: "incoming" | "outgoing", incidentType, rules}</code> (<code
+                  >incidentType</code
+                >
+                <code>"*"</code> for every type; it replaces the one there). Incoming rules are
+                <code>{to, from, authoritative}</code>, outgoing <code>{to, from}</code> · delete one · Nik's side of
+                the editor: the fields a mapper may set for a type and the entities of the context · what a mapper makes
+                of a sample, writing nothing: incoming <code>{item}</code> →
+                <code>{fields, context, authoritative, problems, missing}</code>, outgoing <code>{incidentId}</code> →
+                <code>{sent}</code>; <code>rules</code> left out tries the saved ones.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET</code> · <code>PUT /api/classifiers/{connectionId}</code> ·
+                <code>POST /api/classifiers/try</code>
+              </td>
+              <td>
+                (<strong>connectors.manage</strong>) The classifier of a connection:
+                <code>{rules: [{when: {all | any: [{left, op, right}]}, type}], defaultType}</code>; the comparisons
+                read <code>item</code> · the type an <code>item</code> would become under the rules sent.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
               <td>
                 What the caller was told, the newest first:

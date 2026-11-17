@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it adds to the context) and `mirror` (the commands that read, change and
   comment one object). Each is checked when the file is read, with the line
   of what is wrong.
+- **Classifiers and mappers.** A mapper says how what a connector's product
+  calls things becomes Nik's fields and context (incoming) and back
+  (outgoing), for every type of incident or for one; a classifier says which
+  type a fetched item becomes. They are data in Nik (`/api/mappers`,
+  `/api/classifiers`), changed without touching a connector file, and
+  *try* shows what one makes of a sample.
+- Two filters for expressions: `severity` (another product's scale as
+  Nik's) and `regex_extract` (the part of a text a pattern finds).
 
 ## [4.4.0] - 2026-11-17
 

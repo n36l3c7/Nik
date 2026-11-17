@@ -10,7 +10,21 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text, event, false, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+    false,
+    text,
+    true,
+)
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -991,6 +1005,11 @@ class Connection(Base):
     config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     secrets: Mapped[str] = mapped_column(Text, nullable=False, default="")
     last_test: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # Fetching (4.5): whether this connection brings alerts in, what its last cycle left for the
+    # next (``fetch.next_state`` of the connector), and how it goes: {state, error, lastAt, nextAt…}.
+    fetch_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    fetch_state: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    fetch_status: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -1186,6 +1205,97 @@ class NamedListItem(Base):
     added_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     expires_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+
+class Classifier(Base):
+    """For a connection that fetches: which type of incident an item becomes.
+    ``rules``: ``[{"when": {"all": [...]}, "type": <type id>}]``, the first that holds wins."""
+
+    __tablename__ = "classifiers"
+
+    connection_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    rules: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    default_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class Mapper(Base):
+    """How what a connector's product calls things becomes Nik's fields and context, and back.
+
+    ``direction`` ``incoming``: ``rules`` are ``[{"to": <field or context path>, "from":
+    <template over item>, "authoritative": bool}]``. ``outgoing``: ``[{"to": <the product's
+    name>, "from": <template over incident and context>}]``. One mapper for each type of
+    incident, and ``*`` for every type that has none of its own."""
+
+    __tablename__ = "mappers"
+    __table_args__ = (UniqueConstraint("connector_id", "direction", "incident_type", name="uq_mappers_target"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    connector_id: Mapped[str] = mapped_column(String(41), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)  # incoming | outgoing
+    incident_type: Mapped[str] = mapped_column(String(32), nullable=False, default="*")
+    rules: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class FetchedItem(Base):
+    """An item a connection fetched, by the id the other side gives it: what keeps one alert
+    from becoming two incidents, and what Fetch status lists."""
+
+    __tablename__ = "fetched_items"
+    __table_args__ = (Index("ix_fetched_items_at", "connection_id", "fetched_at"),)
+
+    connection_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(300), primary_key=True)
+    incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # created | incomplete (created with fields missing) | dropped | linked | duplicate
+    outcome: Mapped[str] = mapped_column(String(12), nullable=False, default="created")
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    fetched_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class PreprocessRule(Base):
+    """What is done with a fetched item before it becomes an incident, in order."""
+
+    __tablename__ = "preprocess_rules"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    when: Mapped[str] = mapped_column(String, nullable=False, default="")  # a query on the incident to be
+    action: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # drop | link_to_existing | close_duplicate | run_script
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class MirrorJob(Base):
+    """Something to send to the other side of a mirrored incident: a change of fields, a comment."""
+
+    __tablename__ = "mirror_queue"
+    __table_args__ = (Index("ix_mirror_queue_due", "status", "next_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String, nullable=False)
+    connection_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)  # update | comment
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(8), nullable=False, default="pending")  # pending | done | failed
+    error: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+# Created by migration 0032_fetch_mappers where missing, in this order; and the columns it adds.
+FETCH_TABLES = ("classifiers", "mappers", "fetched_items", "preprocess_rules", "mirror_queue")
+FETCH_COLUMNS = {"connections": ("fetch_enabled", "fetch_state", "fetch_status")}
 
 # Created by migration 0031_lists where missing, in this order.
 LIST_TABLES = ("lists", "list_items")

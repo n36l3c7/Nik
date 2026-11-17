@@ -788,6 +788,22 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>An ISO date, or seconds since 1970, as text in UTC (<code>2026-11-17 08:30</code> by default).</td>
             </tr>
             <tr>
+              <td><code>severity</code> · <code>severity("inverse")</code></td>
+              <td>
+                A severity of another product as Nik's (<code>low</code>, <code>medium</code>, <code>high</code>,
+                <code>critical</code>): a word (<code>Moderate</code>, <code>Severe</code>…), a number from 1 to 5 where
+                5 is the worst (<code>"inverse"</code> when 1 is the worst, as a priority is), or a score from 0 to 100,
+                cut at 25, 50 and 75. Empty for what is none of them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>regex_extract("INC[0-9]+")</code> · <code>regex_extract("user=(\w+)", 1)</code></td>
+              <td>
+                The part of a text a pattern finds, or one group of it by number or by name; empty when it finds none.
+                The pattern is matched with a time limit.
+              </td>
+            </tr>
+            <tr>
               <td><code>defang</code></td>
               <td>
                 <code>hxxp[://]evil[.]example</code>: an address made safe to paste in a message. On a list, each item.
@@ -1403,6 +1419,44 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         read. What a command sends goes through the same two gates as the HTTP node: the
         <a href="#network">network</a> rule (the host of the node's connection is one the playbook may reach, without
         being listed) and the <a href="#data-guard">data guard</a>.
+      </p>
+
+      <h3 id="mappers">Classifiers and mappers</h3>
+      <p>
+        What another product calls things is not what Nik calls them: an alert's <code>threatInfo.threatName</code>, a
+        ticket's <code>short_description</code>, an issue's <code>fields.summary</code> are all the name of an incident.
+        <strong>Mappers</strong> say so, and they are data in Nik, not part of a connector file: whoever manages
+        connectors changes them without touching YAML.
+      </p>
+      <ul>
+        <li>
+          <strong>An incoming mapper</strong> turns what the product sends (a fetched alert, a ticket read by mirroring)
+          into an incident. Each rule has a <em>to</em>: a field of the registry (<code>name</code>,
+          <code>severity</code>, <code>source_id</code>, a field of your own) or a
+          <a href="#context-paths">context path</a> (<code>Alert(val.ID == obj.ID)</code>,
+          <code>ext.&lt;connector&gt;.agent_uuid</code>); and a <em>from</em>: a template over <code>item</code>, with
+          any filter (<code>{{ item.priority | severity('inverse') }}</code>). A value the item does not have writes
+          nothing; one the field refuses is listed as a problem and the rest goes on. A rule marked
+          <em>authoritative</em> writes over what a person set in Nik; otherwise the person's value stays.
+        </li>
+        <li>
+          <strong>An outgoing mapper</strong> turns an incident into what the product takes. Each rule has a
+          <em>to</em>, a name of the product, and a <em>from</em>, a template over <code>incident</code> and
+          <code>context</code>. What has no value sends nothing for its name.
+        </li>
+        <li>
+          A connector has one mapper of each direction for every type of incident (<code>*</code>), and can have one for
+          a type alone, which then replaces the general one for that type.
+        </li>
+        <li>
+          <strong>A classifier</strong> belongs to a connection that fetches and chooses the type of incident an item
+          becomes: rules, each a condition on <code>item</code> and a type; the first that holds wins, else the default
+          type, else <em>Unclassified</em>.
+        </li>
+      </ul>
+      <p>
+        <em>Try</em> shows what a mapper makes of a sample without writing anything: the fields with the values the
+        registry would keep, the writes to the context, the problems, and the fields the type needs that nothing gave.
       </p>
 
       <h3 id="shipped-connectors">The connectors Nik ships</h3>
