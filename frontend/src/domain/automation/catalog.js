@@ -238,6 +238,13 @@ const defaults = (declared) =>
       .map((argument) => [argument.name, argument.default]),
   )
 
+/** Who a task or a question is for, in words. */
+export function forWhom(assignee, nobody) {
+  if (assignee?.user) return assignee.user
+  if (assignee?.role) return `the role ${assignee.role}`
+  return assignee?.owner ? 'the owner' : nobody
+}
+
 /** The settings a node starts with. */
 export function startingConfig(entry) {
   switch (entry.kind) {
@@ -251,6 +258,10 @@ export function startingConfig(entry) {
       return { seconds: 300 }
     case 'approval':
       return { question: '' }
+    case 'task':
+      return { title: '', assignee: { owner: true } }
+    case 'ask':
+      return { question: '', choices: ['Yes', 'No'] }
     case 'action':
       return { action: entry.id, args: defaults(entry.arguments) }
     case 'script':
@@ -339,6 +350,10 @@ export function summaryOf(node, entry) {
         : duration(config.seconds)
     case 'approval':
       return `${config.question || 'no question yet'} · ${config.wait_seconds ? `waits ${duration(config.wait_seconds)}` : 'waits without limit'}`
+    case 'task':
+      return `${config.title || 'nothing to do yet'} · for ${forWhom(config.assignee, 'the owner')}`
+    case 'ask':
+      return `${config.question || 'no question yet'} · to ${forWhom(config.assignee, 'anyone')}`
     case 'action': {
       if (!entry) return 'this action does not exist any more'
       // Named as its action: what it is given says more than the name twice.

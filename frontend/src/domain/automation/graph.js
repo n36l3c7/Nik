@@ -11,7 +11,19 @@
  */
 import { references, renameRoot } from './expressions.js'
 
-export const KINDS = ['trigger', 'condition', 'for_each', 'wait', 'approval', 'action', 'script', 'playbook', 'end']
+export const KINDS = [
+  'trigger',
+  'condition',
+  'for_each',
+  'wait',
+  'approval',
+  'task',
+  'ask',
+  'action',
+  'script',
+  'playbook',
+  'end',
+]
 
 /** The ports a node leaves by. `error` is drawn only when a failure is handled. */
 export const PORTS = {
@@ -20,6 +32,10 @@ export const PORTS = {
   for_each: ['each', 'done', 'error'],
   wait: ['out'],
   approval: ['approved', 'refused'],
+  // A task that passes its due time is also left by "overdue", and stays to do.
+  task: ['done', 'overdue'],
+  // A question with choices has a port for each of them instead of "answered" (portsOf).
+  ask: ['answered', 'timeout'],
   action: ['out', 'error'],
   script: ['out', 'error'],
   playbook: ['out', 'error'],
@@ -41,10 +57,53 @@ export const PORT_LABELS = {
   error: 'on error',
   approved: 'approved',
   refused: 'refused',
+  overdue: 'when overdue',
+  answered: 'answered',
+  timeout: 'no answer',
 }
 
 /** What a port is called where it has to be named (the inspector, the node list). */
 export const PORT_NAMES = { ...PORT_LABELS, out: 'then' }
+
+/** The port an answer leaves by: "Yes, block it" gives "yes_block_it" (as the server does). */
+export function slug(text) {
+  const out = String(text ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return out.slice(0, 24).replace(/^_+|_+$/g, '') || 'answer'
+}
+
+const choicesOf = (node) => (Array.isArray(node?.config?.choices) ? node.config.choices : [])
+
+/** The ports a node leaves by. Those of a question are its choices, then "timeout". */
+export function portsOf(node) {
+  if (node?.kind !== 'ask') return PORTS[node?.kind] ?? []
+  const choices = choicesOf(node)
+  return [...(choices.length ? choices.map(slug) : ['answered']), 'timeout']
+}
+
+/** What an edge of a node shows next to its line: the choice itself for an answer. */
+export function portLabel(node, port) {
+  if (node?.kind === 'ask' && port !== 'timeout') {
+    const choice = choicesOf(node).find((item) => slug(item) === port)
+    if (choice !== undefined) return String(choice)
+  }
+  return PORT_LABELS[port] ?? port
+}
+
+/** What a port of a node is called where it has to be named. */
+export const portName = (node, port) => portLabel(node, port) || 'then'
+
+/** The graph without the edges that leave a node by a port it has no more (a choice removed or renamed). */
+export function pruneEdges(graph, id) {
+  const node = graph.nodes.find((item) => item.id === id)
+  if (!node) return graph
+  const ports = portsOf(node)
+  const edges = graph.edges.filter((edge) => edge.from !== id || ports.includes(edge.port ?? DEFAULT_PORT[node.kind]))
+  return edges.length === graph.edges.length ? graph : { ...graph, edges }
+}
 
 export const KIND_LABELS = {
   trigger: 'Trigger',
@@ -52,6 +111,8 @@ export const KIND_LABELS = {
   for_each: 'For each',
   wait: 'Wait',
   approval: 'Approval',
+  task: 'Task',
+  ask: 'Question',
   action: 'Action',
   script: 'Script',
   playbook: 'Playbook',
@@ -325,8 +386,7 @@ export function connectProblem(graph, from, port, to) {
   const source = nodeOf(graph, from)
   const target = nodeOf(graph, to)
   if (!source || !target) return 'An edge joins two nodes of the playbook'
-  if (!PORTS[source.kind]?.includes(port))
-    return `A ${KIND_LABELS[source.kind].toLowerCase()} node has no "${port}" port`
+  if (!portsOf(source).includes(port)) return `A ${KIND_LABELS[source.kind].toLowerCase()} node has no "${port}" port`
   if (from === to) return 'A node cannot lead to itself'
   if (target.kind === 'trigger') return 'Nothing leads to the trigger'
   if (graph.edges.some((edge) => edge.from === from && edge.to === to && portOf(edge, graph) === port)) {

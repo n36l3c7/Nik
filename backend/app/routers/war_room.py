@@ -198,7 +198,29 @@ def run_line(
         if parsed.name == "close":
             return JSONResponse(status_code=200, content={"action": "close"})
         if parsed.name == "task":
-            raise HTTPException(status_code=400, detail="Tasks come with the next release of Nik")
+            import time
+
+            from .. import tasks
+
+            now = time.time()
+            try:
+                title, user, due = tasks.from_line(parsed.text)
+                task = tasks.create(
+                    db,
+                    kind="task",
+                    title=title,
+                    incident_id=incident.id,
+                    assignee_user=user,
+                    assignee_owner=not user,
+                    due_at=tasks.due_at(due, now) if due else None,
+                    actor=caller.actor,
+                    now=now,
+                )
+            except tasks.TaskError as error:
+                raise HTTPException(status_code=400, detail=error.message) from None
+            audit.record(db, caller.actor, "task.added", f'Added the task "{task.title}"', incident)
+            db.commit()
+            return JSONResponse(status_code=201, content={"action": "task", "task": task.id})
         who = parsed.text.lstrip("@").strip()
         try:
             registry.update(db, incident, {"owner": who or None}, caller.actor, f"user:{caller.actor}")

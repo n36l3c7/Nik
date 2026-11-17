@@ -69,6 +69,7 @@ from .routers import (
     search,
     settings,
     storage,
+    tasks,
     urls,
     users,
     war_room,
@@ -263,6 +264,7 @@ app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")
 app.include_router(context.router, prefix="/api")
 app.include_router(war_room.router, prefix="/api")
+app.include_router(tasks.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")
