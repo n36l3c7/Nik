@@ -247,6 +247,11 @@ def drain(now: float | None = None, limit: int = 200) -> int:
 # --------------------------------------------------------------------------- #
 def loop() -> None:
     last_beat = last_prune = 0.0
+    with SessionLocal() as db:
+        from .nik_actions import system_user
+
+        system_user(db)  # what a playbook changes in Nik is signed with this account
+        db.commit()
     with ThreadPoolExecutor(max_workers=settings.AUTOMATION_CONCURRENCY, thread_name_prefix="nik-step") as pool:
         while not _stopping.is_set():
             started = time.time()

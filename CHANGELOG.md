@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Limits per playbook: runs per hour, one run at a time for the same
   object, a longest run. A general switch stops all automation at once.
   Through the API only, for now (`/api/automation`): the canvas follows.
+- **Automation, third part: what a playbook does and where it may send.**
+  Nodes that act inside Nik (a note, the status, the assignee, a new
+  incident, indicators and lists, linking an artifact), an **HTTP request**
+  node and an **e-mail** node. What a playbook changes is signed
+  `nik-automation` and written to the audit log with the run and with who
+  approved it.
+- **A playbook reaches only the hosts listed for it**, unless an admin lets
+  it reach any host. An address inside the network (loopback, private,
+  link-local, the containers, cloud metadata) is refused in either mode
+  unless that host is listed by name.
+- **The data guard.** What is about to leave is judged by classes of data:
+  e-mail addresses, subjects, internal names and addresses, allowlisted
+  indicators, incident names, file names, mail bodies, attachments,
+  samples, TLP:RED. Hashes, public indicators, verdicts and Nik's ids
+  always leave; every other class is held until an admin opens it for that
+  playbook, by ticking a box and typing the playbook's name. Every opening
+  and closing is in the audit log, with the hosts that can receive it.
 - A new container, **`automation`**, runs the playbooks: the backend's
   image with another command, unprivileged and read-only, the only one
   with a way out for what playbooks send.

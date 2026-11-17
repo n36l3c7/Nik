@@ -601,11 +601,11 @@ def holds(conditions: dict, scope: ex.Scope) -> bool:
     return all(results) if key == "all" else any(results)
 
 
-def _needs_approval(node: dict, spec: actions.Spec, playbook: Playbook) -> bool:
+def _needs_approval(node: dict, spec: actions.Spec, playbook: Playbook, args: dict) -> bool:
     approval = (node.get("config") or {}).get("approval")
     if isinstance(approval, dict) and "ask" in approval:
         return bool(approval["ask"])
-    return bool(spec.changes_outside and playbook.approval_default)
+    return bool(spec.changes(args) and playbook.approval_default)
 
 
 def _ask(
@@ -700,7 +700,7 @@ def _perform(
         arg_classes = ex.render_classes(config.get("args") or {}, scope)
         shown = {"action": spec.id, "args": _cut(args)}
         approved_by = waiting.get("approved_by")
-        if _needs_approval(node, spec, playbook) and not approved_by and not run.dry_run:
+        if _needs_approval(node, spec, playbook, args) and not approved_by and not run.dry_run:
             approval = config.get("approval") if isinstance(config.get("approval"), dict) else {}
             question = f"{node.get('name') or spec.name}: go ahead?"
             outcome = _ask(
@@ -711,11 +711,12 @@ def _perform(
         call = actions.Call(
             db=db, args=args, classes=rendered.classes, arg_classes=arg_classes, dry_run=bool(run.dry_run),
             run=run, playbook=playbook, step_id=step.id, approved_by=approved_by, now=now,
+            held="drop" if config.get("held") == "drop" else "fail",
         )  # fmt: skip
         try:
             result = spec.run(call)
         except actions.ActionError as error:
-            unknown = error.unknown_outcome and spec.changes_outside and not spec.idempotent
+            unknown = error.unknown_outcome and spec.changes(args) and not spec.idempotent
             message = f"{error.message} (outcome unknown: it is not tried again)" if unknown else error.message
             raise StepFailed(message, retry=error.retry and not unknown, request=error.request) from None
         return Outcome(

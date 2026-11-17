@@ -25,7 +25,7 @@ from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Incident, User
 from ..core.models import Session as SessionModel
-from ..core.permissions import ADMIN, RoleError, clean_roles, legacy_role, stored_roles
+from ..core.permissions import ADMIN, SYSTEM_ROLE, RoleError, clean_roles, legacy_role, stored_roles
 from ..core.schemas import PasswordChange, UserCreate, UserEnvelope, UsersEnvelope, UserUpdate
 from ..core.security import (
     Principal,
@@ -158,7 +158,8 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
 def list_users(_admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
     """List all users (admin session or admin key)."""
     users = db.scalars(select(User).order_by(User.created_at.asc())).all()
-    return {"users": [user_to_dict(u) for u in users]}
+    # The system account of the automation engine is not one people manage.
+    return {"users": [user_to_dict(u) for u in users if stored_roles(u.roles) != [SYSTEM_ROLE]]}
 
 
 @router.get("/names")

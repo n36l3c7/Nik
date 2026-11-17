@@ -14,13 +14,13 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..automation import catalog, engine, graph, state, triggers
-from ..core import audit
+from ..automation import catalog, egress, engine, graph, guard, outbound, state, triggers
+from ..core import audit, vault
 from ..core.db import get_db
 from ..core.models import Playbook, PlaybookVersion, Run, RunStep
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, runner_principal
@@ -656,3 +656,201 @@ def put_state(body: StateIn, caller: Principal = Depends(admin_principal), db: O
         audit.record(db, caller.actor, "automation.switch", f"{word} all automation")
         db.commit()
     return {"enabled": state.enabled(db), "workerAlive": state.worker_alive(db)}
+
+
+# --------------------------------------------------------------------------- #
+# What a playbook may reach and send (admins, behind a double check)          #
+# --------------------------------------------------------------------------- #
+class EgressIn(BaseModel):
+    """``mode``: ``listed`` (the hosts below, and those listed for every playbook) or ``any``.
+    Switching to ``any`` needs the double check: ``acknowledged`` and the playbook's name."""
+
+    mode: Literal["listed", "any"]
+    hosts: list[str] = Field(default_factory=list, max_length=200)
+    acknowledged: bool = False
+    confirmName: str = Field(default="", max_length=120)
+
+
+class DataAllowIn(BaseModel):
+    """Open (``allow: true``) or close a class of data for the playbook. Opening needs the double check."""
+
+    dataClass: str = Field(alias="class", max_length=40)
+    allow: bool = True
+    acknowledged: bool = False
+    confirmName: str = Field(default="", max_length=120)
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SmtpIn(BaseModel):
+    host: str = Field(default="", max_length=253)
+    port: int = Field(default=587, ge=1, le=65535)
+    security: Literal["starttls", "tls", "none"] = "starttls"
+    username: str = Field(default="", max_length=320)
+    # Write-only: left out, the stored one is kept; empty, it is removed.
+    password: str | None = Field(default=None, max_length=1000)
+    sender: str = Field(default="", max_length=320)
+    caPem: str = Field(default="", max_length=20_000)
+
+
+class SettingsIn(BaseModel):
+    hosts: list[str] | None = Field(default=None, max_length=500)
+    smtp: SmtpIn | None = None
+
+
+def _double_check(row: Playbook, acknowledged: bool, confirm: str) -> None:
+    if not acknowledged or confirm != row.name:
+        raise HTTPException(
+            status_code=400,
+            detail="Confirm by ticking the box and typing the name of the playbook exactly as it is written",
+        )
+
+
+def _hosts(values: list[str]) -> list[str]:
+    cleaned = []
+    for value in values:
+        host = egress.clean_host(value)
+        if host is None:
+            raise HTTPException(status_code=400, detail="A host is a name or an address, with a port if needed")
+        cleaned.append(host)
+    return sorted(set(cleaned))
+
+
+@router.get("/data-classes")
+def data_classes(_caller: Principal = Depends(runner_principal)) -> dict:
+    """The classes of data the guard knows: those that always leave, and those an admin can open."""
+    return {
+        "always": sorted(guard.ALWAYS),
+        "classes": [{"id": name, **meta} for name, meta in guard.CLASSES.items()],
+    }
+
+
+@router.put("/playbooks/{playbook_id}/egress")
+def set_egress(
+    playbook_id: str, body: EgressIn, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Where the playbook may send. Listing hosts is the admin's; letting it reach
+    **any** host also needs the double check. Both are in the audit log."""
+    row = _get(db, playbook_id)
+    hosts = _hosts(body.hosts)
+    if body.mode == "any" and row.egress_mode != "any":
+        _double_check(row, body.acknowledged, body.confirmName)
+    changes = []
+    if body.mode != row.egress_mode:
+        changes.append(f"may reach {'any host' if body.mode == 'any' else 'listed hosts only'}")
+        action = "automation.egress.open" if body.mode == "any" else "automation.egress.close"
+    else:
+        action = "automation.egress.hosts"
+    if hosts != sorted(row.egress_hosts or []):
+        changes.append("hosts: " + (", ".join(hosts) or "none"))
+    if changes:
+        row.egress_mode = body.mode
+        row.egress_hosts = hosts
+        row.updated_at = now_iso()
+        row.updated_by = caller.actor
+        audit.record(db, caller.actor, action, f'Playbook "{row.name}": {"; ".join(changes)}', target=row.name)
+        db.commit()
+    return _detail(db, row)
+
+
+@router.put("/playbooks/{playbook_id}/data-allow")
+def set_data_allow(
+    playbook_id: str, body: DataAllowIn, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Open or close a class of data for the playbook. Opening needs the double
+    check; the audit entry names the hosts that will be able to receive it."""
+    row = _get(db, playbook_id)
+    if body.dataClass not in guard.CLASSES:
+        raise HTTPException(status_code=400, detail="Unknown class of data")
+    opened = set(row.data_allow or [])
+    label = guard.CLASSES[body.dataClass]["label"]
+    if body.allow and body.dataClass not in opened:
+        _double_check(row, body.acknowledged, body.confirmName)
+        opened.add(body.dataClass)
+        policy = outbound.policy_for(db, row)
+        where = "any host" if policy.mode == "any" else (", ".join(sorted(policy.hosts)) or "no host yet")
+        audit.record(
+            db,
+            caller.actor,
+            "automation.data.open",
+            f'Playbook "{row.name}" may send {label.lower()} to: {where}',
+            target=row.name,
+        )
+    elif not body.allow and body.dataClass in opened:
+        opened.discard(body.dataClass)
+        audit.record(
+            db,
+            caller.actor,
+            "automation.data.close",
+            f'Playbook "{row.name}" may no longer send {label.lower()}',
+            target=row.name,
+        )
+    else:
+        return _detail(db, row)
+    row.data_allow = [name for name in guard.CLASSES if name in opened]
+    row.updated_at = now_iso()
+    row.updated_by = caller.actor
+    db.commit()
+    return _detail(db, row)
+
+
+def _settings_out(db: OrmSession) -> dict:
+    current = state.read(db)
+    smtp = dict(current.get("smtp") or {})
+    return {
+        "enabled": bool(current["enabled"]),
+        "workerAlive": state.worker_alive(db),
+        "hosts": current.get("hosts") or [],
+        "smtp": {
+            "host": smtp.get("host", ""),
+            "port": smtp.get("port", 587),
+            "security": smtp.get("security", "starttls"),
+            "username": smtp.get("username", ""),
+            "sender": smtp.get("sender", ""),
+            "caPem": smtp.get("ca_pem", ""),
+            "hasPassword": bool(smtp.get("password")),  # never the password itself
+        },
+    }
+
+
+@router.get("/settings")
+def get_settings(_caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """The hosts every "listed" playbook may reach, and the SMTP server of the e-mail node."""
+    return _settings_out(db)
+
+
+@router.put("/settings")
+def put_settings(
+    body: SettingsIn, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Change the hosts listed for every playbook, or the SMTP server. The password is
+    stored encrypted and never returned."""
+    current = state.read(db)
+    changes = []
+    if body.hosts is not None:
+        hosts = _hosts(body.hosts)
+        if hosts != sorted(current.get("hosts") or []):
+            state.write(db, hosts=hosts)
+            changes.append("hosts for every playbook: " + (", ".join(hosts) or "none"))
+    if body.smtp is not None:
+        stored = dict(current.get("smtp") or {})
+        host = egress.clean_host(body.smtp.host) if body.smtp.host.strip() else ""
+        if host is None:
+            raise HTTPException(status_code=400, detail="The SMTP server is a host name or an address")
+        fresh = {
+            "host": host,
+            "port": body.smtp.port,
+            "security": body.smtp.security,
+            "username": body.smtp.username.strip(),
+            "sender": body.smtp.sender.strip(),
+            "ca_pem": body.smtp.caPem.strip(),
+            "password": stored.get("password", ""),
+        }
+        if body.smtp.password is not None:
+            fresh["password"] = vault.encrypt(body.smtp.password) if body.smtp.password else ""
+        if fresh != stored:
+            state.write(db, smtp=fresh)
+            changes.append(f"SMTP server: {host or 'none'}")
+    if changes:
+        audit.record(db, caller.actor, "automation.settings", "Changed the automation settings: " + "; ".join(changes))
+        db.commit()
+    return _settings_out(db)

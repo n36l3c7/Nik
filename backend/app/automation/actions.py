@@ -50,6 +50,7 @@ class Call:
     step_id: str = ""
     approved_by: str | None = None
     now: float = 0.0
+    held: str = "fail"  # what the node does with data the guard holds back: fail | drop
 
 
 @dataclass
@@ -74,6 +75,11 @@ class Spec:
     idempotent: bool
     timeout: int
     run: Callable[[Call], Result]
+    outside: Callable[[dict], bool] | None = None  # when it depends on the arguments (a GET changes nothing)
+
+    def changes(self, args: dict) -> bool:
+        """Whether this call changes something outside Nik."""
+        return bool(self.outside(args)) if self.outside is not None else self.changes_outside
 
     def entry(self) -> dict:
         """The action as the catalog lists it."""
@@ -101,6 +107,7 @@ def action(
     arguments: list[dict] | None = None,
     outputs: list[dict] | None = None,
     changes_outside: bool = False,
+    outside: Callable[[dict], bool] | None = None,
     idempotent: bool = True,
     timeout: int = 60,
 ):
@@ -112,10 +119,11 @@ def action(
             description=description,
             arguments=tuple(arguments or ()),
             outputs=tuple(outputs or ()),
-            changes_outside=changes_outside,
+            changes_outside=changes_outside or outside is not None,
             idempotent=idempotent,
             timeout=timeout,
             run=fn,
+            outside=outside,
         )
         return fn
 
