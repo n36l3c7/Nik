@@ -1222,6 +1222,26 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/fetch</code> · <code>PUT /api/fetch/{connectionId}</code> · <code>POST …/run</code> ·
+                <code>POST …/resume</code> · <code>GET …/items</code> ·
+                <code>GET …/sample</code>
+              </td>
+              <td>
+                (<strong>connectors.manage</strong>) The connections whose connector can fetch:
+                <code
+                  >{connections: [{connectionId, connection, connector, enabled, state, error, pausedWhy, lastAt,
+                  nextAt, last, madeLastHour, limitPerHour, fetchState}]}</code
+                >, <code>state</code> one of <code>off</code>, <code>ok</code>, <code>failing</code>,
+                <code>paused</code> · tell one to fetch or not, <code>{enabled}</code> · fetch once now (<code
+                  >409</code
+                >
+                when it does not fetch) · let a paused or failing one go on · what it fetched lately with what became of
+                each item (<code>outcome</code>: <code>created</code>, <code>incomplete</code>, <code>dropped</code>,
+                <code>linked</code>, <code>duplicate</code>; <code>?outcome=</code> narrows) · the last item as it came.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
               <td>
                 What the caller was told, the newest first:

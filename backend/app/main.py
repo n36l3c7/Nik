@@ -51,6 +51,7 @@ from .routers import (
     connectors,
     context,
     enrichment,
+    fetch,
     fields,
     flirt,
     incident_types,
@@ -271,6 +272,7 @@ app.include_router(war_room.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(lists.router, prefix="/api")
 app.include_router(mappers.router, prefix="/api")
+app.include_router(fetch.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

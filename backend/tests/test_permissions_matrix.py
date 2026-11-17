@@ -169,6 +169,13 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/classifiers/{connection_id}"): ("connectors.manage",),
     ("PUT", "/api/classifiers/{connection_id}"): ("connectors.manage",),
     ("POST", "/api/classifiers/try"): ("connectors.manage",),
+    # Fetching: whoever manages connectors.
+    ("GET", "/api/fetch"): ("connectors.manage",),
+    ("PUT", "/api/fetch/{connection_id}"): ("connectors.manage",),
+    ("POST", "/api/fetch/{connection_id}/run"): ("connectors.manage",),
+    ("POST", "/api/fetch/{connection_id}/resume"): ("connectors.manage",),
+    ("GET", "/api/fetch/{connection_id}/items"): ("connectors.manage",),
+    ("GET", "/api/fetch/{connection_id}/sample"): ("connectors.manage",),
     ("GET", "/api/notifications"): ("read",),
     ("POST", "/api/notifications/read"): ("read",),
     ("GET", "/api/automation/connectors"): ("connectors.manage",),

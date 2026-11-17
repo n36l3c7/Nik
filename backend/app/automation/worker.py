@@ -50,6 +50,8 @@ _storage_looked = 0.0
 _started = False
 _stopping = threading.Event()
 _in_flight: set[str] = set()
+# The connections a cycle of fetch is running for.
+_fetching: set[str] = set()
 
 
 def acquire(db, holder: str = HOLDER, now: float | None = None) -> bool:
@@ -259,11 +261,21 @@ def tick(now: float | None = None, *, pool: ThreadPoolExecutor | None = None, ho
             settings.AUTOMATION_CONCURRENCY * 4 if pool is None else settings.AUTOMATION_CONCURRENCY - len(_in_flight)
         )
         claimed = claim_steps(db, now, free, holder) if free > 0 else []
+        from .. import fetch
+
+        fetching = [found for found in fetch.due(db, now) if found not in _fetching]
     done["steps"] = len(claimed)
     if pool is None:
         for step_id in claimed:
             run_step(step_id, now)
+        for connection_id in fetching:
+            fetch.run(connection_id, now)
         return done
+    for connection_id in fetching:
+        _fetching.add(connection_id)
+        pool.submit(fetch.run, connection_id).add_done_callback(
+            lambda _future, done_id=connection_id: _fetching.discard(done_id)
+        )
     for step_id in claimed:
         _in_flight.add(step_id)
         pool.submit(run_step, step_id).add_done_callback(lambda _future, done_id=step_id: _in_flight.discard(done_id))

@@ -1467,6 +1467,46 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         each connection of the connector is the small table under it.
       </p>
 
+      <h3 id="fetching">Fetching: alerts that become incidents</h3>
+      <p>
+        A connection whose connector has a <a href="#connector-fetch"><code>fetch</code></a> can bring alerts in. It
+        does nothing until it is told to (<em>Settings → Automation → Fetch status</em>, or
+        <code>PUT /api/fetch/{connection}</code>); then the automation worker reads it every
+        <code>interval_seconds</code>. One cycle:
+      </p>
+      <ol>
+        <li>
+          the request is sent with the <code>state</code> the cycle before left (before the first one, what
+          <code>first_state</code> says of the moment <code>first_fetch</code> ago), and its pages are read: 200 items a
+          cycle at most;
+        </li>
+        <li>
+          each item is told apart by its <code>item_id</code>. One this connection has fetched before is skipped: an
+          alert makes one incident, however many times the other side sends it;
+        </li>
+        <li>
+          a new item is classified (the type of incident) and mapped (its fields and its context), by the
+          <a href="#mappers">classifier and the mapper</a>; then the incident is made, with a line in its War Room that
+          holds the item as it came, and <code>incident.created</code> is published, so the playbooks that wait for it
+          start;
+        </li>
+        <li>the state for the next cycle is saved when the cycle was read to its end.</li>
+      </ol>
+      <p>
+        An item its mapper cannot make whole still becomes an incident: with no mapper it has a name made of the
+        connector and the id of the item; a field the registry refuses is left empty; a field the type needs and nothing
+        gave is missing. Fetch status lists it as <em>incomplete</em> with what was wrong, so that the mapper is
+        corrected rather than alerts lost.
+      </p>
+      <p>
+        A fetch reaches the host of its own connection and nothing else, with its credentials; the data guard is not
+        involved, since data comes in. A request that fails marks the connection <em>failing</em> and is tried again
+        later and later, an hour apart at most; whoever manages connectors is told once. A connection that makes more
+        than 500 incidents in an hour is <em>paused</em>, with nothing lost: the state stops at the last alert that
+        became an incident, and it goes on from there when someone has looked and lets it. With automation stopped,
+        nothing fetches.
+      </p>
+
       <h3 id="shipped-connectors">The connectors Nik ships</h3>
       <p>
         Twelve files for nine products. Each was written from what the vendor publishes about its API and is tested

@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type a fetched item becomes. They are data in Nik (`/api/mappers`,
   `/api/classifiers`), changed without touching a connector file, and
   *try* shows what one makes of a sample.
+- **Fetching.** A connection whose connector says how brings alerts in:
+  the automation worker reads it at its interval, an alert seen before is
+  skipped, and each new one is classified, mapped and made into an incident
+  with the item as it came in its War Room. A request that fails is tried
+  later and later; a connection that makes more than 500 incidents in an
+  hour is paused with nothing lost. `/api/fetch` shows how each goes, turns
+  it on and off, fetches now and lists what became of each item.
 - **The mapper editor**, in *Settings → Automation → Classifiers and
   mappers*: a table with one row for each field of Nik (those the type needs
   first), the expression that gives it its value with a picker of the
