@@ -2606,6 +2606,56 @@ test('a playbook gives tasks and asks questions: My tasks, the work plan of the 
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
 })
 
+test('a type times its incidents: the SLA in Settings, the timers on the incident, what the account was told', async () => {
+  const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
+  const incident = await (await page.request.get(`/api/incidents/${incidentId}`)).json()
+  const typeId = incident.type || 'unclassified'
+
+  // Settings → Incidents → SLA: one hour and a half to contain, for the type of the open incident.
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('SLA', { exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/incidents\/sla$/)
+  await settings.locator('#sla-type').selectOption(typeId)
+  const table = settings.getByRole('table', { name: /^The SLA of / })
+  const contain = table.getByRole('row').filter({ hasText: 'time_to_contain' })
+  const minutes = contain.getByLabel('Time to contain: minutes allowed', { exact: true })
+  await expect(minutes).toBeDisabled()
+  await contain.getByRole('checkbox').first().check()
+  const save = settings.getByRole('button', { name: /^Save the SLA of / })
+  // Switched on with no time: it says what is missing.
+  await expect(settings.getByRole('alert')).toContainText('Time to contain: say how many minutes are allowed')
+  await expect(save).toBeDisabled()
+  await minutes.fill('90')
+  await contain.getByLabel('Time to contain: minutes allowed if critical').fill('15')
+  await save.click()
+  await expect(settings.getByRole('status')).toContainText('Saved.')
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+
+  // The incident shows its timer beside the tabs; it is paused and started again by hand.
+  const timers = page.getByRole('region', { name: 'SLA timers' })
+  const timer = timers.getByRole('listitem').filter({ hasText: 'Time to contain' })
+  await expect(timer).toContainText(/left · of 1 h 30 min/)
+  await timer.getByRole('button', { name: 'Pause Time to contain' }).click()
+  await expect(timer).toContainText('paused at')
+  await timer.getByRole('button', { name: 'Start Time to contain' }).click()
+  await expect(timer).toContainText(/left · of 1 h 30 min/)
+  await timer.getByRole('button', { name: 'Stop Time to contain' }).click()
+  await expect(timer).toContainText('took')
+  await expect(timer.getByRole('button', { name: 'Stop Time to contain' })).toHaveCount(0)
+
+  // The bell: what this account was told (the approvals and tasks of the tests before), read at once.
+  const bell = page.getByRole('button', { name: /^Notifications \(\d+ new\)$/ })
+  await expect(bell).toBeVisible({ timeout: 45_000 })
+  await bell.click()
+  const told = page.getByRole('dialog', { name: 'Notifications' })
+  await expect(told.getByRole('list', { name: 'Notifications' }).getByRole('listitem').first()).toContainText('new')
+  await told.getByRole('button', { name: 'Mark all as read' }).click()
+  await expect(told.getByRole('button', { name: 'Mark all as read' })).toBeDisabled()
+  await told.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

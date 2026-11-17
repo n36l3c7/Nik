@@ -802,3 +802,105 @@ def link_artifact(call: Call) -> Result:
     )
     triggers.incident_changed(call.db, incident, "incident.updated", ["data"])
     return Result(output={"linked": True})
+
+
+# --------------------------------------------------------------------------- #
+# SLA timers                                                                  #
+# --------------------------------------------------------------------------- #
+TIMER_ARG = {
+    "name": "timer",
+    "type": "text",
+    "required": True,
+    "description": "The timer: time_to_assign, time_to_contain, time_to_close, or a timer field of your own",
+}
+TIMER_OUTPUTS = [
+    {"name": "state", "type": "text", "description": "running, paused or stopped"},
+    {"name": "elapsed_minutes", "type": "number", "description": "What it has counted so far"},
+    {"name": "due_minutes", "type": "number", "description": "The time allowed, when there is one"},
+    {"name": "breached", "type": "bool", "description": "Whether it is past its time"},
+]
+
+
+def _timer(call: Call, what: str) -> Result:
+    from .. import timers
+
+    name = str(call.args.get("timer") or "").strip()
+    row = _incident(call, call.args.get("incident"))
+    minutes = call.args.get("minutes")
+    try:
+        if call.dry_run:
+            timers._known(call.db, name)
+            return Result(output={"state": "dry-run"}, request={"would": f"{what} the timer {name}"})
+        if what == "start":
+            due = int(float(minutes)) * 60 if minutes not in (None, "") else None
+            if due is not None and not 60 <= due <= timers.MINUTES_MAX * 60:
+                raise ActionError("The time allowed is in minutes, from 1 to a year", retry=False)
+            timers.start(
+                call.db,
+                row,
+                name,
+                call.now,
+                due_s=due,
+                business=bool(call.args.get("business_hours")) if call.args.get("business_hours") is not None else None,
+                restart=bool(call.args.get("restart")),
+            )
+        else:
+            timers.halt(call.db, row, name, call.now, state="paused" if what == "pause" else "stopped")
+    except timers.TimerError as error:
+        raise ActionError(error.message, retry=False) from None
+    except (TypeError, ValueError):
+        raise ActionError("The time allowed is a number of minutes", retry=False) from None
+    shown = next((item for item in timers.of(call.db, row, call.now) if item["field"] == name), None)
+    audit.record(call.db, ACTOR, f"timer.{what}", f"Timer {name}: {what}" + signature(call), row)
+    if shown is None:
+        return Result(output={"state": "idle", "elapsed_minutes": 0, "due_minutes": None, "breached": False})
+    return Result(
+        output={
+            "state": shown["state"],
+            "elapsed_minutes": shown["elapsedS"] // 60,
+            "due_minutes": (shown["dueS"] // 60) if shown["dueS"] else None,
+            "breached": shown["breached"],
+        }
+    )
+
+
+@action(
+    "timer.start",
+    group="Nik",
+    name="Start a timer",
+    description="Start an SLA timer of an incident, or let it go on from where it was paused or stopped.",
+    arguments=[
+        INCIDENT_ARG,
+        TIMER_ARG,
+        {"name": "minutes", "type": "number", "description": "The time allowed; empty keeps what it has"},
+        {"name": "business_hours", "type": "bool", "description": "Count only inside business hours"},
+        {"name": "restart", "type": "bool", "description": "Count again from nothing"},
+    ],
+    outputs=TIMER_OUTPUTS,
+)
+def timer_start(call: Call) -> Result:
+    return _timer(call, "start")
+
+
+@action(
+    "timer.pause",
+    group="Nik",
+    name="Pause a timer",
+    description="Pause an SLA timer of an incident: it counts nothing until it is started again.",
+    arguments=[INCIDENT_ARG, TIMER_ARG],
+    outputs=TIMER_OUTPUTS,
+)
+def timer_pause(call: Call) -> Result:
+    return _timer(call, "pause")
+
+
+@action(
+    "timer.stop",
+    group="Nik",
+    name="Stop a timer",
+    description="Stop an SLA timer of an incident: what it timed is over.",
+    arguments=[INCIDENT_ARG, TIMER_ARG],
+    outputs=TIMER_OUTPUTS,
+)
+def timer_stop(call: Call) -> Result:
+    return _timer(call, "stop")

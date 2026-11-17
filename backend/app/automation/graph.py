@@ -68,6 +68,7 @@ EVENTS = (
     "ioc.verdict_changed",
     "ioc.watch_hit",
     "storage.low",
+    "sla.breached",
 )
 
 # Names an expression may read besides the nodes before it.

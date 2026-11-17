@@ -24,7 +24,7 @@ import FieldInput from './FieldInput.jsx'
  */
 export default function EditFieldsDialog({ incident, type, title, fields, values, onClose }) {
   const { assignees, refreshIncidents, retryActiveIncident } = useIncidents()
-  const editable = fields.filter((field) => field.writable !== false && field.name !== 'type')
+  const editable = fields.filter((field) => field.writable !== false && field.name !== 'type' && field.type !== 'timer')
   const [typed, setTyped] = useState(() =>
     Object.fromEntries(editable.map((field) => [field.name, toInput(field, values[field.name])])),
   )

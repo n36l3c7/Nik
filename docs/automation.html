@@ -288,6 +288,14 @@
               </td>
             </tr>
             <tr>
+              <td><code>sla.breached</code></td>
+              <td>A timer of an incident passed the time its type allows. Said once for each timer.</td>
+              <td>
+                <code>timer.field</code>, <code>.label</code>, <code>.due_minutes</code>, <code>.elapsed_minutes</code>;
+                the <code>incident.…</code> fields.
+              </td>
+            </tr>
+            <tr>
               <td><code>storage.low</code></td>
               <td>The disk that holds the evidence has less than a tenth free. Said once a day while it stays so.</td>
               <td>
@@ -613,9 +621,29 @@ Content-Type: application/json
               </td>
               <td><code>linked</code></td>
             </tr>
+            <tr>
+              <td>Start a timer · Pause a timer · Stop a timer</td>
+              <td>
+                <code>timer</code> (<code>time_to_assign</code>, <code>time_to_contain</code>,
+                <code>time_to_close</code>, or a timer field of your own), <code>incident</code>; to start:
+                <code>minutes</code> allowed, <code>business_hours</code>, <code>restart</code>
+              </td>
+              <td><code>state</code>, <code>elapsed_minutes</code>, <code>due_minutes</code>, <code>breached</code></td>
+            </tr>
           </tbody>
         </table>
       </div>
+      <p id="sla">
+        <strong>SLA timers.</strong> A timer counts how long an incident has taken: to be assigned, to be contained, to
+        be closed. The type of an incident says which timers its incidents have and the minutes each is allowed (<em
+          >Settings → Incidents → SLA</em
+        >), by severity if you want, and whether only business hours count. A timer the type switches on starts with the
+        incident; <em>time to assign</em> stops when the incident has an owner, <em>time to close</em> when it is closed
+        (and goes on if it is opened again), <em>time to contain</em> when a playbook or a person stops it. A timer past
+        its time is <em>breached</em>, once: the incident is marked (<code>{{ incident.sla_breached }}</code>), its War
+        Room says so, its owner is told, and <code>sla.breached</code> starts the playbooks that wait for it. The worker
+        looks every minute.
+      </p>
 
       <h3 id="http-node">HTTP request</h3>
       <p>

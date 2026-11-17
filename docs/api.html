@@ -1143,6 +1143,33 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/incidents/{id}/timers</code> ·
+                <code>POST /api/incidents/{id}/timers/{field}/{start|pause|stop}</code>
+              </td>
+              <td>
+                The SLA timers of the incident that were started:
+                <code
+                  >{timers: [{field, label, state, elapsedS, dueS, remainingS, breached, breachedAt, business}],
+                  businessHours}</code
+                >; <code>state</code> is <code>running</code>, <code>paused</code> or <code>stopped</code>, and what a
+                timer counted is worked out by the server, inside business hours when it says so · start, pause or stop
+                one by hand (<strong>write</strong>); to start: <code>{minutes, businessHours, restart}</code>. The SLA
+                itself is the <code>sla</code> of an incident type:
+                <code>[{field, minutes, bySeverity: {critical: 15}, businessHours}]</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
+              <td>
+                What the caller was told, the newest first:
+                <code>{notifications: [{id, kind, text, link, at, read}], unread}</code>. <code>kind</code> is
+                <code>task</code>, <code>task.reminder</code>, <code>task.overdue</code>, <code>approval</code>,
+                <code>mention</code> or <code>sla.breached</code>; <code>link</code> is a path inside Nik · mark as read
+                those named in <code>{ids}</code>, or all of them when none is.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/incidents/{id}/work-plan</code></td>
               <td>
                 The work plan of the incident:
@@ -1414,11 +1441,12 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           <strong id="webhooks">Webhooks</strong>: <code>incident.created/updated/deleted</code>,
           <code>note.added</code>, <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an
           indicator of a watched list), <code>mail.analysed</code>, <code>file.analysed</code>,
-          <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>; the last five carry
-          what a playbook's trigger reads for the same event (<a href="automation.html#trigger">Automation → Trigger</a
-          >). Each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds
-          to the address an admin gave, without the checks a playbook's nodes go through: subscribe an address you trust
-          with senders, subjects and file names.
+          <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>,
+          <code>sla.breached</code> (a timer of an incident passed its time); the last six carry what a playbook's
+          trigger reads for the same event (<a href="automation.html#trigger">Automation → Trigger</a>). Each delivery
+          is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds to the address an
+          admin gave, without the checks a playbook's nodes go through: subscribe an address you trust with senders,
+          subjects and file names.
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

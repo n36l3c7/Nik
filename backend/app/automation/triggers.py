@@ -119,6 +119,12 @@ def storage_low(db: OrmSession, total: int, free: int) -> None:
     _announce(db, "storage.low", data)
 
 
+def sla_breached(db: OrmSession, incident: Incident, field: str, label: str, due_s: int, elapsed_s: int) -> None:
+    data, classes = payloads.sla_breached(incident, field, label, due_s, elapsed_s)
+    publish(db, "sla.breached", "incident", incident.id, data, classes)
+    _announce(db, "sla.breached", data)
+
+
 def watch_hit(db: OrmSession, incident: Incident, hits: list[dict]) -> None:
     if settings.AUTOMATION_WORKER == "off" or not hits:
         return

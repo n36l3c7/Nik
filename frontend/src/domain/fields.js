@@ -7,6 +7,7 @@
  * tabs: [ids], hidden: [ids] }`. Every edit here returns a new layout and
  * leaves the one it was given as it was.
  */
+import { storedTimer } from './timers.js'
 
 export const UNCLASSIFIED = 'unclassified'
 
@@ -77,8 +78,10 @@ export function formatValue(field, value) {
   switch (field?.type) {
     case 'bool':
       return value ? 'yes' : 'no'
-    case 'date':
-    case 'timer': {
+    case 'timer':
+      // Started and stopped, never typed: what it holds in a few words (the side panel reads the clock).
+      return storedTimer(value)
+    case 'date': {
       const ms = Date.parse(value)
       if (!Number.isFinite(ms)) return String(value)
       return new Date(ms).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'

@@ -1,4 +1,5 @@
 import {
+  Bell,
   Boxes,
   DatabaseBackup,
   Fingerprint,
@@ -55,7 +56,7 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
  *   panel: 'incidents' | 'artifacts' | 'iocs' | null,   // the open side panel
  *   onPanel: (panel: string | null) => void,
  *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number, approvals: number,
- *             tasks: number, tasksOverdue: number },
+ *             tasks: number, tasksOverdue: number, unread: number },
  *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
@@ -79,6 +80,7 @@ export default function Rail({
   automationOpen = false,
   onTasks,
   tasksOpen = false,
+  onNotifications,
 }) {
   // With Settings or Automations open no panel is shown, and an entry leaves the page for its panel.
   const open = settingsOpen || automationOpen || tasksOpen ? null : panel
@@ -161,6 +163,15 @@ export default function Rail({
         />
       )}
       <span className="flex-1" />
+      {canRead && (
+        <RailButton
+          icon={Bell}
+          label={counts.unread ? `Notifications (${counts.unread} new)` : 'Notifications'}
+          count={counts.unread}
+          alert={counts.unread > 0}
+          onClick={onNotifications}
+        />
+      )}
       {can('audit.read') && <RailButton icon={ScrollText} label="Audit log" onClick={onAudit} />}
       {can('admin') && <RailButton icon={Users} label="Users" onClick={onUsers} />}
       {can('admin') && <RailButton icon={DatabaseBackup} label="Full backup" onClick={onBackup} />}

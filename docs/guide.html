@@ -997,6 +997,16 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           is for one user, for whoever holds a role, or for the owner of its incident, whoever that is when it is done;
           <em>All open</em> and <em>Closed</em> list everyone's.
         </li>
+        <li id="sla-timers">
+          <strong>SLA timers</strong> are in the panel beside the tabs when the type of the incident times it: what is
+          left of the time to assign, to contain and to close, or by how much it is over. Whoever works incidents
+          pauses, starts and stops one by hand; a playbook can too.
+        </li>
+        <li id="notifications">
+          <strong>The bell</strong> on the rail is what you were told: a task given to you or overdue, an approval that
+          waits, a colleague who wrote <code>@you</code> in a War Room, a timer of an incident you own past its time.
+          Opening one goes where it points.
+        </li>
         <li>
           <strong>Commands.</strong> The same line runs a command when it starts with <code>!</code>:
           <code>!ip 185.220.101.47</code> asks what is known of an address,
@@ -1111,6 +1121,14 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 Every field an incident can hold, with its name, its type and where it is used. A field has one name for
                 one thing, whoever sets it, so its name and its type never change; its label and its choices do. A field
                 no type lists and no incident holds can be deleted.
+              </td>
+            </tr>
+            <tr>
+              <td>SLA <em>(admins)</em></td>
+              <td>
+                For each type of incident, the minutes its incidents are allowed to be assigned, contained and closed,
+                by severity if you want, counting every hour or business hours only. A timer that is on starts with the
+                incident and is shown beside its tabs; past its time the incident is marked and its owner is told.
               </td>
             </tr>
             <tr>

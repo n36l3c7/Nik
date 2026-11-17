@@ -38,6 +38,7 @@ import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
 import { automationFromPath, automationPath } from './domain/automationNav.js'
 import { tasksFromPath, tasksPath } from './domain/tasks.js'
 import { useTasks } from './context/TasksContext.jsx'
+import NotificationsDialog from './components/tasks/NotificationsDialog.jsx'
 import { mailboxFormatOf } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
@@ -491,7 +492,8 @@ export default function App() {
   useEffect(() => {
     if (!tasksRoute) tasksReturn.current = null
   }, [tasksRoute])
-  const { count: taskCount } = useTasks()
+  const { count: taskCount, unread: unreadNotifications } = useTasks()
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const tasksShown = Boolean(tasksRoute) && can('read') && !settings && !automationShown
 
   // The list of keyboard shortcuts ("?" or the header button).
@@ -732,6 +734,7 @@ export default function App() {
           approvals: canAutomate ? approvalsWaiting : 0,
           tasks: taskCount.mine,
           tasksOverdue: taskCount.overdue,
+          unread: unreadNotifications,
         }}
         can={can}
         onSearch={() => setPaletteOpen(true)}
@@ -744,7 +747,9 @@ export default function App() {
         automationOpen={automationShown}
         onTasks={() => (tasksShown ? closeTasks() : openTasks())}
         tasksOpen={tasksShown}
+        onNotifications={() => setNotificationsOpen(true)}
       />
+      {notificationsOpen && <NotificationsDialog onClose={() => setNotificationsOpen(false)} />}
       {settings && (
         <SettingsPage
           section={settings.id}

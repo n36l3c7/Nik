@@ -16,10 +16,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import tasks, war_room, work_plan
+from .. import tasks, timers, war_room, work_plan
 from ..core import audit
 from ..core.db import get_db
-from ..core.models import Incident, Task, WarRoomEntry
+from ..core.models import Incident, Notification, Task, WarRoomEntry
 from ..core.security import Principal, reader_principal, writer_principal
 
 router = APIRouter(tags=["tasks"])
@@ -231,3 +231,104 @@ def open_count(db: OrmSession, incident_id: str) -> int:
         )
         or 0
     )
+
+
+# --------------------------------------------------------------------------- #
+# SLA timers                                                                  #
+# --------------------------------------------------------------------------- #
+class TimerIn(BaseModel):
+    # For "start": the time allowed in minutes (empty keeps what the timer has).
+    minutes: int | None = Field(default=None, ge=1, le=timers.MINUTES_MAX)
+    businessHours: bool | None = None
+    restart: bool = False
+
+
+@router.get("/incidents/{incident_id}/timers")
+def list_timers(
+    incident_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """The SLA timers of the incident that were started: state, what each counted, what is left."""
+    incident = db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return {"timers": timers.of(db, incident, time.time()), "businessHours": timers.business_hours(db)}
+
+
+@router.post("/incidents/{incident_id}/timers/{field}/{what}")
+def move_timer(
+    incident_id: str,
+    field: str,
+    what: str,
+    body: TimerIn,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Start, pause or stop a timer of the incident by hand (``what``: start | pause | stop)."""
+    from ..core.locking import lock_incident
+
+    if what not in ("start", "pause", "stop"):
+        raise HTTPException(status_code=404, detail="A timer is started, paused or stopped")
+    incident = lock_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    now = time.time()
+    try:
+        if what == "start":
+            timers.start(
+                db,
+                incident,
+                field,
+                now,
+                due_s=body.minutes * 60 if body.minutes else None,
+                business=body.businessHours,
+                restart=body.restart,
+            )
+        else:
+            timers.halt(db, incident, field, now, state="paused" if what == "pause" else "stopped")
+    except timers.TimerError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+    audit.record(db, caller.actor, f"timer.{what}", f"Timer {field}: {what}", incident)
+    db.commit()
+    return {"timers": timers.of(db, incident, now)}
+
+
+# --------------------------------------------------------------------------- #
+# What an account is told                                                     #
+# --------------------------------------------------------------------------- #
+class ReadIn(BaseModel):
+    # The notifications that were read; none given means all of them.
+    ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+def _told(row: Notification) -> dict:
+    return {"id": row.id, "kind": row.kind, "text": row.text, "link": row.link, "at": row.at, "read": bool(row.read_at)}
+
+
+@router.get("/notifications")
+def list_notifications(
+    limit: int = Query(50, ge=1, le=200),
+    caller: Principal = Depends(reader_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """What the caller was told, the newest first, and how many are not read yet."""
+    mine = Notification.username == caller.actor
+    rows = db.scalars(select(Notification).where(mine).order_by(Notification.at.desc()).limit(limit)).all()
+    unread = db.scalar(select(func.count()).select_from(Notification).where(mine, Notification.read_at.is_(None)))
+    return {"notifications": [_told(row) for row in rows], "unread": unread or 0}
+
+
+@router.post("/notifications/read")
+def read_notifications(
+    body: ReadIn, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Mark notifications of the caller as read: those named, or all of them."""
+    from ..core.security import now_iso
+
+    stmt = select(Notification).where(Notification.username == caller.actor, Notification.read_at.is_(None))
+    if body.ids:
+        stmt = stmt.where(Notification.id.in_(body.ids))
+    stamp = now_iso()
+    for row in db.scalars(stmt):
+        row.read_at = stamp
+    db.commit()
+    return list_notifications(50, caller, db)

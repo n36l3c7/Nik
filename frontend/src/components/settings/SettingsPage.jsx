@@ -14,6 +14,7 @@ import {
   Plug,
   Shapes,
   TextCursorInput,
+  Timer,
   Radar,
   ScrollText,
   Search,
@@ -38,6 +39,7 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
 import ConnectionsSection from './sections/ConnectionsSection.jsx'
 import FieldsSection from './sections/FieldsSection.jsx'
 import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
+import SlaSection from './sections/SlaSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
@@ -76,6 +78,7 @@ const SECTION_VIEWS = {
   flirt: { icon: Fingerprint, Component: FlirtSignaturesSection },
   incidentTypes: { icon: Shapes, Component: IncidentTypesSection },
   fields: { icon: TextCursorInput, Component: FieldsSection },
+  sla: { icon: Timer, Component: SlaSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
   connections: { icon: Cable, Component: ConnectionsSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },

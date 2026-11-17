@@ -17,6 +17,7 @@ run leaves by ``timeout``; reminders are sent at their interval.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -83,6 +84,34 @@ def notify(db: OrmSession, username: str, kind: str, text: str, link: str = "") 
     if not username:
         return
     db.add(Notification(id=new_id(), username=username, kind=kind, text=text[:500], link=link[:500], at=now_iso()))
+
+
+def notify_approval(db: OrmSession, run: Run, question: str) -> None:
+    """An approval waits: whoever may answer it is told (the caller commits)."""
+    from .core.permissions import AUTOMATION_RUN, permissions_of
+
+    link_to = f"/incident/{run.incident_id}" if run.incident_id else "/automation/approvals"
+    for user in db.scalars(select(User).where(User.disabled.is_(False))):
+        if AUTOMATION_RUN in permissions_of(clean_roles(user.roles)) and SYSTEM_ROLE not in clean_roles(user.roles):
+            notify(db, user.username, "approval", f"An approval waits: {question}", link_to)
+
+
+MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9][A-Za-z0-9._-]{0,63})")
+
+
+def notify_mentions(db: OrmSession, incident: Incident, text: str, author: str) -> list[str]:
+    """``@name`` in a note of the War Room tells that account (the caller commits). Returns who was told."""
+    wanted = {name.lower().rstrip(".") for name in MENTION.findall(text or "")}
+    if not wanted:
+        return []
+    told = []
+    for user in db.scalars(select(User).where(User.disabled.is_(False))):
+        if user.username.lower() in wanted and user.username.lower() != author.lower():
+            notify(
+                db, user.username, "mention", f"{author} mentioned you in {incident.name}", f"/incident/{incident.id}"
+            )
+            told.append(user.username)
+    return told
 
 
 def users_with_role(db: OrmSession, role: str) -> list[str]:

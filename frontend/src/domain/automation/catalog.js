@@ -104,6 +104,11 @@ export const EVENTS = {
     sample: ['list.name', 'My watched list'],
   },
   'storage.low': { label: 'The disk is nearly full', about: '', sample: ['disk.free_percent', 5] },
+  'sla.breached': {
+    label: 'A timer of an incident passes its time',
+    about: 'incident',
+    sample: ['timer.field', 'time_to_contain'],
+  },
 }
 
 /** An event as the inspector lists it: "An e-mail is analysed · mail.analysed". */
@@ -157,6 +162,16 @@ function eventFields(event) {
         { name: 'list.id', type: 'text', description: 'The id of the watched list' },
         { name: 'list.name', type: 'text', description: 'Its name' },
         { name: 'hits', type: 'list', description: 'Every hit: each with type, value, list and incident' },
+        ...INCIDENT_FIELDS,
+      ]
+    case 'sla.breached':
+      return [
+        ...fieldsOf('timer', [
+          ['field', 'text', 'The timer: time_to_assign, time_to_contain, time_to_close…'],
+          ['label', 'text', 'Its name'],
+          ['due_minutes', 'number', 'The time it was allowed'],
+          ['elapsed_minutes', 'number', 'What it had counted'],
+        ]),
         ...INCIDENT_FIELDS,
       ]
     case 'storage.low':
