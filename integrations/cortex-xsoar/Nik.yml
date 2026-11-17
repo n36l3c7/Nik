@@ -17,7 +17,7 @@ configuration:
   required: true
   displaypassword: API Key
   hiddenusername: true
-  additionalinfo: A Nik API key (Settings → API keys). Analyst scope covers incidents/notes/uploads; admin scope is needed for admin-data commands.
+  additionalinfo: A Nik API key (Settings → API keys). The Analyst role covers incidents/notes/uploads; add the Audit role to read the audit log; Admin is needed for admin-data commands.
 - display: Trust any certificate (not secure)
   name: insecure
   type: 8
