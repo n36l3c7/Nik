@@ -431,6 +431,8 @@ def test_migration_0027_adds_the_connector_tables_and_leaves_existing_ones(tmp_p
         conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
         # One of them is there already (a database the baseline created from the models).
         conn.execute(sa.text("CREATE TABLE connectors (id VARCHAR(41) PRIMARY KEY, name VARCHAR(80) NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE playbooks (id VARCHAR(32) PRIMARY KEY, name VARCHAR(120) NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO playbooks (id, name) VALUES ('p1', 'Kept')"))
 
     import app.core.db
 
@@ -440,6 +442,9 @@ def test_migration_0027_adds_the_connector_tables_and_leaves_existing_ones(tmp_p
     command.upgrade(cfg, "0027_connectors")
     with engine.connect() as conn:
         assert set(CONNECTOR_TABLES) <= set(sa.inspect(conn).get_table_names())
+        # The address a playbook can be started at from outside: nobody has one yet.
+        assert {c["name"] for c in sa.inspect(conn).get_columns("playbooks")} >= {"hook_hash", "hook_created_at"}
+        assert conn.execute(sa.text("SELECT name, hook_hash FROM playbooks")).all() == [("Kept", None)]
         assert {c["name"] for c in sa.inspect(conn).get_columns("connectors")} == {"id", "name"}  # left as it was
         assert {c["name"] for c in sa.inspect(conn).get_columns("connections")} >= {"connector_id", "config", "secrets"}
     command.stamp(cfg, "0026_automation")
@@ -447,3 +452,4 @@ def test_migration_0027_adds_the_connector_tables_and_leaves_existing_ones(tmp_p
     command.downgrade(cfg, "0026_automation")
     with engine.connect() as conn:
         assert not set(CONNECTOR_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert {c["name"] for c in sa.inspect(conn).get_columns("playbooks")} == {"id", "name"}

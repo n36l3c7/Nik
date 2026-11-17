@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { duration, inputValues, isFinished, nodeStatuses, runnable, stepLine, stepsOf, triggerLabel } from './runs.js'
+import {
+  artifactTarget,
+  duration,
+  indicatorTarget,
+  inputValues,
+  isFinished,
+  nodeStatuses,
+  runnable,
+  stepLine,
+  stepsOf,
+  triggerLabel,
+} from './runs.js'
 
 const step = (node, status, extra = {}) => ({ node, status, port: null, attempt: 1, itemIndex: null, ...extra })
 
@@ -69,6 +80,37 @@ test('what started a run, and which playbooks can be run by hand', () => {
     runnable(playbooks, { dry: true }).map((playbook) => playbook.name),
     ['a', 'b'],
   )
+})
+
+test('a playbook is offered on what its event is about, or on anything when it has none', () => {
+  const playbooks = [
+    { name: 'any', version: 1, runsOn: '', triggerConfig: { manual: true } },
+    { name: 'mail', version: 1, runsOn: 'mail', triggerConfig: { manual: true, event: 'mail.analysed' } },
+    { name: 'case', version: 1, runsOn: 'incident', triggerConfig: { manual: true, event: 'incident.created' } },
+    { name: 'auto', version: 1, runsOn: 'mail', triggerConfig: { event: 'mail.analysed' } },
+  ]
+  const names = (options) => runnable(playbooks, options).map((playbook) => playbook.name)
+  assert.deepEqual(names({ on: 'mail' }), ['any', 'mail'])
+  assert.deepEqual(names({ on: 'indicator' }), ['any'])
+  assert.deepEqual(names({ on: 'incident' }), ['any', 'case'])
+  assert.deepEqual(names({ on: 'mail', dry: true }), ['any', 'mail', 'auto'])
+  assert.deepEqual(names({}), ['any', 'mail', 'case'])
+
+  assert.deepEqual(artifactTarget({ id: 'mail-ab', kind: 'mail', name: 'Invoice' }), {
+    kind: 'artifact',
+    id: 'mail-ab',
+    what: 'mail',
+    label: 'Invoice',
+  })
+  assert.equal(artifactTarget({ id: 'url-1', kind: 'url', name: '' }).label, 'url-1')
+  assert.equal(artifactTarget({ id: 'pcap-1', kind: 'pcap', name: 'x' }), null)
+  assert.equal(artifactTarget(undefined), null)
+  assert.deepEqual(indicatorTarget('domain', 'evil.example'), {
+    kind: 'indicator',
+    id: 'domain:evil.example',
+    what: 'indicator',
+    label: 'evil.example',
+  })
 })
 
 test('the inputs of a run are sent as their types say', () => {

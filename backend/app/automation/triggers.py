@@ -1,6 +1,7 @@
 """From what happens in Nik to runs: the outbox, matching, limits.
 
-A change (an incident created or updated) writes an event to the outbox
+A change (an incident created or updated, an e-mail, a file or an address
+analysed, a verdict that changed) writes an event to the outbox
 (``automation_events``) **in its own transaction**: the event exists exactly
 when the change does. The worker reads the outbox and, for each event, starts
 a run of every enabled playbook whose trigger waits for it and whose
@@ -27,7 +28,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..core.config import settings
-from ..core.models import AutomationEvent, AutomationSchedule, Incident, Playbook, PlaybookVersion, Run
+from ..core.models import (
+    Artifact,
+    AutomationEvent,
+    AutomationSchedule,
+    Incident,
+    Mail,
+    Playbook,
+    PlaybookVersion,
+    Run,
+    Sample,
+    UrlScan,
+)
 from . import engine, graph, payloads, schedules
 from . import expressions as ex
 
@@ -67,6 +79,56 @@ def publish(db: OrmSession, kind: str, object_kind: str, object_id: str, data: d
 def incident_changed(db: OrmSession, incident: Incident, kind: str, changed: list[str] | None = None) -> None:
     data, classes = payloads.incident_event(incident, changed)
     publish(db, kind, "incident", incident.id, data, classes)
+
+
+def _announce(db: OrmSession, kind: str, data: dict) -> None:
+    """The same event to the webhooks subscribed to it (``events.py``): what an
+    admin asked to be told of, at the address they gave."""
+    from ..events import emit_detached
+
+    emit_detached(db, kind, data)
+
+
+def mail_analysed(db: OrmSession, mail: Mail, incident: Incident | None = None, from_mailbox: str = "") -> None:
+    data, classes = payloads.mail_event(mail, incident, from_mailbox)
+    publish(db, "mail.analysed", "artifact", data["mail"]["artifact_id"], data, classes)
+    _announce(db, "mail.analysed", data)
+
+
+def file_analysed(db: OrmSession, sample: Sample, artifact: Artifact | None, incident: Incident | None = None) -> None:
+    data, classes = payloads.file_event(sample, artifact, incident)
+    publish(db, "file.analysed", "artifact", data["file"]["artifact_id"], data, classes)
+    _announce(db, "file.analysed", data)
+
+
+def url_analysed(db: OrmSession, scan: UrlScan) -> None:
+    data, classes = payloads.scan_event(scan)
+    publish(db, "url.analysed", "artifact", data["scan"]["artifact_id"], data, classes)
+    _announce(db, "url.analysed", data)
+
+
+def verdict_changed(db: OrmSession, kind: str, value: str, old: str, new: str, sources: list[str]) -> None:
+    data, classes = payloads.verdict_changed(db, kind, value, old, new, sources)
+    publish(db, "ioc.verdict_changed", "indicator", indicator_id(kind, value), data, classes)
+    _announce(db, "ioc.verdict_changed", data)
+
+
+def storage_low(db: OrmSession, total: int, free: int) -> None:
+    data, classes = payloads.storage_low(total, free)
+    publish(db, "storage.low", "storage", "", data, classes)
+    _announce(db, "storage.low", data)
+
+
+def watch_hit(db: OrmSession, incident: Incident, hits: list[dict]) -> None:
+    if settings.AUTOMATION_WORKER == "off" or not hits:
+        return
+    data, classes = payloads.watch_hit(db, incident, hits)
+    publish(db, "ioc.watch_hit", "incident", incident.id, data, classes)
+
+
+def indicator_id(kind: str, value: str) -> str:
+    """An indicator as the object of a run: ``domain:evil.example``."""
+    return f"{kind}:{value}"
 
 
 # --------------------------------------------------------------------------- #
@@ -129,6 +191,14 @@ def refusal(db: OrmSession, playbook: Playbook, object_kind: str, object_id: str
     return None
 
 
+def _incident_of(object_kind: str, object_id: str, data: dict) -> str | None:
+    """The incident a run belongs to: its object, or the incident its object was analysed in."""
+    if object_kind == "incident":
+        return object_id
+    held = data.get("incident")
+    return str(held["id"]) if isinstance(held, dict) and held.get("id") else None
+
+
 def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run]:
     """Start the runs an event triggers (the caller commits)."""
     payload = event.payload or {}
@@ -160,7 +230,8 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
                 classes=classes,
                 object_kind=event.object_kind,
                 object_id=event.object_id,
-                incident_id=event.object_id if event.object_kind == "incident" else None,
+                incident_id=_incident_of(event.object_kind, event.object_id, data),
+                artifact_id=event.object_id if event.object_kind == "artifact" else None,
                 started_by="nik-automation",
                 event_id=event.id,
                 caused_by_run=cause,
@@ -234,17 +305,65 @@ def fire_schedules(db: OrmSession, now: float) -> list[Run]:
     return started
 
 
-def manual_object(db: OrmSession, object_kind: str, object_id: str, actor: str) -> tuple[dict, dict, str | None] | None:
-    """The payload of a run started by hand on an object: (data, classes, incident id); None when it does not exist."""
+def manual_object(db: OrmSession, object_kind: str, object_id: str, actor: str) -> tuple[dict, dict, str, str] | None:
+    """The payload of a run started by hand on an object: (data, classes, what
+    it is, incident id); None when it does not exist. What it is: ``incident``,
+    ``mail``, ``file``, ``url``, ``indicator``, or nothing."""
     if not object_kind:
         data, classes = payloads.manual(actor, None)
-        return data, classes, None
+        return data, classes, "", ""
     if object_kind == "incident":
         incident = db.get(Incident, object_id)
         if incident is None:
             return None
         data, classes = payloads.manual(actor, incident)
-        return data, classes, incident.id
+        return data, classes, "incident", incident.id
+    if object_kind == "artifact":
+        artifact = db.get(Artifact, object_id)
+        found = payloads.artifact_manual(actor, db, artifact) if artifact is not None else None
+        if found is None:
+            return None
+        return found[0], found[1], artifact.kind, ""
+    if object_kind == "indicator":
+        from ..iocs import TYPES
+
+        kind, _, value = object_id.partition(":")
+        if kind not in TYPES or not value:
+            return None
+        data, classes = payloads.indicator_manual(actor, db, kind, value)
+        return data, classes, "indicator", ""
+    return None
+
+
+# What each event is about. A playbook run by hand on something else would read fields that are not there.
+_ABOUT = {
+    "incident.created": "incident",
+    "incident.updated": "incident",
+    "ioc.watch_hit": "incident",
+    "mail.analysed": "mail",
+    "file.analysed": "file",
+    "url.analysed": "url",
+    "ioc.verdict_changed": "indicator",
+}
+_NAMES = {
+    "incident": "an incident",
+    "mail": "an e-mail",
+    "file": "a file",
+    "url": "an address",
+    "indicator": "an indicator",
+}
+
+
+def object_of(config: dict[str, Any]) -> str:
+    """What a trigger's event is about ("" when it has none, or one about nothing)."""
+    return _ABOUT.get(str(config.get("event") or ""), "")
+
+
+def manual_problem(config: dict[str, Any], what: str) -> str | None:
+    """Why a playbook cannot be run by hand on this kind of object (None when it can)."""
+    wanted = object_of(config)
+    if what and wanted and what != wanted:
+        return f"This playbook runs on {_NAMES[wanted]}, not on {_NAMES[what]}"
     return None
 
 
@@ -255,6 +374,8 @@ def describe(config: dict[str, Any]) -> str:
         parts.append(str(config["event"]))
     if config.get("cron"):
         parts.append(f"schedule {config['cron']}")
+    if config.get("webhook"):
+        parts.append("webhook")
     if config.get("manual"):
         parts.append("by hand")
     return ", ".join(parts) or "none"

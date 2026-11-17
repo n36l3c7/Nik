@@ -742,6 +742,9 @@ class Playbook(Base):
     max_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=86400)
     approval_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # The address a request from outside starts the playbook at: the SHA-256 of its token (never the token).
+    hook_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True)
+    hook_created_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)

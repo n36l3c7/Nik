@@ -54,8 +54,17 @@ DEFAULT_PORT["for_each"] = "done"
 OPERATORS = ("eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "matches", "exists", "empty")
 ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice", "file")
 
-# The events a trigger can wait for in this release (the others come with their features).
-EVENTS = ("incident.created", "incident.updated")
+# The events a trigger can wait for.
+EVENTS = (
+    "incident.created",
+    "incident.updated",
+    "mail.analysed",
+    "file.analysed",
+    "url.analysed",
+    "ioc.verdict_changed",
+    "ioc.watch_hit",
+    "storage.low",
+)
 
 # Names an expression may read besides the nodes before it.
 ALWAYS = ("trigger", "run", "inputs")
@@ -255,9 +264,11 @@ def _check_node(node: dict, library: Library, problems: list[Problem]) -> None:
         problems.append(Problem("The settings of the node are not an object", node_id, "config"))
         return
     if kind == "trigger":
-        ways = [key for key in ("event", "cron", "manual") if config.get(key)]
+        ways = [key for key in ("event", "cron", "webhook", "manual") if config.get(key)]
         if not ways:
-            problems.append(Problem("A trigger needs an event, a schedule or to be run by hand", node_id, "event"))
+            problems.append(
+                Problem("A trigger needs an event, a schedule, a webhook or to be run by hand", node_id, "event")
+            )
         if config.get("event") and config["event"] not in EVENTS:
             problems.append(Problem("Unknown event: " + ", ".join(EVENTS), node_id, "event"))
         if config.get("cron"):

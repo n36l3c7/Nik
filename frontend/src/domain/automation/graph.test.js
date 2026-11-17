@@ -31,6 +31,11 @@ import {
   nodeFrom,
   summaryOf,
   triggerFields,
+  EVENTS,
+  eventLabel,
+  objectName,
+  runsOn,
+  sampleFilter,
   valueTree,
 } from './catalog.js'
 import { layered, tidy } from './layout.js'
@@ -276,6 +281,39 @@ test('the values a node can pick', () => {
   )
   assert.ok(triggerFields({ event: 'incident.updated' }).some((field) => field.name === 'changed'))
   assert.equal(triggerFields({ manual: true })[0].name, 'actor')
+})
+
+test('each event says what its trigger holds, what it is about and a filter to start from', () => {
+  const names = (config) => triggerFields(config).map((field) => field.name)
+  assert.ok(names({ event: 'mail.analysed' }).includes('mail.sender_sha256'))
+  assert.ok(names({ event: 'mail.analysed' }).includes('from_mailbox'))
+  // An e-mail may have been analysed in an incident, or not.
+  assert.equal(triggerFields({ event: 'mail.analysed' }).find((field) => field.name === 'incident.id').optional, true)
+  assert.ok(names({ event: 'file.analysed' }).includes('file.yara'))
+  assert.ok(names({ event: 'url.analysed' }).includes('scan.final_url'))
+  assert.ok(!names({ event: 'url.analysed' }).includes('incident.id'))
+  assert.ok(names({ event: 'ioc.verdict_changed' }).includes('ioc.old'))
+  assert.ok(names({ event: 'ioc.watch_hit' }).includes('list.name'))
+  assert.ok(names({ event: 'ioc.watch_hit' }).includes('incident.id'))
+  assert.deepEqual(names({ event: 'storage.low' }), ['disk.total', 'disk.used', 'disk.free', 'disk.free_percent'])
+  assert.deepEqual(names({ webhook: true }), ['body', 'headers', 'query'])
+  assert.deepEqual(names({ event: 'not.an.event' }), [])
+
+  assert.equal(runsOn({ event: 'ioc.watch_hit' }), 'incident')
+  assert.equal(runsOn({ event: 'url.analysed' }), 'url')
+  assert.equal(runsOn({ event: 'storage.low' }), '')
+  assert.equal(runsOn({ manual: true }), '')
+  assert.equal(objectName('mail'), 'an e-mail')
+  assert.equal(objectName(''), 'nothing')
+  assert.equal(eventLabel('file.analysed'), 'A file is analysed · file.analysed')
+  assert.equal(eventLabel('later.event'), 'later.event')
+  assert.deepEqual(sampleFilter('mail.analysed'), {
+    all: [{ left: '{{ trigger.mail.verdict }}', op: 'eq', right: 'phishing' }],
+  })
+  assert.equal(sampleFilter('storage.low').all[0].op, 'lt')
+  // Every event the server offers is described here.
+  for (const event of Object.keys(EVENTS)) assert.ok(triggerFields({ event }).length > 0, event)
+  assert.equal(summaryOf({ kind: 'trigger', config: { webhook: true, manual: true } }, null), 'webhook · by hand')
 })
 
 test('positions: under the lowest node, beside what is in the way, and tidied in rows', async () => {

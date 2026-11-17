@@ -1062,7 +1062,7 @@ def test_who_may_do_what_with_playbooks(admin: TestClient):
     by_id = {entry["id"]: entry for entry in catalog["nodes"]}
     assert by_id["flow.condition"]["group"] == "Flow" and by_id["test.block"]["changesOutside"] is True
     assert by_id["test.echo"]["arguments"][0] == {"name": "text", "type": "text", "required": True}
-    assert catalog["events"] == ["incident.created", "incident.updated"] and catalog["ports"]["condition"] == [
+    assert catalog["events"][:2] == ["incident.created", "incident.updated"] and catalog["ports"]["condition"] == [
         "yes",
         "no",
     ]

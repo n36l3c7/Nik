@@ -2089,6 +2089,108 @@ test('a connector is added from its file, a connection is made, and its commands
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })
 
+test('a playbook is run on an artifact from its menu, and started from outside at its own address', async ({
+  request,
+}) => {
+  test.setTimeout(180_000)
+  const before = page.url()
+  const menu = page.getByRole('menu')
+  const look = (name, value) => ({
+    id: 'look',
+    kind: 'action',
+    name,
+    position: { x: 40, y: 160 },
+    config: { action: 'nik.get-indicator', args: { value } },
+  })
+  const make = async (name, trigger, node) => {
+    const made = await page.request.post('/api/automation/playbooks', { data: { name } })
+    expect(made.status()).toBe(201)
+    const id = (await made.json()).id
+    const graph = {
+      nodes: [{ id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: trigger }, node],
+      edges: [{ from: 'start', to: 'look' }],
+    }
+    const saved = await page.request.post(`/api/automation/playbooks/${id}/versions`, { data: { graph } })
+    expect(saved.status(), await saved.text()).toBe(201)
+    return id
+  }
+  const onFile = await make(
+    'Look up a file',
+    { event: 'file.analysed', manual: true },
+    look('Look up its hash', '{{ trigger.file.sha256 }}'),
+  )
+  const onMail = await make(
+    'Triage a mail',
+    { event: 'mail.analysed', manual: true },
+    look('Look up the sender', '{{ trigger.mail.sender_domain }}'),
+  )
+  const outside = await make(
+    'From outside',
+    { webhook: true },
+    look('Look up what was sent', '{{ trigger.body.value }}'),
+  )
+
+  // The menu of an artifact offers the playbooks that run on it: one about e-mails is not among them.
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await panel.getByRole('navigation', { name: 'Artifacts' }).getByText('dropper.bin').click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Run a playbook…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Run a playbook' })
+  await expect(dialog.locator('#run-object')).toContainText('a file · dropper.bin')
+  const choice = dialog.locator('#run-playbook')
+  await expect(choice.locator(`option[value="${onFile}"]`)).toHaveCount(1)
+  await expect(choice.locator(`option[value="${onMail}"]`)).toHaveCount(0)
+  await choice.selectOption(onFile)
+  await dialog.getByRole('button', { name: 'Run', exact: true }).click()
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  const area = page.getByRole('region', { name: 'Automations' })
+  await expect(area.getByRole('status', { name: 'Status of the run' })).toHaveText('done', { timeout: 20_000 })
+
+  // The artifact's own page lists the run.
+  await area.getByRole('button', { name: 'Close automations' }).click()
+  await panel.getByRole('navigation', { name: 'Artifacts' }).getByText('dropper.bin').click()
+  const strip = page.getByLabel('Playbook runs on this artifact')
+  await expect(strip.getByRole('button', { name: /Look up a file/ })).toContainText('done')
+  await expect(strip.getByRole('button', { name: 'Run a playbook…' })).toBeVisible()
+
+  // A playbook that starts from outside gets an address in its Settings, shown once.
+  await page.goto(`/automation/playbooks/${outside}/settings`)
+  const hook = area.getByRole('region', { name: 'Address for requests from outside' })
+  await expect(hook).toContainText('It has no address yet.')
+  await hook.getByRole('button', { name: 'Create the address' }).click()
+  const address = (await hook.locator('#hook-address').textContent()).trim()
+  expect(address).toMatch(/\/api\/automation\/hooks\/[\w-]{40,}$/)
+
+  // Off, it answers as an address that does not exist; on, a request with no session starts it.
+  const send = () => request.post(new URL(address).pathname, { data: { value: '185.220.101.47' } })
+  expect((await send()).status()).toBe(404)
+  expect(
+    (await page.request.put(`/api/automation/playbooks/${outside}/enabled`, { data: { enabled: true } })).status(),
+  ).toBe(200)
+  const taken = await send()
+  expect(taken.status()).toBe(202)
+  expect(await taken.json()).toEqual({ accepted: true })
+  await expect(async () => {
+    const runs = await (await page.request.get(`/api/automation/runs?playbook=${outside}`)).json()
+    expect(runs.runs.map((run) => [run.trigger, run.status])).toEqual([['webhook', 'done']])
+  }).toPass({ timeout: 20_000 })
+
+  // Read again, the page no longer shows it; replaced, the old one stops working.
+  await page.reload()
+  await expect(hook).toContainText('Nik keeps only its hash')
+  await expect(hook.locator('#hook-address')).toHaveCount(0)
+  await hook.getByRole('button', { name: 'Replace the address' }).click()
+  await page.getByRole('dialog', { name: 'Replace the address?' }).getByRole('button', { name: 'Replace' }).click()
+  await expect(hook.locator('#hook-address')).not.toHaveText(address)
+  expect((await send()).status()).toBe(404)
+
+  for (const id of [onFile, onMail, outside]) {
+    expect((await page.request.delete(`/api/automation/playbooks/${id}`)).status()).toBe(204)
+  }
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

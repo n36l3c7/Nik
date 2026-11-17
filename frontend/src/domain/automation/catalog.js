@@ -11,7 +11,7 @@ export const TRIGGER_ENTRY = {
   kind: 'trigger',
   group: 'Flow',
   name: 'Trigger',
-  description: 'What starts the playbook: an event, a schedule, or a person.',
+  description: 'What starts the playbook: an event, a schedule, a request from outside, or a person.',
   arguments: [],
   outputs: [],
 }
@@ -31,18 +31,157 @@ const INCIDENT_FIELDS = [
   ['modified', 'text', 'When it last changed'],
 ].map(([name, type, description]) => ({ name: `incident.${name}`, type, description }))
 
+const fieldsOf = (prefix, rows) =>
+  rows.map(([name, type, description]) => ({ name: `${prefix}.${name}`, type, description }))
+
+const MAIL_FIELDS = fieldsOf('mail', [
+  ['sha256', 'text', 'The SHA-256 of the message'],
+  ['subject', 'text', 'Its subject'],
+  ['sender', 'text', "The sender's address"],
+  ['sender_domain', 'text', "The domain of the sender's address"],
+  ['sender_sha256', 'text', "The SHA-256 of the sender's address: names the sender without giving the address"],
+  ['verdict', 'text', 'phishing, suspicious or clean'],
+  ['score', 'number', 'Its score, 0 to 100'],
+  ['urls', 'list', 'The addresses its links lead to'],
+  ['attachments', 'list', 'Its attachments: each with name, sha256 and size'],
+  ['artifact_id', 'text', 'Its id as an artifact'],
+  ['url', 'text', 'Its address in Nik'],
+])
+
+const FILE_FIELDS = fieldsOf('file', [
+  ['sha256', 'text', 'The SHA-256 of the file'],
+  ['name', 'text', 'Its name'],
+  ['size', 'number', 'Its size in bytes'],
+  ['type', 'text', 'What kind of file it is'],
+  ['verdict', 'text', 'high, medium or empty'],
+  ['yara', 'list', 'The names of the YARA rules that matched'],
+  ['artifact_id', 'text', 'Its id as an artifact'],
+  ['url', 'text', 'Its address in Nik'],
+])
+
+const SCAN_FIELDS = fieldsOf('scan', [
+  ['id', 'text', 'The id of the scan'],
+  ['url', 'text', 'The address that was scanned'],
+  ['final_url', 'text', 'Where it led'],
+  ['host', 'text', 'The host of the address'],
+  ['verdict', 'text', 'phishing, suspicious or clean'],
+  ['score', 'number', 'Its score, 0 to 100'],
+  ['artifact_id', 'text', 'Its id as an artifact'],
+  ['page', 'text', 'Its address in Nik'],
+])
+
+const IOC_FIELDS = fieldsOf('ioc', [
+  ['kind', 'text', 'ip, domain, url, email, md5, sha1 or sha256'],
+  ['value', 'text', 'The indicator'],
+  ['verdict', 'text', 'malicious, suspicious, harmless, unknown or empty'],
+  ['score', 'number', 'The reputation score'],
+  ['tlp', 'text', 'Its TLP, when it has one'],
+  ['tags', 'list', 'Its tags'],
+  ['lists', 'list', 'The names of its lists'],
+  ['incidents', 'number', 'In how many incidents it was seen'],
+  ['private', 'bool', 'It is a private address or an internal name'],
+  ['allowlisted', 'bool', 'It is in the allowlist'],
+])
+
+const INCIDENT_OPTIONAL = [...INCIDENT_FIELDS.map((field) => ({ ...field, optional: true }))]
+
+/** The events a trigger can wait for: what each is called, what it is about, a filter to start from. */
+export const EVENTS = {
+  'incident.created': { label: 'An incident is created', about: 'incident', sample: ['incident.severity', 'high'] },
+  'incident.updated': { label: 'An incident changes', about: 'incident', sample: ['incident.status', 'closed'] },
+  'mail.analysed': { label: 'An e-mail is analysed', about: 'mail', sample: ['mail.verdict', 'phishing'] },
+  'file.analysed': { label: 'A file is analysed', about: 'file', sample: ['file.verdict', 'high'] },
+  'url.analysed': { label: 'An address is scanned', about: 'url', sample: ['scan.verdict', 'phishing'] },
+  'ioc.verdict_changed': {
+    label: "An indicator's verdict changes",
+    about: 'indicator',
+    sample: ['ioc.new', 'malicious'],
+  },
+  'ioc.watch_hit': {
+    label: 'An incident holds a watched indicator',
+    about: 'incident',
+    sample: ['list.name', 'My watched list'],
+  },
+  'storage.low': { label: 'The disk is nearly full', about: '', sample: ['disk.free_percent', 5] },
+}
+
+/** An event as the inspector lists it: "An e-mail is analysed · mail.analysed". */
+export const eventLabel = (event) => (EVENTS[event] ? `${EVENTS[event].label} · ${event}` : event)
+
+/** A first filter for an event, for the analyst to change. */
+export function sampleFilter(event) {
+  const [field, value] = EVENTS[event]?.sample ?? ['incident.severity', 'high']
+  return { all: [{ left: `{{ trigger.${field} }}`, op: typeof value === 'number' ? 'lt' : 'eq', right: value }] }
+}
+
+/** What a trigger's event is about: incident, mail, file, url, indicator, or nothing. */
+export const runsOn = (config = {}) => EVENTS[config.event]?.about ?? ''
+
+const NAMES = {
+  incident: 'an incident',
+  mail: 'an e-mail',
+  file: 'a file',
+  url: 'a scanned address',
+  indicator: 'an indicator',
+}
+/** "an e-mail", for what a playbook runs on. */
+export const objectName = (about) => NAMES[about] ?? 'nothing'
+
+function eventFields(event) {
+  switch (event) {
+    case 'incident.created':
+      return INCIDENT_FIELDS
+    case 'incident.updated':
+      return [...INCIDENT_FIELDS, { name: 'changed', type: 'list', description: 'The fields that changed' }]
+    case 'mail.analysed':
+      return [
+        ...MAIL_FIELDS,
+        { name: 'from_mailbox', type: 'text', description: 'The id of the mailbox it was imported from, or empty' },
+        ...INCIDENT_OPTIONAL,
+      ]
+    case 'file.analysed':
+      return [...FILE_FIELDS, ...INCIDENT_OPTIONAL]
+    case 'url.analysed':
+      return SCAN_FIELDS
+    case 'ioc.verdict_changed':
+      return [
+        ...IOC_FIELDS,
+        { name: 'ioc.old', type: 'text', description: 'The verdict before (empty when it had none)' },
+        { name: 'ioc.new', type: 'text', description: 'The verdict now' },
+        { name: 'ioc.sources', type: 'list', description: 'The sources that answered' },
+      ]
+    case 'ioc.watch_hit':
+      return [
+        ...IOC_FIELDS,
+        { name: 'list.id', type: 'text', description: 'The id of the watched list' },
+        { name: 'list.name', type: 'text', description: 'Its name' },
+        { name: 'hits', type: 'list', description: 'Every hit: each with type, value, list and incident' },
+        ...INCIDENT_FIELDS,
+      ]
+    case 'storage.low':
+      return fieldsOf('disk', [
+        ['total', 'number', 'The size of the disk in bytes'],
+        ['used', 'number', 'Bytes in use'],
+        ['free', 'number', 'Bytes free'],
+        ['free_percent', 'number', 'How much is free, in percent'],
+      ])
+    default:
+      return []
+  }
+}
+
 /** What `{{ trigger.… }}` holds, by what starts the playbook. */
 export function triggerFields(config = {}) {
   const fields = []
-  if (config.event) {
-    fields.push(...INCIDENT_FIELDS)
-    if (config.event === 'incident.updated') {
-      fields.push({ name: 'changed', type: 'list', description: 'The fields that changed' })
-    }
-  }
+  if (config.event) fields.push(...eventFields(config.event))
   if (config.manual) {
     fields.push({ name: 'actor', type: 'text', description: 'Who started the run' })
-    if (!config.event) fields.push(...INCIDENT_FIELDS.map((field) => ({ ...field, optional: true })))
+    if (!config.event) fields.push(...INCIDENT_OPTIONAL)
+  }
+  if (config.webhook) {
+    fields.push({ name: 'body', type: 'any', description: 'What was sent: an object when it is JSON, text otherwise' })
+    fields.push({ name: 'headers', type: 'object', description: 'Content type, user agent and the X- headers' })
+    fields.push({ name: 'query', type: 'object', description: 'What follows the ? in the address' })
   }
   if (config.cron) {
     fields.push({ name: 'at', type: 'text', description: 'When the schedule fired' })
@@ -182,6 +321,7 @@ export function summaryOf(node, entry) {
       const ways = []
       if (config.event) ways.push(config.event)
       if (config.cron) ways.push(`schedule ${config.cron}`)
+      if (config.webhook) ways.push('webhook')
       if (config.manual) ways.push('by hand')
       return ways.join(' · ') || 'not set yet'
     }

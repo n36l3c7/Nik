@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
+from ..automation import triggers as automation_triggers
 from ..core.config import settings
 from ..core.db import after_commit, get_db
 from ..core.files import attachment_headers, read_upload, safe_name
@@ -197,6 +198,7 @@ async def store_mail(
     db.flush()
     artifacts.register_mail(db, row, file_name)
     ref = attach_mail(db, incident, row, file_name, caller.actor) if incident is not None else None
+    automation_triggers.mail_analysed(db, row, incident)
     _audit(db, caller, "mail.upload", f"Analysed e-mail {file_name} ({row.verdict}, score {row.score})", incident)
     db.commit()
     if incident is not None:
@@ -299,6 +301,7 @@ async def reanalyse_mail(
         raise HTTPException(status_code=422, detail=f"The stored message cannot be analysed: {exc}") from exc
     _apply(row, result)
     artifacts.register_mail(db, row)
+    automation_triggers.mail_analysed(db, row)
     for incident in _incidents_referencing(db, sha256):
         doc = dict(relock(db, incident).doc or {})
         for ref in _refs(doc):

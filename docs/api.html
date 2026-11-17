@@ -849,10 +849,36 @@
             <tr>
               <td><code>POST /api/automation/playbooks/{id}/run</code></td>
               <td>
-                Run it by hand: <code>{objectKind: "" | "incident", objectId, dryRun, inputs}</code>.
-                <code>201</code> with the run; <code>400</code> when the playbook is not meant to be run by hand (a dry
-                run always can); <code>409</code> when automation is stopped; <code>429</code> with the limit that
-                refused it.
+                Run it by hand: <code>{objectKind, objectId, dryRun, inputs}</code>, where
+                <code>objectKind</code> is empty, <code>incident</code>, <code>artifact</code> (an analysed e-mail,
+                file or address, by its artifact id) or <code>indicator</code> (<code>objectId</code> is
+                <code>type:value</code>, as in <code>domain:evil.example</code>). <code>201</code> with the run;
+                <code>400</code> when the playbook is not meant to be run by hand (a dry run always can) or its event
+                is about another kind of object; <code>404</code> when the object does not exist; <code>409</code> when
+                automation is stopped; <code>429</code> with the limit that refused it.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/automation/playbooks/{id}/hook</code> ·
+                <code>DELETE /api/automation/playbooks/{id}/hook</code>
+              </td>
+              <td>
+                Give the playbook an address to be started at from outside, or a new one · remove it. The answer of
+                <code>POST</code> holds <code>token</code> and <code>path</code>, and is the only place they appear:
+                Nik keeps the token's SHA-256. The playbook's detail says <code>hook: {since}</code> or
+                <code>null</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/hooks/{token}</code></td>
+              <td>
+                <strong>No authentication</strong>: the token is the credential, and cookies and API keys are not read.
+                Starts the playbook the token belongs to, with the request as <code>trigger.body</code>,
+                <code>trigger.query</code> and <code>trigger.headers</code>. At most 256 kB and 60 requests a minute
+                for each token. <code>202 {"accepted": true}</code>; <code>404</code> whenever the token starts
+                nothing; <code>413</code>, <code>400</code> (unreadable JSON), <code>429</code>. See
+                <a href="automation.html#inbound">Starting a playbook from outside</a>.
               </td>
             </tr>
             <tr>
@@ -1136,9 +1162,14 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           <code>GET /api/jobs/{jobId}</code>.
         </li>
         <li>
-          <strong>Webhooks</strong>: <code>incident.created/updated/deleted</code>, <code>note.added</code>,
-          <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an indicator of a watched list);
-          each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>).
+          <strong id="webhooks">Webhooks</strong>: <code>incident.created/updated/deleted</code>,
+          <code>note.added</code>, <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an
+          indicator of a watched list), <code>mail.analysed</code>, <code>file.analysed</code>,
+          <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>; the last five carry
+          what a playbook's trigger reads for the same event (<a href="automation.html#trigger">Automation →
+          Trigger</a>). Each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what
+          the event holds to the address an admin gave, without the checks a playbook's nodes go through: subscribe an
+          address you trust with senders, subjects and file names.
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

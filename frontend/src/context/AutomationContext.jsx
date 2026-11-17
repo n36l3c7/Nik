@@ -17,7 +17,10 @@ import { useAuth } from './AuthContext.jsx'
  *              screen. Read when the app opens and again every little while,
  *              while the window is in view;
  *   runRequest "Run a playbook…" asked from anywhere (an incident's menu, a
- *              playbook's page): one dialog, drawn by App.
+ *              playbook's page, the menu of an analysed e-mail, file or
+ *              address, the menu of an indicator): one dialog, drawn by App.
+ *              `{ playbookId?, incidentId?, dryRun?, object? }`, where
+ *              `object` is `{ kind: 'artifact'|'indicator', id, what, label }`.
  *
  * All of it is for an account that may run playbooks; playbooks, runs and
  * scripts are loaded by the pages that show them.

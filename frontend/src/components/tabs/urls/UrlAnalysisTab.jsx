@@ -441,6 +441,7 @@ export default function UrlAnalysisTab({ incident }) {
                       title: displayUrl(scan.url),
                       what: 'address',
                       flaggable: scanFlaggable(scan),
+                      artifact: { id: `url-${scan.id}`, kind: 'url', name: displayUrl(scan.url) },
                       ioc: { type: 'url', value: scan.url },
                       timeline: true,
                       actions: [

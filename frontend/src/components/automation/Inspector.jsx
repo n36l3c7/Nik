@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/index.js'
-import { asksApproval, entryOf, headingOf, valueTree } from '../../domain/automation/catalog.js'
+import {
+  asksApproval,
+  entryOf,
+  eventLabel,
+  headingOf,
+  objectName,
+  runsOn,
+  sampleFilter,
+  valueTree,
+} from '../../domain/automation/catalog.js'
 import {
   OPERATORS,
   PORTS,
@@ -449,7 +458,11 @@ function KindSettings({
           <SectionTitle>Starts</SectionTitle>
           <Field
             label="On an event"
-            hint="The playbook runs when this happens in Nik, on the incident it happened to."
+            hint={
+              config.event && runsOn(config)
+                ? `The playbook runs when this happens in Nik, on ${objectName(runsOn(config))}.`
+                : 'The playbook runs when this happens in Nik.'
+            }
             problem={problemAt('event')}
           >
             {(id) => (
@@ -458,11 +471,12 @@ function KindSettings({
                 value={config.event ?? ''}
                 disabled={disabled}
                 onChange={(event) =>
-                  onConfig({ event: event || undefined, ...(event ? {} : { conditions: undefined }) })
+                  // A filter written for one event reads fields another does not have.
+                  onConfig({ event: event || undefined, conditions: undefined })
                 }
                 options={[
                   { value: '', label: '(no event)' },
-                  ...events.map((event) => ({ value: event, label: event })),
+                  ...events.map((event) => ({ value: event, label: eventLabel(event) })),
                 ]}
               />
             )}
@@ -477,9 +491,7 @@ function KindSettings({
                   disabled={disabled}
                   onChange={(on) =>
                     onConfig({
-                      conditions: on
-                        ? { all: [{ left: '{{ trigger.incident.severity }}', op: 'eq', right: 'high' }] }
-                        : undefined,
+                      conditions: on ? sampleFilter(config.event) : undefined,
                     })
                   }
                 />
@@ -524,7 +536,23 @@ function KindSettings({
             </Field>
           )}
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-fg-muted">Can be run by hand (from an incident, or on nothing)</span>
+            <span className="text-xs text-fg-muted">
+              From outside: a request to the playbook’s own address (created in its Settings)
+            </span>
+            <Switch
+              label="Starts from outside"
+              checked={Boolean(config.webhook)}
+              disabled={disabled}
+              onChange={(webhook) => onConfig({ webhook: webhook || undefined })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-fg-muted">
+              Can be run by hand
+              {runsOn(config)
+                ? ` (on ${objectName(runsOn(config))})`
+                : ' (on an incident, an artifact, an indicator, or on nothing)'}
+            </span>
             <Switch
               label="Can be run by hand"
               checked={Boolean(config.manual)}

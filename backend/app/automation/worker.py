@@ -19,11 +19,13 @@ The same loop runs as a thread of the API process with
 from __future__ import annotations
 
 import logging
+import shutil
 import signal
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from sqlalchemy import delete, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -40,6 +42,11 @@ HOLDER = uuid.uuid4().hex
 TICK_SECONDS = 1.0
 EVENTS_PER_TICK = 50
 EVENT_KEPT_SECONDS = 86400
+# The disk that holds the evidence is "low" under this much free space; said once in this long.
+STORAGE_LOW_PERCENT = 10
+STORAGE_LOW_EVERY = 86400
+STORAGE_LOOK_EVERY = 60
+_storage_looked = 0.0
 _started = False
 _stopping = threading.Event()
 _in_flight: set[str] = set()
@@ -175,12 +182,33 @@ def housekeeping(db, now: float) -> None:
                 engine._finish(db, run, "failed", "The run took longer than the playbook allows", now)
         db.commit()
     reclaim(db, now)
+    global _storage_looked
+    if abs(now - _storage_looked) >= STORAGE_LOOK_EVERY:
+        _storage_looked = now
+        storage_low(db, now)
     db.execute(
         delete(AutomationEvent).where(
             AutomationEvent.done.is_(True), AutomationEvent.created_at < engine.iso(now - EVENT_KEPT_SECONDS)
         )
     )
     db.commit()
+
+
+def storage_low(db, now: float, usage=shutil.disk_usage) -> bool:
+    """Write ``storage.low`` when the disk of the evidence has less than a tenth
+    free, once a day for as long as it stays so. Says whether it did."""
+    if now - float(state.read(db).get("storageLowAt") or 0) < STORAGE_LOW_EVERY:
+        return False
+    try:
+        disk = usage(Path(settings.SAMPLE_STORE))
+    except OSError:
+        return False
+    if not disk.total or disk.free * 100 >= disk.total * STORAGE_LOW_PERCENT:
+        return False
+    triggers.storage_low(db, disk.total, disk.free)
+    state.write(db, storageLowAt=now)
+    db.commit()
+    return True
 
 
 def prune(db) -> int:

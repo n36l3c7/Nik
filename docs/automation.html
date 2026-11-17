@@ -183,12 +183,12 @@
 
       <h2 id="nodes">The nodes</h2>
       <h3 id="trigger">Trigger</h3>
-      <p>Every playbook has exactly one. It can start the playbook in three ways, alone or together:</p>
+      <p>Every playbook has exactly one. It can start the playbook in four ways, alone or together:</p>
       <ul>
         <li>
-          <strong>On an event</strong> of Nik: <code>incident.created</code> or <code>incident.updated</code>. The run
-          works on that incident. <em>Only when the event matches</em> adds comparisons, the same as a condition node:
-          <code>{{ trigger.incident.severity }}</code> is one of <code>high, critical</code>.
+          <strong>On an event</strong> of Nik (the table below). The run works on what the event is about: an incident,
+          an analysed e-mail, file or address, an indicator. <em>Only when the event matches</em> adds comparisons, the
+          same as a condition node: <code>{{ trigger.mail.verdict }}</code> equals <code>phishing</code>.
         </li>
         <li>
           <strong>On a schedule</strong>: five fields as in cron (<code>0 8 * * 1-5</code> is 08:00 from Monday to
@@ -197,11 +197,103 @@
           down are not made up for one by one (the schedule fires once when it is back).
         </li>
         <li>
-          <strong>By hand</strong>: <em>Run a playbook…</em> in an incident's right-click menu, on its
-          <em>Automation</em> tab, or <em>Run…</em> on the playbook's page.
+          <strong>From outside</strong>: a request another system sends to the playbook's own address. See
+          <a href="#inbound">Starting a playbook from outside</a>.
+        </li>
+        <li>
+          <strong>By hand</strong>: <em>Run a playbook…</em> in the right-click menu of an incident, of an analysed
+          e-mail, file or address, and of an indicator; on an incident's <em>Automation</em> tab; on an artifact's page;
+          or <em>Run…</em> on the playbook's page. A playbook whose event is about one kind of object is offered on that
+          kind only (one that waits for e-mails is not offered on a file); a playbook with no event is offered
+          everywhere, and reads whatever it was run on.
         </li>
       </ul>
-      <p>What <code>{{ trigger.… }}</code> holds depends on what started the run:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>When</th>
+              <th>What <code>{{ trigger.… }}</code> holds</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>incident.created</code><br /><code>incident.updated</code></td>
+              <td>An incident is created; one of its fields changes.</td>
+              <td>
+                <code>incident.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>,
+                <code>.status</code>, <code>.severity</code>, <code>.assignee</code>, <code>.host</code>,
+                <code>.username</code>, <code>.os</code>, <code>.created</code>, <code>.modified</code>; for
+                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed.
+              </td>
+            </tr>
+            <tr>
+              <td><code>mail.analysed</code></td>
+              <td>
+                An e-mail is analysed: uploaded on its own or in an incident, analysed again, or imported from a
+                mailbox.
+              </td>
+              <td>
+                <code>mail.sha256</code>, <code>.subject</code>, <code>.sender</code>, <code>.sender_domain</code>,
+                <code>.sender_sha256</code>, <code>.verdict</code> (<code>phishing</code>, <code>suspicious</code>,
+                <code>clean</code>), <code>.score</code>, <code>.urls</code> (where its links lead),
+                <code>.attachments</code> (each with <code>name</code>, <code>sha256</code>, <code>size</code>),
+                <code>.artifact_id</code>, <code>.url</code>; <code>from_mailbox</code> (the mailbox's id, or empty);
+                the <code>incident.…</code> fields when it was analysed in one.
+              </td>
+            </tr>
+            <tr>
+              <td><code>file.analysed</code></td>
+              <td>The analysis of a file ends: uploaded, taken out of an e-mail or a capture, or analysed again.</td>
+              <td>
+                <code>file.sha256</code>, <code>.name</code>, <code>.size</code>, <code>.type</code>,
+                <code>.verdict</code> (<code>high</code>, <code>medium</code> or empty), <code>.yara</code> (the names
+                of the rules that matched), <code>.artifact_id</code>, <code>.url</code>; the
+                <code>incident.…</code> fields when it was analysed in one.
+              </td>
+            </tr>
+            <tr>
+              <td><code>url.analysed</code></td>
+              <td>The scan of an address ends.</td>
+              <td>
+                <code>scan.id</code>, <code>.url</code>, <code>.final_url</code>, <code>.host</code>,
+                <code>.verdict</code>, <code>.score</code>, <code>.artifact_id</code>, <code>.page</code> (its address
+                in Nik).
+              </td>
+            </tr>
+            <tr>
+              <td><code>ioc.verdict_changed</code></td>
+              <td>
+                What the sources say of an indicator, taken together, changes (a first answer that says nothing is not
+                a change).
+              </td>
+              <td>
+                <code>ioc.kind</code>, <code>.value</code>, <code>.old</code>, <code>.new</code>,
+                <code>.sources</code>, <code>.score</code>, <code>.tlp</code>, <code>.tags</code>,
+                <code>.lists</code>, <code>.incidents</code>, <code>.private</code>, <code>.allowlisted</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>ioc.watch_hit</code></td>
+              <td>An incident comes to hold an indicator of a watched list. The run works on the incident.</td>
+              <td>
+                <code>ioc.…</code> and <code>list.id</code>, <code>list.name</code> of the first hit;
+                <code>hits</code>, every hit (each with <code>type</code>, <code>value</code>, <code>list</code>,
+                <code>incident</code>); the <code>incident.…</code> fields.
+              </td>
+            </tr>
+            <tr>
+              <td><code>storage.low</code></td>
+              <td>The disk that holds the evidence has less than a tenth free. Said once a day while it stays so.</td>
+              <td>
+                <code>disk.total</code>, <code>.used</code>, <code>.free</code> (bytes), <code>.free_percent</code>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The other ways to start give:</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -212,32 +304,77 @@
           </thead>
           <tbody>
             <tr>
-              <td>An event</td>
-              <td>
-                <code>incident.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>,
-                <code>.status</code>, <code>.severity</code>, <code>.assignee</code>, <code>.host</code>,
-                <code>.username</code>, <code>.os</code>, <code>.created</code>, <code>.modified</code>; for
-                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed.
-              </td>
-            </tr>
-            <tr>
               <td>A person</td>
               <td>
-                <code>actor</code> (who started it) and, when it was run on an incident, the same
-                <code>incident.…</code> fields.
+                <code>actor</code> (who started it) and the fields of what it was run on: <code>incident.…</code>,
+                <code>mail.…</code>, <code>file.…</code>, <code>scan.…</code> or <code>ioc.…</code>, as in the table
+                above.
               </td>
             </tr>
             <tr>
               <td>A schedule</td>
               <td><code>at</code> (when it fired) and <code>cron</code>.</td>
             </tr>
+            <tr>
+              <td>A request from outside</td>
+              <td>
+                <code>body</code> (an object when the request is JSON, text otherwise), <code>headers</code> (content
+                type, user agent and the sender's own <code>X-</code> headers), <code>query</code>.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
       <p>
-        A change a playbook makes to an incident can start other playbooks, three deep at most: beyond that the event is
-        dropped, so two playbooks cannot keep waking each other.
+        A change a playbook makes can start other playbooks, three deep at most: beyond that the event is dropped, so
+        two playbooks cannot keep waking each other. An import of a large mailbox writes one event for each new
+        message: the runs an hour of the playbook are what bounds it.
       </p>
+      <p>
+        The same events can be sent to an address of yours as signed webhooks (<a href="api.html#webhooks"
+          >API → Webhooks</a
+        >): that is Nik telling another system, with no playbook involved.
+      </p>
+
+      <h4 id="inbound">Starting a playbook from outside</h4>
+      <p>
+        Turn on <em>From outside</em> in the trigger, save a version, then open the playbook's <em>Settings</em> and
+        choose <em>Create the address</em>. Nik shows a URL that ends with a long random token:
+      </p>
+      <pre><code>POST https://nik.example.org/api/automation/hooks/&lt;token&gt;
+Content-Type: application/json
+
+{"alert": "beacon", "host": "WKS-12"}</code></pre>
+      <ul>
+        <li>
+          <strong>The address is the credential.</strong> Whoever has it can start the playbook, with no account and no
+          API key; a session cookie or a key sent along is not read. Nik shows it once and keeps only its SHA-256: an
+          address that was lost is replaced, not read again. <em>Replace the address</em> and
+          <em>Remove the address</em> stop the old one at once.
+        </li>
+        <li>
+          <strong>What the playbook reads.</strong> <code>{{ trigger.body }}</code>, <code>{{ trigger.query }}</code>
+          and <code>{{ trigger.headers }}</code>. Of the headers only the content type, the user agent and the sender's
+          own <code>X-</code> headers are kept; anything that looks like a credential, a signature or what a proxy
+          added is dropped.
+        </li>
+        <li>
+          <strong>Limits.</strong> 256 kB a request, 60 requests a minute for each address, and the playbook's own runs
+          an hour. Nothing that arrives has a class of its own: what the playbook may send on is decided by the same
+          guard as everything else.
+        </li>
+        <li>
+          <strong>Answers.</strong> <code>202 {"accepted": true}</code> when the run started; <code>404</code> for an
+          address that does not exist, a playbook that is off or whose trigger does not start from outside, and while
+          automation is stopped (one answer for all, so that it says nothing of what exists); <code>413</code> for a
+          body too large; <code>400</code> for JSON that cannot be read; <code>429</code> beyond the limits. The answer
+          never says what the playbook did.
+        </li>
+        <li>
+          The address must be reachable by the sender: it is under the same origin as the rest of Nik, behind the same
+          reverse proxy.
+        </li>
+      </ul>
 
       <h3 id="condition">Condition</h3>
       <p>
@@ -996,11 +1133,6 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
 
       <h2 id="later">What this release does not do yet</h2>
       <ul>
-        <li>
-          Triggers are the two incident events, a schedule and a person. Events of e-mails, files, addresses and
-          indicators, and inbound webhooks, come with the releases that follow; so do the nodes that analyse an address
-          or check indicators again.
-        </li>
         <li>
           Outside Nik a playbook has the HTTP request and the e-mail. Connectors for other products (a ticketing system,
           an EDR, a firewall), written as files, come in 4.2.

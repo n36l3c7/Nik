@@ -253,7 +253,10 @@
             <tr>
               <td>Webhooks</td>
               <td>when an admin subscribed a URL through the API</td>
-              <td>the event (an incident created, an upload finished), signed</td>
+              <td>
+                the event, signed: an incident created, an upload finished, an e-mail, a file or an address analysed
+                (with its sender, subject, names and verdict), a verdict that changed, a disk nearly full
+              </td>
             </tr>
             <tr>
               <td>Playbooks: the HTTP request and e-mail nodes</td>
@@ -328,6 +331,21 @@
           that cannot sign in, with the run and whoever approved the step. Versions of playbooks and scripts (with the
           difference in a script's code), openings of network and data, approvals and the general switch are all in the
           audit log.
+        </li>
+        <li id="inbound-hook">
+          <strong>One address that asks for no account.</strong>
+          <code>POST /api/automation/hooks/&lt;token&gt;</code> starts a playbook whose trigger says
+          <em>From outside</em>, and is the only route added by automation that answers without signing in. The token
+          is 32 random bytes, made by the server, shown once to whoever builds the playbook and stored as its SHA-256:
+          a copy of the database does not give the addresses. The route never reads a cookie or an API key, so a page
+          open in an analyst's browser cannot use their session through it. A request carries at most 256 kB; each
+          token has 60 requests a minute, and the playbook its runs an hour. Every reason a token starts nothing (it
+          does not exist, the playbook is off, automation is stopped) gives the same <code>404</code>, and a request
+          that is taken is told only <code>accepted</code>. What arrives is data from outside: it has no class of its
+          own, credentials and proxy headers are dropped before the playbook sees the rest, and what the playbook may
+          send on is decided by the guard above. Treat the address as a password: it appears in the sender's
+          configuration and may appear in the access log of a proxy in front of Nik. Replace it when in doubt; creating,
+          replacing and removing one are in the audit log.
         </li>
         <li>
           <strong>Loops and floods.</strong> A playbook's changes can start other playbooks three deep; each playbook

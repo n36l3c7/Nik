@@ -54,6 +54,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
   const artifactMenu = (event, artifact) =>
     menu(event, {
       title: artifact.name,
+      artifact,
       ...(artifact.kind === 'file' || artifact.kind === 'mail' ? { ioc: { type: 'sha256', value: artifact.ref } } : {}),
       copy: [
         { label: 'name', text: artifact.name },

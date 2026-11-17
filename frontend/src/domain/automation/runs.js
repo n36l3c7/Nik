@@ -84,10 +84,34 @@ function ordinal(number) {
   return { 1: 'st', 2: 'nd', 3: 'rd' }[number % 10] ?? 'th'
 }
 
-/** The playbooks that can be run by hand: with a version and a trigger that allows it. `dry`: any with a version. */
-export function runnable(playbooks, { dry = false } = {}) {
-  return (playbooks ?? []).filter((playbook) => playbook.version && (dry || playbook.triggerConfig?.manual))
+/**
+ * The playbooks that can be run by hand: with a version and a trigger that
+ * allows it. `dry`: any with a version. `on`: what it would run on (incident,
+ * mail, file, url, indicator): a playbook whose event is about something
+ * else is left out, one with no event runs on anything.
+ */
+export function runnable(playbooks, { dry = false, on = '' } = {}) {
+  return (playbooks ?? []).filter(
+    (playbook) =>
+      playbook.version &&
+      (dry || playbook.triggerConfig?.manual) &&
+      (!on || !playbook.runsOn || playbook.runsOn === on),
+  )
 }
+
+/** What "Run a playbook…" sends for an artifact: null for a kind no playbook runs on (a capture, a mailbox). */
+export function artifactTarget(artifact) {
+  if (!artifact || !['mail', 'file', 'url'].includes(artifact.kind)) return null
+  return { kind: 'artifact', id: artifact.id, what: artifact.kind, label: artifact.name || artifact.id }
+}
+
+/** What "Run a playbook…" sends for an indicator. */
+export const indicatorTarget = (type, value) => ({
+  kind: 'indicator',
+  id: `${type}:${value}`,
+  what: 'indicator',
+  label: String(value),
+})
 
 /** What the inputs form sends: each input as its type says, empty ones left out. Throws on a required one missing. */
 export function inputValues(inputs, typed) {

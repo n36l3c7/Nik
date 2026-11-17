@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
+from ..automation import triggers as automation_triggers
 from ..core.config import settings
 from ..core.db import after_commit, get_db
 from ..core.files import attachment_headers, read_upload, safe_name
@@ -309,6 +310,7 @@ def store_sample(
     ref = None
     if incident is not None:
         ref = attach_sample(db, incident, row, file_name, caller.actor, origin)
+    automation_triggers.file_analysed(db, row, artifact, incident)
     _audit(
         db,
         caller,
@@ -371,7 +373,7 @@ def reanalyse_sample(
     row.type_label = result["type"]["label"]
     row.entropy = result["entropy"]
     flag_modified(row, "analysis")
-    artifacts.register_file(db, row)
+    automation_triggers.file_analysed(db, row, artifacts.register_file(db, row))
     _audit(db, caller, "sample.reanalyse", f"Re-analysed sample {sha256[:12]}… ({row.type_label})", None)
     db.commit()
     _queue_code(db, background_tasks, sha256, caller.actor)

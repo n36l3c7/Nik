@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Download, Plus, Trash2, X } from 'lucide-react'
+import { Copy, Download, Plus, Trash2, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { saveBlob } from '../../lib/download.js'
+import { formatDateTime } from '../../lib/time.js'
 import { hostOf } from '../../domain/automation/hosts.js'
 import { Badge, Button, Modal } from '../ui/index.js'
 import DataGuardDialog from './DataGuardDialog.jsx'
@@ -26,6 +27,10 @@ import { DurationInput, Field, NumberInput, SectionTitle, Seg, Switch, TextInput
  *
  * Opening either beyond the default asks twice (DataGuardDialog) and is
  * written in the audit log. Limits and the name are for who builds playbooks.
+ *
+ * A playbook whose trigger says "From outside" gets its address here: a long
+ * random token in a URL. Nik shows it once, when it is created, and keeps
+ * only its hash: an address that was lost is replaced, not read again.
  */
 
 function Box({ title, children, aside = null }) {
@@ -34,6 +39,115 @@ function Box({ title, children, aside = null }) {
       <SectionTitle action={aside}>{title}</SectionTitle>
       {children}
     </section>
+  )
+}
+
+/** The address a system outside starts the playbook at: created, replaced, removed. */
+function HookBox({ playbook, canEdit, base, onChanged }) {
+  const { showToast } = useToast()
+  const [made, setMade] = useState(null) // { url }: the address just created, shown this once
+  const [busy, setBusy] = useState(false)
+  const [confirm, setConfirm] = useState(null) // 'replace' | 'remove'
+
+  const change = async (work) => {
+    setBusy(true)
+    try {
+      const answer = await work()
+      setMade(answer?.path ? { url: `${window.location.origin}${answer.path}` } : null)
+      onChanged(await api.get(base))
+    } catch (error) {
+      showToast({ message: error.message })
+    } finally {
+      setBusy(false)
+      setConfirm(null)
+    }
+  }
+  const create = () => change(() => api.post(`${base}/hook`, {}))
+  const remove = () => change(() => api.del(`${base}/hook`))
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(made.url)
+      showToast({ message: 'Address copied.' })
+    } catch {
+      showToast({ message: 'The browser refused to copy.' })
+    }
+  }
+
+  const waits = Boolean(playbook.triggerConfig?.webhook)
+  return (
+    <Box title="Address for requests from outside" aside={playbook.hook ? <Badge color="amber">open</Badge> : null}>
+      <p className="text-sm text-fg-muted">
+        A system outside Nik starts this playbook with a POST to an address that holds a long random token. Whoever has
+        the address can start the playbook: nothing else is asked. The request may carry up to 256 kB, which the
+        playbook reads as <span className="font-mono">{'{{ trigger.body }}'}</span>, and gets no answer but “accepted”.
+      </p>
+      {!waits && (
+        <p className="border border-med-line bg-med-soft px-3 py-2 text-sm text-med-fg">
+          The saved version of this playbook does not start from outside: the address answers “not found” until its
+          trigger says so.
+        </p>
+      )}
+      {made && (
+        <div className="flex flex-col gap-2 border border-accent-strong bg-accent-soft p-3">
+          <span className="text-sm text-fg">Copy the address now: it is not shown again.</span>
+          <div className="flex items-center gap-2">
+            <code
+              id="hook-address"
+              className="min-w-0 flex-1 break-all bg-canvas px-2 py-1.5 font-mono text-xs text-fg"
+            >
+              {made.url}
+            </code>
+            <Button size="sm" variant="secondary" icon={Copy} onClick={copy}>
+              Copy
+            </Button>
+          </div>
+        </div>
+      )}
+      {playbook.hook && !made && (
+        <p className="text-sm text-fg">
+          It has an address, created {formatDateTime(Date.parse(playbook.hook.since))}. Nik keeps only its hash.
+        </p>
+      )}
+      {!playbook.hook && <p className="text-sm text-fg">It has no address yet.</p>}
+      {canEdit && (
+        <div className="flex flex-wrap gap-2">
+          {playbook.hook ? (
+            <>
+              <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirm('replace')}>
+                Replace the address
+              </Button>
+              <Button size="sm" variant="danger" icon={Trash2} disabled={busy} onClick={() => setConfirm('remove')}>
+                Remove the address
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" disabled={busy} onClick={create}>
+              Create the address
+            </Button>
+          )}
+        </div>
+      )}
+      <Modal
+        open={confirm !== null}
+        onClose={() => setConfirm(null)}
+        title={confirm === 'remove' ? 'Remove the address?' : 'Replace the address?'}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirm(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={busy} onClick={confirm === 'remove' ? remove : create}>
+              {confirm === 'remove' ? 'Remove' : 'Replace'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">
+          The address in use stops working at once: whatever sends requests to it gets “not found”
+          {confirm === 'replace' ? ' until it is given the new one.' : '.'}
+        </p>
+      </Modal>
+    </Box>
   )
 }
 
@@ -200,6 +314,10 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
           an admin, where it is imported.
         </p>
       </Box>
+
+      {(playbook.triggerConfig?.webhook || playbook.hook) && (
+        <HookBox playbook={playbook} canEdit={canEdit} base={base} onChanged={onChanged} />
+      )}
 
       <Box title="Limits and approvals">
         <form onSubmit={saveLimits} className="flex flex-col gap-3">

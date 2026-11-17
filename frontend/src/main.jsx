@@ -32,15 +32,15 @@ createRoot(document.getElementById('root')).render(
             <ArtifactProvider>
               <NavigationProvider>
                 <ToastProvider>
-                  <ContextMenuProvider>
-                    <IocLookupProvider>
-                      <IocLibraryProvider>
-                        <AutomationProvider>
+                  <AutomationProvider>
+                    <ContextMenuProvider>
+                      <IocLookupProvider>
+                        <IocLibraryProvider>
                           <App />
-                        </AutomationProvider>
-                      </IocLibraryProvider>
-                    </IocLookupProvider>
-                  </ContextMenuProvider>
+                        </IocLibraryProvider>
+                      </IocLookupProvider>
+                    </ContextMenuProvider>
+                  </AutomationProvider>
                 </ToastProvider>
               </NavigationProvider>
             </ArtifactProvider>

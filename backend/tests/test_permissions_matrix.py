@@ -103,6 +103,10 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/automation/playbooks/{playbook_id}/versions/{number}/restore"): ("automation.edit",),
     ("PUT", "/api/automation/playbooks/{playbook_id}/enabled"): ("automation.edit",),
     ("POST", "/api/automation/playbooks/{playbook_id}/run"): ("automation.run",),
+    ("POST", "/api/automation/playbooks/{playbook_id}/hook"): ("automation.edit",),
+    ("DELETE", "/api/automation/playbooks/{playbook_id}/hook"): ("automation.edit",),
+    # The address a system outside starts a playbook at: the token in the path is the credential.
+    ("POST", "/api/automation/hooks/{token}"): "public",
     ("GET", "/api/automation/playbooks/{playbook_id}/export"): ("automation.edit",),
     ("POST", "/api/automation/playbooks/import"): ("automation.edit",),
     ("GET", "/api/automation/catalog"): ("automation.run",),

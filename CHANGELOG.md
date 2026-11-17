@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **More events start a playbook**: an e-mail analysed
+  (`mail.analysed`), a file analysed (`file.analysed`), an address scanned
+  (`url.analysed`), the verdict of an indicator that changes
+  (`ioc.verdict_changed`), an incident that comes to hold a watched
+  indicator (`ioc.watch_hit`), the disk nearly full (`storage.low`, once a
+  day under 10 % free). Each carries its fields to `{{ trigger.… }}` with
+  the class of data of each, so the data guard knows a sender's address
+  from a hash. The inspector lists the events by what they mean and starts
+  the filter from a field the event has.
+- **A playbook can be started from outside.** A trigger set to "From
+  outside" gets an address in the playbook's Settings: a URL with a random
+  token, shown once and stored as its hash. A POST to it starts the
+  playbook with the request as `trigger.body`, `trigger.query` and
+  `trigger.headers`. No account is asked and no cookie or API key is read;
+  256 kB a request, 60 requests a minute for each address, one answer for
+  every address that starts nothing.
+- **Run a playbook on an e-mail, a file, an address or an indicator**:
+  "Run a playbook…" is in their right-click menus, wherever they are shown,
+  and on an artifact's page, which now lists the runs that worked on it.
+  The playbooks offered are those whose event is about that kind of object,
+  and those with no event.
+- The five new events can also be sent as signed webhooks
+  (`POST /api/webhooks`).
+
 - **Connectors.** A connector is one YAML file that says how to talk to a
   product, without code: what a connection needs (an address, credentials)
   and commands, each a request built from templates in the playbooks' own

@@ -3,6 +3,7 @@ import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
+import { objectName } from '../../domain/automation/catalog.js'
 import { inputValues, runnable } from '../../domain/automation/runs.js'
 import { Button, Modal } from '../ui/index.js'
 
@@ -13,7 +14,9 @@ import { Button, Modal } from '../ui/index.js'
  * Opened from an incident (its right-click menu, its Automation tab): the
  * incident is set, the playbook is chosen among those that can be run by
  * hand. Opened from a playbook's page: the playbook is set, the incident is
- * chosen (or none).
+ * chosen (or none). Opened from an analysed e-mail, file or address, or from
+ * an indicator: that object is set, and the playbooks offered are those that
+ * run on it (their event is about it) or on anything (they have no event).
  *
  * A dry run sends nothing outside Nik and changes nothing in it: each step
  * shows what it would have done. Any playbook with a version can be tried
@@ -41,6 +44,9 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
   const [playbookId, setPlaybookId] = useState(runRequest.playbookId ?? '')
   const [incidentId, setIncidentId] = useState(runRequest.incidentId ?? '')
   const [dryRun, setDryRun] = useState(Boolean(runRequest.dryRun))
+  // An artifact or an indicator the dialog was opened on: it is not chosen here.
+  const object = runRequest.object ?? null
+  const on = object ? object.what : incidentId ? 'incident' : ''
   const [inputs, setInputs] = useState([]) // what the chosen playbook declares
   const [typed, setTyped] = useState({})
   const [error, setError] = useState(null)
@@ -57,7 +63,7 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
     }
   }, [])
 
-  const choices = useMemo(() => runnable(playbooks, { dry: dryRun }), [playbooks, dryRun])
+  const choices = useMemo(() => runnable(playbooks, { dry: dryRun, on }), [playbooks, dryRun, on])
   // The choice follows what can be chosen: the first one when none is, none when it is no longer there.
   useEffect(() => {
     if (!open || !playbooks) return
@@ -93,8 +99,8 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
     setBusy(true)
     try {
       const run = await api.post(`/automation/playbooks/${encodeURIComponent(playbookId)}/run`, {
-        objectKind: incidentId ? 'incident' : '',
-        objectId: incidentId,
+        objectKind: object ? object.kind : incidentId ? 'incident' : '',
+        objectId: object ? object.id : incidentId,
         dryRun,
         inputs: values,
       })
@@ -136,7 +142,11 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
             className={`${FIELD} cursor-pointer`}
           >
             {!playbooks && <option value="">Loading…</option>}
-            {playbooks && choices.length === 0 && <option value="">No playbook can be run this way</option>}
+            {playbooks && choices.length === 0 && (
+              <option value="">
+                {on ? `No playbook can be run on ${objectName(on)}` : 'No playbook can be run this way'}
+              </option>
+            )}
             {choices.map((playbook) => (
               <option key={playbook.id} value={playbook.id}>
                 {playbook.name}
@@ -154,7 +164,18 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
           )}
         </label>
 
-        <label className="flex flex-col gap-1" htmlFor="run-incident">
+        {object && (
+          <div className="flex flex-col gap-1">
+            <span className="text-fg-muted">On</span>
+            <span
+              id="run-object"
+              className="break-all border border-line-soft bg-panel px-3 py-1.5 font-mono text-xs text-fg"
+            >
+              {objectName(object.what)} · {object.label}
+            </span>
+          </div>
+        )}
+        <label className={`flex flex-col gap-1 ${object ? 'hidden' : ''}`} htmlFor="run-incident">
           <span className="text-fg-muted">On</span>
           <select
             id="run-incident"

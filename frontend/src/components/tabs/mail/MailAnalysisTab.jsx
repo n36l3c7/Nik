@@ -204,6 +204,7 @@ export default function MailAnalysisTab({ incident }) {
       title: message.subject || message.fileName,
       what: 'e-mail',
       flaggable: mailFlaggable(message),
+      artifact: { id: `mail-${message.sha256}`, kind: 'mail', name: message.subject || message.fileName },
       ioc: { type: 'sha256', value: message.sha256 },
       copy: [
         { label: 'subject', text: message.subject },

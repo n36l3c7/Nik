@@ -5,25 +5,35 @@ stopping one and answering an approval need ``automation.run`` (analysts have it
 playbooks needs ``automation.edit``; the general switch is the admin's.
 Every body is validated with explicit limits and every error is a fixed
 sentence.
+
+One route here has no caller: ``POST /automation/hooks/{token}``, the address
+a system outside starts a playbook at. The token in its path is the whole
+credential: 32 random bytes, shown once, stored as their SHA-256. The route
+never reads a cookie or an API key, takes at most 256 kB, and is limited per
+token.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+import secrets
 import time
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..automation import catalog, egress, engine, graph, guard, outbound, scripts, state, triggers
+from ..automation import catalog, egress, engine, graph, guard, outbound, payloads, scripts, state, triggers
 from ..core import audit, vault
 from ..core.config import settings as app_settings
 from ..core.db import get_db
 from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep, Script, ScriptVersion
+from ..core.ratelimit import limiter
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, runner_principal
 
 router = APIRouter(prefix="/automation", tags=["automation"])
@@ -65,8 +75,9 @@ class EnabledIn(BaseModel):
 
 
 class RunIn(BaseModel):
-    objectKind: Literal["", "incident"] = ""
-    objectId: str = Field(default="", max_length=200)
+    # An artifact by its id (mail-…, file-…, url-…); an indicator as "type:value".
+    objectKind: Literal["", "incident", "artifact", "indicator"] = ""
+    objectId: str = Field(default="", max_length=1100)
     dryRun: bool = False
     inputs: dict[str, Any] = Field(default_factory=dict)
 
@@ -135,6 +146,7 @@ def _summary(db: OrmSession, row: Playbook) -> dict[str, Any]:
         "hasDraft": row.draft is not None,
         "trigger": triggers.describe(trigger),
         "triggerConfig": trigger,
+        "runsOn": triggers.object_of(trigger),
         "lastRun": {"id": last.id, "status": last.status, "startedAt": last.started_at} if last else None,
         "week": {"done": counts.get("done", 0), "failed": counts.get("failed", 0), "total": sum(counts.values())},
         "warnings": _warnings(db, row, shape),
@@ -158,6 +170,7 @@ def _detail(db: OrmSession, row: Playbook) -> dict[str, Any]:
         "onePerObject": bool(row.one_per_object),
         "maxSeconds": row.max_seconds,
         "approvalDefault": bool(row.approval_default),
+        "hook": {"since": row.hook_created_at} if row.hook_hash else None,
         "createdAt": row.created_at,
         "createdBy": row.created_by,
     }
@@ -503,7 +516,10 @@ def run_playbook(
     found = triggers.manual_object(db, body.objectKind, body.objectId, caller.actor)
     if found is None:
         raise HTTPException(status_code=404, detail="The object to run the playbook on does not exist")
-    data, classes, incident_id = found
+    data, classes, what, incident_id = found
+    wrong = triggers.manual_problem(config, what)
+    if wrong:
+        raise HTTPException(status_code=400, detail=wrong)
     now = time.time()
     if not body.dryRun:
         why = triggers.refusal(db, row, body.objectKind, body.objectId, now)
@@ -517,7 +533,8 @@ def run_playbook(
         classes=classes,
         object_kind=body.objectKind,
         object_id=body.objectId,
-        incident_id=incident_id,
+        incident_id=incident_id or None,
+        artifact_id=body.objectId if body.objectKind == "artifact" else None,
         dry_run=body.dryRun,
         started_by=caller.actor,
         inputs=body.inputs,
@@ -533,6 +550,131 @@ def run_playbook(
     )
     db.commit()
     return _run_summary(run)
+
+
+# --------------------------------------------------------------------------- #
+# The address a playbook is started at from outside                           #
+# --------------------------------------------------------------------------- #
+HOOK_MAX_BYTES = 256 * 1024
+HOOK_LIMIT = "60/minute"
+# What of a request's headers a playbook reads: how the body is written, who says they sent it,
+# and the headers a sender adds of its own. Never a credential, a cookie or what a proxy added.
+_HOOK_HEADERS = ("content-type", "user-agent")
+_HOOK_NEVER = ("x-forwarded-", "x-real-ip", "x-api-key", "x-nik-", "x-csrf", "x-amz-security", "x-auth")
+_HOOK_SECRET_WORDS = ("token", "secret", "key", "auth", "password", "cookie", "signature")
+
+
+def _hook_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _hook_key(request: Request) -> str:
+    """The limit is per token: one noisy sender does not use up another's."""
+    return "hook:" + _hook_hash(str(request.path_params.get("token") or ""))
+
+
+def hook_headers(headers) -> dict[str, str]:
+    kept: dict[str, str] = {}
+    for name, value in headers.items():
+        name = name.lower()
+        custom = (
+            name.startswith("x-")
+            and not name.startswith(_HOOK_NEVER)
+            and not any(word in name for word in _HOOK_SECRET_WORDS)
+        )
+        if (name in _HOOK_HEADERS or custom) and len(kept) < 30:
+            kept[name] = str(value)[:500]
+    return kept
+
+
+@router.post("/playbooks/{playbook_id}/hook", status_code=status.HTTP_201_CREATED)
+def create_hook(
+    playbook_id: str, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Give the playbook an address to be started at from outside, or a new one
+    (the old one stops working). The token is in this answer and nowhere else."""
+    row = _get(db, playbook_id)
+    token = secrets.token_urlsafe(32)
+    again = bool(row.hook_hash)
+    row.hook_hash, row.hook_created_at = _hook_hash(token), now_iso()
+    audit.record(
+        db,
+        caller.actor,
+        "playbook.hook",
+        f'{"Replaced" if again else "Created"} the webhook address of the playbook "{row.name}"',
+        target=row.name,
+    )
+    db.commit()
+    return {"token": token, "path": f"/api/automation/hooks/{token}", "since": row.hook_created_at}
+
+
+@router.delete("/playbooks/{playbook_id}/hook", status_code=status.HTTP_204_NO_CONTENT)
+def delete_hook(
+    playbook_id: str, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    row = _get(db, playbook_id)
+    if row.hook_hash:
+        row.hook_hash, row.hook_created_at = None, None
+        audit.record(
+            db,
+            caller.actor,
+            "playbook.hook",
+            f'Removed the webhook address of the playbook "{row.name}"',
+            target=row.name,
+        )
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/hooks/{token}", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(HOOK_LIMIT, key_func=_hook_key)
+async def inbound_hook(token: str, request: Request, response: Response, db: OrmSession = Depends(get_db)) -> dict:
+    """Start the playbook this token belongs to. No caller: the token is the
+    credential, and nothing else of the request (a cookie, an API key) is read.
+    The answer says only that the request was taken, never what the playbook did."""
+    missing = HTTPException(status_code=404, detail="Not found")
+    if not 20 <= len(token) <= 100:
+        raise missing
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > HOOK_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="The body is larger than 256 kB")
+    raw = b""
+    async for chunk in request.stream():
+        raw += chunk
+        if len(raw) > HOOK_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="The body is larger than 256 kB")
+    row = db.scalars(select(Playbook).where(Playbook.hook_hash == _hook_hash(token))).first()
+    # One answer for every reason a token starts nothing, so that it says nothing of what exists.
+    if row is None or not row.enabled or not row.current_version or not state.enabled(db):
+        raise missing
+    if not triggers.trigger_config(db, row).get("webhook"):
+        raise missing
+    text = raw.decode("utf-8", errors="replace")
+    body: Any = text
+    if "json" in (request.headers.get("content-type") or "").lower():
+        try:
+            body = json.loads(text) if text.strip() else None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="The body is not valid JSON") from exc
+    query = {name: value[:2000] for name, value in list(request.query_params.items())[:50]}
+    data, classes = payloads.webhook(body, hook_headers(request.headers), query)
+    now = time.time()
+    why = triggers.refusal(db, row, "webhook", row.id, now)
+    if why:
+        raise HTTPException(status_code=429, detail="The playbook cannot start now")
+    engine.start_run(
+        db,
+        row,
+        kind="webhook",
+        payload=data,
+        classes=classes,
+        object_kind="webhook",
+        object_id="",
+        started_by="webhook",
+        now=now,
+    )
+    db.commit()
+    return {"accepted": True}
 
 
 @router.get("/playbooks/{playbook_id}/export")
