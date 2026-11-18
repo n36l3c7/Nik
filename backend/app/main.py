@@ -67,6 +67,7 @@ from .routers import (
     mappers,
     mirror,
     network,
+    packs,
     preprocess,
     previews,
     query,
@@ -218,6 +219,15 @@ def on_startup() -> None:
             except IntegrityError:
                 # Another process of the server added them at the same moment.
                 db.rollback()
+    # What Nik ships is written down as packs, once everything above is there.
+    from . import packs as content_packs
+
+    with SessionLocal() as db:
+        try:
+            if content_packs.register_builtin(db):
+                db.commit()
+        except IntegrityError:
+            db.rollback()  # another process of the server wrote them at the same moment
     # Playbooks: the loop runs here only when there is no automation container.
     if app_settings.AUTOMATION_WORKER == "inline":
         from .automation import worker as automation_worker
@@ -284,6 +294,7 @@ app.include_router(fetch.router, prefix="/api")
 app.include_router(preprocess.router, prefix="/api")
 app.include_router(mirror.router, prefix="/api")
 app.include_router(dashboards.router, prefix="/api")
+app.include_router(packs.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

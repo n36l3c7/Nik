@@ -1376,6 +1376,42 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/packs</code> · <code>POST /api/packs/inspect</code> ·
+                <code>POST /api/packs/import</code> · <code>GET /api/packs/{id}/download</code> ·
+                <code>DELETE /api/packs/{id}</code>
+              </td>
+              <td>
+                (<strong>content.manage</strong>) <a href="automation.html#packs">Content packs</a>. The packs that are
+                installed, Nik's own first, each with the items that came from it · read a <code>.nikpack</code> file
+                (multipart <code>file</code>, 20 MB at most) and say what applying it would do, changing nothing:
+                <code
+                  >{token, pack, installed, problems, items: [{kind, name, action, diff?, why?, note?, from?}],
+                  counts}</code
+                >, where <code>action</code> is <code>add</code>, <code>update</code> (with the difference),
+                <code>same</code> or <code>conflict</code> (with why) · apply it:
+                <code>{token, choices: {"kind/name": "skip"}}</code>, all in one transaction or nothing (<code
+                  >409</code
+                >
+                for a conflict that was not skipped, <code>410</code> for a token older than an hour or of someone else)
+                · an installed pack as a file again · take a pack off the list (what it brought stays;
+                <code>409</code> for one Nik ships or one another pack requires).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/packs/items</code> · <code>POST /api/packs/dependencies</code> ·
+                <code>POST /api/packs/export</code>
+              </td>
+              <td>
+                (<strong>content.manage</strong>) What there is to put in a pack, by kind · what a choice of items
+                brings with it, <code>{items: [{kind, name}]}</code> (the scripts and connectors of a playbook, the
+                fields and the playbook of a type…) · the file:
+                <code>{id, name, version, description, author, requires, items, listItems}</code>. A list goes without
+                its items unless <code>listItems</code> is true. Never a connection or a secret.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET</code> · <code>PUT /api/automation/state</code></td>
               <td>
                 Whether automation is on and its worker alive · the general switch,

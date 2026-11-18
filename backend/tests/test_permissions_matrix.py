@@ -160,6 +160,15 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/dashboards/{dashboard_id}/export"): ("read",),
     ("POST", "/api/dashboards/{dashboard_id}/report"): ("read",),
     ("PUT", "/api/dashboards/{dashboard_id}/sharing"): ("dashboards.share",),
+    # Content packs.
+    ("GET", "/api/packs"): ("content.manage",),
+    ("GET", "/api/packs/items"): ("content.manage",),
+    ("POST", "/api/packs/dependencies"): ("content.manage",),
+    ("POST", "/api/packs/export"): ("content.manage",),
+    ("POST", "/api/packs/inspect"): ("content.manage",),
+    ("POST", "/api/packs/import"): ("content.manage",),
+    ("GET", "/api/packs/{pack_id}/download"): ("content.manage",),
+    ("DELETE", "/api/packs/{pack_id}"): ("content.manage",),
     # Lists: read by whoever reads incidents, changed by whoever manages lists.
     ("GET", "/api/lists"): ("read",),
     ("GET", "/api/lists/{name}"): ("read",),

@@ -42,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A dashboard as a document**: `POST /api/dashboards/{id}/report` (the
   *Report* button) makes a PDF or an HTML page of it, each widget asked on
   the server as whoever wants the report and written with its answer.
+- **Content packs.** What Nik is taught travels as one `.nikpack` file: a
+  zip with `pack.yml` and a folder for each kind of item (connectors,
+  scripts, playbooks, fields, incident types, mappers, lists, dashboards,
+  pre-processing rules), never a connection or a secret. Importing is two
+  steps (`/api/packs`): *inspect* says for each item whether it would be
+  added, updated (with the difference), is the same, or conflicts and why;
+  *import* applies what was chosen in one transaction, all or nothing. A
+  playbook or a script that exists gets a new version. Exporting picks items
+  and brings what they need with them. The file is read defensively: no path
+  out of the pack, no links, limits on size and count, YAML read safely.
+- **What Nik ships is listed as packs**: *Nik: incidents*, *automation*,
+  *connectors* and *dashboards*, each downloadable as a file that reads back
+  as what is installed.
 
 ## [4.5.0] - 2026-11-18
 

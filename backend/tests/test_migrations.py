@@ -690,6 +690,7 @@ def test_migration_0033_adds_the_tables_of_dashboards_and_packs(tmp_path, monkey
         inspector = sa.inspect(conn)
         assert set(DASHBOARD_PACK_TABLES) <= set(inspector.get_table_names())
         assert {"layout", "shared_with", "builtin"} <= {c["name"] for c in inspector.get_columns("dashboards")}
+        assert {"kind", "name", "pack_id"} == {c["name"] for c in inspector.get_columns("pack_items")}
     command.stamp(cfg, "0032_fetch_mappers")
     command.upgrade(cfg, "0033_dashboards_packs")  # again: nothing to do
     command.downgrade(cfg, "0032_fetch_mappers")

@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -1319,8 +1320,49 @@ class Dashboard(Base):
     updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
 
+class Pack(Base):
+    """A content pack that is installed: its manifest. What it brought is in ``pack_items``."""
+
+    __tablename__ = "packs"
+
+    id: Mapped[str] = mapped_column(String(49), primary_key=True)  # the id its pack.yml gives
+    name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    version: Mapped[str] = mapped_column(String(20), nullable=False, default="0.0.0")
+    description: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    author: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    installed_at: Mapped[str] = mapped_column(String, nullable=False)
+    installed_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class PackItem(Base):
+    """An item and the pack it came from last. An item is known by its kind and its name, never by an id."""
+
+    __tablename__ = "pack_items"
+
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), primary_key=True)
+    pack_id: Mapped[str] = mapped_column(String(49), ForeignKey("packs.id", ondelete="CASCADE"), nullable=False)
+
+
+class PackUpload(Base):
+    """A pack file between its inspection and its application: kept an hour, for who inspected it."""
+
+    __tablename__ = "pack_uploads"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    file_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_epoch: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
 # Created by migration 0033_dashboards_packs where missing, in this order.
-DASHBOARD_PACK_TABLES = ("dashboards",)
+DASHBOARD_PACK_TABLES = ("dashboards", "packs", "pack_items", "pack_uploads")
 
 # Created by migration 0032_fetch_mappers where missing, in this order; and the columns it adds.
 FETCH_TABLES = ("classifiers", "mappers", "fetched_items", "preprocess_rules", "mirror_queue")
