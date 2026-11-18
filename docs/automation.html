@@ -767,7 +767,10 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>Of a text.</td>
             </tr>
             <tr>
-              <td><code>map(high="1", low="3", else="2")</code></td>
+              <td>
+                <code>map(high="1", low="3", else="2")</code>, or pairs for values that are not names:
+                <code>map("1", "open", "2", "closed")</code>
+              </td>
               <td>
                 Another value for each value named; <code>else</code> for the rest (the value itself when left out).
               </td>
@@ -1596,6 +1599,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <th>Connector</th>
               <th>Signs in with</th>
               <th>Commands</th>
+              <th>Fetches · mirrors</th>
             </tr>
           </thead>
           <tbody>
@@ -1606,16 +1610,19 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 hosts, groups and domain objects added, read and removed; every change is published, and the policy
                 installed when asked, waiting for the task to end
               </td>
+              <td>—</td>
             </tr>
             <tr>
               <td>Check Point Harmony SASE</td>
               <td>an API key</td>
               <td>lists of addresses read and written; the Internet Access rules read</td>
+              <td>—</td>
             </tr>
             <tr>
               <td>Zscaler ZIA (the classic API)</td>
               <td>a user, a password and the API key, in Zscaler's own way</td>
               <td>URL categories read and changed, an address looked up, the changes activated</td>
+              <td>—</td>
             </tr>
             <tr>
               <td>SentinelOne EDR</td>
@@ -1624,31 +1631,42 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 agents found, isolated and reconnected; threats read and resolved; hashes added to the blocklist; a Deep
                 Visibility query run and waited for
               </td>
+              <td>the threats created since the last cycle · —</td>
             </tr>
             <tr>
               <td>SentinelOne SIEM (Singularity Data Lake)</td>
               <td>an API token</td>
               <td>a PowerQuery run; alerts read and their status set</td>
+              <td>the alerts detected since the last cycle, 100 a cycle · —</td>
             </tr>
             <tr>
               <td>ServiceNow</td>
               <td>a user and a password</td>
-              <td>incidents opened, read and updated; comments and work notes added</td>
+              <td>incidents opened, read and updated; comments and work notes added and read</td>
+              <td>the incidents opened since the last cycle · an incident and its comments</td>
             </tr>
             <tr>
               <td>Jira Cloud · Jira Data Center</td>
               <td>an e-mail address and an API token · a personal access token</td>
-              <td>issues created, read and updated; comments; the transitions of an issue listed and made</td>
+              <td>
+                issues created, read and updated; comments added and read; the transitions of an issue listed and made
+              </td>
+              <td>
+                the issues a JQL filter of the connection finds (<em>Issues to fetch</em>), created since the last cycle
+                · an issue and its comments
+              </td>
             </tr>
             <tr>
               <td>Confluence Cloud · Confluence Data Center</td>
               <td>an e-mail address and an API token · a personal access token</td>
               <td>pages created, read, and added to</td>
+              <td>—</td>
             </tr>
             <tr>
               <td>Bitbucket Cloud · Bitbucket Data Center</td>
               <td>an e-mail address and an API token · an HTTP access token</td>
               <td>a file read, and written with a commit: a block list other systems fetch</td>
+              <td>—</td>
             </tr>
           </tbody>
         </table>
@@ -1658,6 +1676,33 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         texts differently. The comments at the top of each file say what it was written against and what the connection
         needs.
       </p>
+      <p>
+        A connector that fetches comes with a <a href="#mappers">mapper</a>: the title, the details, the severity, the
+        status and the id of what it brings in, and the ticket, the alert, the host or the file it is about in the
+        <a href="#context">context</a>. Nik adds these mappers at startup, for every type of incident, and brings them
+        up to date with a release until someone saves one: from then on it is yours. The mappers of ServiceNow and Jira
+        set <code>mirror_id</code> and <code>mirror_direction: in</code>, so a ticket that came in by fetching is read
+        again when it changes there; to send what changes in Nik, start the mirror from the incident with a direction
+        that sends. None says which type of incident an item becomes: without a <a href="#mappers">classifier</a>, the
+        default type is used. Things to know before turning a fetch on:
+      </p>
+      <ul>
+        <li>
+          <strong>Jira</strong> reads and compares times in JQL to the minute and in the time zone of the account that
+          signs in; the first cycle starts from a UTC time, so with an account in another zone it starts some hours off.
+          Jira Cloud is fetched and mirrored through its API v2, which gives texts as plain text; the outgoing mapper of
+          Jira Cloud sends the title only, because a description there is written in Jira's document format.
+        </li>
+        <li>
+          <strong>ServiceNow</strong> reads the comments of an incident from the journal
+          (<code>sys_journal_field</code>): the account needs a role that may read it.
+        </li>
+        <li>
+          <strong>SentinelOne SIEM</strong> gives no way that is public to ask for the alerts in order: a cycle asks for
+          those detected since five minutes before the last one and reads 100. Where more than 100 alerts are detected
+          between two cycles, some are not read.
+        </li>
+      </ul>
 
       <h3 id="connector-format">The connector file, key by key</h3>
       <p>
@@ -2568,8 +2613,9 @@ commands:
       <h2 id="later">What this release does not do yet</h2>
       <ul>
         <li>
-          A connector sends commands: it does not yet bring alerts in from the other side as incidents, or keep an
-          incident and a ticket in step. Both come with a later release.
+          Fetching and mirroring are written for ServiceNow, Jira and SentinelOne; the other shipped connectors send
+          commands only. A fetch asks at an interval: nothing is pushed to Nik by the other product except through a
+          <a href="#trigger">webhook trigger</a>.
         </li>
         <li>
           No shipped connector has been run against a real system (<a href="#shipped-connectors"

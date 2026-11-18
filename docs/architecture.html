@@ -292,6 +292,11 @@
 ├── work_plan.py                    # The work plan of an incident: the steps of its playbooks by phase, its tasks
 ├── timers.py                       # SLA timers: start, pause, stop, business hours, the rules of a type, breaches
 ├── lists.py                        # Lists by name: the store, the short cache, the settings that became lists
+├── mapping.py                      # Classifiers and mappers: what a fetched item becomes, what goes back; the
+│                                   #   mappers the shipped connectors come with
+├── fetch.py                        # Fetching: a cycle of a connection, what was seen before, limits and backoff
+├── preprocess.py                   # Pre-processing rules: drop, link to an incident, close as duplicate, a script
+├── mirror.py                       # Mirroring: reading the other side, the queue of what is sent, comments
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
 ├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
 │                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
@@ -1250,6 +1255,44 @@
         Migrations <code>0030_tasks_sla</code> (tables <code>tasks</code> and <code>notifications</code>, and a wider
         <code>run_steps.port</code> on PostgreSQL) and <code>0031_lists</code> (the two tables, then the move of the
         settings, once).
+      </p>
+      <h3 id="fetch-mirror">Fetching, mappers and mirroring (4.5)</h3>
+      <ul>
+        <li>
+          <strong>The connector file</strong> gained four keys, read and checked by
+          <code>automation/connectors.py</code>: <code>fetch</code>, <code>schema</code>, <code>ext_fields</code> and
+          <code>mirror</code>. <code>Runtime.fetch</code> sends the request of a fetch with the loop of pages a paged
+          command uses; mirroring runs commands of the same connector, nothing else.
+        </li>
+        <li>
+          <strong>Classifiers and mappers</strong> (<code>classifiers</code>, <code>mappers</code>,
+          <code>mapping.py</code>) are rows, not parts of the file: a classifier belongs to a connection, a mapper to a
+          connector, a direction and a type of incident (or every type). <code>apply_incoming</code> returns the fields
+          and the context writes an item gives and writes nothing; <code>apply_outgoing</code> returns what the other
+          side is sent. The mappers in <code>automation/seed/mappers/</code> are added at startup as
+          <code>builtin</code> rows and follow a release until someone saves one.
+        </li>
+        <li>
+          <strong>Fetching</strong> (<code>fetch.py</code>, <code>fetched_items</code>, the columns
+          <code>fetch_enabled</code>, <code>fetch_state</code> and <code>fetch_status</code> of a connection). The
+          automation worker runs the cycles that are due in its pool, one at a time for a connection. An item is told
+          apart by <code>item_id</code> and kept in <code>fetched_items</code> with what became of it; the state of the
+          next cycle is saved only when the whole cycle was read. 200 items a cycle; 500 incidents an hour, then the
+          connection is paused; a failure is tried again after longer and longer, an hour at most.
+        </li>
+        <li>
+          <strong>Pre-processing rules</strong> (<code>preprocess_rules</code>, <code>preprocess.py</code>) are tried in
+          order on what an item was mapped to, before an incident is made: the first that matches decides.
+        </li>
+        <li>
+          <strong>Mirroring</strong> (<code>mirror.py</code>, <code>mirror_queue</code>). What is read from the other
+          side goes through the incoming mapper and <code>fields.update</code>, which records who set each field last
+          (<code>registry.note_source</code>): a field a person set is kept unless the rule is authoritative. What is
+          sent is put in a queue in the transaction of the change and sent by the worker through the data guard.
+        </li>
+      </ul>
+      <p>
+        Migration <code>0032_fetch_mappers</code>: the five tables and the three columns of <code>connections</code>.
       </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>

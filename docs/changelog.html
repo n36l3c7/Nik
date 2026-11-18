@@ -40,6 +40,44 @@
       </p>
 
       <section class="release">
+        <h3>4.5.0 <span class="date">2026-11-18</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Fetching.</strong> A connection can bring the alerts of its
+            product in as incidents: turned on for one connection at a time, read at an interval, each alert taken once,
+            with limits that pause a connection that floods. <em>Settings → Automation → Fetch status</em> shows how
+            each goes (<a href="automation.html#fetching">Fetching</a>).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Classifiers and mappers</strong>, with an editor that tries
+            them on a sample: which type of incident an item becomes, which of its values go to which fields and to the
+            context, and what goes back (<a href="automation.html#mappers">Classifiers and mappers</a>).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Pre-processing rules</strong>: what is fetched can be dropped,
+            linked to an incident that is the same, closed as a duplicate or given to a script, before it becomes an
+            incident.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Mirroring.</strong> An incident and a ticket or an issue of
+            another product kept in step, in, out or both ways, with their comments; what a person set in Nik is kept
+            unless the mapper says otherwise (<a href="automation.html#mirroring">Mirroring</a>).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The shipped connectors fetch and mirror</strong>: ServiceNow,
+            Jira Cloud and Data Center, SentinelOne EDR and SIEM bring alerts in, each with its mapper; ServiceNow and
+            Jira are mirrored (<a href="automation.html#shipped-connectors">the connectors Nik ships</a>). None was run
+            against a real system.
+          </li>
+          <li>
+            <span class="tag added">added</span> A connector file says how it fetches and mirrors with
+            <code>fetch</code>, <code>schema</code>, <code>ext_fields</code> and <code>mirror</code>; two filters,
+            <code>severity</code> and <code>regex_extract</code>, and pairs in <code>map</code>.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>4.4.0 <span class="date">2026-11-17</span></h3>
         <ul>
           <li>

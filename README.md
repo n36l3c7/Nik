@@ -157,8 +157,10 @@ analyses or by a request from outside, and five playbooks ready to turn on;
 4.3 a registry of fields, types of incident with their own page, the context
 of an incident as data playbooks read and write, and a War Room with a
 command line; 4.4 tasks and questions in playbooks, the work plan of an
-incident, SLA timers, notifications and lists. Still to come: fetching and
-mirroring of alerts, dashboards and content packs.
+incident, SLA timers, notifications and lists; 4.5 alerts fetched from other
+products as incidents, classifiers and mappers, pre-processing rules and an
+incident kept in step with its ticket. Still to come: dashboards and content
+packs.
 
 Also planned, not built yet:
 

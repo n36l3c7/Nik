@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-18
+
+Additive: nothing that worked with 4.4 changes, and nothing is fetched or
+mirrored until a connection is told to.
+
 ### Added
 
 - **A connector file can say how it brings alerts in and keeps an object in
@@ -2370,7 +2375,9 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.3.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0
+[4.4.0]: https://github.com/n36l3c7/Nik/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/n36l3c7/Nik/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/n36l3c7/Nik/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/n36l3c7/Nik/compare/v4.0.0...v4.1.0
