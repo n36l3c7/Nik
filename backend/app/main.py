@@ -50,6 +50,7 @@ from .routers import (
     capa_rules,
     connectors,
     context,
+    dashboards,
     enrichment,
     fetch,
     fields,
@@ -281,6 +282,7 @@ app.include_router(mappers.router, prefix="/api")
 app.include_router(fetch.router, prefix="/api")
 app.include_router(preprocess.router, prefix="/api")
 app.include_router(mirror.router, prefix="/api")
+app.include_router(dashboards.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

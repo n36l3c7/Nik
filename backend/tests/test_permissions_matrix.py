@@ -149,6 +149,16 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     # SLA timers of an incident, and what an account was told.
     ("GET", "/api/incidents/{incident_id}/timers"): ("read",),
     ("POST", "/api/incidents/{incident_id}/timers/{field}/{what}"): ("write",),
+    # Dashboards: everyone has their own; sharing one is a permission.
+    ("GET", "/api/dashboards"): ("read",),
+    ("POST", "/api/dashboards"): ("read",),
+    ("POST", "/api/dashboards/import"): ("read",),
+    ("GET", "/api/dashboards/{dashboard_id}"): ("read",),
+    ("PUT", "/api/dashboards/{dashboard_id}"): ("read",),
+    ("DELETE", "/api/dashboards/{dashboard_id}"): ("read",),
+    ("POST", "/api/dashboards/{dashboard_id}/duplicate"): ("read",),
+    ("GET", "/api/dashboards/{dashboard_id}/export"): ("read",),
+    ("PUT", "/api/dashboards/{dashboard_id}/sharing"): ("dashboards.share",),
     # Lists: read by whoever reads incidents, changed by whoever manages lists.
     ("GET", "/api/lists"): ("read",),
     ("GET", "/api/lists/{name}"): ("read",),

@@ -1338,6 +1338,35 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET</code> · <code>POST /api/dashboards</code> · <code>GET</code> · <code>PUT</code> ·
+                <code>DELETE /api/dashboards/{id}</code> · <code>POST …/duplicate</code> · <code>GET …/export</code> ·
+                <code>POST /api/dashboards/import</code>
+              </td>
+              <td>
+                (<strong>read</strong>) The dashboards the caller sees, without their widgets: Nik's, their own and
+                those shared with them · make one of one's own:
+                <code>{name, description, widgets, timeRange, refreshSeconds, filter, filterEntity}</code>, a widget
+                being <code>{id, title, type, entity, query, groupBy, measure, options, x, y, w, h}</code> on a grid of
+                12 columns (<code>type</code>: <code>number</code>, <code>trend</code>, <code>bar</code>,
+                <code>stacked_bar</code>, <code>pie</code>, <code>top</code>, <code>table</code>, <code>duration</code>,
+                <code>gauge</code>, <code>text</code>, <code>storage</code>, <code>fetch</code>). Each widget is checked
+                as <a href="#query-aggregate"><code>/api/query/aggregate</code></a> would check it, and widgets are
+                moved so that none covers another · one dashboard with its widgets · change it (its owner; once it is
+                shared, whoever may share dashboards; never one Nik ships) · delete it · a copy of one's own · the
+                dashboard as a file, without whose it is · make one from such a file. A dashboard that is not yours and
+                not shared with you answers <code>404</code>. The numbers are not here: a page asks
+                <code>/api/query/aggregate</code> for each widget as the person looking.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/dashboards/{id}/sharing</code></td>
+              <td>
+                (<strong>dashboards.share</strong>) Who else sees a dashboard:
+                <code>{everyone, roles, users}</code>; all empty, nobody else. Written to the audit log.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET</code> · <code>PUT /api/automation/state</code></td>
               <td>
                 Whether automation is on and its worker alive · the general switch,

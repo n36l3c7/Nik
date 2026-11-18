@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their **approvals** (for who may run playbooks) and the **tasks**.
   Incidents can be asked by `type`, `closed`, `closeReason`, `occurred`,
   `source`, `slaBreached` and by the seconds their SLA timers counted.
+- **Dashboards, as data.** A dashboard is a set of widgets on a grid of 12
+  columns, each a question in the query language with how it is grouped,
+  measured and shown (`/api/dashboards`). It is personal until someone with
+  `dashboards.share` shares it with everyone, with roles or with accounts; a
+  widget is always asked as the person looking, so a shared dashboard never
+  shows what their roles cannot read. A dashboard goes out as a JSON file and
+  comes back as one's own.
 
 ## [4.5.0] - 2026-11-18
 

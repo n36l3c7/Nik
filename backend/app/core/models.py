@@ -1293,6 +1293,35 @@ class MirrorJob(Base):
     created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
 
+class Dashboard(Base):
+    """Widgets on a grid, each a question asked of what Nik holds. Personal until it is shared;
+    the ones Nik ships are ``builtin``. ``layout`` is the list of its widgets:
+    ``{id, title, type, entity, query, groupBy, measure, options, x, y, w, h}``."""
+
+    __tablename__ = "dashboards"
+    __table_args__ = (Index("ix_dashboards_owner", "owner"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    owner: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # Who else sees it: {"everyone": bool, "roles": [...], "users": [...]}.
+    shared_with: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    layout: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    time_range: Mapped[str] = mapped_column(String(20), nullable=False, default="30d")
+    refresh_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # A query every widget of ``filter_entity`` is narrowed by, unless it opts out.
+    filter_query: Mapped[str] = mapped_column(String(400), nullable=False, default="")
+    filter_entity: Mapped[str] = mapped_column(String(40), nullable=False, default="incidents")
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+# Created by migration 0033_dashboards_packs where missing, in this order.
+DASHBOARD_PACK_TABLES = ("dashboards",)
+
 # Created by migration 0032_fetch_mappers where missing, in this order; and the columns it adds.
 FETCH_TABLES = ("classifiers", "mappers", "fetched_items", "preprocess_rules", "mirror_queue")
 FETCH_COLUMNS = {"connections": ("fetch_enabled", "fetch_state", "fetch_status")}
