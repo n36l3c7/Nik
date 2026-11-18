@@ -453,15 +453,18 @@
             </tr>
             <tr>
               <td>
-                <code>GET /api/query/schema</code> · <code>POST /api/query</code> · <code>POST /api/query/check</code>
+                <code>GET /api/query/schema</code> · <code>POST /api/query</code> · <code>POST /api/query/check</code> ·
+                <code>POST /api/query/aggregate</code>
               </td>
               <td>
                 <a href="#query">The query language</a>. <code>schema</code> (<code>?entity=</code> for one) lists the
                 entities the caller may query and their fields. <code>POST /api/query</code> takes
                 <code>{ entity, query, limit, offset }</code> (<code>incidents</code>, <code>artifacts</code>,
-                <code>indicators</code>, <code>audit</code>) and returns <code>{ entity, total, items }</code>.
-                <code>check</code> reads <code>{ entity, query }</code> without running it and returns its tree. Any
-                signed-in caller; the permission of the entity is checked.
+                <code>indicators</code>, <code>audit</code>, <code>runs</code>, <code>approvals</code>,
+                <code>tasks</code>) and returns <code>{ entity, total, items }</code>. <code>check</code> reads
+                <code>{ entity, query }</code> without running it and returns its tree. <code>aggregate</code>
+                <a href="#query-aggregate">counts or measures</a> what a query finds. Any signed-in caller; the
+                permission of the entity is checked.
               </td>
             </tr>
             <tr>
@@ -1386,8 +1389,9 @@
 
       <h2 id="query">The query language</h2>
       <p>
-        One language asks incidents, artifacts, indicators and the audit log. It is what the <code>q</code> parameter of
-        their list endpoints takes, and what <code>POST /api/query</code> runs on any of them:
+        One language asks incidents, artifacts, indicators, the audit log, the runs of playbooks, their approvals and
+        the tasks. It is what the <code>q</code> parameter of the list endpoints of the first four takes, and what
+        <code>POST /api/query</code> runs on any of them:
       </p>
       <pre><code>status:open severity:&gt;=high owner:"" -host:srv-*
 kind:mail verdict:phishing created:&gt;=now-7d
@@ -1477,7 +1481,53 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
         Limits: 2 000 characters, 20 levels of parentheses, 200 conditions, 8 wildcards in a value, pages of at most 500
         from <code>POST /api/query</code>, and ten seconds for the database to answer. A query is compiled to bound
         parameters, never to SQL text; who may query an entity is checked when it is compiled (<code>audit</code> needs
-        <code>audit.read</code>, the others <code>read</code>).
+        <code>audit.read</code>, <code>runs</code> and <code>approvals</code> need <code>automation.run</code>, the
+        others <code>read</code>).
+      </p>
+      <h3 id="query-aggregate">Counting and measuring</h3>
+      <p>
+        <code>POST /api/query/aggregate</code> answers with numbers instead of rows: it is what a widget of a dashboard
+        asks. The query is compiled as above, so the answer never counts what the caller may not read.
+      </p>
+      <pre><code>{ "entity": "incidents", "query": "status:open",
+  "groupBy": ["created@day", "severity"], "measure": "count",
+  "timeField": "created", "timeRange": "30d", "compare": "previous", "limit": 50 }
+
+{ "entity": "incidents", "columns": [{ "name": "created", "kind": "date", "bucket": "day" }, …],
+  "rows": [["2026-11-17", "high", 2], …], "total": 14, "previous": { "total": 9, "range": {…} },
+  "more": 0, "truncated": false, "range": { "from": "…", "to": "…" } }</code></pre>
+      <ul>
+        <li>
+          <code>groupBy</code>: two fields at most. A date is grouped by a stretch of time,
+          <code>field@hour|day|week|month|year</code> (a week is named by its Monday, times are UTC); a field of tags
+          counts a row under each of its tags. With no group the answer is its <code>total</code> alone.
+        </li>
+        <li>
+          <code>measure</code>: <code>count</code> (the default), or <code>sum</code>, <code>avg</code>,
+          <code>min</code>, <code>max</code>, <code>median</code>, <code>p90</code> of a number field
+          (<code>avg:score</code>) or of the seconds between two dates, <code>median:duration(created,closed)</code>;
+          <code>duration(asked,now)</code> is an age. A row that lacks the number or one of the dates is not measured.
+        </li>
+        <li>
+          <code>timeRange</code> on <code>timeField</code>: a length of time back from now (<code>24h</code>,
+          <code>7d</code>, <code>12w</code>, <code>6m</code>, <code>1y</code>) or <code>{from, to}</code>.
+          <code>compare: "previous"</code> adds the total of the period of the same length before it. When the one group
+          is the time field itself, the stretches with nothing in them are given as zeros.
+        </li>
+        <li>
+          Rows come by time when the first group is a date, in the order of the field when it has one (severity, the
+          worst first), otherwise the largest first; <code>limit</code> (50, at most 500) keeps the first and
+          <code>more</code> says how many groups were left out.
+        </li>
+        <li>
+          A plain count is grouped by the database. Anything else is worked out from the rows that match, 100 000 at
+          most: past that, <code>truncated</code> is true.
+        </li>
+      </ul>
+      <p>
+        For incidents the fields <code>type</code>, <code>closed</code>, <code>closeReason</code>,
+        <code>occurred</code>, <code>source</code>, <code>slaBreached</code> and the seconds the SLA timers counted
+        (<code>timeToAssign</code>, <code>timeToContain</code>, <code>timeToClose</code>) can be asked and measured too.
       </p>
 
       <h2 id="uploads">Uploading files</h2>

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Counting and measuring what a query finds.** `POST /api/query/aggregate`
+  groups what a query finds by one or two fields, a date by hour, day, week,
+  month or year, and counts it or measures it: the sum, mean, minimum,
+  maximum, median or 90th percentile of a number or of the time between two
+  dates, over a time range and against the period before. It runs as the
+  caller, so it never counts what they may not read.
+- The query language asks three more things: the **runs** of playbooks and
+  their **approvals** (for who may run playbooks) and the **tasks**.
+  Incidents can be asked by `type`, `closed`, `closeReason`, `occurred`,
+  `source`, `slaBreached` and by the seconds their SLA timers counted.
+
 ## [4.5.0] - 2026-11-18
 
 Additive: nothing that worked with 4.4 changes, and nothing is fetched or

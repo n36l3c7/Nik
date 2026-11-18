@@ -91,6 +91,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/query/schema"): "signed-in",
     ("POST", "/api/query/check"): "signed-in",
     ("POST", "/api/query"): "signed-in",
+    ("POST", "/api/query/aggregate"): "signed-in",
     ("GET", "/api/automation/playbooks"): ("automation.run",),
     ("POST", "/api/automation/playbooks"): ("automation.edit",),
     ("GET", "/api/automation/playbooks/{playbook_id}"): ("automation.run",),
