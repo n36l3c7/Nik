@@ -95,6 +95,26 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
+    id: 'incidents',
+    label: 'Incidents',
+    sections: [
+      {
+        id: 'incidentTypes',
+        slug: 'types',
+        label: 'Types',
+        permission: 'incidents.configure',
+        keywords: 'incident type fields layout sections page close reasons phishing malware builder',
+      },
+      {
+        id: 'fields',
+        slug: 'all-fields',
+        label: 'All fields',
+        permission: 'incidents.configure',
+        keywords: 'registry custom field name label choice table rename delete',
+      },
+    ],
+  },
+  {
     id: 'automation',
     label: 'Automation',
     sections: [

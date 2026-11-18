@@ -184,6 +184,17 @@ class Argument(_Strict):
         return self
 
 
+class ContextOutput(_Strict):
+    """Where a result goes in the context of the incident the playbook works on.
+
+    ``path`` is a context path (``Ticket(val.ID == obj.ID)``, ``ext.<this connector>.<name>``,
+    ``incident.<field>``); ``value`` a template over the answer, usually an object with the
+    keys of the entity."""
+
+    path: str = Field(min_length=1, max_length=200)
+    value: Any
+
+
 class Command(_Strict):
     name: str
     description: str = Field(default="", max_length=500)
@@ -197,6 +208,10 @@ class Command(_Strict):
     pagination: Pagination | None = None
     poll: Poll | None = None
     outputs: dict[str, Any] = Field(default_factory=dict)
+    context: list[ContextOutput] = Field(default_factory=list, max_length=20)
+    # A command that says what is known of an indicator of this kind: "!ip", "!domain"… of the
+    # War Room ask it too. Its first argument is the value; its "verdict" output is counted.
+    reputation: Literal["ip", "domain", "url", "file", "email"] | None = None
     sample: dict[str, Any] | None = None
     timeout: int = Field(default=60, ge=1, le=300)
 
@@ -438,6 +453,9 @@ def _check_command(raw: dict, loc: tuple, lines: dict, problems: list[Problem]) 
         _request_templates(raw.get(key), (*loc, key), lines, problems)
     for key in ("outputs", "error", "success", "poll"):
         _check_templates(raw.get(key), answer, (*loc, key), lines, problems)
+    for at, item in enumerate(raw.get("context") or []):
+        if isinstance(item, dict):
+            _check_templates(item.get("value"), answer, (*loc, "context", at, "value"), lines, problems)
     pagination = raw.get("pagination")
     if isinstance(pagination, dict):
         _check_templates(pagination, answer, (*loc, "pagination"), lines, problems)
@@ -586,6 +604,19 @@ def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Probl
                     f"commands[{index}].outputs",
                 )
             )
+        for at, item in enumerate(command.context):
+            from .. import context as incident_context
+
+            where = ("commands", index, "context", at)
+            wrong = incident_context.problem(item.path)
+            if wrong is None:
+                target = incident_context.parse(item.path)
+                if target.kind == "ext" and target.connector != connector.id:
+                    wrong = f"A connector writes under ext.{connector.id}, not under ext.{target.connector}"
+            if wrong:
+                problems.append(Problem(_line_of(lines, where), wrong, f"commands[{index}].context[{at}]"))
+            if _paths((body.get("context") or [{}] * (at + 1))[at], "secret"):
+                problems.append(Problem(_line_of(lines, where), "A secret cannot go to the context", "context"))
         if _paths(body.get("outputs"), "secret"):
             problems.append(
                 Problem(_line_of(lines, ("commands", index, "outputs")), "A secret cannot be an output", "outputs")

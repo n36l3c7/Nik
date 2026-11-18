@@ -3,6 +3,7 @@
  * its groups, the node an entry becomes when it is dropped, what a node is
  * called, and the values the expressions of a node can pick.
  */
+import { CONTEXT_FIELDS, INCIDENT_FIELDS as REGISTRY_FIELDS } from '../context.js'
 import { IN_LOOP, newId, nodeOf, readable, triggerOf } from './graph.js'
 
 /** The trigger is not in the library (a playbook has exactly one), so it is described here. */
@@ -411,6 +412,9 @@ export function valueTree(graph, id, entries) {
     )
   }
   push('run', 'This run', RUN_FIELDS)
+  // The incident the run works on, as it is when the step runs, and what is known of it.
+  push('incident', 'The incident, now', REGISTRY_FIELDS)
+  push('context', 'The context of the incident', CONTEXT_FIELDS)
   return roots
 }
 

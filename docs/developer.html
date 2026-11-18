@@ -454,6 +454,19 @@ const isRawIp = isRawIpUrl(entry.url)
           run.
         </li>
         <li>
+          <strong>A system field</strong>: an entry of <code>SYSTEM_FIELDS</code> in
+          <code>backend/app/fields.py</code> that says its type and where it lives. It is seeded at the next start.
+          <strong>A type of field</strong>: a name in <code>TYPES</code>, a branch of <code>coerce</code> there, and in
+          the frontend its label in <code>domain/fields.js</code> and its input in
+          <code>components/fields/FieldInput.jsx</code>.
+        </li>
+        <li>
+          <strong>An entity of the context</strong>: an entry of <code>SCHEMA</code> in
+          <code>backend/app/context.py</code> (its keys, and those an item is told apart by), the classes of data of its
+          keys in <code>CLASSES</code>, and a row in the table of <code>docs/automation.html</code>. The schema is
+          Nik's: a product's own names go under <code>ext</code>.
+        </li>
+        <li>
           <strong>An event</strong>: a builder in <code>payloads.py</code> that returns what the event carries and the
           class of each field, a function in <code>triggers.py</code> that writes it to the outbox, called in the
           transaction of the change; the name goes in <code>graph.EVENTS</code>, in

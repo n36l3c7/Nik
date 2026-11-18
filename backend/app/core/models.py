@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text, event, false
+from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, Integer, String, Text, event, false, text
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -56,6 +57,10 @@ class Session(Base):
     expires_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+# JSONB on PostgreSQL, so that a field can be searched through an index; plain JSON elsewhere.
+FIELDS_JSON = JSON().with_variant(JSONB(), "postgresql")
+
+
 class Incident(Base):
     """Incident document store.
 
@@ -86,6 +91,32 @@ class Incident(Base):
     # the incident's ETag, so a client that edits a stale copy is told (412).
     rev: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     doc: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # The type of the incident (``incident_types``); none means "Unclassified".
+    type_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    # The custom fields of the registry (``fields``): {name: value}, validated on every write by
+    # fields_service, the only writer. ``fields_rev`` is one more at each of those writes.
+    fields: Mapped[dict[str, Any]] = mapped_column(FIELDS_JSON, nullable=False, default=dict, server_default="{}")
+    fields_rev: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    closed_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    close_reason: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    close_notes: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    occurred_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Where it came from when a connector brought it in (4.5), and how it is kept in step.
+    source_connection_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    source_id: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    mirror: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_incidents_source",
+            "source_connection_id",
+            "source_id",
+            unique=True,
+            sqlite_where=text("source_id IS NOT NULL"),
+            postgresql_where=text("source_id IS NOT NULL"),
+        ),
+        Index("ix_incidents_status", "status"),
+    )
 
 
 @event.listens_for(Incident, "before_update")
@@ -964,6 +995,114 @@ class Connection(Base):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
+
+class Field(Base):
+    """A field of the registry: one name for one thing, whatever sets it.
+
+    System fields are seeded and map onto columns Nik already has; custom ones
+    are made in Settings and live in ``incidents.fields``. A name is never
+    changed once it exists: playbooks, mappers and queries refer to it.
+    """
+
+    __tablename__ = "fields"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(41), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    type: Mapped[str] = mapped_column(String(16), nullable=False, default="text")
+    # choice / multi_choice: {"choices": [...]}; list: {"columns": [{name, label, type}]}.
+    options: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    applies_to: Mapped[str] = mapped_column(String(12), nullable=False, default="incident")
+    # On every type of incident without being listed by each.
+    all_types: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class IncidentType(Base):
+    """A type of incident: its fields, how its page is laid out, how it is closed.
+
+    ``fields`` is the ordered list of the custom fields of this type:
+    ``[{"name", "required", "required_on_close"}]``. ``layout`` arranges the
+    Summary in sections and orders the tabs (none: one is generated).
+    """
+
+    __tablename__ = "incident_types"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    colour: Mapped[str] = mapped_column(String(16), nullable=False, default="slate")
+    icon: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    default_playbook_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    auto_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    fields: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    layout: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    sla: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    close_reasons: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    visible_to_roles: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class IncidentContext(Base):
+    """What is known of an incident, as data playbooks read and write (see ``context.py``).
+
+    One document per incident; ``version`` is one more at every write, and a
+    write replaces the document only if the version is still the one it read.
+    """
+
+    __tablename__ = "incident_context"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    data: Mapped[dict[str, Any]] = mapped_column(FIELDS_JSON, nullable=False, default=dict)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class IncidentContextMeta(Base):
+    """Who last set an item of the context (``Ticket:<its key>``, ``ext.<connector>.<name>``)."""
+
+    __tablename__ = "incident_context_meta"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    path_key: Mapped[str] = mapped_column(String(400), primary_key=True)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)  # nik | connector:<id> | user:<name> | run:<id>
+    at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class WarRoomEntry(Base):
+    """One line of the War Room of an incident: a note, a command and its result, what a playbook did.
+
+    ``body`` is text (markdown) for a note and JSON for a result. An entry
+    with a ``parent_id`` belongs under another (the result of a command).
+    """
+
+    __tablename__ = "war_room_entries"
+    __table_args__ = (Index("ix_war_room_incident_at", "incident_id", "at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    at: Mapped[str] = mapped_column(String, nullable=False)
+    author: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # note | command | result | error | task | approval | mirror | file | system
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, default="note")
+    body: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    parent_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
+
+# Created by migration 0029_context_war_room where missing, in this order.
+CONTEXT_TABLES = ("incident_context", "incident_context_meta", "war_room_entries")
+
+# Created by migration 0028_fields_types where missing, in this order.
+FIELD_TABLES = ("fields", "incident_types")
 
 # Created by migration 0027_connectors where missing, in this order.
 CONNECTOR_TABLES = ("connectors", "connections")

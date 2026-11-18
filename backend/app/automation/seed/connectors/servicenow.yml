@@ -14,7 +14,7 @@
 # the fields to change as an object: {"u_site": "Milan", "state": "2"}.
 name: ServiceNow
 id: servicenow
-version: 1
+version: 2
 description: Incidents and their comments in ServiceNow.
 api_version: "Table API (/api/now/table), release Australia"
 verified: false
@@ -61,6 +61,14 @@ commands:
       number: "{{ response.result.number }}"
       sys_id: "{{ response.result.sys_id }}"
       url: "{{ config.url }}/nav_to.do?uri=incident.do?sys_id={{ response.result.sys_id }}"
+    # The ticket, in the context of the incident the playbook works on.
+    context:
+      - path: Ticket(val.ID == obj.ID)
+        value:
+          ID: "{{ response.result.sys_id }}"
+          Number: "{{ response.result.number }}"
+          System: ServiceNow
+          URL: "{{ config.url }}/nav_to.do?uri=incident.do?sys_id={{ response.result.sys_id }}"
     sample:
       number: INC0000001
       sys_id: 00000000000000000000000000000000

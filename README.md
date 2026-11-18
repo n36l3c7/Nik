@@ -35,6 +35,9 @@ every action is attributed to a named analyst in the audit log.
   (what Nik analyses, a schedule, a request from outside, a person),
   conditions, approvals, Python scripts in a sandbox with no network, and a
   guard on where a playbook connects and what it sends.
+- **Incidents your way** — types of incident with fields of your own, a page
+  laid out for each type, a form for closing, and a War Room: one log of
+  what was said and done, with a command line (`!ip 185.220.101.47`).
 - **Connectors** — other products reached through YAML files anyone can read
   and write, with no code: Check Point, Zscaler, SentinelOne, ServiceNow,
   Jira, Confluence and Bitbucket ship (written from the vendors' public
@@ -145,10 +148,11 @@ The 4.x series is being built release by release. 4.0 brought roles as tags,
 Settings as a page and the query language; 4.1 Nik's own automation engine,
 with a canvas of playbooks and a sandbox for scripts; 4.2 connectors written
 as YAML files (twelve ship, for nine products), playbooks started by what Nik
-analyses or by a request from outside, and five playbooks ready to turn on.
-Still to come: incident types with their fields and layouts, a War Room per
-incident, tasks and SLA timers, lists, fetching and mirroring of alerts,
-dashboards and content packs.
+analyses or by a request from outside, and five playbooks ready to turn on;
+4.3 a registry of fields, types of incident with their own page, the context
+of an incident as data playbooks read and write, and a War Room with a
+command line. Still to come: tasks and SLA timers, lists, fetching and
+mirroring of alerts, dashboards and content packs.
 
 Also planned, not built yet:
 

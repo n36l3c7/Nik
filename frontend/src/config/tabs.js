@@ -1,13 +1,15 @@
 import { lazy } from 'react'
 import {
+  Braces,
   Bug,
   Crosshair,
-  LayoutDashboard,
-  Mail,
   Globe,
   HardDrive,
+  LayoutDashboard,
   Link2,
   ListTree,
+  Mail,
+  MessagesSquare,
   Network,
   ScrollText,
   TerminalSquare,
@@ -55,6 +57,8 @@ const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.j
 const NetworkAnalysisTab = lazy(() => import('../components/tabs/network/NetworkAnalysisTab.jsx'))
 const UrlAnalysisTab = lazy(() => import('../components/tabs/urls/UrlAnalysisTab.jsx'))
 const AutomationTab = lazy(() => import('../components/tabs/automation/AutomationTab.jsx'))
+const ContextTab = lazy(() => import('../components/tabs/context/ContextTab.jsx'))
+const WarRoomTab = lazy(() => import('../components/tabs/warroom/WarRoomTab.jsx'))
 
 export const ANALYSIS_TABS = [
   {
@@ -80,6 +84,15 @@ export const ANALYSIS_TABS = [
     defaultData: {},
   },
   {
+    id: 'war_room',
+    label: 'War Room',
+    short: 'Room',
+    group: 'overview',
+    icon: MessagesSquare,
+    component: WarRoomTab,
+    // The log is the server's: notes stay in the incident, the rest is read when the tab opens.
+  },
+  {
     id: 'automation',
     label: 'Automation',
     short: 'Auto',
@@ -87,6 +100,16 @@ export const ANALYSIS_TABS = [
     icon: Workflow,
     component: AutomationTab,
     // The runs are the server's: nothing of this tab is kept in the incident.
+    permission: 'automation.run',
+  },
+  {
+    id: 'context',
+    label: 'Context',
+    short: 'Ctx',
+    group: 'overview',
+    icon: Braces,
+    component: ContextTab,
+    // What playbooks read of the incident: the server's, read when the tab opens.
     permission: 'automation.run',
   },
   {

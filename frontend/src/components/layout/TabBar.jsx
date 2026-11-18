@@ -24,13 +24,17 @@ const SHORT = 1
 const ICONS = 2
 
 /**
- * @param {{ activeTabId: string, onChange: (tabId: string) => void }} props
+ * @param {{
+ *   activeTabId: string,
+ *   onChange: (tabId: string) => void,
+ *   tabs?: object[],       // the tabs to show, in order (those of the incident's type); every visible one otherwise
+ * }} props
  */
-export default function TabBar({ activeTabId, onChange }) {
+export default function TabBar({ activeTabId, onChange, tabs: given = null }) {
   const { activeSummary } = useIncidents()
   const { can } = useAuth()
   // A tab that needs a permission is shown to the accounts that hold it.
-  const tabs = visibleTabs(can)
+  const tabs = given ?? visibleTabs(can)
   // Without an active incident there is nothing to analyze: tabs are disabled.
   // They stay usable while the selected incident is still loading.
   const disabled = !activeSummary
@@ -69,7 +73,8 @@ export default function TabBar({ activeTabId, onChange }) {
       {tabs.map((tab, index) => {
         const Icon = tab.icon
         const isActive = tab.id === activeTabId
-        const newGroup = index > 0 && tab.group !== tabs[index - 1].group
+        // A rule between the groups of the registry; a type that orders its tabs draws none.
+        const newGroup = !given?.ordered && index > 0 && tab.group !== tabs[index - 1].group
         const text = isActive || density === FULL ? tab.label : density === SHORT ? tab.short : null
         return [
           newGroup && (

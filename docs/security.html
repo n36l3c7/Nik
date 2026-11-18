@@ -371,6 +371,14 @@
           may appear in the access log of a proxy in front of Nik. Replace it when in doubt; creating, replacing and
           removing one are in the audit log.
         </li>
+        <li id="war-room-commands">
+          <strong>Commands typed in the War Room</strong> are runs of one node on the same engine, and get nothing a
+          playbook does not get: the permission to run playbooks, the egress rules (the host of the command's connection
+          and the hosts listed for every playbook), the data guard with no class opened, the audit log under the name of
+          who typed. The line is read by a small grammar of its own, not by a shell: a name, pairs of
+          <code>name=value</code>, and expressions that can only read the incident and its context. A command that
+          changes something outside is not sent until it is confirmed.
+        </li>
         <li>
           <strong>Loops and floods.</strong> A playbook's changes can start other playbooks three deep; each playbook
           has a ceiling of runs an hour and, by default, one run at a time on the same object; the whole server has a

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Download,
@@ -52,6 +52,10 @@ import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 import { useAutomation } from './context/AutomationContext.jsx'
 import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
 import RunPlaybookDialog from './components/automation/RunPlaybookDialog.jsx'
+import CloseIncidentDialog from './components/fields/CloseIncidentDialog.jsx'
+import IncidentPanel from './components/fields/IncidentPanel.jsx'
+import { useFields } from './context/FieldsContext.jsx'
+import { orderTabs, typeOf } from './domain/fields.js'
 
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
@@ -85,6 +89,8 @@ const SIDEBAR_DEFAULT_WIDTH = 288
 const SIDEBAR_WIDTH_KEY = 'nik.sidebarWidth'
 // The side panel the rail last opened: 'incidents', 'artifacts' or '' (closed).
 const PANEL_KEY = 'nik.panel'
+// The tab last opened on an incident of each type: nik.tab.<type id>.
+const TAB_KEY = 'nik.tab'
 // Above this size a file is not hashed in the browser to look it up before the upload.
 const LOOKUP_MAX_BYTES = 100 * 1024 * 1024
 
@@ -516,10 +522,32 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  // A tab the account may not see (its roles changed, a link named it) falls back to the first.
-  const shownTabs = visibleTabs(can)
-  const activeTab = shownTabs.find((tab) => tab.id === activeTabId) ?? getTabById(ANALYSIS_TABS[0].id)
+  // The tabs of the incident on screen: those its type shows, in the order its type gives them.
+  const { types: incidentTypes } = useFields()
+  const activeType = typeOf(incidentTypes, activeIncident ?? activeSummary)
+  const shownTabs = useMemo(() => {
+    const ordered = orderTabs(visibleTabs(can), activeType?.layout)
+    ordered.ordered = Boolean(activeType?.layout?.tabs?.length)
+    return ordered
+  }, [can, activeType])
+  // A tab the account may not see (its roles changed, a link named it), or that the type hides, falls back to the first.
+  const activeTab = shownTabs.find((tab) => tab.id === activeTabId) ?? shownTabs[0] ?? getTabById(ANALYSIS_TABS[0].id)
   const ActiveTabComponent = activeTab.component
+  // The tab is remembered for each type of incident: a phishing case opens on Mail if that is where one works.
+  const typeKey = activeType?.id ?? null
+  // Applied when the type on screen changes; among incidents of one type the tab stays where it is.
+  useEffect(() => {
+    if (!typeKey) return
+    const remembered = localStorage.getItem(`${TAB_KEY}.${typeKey}`)
+    if (remembered) setActiveTabId(remembered)
+  }, [typeKey])
+  const chooseTab = useCallback(
+    (tabId) => {
+      setActiveTabId(tabId)
+      if (typeKey) localStorage.setItem(`${TAB_KEY}.${typeKey}`, tabId)
+    },
+    [typeKey],
+  )
 
   // ---- Boot gate (session probe / server reachability) ----
   if (!authReady) return <ConnectingScreen />
@@ -741,111 +769,118 @@ export default function App() {
           artifactView={artifactOpen}
           libraryView={libraryOpen}
         />
-        {canRead && !artifactOpen && !libraryOpen && <TabBar activeTabId={activeTab.id} onChange={setActiveTabId} />}
-        {canRead && !artifactOpen && !libraryOpen && incidentApprovals.length > 0 && (
-          <div className="flex shrink-0 flex-col gap-2 border-b border-line px-6 py-3">
-            {incidentApprovals.map((approval) => (
-              <ApprovalBanner
-                key={approval.id}
-                approval={approval}
-                onOpenRun={(runId) => openAutomation('runs', runId)}
-              />
-            ))}
-          </div>
-        )}
-
-        {storageError && (
-          <div
-            role="alert"
-            className="flex shrink-0 items-center gap-2 border-b border-high-line bg-high-soft px-6 py-2.5 text-sm text-high-fg"
-          >
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 flex-1">
-              {unsavedChanges ? `Changes not saved yet: ${storageError}` : storageError}
-            </span>
-            {unsavedChanges && (
-              <Button size="xs" variant="secondary" onClick={retrySave}>
-                Retry now
-              </Button>
+        <div className="flex min-h-0 flex-1 flex-col min-[1100px]:flex-row">
+          {canRead && !artifactOpen && !libraryOpen && activeIncident && <IncidentPanel incident={activeIncident} />}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {canRead && !artifactOpen && !libraryOpen && (
+              <TabBar activeTabId={activeTab.id} onChange={chooseTab} tabs={shownTabs} />
             )}
-          </div>
-        )}
-
-        <div className="flex min-h-0 flex-1">
-          <main className="min-w-0 flex-1 overflow-y-auto p-6">
-            {!canRead ? (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
-                  title="Nothing to open here"
-                  message="Your roles do not include reading incidents, artifacts and indicators. What they do include is in Settings; an admin can give your account more roles."
-                  action={
-                    <Button icon={Settings} onClick={() => openSettings('account')}>
-                      Open settings
-                    </Button>
-                  }
-                />
+            {canRead && !artifactOpen && !libraryOpen && incidentApprovals.length > 0 && (
+              <div className="flex shrink-0 flex-col gap-2 border-b border-line px-6 py-3">
+                {incidentApprovals.map((approval) => (
+                  <ApprovalBanner
+                    key={approval.id}
+                    approval={approval}
+                    onOpenRun={(runId) => openAutomation('runs', runId)}
+                  />
+                ))}
               </div>
-            ) : libraryOpen ? (
-              <IocLibraryPage onOpenIncident={openIncident} />
-            ) : artifactOpen ? (
-              <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
-            ) : activeIncident ? (
-              <Suspense
-                fallback={
-                  <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
-                    <AsciiSkull preset="medium" />
-                    <p role="status" className="font-mono text-sm text-fg-muted">
-                      Loading…
-                    </p>
-                  </div>
-                }
+            )}
+
+            {storageError && (
+              <div
+                role="alert"
+                className="flex shrink-0 items-center gap-2 border-b border-high-line bg-high-soft px-6 py-2.5 text-sm text-high-fg"
               >
-                <ErrorBoundary resetKey={`${activeTabId}:${activeIncident.id}`}>
-                  <ActiveTabComponent incident={activeIncident} />
-                </ErrorBoundary>
-              </Suspense>
-            ) : activeLoading ? (
-              <IncidentLoadingState name={activeSummary.name} />
-            ) : activeLoadError ? (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
-                  title="Unable to load the incident"
-                  message={activeLoadError}
-                  action={
-                    <Button icon={RefreshCw} onClick={retryActiveIncident}>
-                      Retry
-                    </Button>
-                  }
-                />
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
-                  title="No active incident"
-                  message={
-                    canWrite
-                      ? 'Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere.'
-                      : 'Choose an incident on the left to read it.'
-                  }
-                  action={
-                    canWrite && (
-                      <div className="flex flex-wrap justify-center gap-2">
-                        <Button icon={Plus} onClick={openCreateModal}>
-                          New incident
-                        </Button>
-                        <Button variant="secondary" icon={Microscope} onClick={() => setAnalysisOpen(true)}>
-                          New analysis
-                        </Button>
-                      </div>
-                    )
-                  }
-                />
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  {unsavedChanges ? `Changes not saved yet: ${storageError}` : storageError}
+                </span>
+                {unsavedChanges && (
+                  <Button size="xs" variant="secondary" onClick={retrySave}>
+                    Retry now
+                  </Button>
+                )}
               </div>
             )}
-          </main>
+
+            <div className="flex min-h-0 flex-1">
+              <main className="@container min-w-0 flex-1 overflow-y-auto p-6">
+                {!canRead ? (
+                  <div className="flex h-full items-center justify-center">
+                    <EmptyState
+                      illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                      title="Nothing to open here"
+                      message="Your roles do not include reading incidents, artifacts and indicators. What they do include is in Settings; an admin can give your account more roles."
+                      action={
+                        <Button icon={Settings} onClick={() => openSettings('account')}>
+                          Open settings
+                        </Button>
+                      }
+                    />
+                  </div>
+                ) : libraryOpen ? (
+                  <IocLibraryPage onOpenIncident={openIncident} />
+                ) : artifactOpen ? (
+                  <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
+                ) : activeIncident ? (
+                  <Suspense
+                    fallback={
+                      <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
+                        <AsciiSkull preset="medium" />
+                        <p role="status" className="font-mono text-sm text-fg-muted">
+                          Loading…
+                        </p>
+                      </div>
+                    }
+                  >
+                    <ErrorBoundary resetKey={`${activeTabId}:${activeIncident.id}`}>
+                      <ActiveTabComponent incident={activeIncident} />
+                    </ErrorBoundary>
+                  </Suspense>
+                ) : activeLoading ? (
+                  <IncidentLoadingState name={activeSummary.name} />
+                ) : activeLoadError ? (
+                  <div className="flex h-full items-center justify-center">
+                    <EmptyState
+                      illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+                      title="Unable to load the incident"
+                      message={activeLoadError}
+                      action={
+                        <Button icon={RefreshCw} onClick={retryActiveIncident}>
+                          Retry
+                        </Button>
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <EmptyState
+                      illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                      title="No active incident"
+                      message={
+                        canWrite
+                          ? 'Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere.'
+                          : 'Choose an incident on the left to read it.'
+                      }
+                      action={
+                        canWrite && (
+                          <div className="flex flex-wrap justify-center gap-2">
+                            <Button icon={Plus} onClick={openCreateModal}>
+                              New incident
+                            </Button>
+                            <Button variant="secondary" icon={Microscope} onClick={() => setAnalysisOpen(true)}>
+                              New analysis
+                            </Button>
+                          </div>
+                        )
+                      }
+                    />
+                  </div>
+                )}
+              </main>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -904,6 +939,7 @@ export default function App() {
       />
 
       {canAutomate && <RunPlaybookDialog onStarted={(run) => openAutomation('runs', run.id)} />}
+      <CloseIncidentDialog />
 
       <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <SessionExpiredDialog unsavedChanges={unsavedChanges} />

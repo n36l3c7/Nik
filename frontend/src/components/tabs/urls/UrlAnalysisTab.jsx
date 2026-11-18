@@ -72,7 +72,7 @@ function Overview({ scan, incident }) {
   const certificate = result.certificate
   const issued = certificate?.validFrom ? formatDateTime(certificate.validFrom * 1000) : null
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
+    <div className="grid gap-6 @5xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
       <div className="space-y-3">
         {result.screenshot ? (
           <img

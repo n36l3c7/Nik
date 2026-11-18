@@ -41,6 +41,7 @@ from ..automation import (
     state,
     triggers,
 )
+from ..commands import ADHOC_ID
 from ..core import audit, vault
 from ..core.config import settings as app_settings
 from ..core.db import get_db
@@ -114,7 +115,8 @@ def _size_ok(shape: dict | None) -> None:
 
 def _get(db: OrmSession, playbook_id: str) -> Playbook:
     row = db.get(Playbook, playbook_id)
-    if row is None:
+    # What the commands of the War Room run as is not a playbook to open, edit or run.
+    if row is None or row.id == ADHOC_ID:
         raise HTTPException(status_code=404, detail="Playbook not found")
     return row
 
@@ -272,7 +274,7 @@ def _problems(found: list[graph.Problem]) -> JSONResponse:
 @router.get("/playbooks")
 def list_playbooks(_caller: Principal = Depends(runner_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Every playbook, with its trigger, its last run, a week of counts and what to watch."""
-    rows = db.scalars(select(Playbook).order_by(func.lower(Playbook.name))).all()
+    rows = db.scalars(select(Playbook).where(Playbook.id != ADHOC_ID).order_by(func.lower(Playbook.name))).all()
     return {"playbooks": [_summary(db, row) for row in rows], "workerAlive": state.worker_alive(db), **state.read(db)}
 
 
@@ -762,9 +764,19 @@ def import_playbook(
 # The library, runs, the switch                                               #
 # --------------------------------------------------------------------------- #
 @router.get("/catalog")
-def get_catalog(_caller: Principal = Depends(runner_principal), db: OrmSession = Depends(get_db)) -> dict:
-    """Every node of the library with what it takes and gives, and what a trigger can wait for."""
+def get_catalog(
+    prefix: str | None = Query(None, max_length=100, description="Only the commands whose name starts so."),
+    _caller: Principal = Depends(runner_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Every node of the library with what it takes and gives, and what a trigger can wait for.
+    ``commands`` is the same library as the command line of the War Room types it."""
+    from .. import commands as command_line
+
+    if prefix is not None:
+        return {"commands": command_line.catalog(db, prefix)}
     return {
+        "commands": command_line.catalog(db),
         "nodes": catalog.entries(db),
         # The connections there are, by connector: what a node of a connector chooses from.
         "connections": catalog.connections(db),

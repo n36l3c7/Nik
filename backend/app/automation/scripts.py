@@ -58,6 +58,14 @@ def _fields(items: Any, what: str, *, arguments: bool) -> list[dict]:
         if kind not in TYPES:
             raise ScriptError(f'"{item["name"]}" has an unknown type: ' + ", ".join(TYPES))
         field = {"name": item["name"], "type": kind, "description": str(item.get("description") or "")[:300]}
+        if not arguments and item.get("context_path"):
+            # Where the output goes in the context of the incident a playbook works on.
+            from .. import context as incident_context
+
+            wrong = incident_context.problem(str(item["context_path"]))
+            if wrong:
+                raise ScriptError(f'The output "{item["name"]}": {wrong}')
+            field["context_path"] = str(item["context_path"]).strip()
         if arguments:
             field["required"] = bool(item.get("required"))
             if item.get("default") is not None:

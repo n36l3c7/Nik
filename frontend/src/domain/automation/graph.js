@@ -75,7 +75,7 @@ export const OPERATORS = [
 export const UNARY = new Set(['exists', 'empty'])
 
 /** Names an expression may read besides the nodes before it. */
-export const ALWAYS = ['trigger', 'run', 'inputs']
+export const ALWAYS = ['trigger', 'run', 'inputs', 'context', 'incident']
 export const IN_LOOP = ['item', 'index']
 const RESERVED = new Set([
   ...ALWAYS,

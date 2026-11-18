@@ -69,6 +69,32 @@ def incident_event(incident: Incident, changed: list[str] | None = None) -> tupl
     return data, incident_classes()
 
 
+def registry_classes() -> dict[str, list[str]]:
+    """The classes of an incident's fields by the names of the registry (``{{ incident.owner }}``).
+    A custom field has none of its own: the guard's scan of what leaves decides."""
+    return {
+        "id": ["nik_id"],
+        "type": ["verdict"],
+        "status": ["verdict"],
+        "severity": ["verdict"],
+        "tlp": ["verdict"],
+        "created": ["nik_id"],
+        "modified": ["nik_id"],
+        "closed": ["nik_id"],
+        "occurred": ["nik_id"],
+        "due": ["nik_id"],
+        "name": ["incident_text"],
+        "ticket": ["incident_text"],
+        "details": ["incident_text"],
+        "close_notes": ["incident_text"],
+        "host": ["private_value"],
+        "username": ["private_value"],
+        "owner": ["private_value"],
+        "affected_hosts": ["private_value"],
+        "affected_users": ["private_value"],
+    }
+
+
 def _with_incident(data: dict, classes: dict, incident: Incident | None) -> None:
     if incident is not None:
         data["incident"] = incident_data(incident)

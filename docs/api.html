@@ -196,6 +196,10 @@
             <tr>
               <td><code>PATCH /api/incidents/{id}</code></td>
               <td>
+                The document an incident is read as carries two keys that are not stored in it:
+                <code>type</code> (the id of its type; <code>unclassified</code> when it has none) and
+                <code>fields</code> (its custom fields, and how it was closed). Sent back in a <code>POST</code> or a
+                <code>PATCH</code>, they are checked as <code>PATCH …/fields</code> checks them.
                 <code>application/json</code>: replace the given top-level fields.
                 <code>application/merge-patch+json</code>: apply an RFC 7396 merge patch (nested merge,
                 <code>null</code> deletes). Honors <code>If-Match</code> (<code>412</code> on a stale version) and
@@ -205,6 +209,133 @@
             <tr>
               <td><code>DELETE /api/incidents/{id}</code></td>
               <td>Delete an incident.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/{id}/fields</code></td>
+              <td>
+                The fields of the incident that have a value, by the names of the registry:
+                <code>{fields: {name: value}, rev, type}</code>. System fields (<code>name</code>, <code>status</code>,
+                <code>severity</code>, <code>owner</code>, <code>ticket</code>…) are read from where the incident always
+                kept them.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/incidents/{id}/war-room</code> ·
+                <code>GET /api/incidents/{id}/war-room/{entry}</code>
+              </td>
+              <td>
+                The War Room of the incident, oldest first:
+                <code>{entries: [{id, at, author, kind, body, runId, stepId, tags, parentId}]}</code>.
+                <code>kind</code> is <code>note</code>, <code>command</code>, <code>result</code>, <code>error</code>,
+                <code>approval</code>, <code>system</code>… Filters: <code>show</code> (<code>all</code>,
+                <code>notes</code>, <code>commands</code>, <code>automation</code>, <code>evidence</code>),
+                <code>tag</code>, <code>author</code>, <code>limit</code>, <code>before</code> · one entry, with
+                <code>step</code>: what the step behind it was given, gave and sent, when a playbook or a command made
+                it.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/incidents/{id}/war-room</code> ·
+                <code>PUT /api/incidents/{id}/war-room/{entry}/tags</code>
+              </td>
+              <td>
+                Write a note: <code>{text, tags}</code>. It is a note of the incident like those of
+                <code>POST …/notes</code>, with a line here · tag an entry: <code>{tags}</code>;
+                <code>evidence</code> puts it among the evidence of the incident.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/incidents/{id}/war-room/command</code></td>
+              <td>
+                What is typed in the War Room: <code>{line, confirm?}</code>. Plain text and <code>/note</code> write a
+                note; <code>/assign @user</code> changes the owner; <code>/close</code> answers
+                <code>{action: "close"}</code>; <code>!name arg=value …</code> runs a command as a run of one node
+                (needs <code>automation.run</code>) and answers its entry with <code>runId</code>: the result is the
+                entry whose <code>parentId</code> is this one. <code>400</code> with what is wrong in the line;
+                <code>409</code> with <code>needsConfirm</code> for a command that changes something outside, until
+                <code>confirm: true</code> is sent. <code>GET /api/automation/catalog?prefix=</code> lists the commands
+                with their arguments (<a href="automation.html#command-line">Automation → The command line</a>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/{id}/context</code></td>
+              <td>
+                Needs <code>automation.run</code>. What a playbook reads of the incident: <code>incident</code> (its
+                fields by the names of the registry), <code>context</code> (the entities of the common schema and
+                <code>ext</code>), <code>provenance</code> (for each item, <code>{source, at}</code>: who set it last),
+                <code>schema</code> (each entity's keys and the keys an item is told apart by) and <code>version</code>.
+                Read only: the context is written by Nik's analysis and by what commands and scripts declare (<a
+                  href="automation.html#context"
+                  >Automation → The incident and its context</a
+                >).
+              </td>
+            </tr>
+            <tr>
+              <td><code>PATCH /api/incidents/{id}/fields</code></td>
+              <td>
+                <code>{changes: {name: value}, ifRev?}</code>; <code>null</code> clears a field. Every value is checked
+                against the registry and the incident's type, and stored as the field's type says (a date as UTC, a
+                number as a number, a user as the account is written). One wrong value refuses the whole change:
+                <code>400</code> with which and why; a name the registry does not know is refused the same way.
+                <code>409</code> when <code>ifRev</code> is not the current <code>rev</code>. Answers the fields as they
+                are now, with <code>changed</code>. Setting <code>status</code> to <code>closed</code> is refused while
+                a field the incident's type wants filled before closing is empty, or when <code>close_reason</code> is
+                not one of the type's.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incident-types</code> · <code>GET /api/incident-types/{id}</code></td>
+              <td>
+                The types of incident: <code>id</code>, <code>name</code>, <code>colour</code>, <code>fields</code> (its
+                own, each <code>{name, required, requiredOnClose}</code>), <code>layout</code> (the saved one, or one
+                generated from its fields; <code>customLayout</code> says which), <code>closeReasons</code>,
+                <code>incidents</code> (how many are of it). A type limited to some roles is listed only to accounts
+                that hold one of them.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/incident-types</code> · <code>PUT /api/incident-types/{id}</code> ·
+                <code>DELETE /api/incident-types/{id}?moveTo=</code>
+              </td>
+              <td>
+                Needs <code>incidents.configure</code>.
+                <code>{name, description, colour, fields, layout, closeReasons, visibleToRoles}</code>; on
+                <code>PUT</code> a key left out keeps what the type has, and <code>layout: null</code> goes back to the
+                generated one. A layout is
+                <code>{sections: [{id, title, key, columns, fields: [names]}], tabs: [ids], hidden: [ids]}</code>: a
+                section names fields the type has, a field is in one section, one section at most is the side panel
+                (<code>key</code>). <code>400</code> says what is wrong. Deleting a type moves its incidents to
+                <code>moveTo</code> (<code>unclassified</code> when not said) with every value they hold;
+                <code>unclassified</code> itself cannot be deleted.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/fields</code> · <code>GET /api/fields/{name}</code></td>
+              <td>
+                The registry: every field with <code>name</code>, <code>label</code>, <code>type</code>,
+                <code>options</code>, <code>system</code>, <code>writable</code>, <code>allTypes</code> · one field,
+                with <code>usedBy</code> (the types that list it, how many incidents hold a value).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/fields</code> · <code>PATCH /api/fields/{name}</code> ·
+                <code>DELETE /api/fields/{name}</code>
+              </td>
+              <td>
+                Needs <code>incidents.configure</code>. Make a custom field:
+                <code>{name, label, description, type, options, allTypes}</code>. The name (a lower-case letter, then
+                lower-case letters, digits or <code>_</code>) and the type are for ever. Types: <code>text</code>,
+                <code>long_text</code>, <code>number</code>, <code>bool</code>, <code>date</code>,
+                <code>choice</code> and <code>multi_choice</code> (<code>options.choices</code>), <code>user</code>,
+                <code>role</code>, <code>url</code>, <code>tags</code>, <code>indicator</code>,
+                <code>list</code> (<code>options.columns</code>), <code>timer</code>, <code>json</code> · change its
+                label, description, choices or <code>allTypes</code> · delete one no type lists and no incident holds
+                (<code>409</code> otherwise, and for a system field).
+              </td>
             </tr>
             <tr>
               <td><code>POST /api/incidents/{id}/notes</code> · <code>PATCH</code> / <code>DELETE …/{noteId}</code></td>

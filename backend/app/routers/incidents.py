@@ -34,6 +34,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import fields as field_registry
 from .. import query
 from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
@@ -73,6 +74,41 @@ def _sync_columns(incident: Incident) -> None:
     incident.has_mail = bool(isinstance(mail, dict) and mail.get("messages"))
     incident.updated_at = str(doc.get("updatedAt") or "")
     incident.created_at = str(doc.get("createdAt") or "")
+    # When it was closed: stamped as it closes, cleared when it is opened again.
+    if incident.status == "closed":
+        incident.closed_at = incident.closed_at or now_iso()
+    else:
+        incident.closed_at = None
+
+
+def _shown(row: Incident) -> dict[str, Any]:
+    """The document as the API gives it: with the incident's type and its custom fields, which
+    are kept beside the document and written only through the field registry."""
+    return {
+        **(row.doc or {}),
+        "type": row.type_id or field_registry.UNCLASSIFIED,
+        "fields": field_registry.stored_fields(row),
+    }
+
+
+def _field_changes(partial: dict[str, Any]) -> dict[str, Any]:
+    """Take ``type`` and ``fields`` out of what a client sent: they go through the registry."""
+    changes: dict[str, Any] = {}
+    if "fields" in partial:
+        sent = partial.pop("fields")
+        if sent is not None and not isinstance(sent, dict):
+            raise HTTPException(status_code=400, detail="fields is an object: a value for each name")
+        changes.update(sent or {})
+    if "type" in partial:
+        changes["type"] = partial.pop("type")
+    return changes
+
+
+def _set_fields(db: OrmSession, row: Incident, changes: dict[str, Any], caller: Principal) -> list[str]:
+    try:
+        return field_registry.update(db, row, changes, caller.actor, f"user:{caller.actor}")
+    except field_registry.FieldError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
 
 
 def _audit(db: OrmSession, caller: Principal, action: str, details: str, incident: Incident | None = None) -> None:
@@ -178,6 +214,7 @@ def list_incidents(
                 Incident.has_mail,
                 Incident.created_at,
                 Incident.updated_at,
+                Incident.type_id,
             )
             .where(*conditions)
             .order_by(order)
@@ -195,6 +232,7 @@ def list_incidents(
                 "status": r.status or "open",
                 "assignee": r.assignee,
                 "hasMail": bool(r.has_mail),
+                "type": r.type_id or field_registry.UNCLASSIFIED,
                 "createdAt": r.created_at,
                 "updatedAt": r.updated_at,
             }
@@ -203,7 +241,7 @@ def list_incidents(
     else:
         stmt = select(Incident).where(*conditions).order_by(order)
         stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
-        incidents = [row.doc for row in db.scalars(stmt).all()]
+        incidents = [_shown(row) for row in db.scalars(stmt).all()]
 
     return {"incidents": incidents, "total": total}
 
@@ -243,7 +281,7 @@ def get_incident(
         flag_modified(row, "doc")
         db.commit()
     response.headers["ETag"] = _etag(row.rev)
-    return row.doc
+    return _shown(row)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -266,6 +304,8 @@ def create_incident(
     incident_id = doc.get("id") or str(uuid.uuid4())
     doc["id"] = incident_id
     doc["createdBy"] = caller.actor
+    # Its type and its custom fields are not part of the document: they are checked by the registry.
+    field_changes = _field_changes(doc)
 
     existing = lock_incident(db, str(incident_id))
     if existing is None:
@@ -282,10 +322,12 @@ def create_incident(
     _audit(db, caller, "incident.create", f'Created incident "{doc.get("name") or incident_id}"', incident)
     # For the playbooks: in the transaction of the change, so the event exists exactly when it does.
     triggers.incident_changed(db, incident, "incident.created")
+    if field_changes:
+        _set_fields(db, incident, field_changes, caller)
     db.commit()
     emit(db, background_tasks, "incident.created", {"id": incident_id, "name": doc.get("name")})
     response.headers["ETag"] = _etag(incident.rev)
-    return incident.doc
+    return _shown(incident)
 
 
 MERGE_PATCH_MEDIA_TYPE = "application/merge-patch+json"
@@ -338,9 +380,20 @@ def patch_incident(
     response carries the new ``ETag``.
     """
     row = _get_or_404(db, incident_id, lock=True)
-    previous = row.doc or {}
     if if_match is not None and if_match.strip() != _etag(row.rev):
         raise HTTPException(status_code=412, detail="Incident was modified by someone else (ETag mismatch)")
+    # The type and the custom fields first, through the registry; what is left is the document.
+    partial = dict(partial)
+    field_changes = _field_changes(partial)
+    was_closed = row.status == "closed"
+    if field_changes:
+        _set_fields(db, row, field_changes, caller)
+        if not partial:
+            db.commit()
+            emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": row.name})
+            response.headers["ETag"] = _etag(row.rev)
+            return _shown(row)
+    previous = row.doc or {}
     media_type = (content_type or "").split(";")[0].strip().lower()
     if media_type == MERGE_PATCH_MEDIA_TYPE:
         merged = merge_patch(row.doc or {}, partial)
@@ -353,6 +406,10 @@ def patch_incident(
     row.doc = merged
     flag_modified(row, "doc")
     _sync_columns(row)
+    if row.status == "closed" and not was_closed:
+        problem = field_registry.closing_problem(db, row)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
     # Flags, notes and the suspicious window leave the indicators unchanged.
     if "data" in partial:
         reindex_incident(db, row)
@@ -365,7 +422,7 @@ def patch_incident(
     db.commit()
     emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": merged.get("name")})
     response.headers["ETag"] = _etag(row.rev)
-    return row.doc
+    return _shown(row)
 
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -387,6 +444,12 @@ def delete_incident(
         # What only this incident references goes with it; shared artifacts stay.
         remove_incident_artifacts(db, incident_id)
         remove_incident_captures(db, incident_id)
+        # Its context and its War Room go with it.
+        from .. import context as incident_context
+        from ..core.models import WarRoomEntry
+
+        incident_context.forget(db, incident_id)
+        db.execute(delete(WarRoomEntry).where(WarRoomEntry.incident_id == incident_id))
         db.delete(row)
         db.commit()
         emit(db, background_tasks, "incident.deleted", {"id": incident_id, "name": name})

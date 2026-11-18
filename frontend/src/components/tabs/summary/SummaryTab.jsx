@@ -1,3 +1,4 @@
+import IncidentSections from '../../fields/IncidentSections.jsx'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
@@ -71,7 +72,7 @@ const INPUT_CLASS =
 const DATETIME_CLASS = `${INPUT_CLASS} [color-scheme:light]`
 
 export default function SummaryTab({ incident }) {
-  const { updateIncidentMeta, assignees } = useIncidents()
+  const { updateIncidentMeta, assignees, askClose } = useIncidents()
 
   /* ---- editable draft, reseeded whenever the active incident changes ---- */
   const [ticketId, setTicketId] = useState(incident.ticketId ?? '')
@@ -113,11 +114,14 @@ export default function SummaryTab({ incident }) {
   const invertedRange = startMs !== null && endMs !== null && endMs < startMs
 
   const handleSave = () => {
+    // Closing goes through its own form (a reason, what the type wants filled): the rest is saved here.
+    const closing = status === 'closed' && (incident.status ?? 'open') !== 'closed'
+    if (closing) askClose(incident.id)
     updateIncidentMeta(incident.id, {
       ticketId,
       title,
       severity: severity || null,
-      status,
+      status: closing ? (incident.status ?? 'open') : status,
       assignee,
       host,
       username,
@@ -306,6 +310,9 @@ export default function SummaryTab({ incident }) {
           </Button>
         </div>
       </Card>
+
+      {/* ---- The sections of the incident's type, with their fields ---- */}
+      <IncidentSections incident={incident} />
 
       {/* ---- 2. Recap StatCards ---- */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 2xl:grid-cols-6">

@@ -226,6 +226,10 @@ function normalizeIncident(raw) {
     notes: Array.isArray(raw.notes) ? raw.notes : [],
     // Saved report options (language, TLP, sections, executive summary).
     report: raw.report && typeof raw.report === 'object' ? raw.report : null,
+    // The type of the incident and its custom fields: kept by the server beside the document and
+    // written only through the field registry (PATCH …/fields), never by a change made here.
+    type: typeof raw.type === 'string' && raw.type ? raw.type : 'unclassified',
+    fields: raw.fields && typeof raw.fields === 'object' && !Array.isArray(raw.fields) ? raw.fields : {},
   }
 }
 
@@ -274,6 +278,7 @@ function toSummary(incident) {
     status: normalizeStatus(incident.status),
     assignee: incident.assignee ?? '',
     hasMail: (incident.data?.mail?.messages?.length ?? 0) > 0,
+    type: incident.type ?? 'unclassified',
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt,
   }
@@ -296,6 +301,7 @@ function normalizeSummary(raw) {
     status: normalizeStatus(raw.status),
     assignee: typeof raw.assignee === 'string' ? raw.assignee : '',
     hasMail: raw.hasMail === true,
+    type: typeof raw.type === 'string' && raw.type ? raw.type : 'unclassified',
     createdAt: raw.createdAt ?? '',
     updatedAt: raw.updatedAt ?? '',
   }
@@ -604,6 +610,11 @@ export function IncidentProvider({ children }) {
     setActiveLoadError(null)
     setReloadToken((token) => token + 1)
   }, [])
+
+  // "Close the incident" asked from anywhere (the Summary, the menu of the list): one dialog, drawn by App.
+  const [closeRequest, setCloseRequest] = useState(null)
+  const askClose = useCallback((incidentId) => setCloseRequest(incidentId), [])
+  const endClose = useCallback(() => setCloseRequest(null), [])
 
   const activeIncident = activeIncidentId ? (documents[activeIncidentId] ?? null) : null
   const activeSummary = useMemo(
@@ -1460,7 +1471,9 @@ export function IncidentProvider({ children }) {
       if (typeof raw?.data !== 'object' || raw?.data === null) {
         throw new Error('Unrecognized file: a Nik export with a "data" field is expected.')
       }
-      const incident = normalizeIncident({ ...raw, id: generateId(), updatedAt: nowIso() })
+      // The type and the custom fields are those of the Nik the file came from, which this one may
+      // not have: an imported incident starts Unclassified, with the fields every incident has.
+      const incident = normalizeIncident({ ...raw, id: generateId(), updatedAt: nowIso(), type: null, fields: null })
       storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
       syncUrl(incident.id)
@@ -1481,6 +1494,9 @@ export function IncidentProvider({ children }) {
     activeLoadProgress,
     retryActiveIncident,
     refreshIncidents,
+    closeRequest,
+    askClose,
+    endClose,
     setEventLogChannels,
     clearEventLogs,
     updateReportSettings,

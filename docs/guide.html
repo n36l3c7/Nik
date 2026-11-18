@@ -135,6 +135,16 @@
         there for the accounts whose roles let them use it.
       </p>
 
+      <p id="incident-facts">
+        An open incident has a column of its own beside the tabs: its <strong>type</strong> and its
+        <strong>key facts</strong> (status, severity, owner, ticket, when it occurred, TLP, or whatever its type puts
+        there). It stays while the tabs change. <em>Edit</em> opens a form for those fields; the select changes the type
+        of the incident, which keeps every value it holds: what the new type does not show is hidden, not lost. The
+        arrow folds the column away, which a wide tab wants, and Nik remembers it; in a narrow window the column is a
+        band above the tabs. The type of an incident also decides the sections of its Summary, the order of its tabs and
+        which are hidden; the tab you last opened is remembered for each type.
+      </p>
+
       <p>
         The lists inside the Mail, Malware, Network and URL tabs close with the button in their corner, and stay closed
         the next time. When the window is narrow the tab bar shortens its labels, then shows icons only; the open tab
@@ -901,7 +911,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
       <ul>
         <li>
           <strong>Export an incident</strong> from its row in the incidents panel: a JSON file with everything the
-          incident holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back.
+          incident holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back; an
+          imported incident starts <em>Unclassified</em>, since its type and its custom fields are those of the Nik it
+          came from.
         </li>
         <li>
           <strong>Export artifacts</strong> from the artifacts panel (everything the filter lists), from an artifact's
@@ -959,6 +971,27 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         <li>
           <strong>The Automation tab</strong> of an incident lists the runs that worked on it. A run opens on its own
           page: the playbook as it went, each node coloured by what happened, with what every step got and gave.
+        </li>
+        <li id="war-room">
+          <strong>The War Room tab</strong> is the log of the incident: the notes people write, each step a playbook ran
+          on it, the approvals answered, in the order they happened. The chips keep one kind, or what was marked as
+          evidence. Text written at the bottom is a note of the incident, the same the Summary and the report show.
+          Choosing a line opens it beside the stream: a result as a table when it is one, what was sent, what was
+          written to the context, and <em>Mark as evidence</em>. The Timeline is another thing: the forensic timeline of
+          the evidence.
+        </li>
+        <li>
+          <strong>Commands.</strong> The same line runs a command when it starts with <code>!</code>:
+          <code>!ip 185.220.101.47</code> asks what is known of an address,
+          <code>!servicenow-get-incident number=INC0012345</code> reads a ticket. <code>/assign @anna</code> gives the
+          incident to someone and <code>/close</code> closes it. The name of a command is completed while you type and
+          its arguments are hinted; a command that changes something outside asks first.
+          <a href="automation.html#command-line">Automation</a> has the whole of it.
+        </li>
+        <li>
+          <strong>The Context tab</strong> shows what playbooks read of the incident, as a tree to search: its fields,
+          and the files, e-mails, addresses, tickets and hosts known for it. Choosing a value gives the path to write in
+          a playbook, and says who set it: Nik's analysis, a connector, a run.
         </li>
         <li>
           A note written by a playbook is marked <em>automation</em> and signed <code>nik-automation</code>; the mark
@@ -1040,6 +1073,28 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             <tr>
               <td>YARA rules · capa rules · FLIRT signatures</td>
               <td>Your own rules and signatures for Malware Analysis (the Rules role, or an admin).</td>
+            </tr>
+            <tr>
+              <th colspan="2" scope="colgroup">Incidents</th>
+            </tr>
+            <tr>
+              <td>Types <em>(admins)</em></td>
+              <td>
+                The types of incident. A type opens in a builder: the fields of the registry on the left, to add with a
+                click or by dragging; the sections of the Summary on the right, one of which can be the side panel of
+                the incident page; for a field of your own, whether it is required, or required before closing; the
+                reasons an incident of this type is closed with. Seven types ship (<em>Unclassified</em>, the type of
+                every incident that was given none, <em>Phishing</em>, <em>Malware</em>, <em>Network intrusion</em>,
+                <em>Data leak</em>, <em>Access abuse</em>, <em>Vulnerability</em>); they are yours to change.
+              </td>
+            </tr>
+            <tr>
+              <td>All fields <em>(admins)</em></td>
+              <td>
+                Every field an incident can hold, with its name, its type and where it is used. A field has one name for
+                one thing, whoever sets it, so its name and its type never change; its label and its choices do. A field
+                no type lists and no incident holds can be deleted.
+              </td>
             </tr>
             <tr>
               <th colspan="2" scope="colgroup">Automation</th>

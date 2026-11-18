@@ -73,6 +73,7 @@ class Answer:
     again_at: float | None = None
     state: dict[str, Any] | None = None
     records: list[dict] = field(default_factory=list)  # one per request sent (method, host, path, status)
+    context: list[tuple[str, Any]] = field(default_factory=list)  # (context path, value) the command declares
 
     @property
     def done(self) -> bool:
@@ -528,7 +529,11 @@ class Runtime:
                         again = self._polled(command.poll, answer, args, {}, started)
                         if again is not None:
                             return self._wait(again, {"started": started})
-                return Answer(outputs=self._outputs(command, args, {}, answer), records=self.records)
+                return Answer(
+                    outputs=self._outputs(command, args, {}, answer),
+                    records=self.records,
+                    context=self._context(command, args, {}, answer),
+                )
             index = int(state.get("index") or 0)
             answer = None
             while index < len(command.steps):
@@ -549,7 +554,11 @@ class Runtime:
                 state = {}
                 index += 1
             last = answer or {"response": {}, "status": 0, "headers": {}}
-            return Answer(outputs=self._outputs(command, args, steps, last), records=self.records)
+            return Answer(
+                outputs=self._outputs(command, args, steps, last),
+                records=self.records,
+                context=self._context(command, args, steps, last),
+            )
         except CommandError as error:
             error.record = error.record or (self.records[-1] if self.records else {})
             self.close()
@@ -569,6 +578,19 @@ class Runtime:
         if self._session is not None:
             state["session"] = dict(self._session)
         return Answer(again_at=again_at, state=state, records=self.records)
+
+    def _context(self, command: Command, args: dict, steps: dict, answer: dict) -> list[tuple[str, Any]]:
+        """What the command says goes to the context: a value the answer does not hold is left out."""
+        scope = self._scope(args, steps, answer, sent=False)
+        found = []
+        for item in command.context:
+            try:
+                value = _pruned(ex.render(item.value, scope).data)
+            except ex.ExpressionError:
+                continue
+            if value not in (None, "", [], {}):
+                found.append((item.path, _redact(value, self._hidden)))
+        return found
 
     def _outputs(self, command: Command, args: dict, steps: dict, answer: dict) -> dict[str, Any]:
         scope = self._scope(args, steps, answer, sent=False)

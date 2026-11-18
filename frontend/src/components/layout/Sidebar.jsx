@@ -98,6 +98,7 @@ export default function Sidebar({
     exportIncident,
     importIncidentFromFile,
     setIncidentTriage,
+    askClose,
     unsavedChanges,
   } = useIncidents()
   const { currentUser, can } = useAuth()
@@ -314,7 +315,11 @@ export default function Sidebar({
                         ...STATUSES.filter((s) => s.value !== incident.status).map((s) => ({
                           label: `Mark as ${s.label}`,
                           icon: CircleDot,
-                          onSelect: () => setIncidentTriage(incident.id, { status: s.value }),
+                          // Closing asks for a reason, and for what the type wants filled first.
+                          onSelect: () =>
+                            s.value === 'closed'
+                              ? askClose(incident.id)
+                              : setIncidentTriage(incident.id, { status: s.value }),
                         })),
                         ...(me && incident.assignee.toLowerCase() !== me.toLowerCase()
                           ? [

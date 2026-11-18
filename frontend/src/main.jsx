@@ -12,6 +12,7 @@ import { ContextMenuProvider } from './context/ContextMenuContext.jsx'
 import { NavigationProvider } from './context/NavigationContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 import { AutomationProvider } from './context/AutomationContext.jsx'
+import { FieldsProvider } from './context/FieldsContext.jsx'
 import './index.css'
 
 // Application entry point.
@@ -36,7 +37,9 @@ createRoot(document.getElementById('root')).render(
                     <ContextMenuProvider>
                       <IocLookupProvider>
                         <IocLibraryProvider>
-                          <App />
+                          <FieldsProvider>
+                            <App />
+                          </FieldsProvider>
                         </IocLibraryProvider>
                       </IocLookupProvider>
                     </ContextMenuProvider>

@@ -7,6 +7,129 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-11-17
+
+Incidents your way: a registry of fields, types of incident with a page
+laid out for each, the context of an incident as data playbooks read and
+write, and a War Room with a command line. Every incident that exists is of
+the type *Unclassified* and keeps everything it holds.
+
+**Upgrading from 4.2.0**: nothing more than the usual two commands.
+
+```
+git pull
+podman compose up -d --build
+```
+
+The migrations `0028_fields_types` and `0029_context_war_room` run at start
+and only add tables and columns. Types and fields are in *Settings →
+Incidents*, for admins.
+
+**Not verified on real systems**: the commands of connectors typed in the
+War Room, and the tickets the ServiceNow and Jira connectors write to the
+context, were tried against recorded answers only, like the connectors
+themselves.
+
+### Added
+
+- **A registry of fields.** Every field an incident can hold has one name,
+  a label and a type, whoever sets it: a person, a playbook, later a
+  connector. The fields Nik always had (name, status, severity, owner,
+  ticket, host…) are in it as system fields and stay where they were;
+  custom fields are made through `POST /api/fields` with one of fifteen
+  types (text, number, date, choice, user, tags, a list with columns…).
+- `PATCH /api/incidents/{id}/fields` sets fields by name. Each value is
+  checked against its field and stored as its type says; a name the
+  registry does not know is refused, which is what keeps one name for one
+  thing. `GET /api/incidents/{id}/fields` reads them.
+- **Types of incident.** A type says which fields its incidents have,
+  how the Summary is arranged in sections, and with which reasons one is
+  closed. Seven ship: *Unclassified* (the type of every incident that was
+  given none, so nothing that exists changes), *Phishing*, *Malware*,
+  *Network intrusion*, *Data leak*, *Access abuse*, *Vulnerability*. An
+  incident can change type: what the new type does not show is kept,
+  hidden, and shown again if the type comes back.
+- **Settings → Incidents → Types**: a builder with the registry as a list
+  to search on one side and the sections of the page on the other. Fields
+  are added with a click or by dragging and reordered with the arrows; a
+  field of your own can be required, or required before closing. **All
+  fields** lists the registry as a whole, with where each field is used.
+- **Closing asks how.** Setting an incident to closed opens a form: a
+  reason among those of its type, notes, and the fields the type wants
+  filled first. The server checks the same, so an incident closed through
+  the API or by a playbook is held to it too.
+- **The incident page follows its type.** A panel beside the tabs shows
+  the incident's type and its key facts (the section its type flags as
+  the side panel), whichever tab is open; it folds away for a wide tab,
+  and below 1100 px it is a band above the tabs. The Summary shows the
+  other sections of the type with their fields, each with a form to edit
+  them. The type orders the tabs and hides those it does not need, and the
+  tab last opened is remembered for each type. The type of an incident is
+  changed from the panel.
+- **The context of an incident.** What is known of an incident is data a
+  playbook reads and writes: `{{ context.Ticket[0].Number }}`, in a common
+  schema of eleven entities (File, Mail, URL, IP, Domain, Host, Account,
+  Ticket, Alert, Process, Rule) with fixed keys, whatever product a value
+  came from; what a connector knows beyond it goes under `context.ext`.
+  `{{ incident.severity }}` reads the fields of the incident as they are
+  when the step runs. Nik's own analysis fills the files, e-mails and
+  addresses of the incident.
+- A command of a connector (`context:` in its file) and an output of a
+  script (`context_path`) say where a result goes, with a context path:
+  `Ticket` appends or merges by the entity's key,
+  `Ticket(val.Number == obj.Number)` merges by the key named,
+  `Ticket.Status` sets a key, `incident.<field>` sets a field through the
+  registry. Nothing is written in a dry run. For every item Nik keeps who
+  set it last.
+- **The Context tab** of an incident: the tree of what playbooks read, with
+  a search, the path of each value to copy and who set it.
+- **The War Room** of an incident: one log of what was said and done on
+  it, in the order it happened. The notes people write, each step a
+  playbook ran on the incident, the approvals answered. Chips keep one
+  kind, or what was marked as evidence; the chosen line opens beside the
+  stream with its result (a table when it is a list of flat objects), what
+  was sent and what was written to the context. Text written at the bottom
+  is a note of the incident. The notes an incident already had are listed
+  as they are: nothing is moved, and the Summary and the report keep
+  showing them.
+- **A command line in the War Room.** `!name arg=value` runs one command
+  on the incident, now: a command of a connector
+  (`!servicenow-get-incident number=INC001`), an action of Nik, a script.
+  `${context.Host[0].Name}` reads the incident and its context;
+  `using=` picks the connection, `raw=true` shows JSON, `extend=` keeps the
+  result out of the context. `/note`, `/assign @user` and `/close` do what
+  they say. The name of a command is completed while it is typed, its
+  arguments are hinted, and ↑ brings back the lines typed before.
+- A command is a run of one node on the automation engine: the same
+  permission, egress rules, data guard (with nothing opened) and audit as
+  a playbook. One that changes something outside asks for confirmation
+  first.
+- **Reputation commands**: `!ip`, `!domain`, `!url`, `!file` and `!email`
+  put together Nik's reputation sources and every connector command that
+  declares `reputation: <kind>` in its file, in one verdict with each
+  source beside it.
+- Migration `0029_context_war_room`: the context of incidents, who set
+  each item, and the War Room entries.
+- An incident read through the API carries `type` and `fields`; sent back
+  in a `POST` or a `PATCH`, they are checked by the registry.
+- Migration `0028_fields_types`: the tables of fields and of incident
+  types, and on incidents the type, the custom fields (indexed on
+  PostgreSQL), when it occurred, how it was closed. Incidents that exist
+  keep everything they hold.
+
+### Changed
+
+- Setting an incident to closed from the screens asks for a reason. An API
+  client that sets `status` keeps working; a type that wants fields filled
+  before closing refuses until they are.
+- An imported incident starts *Unclassified*: its type and its custom
+  fields are those of the Nik it came from.
+- The connector files of ServiceNow, Jira Cloud and Jira Data Center are
+  version 2: the commands that open a ticket write it to the context of the
+  incident.
+- Expressions of a playbook have two more names, `incident` and `context`:
+  a node can no longer have one of them as its id.
+
 ## [4.2.0] - 2026-11-17
 
 Connectors: other products reached through files anyone can read and write,
@@ -2100,7 +2223,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/n36l3c7/Nik/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/n36l3c7/Nik/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/n36l3c7/Nik/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/n36l3c7/Nik/compare/v3.8.0...v4.0.0

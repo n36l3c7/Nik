@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 import sqlalchemy as sa
 from alembic.config import Config
 
@@ -453,3 +454,85 @@ def test_migration_0027_adds_the_connector_tables_and_leaves_existing_ones(tmp_p
     with engine.connect() as conn:
         assert not set(CONNECTOR_TABLES) & set(sa.inspect(conn).get_table_names())
         assert {c["name"] for c in sa.inspect(conn).get_columns("playbooks")} == {"id", "name"}
+
+
+def test_migration_0028_adds_fields_and_types_and_leaves_incidents_as_they_are(tmp_path, monkeypatch):
+    from app.core.models import FIELD_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE incidents (id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL DEFAULT '', "
+                "status VARCHAR NOT NULL DEFAULT 'open', doc JSON NOT NULL)"
+            )
+        )
+        conn.execute(
+            sa.text("INSERT INTO incidents (id, name, status, doc) VALUES ('i1', 'Kept', 'closed', '{\"a\": 1}')")
+        )
+        # One of the tables is there already (a database the baseline created from the models).
+        conn.execute(sa.text("CREATE TABLE fields (id VARCHAR(32) PRIMARY KEY, name VARCHAR(41) NOT NULL)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0027_connectors")
+    command.upgrade(cfg, "0028_fields_types")
+    added = {"type_id", "fields", "fields_rev", "closed_at", "close_reason", "close_notes", "occurred_at",
+             "source_connection_id", "source_id", "mirror"}  # fmt: skip
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(FIELD_TABLES) <= set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("fields")} == {"id", "name"}  # left as it was
+        assert added <= {c["name"] for c in inspector.get_columns("incidents")}
+        assert {"ix_incidents_type_id", "ix_incidents_status", "uq_incidents_source"} <= {
+            index["name"] for index in inspector.get_indexes("incidents")
+        }
+        # An incident that was there keeps what it held, has no type and no custom field.
+        row = conn.execute(sa.text("SELECT name, status, doc, type_id, fields, fields_rev FROM incidents")).one()
+        assert (row[0], row[1], row[3], row[5]) == ("Kept", "closed", None, 0)
+        assert row[2] in ('{"a": 1}', {"a": 1}) and row[4] in ("{}", {})
+        # Two incidents may have no source; two cannot share one.
+        conn.execute(sa.text("INSERT INTO incidents (id, doc) VALUES ('i2', '{}')"))
+        conn.execute(sa.text("UPDATE incidents SET source_connection_id = 'c1', source_id = 'A-1' WHERE id = 'i1'"))
+        with pytest.raises(sa.exc.IntegrityError):
+            conn.execute(sa.text("UPDATE incidents SET source_connection_id = 'c1', source_id = 'A-1' WHERE id = 'i2'"))
+    command.stamp(cfg, "0027_connectors")
+    command.upgrade(cfg, "0028_fields_types")  # again: nothing to do
+    command.downgrade(cfg, "0027_connectors")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(FIELD_TABLES) & set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("incidents")} == {"id", "name", "status", "doc"}
+        assert conn.execute(sa.text("SELECT name FROM incidents WHERE id = 'i1'")).scalar() == "Kept"
+
+
+def test_migration_0029_adds_the_context_and_war_room_tables(tmp_path, monkeypatch):
+    from app.core.models import CONTEXT_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON)"))
+        conn.execute(sa.text('INSERT INTO incidents (id, doc) VALUES (\'i1\', \'{"notes": [{"text": "kept"}]}\')'))
+        # One of them is there already (a database the baseline created from the models).
+        conn.execute(sa.text("CREATE TABLE incident_context (incident_id VARCHAR PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0028_fields_types")
+    command.upgrade(cfg, "0029_context_war_room")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(CONTEXT_TABLES) <= set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("incident_context")} == {"incident_id"}  # left as it was
+        assert {c["name"] for c in inspector.get_columns("war_room_entries")} >= {"incident_id", "kind", "body", "tags"}
+        # The notes of an incident stay where they are.
+        assert "kept" in str(conn.execute(sa.text("SELECT doc FROM incidents")).scalar())
+    command.stamp(cfg, "0028_fields_types")
+    command.upgrade(cfg, "0029_context_war_room")  # again: nothing to do
+    command.downgrade(cfg, "0028_fields_types")
+    with engine.connect() as conn:
+        assert not set(CONTEXT_TABLES) & set(sa.inspect(conn).get_table_names())
