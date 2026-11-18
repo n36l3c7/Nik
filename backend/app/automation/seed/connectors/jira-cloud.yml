@@ -9,9 +9,17 @@
 # and an API token of that account (id.atlassian.com, Security, API tokens).
 # Texts go as plain paragraphs: Jira Cloud wants them in its document format,
 # and this file wraps them in one paragraph.
+#
+# Fetching brings in the issues a JQL filter finds ("Issues to fetch"), oldest
+# first, created since the last cycle. JQL reads and compares a time to the
+# minute and in the time zone of the account that signs in: the first cycle
+# starts from a UTC time, so with an account in another zone it starts some
+# hours off. Fetching and mirroring read through
+# the API v2 (/rest/api/2), which Jira Cloud also answers and which gives
+# the texts as plain text, not in the document format.
 name: Jira Cloud
 id: jira-cloud
-version: 2
+version: 3
 description: Issues, comments and transitions in Jira Cloud.
 api_version: "Jira Cloud platform REST API v3 (/rest/api/3)"
 verified: false
@@ -23,6 +31,11 @@ configuration:
     help: "https://your-site.atlassian.net"
   - name: credentials
     type: basic
+  - name: fetch_jql
+    label: Issues to fetch
+    type: text
+    default: "created is not EMPTY"
+    help: "A JQL filter for the issues that become incidents when fetching is on: project = SEC AND issuetype = Incident"
 base_url: "{{ config.url }}"
 headers:
   Accept: application/json
@@ -162,3 +175,89 @@ commands:
       key: "{{ args.key }}"
       transition_id: "{{ args.transition_id }}"
     sample: { key: SEC-1, transition_id: "31" }
+
+  - name: get-issue-text
+    description: An issue, by its key, with its texts as plain text (through the API v2).
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+    request:
+      method: GET
+      path: "/rest/api/2/issue/{{ args.key }}"
+      query: { fields: "summary,description,status,priority,labels,issuetype,created,updated" }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      issue: "{{ response }}"
+
+  - name: get-comments
+    description: "The comments of an issue, oldest first (through the API v2, as plain text)."
+    arguments:
+      - { name: key, type: text, required: true, description: "The key of the issue: SEC-12" }
+    request:
+      method: GET
+      path: "/rest/api/2/issue/{{ args.key }}/comment"
+      query: { orderBy: created, maxResults: 100 }
+    error: { message: "{{ response.errorMessages | join('; ') }}" }
+    outputs:
+      comments: "{{ response.comments }}"
+
+fetch:
+  interval_seconds: 120
+  first_fetch: 3 days
+  request:
+    method: GET
+    path: /rest/api/2/search/jql
+    query:
+      jql: "({{ config.fetch_jql }}) AND created >= \"{{ state.last_time }}\" ORDER BY created ASC"
+      fields: "summary,description,status,priority,labels,issuetype,created,updated"
+  error: { message: "{{ response.errorMessages | join('; ') }}" }
+  pagination:
+    type: cursor
+    param: nextPageToken
+    limit_param: maxResults
+    limit: 100
+    items: "{{ response.issues }}"
+    next: "{{ response.nextPageToken }}"
+    max_pages: 2
+  item_id: "{{ item.id }}"
+  occurred: "{{ item.fields.created | date('%Y-%m-%dT%H:%M:%SZ') }}"
+  first_state:
+    last_time: "{{ first.epoch | date('%Y-%m-%d %H:%M') }}"
+  next_state:
+    last_time: "{{ items | last | get('fields.created') | regex_extract('^[0-9-]+T[0-9]+:[0-9]+') | replace('T', ' ') }}"
+
+schema:
+  incoming:
+    - { name: id, type: text, description: The id of the issue }
+    - { name: key, type: text, description: "Its key: SEC-12" }
+    - { name: fields.summary, type: text }
+    - { name: fields.description, type: text }
+    - { name: fields.status.name, type: text, description: "The status, as the workflow names it" }
+    - { name: fields.status.statusCategory.key, type: text, description: "new, indeterminate or done" }
+    - { name: fields.priority.name, type: text }
+    - { name: fields.issuetype.name, type: text }
+    - { name: fields.labels, type: list }
+    - { name: fields.created, type: date }
+    - { name: fields.updated, type: date }
+  outgoing:
+    - { name: summary, type: text }
+    - { name: description, type: text, description: "In the document format of Jira Cloud" }
+    - { name: labels, type: list }
+    - { name: priority, type: object, description: "{\"name\": \"High\"}" }
+
+mirror:
+  interval_seconds: 120
+  get: { command: get-issue-text }
+  item: "{{ result.issue }}"
+  update:
+    command: update-issue
+    args: { key: "{{ mirror.id }}", fields: "{{ fields }}" }
+  comments:
+    list: { command: get-comments }
+    items: "{{ result.comments }}"
+    id: "{{ item.id }}"
+    text: "{{ item.body }}"
+    author: "{{ item.author.displayName }}"
+    at: "{{ item.created }}"
+    add:
+      command: add-comment
+      args: { key: "{{ mirror.id }}", text: "{{ comment.text }}" }

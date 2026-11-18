@@ -1,0 +1,44 @@
+{
+  "incoming": [
+    {
+      "to": "name",
+      "from": "{{ item.node.name }}"
+    },
+    {
+      "to": "details",
+      "from": "{{ item.node.description }}"
+    },
+    {
+      "to": "severity",
+      "from": "{{ item.node.severity | severity }}"
+    },
+    {
+      "to": "status",
+      "from": "{{ item.node.status | map(NEW='open', IN_PROGRESS='in_progress', RESOLVED='closed', FALSE_POSITIVE='closed', else='open') }}"
+    },
+    {
+      "to": "source_id",
+      "from": "{{ item.node.id }}"
+    },
+    {
+      "to": "Alert(val.ID == obj.ID)",
+      "from": {
+        "ID": "{{ item.node.id }}",
+        "Name": "{{ item.node.name }}",
+        "Severity": "{{ item.node.severity }}",
+        "Source": "SentinelOne",
+        "Time": "{{ item.node.detectedAt }}"
+      }
+    },
+    {
+      "to": "Host(val.Name == obj.Name)",
+      "from": {
+        "Name": "{{ item.node.asset.name }}"
+      }
+    }
+  ],
+  "classifier": {
+    "rules": [],
+    "defaultType": null
+  }
+}

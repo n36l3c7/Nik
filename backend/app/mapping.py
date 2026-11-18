@@ -393,3 +393,57 @@ def targets(db: OrmSession, incident_type: str | None) -> dict[str, Any]:
             for entity, (keys, told) in incident_context.SCHEMA.items()
         ],
     }
+
+
+# --------------------------------------------------------------------------- #
+# What the shipped connectors come with                                       #
+# --------------------------------------------------------------------------- #
+def shipped() -> dict[str, dict[str, Any]]:
+    """connector id → ``{"incoming": [...], "outgoing": [...], "classifier": {...}}``
+    (``automation/seed/mappers/<id>.json``): the mappers a shipped connector starts with."""
+    import json
+    from pathlib import Path
+
+    found = {}
+    for path in sorted((Path(__file__).parent / "automation" / "seed" / "mappers").glob("*.json")):
+        found[path.stem] = json.loads(path.read_text(encoding="utf-8"))
+    return found
+
+
+def seed(db: OrmSession) -> int:
+    """Add the mappers the shipped connectors come with, for every type of incident, and bring
+    up to date those nobody changed (the caller commits). A mapper someone saved is theirs."""
+    changed = 0
+    for connector_id, spec in shipped().items():
+        if db.get(Connector, connector_id) is None:
+            continue
+        for direction in DIRECTIONS:
+            rules = spec.get(direction)
+            if not rules:
+                continue
+            row = db.scalars(
+                select(Mapper).where(
+                    Mapper.connector_id == connector_id, Mapper.direction == direction, Mapper.incident_type == ANY_TYPE
+                )
+            ).one_or_none()
+            if row is not None and not row.builtin:
+                continue
+            cleaned = clean_rules(db, connector_id, direction, rules)
+            if row is not None and row.rules == cleaned:
+                continue
+            body = {"connectorId": connector_id, "direction": direction, "incidentType": ANY_TYPE, "rules": rules}
+            save_mapper(db, body, "nik", builtin=True)
+            changed += 1
+    return changed
+
+
+def default_classifier(db: OrmSession, connection: Connection) -> bool:
+    """Give a connection that has no classifier the one its connector ships (the caller commits)."""
+    spec = (shipped().get(connection.connector_id) or {}).get("classifier") or {}
+    if db.get(Classifier, connection.id) is not None or not (spec.get("rules") or spec.get("defaultType")):
+        return False
+    try:
+        save_classifier(db, connection, spec, "nik")
+    except MappingError:
+        return False  # a type it names was deleted: the connection starts with none
+    return True

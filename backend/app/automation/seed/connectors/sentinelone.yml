@@ -9,9 +9,12 @@
 # The token is one of a service user (Settings, Users, Service Users), with a
 # role that may do what the commands do: viewing is enough for the "get"
 # ones; isolating, mitigating and the blocklist need more.
+#
+# Fetching brings in the threats created since the last cycle, oldest first
+# (createdAt__gt, sortBy and sortOrder, as the two integrations send them).
 name: SentinelOne EDR
 id: sentinelone
-version: 1
+version: 2
 description: Agents, threats, the blocklist and Deep Visibility in the SentinelOne console.
 api_version: "Management API v2.1 (/web/api/v2.1)"
 verified: false
@@ -219,3 +222,46 @@ commands:
       query_id: "{{ steps.start.response.data.queryId }}"
       events: "{{ steps.events.response.data }}"
       count: "{{ steps.events.response.data | length }}"
+
+fetch:
+  interval_seconds: 120
+  first_fetch: 3 days
+  request:
+    method: GET
+    path: /threats
+    query:
+      createdAt__gt: "{{ state.last_time }}"
+      sortBy: createdAt
+      sortOrder: asc
+  error: { message: "{{ response.errors[0].detail }}" }
+  pagination:
+    type: cursor
+    param: cursor
+    limit_param: limit
+    limit: 100
+    items: "{{ response.data }}"
+    next: "{{ response.pagination.nextCursor }}"
+    max_pages: 2
+  item_id: "{{ item.id }}"
+  occurred: "{{ item.threatInfo.createdAt }}"
+  first_state:
+    last_time: "{{ first.iso }}"
+  next_state:
+    last_time: "{{ items | last | get('threatInfo.createdAt') }}"
+
+schema:
+  incoming:
+    - { name: id, type: text, description: The id of the threat }
+    - { name: threatInfo.threatName, type: text }
+    - { name: threatInfo.classification, type: text, description: "Malware, Ransomware, Trojan…" }
+    - { name: threatInfo.confidenceLevel, type: text, description: "malicious or suspicious" }
+    - { name: threatInfo.analystVerdict, type: text }
+    - { name: threatInfo.incidentStatus, type: text, description: "unresolved, in_progress or resolved" }
+    - { name: threatInfo.mitigationStatus, type: text }
+    - { name: threatInfo.sha1, type: text }
+    - { name: threatInfo.sha256, type: text }
+    - { name: threatInfo.filePath, type: text }
+    - { name: threatInfo.createdAt, type: date }
+    - { name: agentRealtimeInfo.agentComputerName, type: text }
+    - { name: agentRealtimeInfo.agentId, type: text }
+    - { name: agentRealtimeInfo.agentOsName, type: text }

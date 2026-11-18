@@ -385,10 +385,18 @@ def _where(value: Any, key: str, op: str | None = None, wanted: Any = None) -> l
     return [item for item in _listed(value) if compare(lookup(item, key), op, wanted)]
 
 
-def _map(value: Any, **pairs: Any) -> Any:
+def _map(value: Any, *flat: Any, **pairs: Any) -> Any:
+    """Another value for each value named: ``map(high='1')``, or, for what is not a name,
+    pairs one after the other: ``map('1', 'open', '2', 'in_progress')``."""
+    if len(flat) % 2:
+        raise ValueError("pairs")
     fallback = pairs.pop("else", value)
+    wanted = _text(value).casefold()
+    for at in range(0, len(flat), 2):
+        if wanted == _text(flat[at]).casefold():
+            return flat[at + 1]
     for key, mapped in pairs.items():
-        if _text(value).casefold() == key.casefold():
+        if wanted == key.casefold():
             return mapped
     return fallback
 

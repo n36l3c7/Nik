@@ -138,3 +138,103 @@ def test_a_dry_run_of_a_command_names_its_first_request(connector, name):
     would = rt.Runtime(connector, config, connection["secrets"], policy, send=nothing)
     spec = connector.command(name).request or connector.command(name).steps[0].request
     assert spec.method in ("GET", "POST", "PUT", "PATCH", "DELETE") and would.host == host.split(":")[0]
+
+
+# --------------------------------------------------------------------------- #
+# Fetching and mirroring                                                      #
+# --------------------------------------------------------------------------- #
+FETCHING = [connector for _text, connector in SHIPPED if connector.fetch is not None]
+
+
+@pytest.mark.parametrize("connector", FETCHING, ids=[connector.id for connector in FETCHING])
+def test_a_shipped_fetch_asks_what_the_documentation_says_and_its_mapper_reads_the_answer(connector, client):
+    """``fetch.json`` beside the commands: the state a cycle starts from, the requests it must send,
+    the ids and the next state it must give, and what the shipped mapper makes of the first item."""
+    from app import fields as registry
+    from app import mapping
+    from app.automation import expressions as ex
+    from app.core.db import SessionLocal
+
+    fixture = json.loads((DATA / connector.id / "fetch.json").read_text(encoding="utf-8"))
+    connection = _connection(connector.id)
+    config = {**connection["config"], **fixture.get("config", {})}
+    host = ca.host_of(connector, config).split(":")[0]
+    wire = Recorded(fixture["exchanges"], host)
+    rt.forget_tokens()
+    runtime = rt.Runtime(
+        connector, config, connection["secrets"], egress.Policy(mode="listed", hosts=frozenset({host})), send=wire
+    )
+    spec = connector.fetch
+    state = fixture["state"]
+    found = runtime.fetch(
+        spec, state, {"iso": "", "epoch": 0, "epoch_ms": 0}, {"iso": "", "epoch": 0, "epoch_ms": 0}, 200
+    )
+    assert wire.exchanges == [], "the fetch sent fewer requests than the documentation says"
+    items = found["items"]
+
+    def of_item(template: str, item) -> str:
+        return str(ex.render_text(template, ex.Scope(values={"item": item, "config": config, "state": state})).data)
+
+    assert [of_item(spec.item_id, item) for item in items] == fixture["item_ids"]
+    if spec.occurred:
+        assert [of_item(spec.occurred, item) for item in items] == fixture["occurred"]
+    at = fixture.get("now", {"epoch": 0})["epoch"]
+    now = {"iso": "", "epoch": at, "epoch_ms": at * 1000}
+    held = {"config": config, "state": state, "response": found["response"], "items": items, "now": now}
+    scope = ex.Scope(values=held)
+    assert {key: ex.render(value, scope).data for key, value in spec.next_state.items()} == fixture["next_state"]
+    # Before the first cycle: the state its request needs, from the moment first_fetch ago.
+    start = fixture["first_state_for"]
+    moment = {"iso": start.get("iso", ""), "epoch": start["epoch"], "epoch_ms": start["epoch"] * 1000}
+    first = ex.render(spec.first_state, ex.Scope(values={"config": config, "first": moment, "now": moment})).data
+    assert first == start["state"]
+
+    shipped = mapping.shipped()[connector.id]
+    with SessionLocal() as db:
+        registry.seed(db)
+        db.commit()
+        made = mapping.apply_incoming(
+            db, mapping.clean_rules(db, connector.id, "incoming", shipped["incoming"]), items[0], connector.id
+        )
+        assert made.problems == []
+        assert made.fields == fixture["mapped"]["fields"]
+        assert [path for path, _value in made.context] == fixture["mapped"]["context"]
+        if "outgoing" in fixture:
+            rules = mapping.clean_rules(db, connector.id, "outgoing", shipped["outgoing"])
+            scope = ex.Scope(values={"incident": fixture["outgoing"]["incident"], "context": {}, "mirror": {"id": "x"}})
+            sent = {}
+            for rule in rules:
+                value, _why = mapping._value(rule["from"], scope)
+                if value not in (None, ""):
+                    sent[rule["to"]] = value
+            assert sent == fixture["outgoing"]["sent"]
+    if connector.mirror is not None and connector.mirror.comments is not None and "comments" in fixture:
+        said = connector.mirror.comments
+        result = fixture["comments"]["result"]
+        listed = ex.render_text(said.items, ex.Scope(values={"result": result})).data
+        read = [
+            {
+                key: str(ex.render_text(getattr(said, key), ex.Scope(values={"item": item})).data)
+                for key in ("id", "text", "author", "at")
+            }
+            for item in listed
+        ]
+        assert read == fixture["comments"]["read"]
+
+
+def test_the_products_that_raise_alerts_and_keep_tickets_are_fetched():
+    assert {connector.id for connector in FETCHING} >= {
+        "servicenow", "jira-cloud", "jira-datacenter", "sentinelone", "sentinelone-sdl"
+    }  # fmt: skip
+    from app import mapping
+
+    assert set(mapping.shipped()) == {connector.id for connector in FETCHING}
+
+
+def test_the_mirror_of_a_shipped_connector_names_commands_that_take_what_it_gives():
+    mirrored = [connector for _text, connector in SHIPPED if connector.mirror is not None]
+    assert {connector.id for connector in mirrored} >= {"servicenow", "jira-cloud", "jira-datacenter"}
+    for connector in mirrored:
+        for _where, call in connector.mirror_calls():
+            assert connector.command(call.command) is not None
+        assert connector.fetch is not None, f"{connector.id}: mirrors what it does not fetch"

@@ -1,0 +1,74 @@
+{
+  "args": {
+    "key": "SEC-12"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rest/api/2/issue/SEC-12",
+        "query": {
+          "fields": "summary,description,status,priority,labels,issuetype,created,updated"
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "10000",
+          "key": "SEC-12",
+          "fields": {
+            "summary": "Phishing: Invoice 2026",
+            "description": "A user reported a message with a link to a fake login page.",
+            "status": {
+              "name": "To Do",
+              "statusCategory": {
+                "key": "new"
+              }
+            },
+            "priority": {
+              "name": "High"
+            },
+            "issuetype": {
+              "name": "Incident"
+            },
+            "labels": [
+              "phishing"
+            ],
+            "created": "2026-11-16T08:30:05.000+0000",
+            "updated": "2026-11-16T08:30:05.000+0000"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "issue": {
+      "id": "10000",
+      "key": "SEC-12",
+      "fields": {
+        "summary": "Phishing: Invoice 2026",
+        "description": "A user reported a message with a link to a fake login page.",
+        "status": {
+          "name": "To Do",
+          "statusCategory": {
+            "key": "new"
+          }
+        },
+        "priority": {
+          "name": "High"
+        },
+        "issuetype": {
+          "name": "Incident"
+        },
+        "labels": [
+          "phishing"
+        ],
+        "created": "2026-11-16T08:30:05.000+0000",
+        "updated": "2026-11-16T08:30:05.000+0000"
+      }
+    }
+  }
+}

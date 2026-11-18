@@ -436,9 +436,12 @@ function unique(value) {
   return seen
 }
 
-function mapped(value, named) {
+function mapped(value, named, flat = []) {
+  if (flat.length % 2) fail()
   const pairs = named.filter(([key]) => key !== 'else')
   const fallback = named.find(([key]) => key === 'else')
+  // What is not a name is given as pairs, one after the other: map('1', 'open', '2', 'closed').
+  for (let at = 0; at < flat.length; at += 2) if (fold(value) === text(flat[at]).toLowerCase()) return flat[at + 1]
   for (const [key, result] of pairs) if (fold(value) === key.toLowerCase()) return result
   return fallback ? fallback[1] : value
 }
@@ -551,7 +554,7 @@ const FILTERS = {
       return found === MISSING ? null : found
     },
   },
-  map: { args: [0, 0], named: true, run: (v, named) => mapped(v, named) },
+  map: { args: [0, 60], named: true, run: (v, named, flat) => mapped(v, named, flat) },
   split: {
     args: [0, 1],
     run: (v, sep = ',') =>
@@ -637,7 +640,7 @@ function apply(filter, data) {
   const [least, most] = spec.args
   if (filter.args.length < least || filter.args.length > most) fail()
   if (filter.named.length && !spec.named) fail()
-  return spec.named ? spec.run(data, filter.named) : spec.run(data, ...filter.args)
+  return spec.named ? spec.run(data, filter.named, filter.args) : spec.run(data, ...filter.args)
 }
 
 function evaluate(expr, scope) {

@@ -1,0 +1,110 @@
+{
+  "state": {
+    "since_ms": 1794816000000
+  },
+  "now": {
+    "epoch": 1794823200
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/unifiedalerts/graphql",
+        "json": {
+          "query": "query SearchAlerts($filters: [FilterInput!], $first: Int!) { alerts(filters: $filters, first: $first) { edges { node { id name description severity status analystVerdict classification confidenceLevel detectedAt storylineId asset { id name } } } pageInfo { hasNextPage endCursor } totalCount } }",
+          "variables": {
+            "first": 100,
+            "filters": [
+              {
+                "fieldId": "detectedAt",
+                "dateTimeRange": {
+                  "start": 1794816000000,
+                  "startInclusive": true
+                }
+              }
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "alerts": {
+              "edges": [
+                {
+                  "node": {
+                    "id": "0195-aaaa",
+                    "name": "Suspicious PowerShell",
+                    "description": "An encoded command started from a document.",
+                    "severity": "HIGH",
+                    "status": "NEW",
+                    "analystVerdict": "UNDEFINED",
+                    "detectedAt": "2026-11-16T08:30:05Z",
+                    "asset": {
+                      "id": "a-1",
+                      "name": "WKS-FINANCE-01"
+                    }
+                  }
+                },
+                {
+                  "node": {
+                    "id": "0195-bbbb",
+                    "name": "Credential dumping",
+                    "description": "An encoded command started from a document.",
+                    "severity": "CRITICAL",
+                    "status": "NEW",
+                    "analystVerdict": "UNDEFINED",
+                    "detectedAt": "2026-11-16T09:10:40Z",
+                    "asset": {
+                      "id": "a-1",
+                      "name": "WKS-FINANCE-01"
+                    }
+                  }
+                }
+              ],
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "totalCount": 2
+            }
+          }
+        }
+      }
+    }
+  ],
+  "item_ids": [
+    "0195-aaaa",
+    "0195-bbbb"
+  ],
+  "occurred": [
+    "2026-11-16T08:30:05Z",
+    "2026-11-16T09:10:40Z"
+  ],
+  "next_state": {
+    "since_ms": 1794822900000
+  },
+  "first_state_for": {
+    "epoch": 1794816000,
+    "state": {
+      "since_ms": 1794816000000
+    }
+  },
+  "mapped": {
+    "fields": {
+      "name": "Suspicious PowerShell",
+      "details": "An encoded command started from a document.",
+      "severity": "high",
+      "status": "open",
+      "source_id": "0195-aaaa"
+    },
+    "context": [
+      "Alert(val.ID == obj.ID)",
+      "Host(val.Name == obj.Name)"
+    ]
+  }
+}

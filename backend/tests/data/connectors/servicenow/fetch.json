@@ -1,0 +1,119 @@
+{
+  "state": {
+    "last_time": "2026-11-16 08:00:00"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/now/table/incident",
+        "query": {
+          "sysparm_query": "sys_created_on>2026-11-16 08:00:00^ORDERBYsys_created_on",
+          "sysparm_limit": 100,
+          "sysparm_offset": 0
+        },
+        "headers": {
+          "Authorization": "Basic bmlrLmludGVncmF0aW9uOnNuLVBhc3N3MHJkLTEyMw=="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "result": [
+            {
+              "sys_id": "9d385017c611228701d22104cc95c371",
+              "number": "INC0010001",
+              "short_description": "Phishing: Invoice 2026",
+              "description": "A user reported a message with a link to a fake login page.",
+              "priority": "2",
+              "urgency": "2",
+              "impact": "2",
+              "state": "1",
+              "category": "security",
+              "opened_at": "2026-11-16 08:30:00",
+              "sys_created_on": "2026-11-16 08:30:05"
+            },
+            {
+              "sys_id": "46e8219ba9fe1981013806b6e04fed06",
+              "number": "INC0010002",
+              "short_description": "Laptop lost",
+              "description": "A user reported a message with a link to a fake login page.",
+              "priority": "4",
+              "urgency": "2",
+              "impact": "2",
+              "state": "2",
+              "category": "security",
+              "opened_at": "2026-11-16 09:10:00",
+              "sys_created_on": "2026-11-16 09:10:00"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "item_ids": [
+    "9d385017c611228701d22104cc95c371",
+    "46e8219ba9fe1981013806b6e04fed06"
+  ],
+  "occurred": [
+    "2026-11-16 08:30:00",
+    "2026-11-16 09:10:00"
+  ],
+  "next_state": {
+    "last_time": "2026-11-16 09:10:00"
+  },
+  "first_state_for": {
+    "epoch": 1794816000,
+    "state": {
+      "last_time": "2026-11-16 08:00:00"
+    }
+  },
+  "mapped": {
+    "fields": {
+      "name": "Phishing: Invoice 2026",
+      "details": "A user reported a message with a link to a fake login page.",
+      "severity": "high",
+      "status": "open",
+      "ticket": "INC0010001",
+      "category": "security",
+      "source_id": "9d385017c611228701d22104cc95c371",
+      "mirror_id": "9d385017c611228701d22104cc95c371",
+      "mirror_direction": "in"
+    },
+    "context": [
+      "Ticket(val.ID == obj.ID)"
+    ]
+  },
+  "outgoing": {
+    "incident": {
+      "name": "Phishing: Invoice 2026",
+      "severity": "critical",
+      "details": "Confirmed."
+    },
+    "sent": {
+      "short_description": "Phishing: Invoice 2026",
+      "description": "Confirmed.",
+      "urgency": "1"
+    }
+  },
+  "comments": {
+    "result": {
+      "comments": [
+        {
+          "sys_id": "c1a",
+          "value": "User called back.",
+          "sys_created_by": "helpdesk",
+          "sys_created_on": "2026-11-16 09:00:00"
+        }
+      ]
+    },
+    "read": [
+      {
+        "id": "c1a",
+        "text": "User called back.",
+        "author": "helpdesk",
+        "at": "2026-11-16 09:00:00"
+      }
+    ]
+  }
+}

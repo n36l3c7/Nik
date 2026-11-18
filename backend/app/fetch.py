@@ -98,6 +98,7 @@ def enable(db: OrmSession, connection: Connection, enabled: bool, now: float) ->
         raise FetchError("The connector of this connection does not say how to fetch")
     connection.fetch_enabled = bool(enabled)
     if enabled:
+        mapping.default_classifier(db, connection)
         _keep_status(connection, state="ok", error="", fails=0, nextAt=now, pausedWhy="")
 
 

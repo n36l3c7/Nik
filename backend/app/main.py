@@ -206,6 +206,10 @@ def on_startup() -> None:
                 # last: they are checked against the scripts and the connectors that are there.
                 changed = automation_scripts.seed(db) + connector_actions.seed(db)
                 db.flush()
+                # The mappers the shipped connectors come with (those nobody changed follow a release).
+                from . import mapping
+
+                changed += mapping.seed(db)
                 changed += shipped.seed(db)
                 if changed:
                     db.commit()

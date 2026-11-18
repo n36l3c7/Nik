@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection.
 - Two filters for expressions: `severity` (another product's scale as
   Nik's) and `regex_extract` (the part of a text a pattern finds).
+- **The shipped connectors fetch and mirror.** ServiceNow (incidents, with
+  their comments), Jira Cloud and Jira Data Center (the issues a JQL filter
+  of the connection finds, with their comments), SentinelOne EDR (threats)
+  and SentinelOne SIEM (alerts) say how they bring alerts in; ServiceNow and
+  Jira also say how an incident is kept in step with its ticket. Each comes
+  with a mapper, added at startup and kept up to date until someone changes
+  it. New commands: `get-incident-by-id` and `get-comments` (ServiceNow),
+  `get-comments` (Jira), `get-issue-text` (Jira Cloud). The `map` filter
+  takes pairs for values that are not names: `map('1', 'open', '2', 'closed')`.
 
 ## [4.4.0] - 2026-11-17
 

@@ -1,0 +1,146 @@
+{
+  "config": {
+    "fetch_jql": "project = SEC"
+  },
+  "state": {
+    "last_time": "2026-11-16 08:00"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rest/api/2/search/jql",
+        "query": {
+          "jql": "(project = SEC) AND created >= \"2026-11-16 08:00\" ORDER BY created ASC",
+          "fields": "summary,description,status,priority,labels,issuetype,created,updated",
+          "maxResults": 100
+        },
+        "headers": {
+          "Authorization": "Basic bmlrQGFjbWUuZXhhbXBsZTpBVEFUVDN4RmZHRjAtYXBpLXRva2VuLTAxMjM0NTY3ODk="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "issues": [
+            {
+              "id": "10000",
+              "key": "SEC-12",
+              "fields": {
+                "summary": "Phishing: Invoice 2026",
+                "description": "A user reported a message with a link to a fake login page.",
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "priority": {
+                  "name": "High"
+                },
+                "issuetype": {
+                  "name": "Incident"
+                },
+                "labels": [
+                  "phishing"
+                ],
+                "created": "2026-11-16T08:30:05.000+0000",
+                "updated": "2026-11-16T08:30:05.000+0000"
+              }
+            },
+            {
+              "id": "10001",
+              "key": "SEC-13",
+              "fields": {
+                "summary": "Laptop lost",
+                "description": "A user reported a message with a link to a fake login page.",
+                "status": {
+                  "name": "In Progress",
+                  "statusCategory": {
+                    "key": "indeterminate"
+                  }
+                },
+                "priority": {
+                  "name": "Low"
+                },
+                "issuetype": {
+                  "name": "Incident"
+                },
+                "labels": [
+                  "phishing"
+                ],
+                "created": "2026-11-16T09:10:40.000+0000",
+                "updated": "2026-11-16T09:10:40.000+0000"
+              }
+            }
+          ],
+          "isLast": true
+        }
+      }
+    }
+  ],
+  "item_ids": [
+    "10000",
+    "10001"
+  ],
+  "occurred": [
+    "2026-11-16T08:30:05Z",
+    "2026-11-16T09:10:40Z"
+  ],
+  "next_state": {
+    "last_time": "2026-11-16 09:10"
+  },
+  "first_state_for": {
+    "epoch": 1794816000,
+    "state": {
+      "last_time": "2026-11-16 08:00"
+    }
+  },
+  "mapped": {
+    "fields": {
+      "name": "Phishing: Invoice 2026",
+      "details": "A user reported a message with a link to a fake login page.",
+      "severity": "high",
+      "status": "open",
+      "ticket": "SEC-12",
+      "source_id": "10000",
+      "mirror_id": "SEC-12",
+      "mirror_direction": "in"
+    },
+    "context": [
+      "Ticket(val.ID == obj.ID)"
+    ]
+  },
+  "outgoing": {
+    "incident": {
+      "name": "Phishing: Invoice 2026",
+      "severity": "critical",
+      "details": "Confirmed."
+    },
+    "sent": {
+      "summary": "Phishing: Invoice 2026"
+    }
+  },
+  "comments": {
+    "result": {
+      "comments": [
+        {
+          "id": "10100",
+          "body": "User called back.",
+          "author": {
+            "displayName": "Mario Rossi"
+          },
+          "created": "2026-11-16T09:00:00.000+0000"
+        }
+      ]
+    },
+    "read": [
+      {
+        "id": "10100",
+        "text": "User called back.",
+        "author": "Mario Rossi",
+        "at": "2026-11-16T09:00:00.000+0000"
+      }
+    ]
+  }
+}

@@ -263,3 +263,33 @@ def test_a_classifier_chooses_the_type_of_incident_an_item_becomes(admin: TestCl
     ) == ('Rule 1: "incident" cannot be read here, only item')
     assert wrong({"rules": [], "defaultType": "nope"}) == 'There is no type of incident "nope"'
     assert admin.get("/api/classifiers/nope").status_code == 404
+
+
+def test_the_shipped_connectors_come_with_their_mappers(admin: TestClient):
+    from sqlalchemy import select
+
+    from app import mapping
+    from app.automation import connector_actions
+    from app.core.db import SessionLocal
+    from app.core.models import Mapper
+
+    with SessionLocal() as db:
+        connector_actions.seed(db)
+        db.flush()
+        assert mapping.seed(db) >= 5
+        db.commit()
+        assert mapping.seed(db) == 0  # nothing changed: nothing is written again
+        row = db.scalars(
+            select(Mapper).where(Mapper.connector_id == "servicenow", Mapper.direction == "incoming")
+        ).one()
+        assert row.builtin and row.incident_type == mapping.ANY_TYPE
+    # A mapper someone saved is theirs: a release does not take it back.
+    mine = [{"to": "name", "from": "{{ item.number }}"}]
+    saved = admin.put("/api/mappers", json={"connectorId": "servicenow", "direction": "incoming", "rules": mine})
+    assert saved.status_code == 200, saved.text
+    with SessionLocal() as db:
+        assert mapping.seed(db) == 0
+        row = db.scalars(
+            select(Mapper).where(Mapper.connector_id == "servicenow", Mapper.direction == "incoming")
+        ).one()
+        assert not row.builtin and [rule["from"] for rule in row.rules] == ["{{ item.number }}"]

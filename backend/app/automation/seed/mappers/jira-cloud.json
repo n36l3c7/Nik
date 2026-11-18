@@ -1,0 +1,55 @@
+{
+  "incoming": [
+    {
+      "to": "name",
+      "from": "{{ item.fields.summary }}"
+    },
+    {
+      "to": "details",
+      "from": "{{ item.fields.description }}"
+    },
+    {
+      "to": "severity",
+      "from": "{{ item.fields.priority.name | severity }}"
+    },
+    {
+      "to": "status",
+      "from": "{{ item.fields.status.statusCategory.key | map(new='open', indeterminate='in_progress', done='closed', else='open') }}"
+    },
+    {
+      "to": "ticket",
+      "from": "{{ item.key }}"
+    },
+    {
+      "to": "source_id",
+      "from": "{{ item.id }}"
+    },
+    {
+      "to": "mirror_id",
+      "from": "{{ item.key }}"
+    },
+    {
+      "to": "mirror_direction",
+      "from": "in"
+    },
+    {
+      "to": "Ticket(val.ID == obj.ID)",
+      "from": {
+        "ID": "{{ item.id }}",
+        "Number": "{{ item.key }}",
+        "System": "Jira",
+        "Status": "{{ item.fields.status.name }}"
+      }
+    }
+  ],
+  "outgoing": [
+    {
+      "to": "summary",
+      "from": "{{ incident.name }}"
+    }
+  ],
+  "classifier": {
+    "rules": [],
+    "defaultType": null
+  }
+}

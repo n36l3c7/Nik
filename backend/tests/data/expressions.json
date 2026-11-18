@@ -555,6 +555,18 @@
     {
       "template": "{{ trigger.mail.subject | regex_extract('nothing') }}",
       "result": ""
+    },
+    {
+      "template": "{{ search.count | map('3', 'three', '4', 'four') }}",
+      "result": "three"
+    },
+    {
+      "template": "{{ search.count | map('9', 'nine', else='other') }}",
+      "result": "other"
+    },
+    {
+      "template": "{{ trigger.mail.verdict | map('PHISHING', 1, spam=2) }}",
+      "result": 1
     }
   ]
 }

@@ -1,0 +1,50 @@
+{
+  "incoming": [
+    {
+      "to": "name",
+      "from": "{{ item.threatInfo.threatName }} on {{ item.agentRealtimeInfo.agentComputerName }}"
+    },
+    {
+      "to": "details",
+      "from": "{{ item.threatInfo.classification }}: {{ item.threatInfo.filePath }}"
+    },
+    {
+      "to": "severity",
+      "from": "{{ item.threatInfo.confidenceLevel | map(malicious='high', suspicious='medium', else='low') }}"
+    },
+    {
+      "to": "source_id",
+      "from": "{{ item.id }}"
+    },
+    {
+      "to": "Alert(val.ID == obj.ID)",
+      "from": {
+        "ID": "{{ item.id }}",
+        "Name": "{{ item.threatInfo.threatName }}",
+        "Severity": "{{ item.threatInfo.confidenceLevel }}",
+        "Source": "SentinelOne",
+        "Time": "{{ item.threatInfo.createdAt }}"
+      }
+    },
+    {
+      "to": "Host(val.Name == obj.Name)",
+      "from": {
+        "Name": "{{ item.agentRealtimeInfo.agentComputerName }}",
+        "AgentID": "{{ item.agentRealtimeInfo.agentId }}"
+      }
+    },
+    {
+      "to": "File(val.SHA256 == obj.SHA256)",
+      "from": {
+        "Name": "{{ item.threatInfo.threatName }}",
+        "SHA1": "{{ item.threatInfo.sha1 }}",
+        "SHA256": "{{ item.threatInfo.sha256 }}",
+        "Path": "{{ item.threatInfo.filePath }}"
+      }
+    }
+  ],
+  "classifier": {
+    "rules": [],
+    "defaultType": null
+  }
+}
