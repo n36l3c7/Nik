@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { api, onUnauthorized } from '../services/api.js'
 import { can as userCan } from '../domain/permissions.js'
 import { resetQuerySchema } from '../services/querySchema.js'
+import { forgetAnswers } from '../services/widgetData.js'
 import { useAudit } from './AuditContext.jsx'
 
 /*
@@ -170,6 +171,7 @@ export function AuthProvider({ children }) {
     setUsers([])
     clearAudit()
     resetQuerySchema()
+    forgetAnswers()
   }, [clearAudit])
 
   /** Remove a user (admin action), then reload the list. @returns {Promise<{ok, error}>} */

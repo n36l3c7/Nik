@@ -2871,7 +2871,8 @@ test('Fetch status: a connection is told to fetch, says why it fails, and is let
   await page.getByRole('button', { name: 'Close platform settings' }).click()
   await page.getByRole('button', { name: /^Notifications/ }).click()
   const told = page.getByRole('dialog', { name: 'Notifications' })
-  await expect(told.getByRole('listitem').filter({ hasText: 'Fetching from Acme test fails' })).toHaveCount(1, {
+  // At least once: let go on, it may have failed a second time before it was turned off.
+  await expect(told.getByRole('listitem').filter({ hasText: 'Fetching from Acme test fails' }).first()).toBeVisible({
     timeout: 45_000,
   })
   await told.getByRole('button', { name: 'Close' }).click()
@@ -2908,6 +2909,71 @@ test('an incident is mirrored with an object of another product, read now, and s
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
   await mirror.getByRole('button', { name: 'Stop' }).click()
   await expect(mirror.getByRole('button', { name: 'Mirror with…' })).toBeVisible()
+})
+
+test('a dashboard is built from widgets, shows real numbers, and opens what is behind one', async () => {
+  await page.getByRole('button', { name: 'Dashboards', exact: true }).click()
+  const boards = page.getByRole('region', { name: 'Dashboards' })
+  await expect(page).toHaveURL(/\/dashboards/)
+  await boards.getByRole('button', { name: 'New', exact: true }).click()
+  const name = boards.getByRole('textbox', { name: 'The name of the dashboard' })
+  await expect(name).toHaveValue('New dashboard')
+  await name.fill('Shift board')
+
+  // A number: how many incidents there are.
+  await boards.getByRole('button', { name: 'Add a widget' }).click()
+  await page
+    .getByRole('dialog', { name: 'Add a widget' })
+    .getByRole('button', { name: /^Number/ })
+    .click()
+  const editor = page.getByRole('dialog', { name: 'Edit the widget' })
+  await editor.getByLabel('Title').fill('Incidents now')
+  // The preview asks with the real data of who edits.
+  await expect(editor.getByRole('region', { name: 'Preview' })).toContainText(/\d/)
+  await editor.getByRole('button', { name: 'Done' }).click()
+
+  // Bars: incidents for each status.
+  await boards.getByRole('button', { name: 'Add a widget' }).click()
+  await page.getByRole('dialog', { name: 'Add a widget' }).getByRole('button', { name: /^Bars/ }).click()
+  await editor.getByLabel('Title').fill('By status')
+  await editor.getByLabel('For each').selectOption('status')
+  await expect(editor.getByRole('region', { name: 'Preview' })).toContainText('open')
+  await editor.getByRole('button', { name: 'Done' }).click()
+
+  // The keyboard moves a widget on the grid: the bars go beside the number, then back under it.
+  const grip = boards.getByRole('button', { name: /^Move By status/ })
+  await grip.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(boards.locator('p[aria-live="polite"]')).toContainText('By status: column 2')
+  await page.keyboard.press('ArrowLeft')
+  await expect(boards.locator('p[aria-live="polite"]')).toContainText('By status: column 1')
+
+  await boards.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(boards.getByRole('heading', { name: 'Shift board' })).toBeVisible()
+  await expect(boards.getByText('Only you')).toBeVisible()
+  await expect(page).toHaveURL(/\/dashboards\/[0-9a-f]{32}$/)
+  const number = boards.getByRole('article', { name: 'Incidents now' })
+  await expect(number.getByRole('button', { name: /^Incidents now: \d+\. Show them\.$/ })).toBeVisible()
+  const bars = boards.getByRole('article', { name: 'By status' })
+  await expect(bars.getByRole('listitem').first()).toContainText('open')
+
+  // The same figures as a table.
+  await bars.getByRole('button', { name: 'Show By status as a table' }).click()
+  await expect(bars.getByRole('table')).toContainText('open')
+  await bars.getByRole('button', { name: 'Show By status as a chart' }).click()
+
+  // What is behind a number: the query, and the incidents themselves.
+  await number.getByRole('button', { name: /Show them/ }).click()
+  const behind = page.getByRole('dialog', { name: 'Incidents now' })
+  await expect(behind).toContainText(/\d+ objects?/)
+  await expect(behind.getByRole('table')).toContainText('WKS-FINANCE-01')
+  await behind.getByRole('button', { name: 'Close' }).click()
+
+  await boards.getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Delete "Shift board"?' }).getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByRole('navigation', { name: 'Your dashboards' }).getByText('Shift board')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Close dashboards' }).first().click()
+  await expect(page.getByRole('region', { name: 'Dashboards' })).toHaveCount(0)
 })
 
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {

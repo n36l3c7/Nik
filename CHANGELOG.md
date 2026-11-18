@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   widget is always asked as the person looking, so a shared dashboard never
   shows what their roles cannot read. A dashboard goes out as a JSON file and
   comes back as one's own.
+- **The Dashboards page**, on the rail: the dashboards you see on the left,
+  the open one with its time range on the right. Widgets are a number (with
+  its change against the period before), a trend line, bars, stacked bars, a
+  donut, a list of top values, a table, a duration, a gauge against a target,
+  a note, and two of Nik itself (storage, and the health of what fetches).
+  Charts are Nik's own SVG, each readable as a table; a value opens the
+  objects behind it with their query. In edit mode widgets are dragged and
+  resized on 12 columns, by pointer or by keyboard, and a widget is edited
+  with its answer beside it. A dashboard can be the page that opens at
+  sign-in.
 
 ## [4.5.0] - 2026-11-18
 

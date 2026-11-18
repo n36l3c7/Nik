@@ -4,6 +4,7 @@ import {
   DatabaseBackup,
   Fingerprint,
   FolderClosed,
+  LayoutDashboard,
   ListChecks,
   ScrollText,
   Search,
@@ -80,10 +81,12 @@ export default function Rail({
   automationOpen = false,
   onTasks,
   tasksOpen = false,
+  onDashboards,
+  dashboardsOpen = false,
   onNotifications,
 }) {
   // With Settings or Automations open no panel is shown, and an entry leaves the page for its panel.
-  const open = settingsOpen || automationOpen || tasksOpen ? null : panel
+  const open = settingsOpen || automationOpen || tasksOpen || dashboardsOpen ? null : panel
   const toggle = (name) => onPanel(open === name ? null : name)
   const canRead = can('read')
   return (
@@ -160,6 +163,14 @@ export default function Rail({
           count={counts.tasks}
           alert={counts.tasksOverdue > 0}
           onClick={onTasks}
+        />
+      )}
+      {canRead && (
+        <RailButton
+          icon={LayoutDashboard}
+          label={dashboardsOpen ? 'Close dashboards' : 'Dashboards'}
+          active={dashboardsOpen}
+          onClick={onDashboards}
         />
       )}
       <span className="flex-1" />

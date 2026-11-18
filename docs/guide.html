@@ -56,6 +56,7 @@
           <li><a href="#shortcuts">Keyboard shortcuts</a></li>
           <li><a href="#queries">Filter the lists with a query</a></li>
           <li><a href="#search">Search</a></li>
+          <li><a href="#dashboards">Dashboards</a></li>
           <li><a href="#report">The incident report</a></li>
           <li><a href="#share">Export, import and backup</a></li>
           <li><a href="#automations">Automations</a></li>
@@ -875,6 +876,51 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         <img src="img/search.png" alt="The search palette" width="1600" height="1000" loading="lazy" />
         <figcaption>The search palette: an address found across the incident.</figcaption>
       </figure>
+
+      <h2 id="dashboards">Dashboards</h2>
+      <p>
+        <strong>Dashboards</strong>, on the rail, are pages of <em>widgets</em>: each widget is one question asked of
+        what Nik holds, and shows the answer as a number, a line, bars, a donut, a list or a table. How many incidents
+        are open and how serious, how many were opened each day, how long they take to be assigned and closed, which
+        playbooks fail, which tasks are overdue. The address of a dashboard is its own
+        (<code>/dashboards/&lt;id&gt;</code>), so it can be bookmarked and sent.
+      </p>
+      <ul>
+        <li>
+          <strong>Reading one.</strong> The <em>time range</em> at the top (the last 24 hours, 7, 30 or 90 days, a year,
+          or all time) applies to every widget, unless a widget says it ignores it. A number can show its
+          <em>change against the period before</em>: the same length of time, just earlier. Point at a bar, a slice or a
+          place on a line to read its figures; the button at the top right of a chart shows the
+          <strong>same figures as a table</strong>. <strong>Click a value</strong> to see what is behind it: the
+          <a href="#queries">query</a> that finds those objects, which can be copied, and the first of them (an incident
+          opens from there). The house button makes a dashboard the page that <strong>opens when you sign in</strong>,
+          in this browser.
+        </li>
+        <li>
+          <strong>Making one.</strong> <em>New</em> starts an empty dashboard of your own; <em>Edit</em> changes one of
+          yours. <em>Add a widget</em> asks for its type, then opens its editor: what it is asked of (incidents,
+          artifacts, indicators, tasks, the audit log, the runs of playbooks and their approvals, each for who may read
+          it), which ones, as a <a href="#queries">query</a> you write or build, how the answer is grouped (by a field;
+          a date by hour, day, week, month or year) and what is measured: a count, or the mean, median, 90th percentile,
+          sum, least or most of a number or of the <em>time between two dates</em>. The widget is shown beside the form
+          as it will be, with your data. A dashboard can also have one <strong>filter</strong> for all the widgets of
+          one kind of object (only the incidents of a customer, say), which a widget may ignore.
+        </li>
+        <li>
+          <strong>Arranging it.</strong> While editing, drag a widget by the grip in its corner and resize it by the
+          opposite corner: it snaps to twelve columns, and the others make room. With the grip focused the
+          <kbd>arrow keys</kbd> move the widget and <kbd>Shift</kbd> with the arrow keys resizes it. On a narrow window
+          the widgets are one under the other, in reading order.
+        </li>
+        <li>
+          <strong>Whose it is.</strong> A dashboard is yours alone until it is shared, which needs the
+          <a href="#roles">Dashboards</a> role (or an administrator): with everyone, with the holders of some roles, or
+          with some accounts. Whoever sees a shared dashboard sees in each widget
+          <strong>only what their own roles let them read</strong>: sharing shows the questions, never more of the
+          answers. A dashboard you see and do not own can be <em>duplicated</em> into one of yours;
+          <em>Export</em> saves it as a file that <em>Import</em> takes, here or in another Nik.
+        </li>
+      </ul>
 
       <h2 id="report">The incident report</h2>
       <p>

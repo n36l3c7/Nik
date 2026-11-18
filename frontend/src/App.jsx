@@ -37,6 +37,7 @@ import { currentPath, onLocationChange, setPath } from './lib/location.js'
 import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
 import { automationFromPath, automationPath } from './domain/automationNav.js'
 import { tasksFromPath, tasksPath } from './domain/tasks.js'
+import { dashboardsFromPath, dashboardsPath, landingDashboard } from './domain/dashboards.js'
 import { useTasks } from './context/TasksContext.jsx'
 import NotificationsDialog from './components/tasks/NotificationsDialog.jsx'
 import { mailboxFormatOf } from './domain/mailbox.js'
@@ -63,6 +64,7 @@ import { orderTabs, typeOf } from './domain/fields.js'
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
 const TasksPage = lazy(() => import('./components/tasks/TasksPage.jsx'))
+const DashboardsPage = lazy(() => import('./components/dashboards/DashboardsPage.jsx'))
 
 /*
  * ============================================================================
@@ -496,6 +498,35 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const tasksShown = Boolean(tasksRoute) && can('read') && !settings && !automationShown
 
+  // Dashboards, in the same way: /dashboards and /dashboards/<id>.
+  const [dashboardsRoute, setDashboardsRoute] = useState(() => dashboardsFromPath(window.location.pathname))
+  useEffect(() => onLocationChange(() => setDashboardsRoute(dashboardsFromPath(window.location.pathname))), [])
+  const dashboardsReturn = useRef(null)
+  const openDashboards = useCallback((id = null, { replace = false } = {}) => {
+    if (!dashboardsFromPath(window.location.pathname)) dashboardsReturn.current = currentPath()
+    setPath(dashboardsPath(id), { replace })
+  }, [])
+  const closeDashboards = useCallback(() => {
+    const back = dashboardsReturn.current
+    dashboardsReturn.current = null
+    setPath(back ?? (activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'))
+  }, [activeIncidentId])
+  useEffect(() => {
+    if (!dashboardsRoute) dashboardsReturn.current = null
+  }, [dashboardsRoute])
+  const dashboardsShown = Boolean(dashboardsRoute) && can('read') && !settings && !automationShown && !tasksShown
+  // Whoever chose a dashboard to open at sign-in lands on it, when the address asks for nothing else.
+  const landed = useRef(false)
+  useEffect(() => {
+    if (landed.current || !isAuthenticated) return
+    landed.current = true
+    const wanted = landingDashboard()
+    if (wanted && window.location.pathname === '/' && can('read')) {
+      dashboardsReturn.current = '/'
+      setPath(dashboardsPath(wanted), { replace: true })
+    }
+  }, [isAuthenticated, can])
+
   // The list of keyboard shortcuts ("?" or the header button).
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
@@ -724,6 +755,7 @@ export default function App() {
           if (settings) closeSettings()
           else if (automationShown) closeAutomation()
           else if (tasksShown) closeTasks()
+          else if (dashboardsShown) closeDashboards()
           setPanel(next)
         }}
         counts={{
@@ -747,6 +779,8 @@ export default function App() {
         automationOpen={automationShown}
         onTasks={() => (tasksShown ? closeTasks() : openTasks())}
         tasksOpen={tasksShown}
+        onDashboards={() => (dashboardsShown ? closeDashboards() : openDashboards())}
+        dashboardsOpen={dashboardsShown}
         onNotifications={() => setNotificationsOpen(true)}
       />
       {notificationsOpen && <NotificationsDialog onClose={() => setNotificationsOpen(false)} />}
@@ -789,7 +823,23 @@ export default function App() {
           <TasksPage taskId={tasksRoute.id} onSelect={openTasks} onClose={closeTasks} onOpenIncident={openIncident} />
         </Suspense>
       )}
-      {!settings && !automationShown && !tasksShown && panel && canRead && (
+      {dashboardsShown && (
+        <Suspense
+          fallback={
+            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
+              Loading dashboards…
+            </p>
+          }
+        >
+          <DashboardsPage
+            dashboardId={dashboardsRoute.id}
+            onSelect={openDashboards}
+            onClose={closeDashboards}
+            onOpenIncident={openIncident}
+          />
+        </Suspense>
+      )}
+      {!settings && !automationShown && !tasksShown && !dashboardsShown && panel && canRead && (
         <>
           <Sidebar
             panel={panel}
@@ -804,7 +854,11 @@ export default function App() {
         </>
       )}
 
-      <div className={settings || automationShown || tasksShown ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
+      <div
+        className={
+          settings || automationShown || tasksShown || dashboardsShown ? 'hidden' : 'flex min-w-0 flex-1 flex-col'
+        }
+      >
         <Header
           onOpenSearch={() => setPaletteOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}
