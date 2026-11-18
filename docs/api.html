@@ -1360,6 +1360,15 @@
               </td>
             </tr>
             <tr>
+              <td><code>POST /api/dashboards/{id}/report</code></td>
+              <td>
+                (<strong>read</strong>) The dashboard as a document: <code>{format: "pdf" | "html", timeRange}</code>.
+                Each widget is asked on the server <strong>as the caller</strong> and written with its answer, a chart
+                as its table; one the caller may not ask says so. <code>timeRange</code> replaces the one the dashboard
+                opens on. Written to the audit log.
+              </td>
+            </tr>
+            <tr>
               <td><code>PUT /api/dashboards/{id}/sharing</code></td>
               <td>
                 (<strong>dashboards.share</strong>) Who else sees a dashboard:

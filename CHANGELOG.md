@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resized on 12 columns, by pointer or by keyboard, and a widget is edited
   with its answer beside it. A dashboard can be the page that opens at
   sign-in.
+- **Four dashboards ship with Nik**, seen by everyone and changed by nobody:
+  *SOC overview*, *Automation*, *Indicators* and *Storage and system*.
+  Duplicate one to make it yours.
+- **A dashboard as a document**: `POST /api/dashboards/{id}/report` (the
+  *Report* button) makes a PDF or an HTML page of it, each widget asked on
+  the server as whoever wants the report and written with its answer.
 
 ## [4.5.0] - 2026-11-18
 

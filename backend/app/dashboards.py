@@ -423,3 +423,39 @@ def imported(db: OrmSession, data: Any, actor: str) -> Dashboard:
 
 def duplicate(db: OrmSession, row: Dashboard, actor: str) -> Dashboard:
     return imported(db, exported(row), actor)
+
+
+# --------------------------------------------------------------------------- #
+# What Nik ships                                                              #
+# --------------------------------------------------------------------------- #
+def shipped() -> list[dict[str, Any]]:
+    """The dashboards Nik ships (``automation/seed/dashboards/*.json``), in the format of an export."""
+    from pathlib import Path
+
+    folder = Path(__file__).parent / "automation" / "seed" / "dashboards"
+    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(folder.glob("*.json"))]
+
+
+def seed(db: OrmSession) -> int:
+    """Add the dashboards Nik ships and bring them up to date with a release (the caller commits).
+    They are ``builtin``: seen by everyone, changed by nobody, so there is nothing of anyone's to keep."""
+    held = {row.name: row for row in db.scalars(select(Dashboard).where(Dashboard.builtin.is_(True))).all()}
+    changed = 0
+    for data in shipped():
+        body = {key: data.get(key) for key in ("name", "description", "widgets", "timeRange", "refreshSeconds")}
+        body.update(filter=data.get("filter") or "", filterEntity=data.get("filterEntity") or "incidents")
+        row = held.pop(str(data["name"]), None)
+        if row is None:
+            create(db, body, "nik", builtin=True)
+            changed += 1
+            continue
+        before = exported(row)
+        _apply(row, body, "nik")
+        if exported(row) != before:
+            changed += 1
+        else:
+            db.expire(row, ["updated_at", "updated_by"])
+    for row in held.values():  # one a release no longer ships
+        db.delete(row)
+        changed += 1
+    return changed

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Copy, Download, House, Pencil, Plus, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react'
+import { Copy, Download, FileText, House, Pencil, Plus, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { api } from '../../services/api.js'
+import { api, postForBlob } from '../../services/api.js'
 import {
   ENTITIES,
   LANDING_KEY,
@@ -348,6 +348,19 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
       },
       (failure) => setError(failure.message),
     )
+  const [reporting, setReporting] = useState(false)
+  const report = () => {
+    setReporting(true)
+    postForBlob(`/dashboards/${board.id}/report`, { format: 'pdf', timeRange: range })
+      .then(
+        (blob) => {
+          const name = board.name.replace(/[^\w.-]+/g, '-').toLowerCase() || 'dashboard'
+          saveBlob(blob, `${name}-dashboard.pdf`)
+        },
+        (failure) => setError(failure.message),
+      )
+      .finally(() => setReporting(false))
+  }
   const importFile = async (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -545,6 +558,15 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                       onClick={exportFile}
                       aria-label="Export"
                       title="Export as a file"
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={FileText}
+                      onClick={report}
+                      disabled={reporting}
+                      aria-label="Report"
+                      title="A PDF of this dashboard, with what you see in it"
                     />
                     {shown.canShare && (shown.canEdit || can('dashboards.share')) && (
                       <Button

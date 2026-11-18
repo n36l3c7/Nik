@@ -348,6 +348,13 @@ export function ticks(max, count = 4) {
   return out
 }
 
+/** Ticks for something that is counted: whole numbers only (never "0.5 incidents"). */
+export function wholeTicks(max, count = 4) {
+  const top = Math.max(1, Math.ceil(Number(max) || 0))
+  const found = ticks(top, Math.min(count, top)).filter(Number.isInteger)
+  return found.length > 1 ? found : [0, top]
+}
+
 /** Ticks for seconds, on round minutes, hours or days. */
 export function durationTicks(max, count = 4) {
   const top = Number(max) > 0 ? Number(max) : 60

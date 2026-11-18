@@ -186,9 +186,10 @@ def on_startup() -> None:
     with SessionLocal() as db:
         try:
             # The types Nik ships too, each added once.
+            from . import dashboards as boards
             from . import lists as named_lists
 
-            if field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db):
+            if field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db) + boards.seed(db):
                 db.commit()
         except IntegrityError:
             db.rollback()  # another process of the server added them at the same moment

@@ -28,6 +28,7 @@ import {
   seriesOf,
   sharingText,
   ticks,
+  wholeTicks,
   widgetQuery,
 } from './dashboards.js'
 
@@ -134,6 +135,11 @@ test('numbers as people read them', () => {
   assert.deepEqual(ticks(14), [0, 5, 10, 15])
   assert.deepEqual(ticks(0), [0, 0.25, 0.5, 0.75, 1])
   assert.deepEqual(ticks(3), [0, 1, 2, 3])
+  // What is counted has no halves.
+  assert.deepEqual(wholeTicks(1), [0, 1])
+  assert.deepEqual(wholeTicks(0), [0, 1])
+  assert.deepEqual(wholeTicks(3), [0, 1, 2, 3])
+  assert.deepEqual(wholeTicks(14), [0, 5, 10, 15])
   assert.deepEqual(durationTicks(4 * 3600), [0, 3600, 7200, 10800, 14400])
 })
 

@@ -7,17 +7,22 @@ not here: the page asks ``POST /api/query/aggregate`` as the person looking.
 
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import dashboards
+from .. import dashboard_report, dashboards
+from .. import ioc_library as lib
 from ..core import audit
 from ..core.db import get_db
 from ..core.permissions import DASHBOARDS_SHARE
-from ..core.security import Principal, reader_principal, require
+from ..core.security import Principal, now_iso, reader_principal, require
+from ..report import to_pdf
+from .settings import read_settings
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 share_principal = require(DASHBOARDS_SHARE)
@@ -31,6 +36,11 @@ class DashboardIn(BaseModel):
     refreshSeconds: int | None = Field(default=None, ge=0, le=3600)
     filter: str | None = Field(default=None, max_length=400)
     filterEntity: str | None = Field(default=None, max_length=40)
+
+
+class ReportIn(BaseModel):
+    format: Literal["pdf", "html"] = "pdf"
+    timeRange: str | None = Field(default=None, max_length=20)
 
 
 class SharingIn(BaseModel):
@@ -168,3 +178,40 @@ def export_dashboard(
 ) -> dict:
     """The dashboard as a file ``POST /api/dashboards/import`` takes: what it shows, not whose it is."""
     return dashboards.exported(_one(db, dashboard_id, caller))
+
+
+@router.post("/{dashboard_id}/report", response_model=None)
+def dashboard_report_file(
+    dashboard_id: str,
+    body: ReportIn = Body(default_factory=ReportIn),
+    caller: Principal = Depends(reader_principal),
+    db: OrmSession = Depends(get_db),
+):
+    """The dashboard as a document, a PDF (default) or HTML: each widget with what it answers **to the
+    caller**, a chart as its table. ``timeRange`` replaces the one the dashboard opens on."""
+    row = _one(db, dashboard_id, caller)
+    chosen = (body.timeRange or row.time_range or "all").lower()
+    settings = read_settings(db)
+    try:
+        found = dashboard_report.answers(db, row, caller, chosen, source=lambda: lib.library(db, settings))
+    except dashboards.ql.QueryError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+    now = now_iso()
+    document = dashboard_report.build_html(
+        row,
+        found,
+        time_range=chosen,
+        generated_by=caller.actor,
+        generated_at=now,
+        org=str((settings.get("report") or {}).get("orgName") or ""),
+    )
+    audit.record(db, caller.actor, "dashboard.report", f'Made a report of the dashboard "{row.name}"', target=row.id)
+    db.commit()
+    if body.format == "html":
+        return HTMLResponse(document)
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", row.name).strip("_") or "dashboard"
+    return Response(
+        content=to_pdf(document),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{base}-dashboard.pdf"'},
+    )

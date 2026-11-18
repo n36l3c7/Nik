@@ -14,6 +14,7 @@ import {
   rowsRequest,
   seriesOf,
   ticks,
+  wholeTicks,
   widgetQuery,
 } from '../../domain/dashboards.js'
 import { stateBadge, lastText } from '../../domain/fetch.js'
@@ -221,7 +222,8 @@ export default function Widget({
     const kind = formatOf(widget)
     return (value) => formatValue(value, kind)
   }, [widget])
-  const ticksOf = formatOf(widget) === 'duration' ? durationTicks : ticks
+  const counted = !widget.measure || widget.measure === 'count'
+  const ticksOf = formatOf(widget) === 'duration' ? durationTicks : counted ? wholeTicks : ticks
 
   if (widget.type === 'text') {
     return widget.options?.text ? (

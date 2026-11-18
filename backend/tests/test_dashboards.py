@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from app import dashboards
@@ -168,3 +170,88 @@ def test_a_dashboard_goes_out_as_a_file_and_comes_back_as_ones_own(admin: TestCl
     assert other.post("/api/dashboards/import", json={"name": "x"}, headers=viewer).status_code == 400
     broken = {**file, "widgets": [{"type": "bar", "entity": "incidents", "groupBy": ["nothing"]}]}
     assert other.post("/api/dashboards/import", json=broken, headers=viewer).status_code == 400
+
+
+def test_nik_ships_dashboards_everyone_sees_and_nobody_changes(admin: TestClient):
+    from app.core.db import SessionLocal
+
+    with SessionLocal() as db:
+        assert dashboards.seed(db) == 4
+        db.commit()
+        assert dashboards.seed(db) == 0  # nothing changed: nothing is written again
+    viewer = make_key(admin, label="v", roles=["viewer"])
+    other = TestClient(app)
+    listed = other.get("/api/dashboards", headers=viewer).json()["dashboards"]
+    assert [row["name"] for row in listed] == ["Automation", "Indicators", "SOC overview", "Storage and system"]
+    assert all(row["builtin"] and not row["canEdit"] and not row["canShare"] for row in listed)
+    soc = next(row for row in listed if row["name"] == "SOC overview")
+    path = f"/api/dashboards/{soc['id']}"
+    assert len(other.get(path, headers=viewer).json()["widgets"]) == soc["widgetCount"] >= 10
+    # Not changed, not deleted, not shared, by anyone; a copy is one's own.
+    assert admin.put(path, json={"name": "Mine"}).status_code == 403
+    assert admin.delete(path).status_code == 403
+    assert admin.put(f"{path}/sharing", json={"everyone": True}).status_code == 409
+    copy = other.post(f"{path}/duplicate", headers=viewer).json()
+    assert copy["name"] == "SOC overview" and copy["owner"] == "api:v" and copy["canEdit"] and not copy["builtin"]
+    # Every widget Nik ships can be asked: none answers with a query that cannot be read.
+    for row in listed:
+        report = admin.post(f"/api/dashboards/{row['id']}/report", json={"format": "html"})
+        assert report.status_code == 200, report.text
+        assert "could not be asked" not in report.text, row["name"]
+    # A dashboard a release no longer ships goes; one that changed is brought up to date.
+    with SessionLocal() as db:
+        from sqlalchemy import select
+
+        from app.core.models import Dashboard
+
+        row = db.scalars(select(Dashboard).where(Dashboard.name == "Indicators")).one()
+        row.name, row.layout = "Gone", []
+        db.commit()
+        assert dashboards.seed(db) == 2
+        db.commit()
+    names = [row["name"] for row in admin.get("/api/dashboards").json()["dashboards"] if row["builtin"]]
+    assert names == ["Automation", "Indicators", "SOC overview", "Storage and system"]
+
+
+def test_a_dashboard_is_a_report_of_what_the_caller_may_read(admin: TestClient):
+    for name, severity in (("Phish <b>one</b>", "high"), ("Laptop", "low"), ("Other", "high")):
+        made_at = datetime.now(timezone.utc).isoformat()
+        doc = {"id": f"rep-{len(name)}", "name": name, "severity": severity, "createdAt": made_at, "data": {}}
+        assert admin.post("/api/incidents", json=doc).status_code == 201
+    widgets = [
+        {"type": "number", "title": "All <incidents>", "entity": "incidents", "options": {"compare": True}},
+        {"type": "bar", "title": "By severity", "entity": "incidents", "groupBy": ["severity"]},
+        {"type": "table", "title": "The rows", "entity": "incidents", "query": "severity:high",
+         "options": {"columns": ["name", "severity"], "limit": 1}},
+        {"type": "number", "title": "Runs", "entity": "runs"},
+        {"type": "text", "title": "Note", "options": {"text": "Read <script>this</script>"}},
+        {"type": "storage", "title": "Disk"},
+    ]  # fmt: skip
+    board = made_board = made_dashboard(admin, widgets)
+    path = f"/api/dashboards/{board['id']}"
+    page = admin.post(f"{path}/report", json={"format": "html", "timeRange": "7d"})
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    text = page.text
+    assert "the last 7 days" in text and "as seen by admin" in text
+    # Every value is escaped: a title, a name of an incident, a note.
+    assert "All &lt;incidents&gt;" in text and "<incidents>" not in text
+    assert "Phish &lt;b&gt;one&lt;/b&gt;" in text or "Other" in text
+    assert "<script>" not in text and "&lt;script&gt;" in text
+    assert '<p class="figure">3</p>' in text and "The period before: 0." in text
+    assert "<td>high</td><td class" not in text and "<td>high</td><td>2</td>" in text
+    assert "The first 1 of 2." in text
+    assert "Shown in Nik only" in text
+    # The same dashboard, shared: a viewer is told what their roles do not let them see.
+    assert admin.put(f"{path}/sharing", json={"everyone": True}).status_code == 200
+    viewer = make_key(admin, label="v", roles=["viewer"])
+    seen = TestClient(app).post(f"{path}/report", json={"format": "html"}, headers=viewer)
+    assert seen.status_code == 200 and "Your roles do not let you see this." in seen.text
+    assert seen.text.count("Your roles do not let you see this.") == 1 and "as seen by api:v" in seen.text
+    pdf = admin.post(f"{path}/report", json={})
+    assert pdf.status_code == 200 and pdf.content[:5] == b"%PDF-"
+    assert "SOC" not in pdf.headers["content-disposition"] and "-dashboard.pdf" in pdf.headers["content-disposition"]
+    assert made_board["id"] and admin.post("/api/dashboards/nope/report", json={}).status_code == 404
+
+
+def made_dashboard(client: TestClient, widgets: list) -> dict:
+    return made(client, name="Report me", widgets=widgets)

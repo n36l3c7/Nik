@@ -161,11 +161,12 @@ def time_range(value: Any, now: datetime) -> tuple[datetime, datetime] | None:
     return now - timedelta(hours=int(found.group(1)) * _HOURS[found.group(2)]), now
 
 
-def _within(query: str | None, field: str, start: datetime, end: datetime) -> str:
-    """The query, and the field inside the range."""
+def _within(query: str | None, field: str, start: datetime, end: datetime, *, to_the_end: bool = True) -> str:
+    """The query, and the field inside the range: from the second it starts in to the second it ends
+    in (what happened a moment ago counts), or up to it for a period that another one follows."""
     low, high = dates._stamp(start), dates._stamp(end)
     held = f"({query.strip()}) " if (query or "").strip() else ""
-    return f'{held}{field}:>="{low}" {field}:<"{high}"'
+    return f'{held}{field}:>="{low}" {field}:{"<=" if to_the_end else "<"}"{high}"'
 
 
 def bucket_of(value: Any, bucket: str) -> str:
@@ -415,7 +416,9 @@ def run(
     }
     if compare == "previous" and span is not None and stamp is not None:
         before = (span[0] - (span[1] - span[0]), span[0])
-        earlier = _find(db, entity, _within(query, stamp.name, *before), principal, [], what, now, source)
+        earlier = _find(
+            db, entity, _within(query, stamp.name, *before, to_the_end=False), principal, [], what, now, source
+        )
         out["previous"] = {
             "total": _reduce(what.fn, earlier.values, earlier.count),
             "range": {"from": dates._stamp(before[0]) + "Z", "to": dates._stamp(before[1]) + "Z"},

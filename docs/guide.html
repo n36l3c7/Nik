@@ -920,7 +920,51 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           answers. A dashboard you see and do not own can be <em>duplicated</em> into one of yours;
           <em>Export</em> saves it as a file that <em>Import</em> takes, here or in another Nik.
         </li>
+        <li>
+          <strong>As a document.</strong> <em>Report</em> makes a PDF of the dashboard over the time range that is
+          chosen: every widget with its answer, a chart as its table. It holds what <em>you</em> see: a widget your
+          roles do not let you ask says so.
+        </li>
       </ul>
+      <p>Nik ships four dashboards, seen by everyone and changed by nobody: duplicate one to make it yours.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Dashboard</th>
+              <th>What it shows</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SOC overview</td>
+              <td>
+                Open incidents by type and severity, new ones per day, SLA breaches, the mean time to assign and the
+                median and 90th percentile of the time to close, who owns what is open, why incidents were closed.
+              </td>
+            </tr>
+            <tr>
+              <td>Automation <em>(who may run playbooks)</em></td>
+              <td>
+                Runs per day by how they ended, failures by playbook, the approvals that wait and how old the oldest is,
+                the tasks that are overdue.
+              </td>
+            </tr>
+            <tr>
+              <td>Indicators</td>
+              <td>The IoC library by verdict, type and origin, what is new per day, the most used tags and lists.</td>
+            </tr>
+            <tr>
+              <td>Storage and system</td>
+              <td>
+                How full the file store is and with what <em>(administrators)</em>, how each connection that fetches
+                goes <em>(who manages connectors)</em>, the incidents fetched by connection, and what is done in Nik per
+                day <em>(who reads the audit log)</em>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <h2 id="report">The incident report</h2>
       <p>
