@@ -51,6 +51,7 @@ from .routers import (
     connectors,
     context,
     enrichment,
+    fetch,
     fields,
     flirt,
     incident_types,
@@ -62,7 +63,10 @@ from .routers import (
     lists,
     mailboxes,
     mails,
+    mappers,
+    mirror,
     network,
+    preprocess,
     previews,
     query,
     report,
@@ -139,7 +143,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="4.4.0",
+    version="4.5.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -202,6 +206,10 @@ def on_startup() -> None:
                 # last: they are checked against the scripts and the connectors that are there.
                 changed = automation_scripts.seed(db) + connector_actions.seed(db)
                 db.flush()
+                # The mappers the shipped connectors come with (those nobody changed follow a release).
+                from . import mapping
+
+                changed += mapping.seed(db)
                 changed += shipped.seed(db)
                 if changed:
                     db.commit()
@@ -269,6 +277,10 @@ app.include_router(context.router, prefix="/api")
 app.include_router(war_room.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(lists.router, prefix="/api")
+app.include_router(mappers.router, prefix="/api")
+app.include_router(fetch.router, prefix="/api")
+app.include_router(preprocess.router, prefix="/api")
+app.include_router(mirror.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

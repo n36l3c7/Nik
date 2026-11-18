@@ -1,0 +1,99 @@
+{
+  "state": {
+    "last_time": "2026-11-16T08:00:00Z"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats",
+        "query": {
+          "createdAt__gt": "2026-11-16T08:00:00Z",
+          "sortBy": "createdAt",
+          "sortOrder": "asc",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "5555555555555555555",
+              "threatInfo": {
+                "threatName": "dropper.exe",
+                "classification": "Trojan",
+                "confidenceLevel": "malicious",
+                "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+                "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                "filePath": "\\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\dropper.exe",
+                "createdAt": "2026-11-16T08:30:05.123456Z",
+                "mitigationStatus": "not_mitigated",
+                "incidentStatus": "unresolved"
+              },
+              "agentRealtimeInfo": {
+                "agentComputerName": "WKS-FINANCE-01",
+                "agentId": "1111111111111111111"
+              }
+            },
+            {
+              "id": "5555555555555555556",
+              "threatInfo": {
+                "threatName": "tool.exe",
+                "classification": "Trojan",
+                "confidenceLevel": "suspicious",
+                "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+                "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                "filePath": "\\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\tool.exe",
+                "createdAt": "2026-11-16T09:10:40.000000Z",
+                "mitigationStatus": "not_mitigated",
+                "incidentStatus": "unresolved"
+              },
+              "agentRealtimeInfo": {
+                "agentComputerName": "WKS-HR-02",
+                "agentId": "1111111111111111111"
+              }
+            }
+          ],
+          "pagination": {
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "item_ids": [
+    "5555555555555555555",
+    "5555555555555555556"
+  ],
+  "occurred": [
+    "2026-11-16T08:30:05.123456Z",
+    "2026-11-16T09:10:40.000000Z"
+  ],
+  "next_state": {
+    "last_time": "2026-11-16T09:10:40.000000Z"
+  },
+  "first_state_for": {
+    "epoch": 1794816000,
+    "iso": "2026-11-16T08:00:00Z",
+    "state": {
+      "last_time": "2026-11-16T08:00:00Z"
+    }
+  },
+  "mapped": {
+    "fields": {
+      "name": "dropper.exe on WKS-FINANCE-01",
+      "details": "Trojan: \\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\dropper.exe",
+      "severity": "high",
+      "source_id": "5555555555555555555"
+    },
+    "context": [
+      "Alert(val.ID == obj.ID)",
+      "Host(val.Name == obj.Name)",
+      "File(val.SHA256 == obj.SHA256)"
+    ]
+  }
+}

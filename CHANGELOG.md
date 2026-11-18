@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-18
+
+Additive: nothing that worked with 4.4 changes, and nothing is fetched or
+mirrored until a connection is told to.
+
+### Added
+
+- **A connector file can say how it brings alerts in and keeps an object in
+  step**: `fetch` (a request sent again and again, its pages, what tells one
+  alert from another, the state it carries from a cycle to the next),
+  `schema` (the names the product uses, for the mapper), `ext_fields` (what
+  it adds to the context) and `mirror` (the commands that read, change and
+  comment one object). Each is checked when the file is read, with the line
+  of what is wrong.
+- **Classifiers and mappers.** A mapper says how what a connector's product
+  calls things becomes Nik's fields and context (incoming) and back
+  (outgoing), for every type of incident or for one; a classifier says which
+  type a fetched item becomes. They are data in Nik (`/api/mappers`,
+  `/api/classifiers`), changed without touching a connector file, and
+  *try* shows what one makes of a sample.
+- **Fetching.** A connection whose connector says how brings alerts in:
+  the automation worker reads it at its interval, an alert seen before is
+  skipped, and each new one is classified, mapped and made into an incident
+  with the item as it came in its War Room. A request that fails is tried
+  later and later; a connection that makes more than 500 incidents in an
+  hour is paused with nothing lost. `/api/fetch` shows how each goes, turns
+  it on and off, fetches now and lists what became of each item.
+- **Mirroring.** An incident is kept in step with a ticket or an issue of
+  another product: what the other side says comes in through the incoming
+  mapper, with what a person set in Nik kept unless the mapper marks the
+  field authoritative, and its comments become lines of the War Room; what
+  changes in Nik and the notes tagged `mirror` go out from a queue, tried
+  again when a send fails. Started from the panel of the incident or by a
+  mapper; a mirror that sends is a standing permission, recorded, and what
+  it sends passes the data guard.
+- Who set each field of an incident last is remembered (a person, a
+  playbook, a connector): it is what decides what a fetch or a mirror may
+  write over.
+- **Fetch status** (*Settings → Automation*): the connections that can
+  fetch, each with its state and why, what its last cycle found, the items
+  it fetched lately with what became of each, and the buttons to turn it on
+  and off, fetch now and let it go on. The mapper editor takes the last item
+  a connection fetched as its sample.
+- **Pre-processing rules** (*Settings → Incidents*): before a fetched item
+  becomes an incident it can be dropped, linked to the open incident that is
+  the same, made and closed as a duplicate, or left to a script to say. The
+  rules are tried in order and *try* says which would decide for a sample.
+- **The mapper editor**, in *Settings → Automation → Classifiers and
+  mappers*: a table with one row for each field of Nik (those the type needs
+  first), the expression that gives it its value with a picker of the
+  product's fields, the value on a pasted sample, and *Wins over edits*; rows
+  for context paths; the outgoing table; and the classifier of each
+  connection.
+- Two filters for expressions: `severity` (another product's scale as
+  Nik's) and `regex_extract` (the part of a text a pattern finds).
+- **The shipped connectors fetch and mirror.** ServiceNow (incidents, with
+  their comments), Jira Cloud and Jira Data Center (the issues a JQL filter
+  of the connection finds, with their comments), SentinelOne EDR (threats)
+  and SentinelOne SIEM (alerts) say how they bring alerts in; ServiceNow and
+  Jira also say how an incident is kept in step with its ticket. Each comes
+  with a mapper, added at startup and kept up to date until someone changes
+  it. New commands: `get-incident-by-id` and `get-comments` (ServiceNow),
+  `get-comments` (Jira), `get-issue-text` (Jira Cloud). The `map` filter
+  takes pairs for values that are not names: `map('1', 'open', '2', 'closed')`.
+
 ## [4.4.0] - 2026-11-17
 
 People in the loop: playbooks give tasks and ask questions, each incident has
@@ -2310,7 +2375,9 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.3.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0
+[4.4.0]: https://github.com/n36l3c7/Nik/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/n36l3c7/Nik/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/n36l3c7/Nik/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/n36l3c7/Nik/compare/v4.0.0...v4.1.0

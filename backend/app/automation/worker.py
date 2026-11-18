@@ -50,6 +50,8 @@ _storage_looked = 0.0
 _started = False
 _stopping = threading.Event()
 _in_flight: set[str] = set()
+# The connections a cycle of fetch is running for.
+_fetching: set[str] = set()
 
 
 def acquire(db, holder: str = HOLDER, now: float | None = None) -> bool:
@@ -259,11 +261,36 @@ def tick(now: float | None = None, *, pool: ThreadPoolExecutor | None = None, ho
             settings.AUTOMATION_CONCURRENCY * 4 if pool is None else settings.AUTOMATION_CONCURRENCY - len(_in_flight)
         )
         claimed = claim_steps(db, now, free, holder) if free > 0 else []
+        from .. import fetch
+
+        fetching = [found for found in fetch.due(db, now) if found not in _fetching]
+        from .. import mirror
+
+        # Mirrored incidents to read, and what waits to be sent to the other side.
+        reading = [found for found in mirror.due(db, now) if f"in:{found}" not in _fetching]
+        sending = [found for found in mirror.jobs_due(db, now) if f"out:{found}" not in _fetching]
     done["steps"] = len(claimed)
     if pool is None:
         for step_id in claimed:
             run_step(step_id, now)
+        for connection_id in fetching:
+            fetch.run(connection_id, now)
+        for incident_id in reading:
+            mirror.run_pull(incident_id, now)
+        for job_id in sending:
+            mirror.run_push(job_id, now)
         return done
+    for key, work, wanted in (
+        *((f"in:{found}", mirror.run_pull, found) for found in reading),
+        *((f"out:{found}", mirror.run_push, found) for found in sending),
+    ):
+        _fetching.add(key)
+        pool.submit(work, wanted).add_done_callback(lambda _future, done_key=key: _fetching.discard(done_key))
+    for connection_id in fetching:
+        _fetching.add(connection_id)
+        pool.submit(fetch.run, connection_id).add_done_callback(
+            lambda _future, done_id=connection_id: _fetching.discard(done_id)
+        )
     for step_id in claimed:
         _in_flight.add(step_id)
         pool.submit(run_step, step_id).add_done_callback(lambda _future, done_id=step_id: _in_flight.discard(done_id))

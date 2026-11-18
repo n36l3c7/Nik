@@ -483,6 +483,15 @@ const isRawIp = isRawIpUrl(entry.url)
           <code>timers.sync</code>.
         </li>
         <li>
+          <strong>A fetch or a mirror for a shipped connector</strong>: the keys <code>fetch</code>,
+          <code>schema</code> and <code>mirror</code> in its file (raise its <code>version</code>), a mapper in
+          <code>backend/app/automation/seed/mappers/&lt;id&gt;.json</code> (<code>incoming</code>,
+          <code>outgoing</code>, <code>classifier</code>), and <code>fetch.json</code> beside the fixtures of its
+          commands in <code>backend/tests/data/connectors/&lt;id&gt;/</code>: the state a cycle starts from, the
+          requests it must send with their answers, the ids, the next state, and what the mapper makes of the first
+          item. <code>test_shipped_connectors.py</code> reads it; a connector that fetches without one fails the suite.
+        </li>
+        <li>
           <strong>An event</strong>: a builder in <code>payloads.py</code> that returns what the event carries and the
           class of each field, a function in <code>triggers.py</code> that writes it to the outbox, called in the
           transaction of the change; the name goes in <code>graph.EVENTS</code>, in

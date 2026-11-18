@@ -256,6 +256,30 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-45">Upgrading to 4.5</h4>
+      <p>
+        Release 4.5 needs nothing more than the two commands above. The migration <code>0032_fetch_mappers</code> runs
+        at start. After the update:
+      </p>
+      <ul>
+        <li>
+          <strong>nothing is fetched until you say so.</strong> A connection of ServiceNow, Jira or SentinelOne can
+          bring alerts in as incidents, and it is turned on, one connection at a time, in
+          <em>Settings → Automation → Fetch status</em>. Before that, look at its mapper in
+          <em>Classifiers and mappers</em> and try it on a sample; for Jira, set <em>Issues to fetch</em> in the
+          connection, or every issue the account can see comes in;
+        </li>
+        <li>
+          the shipped connectors of ServiceNow, Jira and SentinelOne are replaced by their new version, as at every
+          release; one you changed and installed with a higher version is left as it is, and does not fetch until its
+          file says how;
+        </li>
+        <li>
+          the automation worker does the fetching and the mirroring: with <code>AUTOMATION_ENABLED</code> off, or the
+          worker stopped, nothing comes in and nothing is sent. The worker reaches the host of each connection through
+          the proxy the playbooks use.
+        </li>
+      </ul>
       <h4 id="upgrading-to-44">Upgrading to 4.4</h4>
       <p>
         Release 4.4 needs nothing more than the two commands above. The migrations <code>0030_tasks_sla</code> and

@@ -6,14 +6,14 @@
 # under /sdl/v2/api/queries and the alerts under
 # /web/api/v2.1/unifiedalerts/graphql) and, for the changes to an alert, from
 # the Cortex XSOAR integration, which is the only public source for them.
-# Two things in it are the least certain and are marked below. Not run
+# Three things in it are the least certain and are marked below. Not run
 # against a real console: see "verified" below.
 #
 # The token is one of a service user of the console, with its scope at
 # account or site level (a token of global scope is refused by the Data Lake).
 name: SentinelOne SIEM
 id: sentinelone-sdl
-version: 1
+version: 2
 description: PowerQuery searches in the Singularity Data Lake, and the alerts of the Singularity Operations Center.
 api_version: "SDL long-running query API v2 (/sdl/v2/api/queries); unified alerts GraphQL (/web/api/v2.1/unifiedalerts/graphql)"
 verified: false
@@ -123,3 +123,44 @@ commands:
       updated: "{{ response.data.alertTriggerActions.actions[0].alertCount }}"
       failed: "{{ response.data.alertTriggerActions.actions[0].failure | length }}"
     sample: { updated: 1, failed: 0 }
+
+# Least certain: nothing public says in what order the alerts come, nor how to
+# ask for an order. A cycle asks for the alerts detected since five minutes
+# before the last one (an alert read twice is taken once) and reads 100 of
+# them: where more than 100 are detected between two cycles, some are not read.
+fetch:
+  interval_seconds: 120
+  first_fetch: 1 days
+  request:
+    method: POST
+    path: /web/api/v2.1/unifiedalerts/graphql
+    json:
+      query: "query SearchAlerts($filters: [FilterInput!], $first: Int!) { alerts(filters: $filters, first: $first) { edges { node { id name description severity status analystVerdict classification confidenceLevel detectedAt storylineId asset { id name } } } pageInfo { hasNextPage endCursor } totalCount } }"
+      variables:
+        first: 100
+        filters:
+          - fieldId: detectedAt
+            dateTimeRange: { start: "{{ state.since_ms }}", startInclusive: true }
+  success: { when: { all: [{ left: "{{ response.errors }}", op: empty }] } }
+  error: { message: "{{ response.errors[0].message }}" }
+  items: "{{ response.data.alerts.edges }}"
+  item_id: "{{ item.node.id }}"
+  occurred: "{{ item.node.detectedAt }}"
+  first_state:
+    since_ms: "{{ first.epoch_ms }}"
+  next_state:
+    since_ms: "{{ now.epoch_ms | add(-300000) }}"
+
+schema:
+  incoming:
+    - { name: node.id, type: text, description: The id of the alert }
+    - { name: node.name, type: text }
+    - { name: node.description, type: text }
+    - { name: node.severity, type: text, description: "CRITICAL, HIGH, MEDIUM, LOW, INFO or UNKNOWN" }
+    - { name: node.status, type: text, description: "NEW, IN_PROGRESS, RESOLVED or FALSE_POSITIVE" }
+    - { name: node.analystVerdict, type: text }
+    - { name: node.classification, type: text }
+    - { name: node.confidenceLevel, type: text }
+    - { name: node.detectedAt, type: date }
+    - { name: node.storylineId, type: text }
+    - { name: node.asset.name, type: text }

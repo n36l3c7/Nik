@@ -1002,6 +1002,15 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           left of the time to assign, to contain and to close, or by how much it is over. Whoever works incidents
           pauses, starts and stops one by hand; a playbook can too.
         </li>
+        <li id="mirror">
+          <strong>Mirror</strong>, in the same panel, keeps the incident in step with a ticket or an issue of another
+          product: <em>Mirror with…</em> asks for the connection, the id of the object there, and which way.
+          <em>Read now</em> reads the other side at once and says what changed and what was kept because you set it
+          here; a note tagged <code>mirror</code> is sent to the other side as a comment (<a
+            href="automation.html#mirroring"
+            >Mirroring</a
+          >).
+        </li>
         <li id="notifications">
           <strong>The bell</strong> on the rail is what you were told: a task given to you or overdue, an approval that
           waits, a colleague who wrote <code>@you</code> in a War Room, a timer of an incident you own past its time.
@@ -1129,6 +1138,33 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 For each type of incident, the minutes its incidents are allowed to be assigned, contained and closed,
                 by severity if you want, counting every hour or business hours only. A timer that is on starts with the
                 incident and is shown beside its tabs; past its time the incident is marked and its owner is told.
+              </td>
+            </tr>
+            <tr>
+              <td>Classifiers and mappers <em>(who manages connectors)</em></td>
+              <td>
+                How what a connector's product calls things becomes Nik's fields and context, and back: a table of rules
+                for each connector, tried on a sample before it is saved; and for a connection that brings alerts in,
+                which type of incident each becomes (<a href="automation.html#mappers">Classifiers and mappers</a>).
+              </td>
+            </tr>
+            <tr>
+              <td>Fetch status <em>(who manages connectors)</em></td>
+              <td>
+                The connections that bring alerts in as incidents: on or off, fetching, failing or paused and why, what
+                the last cycle found, and what became of each item fetched lately (<a href="automation.html#fetching"
+                  >Fetching</a
+                >).
+              </td>
+            </tr>
+            <tr>
+              <td>Pre-processing rules <em>(admins)</em></td>
+              <td>
+                What is done with an alert a connection brings in before it becomes an incident: dropped as noise,
+                linked to the open incident it belongs to, closed as a duplicate, or left to a script (<a
+                  href="automation.html#preprocessing"
+                  >Before an item becomes an incident</a
+                >).
               </td>
             </tr>
             <tr>

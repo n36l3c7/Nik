@@ -767,7 +767,10 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>Of a text.</td>
             </tr>
             <tr>
-              <td><code>map(high="1", low="3", else="2")</code></td>
+              <td>
+                <code>map(high="1", low="3", else="2")</code>, or pairs for values that are not names:
+                <code>map("1", "open", "2", "closed")</code>
+              </td>
               <td>
                 Another value for each value named; <code>else</code> for the rest (the value itself when left out).
               </td>
@@ -786,6 +789,22 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             <tr>
               <td><code>date</code> · <code>date("%d/%m/%Y")</code></td>
               <td>An ISO date, or seconds since 1970, as text in UTC (<code>2026-11-17 08:30</code> by default).</td>
+            </tr>
+            <tr>
+              <td><code>severity</code> · <code>severity("inverse")</code></td>
+              <td>
+                A severity of another product as Nik's (<code>low</code>, <code>medium</code>, <code>high</code>,
+                <code>critical</code>): a word (<code>Moderate</code>, <code>Severe</code>…), a number from 1 to 5 where
+                5 is the worst (<code>"inverse"</code> when 1 is the worst, as a priority is), or a score from 0 to 100,
+                cut at 25, 50 and 75. Empty for what is none of them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>regex_extract("INC[0-9]+")</code> · <code>regex_extract("user=(\w+)", 1)</code></td>
+              <td>
+                The part of a text a pattern finds, or one group of it by number or by name; empty when it finds none.
+                The pattern is matched with a time limit.
+              </td>
             </tr>
             <tr>
               <td><code>defang</code></td>
@@ -1405,6 +1424,167 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         being listed) and the <a href="#data-guard">data guard</a>.
       </p>
 
+      <h3 id="mappers">Classifiers and mappers</h3>
+      <p>
+        What another product calls things is not what Nik calls them: an alert's <code>threatInfo.threatName</code>, a
+        ticket's <code>short_description</code>, an issue's <code>fields.summary</code> are all the name of an incident.
+        <strong>Mappers</strong> say so, and they are data in Nik, not part of a connector file: whoever manages
+        connectors changes them without touching YAML.
+      </p>
+      <ul>
+        <li>
+          <strong>An incoming mapper</strong> turns what the product sends (a fetched alert, a ticket read by mirroring)
+          into an incident. Each rule has a <em>to</em>: a field of the registry (<code>name</code>,
+          <code>severity</code>, <code>source_id</code>, a field of your own) or a
+          <a href="#context-paths">context path</a> (<code>Alert(val.ID == obj.ID)</code>,
+          <code>ext.&lt;connector&gt;.agent_uuid</code>); and a <em>from</em>: a template over <code>item</code>, with
+          any filter (<code>{{ item.priority | severity('inverse') }}</code>). A value the item does not have writes
+          nothing; one the field refuses is listed as a problem and the rest goes on. A rule marked
+          <em>authoritative</em> writes over what a person set in Nik; otherwise the person's value stays.
+        </li>
+        <li>
+          <strong>An outgoing mapper</strong> turns an incident into what the product takes. Each rule has a
+          <em>to</em>, a name of the product, and a <em>from</em>, a template over <code>incident</code> and
+          <code>context</code>. What has no value sends nothing for its name.
+        </li>
+        <li>
+          A connector has one mapper of each direction for every type of incident (<code>*</code>), and can have one for
+          a type alone, which then replaces the general one for that type.
+        </li>
+        <li>
+          <strong>A classifier</strong> belongs to a connection that fetches and chooses the type of incident an item
+          becomes: rules, each a condition on <code>item</code> and a type; the first that holds wins, else the default
+          type, else <em>Unclassified</em>.
+        </li>
+      </ul>
+      <p>
+        They are edited in <em>Settings → Automation → Classifiers and mappers</em>. Choose the connector, the direction
+        and the type of incident: the table has one row for each field of Nik, those the type needs first, then those
+        that are mapped, then the rest folded away. Each row has the expression that gives the field its value, with a
+        <strong>+</strong> that puts in a field of the product (those its connector names in <code>schema</code>, or
+        those of the sample when it names none), the value on the sample, and <em>Wins over edits</em>.
+        <em>Add a context path</em> adds a row that writes to the context (<code>Alert(val.ID == obj.ID)</code>, an
+        <code>ext</code> field of the connector). Paste one item as the product sends it and <em>Try on the sample</em>:
+        every row shows the value the incident would get, with what a field refused and what the type needs that nothing
+        gave. Nothing is written until the mapper is saved, and trying never writes to an incident. The classifier of
+        each connection of the connector is the small table under it.
+      </p>
+
+      <h3 id="fetching">Fetching: alerts that become incidents</h3>
+      <p>
+        A connection whose connector has a <a href="#connector-fetch"><code>fetch</code></a> can bring alerts in. It
+        does nothing until it is told to (<em>Settings → Automation → Fetch status</em>, or
+        <code>PUT /api/fetch/{connection}</code>); then the automation worker reads it every
+        <code>interval_seconds</code>. One cycle:
+      </p>
+      <ol>
+        <li>
+          the request is sent with the <code>state</code> the cycle before left (before the first one, what
+          <code>first_state</code> says of the moment <code>first_fetch</code> ago), and its pages are read: 200 items a
+          cycle at most;
+        </li>
+        <li>
+          each item is told apart by its <code>item_id</code>. One this connection has fetched before is skipped: an
+          alert makes one incident, however many times the other side sends it;
+        </li>
+        <li>
+          a new item is classified (the type of incident) and mapped (its fields and its context), by the
+          <a href="#mappers">classifier and the mapper</a>; then the incident is made, with a line in its War Room that
+          holds the item as it came, and <code>incident.created</code> is published, so the playbooks that wait for it
+          start;
+        </li>
+        <li>the state for the next cycle is saved when the cycle was read to its end.</li>
+      </ol>
+      <p>
+        An item its mapper cannot make whole still becomes an incident: with no mapper it has a name made of the
+        connector and the id of the item; a field the registry refuses is left empty; a field the type needs and nothing
+        gave is missing. Fetch status lists it as <em>incomplete</em> with what was wrong, so that the mapper is
+        corrected rather than alerts lost.
+      </p>
+      <p>
+        A fetch reaches the host of its own connection and nothing else, with its credentials; the data guard is not
+        involved, since data comes in. A request that fails marks the connection <em>failing</em> and is tried again
+        later and later, an hour apart at most; whoever manages connectors is told once. A connection that makes more
+        than 500 incidents in an hour is <em>paused</em>, with nothing lost: the state stops at the last alert that
+        became an incident, and it goes on from there when someone has looked and lets it. With automation stopped,
+        nothing fetches.
+      </p>
+
+      <p id="fetch-status">
+        <strong>Fetch status</strong> (<em>Settings → Automation → Fetch status</em>) lists the connections that can
+        fetch: whether each does, when it last fetched and will next, what its last cycle found, and why it is failing
+        or paused. A connection is turned on and off there, made to fetch now, and let go on. Opened, a connection shows
+        what it fetched lately and what became of each item: an incident, an <em>incomplete</em> one with what its
+        mapper could not give, an item dropped, linked or closed as a duplicate by a rule. In the mapper editor,
+        <em>Use the last item fetched</em> takes the last item of a connection as the sample.
+      </p>
+
+      <h4 id="preprocessing">Before an item becomes an incident</h4>
+      <p>
+        <strong>Pre-processing rules</strong> (<em>Settings → Incidents → Pre-processing rules</em>) are tried, in their
+        order, on every new item, before anything is written. A rule has a condition, the kind a classifier has, over
+        <code>incident</code> (what the item would become: its type and the fields its mapper gave) and
+        <code>item</code> (what came); nothing for <em>always</em>. The first rule that decides wins:
+      </p>
+      <ul>
+        <li><strong>Drop it</strong>: no incident. The item is remembered, so it does not come back;</li>
+        <li>
+          <strong>Link it to an open incident</strong>: no incident; the item becomes a line of the War Room of the open
+          incident that has the <em>same</em> values in the fields the rule names (<code>name</code>, <code>host</code>,
+          <code>username</code>, <code>ticket</code>, <code>severity</code>, <code>source_id</code>, <code>type</code>),
+          made in the last so many hours if the rule says so;
+        </li>
+        <li>
+          <strong>Close it as a duplicate</strong>: the incident is made, and closed at once with the reason
+          <em>Duplicate</em> and the incident it is a duplicate of;
+        </li>
+        <li>
+          <strong>Ask a script</strong>: a script of the library is given <code>item</code> and
+          <code>incident</code> and returns <code>{"action": "drop"}</code>,
+          <code>{"action": "link_to_existing", "same": ["host"]}</code>,
+          <code>{"action": "close_duplicate", "same": ["name"]}</code>, or anything else to go on.
+        </li>
+      </ul>
+      <p>
+        A rule that finds no incident that is the same decides nothing, and the next is tried. With no rule that
+        decides, the item becomes an incident. <em>Try on a sample</em> says which rule would decide for an item of a
+        connection, and does nothing.
+      </p>
+
+      <h3 id="mirroring">Mirroring: an incident and a ticket in step</h3>
+      <p>
+        An incident can be kept in step with one object of another product, a ticket or an issue, through a connection
+        whose connector has a <a href="#connector-fetch"><code>mirror</code></a
+        >. It is started from the panel of the incident (<em>Mirror with…</em>: the connection, the id of the object on
+        the other side, and which way), or by a mapper that sets <code>mirror_id</code> and
+        <code>mirror_direction</code> on what it fetches. The fields <code>mirror_id</code>,
+        <code>mirror_direction</code> and <code>mirror_last_sync</code> of the incident say how it stands.
+      </p>
+      <ul>
+        <li>
+          <strong>In.</strong> The worker reads the object every <code>interval_seconds</code> of the connector, and the
+          <a href="#mappers">incoming mapper</a> turns it into fields. A field a person set in Nik is
+          <strong>kept</strong>: the other side writes over it only when the mapper marks it <em>authoritative</em> (<em
+            >Wins over edits</em
+          >). What the connector itself wrote, or nobody set, follows the other side. Comments not seen before become
+          lines of the War Room. A closed incident is read for a day more, then left alone.
+        </li>
+        <li>
+          <strong>Out.</strong> When a field the <a href="#mappers">outgoing mapper</a> reads changes in Nik, the
+          incident is sent as that mapper writes it; a note tagged <code>mirror</code> is sent as a comment. Sending is
+          done by the worker from a queue: one that fails is tried again later and later, eight times, and is listed in
+          <em>Fetch status</em> with why, where it can be sent again.
+        </li>
+      </ul>
+      <p>
+        Starting a mirror that sends is a <strong>standing permission</strong>: from then on what changes is sent
+        without asking again. It needs the permission to run playbooks, it is written in the War Room and in the audit
+        log with who gave it, and what is sent passes the <a href="#data-guard">data guard</a> with no class of data
+        opened unless one was opened for this mirror, which needs the permission that opens classes for playbooks. It
+        reaches the host of its connection and nothing else. A loop is not possible: what the mirror's own connector
+        wrote is never sent back, and a comment Nik sent is recognised when it comes back.
+      </p>
+
       <h3 id="shipped-connectors">The connectors Nik ships</h3>
       <p>
         Twelve files for nine products. Each was written from what the vendor publishes about its API and is tested
@@ -1419,6 +1599,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <th>Connector</th>
               <th>Signs in with</th>
               <th>Commands</th>
+              <th>Fetches · mirrors</th>
             </tr>
           </thead>
           <tbody>
@@ -1429,16 +1610,19 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 hosts, groups and domain objects added, read and removed; every change is published, and the policy
                 installed when asked, waiting for the task to end
               </td>
+              <td>—</td>
             </tr>
             <tr>
               <td>Check Point Harmony SASE</td>
               <td>an API key</td>
               <td>lists of addresses read and written; the Internet Access rules read</td>
+              <td>—</td>
             </tr>
             <tr>
               <td>Zscaler ZIA (the classic API)</td>
               <td>a user, a password and the API key, in Zscaler's own way</td>
               <td>URL categories read and changed, an address looked up, the changes activated</td>
+              <td>—</td>
             </tr>
             <tr>
               <td>SentinelOne EDR</td>
@@ -1447,31 +1631,42 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 agents found, isolated and reconnected; threats read and resolved; hashes added to the blocklist; a Deep
                 Visibility query run and waited for
               </td>
+              <td>the threats created since the last cycle · —</td>
             </tr>
             <tr>
               <td>SentinelOne SIEM (Singularity Data Lake)</td>
               <td>an API token</td>
               <td>a PowerQuery run; alerts read and their status set</td>
+              <td>the alerts detected since the last cycle, 100 a cycle · —</td>
             </tr>
             <tr>
               <td>ServiceNow</td>
               <td>a user and a password</td>
-              <td>incidents opened, read and updated; comments and work notes added</td>
+              <td>incidents opened, read and updated; comments and work notes added and read</td>
+              <td>the incidents opened since the last cycle · an incident and its comments</td>
             </tr>
             <tr>
               <td>Jira Cloud · Jira Data Center</td>
               <td>an e-mail address and an API token · a personal access token</td>
-              <td>issues created, read and updated; comments; the transitions of an issue listed and made</td>
+              <td>
+                issues created, read and updated; comments added and read; the transitions of an issue listed and made
+              </td>
+              <td>
+                the issues a JQL filter of the connection finds (<em>Issues to fetch</em>), created since the last cycle
+                · an issue and its comments
+              </td>
             </tr>
             <tr>
               <td>Confluence Cloud · Confluence Data Center</td>
               <td>an e-mail address and an API token · a personal access token</td>
               <td>pages created, read, and added to</td>
+              <td>—</td>
             </tr>
             <tr>
               <td>Bitbucket Cloud · Bitbucket Data Center</td>
               <td>an e-mail address and an API token · an HTTP access token</td>
               <td>a file read, and written with a commit: a block list other systems fetch</td>
+              <td>—</td>
             </tr>
           </tbody>
         </table>
@@ -1481,6 +1676,33 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         texts differently. The comments at the top of each file say what it was written against and what the connection
         needs.
       </p>
+      <p>
+        A connector that fetches comes with a <a href="#mappers">mapper</a>: the title, the details, the severity, the
+        status and the id of what it brings in, and the ticket, the alert, the host or the file it is about in the
+        <a href="#context">context</a>. Nik adds these mappers at startup, for every type of incident, and brings them
+        up to date with a release until someone saves one: from then on it is yours. The mappers of ServiceNow and Jira
+        set <code>mirror_id</code> and <code>mirror_direction: in</code>, so a ticket that came in by fetching is read
+        again when it changes there; to send what changes in Nik, start the mirror from the incident with a direction
+        that sends. None says which type of incident an item becomes: without a <a href="#mappers">classifier</a>, the
+        default type is used. Things to know before turning a fetch on:
+      </p>
+      <ul>
+        <li>
+          <strong>Jira</strong> reads and compares times in JQL to the minute and in the time zone of the account that
+          signs in; the first cycle starts from a UTC time, so with an account in another zone it starts some hours off.
+          Jira Cloud is fetched and mirrored through its API v2, which gives texts as plain text; the outgoing mapper of
+          Jira Cloud sends the title only, because a description there is written in Jira's document format.
+        </li>
+        <li>
+          <strong>ServiceNow</strong> reads the comments of an incident from the journal
+          (<code>sys_journal_field</code>): the account needs a role that may read it.
+        </li>
+        <li>
+          <strong>SentinelOne SIEM</strong> gives no way that is public to ask for the alerts in order: a cycle asks for
+          those detected since five minutes before the last one and reads 100. Where more than 100 alerts are detected
+          between two cycles, some are not read.
+        </li>
+      </ul>
 
       <h3 id="connector-format">The connector file, key by key</h3>
       <p>
@@ -1610,6 +1832,36 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             <tr>
               <td><code>commands</code> (required)</td>
               <td>The commands (below): at least one, 100 at most.</td>
+            </tr>
+            <tr>
+              <td><code>fetch</code></td>
+              <td>
+                How a connection brings alerts in as incidents (<a href="#connector-fetch">below</a>). A connector
+                without it only sends commands.
+              </td>
+            </tr>
+            <tr>
+              <td><code>schema</code></td>
+              <td>
+                The names the product uses: <code>incoming</code> (what a fetched item holds) and
+                <code>outgoing</code> (what a create or an update takes), each a list of
+                <code>{ name, type, description }</code> with <code>type</code> one of <code>text</code>,
+                <code>number</code>, <code>bool</code>, <code>date</code>, <code>list</code>, <code>object</code>. The
+                mapper editor offers them; nothing is checked against them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>ext_fields</code></td>
+              <td>
+                What this connector adds to the context of an incident under <code>ext.&lt;id&gt;</code>: a list of
+                <code>{ name, type, description }</code>, so that what is there has a name and a type.
+              </td>
+            </tr>
+            <tr>
+              <td><code>mirror</code></td>
+              <td>
+                How an incident and one object of the product are kept in step (<a href="#connector-fetch">below</a>).
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1921,6 +2173,53 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         <code>any</code> and the operators <code>eq</code>, <code>ne</code>, <code>gt</code>, <code>gte</code>,
         <code>lt</code>, <code>lte</code>, <code>contains</code>, <code>in</code>, <code>exists</code>,
         <code>empty</code>.
+      </p>
+
+      <h4 id="connector-fetch">Fetching and mirroring</h4>
+      <p>
+        <strong><code>fetch</code></strong> is one request, sent again and again, whose answer is a list of alerts. Its
+        keys:
+      </p>
+      <ul>
+        <li>
+          <code>interval_seconds</code> (120 by default, 30 at least) and <code>first_fetch</code>: how far back the
+          first cycle looks, as <code>30 minutes</code>, <code>12 hours</code> or <code>3 days</code> (a month at most);
+        </li>
+        <li>
+          <code>request</code>, with <code>success</code> and <code>error</code> as in a command. Its templates read
+          <code>config</code>, <code>secret</code> and <code>state</code>, never an argument: nobody gives a fetch any;
+        </li>
+        <li>
+          <code>pagination</code> (as in a command), or <code>items</code> when the answer is one page: where the alerts
+          are, <code>"{{ response.data }}"</code>;
+        </li>
+        <li>
+          <code>item_id</code>: what tells one alert from another, <code>"{{ item.id }}"</code>. An alert whose id was
+          seen on this connection is skipped; <code>occurred</code>: when it happened,
+          <code>"{{ item.createdAt }}"</code>;
+        </li>
+        <li>
+          <code>first_state</code> and <code>next_state</code>: the <code>state</code> the request reads. Before the
+          first cycle it is what <code>first_state</code> says, which reads <code>first</code>, the moment
+          <code>first_fetch</code> ago (<code>first.iso</code>, <code>first.epoch</code>, <code>first.epoch_ms</code>);
+          after each cycle it is what <code>next_state</code> says, which reads the answer and <code>items</code>, every
+          alert of the cycle: <code>last_time: "{{ items | last | get('createdAt') }}"</code>. It is saved only when the
+          whole cycle was read.
+        </li>
+      </ul>
+      <p>
+        <strong><code>mirror</code></strong> names the commands of this same file that keep one object in step:
+        <code>get</code> (read it), <code>update</code> (change it: its command says
+        <code>changes_outside: true</code>), and <code>comments</code> with <code>list</code> and <code>add</code>. Each
+        is <code>{ command, args }</code>; <code>args</code> are templates over <code>mirror.id</code> (the id of the
+        object on the other side), <code>fields</code> (what the outgoing mapper gave), <code>comment.text</code> and
+        <code>since</code>, and must be arguments the command takes. With no <code>args</code> the id goes to the
+        command's first argument. <code>comments</code> also says where the comments are in the result of
+        <code>list</code> (<code>items</code>, <code>"{{ result.comments }}"</code> by default) and what one is
+        (<code>id</code>, <code>text</code>, <code>author</code>, <code>at</code>, over <code>item</code>).
+        <code>interval_seconds</code> is how often the other side is read (120 by default). <code>item</code> says where
+        the object is in what <code>get</code> gave (<code>"{{ result.ticket }}"</code>; the whole result by default):
+        it must have the shape a fetched item has, since the same incoming mapper reads both.
       </p>
 
       <h4 id="connector-samples">Two complete files</h4>
@@ -2314,8 +2613,9 @@ commands:
       <h2 id="later">What this release does not do yet</h2>
       <ul>
         <li>
-          A connector sends commands: it does not yet bring alerts in from the other side as incidents, or keep an
-          incident and a ticket in step. Both come with a later release.
+          Fetching and mirroring are written for ServiceNow, Jira and SentinelOne; the other shipped connectors send
+          commands only. A fetch asks at an interval: nothing is pushed to Nik by the other product except through a
+          <a href="#trigger">webhook trigger</a>.
         </li>
         <li>
           No shipped connector has been run against a real system (<a href="#shipped-connectors"

@@ -83,6 +83,8 @@ test('the search box narrows the sections by label, group and keywords', () => {
   assert.deepEqual(ids(filterSettings(all, 'automation')), [
     'connectors',
     'connections',
+    'mappers',
+    'fetchStatus',
     'automationNetwork',
     'automationSwitch',
   ])

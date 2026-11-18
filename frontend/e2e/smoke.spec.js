@@ -2724,6 +2724,192 @@ test('lists: one is made and filled, a feature is pointed at it, and what Nik sh
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
+test('a mapper says how the names of a product become those of Nik, tried on a sample; a classifier chooses the type', async () => {
+  const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByText('Classifiers and mappers', { exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/automation\/classifiers-and-mappers$/)
+  await settings.getByLabel('Connector', { exact: true }).selectOption('acme')
+  await expect(settings.getByText('no mapper yet')).toBeVisible()
+
+  // A sample of what the product sends, and two rules written against it.
+  await settings
+    .getByLabel('A sample item, as JSON')
+    .fill('{"id": "T-77", "title": "Emotet on a laptop", "priority": 1, "host": {"name": "WKS-FINANCE-01"}}')
+  const rules = settings.getByRole('table', { name: 'Rules of the incoming mapper' })
+  await settings.getByRole('button', { name: /^Show the \d+ other fields$/ }).click()
+  const name = rules.getByRole('row').filter({ hasText: /^Name/ })
+  // The connector names no field: the picker offers those of the sample.
+  await name.getByLabel('Name: its value: put a field in').selectOption('title')
+  await expect(name.getByLabel('Name: its value', { exact: true })).toHaveValue('{{ item.title }}')
+  const severity = rules.getByRole('row').filter({ hasText: /^Severity/ })
+  await severity.getByLabel('Severity: its value', { exact: true }).fill("{{ item.priority | severity('inverse') }}")
+  await severity.getByLabel('Severity: wins over what a person set').check()
+  const host = rules.getByRole('row').filter({ hasText: /^Host/ })
+  await host.getByLabel('Host: its value', { exact: true }).fill('{{ item.host.name }}')
+  await settings.getByRole('button', { name: 'Add a context path' }).click()
+  await settings.getByLabel('Context path 1', { exact: true }).fill('Alert(val.ID == obj.ID)')
+  await settings.getByLabel('Context path 1: its value', { exact: true }).fill('{"ID": "{{ item.id }}"}')
+
+  // Tried on the sample: each row shows the value the incident would get. Nothing is written.
+  await settings.getByRole('button', { name: 'Try on the sample' }).first().click()
+  await expect(name).toContainText('Emotet on a laptop')
+  await expect(severity).toContainText('critical')
+  await expect(host).toContainText('WKS-FINANCE-01')
+  await expect(rules.getByRole('row').filter({ hasText: 'T-77' })).toHaveCount(1)
+  await settings.getByRole('button', { name: 'Save the mapper' }).click()
+  await expect(settings.getByRole('status').filter({ hasText: 'The mapper is saved.' })).toBeVisible()
+  await expect(settings.getByText('saved', { exact: true })).toBeVisible()
+
+  // What a field refuses is said, and the rest goes on.
+  await severity.getByLabel('Severity: its value', { exact: true }).fill('{{ item.title }}')
+  await settings.getByRole('button', { name: 'Try on the sample' }).first().click()
+  await expect(settings.getByRole('status').filter({ hasText: 'Severity' })).toBeVisible()
+  await expect(name).toContainText('Emotet on a laptop')
+
+  // The classifier of the connection: the first rule that holds gives the type.
+  const classifier = settings.getByRole('region', { name: 'Classifier of Acme test' })
+  await classifier.getByRole('button', { name: 'Add a rule' }).click()
+  await classifier.getByLabel('Rule 1: what to compare', { exact: true }).fill('{{ item.title }}')
+  await classifier.getByLabel('Rule 1: how').selectOption('contains')
+  await classifier.getByLabel('Rule 1: with what').fill('Emotet')
+  await classifier.getByLabel('Rule 1: the type it becomes').selectOption('malware')
+  await classifier.getByRole('button', { name: 'Try on the sample' }).click()
+  await expect(classifier.getByRole('status').filter({ hasText: 'The sample becomes' })).toContainText('Malware')
+  await classifier.getByRole('button', { name: 'Save the classifier' }).click()
+  await expect(classifier.getByRole('status').filter({ hasText: 'The classifier is saved.' })).toBeVisible()
+
+  // The other way: what goes to the product for an incident.
+  await settings.getByRole('group', { name: 'Direction' }).getByRole('button', { name: 'Outgoing' }).click()
+  await settings.getByRole('button', { name: 'Add a name' }).click()
+  await settings.getByLabel('Name 1', { exact: true }).fill('summary')
+  await settings.getByLabel('summary: its value', { exact: true }).fill('{{ incident.name }} ({{ incident.status }})')
+  await settings.getByLabel('The id of an incident to try the mapper on').fill(incidentId)
+  await settings.getByRole('button', { name: 'Try on the sample' }).click()
+  await expect(settings.getByRole('table', { name: 'Rules of the outgoing mapper' })).toContainText(
+    /WKS-FINANCE-01.*\(/,
+  )
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+})
+
+test('pre-processing rules say what becomes of a fetched item before it is an incident', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByText('Pre-processing rules', { exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/incidents\/pre-processing$/)
+  await expect(settings.getByText('No rule yet: every new item becomes an incident.')).toBeVisible()
+
+  // A rule that drops noise.
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  const dialog = page.getByRole('dialog', { name: 'New rule' })
+  await expect(dialog.getByRole('status')).toHaveText('Give the rule a name')
+  await dialog.getByLabel('Name').fill('Port scans are noise')
+  await dialog.getByLabel('What to compare').fill('{{ item.title }}')
+  await dialog.getByLabel('How it compares').selectOption('contains')
+  await dialog.getByLabel('With what').fill('Port scan')
+  await dialog.getByRole('button', { name: 'Save the rule' }).click()
+  // One that needs to know which incident is the same.
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  await dialog.getByLabel('Name').fill('Same host, same case')
+  await dialog.getByLabel('Then').selectOption('link_to_existing')
+  await expect(dialog.getByRole('status')).toHaveText('Say which fields are the same in the incident to look for')
+  await dialog.getByLabel('host', { exact: true }).check()
+  await dialog.getByLabel(/Made in the last hours/).fill('48')
+  await dialog.getByRole('button', { name: 'Save the rule' }).click()
+
+  const rules = settings.getByRole('list', { name: 'Pre-processing rules' })
+  await expect(rules.getByRole('listitem')).toHaveText([
+    /Port scans are noise.*when all of 1: \{\{ item\.title \}\} contains Port scan: drop it/,
+    /Same host, same case.*always: link it to the open incident with the same host made in the last 48 h/,
+  ])
+  // Their order is theirs to change; a rule is deleted.
+  await rules.getByRole('button', { name: 'Move Same host, same case up' }).click()
+  await expect(rules.getByRole('listitem').first()).toContainText('Same host, same case')
+  await rules.getByRole('button', { name: 'Delete Same host, same case' }).click()
+  await rules.getByRole('button', { name: 'Delete Port scans are noise' }).click()
+  await expect(settings.getByText('No rule yet: every new item becomes an incident.')).toBeVisible()
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+})
+
+test('Fetch status: a connection is told to fetch, says why it fails, and is let go on', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByText('Fetch status', { exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/automation\/fetch-status$/)
+  const row = settings
+    .getByRole('list', { name: 'Connections that can fetch' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme test' })
+  await expect(row).toContainText('off')
+  await expect(row).toContainText('It does not fetch.')
+
+  await row.getByRole('button', { name: 'Turn on' }).click()
+  await expect(settings.getByRole('status')).toContainText('Acme test fetches')
+  await expect(row).toContainText('fetching')
+  // There is no Acme Desk to answer: the cycle fails, and the page says why.
+  await row.getByRole('button', { name: 'Fetch now' }).click()
+  await expect(row).toContainText('failing', { timeout: 30_000 })
+  await expect(row.locator('.text-high-fg').first()).not.toBeEmpty()
+  await row.getByRole('button', { name: 'Let it go on' }).click()
+  await expect(settings.getByRole('status')).toContainText('Acme test goes on.')
+  // What it fetched lately: nothing yet.
+  await row.getByRole('button', { name: 'Show what Acme test fetched' }).click()
+  await expect(row).toContainText('Nothing fetched yet.')
+  await row.getByRole('button', { name: 'Turn off' }).click()
+  await expect(row).toContainText('It does not fetch.')
+  // Who is told when a connection fails: the bell holds it.
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: /^Notifications/ }).click()
+  const told = page.getByRole('dialog', { name: 'Notifications' })
+  await expect(told.getByRole('listitem').filter({ hasText: 'Fetching from Acme test fails' })).toHaveCount(1, {
+    timeout: 45_000,
+  })
+  await told.getByRole('button', { name: 'Close' }).click()
+})
+
+test('an incident is mirrored with an object of another product, read now, and stopped', async () => {
+  const mirror = page.getByRole('region', { name: 'Mirroring' })
+  await mirror.getByRole('button', { name: 'Mirror with…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Mirror this incident' })
+  await expect(dialog.getByRole('status')).toHaveText('Say which object of the other side this incident is')
+  await dialog.getByLabel('The id of the object on the other side').fill('T-77')
+  // Acme Desk is read, not written to: it cannot be mirrored out.
+  await dialog.getByRole('radio', { name: /^Both ways/ }).check()
+  await expect(dialog.getByRole('status')).toHaveText('Acme Desk is read, not written to: mirror in')
+  await expect(dialog.getByRole('button', { name: 'Start mirroring' })).toBeDisabled()
+  await dialog.getByRole('radio', { name: /^In/ }).check()
+  await dialog.getByRole('button', { name: 'Start mirroring' }).click()
+  await expect(mirror).toContainText('Acme test')
+  await expect(mirror).toContainText('T-77 · read from there')
+  await expect(mirror).toContainText('Not read yet')
+
+  // There is no Acme Desk to answer: reading now says why it could not.
+  await mirror.getByRole('button', { name: 'Read now' }).click()
+  await expect(mirror.getByRole('alert')).not.toBeEmpty({ timeout: 30_000 })
+  // The War Room tells who started it.
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await tabs.getByRole('button', { name: 'War Room', exact: true }).click()
+  await expect(
+    page
+      .getByRole('list', { name: 'War Room' })
+      .getByRole('listitem')
+      .filter({ hasText: 'started mirroring with Acme test' }),
+  ).toHaveCount(1)
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await mirror.getByRole('button', { name: 'Stop' }).click()
+  await expect(mirror.getByRole('button', { name: 'Mirror with…' })).toBeVisible()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

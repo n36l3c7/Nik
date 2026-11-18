@@ -1193,6 +1193,98 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET</code> · <code>PUT /api/mappers</code> · <code>DELETE /api/mappers/{id}</code> ·
+                <code>GET /api/mappers/targets?type=</code> · <code>POST /api/mappers/try</code>
+              </td>
+              <td>
+                (<strong>connectors.manage</strong>) The mappers (<code>?connector=</code> for one connector) · save the
+                mapper of <code>{connectorId, direction: "incoming" | "outgoing", incidentType, rules}</code> (<code
+                  >incidentType</code
+                >
+                <code>"*"</code> for every type; it replaces the one there). Incoming rules are
+                <code>{to, from, authoritative}</code>, outgoing <code>{to, from}</code> · delete one · Nik's side of
+                the editor: the fields a mapper may set for a type and the entities of the context · what a mapper makes
+                of a sample, writing nothing: incoming <code>{item}</code> →
+                <code>{fields, context, authoritative, problems, missing}</code>, outgoing <code>{incidentId}</code> →
+                <code>{sent}</code>; <code>rules</code> left out tries the saved ones.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET</code> · <code>PUT /api/classifiers/{connectionId}</code> ·
+                <code>POST /api/classifiers/try</code>
+              </td>
+              <td>
+                (<strong>connectors.manage</strong>) The classifier of a connection:
+                <code>{rules: [{when: {all | any: [{left, op, right}]}, type}], defaultType}</code>; the comparisons
+                read <code>item</code> · the type an <code>item</code> would become under the rules sent.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/fetch</code> · <code>PUT /api/fetch/{connectionId}</code> · <code>POST …/run</code> ·
+                <code>POST …/resume</code> · <code>GET …/items</code> ·
+                <code>GET …/sample</code>
+              </td>
+              <td>
+                (<strong>connectors.manage</strong>) The connections whose connector can fetch:
+                <code
+                  >{connections: [{connectionId, connection, connector, enabled, state, error, pausedWhy, lastAt,
+                  nextAt, last, madeLastHour, limitPerHour, fetchState}]}</code
+                >, <code>state</code> one of <code>off</code>, <code>ok</code>, <code>failing</code>,
+                <code>paused</code> · tell one to fetch or not, <code>{enabled}</code> · fetch once now (<code
+                  >409</code
+                >
+                when it does not fetch) · let a paused or failing one go on · what it fetched lately with what became of
+                each item (<code>outcome</code>: <code>created</code>, <code>incomplete</code>, <code>dropped</code>,
+                <code>linked</code>, <code>duplicate</code>; <code>?outcome=</code> narrows) · the last item as it came.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET</code> · <code>POST /api/preprocess-rules</code> · <code>PUT</code> ·
+                <code>DELETE /api/preprocess-rules/{id}</code> · <code>PUT /api/preprocess-rules/order</code> ·
+                <code>POST /api/preprocess-rules/try</code>
+              </td>
+              <td>
+                (<strong>incidents.configure</strong>) The rules in the order they are tried · add one:
+                <code>{name, enabled, when, action, params}</code>, with <code>when</code> a condition over
+                <code>incident</code> and <code>item</code> (left out for always), <code>action</code> one of
+                <code>drop</code>, <code>link_to_existing</code>, <code>close_duplicate</code>, <code>run_script</code>,
+                and <code>params</code> <code>{same: ["host"], within_hours}</code> or <code>{script}</code> · change ·
+                delete · put them in the order of <code>{ids}</code> · which rule would decide for
+                <code>{connectionId, item}</code>, doing nothing.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET</code> · <code>POST</code> · <code>DELETE /api/incidents/{id}/mirror</code> ·
+                <code>POST /api/incidents/{id}/mirror/sync</code>
+              </td>
+              <td>
+                Whether the incident is mirrored:
+                <code
+                  >{mirrored, connection, id, direction, dataAllow, startedBy, lastSync, error, waiting,
+                  connections}</code
+                >, with the connections it can be mirrored with · start (<strong>write</strong>):
+                <code>{connectionId, mirrorId, direction: "in" | "out" | "both", dataAllow}</code>. <code>out</code> and
+                <code>both</code> also need <strong>automation.run</strong>, and a class of data in
+                <code>dataAllow</code> needs <strong>automation.open</strong> · stop · read the other side now:
+                <code>{changed, kept, comments, problems}</code>, where <code>kept</code> are the fields a person set
+                that were left as they are (<code>502</code> when the other side cannot be read).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/mirror/queue</code> · <code>POST /api/mirror/queue/{id}/retry</code></td>
+              <td>
+                (<strong>connectors.manage</strong>) What waits to be sent to the other side of mirrored incidents and
+                what could not be:
+                <code>{jobs: [{id, incidentId, incident, connection, kind, status, attempts, error, nextAt}]}</code> ·
+                try one again at the next turn of the worker.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
               <td>
                 What the caller was told, the newest first:

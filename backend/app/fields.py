@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -548,13 +549,45 @@ def update(
     told = [SYSTEM_FIELDS[name].where.partition(":")[2] if name in _DOC_KEYS else name for name in changed]
     triggers.incident_changed(db, incident, "incident.updated", sorted(set(told) | set(changed)))
     # An owner, a closing, another type or severity: the SLA timers follow at once.
-    import time
 
     from . import timers
 
     timers.sync(db, incident, time.time())
-    del source  # recorded with the provenance of the context, which comes with it
+    # Who set each field last: what decides whether a fetch or a mirror may write over it.
+    note_source(db, incident, changed, source or f"user:{actor}")
+    # A mirrored incident: what changed here goes to the other side, unless it came from there.
+    from . import mirror
+
+    mirror.on_fields_changed(db, incident, changed, source or f"user:{actor}", time.time())
     return changed
+
+
+def note_source(db: OrmSession, incident: Incident, names: list[str], source: str) -> None:
+    """Remember who set these fields of an incident last (the caller commits)."""
+    from .core.models import IncidentContextMeta
+
+    stamp = now_iso()
+    for name in names:
+        key = f"field:{name}"
+        meta = db.get(IncidentContextMeta, (incident.id, key))
+        if meta is None:
+            db.add(IncidentContextMeta(incident_id=incident.id, path_key=key, source=source[:120], at=stamp))
+        else:
+            meta.source, meta.at = source[:120], stamp
+
+
+def source_of(db: OrmSession, incident: Incident, name: str) -> str | None:
+    """Who set a field of an incident last; None when nobody is remembered."""
+    from .core.models import IncidentContextMeta
+
+    meta = db.get(IncidentContextMeta, (incident.id, f"field:{name}"))
+    return meta.source if meta is not None else None
+
+
+# A key of the document → the name of its field in the registry.
+DOC_FIELDS = {
+    spec.where.partition(":")[2]: name for name, spec in SYSTEM_FIELDS.items() if spec.where.startswith("doc:")
+}
 
 
 def closing_problem(db: OrmSession, incident: Incident) -> str | None:

@@ -430,7 +430,48 @@ class Runtime:
     # --------------------------------------------------------------- commands --
     def _paged(self, command: Command, args: dict) -> dict[str, Any]:
         """Read a list to its end, or to the limits. The answer is ``{items, pages, truncated}``."""
-        page = command.pagination
+        return self._pages(
+            command.request,
+            command.pagination,
+            command.success,
+            command.error,
+            command.timeout,
+            lambda: self._scope(args, {}, sent=True),
+            lambda answer: self._scope(args, {}, answer, sent=False),
+            MAX_ITEMS,
+        )
+
+    def fetch(self, spec: Any, state: dict[str, Any], first: dict[str, Any], now: dict[str, Any], limit: int) -> dict:
+        """Read the items of one cycle of a fetch: ``{"items", "truncated", "response", "status", "headers"}``.
+
+        The request reads ``state`` (and ``first``, ``now``); nobody gives it arguments. With
+        ``pagination`` the pages are read to the end or to ``limit`` items; without, ``items`` says
+        where they are in the one answer."""
+        base = {"config": self.config, "state": state, "first": first, "now": now}
+
+        def sent() -> ex.Scope:
+            return ex.Scope(values={**base, "secret": self.secrets})
+
+        def read(answer: dict) -> ex.Scope:
+            held = {**base, "response": answer["response"], "status": answer["status"], "headers": answer["headers"]}
+            return ex.Scope(values=held)
+
+        if spec.pagination is not None:
+            paged = self._pages(spec.request, spec.pagination, spec.success, spec.error, 60, sent, read, limit)
+            answer = paged["response"]
+            return {"items": answer["items"], "truncated": answer["truncated"], **paged}
+        answer = self._raw(spec.request, sent(), timeout=60)
+        after = read(answer)
+        self._judge(answer, spec.success, spec.error, after)
+        try:
+            found = ex.render_text(str(spec.items), after).data
+        except ex.ExpressionError:
+            found = []
+        found = found if isinstance(found, list) else []
+        return {"items": found[:limit], "truncated": len(found) > limit, **answer}
+
+    def _pages(self, request, page, success, error, timeout, sent_scope, answer_scope, limit: int) -> dict[str, Any]:
+        """The loop of a paged request, for a command and for a fetch: who reads what is said by the two scopes."""
         items: list[Any] = []
         cursor: Any = None
         offset = 0
@@ -439,7 +480,7 @@ class Runtime:
         last: dict[str, Any] = {"response": {}, "status": 0, "headers": {}}
         truncated = False
         for count in range(page.max_pages):
-            spec = command.request
+            spec = request
             extra: dict[str, Any] = {}
             if page.limit_param:
                 extra[page.limit_param] = page.limit
@@ -453,18 +494,17 @@ class Runtime:
                 spec = spec.model_copy(update={"path": next_url, "query": None})
             else:
                 spec = spec.model_copy(update={"query": {**(spec.query or {}), **extra}})
-            scope = self._scope(args, {}, sent=True)
-            last = self._raw(spec, scope, timeout=command.timeout)
-            after = self._scope(args, {}, last, sent=False)
-            self._judge(last, command.success, command.error, after)
+            last = self._raw(spec, sent_scope(), timeout=timeout)
+            after = answer_scope(last)
+            self._judge(last, success, error, after)
             try:
                 found = ex.render_text(page.items, after).data
             except ex.ExpressionError:
                 found = []
             found = found if isinstance(found, list) else []
             items += found
-            if len(items) >= MAX_ITEMS:
-                items, truncated = items[:MAX_ITEMS], True
+            if len(items) >= limit:
+                items, truncated = items[:limit], True
                 break
             if page.type in ("offset", "page"):
                 if len(found) < page.limit:

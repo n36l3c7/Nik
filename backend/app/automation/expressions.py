@@ -385,10 +385,18 @@ def _where(value: Any, key: str, op: str | None = None, wanted: Any = None) -> l
     return [item for item in _listed(value) if compare(lookup(item, key), op, wanted)]
 
 
-def _map(value: Any, **pairs: Any) -> Any:
+def _map(value: Any, *flat: Any, **pairs: Any) -> Any:
+    """Another value for each value named: ``map(high='1')``, or, for what is not a name,
+    pairs one after the other: ``map('1', 'open', '2', 'in_progress')``."""
+    if len(flat) % 2:
+        raise ValueError("pairs")
     fallback = pairs.pop("else", value)
+    wanted = _text(value).casefold()
+    for at in range(0, len(flat), 2):
+        if wanted == _text(flat[at]).casefold():
+            return flat[at + 1]
     for key, mapped in pairs.items():
-        if _text(value).casefold() == key.casefold():
+        if wanted == key.casefold():
             return mapped
     return fallback
 
@@ -424,8 +432,65 @@ def _unique(value: Any) -> list:
     return seen
 
 
+_SEVERITY_WORDS = {
+    "informational": "low", "info": "low", "none": "low", "low": "low", "minor": "low", "trivial": "low",
+    "lowest": "low", "medium": "medium", "moderate": "medium", "warning": "medium", "normal": "medium",
+    "high": "high", "major": "high", "important": "high", "critical": "critical", "severe": "critical",
+    "highest": "critical", "blocker": "critical", "urgent": "critical", "fatal": "critical",
+}  # fmt: skip
+
+
+def _severity(value: Any, scale: Any = "") -> str:
+    """A severity of another product as Nik's: low, medium, high or critical ("" when it is none).
+
+    Words are read as they are (``Critical``, ``moderate``…). A number from 1 to 5 counts up
+    (5 is the worst), or down with ``severity('inverse')`` for a scale where 1 is the worst (a
+    priority); a number from 0 to 100 is cut at 25, 50 and 75."""
+    text = _text(value).strip().lower()
+    if not text:
+        return ""
+    if text in _SEVERITY_WORDS:
+        return _SEVERITY_WORDS[text]
+    try:
+        number = float(text.split(" ")[0].strip("p-"))
+    except ValueError:
+        return ""
+    inverse = _text(scale).strip().lower() == "inverse"
+    if number != number or number < 0:
+        return ""
+    if number <= 5:
+        step = max(1, min(5, int(round(number)) or 1))
+        up = ("low", "low", "medium", "high", "critical")
+        down = ("critical", "high", "medium", "low", "low")
+        return (down if inverse else up)[step - 1]
+    return "low" if number < 25 else "medium" if number < 50 else "high" if number < 75 else "critical"
+
+
+def _regex_extract(value: Any, pattern: Any, group: Any = 0) -> str:
+    """The part of a text a pattern finds (a group of it, by number or by name); "" when it finds none.
+    The pattern is matched with a time limit, never with the unbounded ``re``."""
+    import regex
+
+    source = _text(pattern)
+    if not source or len(source) > 500:
+        raise ValueError("pattern")
+    try:
+        found = regex.search(source, _text(value)[:100_000], timeout=0.5)
+    except (TimeoutError, regex.error):
+        raise ValueError("pattern") from None
+    if found is None:
+        return ""
+    try:
+        part = found.group(group if isinstance(group, str) else int(group))
+    except (IndexError, ValueError, TypeError):
+        raise ValueError("group") from None
+    return part or ""
+
+
 FILTERS = {
     "default": None,  # handled by the evaluator: it is the one filter that takes a missing value
+    "severity": _severity,
+    "regex_extract": _regex_extract,
     "in_list": None,  # handled by the evaluator: the scope knows the lists
     "length": lambda v: len(v) if isinstance(v, (list, tuple, dict, str)) else 0,
     "join": lambda v, sep=", ": _text(sep).join(_text(item) for item in _listed(v)),

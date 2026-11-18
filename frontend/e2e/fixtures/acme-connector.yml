@@ -26,3 +26,13 @@ commands:
       json: { title: "{{ args.title }}" }
     outputs: { number: "{{ response.number }}" }
     sample: { number: T-0000 }
+fetch:
+  interval_seconds: 3600
+  first_fetch: 1 days
+  request: { method: GET, path: /tickets, query: { since: "{{ state.last_time }}" } }
+  items: "{{ response.tickets }}"
+  item_id: "{{ item.number }}"
+  first_state: { last_time: "{{ first.iso }}" }
+  next_state: { last_time: "{{ items | last | get('created') }}" }
+mirror:
+  get: { command: get-ticket }

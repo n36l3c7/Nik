@@ -636,3 +636,38 @@ def test_migration_0031_adds_the_lists_and_moves_what_the_settings_held(tmp_path
         assert not set(LIST_TABLES) & set(sa.inspect(conn).get_table_names())
         doc = json.loads(conn.execute(sa.text("SELECT doc FROM settings WHERE id = 1")).scalar())
         assert doc["iocAllowlist"] == ["corp.example"] and doc["mail"]["orgDomains"] == ["corp.example"]
+
+
+def test_migration_0032_adds_the_tables_and_columns_of_fetching(tmp_path, monkeypatch):
+    from app.core.models import FETCH_COLUMNS, FETCH_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        # A connection as releases before this one knew it, and one table that is there already.
+        conn.execute(sa.text("CREATE TABLE connections (id VARCHAR(32) PRIMARY KEY, name VARCHAR(80) NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO connections (id, name) VALUES ('c1', 'SOC')"))
+        conn.execute(sa.text("CREATE TABLE mappers (id VARCHAR(32) PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0031_lists")
+    command.upgrade(cfg, "0032_fetch_mappers")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(FETCH_TABLES) <= set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("mappers")} == {"id"}  # left as it was
+        assert set(FETCH_COLUMNS["connections"]) <= {c["name"] for c in inspector.get_columns("connections")}
+        # The connection that was there fetches nothing.
+        assert conn.execute(sa.text("SELECT fetch_enabled, fetch_state FROM connections")).one() in (
+            (0, None),
+            (False, None),
+        )
+    command.stamp(cfg, "0031_lists")
+    command.upgrade(cfg, "0032_fetch_mappers")  # again: nothing to do
+    command.downgrade(cfg, "0031_lists")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(FETCH_TABLES) & set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("connections")} == {"id", "name"}

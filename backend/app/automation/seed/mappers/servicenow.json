@@ -1,0 +1,67 @@
+{
+  "incoming": [
+    {
+      "to": "name",
+      "from": "{{ item.short_description }}"
+    },
+    {
+      "to": "details",
+      "from": "{{ item.description }}"
+    },
+    {
+      "to": "severity",
+      "from": "{{ item.priority | severity('inverse') }}"
+    },
+    {
+      "to": "status",
+      "from": "{{ item.state | map('1', 'open', '2', 'in_progress', '3', 'in_progress', '6', 'closed', '7', 'closed', '8', 'closed') }}"
+    },
+    {
+      "to": "ticket",
+      "from": "{{ item.number }}"
+    },
+    {
+      "to": "category",
+      "from": "{{ item.category }}"
+    },
+    {
+      "to": "source_id",
+      "from": "{{ item.sys_id }}"
+    },
+    {
+      "to": "mirror_id",
+      "from": "{{ item.sys_id }}"
+    },
+    {
+      "to": "mirror_direction",
+      "from": "in"
+    },
+    {
+      "to": "Ticket(val.ID == obj.ID)",
+      "from": {
+        "ID": "{{ item.sys_id }}",
+        "Number": "{{ item.number }}",
+        "System": "ServiceNow",
+        "Status": "{{ item.state }}"
+      }
+    }
+  ],
+  "outgoing": [
+    {
+      "to": "short_description",
+      "from": "{{ incident.name }}"
+    },
+    {
+      "to": "description",
+      "from": "{{ incident.details }}"
+    },
+    {
+      "to": "urgency",
+      "from": "{{ incident.severity | map(critical='1', high='1', medium='2', low='3') }}"
+    }
+  ],
+  "classifier": {
+    "rules": [],
+    "defaultType": null
+  }
+}

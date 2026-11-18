@@ -9,12 +9,18 @@
 # example "itil"). An instance that only takes OAuth is not served by this
 # file yet.
 #
+# Fetching brings in the incidents opened since the last cycle, oldest first
+# (sys_created_on, which the Table API gives and compares in UTC as
+# "yyyy-MM-dd HH:mm:ss"). Mirroring reads an incident by its sys_id, and its
+# comments from the journal (sys_journal_field), which the account must be
+# allowed to read.
+#
 # The fields of an incident differ from one company to another. The commands
 # name the common ones; any other is set with "update-incident", which takes
 # the fields to change as an object: {"u_site": "Milan", "state": "2"}.
 name: ServiceNow
 id: servicenow
-version: 2
+version: 3
 description: Incidents and their comments in ServiceNow.
 api_version: "Table API (/api/now/table), release Australia"
 verified: false
@@ -129,3 +135,95 @@ commands:
       number: "{{ response.result.number }}"
       sys_id: "{{ response.result.sys_id }}"
     sample: { number: INC0000001, sys_id: 00000000000000000000000000000000 }
+
+  - name: get-incident-by-id
+    description: An incident, by its sys_id, with the values as they are stored (not their labels).
+    arguments:
+      - { name: sys_id, type: text, required: true, description: The sys_id of the incident }
+    request:
+      method: GET
+      path: "/api/now/table/incident/{{ args.sys_id }}"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      incident: "{{ response.result }}"
+
+  - name: get-comments
+    description: The comments of an incident, oldest first.
+    arguments:
+      - { name: sys_id, type: text, required: true, description: The sys_id of the incident }
+    request:
+      method: GET
+      path: /api/now/table/sys_journal_field
+      query:
+        sysparm_query: "element_id={{ args.sys_id }}^element=comments^ORDERBYsys_created_on"
+        sysparm_fields: "sys_id,value,sys_created_by,sys_created_on"
+        sysparm_limit: 100
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      comments: "{{ response.result }}"
+
+fetch:
+  interval_seconds: 120
+  first_fetch: 3 days
+  request:
+    method: GET
+    path: /api/now/table/incident
+    query:
+      sysparm_query: "sys_created_on>{{ state.last_time }}^ORDERBYsys_created_on"
+  error: { message: "{{ response.error.message }}" }
+  pagination:
+    type: offset
+    param: sysparm_offset
+    limit_param: sysparm_limit
+    limit: 100
+    items: "{{ response.result }}"
+    max_pages: 2
+  item_id: "{{ item.sys_id }}"
+  occurred: "{{ item.opened_at }}"
+  first_state:
+    last_time: "{{ first.epoch | date('%Y-%m-%d %H:%M:%S') }}"
+  next_state:
+    last_time: "{{ items | last | get('sys_created_on') }}"
+
+schema:
+  incoming:
+    - { name: sys_id, type: text, description: The id of the incident in ServiceNow }
+    - { name: number, type: text, description: "Its number: INC0010001" }
+    - { name: short_description, type: text }
+    - { name: description, type: text }
+    - { name: priority, type: number, description: "1 (critical) to 5 (planning)" }
+    - { name: urgency, type: number, description: "1 (high) to 3 (low)" }
+    - { name: impact, type: number, description: "1 (high) to 3 (low)" }
+    - { name: state, type: number, description: "1 new, 2 in progress, 3 on hold, 6 resolved, 7 closed, 8 canceled" }
+    - { name: category, type: text }
+    - { name: opened_at, type: date }
+    - { name: sys_created_on, type: date }
+    - { name: close_notes, type: text }
+  outgoing:
+    - { name: short_description, type: text }
+    - { name: description, type: text }
+    - { name: urgency, type: number }
+    - { name: impact, type: number }
+    - { name: category, type: text }
+    - { name: work_notes, type: text }
+    - { name: state, type: number }
+    - { name: close_code, type: text }
+    - { name: close_notes, type: text }
+
+mirror:
+  interval_seconds: 120
+  get: { command: get-incident-by-id }
+  item: "{{ result.incident }}"
+  update:
+    command: update-incident
+    args: { sys_id: "{{ mirror.id }}", fields: "{{ fields }}" }
+  comments:
+    list: { command: get-comments }
+    items: "{{ result.comments }}"
+    id: "{{ item.sys_id }}"
+    text: "{{ item.value }}"
+    author: "{{ item.sys_created_by }}"
+    at: "{{ item.sys_created_on }}"
+    add:
+      command: add-comment
+      args: { sys_id: "{{ mirror.id }}", text: "{{ comment.text }}" }

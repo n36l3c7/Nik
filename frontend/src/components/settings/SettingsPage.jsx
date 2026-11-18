@@ -1,10 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import {
+  ArrowLeftRight,
   Cable,
   Clock,
   DatabaseBackup,
+  DownloadCloud,
   FileSearch,
   FileText,
+  Filter,
   Fingerprint,
   Globe,
   HardDrive,
@@ -41,7 +44,10 @@ import ConnectionsSection from './sections/ConnectionsSection.jsx'
 import FieldsSection from './sections/FieldsSection.jsx'
 import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import SlaSection from './sections/SlaSection.jsx'
+import PreprocessSection from './sections/PreprocessSection.jsx'
 import ListsSection from './sections/ListsSection.jsx'
+import MappersSection from './sections/MappersSection.jsx'
+import FetchStatusSection from './sections/FetchStatusSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
@@ -81,9 +87,12 @@ const SECTION_VIEWS = {
   incidentTypes: { icon: Shapes, Component: IncidentTypesSection },
   fields: { icon: TextCursorInput, Component: FieldsSection },
   sla: { icon: Timer, Component: SlaSection },
+  preprocess: { icon: Filter, Component: PreprocessSection },
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
   connections: { icon: Cable, Component: ConnectionsSection },
+  mappers: { icon: ArrowLeftRight, Component: MappersSection },
+  fetchStatus: { icon: DownloadCloud, Component: FetchStatusSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },
   automationSwitch: { icon: OctagonX, Component: AutomationSwitchSection },
   account: { icon: UserCog, Component: MyAccountSection },

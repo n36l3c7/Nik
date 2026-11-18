@@ -388,6 +388,16 @@
           is http, https or mailto. The work plan of an incident shows a node by its name and its kind, never by what it
           is given.
         </li>
+        <li id="fetch-security">
+          <strong>Fetching and mirroring.</strong> A fetch reaches the host of its own connection and nothing else, and
+          what it brings in is data, never instructions: an item is read through the mapper, a value is checked by the
+          field it goes to, and the item as it came is shown as text. "The same incident" of a pre-processing rule is
+          found by columns of the incident, never by a query built from what the other side sent. A connection that
+          makes more than 500 incidents in an hour is paused. A mirror that sends is a standing permission, given by
+          someone who may run playbooks and recorded with their name; what it sends passes the data guard with only the
+          classes opened for that mirror, by someone who may open them. What a person set in Nik is not written over by
+          the other side unless the mapper says the field is authoritative.
+        </li>
         <li id="lists-security">
           <strong>Lists</strong> are read by whoever reads incidents and changed with <code>lists.manage</code> (the
           roles <em>admin</em> and <em>playbooks</em>). A playbook writes only to a list that says it may, which no list

@@ -8,7 +8,7 @@
         "method": "GET",
         "path": "/rest/api/2/issue/SEC-12",
         "query": {
-          "fields": "summary,status,assignee,priority,labels,created,updated"
+          "fields": "summary,description,status,assignee,priority,labels,issuetype,created,updated"
         },
         "headers": {
           "Authorization": "Bearer NDc2-personal-access-token-0123456789"

@@ -1,0 +1,49 @@
+{
+  "args": {
+    "sys_id": "9d385017c611228701d22104cc95c371"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/now/table/incident/9d385017c611228701d22104cc95c371",
+        "headers": {
+          "Authorization": "Basic bmlrLmludGVncmF0aW9uOnNuLVBhc3N3MHJkLTEyMw=="
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "result": {
+            "sys_id": "9d385017c611228701d22104cc95c371",
+            "number": "INC0010001",
+            "short_description": "Phishing: Invoice 2026",
+            "description": "A user reported a message with a link to a fake login page.",
+            "priority": "2",
+            "urgency": "2",
+            "impact": "2",
+            "state": "1",
+            "category": "security",
+            "opened_at": "2026-11-16 08:30:00",
+            "sys_created_on": "2026-11-16 08:30:05"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "incident": {
+      "sys_id": "9d385017c611228701d22104cc95c371",
+      "number": "INC0010001",
+      "short_description": "Phishing: Invoice 2026",
+      "description": "A user reported a message with a link to a fake login page.",
+      "priority": "2",
+      "urgency": "2",
+      "impact": "2",
+      "state": "1",
+      "category": "security",
+      "opened_at": "2026-11-16 08:30:00",
+      "sys_created_on": "2026-11-16 08:30:05"
+    }
+  }
+}

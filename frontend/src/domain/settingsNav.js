@@ -119,6 +119,13 @@ export const SETTINGS_GROUPS = [
         permission: 'incidents.configure',
         keywords: 'timer time to assign contain close minutes severity business hours breach deadline',
       },
+      {
+        id: 'preprocess',
+        slug: 'pre-processing',
+        label: 'Pre-processing rules',
+        permission: 'incidents.configure',
+        keywords: 'fetch alerts drop duplicate link existing dedup noise script before incident',
+      },
     ],
   },
   {
@@ -151,6 +158,20 @@ export const SETTINGS_GROUPS = [
         label: 'Connections',
         permission: 'connectors.manage',
         keywords: 'credentials address token instance test systems',
+      },
+      {
+        id: 'mappers',
+        slug: 'classifiers-and-mappers',
+        label: 'Classifiers and mappers',
+        permission: 'connectors.manage',
+        keywords: 'mapping fields vendor incoming outgoing fetch alerts type classify sample expression',
+      },
+      {
+        id: 'fetchStatus',
+        slug: 'fetch-status',
+        label: 'Fetch status',
+        permission: 'connectors.manage',
+        keywords: 'alerts incoming polling failing paused items incomplete mirror queue turn on',
       },
       {
         id: 'automationNetwork',
