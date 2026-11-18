@@ -181,6 +181,16 @@ def housekeeping(db, now: float) -> None:
             if run is not None and run.status == "running" and run.deadline < now:
                 engine._finish(db, run, "failed", "The run took longer than the playbook allows", now)
         db.commit()
+    # Tasks past their time, questions nobody answered, reminders.
+    from .. import tasks, timers
+
+    tasks.tick(db, now)
+    # SLA timers: what the type of an incident times, and what is past its time.
+    timers.tick(db, now)
+    from .. import lists
+
+    if lists.prune(db, now):
+        db.commit()
     reclaim(db, now)
     global _storage_looked
     if abs(now - _storage_looked) >= STORAGE_LOOK_EVERY:

@@ -103,7 +103,8 @@ def test_plain_text_and_slash_commands(admin: TestClient):
         typed(admin, "/assign").status_code == 201 and admin.get("/api/incidents/i1").json().get("assignee", "") == ""
     )
     assert typed(admin, "/close").json() == {"action": "close"}
-    assert typed(admin, "/task Call the bank").json()["detail"] == "Tasks come with the next release of Nik"
+    assert typed(admin, "/task Call the bank").json()["action"] == "task"
+    assert typed(admin, "/task").json()["detail"].startswith("/task is followed by what to do")
     assert typed(admin, "/note").json()["detail"] == "/note is followed by the note"
     assert typed(admin, "/dance").status_code == 400 and typed(admin, "x", "nope").status_code == 404
 

@@ -10,7 +10,7 @@ import { entryOf, freePosition, headingOf, nodeFrom } from '../../domain/automat
 import {
   DEFAULT_PORT,
   MAX_NODES,
-  PORT_NAMES,
+  portName,
   addNode,
   connect,
   copyOf,
@@ -108,7 +108,7 @@ function NodeList({ graph, catalog, problems, selected, onSelect }) {
                 </td>
                 <td className="border-b border-line-soft px-3 py-1.5 text-fg-muted">
                   {(outgoing.get(node.id) ?? [])
-                    .map((edge) => `${PORT_NAMES[edge.port]} → ${nodeOf(graph, edge.to)?.name || edge.to}`)
+                    .map((edge) => `${portName(node, edge.port)} → ${nodeOf(graph, edge.to)?.name || edge.to}`)
                     .join('; ') || '—'}
                 </td>
                 <td className="border-b border-line-soft px-3 py-1.5 text-high-fg">

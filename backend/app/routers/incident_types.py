@@ -31,6 +31,8 @@ class TypeIn(BaseModel):
     fields: list[dict[str, Any]] | None = None
     layout: dict[str, Any] | None = None
     closeReasons: list[str] | None = None
+    # For each timer: {field, minutes, bySeverity: {high: 60, …}, businessHours}.
+    sla: list[dict[str, Any]] | None = None
     defaultPlaybookId: str | None = Field(default=None, max_length=32)
     autoRun: bool | None = None
     visibleToRoles: list[str] | None = None
@@ -111,6 +113,21 @@ def update_type(
         raise HTTPException(status_code=400, detail=error.message) from None
     _apply(row, cleaned, caller.actor)
     audit.record(db, caller.actor, "type.update", f'Changed the incident type "{row.name}"', target=row.name)
+    if "sla" in cleaned:
+        # The open incidents of the type follow its new SLA at once.
+        import time
+
+        from sqlalchemy import select
+
+        from .. import timers
+        from ..core.models import Incident
+
+        db.flush()
+        of_type = Incident.type_id == row.id
+        if row.id == types.UNCLASSIFIED:
+            of_type = of_type | Incident.type_id.is_(None)
+        for incident in db.scalars(select(Incident).where(of_type, Incident.status != "closed")):
+            timers.sync(db, incident, time.time())
     db.commit()
     return types.out(db, row)
 

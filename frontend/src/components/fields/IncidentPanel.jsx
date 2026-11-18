@@ -8,6 +8,7 @@ import { panelSection, typeOf, valuesOf } from '../../domain/fields.js'
 import { Badge, Button } from '../ui/index.js'
 import EditFieldsDialog from './EditFieldsDialog.jsx'
 import FieldList from './FieldList.jsx'
+import Timers from './Timers.jsx'
 
 /*
  * ============================================================================
@@ -139,6 +140,7 @@ export default function IncidentPanel({ incident }) {
         dense
         className="grid-cols-2 sm:grid-cols-3 min-[1100px]:grid-cols-1"
       />
+      <Timers incident={incident} />
       {editing && (
         <EditFieldsDialog
           incident={incident}

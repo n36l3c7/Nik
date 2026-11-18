@@ -13,17 +13,20 @@ import {
 } from '../../domain/automation/catalog.js'
 import {
   OPERATORS,
-  PORTS,
-  PORT_NAMES,
   UNARY,
   connect,
   disconnect,
   edgesFrom,
   nodeOf,
+  portName,
+  portsOf,
+  pruneEdges,
   renameNode,
   unreadable,
   updateNode,
 } from '../../domain/automation/graph.js'
+import { ROLES } from '../../domain/permissions.js'
+import { useFields } from '../../context/FieldsContext.jsx'
 import ExpressionInput from './ExpressionInput.jsx'
 import {
   DurationInput,
@@ -436,6 +439,339 @@ function Pairs({ value, onChange, tree, disabled }) {
   )
 }
 
+const ROLE_OPTIONS = ROLES.filter((role) => role.shown).map((role) => ({ value: role.id, label: role.label }))
+const INPUT_TYPES = [
+  { value: 'text', label: 'text' },
+  { value: 'number', label: 'number' },
+  { value: 'bool', label: 'yes / no' },
+]
+
+/** Who a task or a question is for: the owner of the incident, a user, a role, or anyone (a question). */
+function Assignee({ value, onChange, tree, disabled, anyone }) {
+  const who = value ?? {}
+  const mode = who.user !== undefined ? 'user' : who.role ? 'role' : who.owner ? 'owner' : anyone ? 'anyone' : 'owner'
+  return (
+    <Field label="For" hint={mode === 'owner' ? 'Whoever has the incident when it is done.' : null}>
+      {(id) => (
+        <div className="flex flex-col gap-1.5">
+          <Seg
+            label="Who it is for"
+            value={mode}
+            disabled={disabled}
+            onChange={(next) =>
+              onChange(
+                next === 'user'
+                  ? { user: '' }
+                  : next === 'role'
+                    ? { role: 'analyst' }
+                    : next === 'owner'
+                      ? { owner: true }
+                      : undefined,
+              )
+            }
+            options={[
+              ...(anyone ? [{ value: 'anyone', label: 'Anyone' }] : []),
+              { value: 'owner', label: 'The owner' },
+              { value: 'user', label: 'A user' },
+              { value: 'role', label: 'A role' },
+            ]}
+          />
+          {mode === 'user' && (
+            <ExpressionInput
+              id={id}
+              label="The user it is for"
+              tree={tree}
+              disabled={disabled}
+              value={who.user ?? ''}
+              placeholder="anna, or {{ incident.owner }}"
+              onChange={(user) => onChange({ user })}
+            />
+          )}
+          {mode === 'role' && (
+            <SelectInput
+              id={id}
+              aria-label="The role it is for"
+              value={who.role}
+              disabled={disabled}
+              options={ROLE_OPTIONS}
+              onChange={(role) => onChange({ role })}
+            />
+          )}
+        </div>
+      )}
+    </Field>
+  )
+}
+
+/** The fields of the incident a person fills when they complete a task or answer a question. */
+function FieldsToFill({ value, onChange, disabled, problem }) {
+  const { fields } = useFields()
+  const chosen = Array.isArray(value) ? value : []
+  const fillable = fields.filter((field) => field.appliesTo === 'incident' && field.writable !== false)
+  const left = fillable.filter((field) => !chosen.includes(field.name))
+  const labelOf = (name) => fillable.find((field) => field.name === name)?.label || name
+  return (
+    <Field label="Fields to fill" hint="Written to the incident when it is done." problem={problem}>
+      {(id) => (
+        <div className="flex flex-col gap-1">
+          {chosen.map((name) => (
+            <div key={name} className="flex items-center justify-between gap-1 border border-line-soft pl-2 text-xs">
+              <span className="min-w-0 truncate py-1">
+                {labelOf(name)} <span className="font-mono text-[11px] text-fg-subtle">{name}</span>
+              </span>
+              {!disabled && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  icon={X}
+                  aria-label={`Do not ask for ${labelOf(name)}`}
+                  onClick={() => {
+                    const next = chosen.filter((item) => item !== name)
+                    onChange(next.length ? next : undefined)
+                  }}
+                />
+              )}
+            </div>
+          ))}
+          {!disabled && left.length > 0 && (
+            <select
+              id={id}
+              aria-label="Add a field to fill"
+              value=""
+              onChange={(event) => onChange([...chosen, event.target.value])}
+              className={`${INPUT} cursor-pointer text-fg-muted`}
+            >
+              <option value="">+ ask for a field…</option>
+              {left.map((field) => (
+                <option key={field.name} value={field.name}>
+                  {field.label || field.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+    </Field>
+  )
+}
+
+/** What a question asks for besides its choices: values for the playbook alone. */
+function AskedFor({ value, onChange, disabled }) {
+  const rows = Array.isArray(value) ? value : []
+  const write = (next) => onChange(next.length ? next : undefined)
+  const change = (index, patch) => write(rows.map((row, at) => (at === index ? { ...row, ...patch } : row)))
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((row, index) => (
+        <div
+          key={index}
+          role="group"
+          aria-label={`Asked for ${index + 1}`}
+          className="flex flex-col gap-1 border border-line-soft p-2"
+        >
+          <div className="flex gap-1">
+            <TextInput
+              aria-label={`Asked for ${index + 1}: label`}
+              value={row.label ?? ''}
+              disabled={disabled}
+              placeholder="Serial number"
+              onChange={(label) => change(index, { label })}
+            />
+            {!disabled && (
+              <Button
+                variant="ghost"
+                size="xs"
+                icon={X}
+                aria-label={`Remove what is asked for ${index + 1}`}
+                onClick={() => write(rows.filter((_, at) => at !== index))}
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <TextInput
+              aria-label={`Asked for ${index + 1}: name`}
+              value={row.name ?? ''}
+              disabled={disabled}
+              placeholder="serial"
+              onChange={(name) => change(index, { name: name.toLowerCase().replace(/[^a-z0-9_]/g, '_') })}
+            />
+            <SelectInput
+              aria-label={`Asked for ${index + 1}: type`}
+              value={row.type ?? 'text'}
+              disabled={disabled}
+              options={INPUT_TYPES}
+              onChange={(type) => change(index, { type })}
+            />
+          </div>
+          <Switch
+            label="Needed"
+            checked={Boolean(row.required)}
+            disabled={disabled}
+            onChange={(required) => change(index, { required })}
+          />
+        </div>
+      ))}
+      {!disabled && rows.length < 10 && (
+        <Button
+          variant="secondary"
+          size="xs"
+          icon={Plus}
+          className="self-start"
+          onClick={() => write([...rows, { name: `value_${rows.length + 1}`, label: '', type: 'text' }])}
+        >
+          Ask for a value
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** An interval that can be left out: "never", or every so long. */
+function Every({ label, hint, none, some, value, start, onChange, disabled }) {
+  return (
+    <Field label={label} hint={hint}>
+      {(id) => (
+        <div className="flex flex-wrap items-center gap-2">
+          <Seg
+            label={label}
+            value={value ? 'some' : 'none'}
+            disabled={disabled}
+            onChange={(next) => onChange(next === 'some' ? start : undefined)}
+            options={[
+              { value: 'none', label: none },
+              { value: 'some', label: some },
+            ]}
+          />
+          {value ? (
+            <DurationInput
+              id={id}
+              value={value}
+              disabled={disabled}
+              onChange={(seconds) => onChange(seconds ?? start)}
+            />
+          ) : null}
+        </div>
+      )}
+    </Field>
+  )
+}
+
+/** The settings of a task or of a question: what is asked, of whom, by when, and what is filled. */
+function PersonSettings({ node, tree, disabled, onConfig, problemAt }) {
+  const config = node.config ?? {}
+  const task = node.kind === 'task'
+  const what = task ? 'title' : 'question'
+  return (
+    <>
+      <Field
+        label={task ? 'What to do' : 'Question'}
+        required
+        hint={task ? 'The title of the task.' : 'What the person who answers reads.'}
+        problem={problemAt(what)}
+      >
+        {(id) => (
+          <ExpressionInput
+            id={id}
+            tree={tree}
+            disabled={disabled}
+            value={config[what] ?? ''}
+            placeholder={task ? 'Collect the laptop of {{ incident.username }}' : 'Is the disk encrypted?'}
+            onChange={(text) => onConfig({ [what]: text })}
+          />
+        )}
+      </Field>
+      <Field label="Instructions" hint="Shown on the page of the task. Markdown.">
+        {(id) => (
+          <ExpressionInput
+            id={id}
+            multiline
+            tree={tree}
+            disabled={disabled}
+            value={config.instructions ?? ''}
+            onChange={(instructions) => onConfig({ instructions: instructions || undefined })}
+          />
+        )}
+      </Field>
+      <Assignee
+        value={config.assignee}
+        tree={tree}
+        disabled={disabled}
+        anyone={!task}
+        onChange={(assignee) => onConfig({ assignee })}
+      />
+      {!task && (
+        <Field
+          label="Choices"
+          hint="One edge leaves the node for each choice. With none, the answer is the form alone."
+          problem={problemAt('choices')}
+        >
+          {() => (
+            <ListInput
+              label="The choices, separated by commas"
+              tree={tree}
+              value={config.choices ?? []}
+              disabled={disabled}
+              onChange={(choices) =>
+                onConfig({ choices: Array.isArray(choices) && choices.length ? choices.slice(0, 6) : undefined })
+              }
+            />
+          )}
+        </Field>
+      )}
+      {!task && (
+        <Field label="Asks for" hint="Values the steps after read as {{ node.values.name }}.">
+          {() => <AskedFor value={config.inputs} disabled={disabled} onChange={(inputs) => onConfig({ inputs })} />}
+        </Field>
+      )}
+      <FieldsToFill
+        value={config.fields}
+        disabled={disabled}
+        problem={problemAt('fields')}
+        onChange={(fields) => onConfig({ fields })}
+      />
+      {task && (
+        <Field
+          label="Due"
+          hint='In how long: 30m, 2h, 3d, or an expression. Past it the task is overdue and the "when overdue" edge is followed too.'
+          problem={problemAt('due')}
+        >
+          {(id) => (
+            <ExpressionInput
+              id={id}
+              tree={tree}
+              disabled={disabled}
+              value={config.due === undefined || config.due === null ? '' : String(config.due)}
+              placeholder="No due time"
+              onChange={(due) => onConfig({ due: due.trim() || undefined })}
+            />
+          )}
+        </Field>
+      )}
+      <Every
+        label="Reminder"
+        none="None"
+        some="Every"
+        value={config.reminder_seconds}
+        start={3600}
+        disabled={disabled}
+        onChange={(reminder_seconds) => onConfig({ reminder_seconds })}
+      />
+      {!task && (
+        <Every
+          label="Waits"
+          hint={config.timeout_seconds ? 'Then the "no answer" edge is followed.' : 'Until someone answers.'}
+          none="Without limit"
+          some="For"
+          value={config.timeout_seconds}
+          start={86400}
+          disabled={disabled}
+          onChange={(timeout_seconds) => onConfig({ timeout_seconds })}
+        />
+      )}
+    </>
+  )
+}
+
 /** The settings that depend on the kind of node. */
 function KindSettings({
   node,
@@ -733,6 +1069,9 @@ function KindSettings({
           />
         </>
       )
+    case 'task':
+    case 'ask':
+      return <PersonSettings node={node} tree={tree} disabled={disabled} onConfig={onConfig} problemAt={problemAt} />
     case 'action':
     case 'script': {
       if (!entry) {
@@ -910,7 +1249,7 @@ function KindSettings({
 
 /** Where the node goes next, port by port; an edge can be drawn and removed here. */
 function GoesTo({ graph, node, disabled, onGraph, onRefused, onSelectNode }) {
-  const ports = PORTS[node.kind] ?? []
+  const ports = portsOf(node)
   const outgoing = edgesFrom(graph).get(node.id) ?? []
   if (ports.length === 0) return null
   return (
@@ -922,8 +1261,8 @@ function GoesTo({ graph, node, disabled, onGraph, onRefused, onSelectNode }) {
           (other) => other.id !== node.id && other.kind !== 'trigger' && !targets.some((edge) => edge.to === other.id),
         )
         return (
-          <div key={port} role="group" aria-label={`Port ${PORT_NAMES[port]}`} className="flex flex-col gap-1">
-            <span className="font-mono text-[11px] text-fg-muted">{PORT_NAMES[port]}</span>
+          <div key={port} role="group" aria-label={`Port ${portName(node, port)}`} className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] text-fg-muted">{portName(node, port)}</span>
             {targets.map((edge) => (
               <div key={edge.to} className="flex items-center justify-between gap-1 border border-line-soft pl-2">
                 <button
@@ -938,7 +1277,7 @@ function GoesTo({ graph, node, disabled, onGraph, onRefused, onSelectNode }) {
                     variant="ghost"
                     size="xs"
                     icon={X}
-                    aria-label={`Remove the edge "${PORT_NAMES[port]}" to ${nodeOf(graph, edge.to)?.name || edge.to}`}
+                    aria-label={`Remove the edge "${portName(node, port)}" to ${nodeOf(graph, edge.to)?.name || edge.to}`}
                     title="Remove this edge"
                     onClick={() => onGraph(disconnect(graph, node.id, port, edge.to))}
                   />
@@ -947,7 +1286,7 @@ function GoesTo({ graph, node, disabled, onGraph, onRefused, onSelectNode }) {
             ))}
             {!disabled && others.length > 0 && (
               <select
-                aria-label={`Draw an edge "${PORT_NAMES[port]}" to`}
+                aria-label={`Draw an edge "${portName(node, port)}" to`}
                 value=""
                 onChange={(event) => {
                   const result = connect(graph, node.id, port, event.target.value)
@@ -1162,14 +1501,17 @@ export default function Inspector({
   const elsewhere = mine.filter(
     (problem) =>
       !problem.field ||
-      !/^(args\.|event$|cron$|items$|max$|seconds$|timeout$|question$|playbook$|connection$)/.test(problem.field),
+      !/^(args\.|event$|cron$|items$|max$|seconds$|timeout$|question$|title$|choices$|fields$|due$|playbook$|connection$)/.test(
+        problem.field,
+      ),
   )
   const notReadable = unreadable(graph, node.id)
   const update = updates.find((item) => item.node === node.id)
   const onConfig = (patch) => {
     const config = { ...node.config, ...patch }
     for (const key of Object.keys(config)) if (config[key] === undefined) delete config[key]
-    onGraph(updateNode(graph, node.id, { config }))
+    // A choice of a question that is gone takes its edges with it.
+    onGraph(pruneEdges(updateNode(graph, node.id, { config }), node.id))
   }
   const commitId = () => {
     if (idDraft === null || idDraft === node.id) {
@@ -1263,6 +1605,20 @@ export default function Inspector({
             />
           )}
         </Field>
+
+        {node.kind !== 'trigger' && (
+          <Field label="Phase" hint="Groups this step in the work plan of an incident: Triage, Containment…">
+            {(id) => (
+              <TextInput
+                id={id}
+                value={node.config?.phase ?? ''}
+                disabled={readOnly}
+                maxLength={40}
+                onChange={(phase) => onConfig({ phase: phase || undefined })}
+              />
+            )}
+          </Field>
+        )}
 
         <KindSettings
           node={node}

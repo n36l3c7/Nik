@@ -57,6 +57,15 @@ SEVERITIES = ("low", "medium", "high", "critical")
 STATUSES = ("open", "in_progress", "closed")
 
 
+def _timers(db: OrmSession, incident: Incident) -> None:
+    """The SLA timers of the incident follow what was just saved (an owner, a closing)."""
+    import time
+
+    from .. import timers
+
+    timers.sync(db, incident, time.time())
+
+
 def _sync_columns(incident: Incident) -> None:
     """Refresh the mirrored scalar columns from the incident ``doc``."""
     doc = incident.doc or {}
@@ -317,6 +326,7 @@ def create_incident(
         _sync_columns(existing)
         incident = existing
     db.flush()
+    _timers(db, incident)
     reindex_incident(db, incident)
 
     _audit(db, caller, "incident.create", f'Created incident "{doc.get("name") or incident_id}"', incident)
@@ -406,6 +416,7 @@ def patch_incident(
     row.doc = merged
     flag_modified(row, "doc")
     _sync_columns(row)
+    _timers(db, row)
     if row.status == "closed" and not was_closed:
         problem = field_registry.closing_problem(db, row)
         if problem:

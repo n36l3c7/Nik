@@ -36,6 +36,9 @@ import { api } from './services/api.js'
 import { currentPath, onLocationChange, setPath } from './lib/location.js'
 import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
 import { automationFromPath, automationPath } from './domain/automationNav.js'
+import { tasksFromPath, tasksPath } from './domain/tasks.js'
+import { useTasks } from './context/TasksContext.jsx'
+import NotificationsDialog from './components/tasks/NotificationsDialog.jsx'
 import { mailboxFormatOf } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
@@ -59,6 +62,7 @@ import { orderTabs, typeOf } from './domain/fields.js'
 
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
+const TasksPage = lazy(() => import('./components/tasks/TasksPage.jsx'))
 
 /*
  * ============================================================================
@@ -472,6 +476,26 @@ export default function App() {
     : []
   const automationShown = Boolean(automation) && canAutomate && !settings
 
+  // My tasks, in the same way: /tasks and /tasks/<id>.
+  const [tasksRoute, setTasksRoute] = useState(() => tasksFromPath(window.location.pathname))
+  useEffect(() => onLocationChange(() => setTasksRoute(tasksFromPath(window.location.pathname))), [])
+  const tasksReturn = useRef(null)
+  const openTasks = useCallback((id = null, { replace = false } = {}) => {
+    if (!tasksFromPath(window.location.pathname)) tasksReturn.current = currentPath()
+    setPath(tasksPath(id), { replace })
+  }, [])
+  const closeTasks = useCallback(() => {
+    const back = tasksReturn.current
+    tasksReturn.current = null
+    setPath(back ?? (activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'))
+  }, [activeIncidentId])
+  useEffect(() => {
+    if (!tasksRoute) tasksReturn.current = null
+  }, [tasksRoute])
+  const { count: taskCount, unread: unreadNotifications } = useTasks()
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const tasksShown = Boolean(tasksRoute) && can('read') && !settings && !automationShown
+
   // The list of keyboard shortcuts ("?" or the header button).
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
@@ -699,6 +723,7 @@ export default function App() {
         onPanel={(next) => {
           if (settings) closeSettings()
           else if (automationShown) closeAutomation()
+          else if (tasksShown) closeTasks()
           setPanel(next)
         }}
         counts={{
@@ -707,6 +732,9 @@ export default function App() {
           iocs: library.counts.all,
           alerts: library.alerts,
           approvals: canAutomate ? approvalsWaiting : 0,
+          tasks: taskCount.mine,
+          tasksOverdue: taskCount.overdue,
+          unread: unreadNotifications,
         }}
         can={can}
         onSearch={() => setPaletteOpen(true)}
@@ -717,7 +745,11 @@ export default function App() {
         settingsOpen={Boolean(settings)}
         onAutomation={() => (automationShown ? closeAutomation() : openAutomation())}
         automationOpen={automationShown}
+        onTasks={() => (tasksShown ? closeTasks() : openTasks())}
+        tasksOpen={tasksShown}
+        onNotifications={() => setNotificationsOpen(true)}
       />
+      {notificationsOpen && <NotificationsDialog onClose={() => setNotificationsOpen(false)} />}
       {settings && (
         <SettingsPage
           section={settings.id}
@@ -746,7 +778,18 @@ export default function App() {
           />
         </Suspense>
       )}
-      {!settings && !automationShown && panel && canRead && (
+      {tasksShown && (
+        <Suspense
+          fallback={
+            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
+              Loading tasks…
+            </p>
+          }
+        >
+          <TasksPage taskId={tasksRoute.id} onSelect={openTasks} onClose={closeTasks} onOpenIncident={openIncident} />
+        </Suspense>
+      )}
+      {!settings && !automationShown && !tasksShown && panel && canRead && (
         <>
           <Sidebar
             panel={panel}
@@ -761,7 +804,7 @@ export default function App() {
         </>
       )}
 
-      <div className={settings || automationShown ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
+      <div className={settings || automationShown || tasksShown ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
         <Header
           onOpenSearch={() => setPaletteOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}

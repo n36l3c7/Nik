@@ -287,6 +287,11 @@
 │                                   #   by key, provenance (who set each item last)
 ├── war_room.py                     # The War Room: entries, the read adapter over an incident's notes
 ├── commands.py                     # The command line of the War Room: its grammar, a command as a run of one node
+├── tasks.py                        # Tasks and questions: who may complete one, its form, reminders and overdue;
+│                                   #   what an account is told (notifications)
+├── work_plan.py                    # The work plan of an incident: the steps of its playbooks by phase, its tasks
+├── timers.py                       # SLA timers: start, pause, stop, business hours, the rules of a type, breaches
+├── lists.py                        # Lists by name: the store, the short cache, the settings that became lists
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
 ├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
 │                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
@@ -1197,6 +1202,54 @@
         (<code>routers/incidents.py</code>) and taken out on the way in, where they go through the registry. Migrations
         <code>0028_fields_types</code> and <code>0029_context_war_room</code> add the tables and columns where they are
         missing.
+      </p>
+      <h3 id="tasks-lists">Tasks, timers and lists (4.4)</h3>
+      <ul>
+        <li>
+          <strong>Tasks</strong> (<code>tasks</code>, <code>tasks.py</code>). A <em>task</em> or an <em>ask</em> node of
+          a playbook makes a row and its step waits (<code>step.waiting = {kind: "task", id}</code>); completing the
+          task calls <code>engine.resume(step, port, output)</code>, which is what lets a run go on by the port of an
+          answer. The ports of a question are its choices (<code>graph.ports_of</code>, mirrored in
+          <code>domain/automation/graph.js</code>). A task past its due time is left by <em>overdue</em> as well and
+          stays open: <code>engine.follow</code> takes that one edge and <code>_resolve</code> leaves an edge already
+          taken alone when the step ends. <code>tasks.tick</code>, called by the worker every minute, sends reminders,
+          marks what is overdue and gives up the questions nobody answered. A run that waits for a person is
+          <code>waiting</code>, and its deadline moves by the time it waited.
+        </li>
+        <li>
+          <strong>The work plan</strong> (<code>work_plan.py</code>) is read, never stored: for each run on the
+          incident, the nodes of its version in topological order, grouped by the <code>phase</code> of their settings,
+          each with the state of its step. It gives a node's name, kind and phase and none of its other settings, so
+          whoever reads the incident may read it.
+        </li>
+        <li>
+          <strong>SLA timers</strong> (<code>timers.py</code>). A timer is the value of a field of type
+          <code>timer</code> in <code>incidents.fields</code>:
+          <code>{state, started_at, accumulated_s, due_s, breached_at, business}</code>. It is never written through
+          <code>fields.update</code>: <code>timers.sync</code> applies the <code>sla</code> of the incident's type
+          whenever an incident is saved and at every tick of the worker, and <code>timers.tick</code> marks what is past
+          its time once and publishes <code>sla.breached</code>. Business time is counted by
+          <code>business_seconds</code> from the hours of the list <code>business_hours</code>, in UTC.
+        </li>
+        <li>
+          <strong>Notifications</strong> (<code>notifications</code>): one row for each thing an account is told, read
+          through <code>/api/notifications</code>. <code>tasks.notify</code> is the only writer.
+        </li>
+        <li>
+          <strong>Lists</strong> (<code>lists</code>, <code>list_items</code>, <code>lists.py</code>). What the settings
+          document kept as arrays lives in lists Nik ships; the document holds <code>{"list": "&lt;name&gt;"}</code> in
+          their place, which is also how a feature is pointed at another list. <code>read_settings</code> fills the old
+          keys from the lists and <code>PUT /api/settings</code> writes to them, so nothing that reads the settings
+          changed. Reads go through a cache of a few seconds, dropped when this process writes a list. A watch list of
+          the IoC library is read through the same functions, by its name as a slug. In expressions,
+          <code>in_list</code> is answered by the scope (<code>Scope.in_list</code>), which the engine builds with the
+          database at hand.
+        </li>
+      </ul>
+      <p>
+        Migrations <code>0030_tasks_sla</code> (tables <code>tasks</code> and <code>notifications</code>, and a wider
+        <code>run_steps.port</code> on PostgreSQL) and <code>0031_lists</code> (the two tables, then the move of the
+        settings, once).
       </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>

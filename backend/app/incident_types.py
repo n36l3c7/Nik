@@ -34,6 +34,7 @@ TABS = (
     "summary",
     "timeline",
     "war_room",
+    "work_plan",
     "automation",
     "context",
     "iocs",
@@ -294,6 +295,13 @@ def clean(db: OrmSession, body: dict[str, Any], existing: IncidentType | None = 
             for section in kept.get("sections") or []
         ]
         out["layout"] = kept
+    if "sla" in body:
+        from . import timers
+
+        try:
+            out["sla"] = timers.clean_sla(db, body.get("sla"))
+        except timers.TimerError as error:
+            raise TypeError_(error.message) from None
     if "closeReasons" in body:
         reasons = body.get("closeReasons") or []
         if not isinstance(reasons, list) or len(reasons) > REASONS_MAX:
@@ -406,7 +414,7 @@ def out(db: OrmSession, row: IncidentType, known: dict[str, Field] | None = None
         # What the page is drawn from: the saved layout, or one made from the fields.
         "layout": row.layout or generated_layout(known, row),
         "customLayout": bool(row.layout),
-        "sla": row.sla or [],
+        "sla": _sla_out(row.sla),
         "closeReasons": row.close_reasons or [],
         "defaultPlaybookId": row.default_playbook_id,
         "autoRun": bool(row.auto_run),
@@ -415,3 +423,9 @@ def out(db: OrmSession, row: IncidentType, known: dict[str, Field] | None = None
         "updatedAt": row.updated_at,
         "updatedBy": row.updated_by,
     }
+
+
+def _sla_out(rules: list | None) -> list[dict[str, Any]]:
+    from . import timers
+
+    return timers.sla_out(rules)

@@ -59,6 +59,37 @@ FLOW = [
         ],
     },
     {
+        "id": "flow.task",
+        "kind": "task",
+        "name": "Task",
+        "description": "Give a person something to do and wait until it is done.",
+        "outputs": [
+            {"name": "by", "type": "text", "description": "Who did it"},
+            {"name": "at", "type": "text", "description": "When"},
+            {"name": "comment", "type": "text", "description": "What they wrote"},
+            {"name": "fields", "type": "object", "description": "The fields they filled, by name"},
+            {"name": "skipped", "type": "text", "description": "Why it was skipped, when it was"},
+            {"name": "overdue", "type": "bool", "description": "True after its due time, until it is done"},
+            {"name": "task", "type": "text", "description": "The id of the task"},
+        ],
+    },
+    {
+        "id": "flow.ask",
+        "kind": "ask",
+        "name": "Question",
+        "description": "Ask a person to choose or to fill a small form; go on by their answer.",
+        "outputs": [
+            {"name": "choice", "type": "text", "description": "The choice they made"},
+            {"name": "values", "type": "object", "description": "What they typed, by name"},
+            {"name": "fields", "type": "object", "description": "The fields they filled, by name"},
+            {"name": "by", "type": "text", "description": "Who answered"},
+            {"name": "at", "type": "text", "description": "When"},
+            {"name": "comment", "type": "text", "description": "What they wrote"},
+            {"name": "skipped", "type": "text", "description": "Why there is no answer, when nobody gave one"},
+            {"name": "task", "type": "text", "description": "The id of the question"},
+        ],
+    },
+    {
         "id": "flow.playbook",
         "kind": "playbook",
         "name": "Run another playbook",
@@ -104,6 +135,12 @@ class Library:
         """(id, name) of the connections of a connector."""
         rows = self.db.execute(select(Connection.id, Connection.name).where(Connection.connector_id == connector_id))
         return [(row[0], row[1]) for row in rows]
+
+    def fillable_fields(self) -> set[str]:
+        """The fields of incidents a task or a question may ask a person to fill."""
+        from .. import tasks
+
+        return tasks.fillable(self.db)
 
     def playbook_graph(self, name: str) -> dict | None:
         playbook = self.db.scalars(select(Playbook).where(Playbook.name == name)).first()

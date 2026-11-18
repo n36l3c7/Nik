@@ -13,6 +13,7 @@ import { NavigationProvider } from './context/NavigationContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 import { AutomationProvider } from './context/AutomationContext.jsx'
 import { FieldsProvider } from './context/FieldsContext.jsx'
+import { TasksProvider } from './context/TasksContext.jsx'
 import './index.css'
 
 // Application entry point.
@@ -38,7 +39,9 @@ createRoot(document.getElementById('root')).render(
                       <IocLookupProvider>
                         <IocLibraryProvider>
                           <FieldsProvider>
-                            <App />
+                            <TasksProvider>
+                              <App />
+                            </TasksProvider>
                           </FieldsProvider>
                         </IocLibraryProvider>
                       </IocLookupProvider>

@@ -104,6 +104,11 @@ export const EVENTS = {
     sample: ['list.name', 'My watched list'],
   },
   'storage.low': { label: 'The disk is nearly full', about: '', sample: ['disk.free_percent', 5] },
+  'sla.breached': {
+    label: 'A timer of an incident passes its time',
+    about: 'incident',
+    sample: ['timer.field', 'time_to_contain'],
+  },
 }
 
 /** An event as the inspector lists it: "An e-mail is analysed · mail.analysed". */
@@ -157,6 +162,16 @@ function eventFields(event) {
         { name: 'list.id', type: 'text', description: 'The id of the watched list' },
         { name: 'list.name', type: 'text', description: 'Its name' },
         { name: 'hits', type: 'list', description: 'Every hit: each with type, value, list and incident' },
+        ...INCIDENT_FIELDS,
+      ]
+    case 'sla.breached':
+      return [
+        ...fieldsOf('timer', [
+          ['field', 'text', 'The timer: time_to_assign, time_to_contain, time_to_close…'],
+          ['label', 'text', 'Its name'],
+          ['due_minutes', 'number', 'The time it was allowed'],
+          ['elapsed_minutes', 'number', 'What it had counted'],
+        ]),
         ...INCIDENT_FIELDS,
       ]
     case 'storage.low':
@@ -238,6 +253,13 @@ const defaults = (declared) =>
       .map((argument) => [argument.name, argument.default]),
   )
 
+/** Who a task or a question is for, in words. */
+export function forWhom(assignee, nobody) {
+  if (assignee?.user) return assignee.user
+  if (assignee?.role) return `the role ${assignee.role}`
+  return assignee?.owner ? 'the owner' : nobody
+}
+
 /** The settings a node starts with. */
 export function startingConfig(entry) {
   switch (entry.kind) {
@@ -251,6 +273,10 @@ export function startingConfig(entry) {
       return { seconds: 300 }
     case 'approval':
       return { question: '' }
+    case 'task':
+      return { title: '', assignee: { owner: true } }
+    case 'ask':
+      return { question: '', choices: ['Yes', 'No'] }
     case 'action':
       return { action: entry.id, args: defaults(entry.arguments) }
     case 'script':
@@ -339,6 +365,10 @@ export function summaryOf(node, entry) {
         : duration(config.seconds)
     case 'approval':
       return `${config.question || 'no question yet'} · ${config.wait_seconds ? `waits ${duration(config.wait_seconds)}` : 'waits without limit'}`
+    case 'task':
+      return `${config.title || 'nothing to do yet'} · for ${forWhom(config.assignee, 'the owner')}`
+    case 'ask':
+      return `${config.question || 'no question yet'} · to ${forWhom(config.assignee, 'anyone')}`
     case 'action': {
       if (!entry) return 'this action does not exist any more'
       // Named as its action: what it is given says more than the name twice.

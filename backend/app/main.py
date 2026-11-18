@@ -59,6 +59,7 @@ from .routers import (
     iocs,
     jobs,
     keys,
+    lists,
     mailboxes,
     mails,
     network,
@@ -69,6 +70,7 @@ from .routers import (
     search,
     settings,
     storage,
+    tasks,
     urls,
     users,
     war_room,
@@ -137,7 +139,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="4.3.0",
+    version="4.4.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -179,7 +181,9 @@ def on_startup() -> None:
     with SessionLocal() as db:
         try:
             # The types Nik ships too, each added once.
-            if field_registry.seed(db) + type_registry.seed(db):
+            from . import lists as named_lists
+
+            if field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db):
                 db.commit()
         except IntegrityError:
             db.rollback()  # another process of the server added them at the same moment
@@ -263,6 +267,8 @@ app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")
 app.include_router(context.router, prefix="/api")
 app.include_router(war_room.router, prefix="/api")
+app.include_router(tasks.router, prefix="/api")
+app.include_router(lists.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

@@ -536,3 +536,103 @@ def test_migration_0029_adds_the_context_and_war_room_tables(tmp_path, monkeypat
     command.downgrade(cfg, "0028_fields_types")
     with engine.connect() as conn:
         assert not set(CONTEXT_TABLES) & set(sa.inspect(conn).get_table_names())
+
+
+def test_migration_0030_adds_the_tables_of_tasks_and_notifications(tmp_path, monkeypatch):
+    from app.core.models import TASK_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
+        # One of them is there already (a database the baseline created from the models).
+        conn.execute(sa.text("CREATE TABLE notifications (id VARCHAR(32) PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0029_context_war_room")
+    command.upgrade(cfg, "0030_tasks_sla")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(TASK_TABLES) <= set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("notifications")} == {"id"}  # left as it was
+        assert {c["name"] for c in inspector.get_columns("tasks")} >= {"incident_id", "step_id", "status", "due_at"}
+    command.stamp(cfg, "0029_context_war_room")
+    command.upgrade(cfg, "0030_tasks_sla")  # again: nothing to do
+    command.downgrade(cfg, "0029_context_war_room")
+    with engine.connect() as conn:
+        assert not set(TASK_TABLES) & set(sa.inspect(conn).get_table_names())
+
+
+def test_migration_0030_widens_the_port_of_a_step_on_postgresql(client):
+    """A question leaves by a port named after a choice: 12 characters were not enough."""
+    import importlib.util
+    from pathlib import Path
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    import app.core.db
+
+    engine = app.core.db.engine
+    if engine.dialect.name != "postgresql":
+        pytest.skip("SQLite holds no length for a text column")
+    spec = importlib.util.spec_from_file_location(
+        "m0030", Path(__file__).parent.parent / "alembic" / "versions" / "0030_tasks_sla.py"
+    )
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    def length(conn) -> int:
+        return next(c for c in sa.inspect(conn).get_columns("run_steps") if c["name"] == "port")["type"].length
+
+    with engine.begin() as conn:
+        conn.execute(sa.text("ALTER TABLE run_steps ALTER COLUMN port TYPE varchar(12)"))
+        for _ in range(2):  # the second time there is nothing to do
+            with Operations.context(MigrationContext.configure(conn)):
+                migration.upgrade()
+            assert length(conn) == 40
+
+
+def test_migration_0031_adds_the_lists_and_moves_what_the_settings_held(tmp_path, monkeypatch):
+    from app import lists
+    from app.core.db import Base
+    from app.core.models import LIST_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    held = {"iocAllowlist": ["corp.example"], "mail": {"orgDomains": ["corp.example"], "trustedAuthServers": []}}
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE settings (id INTEGER PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO settings (id, doc) VALUES (1, :doc)"), {"doc": json.dumps(held)})
+        for table in ("playbooks", "playbook_versions", "ioc_lists", "ioc_list_items"):
+            Base.metadata.tables[table].create(conn)
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    lists.clear_cache()
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0030_tasks_sla")
+    command.upgrade(cfg, "0031_lists")
+    lists.clear_cache()
+    with engine.connect() as conn:
+        assert set(LIST_TABLES) <= set(sa.inspect(conn).get_table_names())
+        names = {row[0] for row in conn.execute(sa.text("SELECT name FROM lists"))}
+        assert names == set(lists.BUILTIN)
+        doc = json.loads(conn.execute(sa.text("SELECT doc FROM settings WHERE id = 1")).scalar())
+        assert doc["iocAllowlist"] == {"list": "ioc_allowlist"}
+        assert doc["mail"]["orgDomains"] == {"list": "internal_domains"}
+        kept = conn.execute(
+            sa.text("SELECT i.key FROM list_items i JOIN lists l ON l.id = i.list_id WHERE l.name = 'ioc_allowlist'")
+        ).fetchall()
+        assert [row[0] for row in kept] == ["corp.example"]
+    command.stamp(cfg, "0030_tasks_sla")
+    command.upgrade(cfg, "0031_lists")  # again: the lists are there, nothing moves
+    lists.clear_cache()
+    command.downgrade(cfg, "0030_tasks_sla")
+    lists.clear_cache()
+    with engine.connect() as conn:
+        assert not set(LIST_TABLES) & set(sa.inspect(conn).get_table_names())
+        doc = json.loads(conn.execute(sa.text("SELECT doc FROM settings WHERE id = 1")).scalar())
+        assert doc["iocAllowlist"] == ["corp.example"] and doc["mail"]["orgDomains"] == ["corp.example"]

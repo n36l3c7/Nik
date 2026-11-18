@@ -85,6 +85,8 @@ class Scope:
 
     values: dict[str, Any] = field(default_factory=dict)
     classes: dict[str, dict[str, list]] = field(default_factory=dict)
+    # Whether a value is in a list by its name (``| in_list('vip_users')``); None where lists cannot be read.
+    in_list: Any = None
 
     def classes_at(self, name: str, steps: tuple) -> frozenset:
         found: set = set()
@@ -424,6 +426,7 @@ def _unique(value: Any) -> list:
 
 FILTERS = {
     "default": None,  # handled by the evaluator: it is the one filter that takes a missing value
+    "in_list": None,  # handled by the evaluator: the scope knows the lists
     "length": lambda v: len(v) if isinstance(v, (list, tuple, dict, str)) else 0,
     "join": lambda v, sep=", ": _text(sep).join(_text(item) for item in _listed(v)),
     "lower": lambda v: _text(v).lower(),
@@ -505,6 +508,12 @@ def evaluate(expr: Expr, scope: Scope) -> Value:
             continue
         if data is MISSING:
             break
+        if item.name == "in_list":
+            if scope.in_list is None or len(item.args) != 1:
+                raise ExpressionError(item.position, "in_list takes the name of a list, where lists can be read")
+            data = bool(scope.in_list(_text(item.args[0]), data))
+            classes = frozenset({"verdict"})  # a yes or a no, not the value it was asked about
+            continue
         try:
             data = FILTERS[item.name](data, *item.args, **dict(item.named))
         except (TypeError, ValueError, KeyError, IndexError, OverflowError):

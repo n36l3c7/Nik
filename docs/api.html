@@ -1126,6 +1126,123 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/tasks</code> · <code>GET /api/tasks/count</code> ·
+                <code>GET /api/tasks/{id}</code>
+              </td>
+              <td>
+                The open tasks and questions the caller may complete, the most pressing first (<code>which=all</code>
+                for everyone's, <code>incident</code> for one incident, <code>status=open|closed|all</code>):
+                <code
+                  >{tasks: [{id, kind, title, instructions, status, incidentId, for, assignee, choices, inputs, fields,
+                  answer, dueAt, mine}]}</code
+                >. <code>kind</code> is <code>task</code> or <code>ask</code>; <code>status</code> is <code>open</code>,
+                <code>overdue</code>, <code>done</code> or <code>skipped</code>; <code>mine</code> says whether the
+                caller may complete it · <code>{mine, overdue}</code>, for a count · one task, with
+                <code>entries</code>: what the War Room of its incident says of it.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/incidents/{id}/timers</code> ·
+                <code>POST /api/incidents/{id}/timers/{field}/{start|pause|stop}</code>
+              </td>
+              <td>
+                The SLA timers of the incident that were started:
+                <code
+                  >{timers: [{field, label, state, elapsedS, dueS, remainingS, breached, breachedAt, business}],
+                  businessHours}</code
+                >; <code>state</code> is <code>running</code>, <code>paused</code> or <code>stopped</code>, and what a
+                timer counted is worked out by the server, inside business hours when it says so · start, pause or stop
+                one by hand (<strong>write</strong>); to start: <code>{minutes, businessHours, restart}</code>. The SLA
+                itself is the <code>sla</code> of an incident type:
+                <code>[{field, minutes, bySeverity: {critical: 15}, businessHours}]</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/lists</code> · <code>GET /api/lists/{name}</code> ·
+                <code>GET /api/lists/{name}/export?format=csv|json</code>
+              </td>
+              <td>
+                Every list, with how many items it holds and where it is used, and <code>pointers</code>: which list
+                each feature reads (<code>{iocAllowlist: {list, default, kind}, …}</code>) · one list with its
+                <code>entries</code> (<code>{key, value, note, addedAt, addedBy, expiresAt}</code>) or its
+                <code>document</code> · the list as a file. <code>kind</code> is <code>values</code>,
+                <code>key_value</code>, <code>json</code>, or <code>indicators</code> for a watch list of the IoC
+                library, which is read here and changed where indicators are.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/lists</code> · <code>PUT</code> · <code>DELETE /api/lists/{name}</code> ·
+                <code>PUT</code> · <code>POST</code> · <code>DELETE /api/lists/{name}/items</code> ·
+                <code>POST /api/lists/{name}/import</code> · <code>PUT /api/lists/pointers</code>
+              </td>
+              <td>
+                (<strong>lists.manage</strong>) Make a list (<code
+                  >{name, label, description, kind, itemType, writableByAutomation}</code
+                >; the name and the kind do not change afterwards) · change it · delete one of yours that nothing uses ·
+                replace its items (<code>{entries}</code>, or <code>{document}</code>) · add one (<code
+                  >{key, value, note, expiresAt}</code
+                >) · remove one (<code>?key=</code>) · replace them from a file (<code>{format, text}</code>) · choose
+                which list a feature reads (<code>{pointers: {iocAllowlist: "my_allowlist"}}</code>): it must be of the
+                kind the feature takes. <code>GET</code> and <code>PUT /api/settings</code> go on giving and taking the
+                arrays they always did, read from and written to the lists; a key left out of a <code>PUT</code> keeps
+                what is stored.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/notifications</code> · <code>POST /api/notifications/read</code></td>
+              <td>
+                What the caller was told, the newest first:
+                <code>{notifications: [{id, kind, text, link, at, read}], unread}</code>. <code>kind</code> is
+                <code>task</code>, <code>task.reminder</code>, <code>task.overdue</code>, <code>approval</code>,
+                <code>mention</code> or <code>sla.breached</code>; <code>link</code> is a path inside Nik · mark as read
+                those named in <code>{ids}</code>, or all of them when none is.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/{id}/work-plan</code></td>
+              <td>
+                The work plan of the incident:
+                <code
+                  >{plans: [{runId, playbook, status, phases: [{name, steps: [{node, name, kind, summary, status, port,
+                  error, task}]}], graph, statuses}], tasks, counts: {tasks, open, done}}</code
+                >. One plan for each playbook that runs or ran on it (dry runs and commands of the War Room left out),
+                the newest first; <code>status</code> of a step is that of the run's step, or <code>none</code> when it
+                was not reached; <code>graph</code> is the playbook's, each node with its name, kind and phase and none
+                of its settings; <code>tasks</code> are those added by hand.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/incidents/{id}/tasks</code> ·
+                <code>PUT /api/tasks/{id}/assignee</code>
+              </td>
+              <td>
+                Add a task to an incident by hand:
+                <code>{title, instructions, assignee: {user | role | owner}, due, fields}</code>; with nobody named it
+                is for the owner of the incident. <code>due</code> is <code>"30m"</code>, <code>"2h"</code>,
+                <code>"3d"</code>, seconds or a date · give an open task to someone else (<strong>write</strong>).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/tasks/{id}/complete</code> ·
+                <code>POST /api/tasks/{id}/skip</code>
+              </td>
+              <td>
+                Complete a task or answer a question:
+                <code>{choice, fields: {name: value}, values: {name: value}, comment}</code>. The fields are written to
+                the incident through the registry; the run that waits goes on by the port of the answer.
+                <code>403</code> when the task is for someone else (it is for the user it names, whoever holds its role,
+                the owner of its incident, and an admin), <code>409</code> when it is not open any more,
+                <code>400</code> with what is missing · give it up, <code>{why}</code>: the run goes on as if the task
+                were done, or the question unanswered.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET</code> · <code>PUT /api/automation/state</code></td>
               <td>
                 Whether automation is on and its worker alive · the general switch,
@@ -1357,11 +1474,12 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           <strong id="webhooks">Webhooks</strong>: <code>incident.created/updated/deleted</code>,
           <code>note.added</code>, <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an
           indicator of a watched list), <code>mail.analysed</code>, <code>file.analysed</code>,
-          <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>; the last five carry
-          what a playbook's trigger reads for the same event (<a href="automation.html#trigger">Automation → Trigger</a
-          >). Each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds
-          to the address an admin gave, without the checks a playbook's nodes go through: subscribe an address you trust
-          with senders, subjects and file names.
+          <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>,
+          <code>sla.breached</code> (a timer of an incident passed its time); the last six carry what a playbook's
+          trigger reads for the same event (<a href="automation.html#trigger">Automation → Trigger</a>). Each delivery
+          is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds to the address an
+          admin gave, without the checks a playbook's nodes go through: subscribe an address you trust with senders,
+          subjects and file names.
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

@@ -40,6 +40,44 @@
       </p>
 
       <section class="release">
+        <h3>4.4.0 <span class="date">2026-11-17</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Tasks and questions in playbooks.</strong> A
+            <a href="automation.html#task-node">Task</a> node gives a person something to do, a
+            <a href="automation.html#ask-node">Question</a> node asks them to choose or to fill a small form, with an
+            edge for each answer. Either is for a user, a role, or the owner of the incident; a task past its due time
+            is overdue and stays to do.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The Work plan of an incident</strong>: what its playbooks do,
+            step by step under the phases they name, as a list or as the drawing of the playbook, with its tasks.
+            <strong>My tasks</strong>, on the rail, is what waits for you across every incident.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>SLA timers</strong>: a type of incident says how long its
+            incidents are allowed to be assigned, contained and closed, by severity and in business hours if wanted; a
+            timer past its time marks the incident, tells its owner and starts the playbooks that wait for
+            <code>sla.breached</code>.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Notifications</strong>: a bell on the rail with the tasks given
+            to you, the approvals that wait, the mentions (<code>@you</code>) and the SLAs past their time.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Lists</strong>, in Settings: what features and playbooks read
+            by a name, edited, imported and exported; playbooks read and write them and ask
+            <code>| in_list('name')</code> (<a href="automation.html#lists">Lists</a>).
+          </li>
+          <li>
+            <span class="tag changed">changed</span> What Settings kept as fixed lists (the IoC allowlist, your domains,
+            the trusted mail servers, the suspicious keywords, the business hours, the hosts every playbook may reach)
+            are lists now, moved as they were (<a href="deployment.html#upgrading-to-44">Upgrading to 4.4</a>).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>4.3.0 <span class="date">2026-11-17</span></h3>
         <ul>
           <li>

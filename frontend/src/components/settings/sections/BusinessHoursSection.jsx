@@ -1,5 +1,6 @@
 import { Clock } from 'lucide-react'
 import { useSettings } from '../../../context/SettingsContext.jsx'
+import ListPicker from '../ListPicker.jsx'
 
 /*
  * Business-hours settings section: the window beyond which events are marked
@@ -48,6 +49,12 @@ export default function BusinessHoursSection() {
           are highlighted as a time anomaly across every tab and on the timeline.
         </p>
       </div>
+
+      <ListPicker
+        setting="businessHours"
+        label="Hours"
+        hint="The form below edits the list that is chosen. SLA timers that count business hours read the same hours, in UTC."
+      />
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border border-line bg-panel p-4">
         <label className="flex items-center gap-2 text-sm text-fg-muted">

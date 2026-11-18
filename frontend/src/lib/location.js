@@ -46,8 +46,8 @@ export function onLocationChange(handler) {
 }
 
 /**
- * An indicator's page, the Settings page and the Automations area are drawn over whatever is open:
+ * An indicator's page, the Settings page, the Automations area and My tasks are drawn over whatever is open:
  * the incident, the artifact or the library under them stays as it is, and is
  * there again when they are left.
  */
-export const isOverlayPage = (pathname) => /^\/(ioc|settings|automation)(\/|$)/.test(pathname)
+export const isOverlayPage = (pathname) => /^\/(ioc|settings|automation|tasks)(\/|$)/.test(pathname)

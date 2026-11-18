@@ -65,6 +65,7 @@ export function stepLine(step) {
   if (step.status === 'failed') return step.error || 'failed'
   if (step.status === 'waiting') {
     if (step.waiting === 'approval') return 'waiting for an approval'
+    if (step.waiting === 'task') return 'waiting for a person'
     if (step.waiting === 'run') return 'waiting for the playbook it started'
     if (step.waiting === 'each') return 'going through the items'
     return 'waiting'

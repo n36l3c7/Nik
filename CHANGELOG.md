@@ -7,6 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-11-17
+
+People in the loop: playbooks give tasks and ask questions, each incident has
+a work plan and each analyst a page of their tasks; types of incident time
+their incidents; and what features and playbooks compare with lives in lists.
+
+**Upgrading from 4.3.0**: nothing more than the usual two commands.
+
+```
+git pull
+podman compose up -d --build
+```
+
+The migrations `0030_tasks_sla` and `0031_lists` run at start. The second
+moves what Settings kept as fixed lists into *Settings → Lists*, once and as
+it was. No incident is timed until a type is given an SLA.
+
+**Not verified on real systems**: reminders, overdue tasks and SLA breaches
+were tried with the clock of the tests, not over real days; business hours
+are counted in UTC. Nothing in this release talks to another product.
+
+### Added
+
+- **Tasks and questions in playbooks.** A *Task* node gives a person
+  something to do and the run waits until it is done; a *Question* node asks
+  a person to choose or to fill a small form and the run goes on by the
+  answer, with a port for each choice. Either is for a user, for whoever
+  holds a role, or for the owner of the incident at the moment it is done;
+  either can ask for fields of the incident, checked and written through the
+  registry. A task past its due time is overdue and stays to do: the run
+  also leaves by *when overdue*. Reminders at an interval; a question nobody
+  answered in its time leaves by *no answer*.
+- Tasks added to an incident by hand (`POST /api/incidents/{id}/tasks`, and
+  `/task Call the user @anna due=2h` in the War Room), given to someone else,
+  completed and skipped through `/api/tasks`. The War Room tells each step.
+
+- **The Work plan of an incident.** A tab with what the playbooks of the
+  incident do, step by step, under the phases a playbook names (a node can
+  name a *phase*), each step with what happened to it; the same plan as the
+  drawing of the playbook, read-only; and the tasks added by hand. A task or
+  a question opens there with its form.
+- **My tasks**, on the rail with a count: what waits for you across every
+  incident, the most pressing first, at `/tasks` and `/tasks/<id>`. The
+  instructions of a task are read as a small Markdown.
+
+- **SLA timers.** The type of an incident says how long its incidents are
+  allowed to be assigned, contained and closed (*Settings → Incidents →
+  SLA*), by severity if wanted, counting every hour or business hours only.
+  The timers are shown beside the tabs of the incident and are started,
+  paused and stopped by the rules of the type, by the new nodes *Start a
+  timer*, *Pause a timer* and *Stop a timer*, or by hand. A timer past its
+  time marks the incident, tells its owner and publishes `sla.breached`, a
+  new event for playbooks and webhooks.
+- **Notifications.** A bell on the rail with what the account was told: a
+  task given, a reminder, a task overdue, an approval that waits, a mention
+  (`@name`) in a War Room, an SLA past its time.
+
+- **Lists.** What features and playbooks read by a name, in *Settings →
+  Lists*: values, keys with values, or one document; edited there, imported
+  and exported as CSV or JSON, each with where it is used. Playbooks read
+  them with *Read a list* and *Is it in a list?*, write to those that allow
+  it with *Add to a list*, *Remove from a list* and *Set a list*, and ask
+  `{{ value | in_list('name') }}` in any expression. The watch lists of the
+  IoC library are read the same way.
+
+### Changed
+
+- **What the settings kept as fixed lists are lists now**: the IoC
+  allowlist (`ioc_allowlist`), your organisation's domains
+  (`internal_domains`), the trusted mail servers
+  (`mail_trusted_auth_servers`), the suspicious keywords
+  (`suspicious_keywords`), the business hours (`business_hours`) and the
+  hosts every playbook may reach (`automation_hosts`). Migration
+  `0031_lists` moves them once, as they are. Each section of Settings shows
+  which list it reads and lets another be chosen; the allowlist, the mail
+  domains and servers and the hosts are edited in Lists, the keywords and
+  the business hours keep their forms. `GET` and `PUT /api/settings` give
+  and take the same arrays as before.
+- `PUT /api/settings` keeps what is stored for a key that is not sent
+  (`keywords` and `businessHours` were emptied before).
+- A field of type *timer* is started and stopped, never written: the
+  registry refuses a value for it.
+- The bar of the analysis tabs takes a second row when even the icons alone
+  do not fit in one.
+- A run that waits for a task or a question is *waiting*, like one that
+  waits for an approval; that time does not count against its longest run.
+
 ## [4.3.0] - 2026-11-17
 
 Incidents your way: a registry of fields, types of incident with a page

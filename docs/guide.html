@@ -980,6 +980,33 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           written to the context, and <em>Mark as evidence</em>. The Timeline is another thing: the forensic timeline of
           the evidence.
         </li>
+        <li id="work-plan">
+          <strong>The Work plan tab</strong> shows what the playbooks of the incident do, step by step: for each
+          playbook that runs or ran on it, its steps in order under the phases the playbook names (<em>Triage</em>,
+          <em>Containment</em>…), each with what happened to it. <em>Graph</em> shows the same plan as the drawing of
+          the playbook, and your choice is remembered. A step that is a task or a question opens it: whoever it is for
+          fills its form there, and whoever writes incidents can give it to someone else. <em>Add a task</em> adds one
+          by hand, for the owner of the incident, a user or a role, with a due time if you want one;
+          <code>/task Call the user @anna due=2h</code> in the War Room does the same.
+        </li>
+        <li id="my-tasks">
+          <strong>My tasks</strong>, on the rail, is what waits for you across every incident, the most pressing first,
+          with a count on the icon and a dot when something is overdue. A task shows its instructions and its form: a
+          choice when it is a question, the fields of the incident it asks for, a comment. <em>Mark as done</em> (or
+          <em>Send the answer</em>) lets the playbook that waits go on; <em>Skip…</em> gives it up with a reason. A task
+          is for one user, for whoever holds a role, or for the owner of its incident, whoever that is when it is done;
+          <em>All open</em> and <em>Closed</em> list everyone's.
+        </li>
+        <li id="sla-timers">
+          <strong>SLA timers</strong> are in the panel beside the tabs when the type of the incident times it: what is
+          left of the time to assign, to contain and to close, or by how much it is over. Whoever works incidents
+          pauses, starts and stops one by hand; a playbook can too.
+        </li>
+        <li id="notifications">
+          <strong>The bell</strong> on the rail is what you were told: a task given to you or overdue, an approval that
+          waits, a colleague who wrote <code>@you</code> in a War Room, a timer of an incident you own past its time.
+          Opening one goes where it points.
+        </li>
         <li>
           <strong>Commands.</strong> The same line runs a command when it starts with <code>!</code>:
           <code>!ip 185.220.101.47</code> asks what is known of an address,
@@ -1094,6 +1121,28 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 Every field an incident can hold, with its name, its type and where it is used. A field has one name for
                 one thing, whoever sets it, so its name and its type never change; its label and its choices do. A field
                 no type lists and no incident holds can be deleted.
+              </td>
+            </tr>
+            <tr>
+              <td>SLA <em>(admins)</em></td>
+              <td>
+                For each type of incident, the minutes its incidents are allowed to be assigned, contained and closed,
+                by severity if you want, counting every hour or business hours only. A timer that is on starts with the
+                incident and is shown beside its tabs; past its time the incident is marked and its owner is told.
+              </td>
+            </tr>
+            <tr>
+              <th colspan="2" scope="colgroup">Lists</th>
+            </tr>
+            <tr>
+              <td>Lists <em>(who manages lists)</em></td>
+              <td>
+                Every list a feature or a playbook reads by its name: those Nik ships (the IoC allowlist, your
+                organisation's domains, the trusted mail servers, the suspicious keywords, the business hours, the hosts
+                every playbook may reach), yours, and the watch lists of the IoC library. A list holds values, keys with
+                values, or one document; it is edited here, exported and imported as CSV or JSON, and says where it is
+                used. The section of a feature shows which list it reads (<em>Open in Lists</em> goes to it) and lets
+                another of the same kind be chosen.
               </td>
             </tr>
             <tr>

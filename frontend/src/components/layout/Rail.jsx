@@ -1,8 +1,10 @@
 import {
+  Bell,
   Boxes,
   DatabaseBackup,
   Fingerprint,
   FolderClosed,
+  ListChecks,
   ScrollText,
   Search,
   Settings,
@@ -53,7 +55,8 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
  * @param {{
  *   panel: 'incidents' | 'artifacts' | 'iocs' | null,   // the open side panel
  *   onPanel: (panel: string | null) => void,
- *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number, approvals: number },
+ *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number, approvals: number,
+ *             tasks: number, tasksOverdue: number, unread: number },
  *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
  *   onSearch: () => void, onAudit: () => void, onUsers: () => void,
  *   onBackup: () => void, onSettings: () => void,
@@ -75,9 +78,12 @@ export default function Rail({
   settingsOpen = false,
   onAutomation,
   automationOpen = false,
+  onTasks,
+  tasksOpen = false,
+  onNotifications,
 }) {
   // With Settings or Automations open no panel is shown, and an entry leaves the page for its panel.
-  const open = settingsOpen || automationOpen ? null : panel
+  const open = settingsOpen || automationOpen || tasksOpen ? null : panel
   const toggle = (name) => onPanel(open === name ? null : name)
   const canRead = can('read')
   return (
@@ -140,7 +146,32 @@ export default function Rail({
           onClick={onAutomation}
         />
       )}
+      {canRead && (
+        <RailButton
+          icon={ListChecks}
+          label={
+            tasksOpen
+              ? 'Close my tasks'
+              : counts.tasks
+                ? `My tasks (${counts.tasks} ${counts.tasks === 1 ? 'waits' : 'wait'}${counts.tasksOverdue ? `, ${counts.tasksOverdue} overdue` : ''})`
+                : 'My tasks'
+          }
+          active={tasksOpen}
+          count={counts.tasks}
+          alert={counts.tasksOverdue > 0}
+          onClick={onTasks}
+        />
+      )}
       <span className="flex-1" />
+      {canRead && (
+        <RailButton
+          icon={Bell}
+          label={counts.unread ? `Notifications (${counts.unread} new)` : 'Notifications'}
+          count={counts.unread}
+          alert={counts.unread > 0}
+          onClick={onNotifications}
+        />
+      )}
       {can('audit.read') && <RailButton icon={ScrollText} label="Audit log" onClick={onAudit} />}
       {can('admin') && <RailButton icon={Users} label="Users" onClick={onUsers} />}
       {can('admin') && <RailButton icon={DatabaseBackup} label="Full backup" onClick={onBackup} />}

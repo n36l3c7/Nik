@@ -119,6 +119,12 @@ def storage_low(db: OrmSession, total: int, free: int) -> None:
     _announce(db, "storage.low", data)
 
 
+def sla_breached(db: OrmSession, incident: Incident, field: str, label: str, due_s: int, elapsed_s: int) -> None:
+    data, classes = payloads.sla_breached(incident, field, label, due_s, elapsed_s)
+    publish(db, "sla.breached", "incident", incident.id, data, classes)
+    _announce(db, "sla.breached", data)
+
+
 def watch_hit(db: OrmSession, incident: Incident, hits: list[dict]) -> None:
     if settings.AUTOMATION_WORKER == "off" or not hits:
         return
@@ -140,7 +146,7 @@ def trigger_config(db: OrmSession, playbook: Playbook) -> dict:
     return (node or {}).get("config") or {}
 
 
-def accepts(config: dict, kind: str, data: dict, classes: dict) -> bool:
+def accepts(config: dict, kind: str, data: dict, classes: dict, db: OrmSession | None = None) -> bool:
     """Whether a trigger waits for this event and its conditions hold."""
     if config.get("event") != kind:
         return False
@@ -148,7 +154,8 @@ def accepts(config: dict, kind: str, data: dict, classes: dict) -> bool:
     if not conditions:
         return True
     try:
-        return engine.holds(conditions, ex.Scope(values={"trigger": data}, classes={"trigger": classes}))
+        scope = ex.Scope(values={"trigger": data}, classes={"trigger": classes}, in_list=engine._in_list(db))
+        return engine.holds(conditions, scope)
     except (ex.ExpressionError, engine.StepFailed):
         return False
 
@@ -215,7 +222,7 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
         # A playbook never starts on what its own run did.
         if caused_by is not None and caused_by.playbook_id == playbook.id:
             continue
-        if not accepts(trigger_config(db, playbook), event.kind, data, classes):
+        if not accepts(trigger_config(db, playbook), event.kind, data, classes, db):
             continue
         why = refusal(db, playbook, event.object_kind, event.object_id, now)
         if why:

@@ -6,6 +6,7 @@ import {
   Globe,
   HardDrive,
   LayoutDashboard,
+  ListChecks,
   Link2,
   ListTree,
   Mail,
@@ -59,6 +60,7 @@ const UrlAnalysisTab = lazy(() => import('../components/tabs/urls/UrlAnalysisTab
 const AutomationTab = lazy(() => import('../components/tabs/automation/AutomationTab.jsx'))
 const ContextTab = lazy(() => import('../components/tabs/context/ContextTab.jsx'))
 const WarRoomTab = lazy(() => import('../components/tabs/warroom/WarRoomTab.jsx'))
+const WorkPlanTab = lazy(() => import('../components/tabs/workplan/WorkPlanTab.jsx'))
 
 export const ANALYSIS_TABS = [
   {
@@ -91,6 +93,15 @@ export const ANALYSIS_TABS = [
     icon: MessagesSquare,
     component: WarRoomTab,
     // The log is the server's: notes stay in the incident, the rest is read when the tab opens.
+  },
+  {
+    id: 'work_plan',
+    label: 'Work plan',
+    short: 'Plan',
+    group: 'overview',
+    icon: ListChecks,
+    component: WorkPlanTab,
+    // What the playbooks of the incident do step by step, and its tasks: read when the tab opens.
   },
   {
     id: 'automation',

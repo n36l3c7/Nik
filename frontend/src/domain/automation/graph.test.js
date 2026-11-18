@@ -11,6 +11,11 @@ import {
   moveNodes,
   newId,
   normalise,
+  portLabel,
+  portName,
+  portsOf,
+  pruneEdges,
+  slug,
   paste,
   readable,
   record,
@@ -389,4 +394,40 @@ test('a pasted address is listed as its host', () => {
   assert.equal(hostOf('example.org.'), 'example.org')
   assert.equal(hostOf('not a host'), 'not a host') // the server says why it is refused
   assert.equal(hostOf(null), '')
+})
+
+test('a question leaves by its choices, a task by done and overdue', () => {
+  const ask = node('q', 'ask', { question: 'Encrypted?', choices: ['Yes', 'No, not at all'] })
+  assert.deepEqual(portsOf(ask), ['yes', 'no_not_at_all', 'timeout'])
+  assert.deepEqual(portsOf(node('q', 'ask', { question: 'Serial?' })), ['answered', 'timeout'])
+  assert.deepEqual(portsOf(node('t', 'task', { title: 'x' })), ['done', 'overdue'])
+  assert.equal(slug('  Yes, block it!  '), 'yes_block_it')
+  assert.equal(slug('???'), 'answer')
+  // An edge is named as the choice it follows.
+  assert.equal(portLabel(ask, 'no_not_at_all'), 'No, not at all')
+  assert.equal(portLabel(ask, 'timeout'), 'no answer')
+  assert.equal(portName(node('t', 'task'), 'overdue'), 'when overdue')
+  assert.equal(portName(node('a', 'action'), 'out'), 'then')
+
+  const graph = {
+    nodes: [node('start', 'trigger', { manual: true }), ask, node('a', 'end'), node('b', 'end')],
+    edges: [{ from: 'start', to: 'q' }],
+  }
+  const drawn = connect(connect(graph, 'q', 'yes', 'a').graph, 'q', 'no_not_at_all', 'b').graph
+  assert.equal(drawn.edges.length, 3)
+  assert.match(connect(graph, 'q', 'answered', 'a').problem, /no "answered" port/)
+  // A choice that is gone takes its edges with it; the others stay.
+  const fewer = pruneEdges(updateNode(drawn, 'q', { config: { question: 'Encrypted?', choices: ['Yes'] } }), 'q')
+  assert.deepEqual(
+    fewer.edges.map((edge) => edge.port ?? ''),
+    ['', 'yes'],
+  )
+  assert.equal(pruneEdges(drawn, 'q'), drawn)
+
+  assert.equal(
+    summaryOf(node('t', 'task', { title: 'Pull the disk', assignee: { role: 'analyst' } })),
+    'Pull the disk · for the role analyst',
+  )
+  assert.equal(summaryOf(node('t', 'task', { title: 'Pull the disk' })), 'Pull the disk · for the owner')
+  assert.equal(summaryOf(ask), 'Encrypted? · to anyone')
 })

@@ -112,6 +112,26 @@ export const SETTINGS_GROUPS = [
         permission: 'incidents.configure',
         keywords: 'registry custom field name label choice table rename delete',
       },
+      {
+        id: 'sla',
+        slug: 'sla',
+        label: 'SLA',
+        permission: 'incidents.configure',
+        keywords: 'timer time to assign contain close minutes severity business hours breach deadline',
+      },
+    ],
+  },
+  {
+    id: 'lists',
+    label: 'Lists',
+    sections: [
+      {
+        id: 'lists',
+        slug: 'all',
+        label: 'Lists',
+        permission: 'lists.manage',
+        keywords: 'allowlist domains keywords business hours hosts values import export csv json watch vip',
+      },
     ],
   },
   {

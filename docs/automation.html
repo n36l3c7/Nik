@@ -288,6 +288,14 @@
               </td>
             </tr>
             <tr>
+              <td><code>sla.breached</code></td>
+              <td>A timer of an incident passed the time its type allows. Said once for each timer.</td>
+              <td>
+                <code>timer.field</code>, <code>.label</code>, <code>.due_minutes</code>, <code>.elapsed_minutes</code>;
+                the <code>incident.…</code> fields.
+              </td>
+            </tr>
+            <tr>
               <td><code>storage.low</code></td>
               <td>The disk that holds the evidence has less than a tenth free. Said once a day while it stays so.</td>
               <td>
@@ -456,6 +464,47 @@ Content-Type: application/json
         <a href="#approvals">Approvals</a>.
       </p>
 
+      <h3 id="task-node">Task</h3>
+      <p>
+        Gives a person something to do and waits until it is done. A task has a <em>title</em>,
+        <em>instructions</em> (Markdown), and is <em>for</em> a user, for whoever holds a role, or for the owner of the
+        incident: whoever has the incident at the moment the task is done, so a task follows the incident when it
+        changes hands. It can ask for <em>fields</em> of the incident to be filled: what is typed is checked as the
+        field says and written to the incident. The run leaves by <em>when done</em> and the steps after read
+        <code>{{ node.by }}</code>, <code>{{ node.comment }}</code> and <code>{{ node.fields.name }}</code>.
+      </p>
+      <p>
+        With a <em>due</em> time (<code>30m</code>, <code>2h</code>, <code>3d</code>, a number of seconds, or an
+        expression that gives one of them or a date) the task becomes <em>overdue</em> when the time passes, and
+        <strong>stays to do</strong>: the run also leaves by <em>when overdue</em>, if an edge is drawn there, and still
+        leaves by <em>when done</em> when the task is completed. A <em>reminder</em> tells who it is for again at its
+        interval. A task that is skipped lets the run go on by <em>when done</em> with
+        <code>{{ node.skipped }}</code> saying why.
+      </p>
+
+      <h3 id="ask-node">Question</h3>
+      <p>
+        Asks a person to choose, or to fill a small form, and goes on by the answer. A question is for a user, a role,
+        the owner of the incident, or <em>anyone</em> who works incidents. Each <em>choice</em> (six at most) is a port
+        of the node, so a different edge leaves it for each answer; with no choice the node leaves by <em>answered</em>.
+        It can ask for values (text, a number, yes or no) that the steps after read as
+        <code>{{ node.values.name }}</code>, and for fields of the incident, written to it as for a task.
+        <code>{{ node.choice }}</code> is the choice made. With a time to wait, a question nobody answered is given up
+        and the run leaves by <em>no answer</em>. The <a href="#approval-node">approval</a> is the question whose answer
+        is yes or no, and stays what gates a change outside Nik.
+      </p>
+      <p>
+        Any node but the trigger can name a <em>phase</em> (<em>Triage</em>, <em>Containment</em>…): the
+        <a href="guide.html#work-plan">work plan</a> of an incident lists the steps of a playbook under its phases, in
+        the order the playbook reaches them. The plan shows a node by its name and its kind, never by what it is given,
+        so whoever reads the incident can read it.
+      </p>
+      <p>
+        A run that waits for a task or a question is <em>waiting</em>, and that time does not count against the longest
+        run of the playbook. When the run ends for another reason, what was still asked is skipped. A dry run asks
+        nobody: it takes <em>when done</em>, or the first choice. A task or a question cannot be inside a "for each".
+      </p>
+
       <h3 id="playbook-node">Run another playbook</h3>
       <p>
         Starts another playbook at its current version, with the inputs you give it, and (unless you turn
@@ -572,9 +621,43 @@ Content-Type: application/json
               </td>
               <td><code>linked</code></td>
             </tr>
+            <tr>
+              <td>Start a timer · Pause a timer · Stop a timer</td>
+              <td>
+                <code>timer</code> (<code>time_to_assign</code>, <code>time_to_contain</code>,
+                <code>time_to_close</code>, or a timer field of your own), <code>incident</code>; to start:
+                <code>minutes</code> allowed, <code>business_hours</code>, <code>restart</code>
+              </td>
+              <td><code>state</code>, <code>elapsed_minutes</code>, <code>due_minutes</code>, <code>breached</code></td>
+            </tr>
           </tbody>
         </table>
       </div>
+      <p id="lists">
+        <strong>Lists.</strong> A list is what a playbook reads by a name: the VIP users, the hosts that are yours, the
+        addresses a campaign used. Lists are made and filled in <em>Settings → Lists</em>; what Nik used to keep in its
+        settings (the IoC allowlist, your domains, the suspicious keywords, the business hours, the hosts every playbook
+        may reach) is there too, and so are the watch lists of the IoC library, read like the others.
+        <em>Read a list</em> gives its <code>items</code> (values, an object of key → value, or a document) and their
+        <code>count</code>; <em>Is it in a list?</em> gives <code>found</code>; <em>Add to a list</em>,
+        <em>Remove from a list</em> and <em>Set a list</em> change one, and only a list that says
+        <em>Playbooks may write to this list</em>: every other is refused. An item can be added for a time
+        (<code>expires_minutes</code>) and is dropped when it is over. In an expression,
+        <code>{{ trigger.mail.sender_domain | in_list('internal_domains') }}</code> is true or false; a list of networks
+        holds the addresses inside them, and a list of values is compared without regard to case. A trigger's condition
+        can use it too.
+      </p>
+      <p id="sla">
+        <strong>SLA timers.</strong> A timer counts how long an incident has taken: to be assigned, to be contained, to
+        be closed. The type of an incident says which timers its incidents have and the minutes each is allowed (<em
+          >Settings → Incidents → SLA</em
+        >), by severity if you want, and whether only business hours count. A timer the type switches on starts with the
+        incident; <em>time to assign</em> stops when the incident has an owner, <em>time to close</em> when it is closed
+        (and goes on if it is opened again), <em>time to contain</em> when a playbook or a person stops it. A timer past
+        its time is <em>breached</em>, once: the incident is marked (<code>{{ incident.sla_breached }}</code>), its War
+        Room says so, its owner is told, and <code>sla.breached</code> starts the playbooks that wait for it. The worker
+        looks every minute.
+      </p>
 
       <h3 id="http-node">HTTP request</h3>
       <p>
@@ -1228,8 +1311,9 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             <tr>
               <td><code>/</code></td>
               <td>
-                <code>/note text</code>; <code>/assign @user</code> (alone: nobody has it); <code>/close</code>, which
-                opens the form of closing.
+                <code>/note text</code>; <code>/assign @user</code> (alone: nobody has it);
+                <code>/task Call the user @anna due=2h</code>, a task of the incident (with nobody named, for its
+                owner); <code>/close</code>, which opens the form of closing.
               </td>
             </tr>
             <tr>

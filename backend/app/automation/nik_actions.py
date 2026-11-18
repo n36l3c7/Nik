@@ -802,3 +802,273 @@ def link_artifact(call: Call) -> Result:
     )
     triggers.incident_changed(call.db, incident, "incident.updated", ["data"])
     return Result(output={"linked": True})
+
+
+# --------------------------------------------------------------------------- #
+# SLA timers                                                                  #
+# --------------------------------------------------------------------------- #
+TIMER_ARG = {
+    "name": "timer",
+    "type": "text",
+    "required": True,
+    "description": "The timer: time_to_assign, time_to_contain, time_to_close, or a timer field of your own",
+}
+TIMER_OUTPUTS = [
+    {"name": "state", "type": "text", "description": "running, paused or stopped"},
+    {"name": "elapsed_minutes", "type": "number", "description": "What it has counted so far"},
+    {"name": "due_minutes", "type": "number", "description": "The time allowed, when there is one"},
+    {"name": "breached", "type": "bool", "description": "Whether it is past its time"},
+]
+
+
+def _timer(call: Call, what: str) -> Result:
+    from .. import timers
+
+    name = str(call.args.get("timer") or "").strip()
+    row = _incident(call, call.args.get("incident"))
+    minutes = call.args.get("minutes")
+    try:
+        if call.dry_run:
+            timers._known(call.db, name)
+            return Result(output={"state": "dry-run"}, request={"would": f"{what} the timer {name}"})
+        if what == "start":
+            due = int(float(minutes)) * 60 if minutes not in (None, "") else None
+            if due is not None and not 60 <= due <= timers.MINUTES_MAX * 60:
+                raise ActionError("The time allowed is in minutes, from 1 to a year", retry=False)
+            timers.start(
+                call.db,
+                row,
+                name,
+                call.now,
+                due_s=due,
+                business=bool(call.args.get("business_hours")) if call.args.get("business_hours") is not None else None,
+                restart=bool(call.args.get("restart")),
+            )
+        else:
+            timers.halt(call.db, row, name, call.now, state="paused" if what == "pause" else "stopped")
+    except timers.TimerError as error:
+        raise ActionError(error.message, retry=False) from None
+    except (TypeError, ValueError):
+        raise ActionError("The time allowed is a number of minutes", retry=False) from None
+    shown = next((item for item in timers.of(call.db, row, call.now) if item["field"] == name), None)
+    audit.record(call.db, ACTOR, f"timer.{what}", f"Timer {name}: {what}" + signature(call), row)
+    if shown is None:
+        return Result(output={"state": "idle", "elapsed_minutes": 0, "due_minutes": None, "breached": False})
+    return Result(
+        output={
+            "state": shown["state"],
+            "elapsed_minutes": shown["elapsedS"] // 60,
+            "due_minutes": (shown["dueS"] // 60) if shown["dueS"] else None,
+            "breached": shown["breached"],
+        }
+    )
+
+
+@action(
+    "timer.start",
+    group="Nik",
+    name="Start a timer",
+    description="Start an SLA timer of an incident, or let it go on from where it was paused or stopped.",
+    arguments=[
+        INCIDENT_ARG,
+        TIMER_ARG,
+        {"name": "minutes", "type": "number", "description": "The time allowed; empty keeps what it has"},
+        {"name": "business_hours", "type": "bool", "description": "Count only inside business hours"},
+        {"name": "restart", "type": "bool", "description": "Count again from nothing"},
+    ],
+    outputs=TIMER_OUTPUTS,
+)
+def timer_start(call: Call) -> Result:
+    return _timer(call, "start")
+
+
+@action(
+    "timer.pause",
+    group="Nik",
+    name="Pause a timer",
+    description="Pause an SLA timer of an incident: it counts nothing until it is started again.",
+    arguments=[INCIDENT_ARG, TIMER_ARG],
+    outputs=TIMER_OUTPUTS,
+)
+def timer_pause(call: Call) -> Result:
+    return _timer(call, "pause")
+
+
+@action(
+    "timer.stop",
+    group="Nik",
+    name="Stop a timer",
+    description="Stop an SLA timer of an incident: what it timed is over.",
+    arguments=[INCIDENT_ARG, TIMER_ARG],
+    outputs=TIMER_OUTPUTS,
+)
+def timer_stop(call: Call) -> Result:
+    return _timer(call, "stop")
+
+
+# --------------------------------------------------------------------------- #
+# Lists                                                                       #
+# --------------------------------------------------------------------------- #
+LIST_ARG = {"name": "list", "type": "text", "required": True, "description": "The name of the list"}
+
+
+def _list_for_writing(call: Call, name: str):
+    from .. import lists
+
+    row = lists.find(call.db, name)
+    if row is None:
+        if lists.watch_list(call.db, name) is not None:
+            raise ActionError("A list of the IoC library is changed with the indicator nodes", retry=False)
+        raise ActionError(f'There is no list called "{name}"', retry=False)
+    if not row.writable_by_automation:
+        raise ActionError(
+            f'Playbooks may not write to the list "{name}": whoever manages lists can allow it', retry=False
+        )
+    return row
+
+
+@action(
+    "list.get",
+    group="Nik",
+    name="Read a list",
+    description="What a list holds: its values, its keys with their values, or its document.",
+    arguments=[LIST_ARG],
+    outputs=[
+        {"name": "items", "type": "any", "description": "A list of values, an object of key → value, or the document"},
+        {"name": "count", "type": "number", "description": "How many items it holds"},
+    ],
+)
+def list_get(call: Call) -> Result:
+    from .. import lists
+
+    name = str(call.args.get("list") or "").strip()
+    try:
+        held = lists.get(call.db, name)
+    except lists.ListError as error:
+        raise ActionError(error.message, retry=False) from None
+    return Result(output={"items": held, "count": len(held) if isinstance(held, (list, dict)) else 1})
+
+
+@action(
+    "list.contains",
+    group="Nik",
+    name="Is it in a list?",
+    description="Whether a value is in a list. A list of networks holds the addresses inside them.",
+    arguments=[LIST_ARG, {"name": "value", "type": "text", "required": True, "description": "What to look for"}],
+    outputs=[{"name": "found", "type": "bool", "description": "Whether the list holds it"}],
+)
+def list_contains(call: Call) -> Result:
+    from .. import lists
+
+    name = str(call.args.get("list") or "").strip()
+    if lists.find(call.db, name) is None and lists.watch_list(call.db, name) is None:
+        raise ActionError(f'There is no list called "{name}"', retry=False)
+    return Result(output={"found": lists.contains(call.db, name, call.args.get("value"))})
+
+
+@action(
+    "list.add",
+    group="Nik",
+    name="Add to a list",
+    description="Add a value to a list that playbooks may write to, or change the value of a key.",
+    arguments=[
+        LIST_ARG,
+        {
+            "name": "value",
+            "type": "text",
+            "required": True,
+            "description": "The value to add (the key, in a key → value list)",
+        },
+        {"name": "data", "type": "any", "description": "What the key holds, in a key → value list"},
+        {"name": "note", "type": "text", "description": "Why it is there"},
+        {"name": "expires_minutes", "type": "number", "description": "Dropped after so long; empty to keep it"},
+    ],
+    outputs=[
+        {"name": "added", "type": "bool", "description": "False when the list held it already"},
+        {"name": "count", "type": "number", "description": "How many items the list holds now"},
+    ],
+)
+def list_add(call: Call) -> Result:
+    from .. import lists
+
+    name = str(call.args.get("list") or "").strip()
+    row = _list_for_writing(call, name)
+    value = str(call.args.get("value") or "").strip()
+    minutes = call.args.get("expires_minutes")
+    try:
+        expires = call.now + float(minutes) * 60 if minutes not in (None, "") else None
+    except (TypeError, ValueError):
+        raise ActionError("The time after which it is dropped is a number of minutes", retry=False) from None
+    if call.dry_run:
+        return Result(output={"added": False, "count": 0}, request={"would": f"add to the list {name}", "value": value})
+    try:
+        added = lists.add_item(
+            call.db, row, value, call.args.get("data"), ACTOR, note=str(call.args.get("note") or ""), expires_at=expires
+        )
+    except lists.ListError as error:
+        raise ActionError(error.message, retry=False) from None
+    audit.record(
+        call.db, ACTOR, "list.add", f'Added "{value[:80]}" to the list "{name}"' + signature(call), target=name
+    )
+    call.db.flush()
+    return Result(output={"added": added, "count": len(lists.items(call.db, name))})
+
+
+@action(
+    "list.remove",
+    group="Nik",
+    name="Remove from a list",
+    description="Remove a value from a list that playbooks may write to.",
+    arguments=[LIST_ARG, {"name": "value", "type": "text", "required": True, "description": "The value (or the key)"}],
+    outputs=[{"name": "removed", "type": "bool", "description": "False when the list did not hold it"}],
+)
+def list_remove(call: Call) -> Result:
+    from .. import lists
+
+    name = str(call.args.get("list") or "").strip()
+    row = _list_for_writing(call, name)
+    value = str(call.args.get("value") or "").strip()
+    if call.dry_run:
+        return Result(output={"removed": False}, request={"would": f"remove from the list {name}", "value": value})
+    removed = lists.remove_item(call.db, row, value, ACTOR)
+    if removed:
+        audit.record(
+            call.db,
+            ACTOR,
+            "list.remove",
+            f'Removed "{value[:80]}" from the list "{name}"' + signature(call),
+            target=name,
+        )
+    return Result(output={"removed": removed})
+
+
+@action(
+    "list.set",
+    group="Nik",
+    name="Set a list",
+    description="Replace everything a list holds, when playbooks may write to it.",
+    arguments=[
+        LIST_ARG,
+        {
+            "name": "items",
+            "type": "any",
+            "required": True,
+            "description": "The values, an object of key → value, or the document of a list that is one",
+        },
+    ],
+    outputs=[{"name": "count", "type": "number", "description": "How many items the list holds now"}],
+)
+def list_set(call: Call) -> Result:
+    from .. import lists
+
+    name = str(call.args.get("list") or "").strip()
+    row = _list_for_writing(call, name)
+    wanted = call.args.get("items")
+    if call.dry_run:
+        return Result(output={"count": 0}, request={"would": f"set the list {name}"})
+    try:
+        count = lists.set_items(call.db, row, wanted, ACTOR)
+    except lists.ListError as error:
+        raise ActionError(error.message, retry=False) from None
+    audit.record(call.db, ACTOR, "list.set", f'Set the list "{name}": {count} items' + signature(call), target=name)
+    return Result(output={"count": count})

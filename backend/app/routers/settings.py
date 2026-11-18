@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import lists
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Setting
@@ -38,6 +39,15 @@ def read_settings(db: OrmSession) -> dict:
     doc = (row.doc if row is not None else None) or {}
     defaults = default_settings_doc()
     merged = {key: doc.get(key, value) for key, value in defaults.items()}
+    # What became lists is read from them, in the shape it always had.
+    for key in ("keywords", "businessHours", "iocAllowlist"):
+        merged[key] = lists.settings_value(db, key, defaults[key])
+    held = merged["mail"] if isinstance(merged["mail"], dict) else {}
+    merged["mail"] = {
+        **defaults["mail"],
+        **held,
+        **{key: lists.settings_value(db, f"mail.{key}", []) for key in ("orgDomains", "trustedAuthServers")},
+    }
     merged["enrichment"] = enrichment_config(merged)
     return merged
 
@@ -69,9 +79,11 @@ def put_settings(
     is_admin = caller.has("admin")
     if not is_admin:
         body = body.model_copy(update={key: None for key in ADMIN_KEYS})
+    # A key that was not sent keeps what is stored: a page sends only what it changed.
+    sent = body.model_fields_set
     doc = {
-        "keywords": body.keywords,
-        "businessHours": body.businessHours,
+        "keywords": body.keywords if "keywords" in sent else current["keywords"],
+        "businessHours": body.businessHours if "businessHours" in sent else current["businessHours"],
         "iocAllowlist": (
             [str(entry).strip() for entry in body.iocAllowlist if str(entry).strip()]
             if body.iocAllowlist is not None
@@ -95,15 +107,27 @@ def put_settings(
             else current["enrichment"]
         ),
     }
+    changed = sorted(key for key, value in doc.items() if value != current.get(key))
+    # What is a list is written to its list; the document keeps which list that is.
+    stored = dict(doc)
+    pointers = lists.pointers_of(db)
+    for key in ("keywords", "businessHours", "iocAllowlist"):
+        if key in changed or lists.find(db, pointers[key]) is None:
+            lists.apply_setting(db, key, doc[key], caller.actor)
+        stored[key] = {"list": pointers[key]}
+    stored["mail"] = dict(doc["mail"])
+    for key in ("orgDomains", "trustedAuthServers"):
+        if "mail" in changed or lists.find(db, pointers[f"mail.{key}"]) is None:
+            lists.apply_setting(db, f"mail.{key}", doc["mail"].get(key) or [], caller.actor)
+        stored["mail"][key] = {"list": pointers[f"mail.{key}"]}
     row = db.get(Setting, SETTINGS_ID)
     if row is None:
-        row = Setting(id=SETTINGS_ID, doc=doc)
+        row = Setting(id=SETTINGS_ID, doc=stored)
         db.add(row)
     else:
-        row.doc = doc
+        row.doc = stored
         flag_modified(row, "doc")
-    changed = sorted(key for key, value in doc.items() if value != current.get(key))
     if changed:
         audit.record(db, caller.actor, "settings.update", f"Changed the settings: {', '.join(changed)}")
     db.commit()
-    return _out(doc)
+    return _out(read_settings(db))
