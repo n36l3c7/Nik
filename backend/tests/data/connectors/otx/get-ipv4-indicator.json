@@ -1,0 +1,62 @@
+{
+  "args": {
+    "ip": "8.8.8.8",
+    "section": "general"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/indicators/IPv4/8.8.8.8/general",
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "indicator": "8.8.8.8",
+          "type": "IPv4",
+          "asn": "AS64500 Example Networks",
+          "country_name": "Netherlands",
+          "pulse_info": {
+            "count": 0,
+            "pulses": []
+          },
+          "validation": [],
+          "sections": [
+            "general",
+            "geo",
+            "reputation",
+            "url_list",
+            "passive_dns",
+            "malware",
+            "http_scans"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "indicator": "8.8.8.8",
+      "type": "IPv4",
+      "asn": "AS64500 Example Networks",
+      "country_name": "Netherlands",
+      "pulse_info": {
+        "count": 0,
+        "pulses": []
+      },
+      "validation": [],
+      "sections": [
+        "general",
+        "geo",
+        "reputation",
+        "url_list",
+        "passive_dns",
+        "malware",
+        "http_scans"
+      ]
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/ping",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "message": "pong",
+          "expiration": "2026-12-31",
+          "offering": "enterprise",
+          "address": "3.215.138.152",
+          "plan": "Elite",
+          "modules": "Hunt,Vulnerability Prioritization"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "message": "pong",
+    "plan": "Elite",
+    "modules": "Hunt,Vulnerability Prioritization",
+    "offering": "enterprise",
+    "expiration": "2026-12-31",
+    "address": "3.215.138.152"
+  }
+}

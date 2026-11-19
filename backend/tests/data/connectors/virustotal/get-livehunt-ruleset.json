@@ -1,0 +1,58 @@
+{
+  "args": {
+    "id": "6425310189355008"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/intelligence/hunting_rulesets/6425310189355008",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "hunting_ruleset",
+            "id": "6425310189355008",
+            "attributes": {
+              "name": "foobar",
+              "enabled": true,
+              "limit": 100,
+              "creation_date": 1521016318,
+              "modification_date": 1521016318,
+              "number_of_rules": 1,
+              "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+              "notification_emails": [
+                "notifications@acme.com"
+              ],
+              "match_object_type": "file"
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/intelligence/hunting_rulesets/6425310189355008"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6425310189355008",
+    "type": "hunting_ruleset",
+    "attributes": {
+      "name": "foobar",
+      "enabled": true,
+      "limit": 100,
+      "creation_date": 1521016318,
+      "modification_date": 1521016318,
+      "number_of_rules": 1,
+      "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+      "notification_emails": [
+        "notifications@acme.com"
+      ],
+      "match_object_type": "file"
+    }
+  }
+}

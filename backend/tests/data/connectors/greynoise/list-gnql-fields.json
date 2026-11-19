@@ -1,0 +1,92 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/gnql/fields",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "fields": [
+            {
+              "name": "classification",
+              "description": "Whether the device has been categorized as unknown, benign, suspicious or malicious",
+              "value_types": [
+                "string"
+              ],
+              "closed_options": [
+                "benign",
+                "suspicious",
+                "malicious",
+                "unknown"
+              ],
+              "is_single_value": true,
+              "is_date": false,
+              "is_restricted": false
+            },
+            {
+              "name": "metadata.asn_subnet",
+              "description": "The latest ASN subnet GreyNoise observed for the IP address",
+              "aliases": [
+                "asn_subnet"
+              ],
+              "value_types": [
+                "string",
+                "ipcidr"
+              ],
+              "is_single_value": true,
+              "is_date": false,
+              "is_restricted": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "fields": [
+      {
+        "name": "classification",
+        "description": "Whether the device has been categorized as unknown, benign, suspicious or malicious",
+        "value_types": [
+          "string"
+        ],
+        "closed_options": [
+          "benign",
+          "suspicious",
+          "malicious",
+          "unknown"
+        ],
+        "is_single_value": true,
+        "is_date": false,
+        "is_restricted": false
+      },
+      {
+        "name": "metadata.asn_subnet",
+        "description": "The latest ASN subnet GreyNoise observed for the IP address",
+        "aliases": [
+          "asn_subnet"
+        ],
+        "value_types": [
+          "string",
+          "ipcidr"
+        ],
+        "is_single_value": true,
+        "is_date": false,
+        "is_restricted": true
+      }
+    ],
+    "names": [
+      "classification",
+      "metadata.asn_subnet"
+    ],
+    "restricted": [
+      "metadata.asn_subnet"
+    ]
+  }
+}

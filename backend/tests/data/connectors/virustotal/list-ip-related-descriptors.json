@@ -1,0 +1,44 @@
+{
+  "args": {
+    "ip": "8.8.8.8",
+    "relationship": "resolutions"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/ip_addresses/8.8.8.8/relationships/resolutions",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "resolution",
+              "id": "8.8.8.8www.hooli.com"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "resolution",
+        "id": "8.8.8.8www.hooli.com"
+      }
+    ],
+    "ids": [
+      "8.8.8.8www.hooli.com"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

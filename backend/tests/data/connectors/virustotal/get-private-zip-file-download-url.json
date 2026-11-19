@@ -1,0 +1,27 @@
+{
+  "args": {
+    "id": "4939392292"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/zip_files/4939392292/download_url",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": "https://vtsamples.commondatastorage.googleapis.com/zips/4939392292?Expires=1524733537"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "data": "https://vtsamples.commondatastorage.googleapis.com/zips/4939392292?Expires=1524733537"
+    }
+  }
+}

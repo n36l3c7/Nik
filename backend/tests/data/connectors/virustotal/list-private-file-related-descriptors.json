@@ -1,0 +1,44 @@
+{
+  "args": {
+    "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772",
+    "relationship": "dropped_files"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/files/11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772/relationships/dropped_files",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "private_file",
+              "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "private_file",
+        "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772"
+      }
+    ],
+    "ids": [
+      "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

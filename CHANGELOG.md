@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-11-19
+
+The sources of threat intelligence are connectors, each in a content pack of
+its own with every command of its public API; an instance holds several keys
+and says how they take turns.
+
+### Added
+
+- **Eleven packs of threat-intelligence sources**, in the catalogue:
+  VirusTotal, AbuseIPDB, urlscan.io, MalwareBazaar, URLhaus, ThreatFox,
+  AlienVault OTX, GreyNoise, Shodan, Google Safe Browsing and RDAP. Each
+  connector has every command its vendor documents (535 in all), so
+  each is a block of the playbook editor and a `!` command of the War Room
+  and the Playground; the look-ups of an indicator are `reputation`
+  commands, with the verdict Nik already gave for that source. Every one
+  was written from the vendor's documentation and tested against recorded
+  exchanges, not against the service: each says `verified: false`.
+- **A command says when it needs a paid plan.** `premium: true` in a
+  connector file marks a command the vendor gives only to a paid plan; the
+  library of the editor, the page of the connector and the card of a pack
+  say so. Nothing is enforced: the vendor answers what it answers.
+- **Several keys for one instance.** Beside its credentials an instance
+  holds more keys, named and ordered, and says how they take turns: one
+  request each, the same key until it is used up, the one with most left
+  today, or the first only with the others in reserve. Each key is held to
+  the requests a minute and a day you set; a key the vendor refuses with
+  429 is left alone for a while and the next is tried for the same request.
+  When every key is used up the command waits for the first to come back,
+  or fails, as the instance says. The page shows what each key was used
+  for today, and *Test every key* tries each.
+- **Answers that are kept.** An instance may keep the answer of a command
+  for some hours and give it back without a request, for commands that
+  change nothing outside only. *Forget the kept answers* asks again.
+- **Try it.** Each command on the page of a connector opens the Playground
+  with its line ready to complete: its required arguments and the instance
+  to use.
+- **Other hosts for a connector.** `more_hosts` in a connector file lists
+  fixed host names its commands reach beside the address of the instance
+  (InternetDB for Shodan, the registries RDAP.org sends to). The
+  credentials of the instance are never sent to them, and the page of the
+  connector lists them.
+
+- **Two filters for addresses.** `urlencode` writes a value as an address
+  takes it, so that what is put in a path cannot change the path;
+  `base64url` is how some APIs name a URL.
+
+### Changed
+
+- **The automatic look-ups use the keys of the instances.** Beside the
+  keys of *Settings → Indicators → Threat intelligence*, the look-ups of a
+  source use every key of the instances of its connector that are on. A
+  key that is in both places counts once. abuse.ch gives one key for its
+  three services: an instance of any of them holds it.
+- A connector file may be 1 MB and hold 400 commands (256 kB and 100).
+
+### Fixed
+
+- **urlscan.io never said "malicious" for a search result** when the
+  answer carries the verdict where the search API documents it
+  (`verdicts.malicious`); Nik read only `verdicts.overall.malicious`. Both
+  are read now.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migration `0040_instance_keys` adds two tables and two columns.
+- Nothing is installed by the upgrade: the new packs are in the catalogue
+  (*Settings → Automation → Content packs*, *Read again*).
+- The keys already set for the look-ups keep working. To use a source in
+  playbooks, install its pack and make an instance with a key.
+
 ## [6.0.0] - 2026-11-19
 
 What Nik knows about a product of a vendor is a content pack of its own,
@@ -2829,7 +2900,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.0.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.1.0...HEAD
+[6.1.0]: https://github.com/n36l3c7/Nik/compare/v6.0.0...v6.1.0
 [6.0.0]: https://github.com/n36l3c7/Nik/compare/v5.4.0...v6.0.0
 [5.4.0]: https://github.com/n36l3c7/Nik/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/n36l3c7/Nik/compare/v5.2.0...v5.3.0

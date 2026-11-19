@@ -1,0 +1,50 @@
+{
+  "args": {
+    "date": "2026-05-12"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/bsi/company",
+        "query": {
+          "date": "2026-05-12"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "date": "2026-05-12",
+          "source": "db",
+          "stats": {
+            "companies": [
+              {
+                "name": "Cloudflare",
+                "category": "cdn",
+                "trust_level": "1",
+                "ip_count": 18402,
+                "cidr_count": 91
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "stats": [
+      {
+        "name": "Cloudflare",
+        "category": "cdn",
+        "trust_level": "1",
+        "ip_count": 18402,
+        "cidr_count": 91
+      }
+    ],
+    "date": "2026-05-12",
+    "source": "db"
+  }
+}

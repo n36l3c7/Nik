@@ -1,0 +1,115 @@
+{
+  "args": {
+    "query": "tags:Mirai",
+    "start": "2025-11-10T00:00:00Z",
+    "end": "2025-11-10T23:59:59Z",
+    "limit": 100
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/gnql/timeseries",
+        "query": {
+          "query": "tags:Mirai",
+          "start": "2025-11-10T00:00:00Z",
+          "end": "2025-11-10T23:59:59Z",
+          "limit": 100
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "2025-11-10-14": [
+            {
+              "ip": "203.0.113.45",
+              "internet_scanner_intelligence": {
+                "first_seen": "2018-01-28",
+                "last_seen": "2018-02-28",
+                "found": true,
+                "tags": [
+                  "Mirai",
+                  "Telnet Worm"
+                ],
+                "actor": "Shodan.io",
+                "spoofable": true,
+                "classification": "benign",
+                "cves": [
+                  "CVE-2020-1234",
+                  "CVE-2021-2345"
+                ],
+                "vpn": true,
+                "vpn_service": "IPVANISH_VPN",
+                "tor": false,
+                "last_seen_timestamp": "2025-01-15T12:30:45Z",
+                "metadata": {
+                  "asn": "AS13335",
+                  "source_country": "United States",
+                  "source_country_code": "US",
+                  "organization": "Example Hosting"
+                },
+                "raw_data": {
+                  "scan": [
+                    {
+                      "port": 22,
+                      "protocol": "tcp"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "hours": [
+      "2025-11-10-14"
+    ],
+    "records": {
+      "2025-11-10-14": [
+        {
+          "ip": "203.0.113.45",
+          "internet_scanner_intelligence": {
+            "first_seen": "2018-01-28",
+            "last_seen": "2018-02-28",
+            "found": true,
+            "tags": [
+              "Mirai",
+              "Telnet Worm"
+            ],
+            "actor": "Shodan.io",
+            "spoofable": true,
+            "classification": "benign",
+            "cves": [
+              "CVE-2020-1234",
+              "CVE-2021-2345"
+            ],
+            "vpn": true,
+            "vpn_service": "IPVANISH_VPN",
+            "tor": false,
+            "last_seen_timestamp": "2025-01-15T12:30:45Z",
+            "metadata": {
+              "asn": "AS13335",
+              "source_country": "United States",
+              "source_country_code": "US",
+              "organization": "Example Hosting"
+            },
+            "raw_data": {
+              "scan": [
+                {
+                  "port": 22,
+                  "protocol": "tcp"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "args": {
+    "id": "piedpiper"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/groups/piedpiper/relationships/users",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "user",
+              "id": "richard"
+            },
+            {
+              "type": "user",
+              "id": "gilfoyle"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "user",
+        "id": "richard"
+      },
+      {
+        "type": "user",
+        "id": "gilfoyle"
+      }
+    ],
+    "ids": [
+      "richard",
+      "gilfoyle"
+    ],
+    "count": 2,
+    "cursor": null
+  }
+}

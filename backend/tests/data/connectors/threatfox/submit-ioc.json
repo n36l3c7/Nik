@@ -1,0 +1,56 @@
+{
+  "args": {
+    "iocs": [
+      "tooeviltoexist.com"
+    ],
+    "threat_type": "botnet_cc",
+    "ioc_type": "domain",
+    "malware": "win.zloader",
+    "confidence_level": 75,
+    "is_compromised": false,
+    "reference": "https://twitter.com/JAMESWT_MHT/status/1336229725082177536",
+    "tags": [
+      "TA505"
+    ],
+    "comment": "This is a very evil IOC!",
+    "anonymous": false
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/",
+        "json": {
+          "query": "submit_ioc",
+          "threat_type": "botnet_cc",
+          "ioc_type": "domain",
+          "malware": "win.zloader",
+          "confidence_level": 75,
+          "is_compromised": false,
+          "reference": "https://twitter.com/JAMESWT_MHT/status/1336229725082177536",
+          "comment": "This is a very evil IOC!",
+          "anonymous": 0,
+          "tags": [
+            "TA505"
+          ],
+          "iocs": [
+            "tooeviltoexist.com"
+          ]
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query_status": "ok"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "query_status": "ok",
+    "data": null
+  }
+}

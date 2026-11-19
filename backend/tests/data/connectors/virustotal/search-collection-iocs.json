@@ -1,0 +1,86 @@
+{
+  "args": {
+    "id": "0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e",
+    "query": "entity:domain"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/collections/0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e/search",
+        "query": {
+          "query": "entity:domain",
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "domain",
+              "id": "www.hooli.com",
+              "attributes": {
+                "last_analysis_stats": {
+                  "harmless": 60,
+                  "malicious": 0,
+                  "suspicious": 1,
+                  "timeout": 0,
+                  "undetected": 8
+                },
+                "reputation": 0,
+                "registrar": "MarkMonitor Inc.",
+                "categories": {
+                  "Forcepoint ThreatSeeker": "information technology"
+                },
+                "last_analysis_date": 1612962021,
+                "tags": []
+              },
+              "links": {
+                "self": "https://www.virustotal.com/api/v3/domains/www.hooli.com"
+              }
+            }
+          ],
+          "meta": {
+            "total_hits": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "domain",
+        "id": "www.hooli.com",
+        "attributes": {
+          "last_analysis_stats": {
+            "harmless": 60,
+            "malicious": 0,
+            "suspicious": 1,
+            "timeout": 0,
+            "undetected": 8
+          },
+          "reputation": 0,
+          "registrar": "MarkMonitor Inc.",
+          "categories": {
+            "Forcepoint ThreatSeeker": "information technology"
+          },
+          "last_analysis_date": 1612962021,
+          "tags": []
+        },
+        "links": {
+          "self": "https://www.virustotal.com/api/v3/domains/www.hooli.com"
+        }
+      }
+    ],
+    "ids": [
+      "www.hooli.com"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

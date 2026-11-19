@@ -1,0 +1,97 @@
+{
+  "args": {
+    "host": "8.8.8.8"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "geonet.shodan.io",
+        "path": "/api/geoping/8.8.8.8"
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "ip": "8.8.8.8",
+            "is_alive": true,
+            "min_rtt": 0.552,
+            "avg_rtt": 0.601,
+            "max_rtt": 0.677,
+            "rtts": [
+              0.677,
+              0.552,
+              0.574
+            ],
+            "packets_sent": 3,
+            "packets_received": 3,
+            "packet_loss": 0.0,
+            "from_loc": {
+              "city": "Frankfurt",
+              "country": "DE",
+              "latlon": "50.1109,8.6821"
+            }
+          },
+          {
+            "ip": "8.8.8.8",
+            "is_alive": false,
+            "min_rtt": 0.0,
+            "avg_rtt": 0.0,
+            "max_rtt": 0.0,
+            "rtts": [],
+            "packets_sent": 3,
+            "packets_received": 0,
+            "packet_loss": 1.0,
+            "from_loc": {
+              "city": "Singapore",
+              "country": "SG",
+              "latlon": "1.3521,103.8198"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "results": [
+      {
+        "ip": "8.8.8.8",
+        "is_alive": true,
+        "min_rtt": 0.552,
+        "avg_rtt": 0.601,
+        "max_rtt": 0.677,
+        "rtts": [
+          0.677,
+          0.552,
+          0.574
+        ],
+        "packets_sent": 3,
+        "packets_received": 3,
+        "packet_loss": 0.0,
+        "from_loc": {
+          "city": "Frankfurt",
+          "country": "DE",
+          "latlon": "50.1109,8.6821"
+        }
+      },
+      {
+        "ip": "8.8.8.8",
+        "is_alive": false,
+        "min_rtt": 0.0,
+        "avg_rtt": 0.0,
+        "max_rtt": 0.0,
+        "rtts": [],
+        "packets_sent": 3,
+        "packets_received": 0,
+        "packet_loss": 1.0,
+        "from_loc": {
+          "city": "Singapore",
+          "country": "SG",
+          "latlon": "1.3521,103.8198"
+        }
+      }
+    ],
+    "alive_from": 1,
+    "count": 2
+  }
+}

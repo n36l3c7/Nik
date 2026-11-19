@@ -158,6 +158,8 @@ def set_extra_keys(
             else:
                 secrets[field] = str(value)[:10_000]
         missing = [field for field in required if not secrets.get(field)]
+        if not secrets:
+            raise KeyError_(f'The key "{name}" holds no credential')
         if missing:
             raise KeyError_(f'The key "{name}" needs: ' + ", ".join(missing))
         if not key_id:

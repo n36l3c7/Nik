@@ -1,0 +1,52 @@
+{
+  "args": {
+    "host": "8.8.8.8"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "geonet.shodan.io",
+        "path": "/api/ping/8.8.8.8"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "ip": "8.8.8.8",
+          "is_alive": true,
+          "min_rtt": 0.552,
+          "avg_rtt": 0.601,
+          "max_rtt": 0.677,
+          "rtts": [
+            0.677,
+            0.552,
+            0.574
+          ],
+          "packets_sent": 3,
+          "packets_received": 3,
+          "packet_loss": 0.0,
+          "from_loc": {
+            "city": "Frankfurt",
+            "country": "DE",
+            "latlon": "50.1109,8.6821"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ip": "8.8.8.8",
+    "is_alive": true,
+    "avg_rtt": 0.601,
+    "min_rtt": 0.552,
+    "max_rtt": 0.677,
+    "packets_sent": 3,
+    "packets_received": 3,
+    "packet_loss": 0.0,
+    "from_loc": {
+      "city": "Frankfurt",
+      "country": "DE",
+      "latlon": "50.1109,8.6821"
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "args": {
+    "name": "Testsearch",
+    "query": "page.domain:urlscan.io",
+    "datasource": "scans",
+    "description": "urlscan documentation example saved search.",
+    "long_description": "Example saved search created from urlscan documentation",
+    "tlp": "red",
+    "usertags": [
+      "private.privatetag"
+    ],
+    "permissions": [
+      "team:read",
+      "team:write"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/user/searches/",
+        "json": {
+          "search": {
+            "name": "Testsearch",
+            "query": "page.domain:urlscan.io",
+            "datasource": "scans",
+            "description": "urlscan documentation example saved search.",
+            "longDescription": "Example saved search created from urlscan documentation",
+            "tlp": "red",
+            "usertags": [
+              "private.privatetag"
+            ],
+            "permissions": [
+              "team:read",
+              "team:write"
+            ]
+          }
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "search": {
+            "_id": "6f1c2a9be4b0a1d2c3e4f567",
+            "datasource": "scans",
+            "query": "page.domain:urlscan.io",
+            "name": "Testsearch",
+            "description": "urlscan documentation example saved search.",
+            "longDescription": "Example saved search created from urlscan documentation",
+            "tlp": "red",
+            "usertags": [
+              "private.privatetag"
+            ],
+            "permissions": [
+              "team:read",
+              "team:write"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6f1c2a9be4b0a1d2c3e4f567",
+    "search": {
+      "_id": "6f1c2a9be4b0a1d2c3e4f567",
+      "datasource": "scans",
+      "query": "page.domain:urlscan.io",
+      "name": "Testsearch",
+      "description": "urlscan documentation example saved search.",
+      "longDescription": "Example saved search created from urlscan documentation",
+      "tlp": "red",
+      "usertags": [
+        "private.privatetag"
+      ],
+      "permissions": [
+        "team:read",
+        "team:write"
+      ]
+    }
+  }
+}

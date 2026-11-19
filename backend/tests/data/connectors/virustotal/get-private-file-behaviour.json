@@ -1,0 +1,71 @@
+{
+  "args": {
+    "sandbox_id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772_Zenbox"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/file_behaviours/11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772_Zenbox",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "private_file_behaviour",
+            "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772_Zenbox",
+            "attributes": {
+              "analysis_date": 1669409515,
+              "sandbox_name": "Zenbox",
+              "has_html_report": true,
+              "has_pcap": false,
+              "verdicts": [
+                "UNKNOWN_VERDICT"
+              ],
+              "calls_highlighted": [
+                "GetTickCount"
+              ],
+              "files_opened": [
+                "C:\\WINDOWS\\system32\\winime32.dll"
+              ],
+              "processes_tree": [
+                {
+                  "process_id": "2248",
+                  "name": "sample.exe"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772_Zenbox",
+    "type": "private_file_behaviour",
+    "attributes": {
+      "analysis_date": 1669409515,
+      "sandbox_name": "Zenbox",
+      "has_html_report": true,
+      "has_pcap": false,
+      "verdicts": [
+        "UNKNOWN_VERDICT"
+      ],
+      "calls_highlighted": [
+        "GetTickCount"
+      ],
+      "files_opened": [
+        "C:\\WINDOWS\\system32\\winime32.dll"
+      ],
+      "processes_tree": [
+        {
+          "process_id": "2248",
+          "name": "sample.exe"
+        }
+      ]
+    }
+  }
+}

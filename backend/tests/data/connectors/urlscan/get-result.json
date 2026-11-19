@@ -1,0 +1,262 @@
+{
+  "args": {
+    "scan_id": "68e26c59-2eae-437b-aeb1-cf750fafe7d7"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/result/68e26c59-2eae-437b-aeb1-cf750fafe7d7/",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "requests": [],
+            "cookies": [],
+            "console": [],
+            "links": []
+          },
+          "stats": {
+            "resourceStats": []
+          },
+          "meta": {
+            "processors": {
+              "rdns": {
+                "data": [
+                  {
+                    "ip": "49.12.22.106",
+                    "ptr": "urlscan.io"
+                  }
+                ]
+              }
+            }
+          },
+          "task": {
+            "uuid": "68e26c59-2eae-437b-aeb1-cf750fafe7d7",
+            "time": "2023-08-18T10:27:47.342Z",
+            "url": "https://urlscan.io/",
+            "visibility": "public",
+            "method": "api",
+            "source": "d1675d21",
+            "tags": [],
+            "reportURL": "https://urlscan.io/result/68e26c59-2eae-437b-aeb1-cf750fafe7d7/",
+            "screenshotURL": "https://urlscan.io/screenshots/68e26c59-2eae-437b-aeb1-cf750fafe7d7.png",
+            "domURL": "https://urlscan.io/dom/68e26c59-2eae-437b-aeb1-cf750fafe7d7/"
+          },
+          "page": {
+            "url": "https://urlscan.io/",
+            "domain": "urlscan.io",
+            "country": "DE",
+            "city": "",
+            "server": "nginx",
+            "ip": "49.12.22.106",
+            "asn": "AS24940",
+            "asnname": "HETZNER-AS, DE"
+          },
+          "lists": {
+            "ips": [
+              "2a00:1450:4001:827::2003",
+              "49.12.22.106"
+            ],
+            "countries": [
+              "DE"
+            ],
+            "asns": [
+              "15169",
+              "24940"
+            ],
+            "domains": [
+              "urlscan.io",
+              "www.gstatic.com"
+            ],
+            "servers": [
+              "nginx",
+              "sffe"
+            ],
+            "urls": [
+              "https://urlscan.io/",
+              "https://urlscan.io/img/urlscan_256.png"
+            ]
+          },
+          "verdicts": {
+            "overall": {
+              "score": -50,
+              "categories": [],
+              "brands": [],
+              "tags": [],
+              "malicious": false,
+              "hasVerdicts": true
+            },
+            "urlscan": {
+              "score": -50,
+              "categories": [],
+              "brands": [],
+              "tags": [],
+              "malicious": false,
+              "hasVerdicts": true
+            },
+            "engines": {
+              "score": 0,
+              "categories": [],
+              "enginesTotal": 0,
+              "maliciousTotal": 0,
+              "benignTotal": 0,
+              "maliciousVerdicts": [],
+              "benignVerdicts": [],
+              "malicious": false,
+              "hasVerdicts": false
+            },
+            "community": {
+              "score": 0,
+              "categories": [],
+              "brands": [],
+              "votesTotal": 0,
+              "votesMalicious": 0,
+              "votesBenign": 0,
+              "malicious": false,
+              "hasVerdicts": false
+            }
+          },
+          "submitter": {
+            "country": "US"
+          },
+          "scanner": {
+            "country": "us"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "malicious": false,
+    "score": -50,
+    "categories": [],
+    "brands": [],
+    "url": "https://urlscan.io/",
+    "domain": "urlscan.io",
+    "ip": "49.12.22.106",
+    "country": "DE",
+    "server": "nginx",
+    "asn": "AS24940",
+    "report": "https://urlscan.io/result/68e26c59-2eae-437b-aeb1-cf750fafe7d7/",
+    "screenshot": "https://urlscan.io/screenshots/68e26c59-2eae-437b-aeb1-cf750fafe7d7.png",
+    "dom": "https://urlscan.io/dom/68e26c59-2eae-437b-aeb1-cf750fafe7d7/",
+    "ips": [
+      "2a00:1450:4001:827::2003",
+      "49.12.22.106"
+    ],
+    "domains": [
+      "urlscan.io",
+      "www.gstatic.com"
+    ],
+    "urls": [
+      "https://urlscan.io/",
+      "https://urlscan.io/img/urlscan_256.png"
+    ],
+    "verdicts": {
+      "overall": {
+        "score": -50,
+        "categories": [],
+        "brands": [],
+        "tags": [],
+        "malicious": false,
+        "hasVerdicts": true
+      },
+      "urlscan": {
+        "score": -50,
+        "categories": [],
+        "brands": [],
+        "tags": [],
+        "malicious": false,
+        "hasVerdicts": true
+      },
+      "engines": {
+        "score": 0,
+        "categories": [],
+        "enginesTotal": 0,
+        "maliciousTotal": 0,
+        "benignTotal": 0,
+        "maliciousVerdicts": [],
+        "benignVerdicts": [],
+        "malicious": false,
+        "hasVerdicts": false
+      },
+      "community": {
+        "score": 0,
+        "categories": [],
+        "brands": [],
+        "votesTotal": 0,
+        "votesMalicious": 0,
+        "votesBenign": 0,
+        "malicious": false,
+        "hasVerdicts": false
+      }
+    },
+    "task": {
+      "uuid": "68e26c59-2eae-437b-aeb1-cf750fafe7d7",
+      "time": "2023-08-18T10:27:47.342Z",
+      "url": "https://urlscan.io/",
+      "visibility": "public",
+      "method": "api",
+      "source": "d1675d21",
+      "tags": [],
+      "reportURL": "https://urlscan.io/result/68e26c59-2eae-437b-aeb1-cf750fafe7d7/",
+      "screenshotURL": "https://urlscan.io/screenshots/68e26c59-2eae-437b-aeb1-cf750fafe7d7.png",
+      "domURL": "https://urlscan.io/dom/68e26c59-2eae-437b-aeb1-cf750fafe7d7/"
+    },
+    "page": {
+      "url": "https://urlscan.io/",
+      "domain": "urlscan.io",
+      "country": "DE",
+      "city": "",
+      "server": "nginx",
+      "ip": "49.12.22.106",
+      "asn": "AS24940",
+      "asnname": "HETZNER-AS, DE"
+    },
+    "lists": {
+      "ips": [
+        "2a00:1450:4001:827::2003",
+        "49.12.22.106"
+      ],
+      "countries": [
+        "DE"
+      ],
+      "asns": [
+        "15169",
+        "24940"
+      ],
+      "domains": [
+        "urlscan.io",
+        "www.gstatic.com"
+      ],
+      "servers": [
+        "nginx",
+        "sffe"
+      ],
+      "urls": [
+        "https://urlscan.io/",
+        "https://urlscan.io/img/urlscan_256.png"
+      ]
+    },
+    "stats": {
+      "resourceStats": []
+    },
+    "meta": {
+      "processors": {
+        "rdns": {
+          "data": [
+            {
+              "ip": "49.12.22.106",
+              "ptr": "urlscan.io"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

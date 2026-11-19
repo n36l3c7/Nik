@@ -1,0 +1,78 @@
+{
+  "args": {
+    "domain": "www.hooli.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/domains/www.hooli.com",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "domain",
+            "id": "www.hooli.com",
+            "attributes": {
+              "last_analysis_stats": {
+                "harmless": 60,
+                "malicious": 0,
+                "suspicious": 1,
+                "timeout": 0,
+                "undetected": 8
+              },
+              "reputation": 0,
+              "registrar": "MarkMonitor Inc.",
+              "categories": {
+                "Forcepoint ThreatSeeker": "information technology"
+              },
+              "last_analysis_date": 1612962021,
+              "tags": []
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/domains/www.hooli.com"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "suspicious",
+    "summary": "0 malicious, 1 suspicious, 60 harmless, 8 undetected",
+    "malicious": 0,
+    "suspicious": 1,
+    "harmless": 60,
+    "undetected": 8,
+    "stats": {
+      "harmless": 60,
+      "malicious": 0,
+      "suspicious": 1,
+      "timeout": 0,
+      "undetected": 8
+    },
+    "reputation": 0,
+    "id": "www.hooli.com",
+    "attributes": {
+      "last_analysis_stats": {
+        "harmless": 60,
+        "malicious": 0,
+        "suspicious": 1,
+        "timeout": 0,
+        "undetected": 8
+      },
+      "reputation": 0,
+      "registrar": "MarkMonitor Inc.",
+      "categories": {
+        "Forcepoint ThreatSeeker": "information technology"
+      },
+      "last_analysis_date": 1612962021,
+      "tags": []
+    },
+    "link": "https://www.virustotal.com/gui/domain/www.hooli.com"
+  }
+}

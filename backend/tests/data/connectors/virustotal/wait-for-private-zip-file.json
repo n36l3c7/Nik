@@ -1,0 +1,62 @@
+{
+  "args": {
+    "id": "4939392292"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/zip_files/4939392292",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "zip_file",
+            "id": "4939392292",
+            "attributes": {
+              "status": "creating",
+              "progress": 45,
+              "files_ok": 0,
+              "files_error": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/zip_files/4939392292",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "zip_file",
+            "id": "4939392292",
+            "attributes": {
+              "status": "finished",
+              "progress": 100,
+              "files_ok": 3,
+              "files_error": 0
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "4939392292",
+    "status": "finished",
+    "progress": 100,
+    "files_ok": 3,
+    "files_error": 0
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "args": {
+    "query": "Raspbian port:22"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/host/search/tokens",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "query": "Raspbian port:22"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "attributes": {
+            "ports": [
+              22
+            ]
+          },
+          "errors": [],
+          "string": "Raspbian",
+          "filters": [
+            "port"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "filters": [
+      "port"
+    ],
+    "attributes": {
+      "ports": [
+        22
+      ]
+    },
+    "string": "Raspbian",
+    "errors": []
+  }
+}

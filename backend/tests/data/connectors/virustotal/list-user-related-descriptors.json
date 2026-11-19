@@ -1,0 +1,44 @@
+{
+  "args": {
+    "id": "gilfoyle",
+    "relationship": "groups"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/users/gilfoyle/relationships/groups",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "group",
+              "id": "piedpiper"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "group",
+        "id": "piedpiper"
+      }
+    ],
+    "ids": [
+      "piedpiper"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

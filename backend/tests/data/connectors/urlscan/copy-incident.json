@@ -1,0 +1,115 @@
+{
+  "args": {
+    "incident_id": "6f1c2a9be4b0a1d2c3e4fdef"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/user/incidents/6f1c2a9be4b0a1d2c3e4fdef/copy",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "incident": {
+            "_id": "6f1c2a9be4b0a1d2c3e4f111",
+            "scanInterval": 3600,
+            "watchedAttributes": [
+              "detections",
+              "tls"
+            ],
+            "userAgents": [
+              "Chrome on Linux",
+              "Chrome on macOS"
+            ],
+            "userAgentsPerInterval": 1,
+            "countries": [
+              "de",
+              "us"
+            ],
+            "countriesPerInterval": 2,
+            "stopDelaySuspended": 3600,
+            "stopDelayInactive": 86400,
+            "stopDelayMalicious": 90000,
+            "scanIntervalAfterSuspended": 86400,
+            "scanIntervalAfterMalicious": 86400,
+            "owner": "own",
+            "type": "hostname",
+            "observable": "foobar.com",
+            "state": "active",
+            "visibility": "private",
+            "channels": [
+              "6f1c2a9be4b0a1d2c3e4fabc"
+            ],
+            "sourceType": "copy",
+            "sourceId": "6f1c2a9be4b0a1d2c3e4fdef",
+            "stateSize": 3717,
+            "stateCount": 0,
+            "scanIntervalMode": "automatic",
+            "labels": [
+              "hasHTTP",
+              "hasIP",
+              "hasMX",
+              "hasNS"
+            ],
+            "expireAt": "2025-01-24T11:44:52.563Z",
+            "createdAt": "2025-01-21T11:44:52.566Z",
+            "scannedAt": "2025-01-21T12:44:52.566Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6f1c2a9be4b0a1d2c3e4f111",
+    "state": "active",
+    "incident": {
+      "_id": "6f1c2a9be4b0a1d2c3e4f111",
+      "scanInterval": 3600,
+      "watchedAttributes": [
+        "detections",
+        "tls"
+      ],
+      "userAgents": [
+        "Chrome on Linux",
+        "Chrome on macOS"
+      ],
+      "userAgentsPerInterval": 1,
+      "countries": [
+        "de",
+        "us"
+      ],
+      "countriesPerInterval": 2,
+      "stopDelaySuspended": 3600,
+      "stopDelayInactive": 86400,
+      "stopDelayMalicious": 90000,
+      "scanIntervalAfterSuspended": 86400,
+      "scanIntervalAfterMalicious": 86400,
+      "owner": "own",
+      "type": "hostname",
+      "observable": "foobar.com",
+      "state": "active",
+      "visibility": "private",
+      "channels": [
+        "6f1c2a9be4b0a1d2c3e4fabc"
+      ],
+      "sourceType": "copy",
+      "sourceId": "6f1c2a9be4b0a1d2c3e4fdef",
+      "stateSize": 3717,
+      "stateCount": 0,
+      "scanIntervalMode": "automatic",
+      "labels": [
+        "hasHTTP",
+        "hasIP",
+        "hasMX",
+        "hasNS"
+      ],
+      "expireAt": "2025-01-24T11:44:52.563Z",
+      "createdAt": "2025-01-21T11:44:52.566Z",
+      "scannedAt": "2025-01-21T12:44:52.566Z"
+    }
+  }
+}

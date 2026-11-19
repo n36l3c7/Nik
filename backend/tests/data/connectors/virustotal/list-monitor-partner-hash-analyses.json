@@ -1,0 +1,56 @@
+{
+  "args": {
+    "sha256": "d917dd47406322341cef40cf38091292962ba81d42983456aae4dc4f7967afb1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/hashes/d917dd47406322341cef40cf38091292962ba81d42983456aae4dc4f7967afb1/analyses",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "monitor_analysis",
+              "id": "d917dd47406322341cef40cf38091292962ba81d42983456aae4dc4f7967afb1-1517474700",
+              "attributes": {
+                "date": 1517474787,
+                "detections_count": 1,
+                "sha256": "d917dd47406322341cef40cf38091292962ba81d42983456aae4dc4f7967afb1",
+                "tags": [
+                  "detected"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "monitor_analysis",
+        "id": "d917dd47406322341cef40cf38091292962ba81d42983456aae4dc4f7967afb1-1517474700",
+        "attributes": {
+          "date": 1517474787,
+          "detections_count": 1,
+          "sha256": "d917dd47406322341cef40cf38091292962ba81d42983456aae4dc4f7967afb1",
+          "tags": [
+            "detected"
+          ]
+        }
+      }
+    ],
+    "ids": [
+      "d917dd47406322341cef40cf38091292962ba81d42983456aae4dc4f7967afb1-1517474700"
+    ],
+    "count": 1,
+    "meta": null
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/alert/triggers",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "name": "any",
+            "rule": "*",
+            "description": "Match any service that is discovered"
+          },
+          {
+            "name": "industrial_control_system",
+            "rule": "tag:ics",
+            "description": "Services associated with industrial control systems"
+          },
+          {
+            "name": "malware",
+            "rule": "tag:compromised,malware",
+            "description": "Compromised or malware-related services"
+          },
+          {
+            "name": "uncommon",
+            "rule": "-port:22,80,443,7547",
+            "description": "Services that generally shouldn't be publicly available"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "triggers": [
+      {
+        "name": "any",
+        "rule": "*",
+        "description": "Match any service that is discovered"
+      },
+      {
+        "name": "industrial_control_system",
+        "rule": "tag:ics",
+        "description": "Services associated with industrial control systems"
+      },
+      {
+        "name": "malware",
+        "rule": "tag:compromised,malware",
+        "description": "Compromised or malware-related services"
+      },
+      {
+        "name": "uncommon",
+        "rule": "-port:22,80,443,7547",
+        "description": "Services that generally shouldn't be publicly available"
+      }
+    ],
+    "names": [
+      "any",
+      "industrial_control_system",
+      "malware",
+      "uncommon"
+    ]
+  }
+}

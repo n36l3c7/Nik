@@ -1,0 +1,38 @@
+{
+  "args": {
+    "url": "https://www.hooli.com/",
+    "sandboxes": "chrome_headless_linux",
+    "retention_period_days": 7,
+    "storage_region": "EU"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/private/urls",
+        "form": {
+          "url": "https://www.hooli.com/",
+          "sandboxes": "chrome_headless_linux",
+          "retention_period_days": 7,
+          "storage_region": "EU"
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "private_analysis",
+            "id": "ZmI5Y2VmNGJmZDIwZTkzNmQ5MzY0NTcwMGI2Nzc2M2Q6Tm9uZToxNjYwODI1NDE1"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "analysis_id": "ZmI5Y2VmNGJmZDIwZTkzNmQ5MzY0NTcwMGI2Nzc2M2Q6Tm9uZToxNjYwODI1NDE1",
+    "type": "private_analysis"
+  }
+}

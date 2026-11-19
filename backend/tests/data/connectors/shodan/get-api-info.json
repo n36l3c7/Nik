@@ -1,0 +1,45 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api-info",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "scan_credits": 100000,
+          "usage_limits": {
+            "scan_credits": -1,
+            "query_credits": -1,
+            "monitored_ips": -1
+          },
+          "plan": "stream-100",
+          "https": false,
+          "unlocked": true,
+          "query_credits": 100000,
+          "monitored_ips": 19,
+          "unlocked_left": 100000,
+          "telnet": false
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "plan": "stream-100",
+    "query_credits": 100000,
+    "scan_credits": 100000,
+    "monitored_ips": 19,
+    "usage_limits": {
+      "scan_credits": -1,
+      "query_credits": -1,
+      "monitored_ips": -1
+    },
+    "unlocked": true,
+    "unlocked_left": 100000
+  }
+}

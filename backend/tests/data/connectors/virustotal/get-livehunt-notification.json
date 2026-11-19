@@ -1,0 +1,51 @@
+{
+  "args": {
+    "id": "6425310189355008-5642212b23c8b3e10e0c1d9c0b6b8d5a"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/intelligence/hunting_notifications/6425310189355008-5642212b23c8b3e10e0c1d9c0b6b8d5a",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "hunting_notification",
+            "id": "6425310189355008-5642212b23c8b3e10e0c1d9c0b6b8d5a",
+            "attributes": {
+              "date": 1543301214,
+              "rule_name": "foobar",
+              "ruleset_id": "6425310189355008",
+              "ruleset_name": "foobar",
+              "tags": [
+                "foobar",
+                "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+              ],
+              "snippet": "66 6F 6F 62 61 72"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6425310189355008-5642212b23c8b3e10e0c1d9c0b6b8d5a",
+    "type": "hunting_notification",
+    "attributes": {
+      "date": 1543301214,
+      "rule_name": "foobar",
+      "ruleset_id": "6425310189355008",
+      "ruleset_name": "foobar",
+      "tags": [
+        "foobar",
+        "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+      ],
+      "snippet": "66 6F 6F 62 61 72"
+    }
+  }
+}

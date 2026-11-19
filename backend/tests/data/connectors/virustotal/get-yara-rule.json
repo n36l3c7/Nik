@@ -1,0 +1,54 @@
+{
+  "args": {
+    "id": "003e1c51ef-PK_AXA_fun"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/yara_rules/003e1c51ef-PK_AXA_fun",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "yara_rule",
+            "id": "003e1c51ef-PK_AXA_fun",
+            "attributes": {
+              "name": "PK_AXA_fun",
+              "tags": [
+                "AXA"
+              ],
+              "matches": 0,
+              "author": "Thomas Damonneville",
+              "enabled": true,
+              "rule": "rule PK_AXA_fun : AXA { condition: uint32(0) == 0x04034b50 }",
+              "creation_date": 1682985600,
+              "last_modification_date": 1683185194
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "003e1c51ef-PK_AXA_fun",
+    "name": "PK_AXA_fun",
+    "rule": "rule PK_AXA_fun : AXA { condition: uint32(0) == 0x04034b50 }",
+    "attributes": {
+      "name": "PK_AXA_fun",
+      "tags": [
+        "AXA"
+      ],
+      "matches": 0,
+      "author": "Thomas Damonneville",
+      "enabled": true,
+      "rule": "rule PK_AXA_fun : AXA { condition: uint32(0) == 0x04034b50 }",
+      "creation_date": 1682985600,
+      "last_modification_date": 1683185194
+    }
+  }
+}

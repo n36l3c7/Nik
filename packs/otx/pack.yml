@@ -1,0 +1,10 @@
+id: otx
+name: AlienVault OTX
+vendor: LevelBlue
+category: Threat intelligence
+version: 1.0.0
+description: >-
+  LevelBlue's Open Threat Exchange as commands: the reputation of an address, a domain, a URL or a file from the
+  pulses that name it, every section of an indicator, and pulses to read, search, publish and subscribe to.
+author: Nik
+nik: ">=6.1"

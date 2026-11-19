@@ -1,0 +1,74 @@
+{
+  "args": {
+    "id": "u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101",
+    "relationship": "item"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/analyses/u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101/item",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "url",
+            "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+            "attributes": {
+              "url": "https://www.virustotal.com/",
+              "last_final_url": "https://www.virustotal.com/",
+              "last_http_response_code": 200,
+              "reputation": 12,
+              "last_analysis_stats": {
+                "harmless": 70,
+                "malicious": 2,
+                "suspicious": 0,
+                "timeout": 0,
+                "undetected": 20
+              },
+              "times_submitted": 5,
+              "tags": []
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "url",
+        "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+        "attributes": {
+          "url": "https://www.virustotal.com/",
+          "last_final_url": "https://www.virustotal.com/",
+          "last_http_response_code": 200,
+          "reputation": 12,
+          "last_analysis_stats": {
+            "harmless": 70,
+            "malicious": 2,
+            "suspicious": 0,
+            "timeout": 0,
+            "undetected": 20
+          },
+          "times_submitted": 5,
+          "tags": []
+        },
+        "links": {
+          "self": "https://www.virustotal.com/api/v3/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
+        }
+      }
+    ],
+    "ids": [
+      "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
+    ],
+    "count": 1
+  }
+}

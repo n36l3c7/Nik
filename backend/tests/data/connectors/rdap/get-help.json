@@ -1,0 +1,68 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/help",
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "lang": "en",
+          "notices": [
+            {
+              "title": "About this service",
+              "description": [
+                "RDAP.org aims to support users and developers of RDAP clients by providing a \"bootstrap server\", i.e. single end point for RDAP queries.",
+                "RDAP.org aggregates information about all known RDAP servers. RDAP clients can send RDAP queries to RDAP.org, which will then redirect requests to the appropriate RDAP service."
+              ],
+              "links": [
+                {
+                  "title": "Further information",
+                  "value": "https://rdap.org/help",
+                  "href": "https://about.rdap.org",
+                  "rel": "about"
+                }
+              ]
+            }
+          ]
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "conformance": [
+      "rdap_level_0"
+    ],
+    "notices": [
+      {
+        "title": "About this service",
+        "description": [
+          "RDAP.org aims to support users and developers of RDAP clients by providing a \"bootstrap server\", i.e. single end point for RDAP queries.",
+          "RDAP.org aggregates information about all known RDAP servers. RDAP clients can send RDAP queries to RDAP.org, which will then redirect requests to the appropriate RDAP service."
+        ],
+        "links": [
+          {
+            "title": "Further information",
+            "value": "https://rdap.org/help",
+            "href": "https://about.rdap.org",
+            "rel": "about"
+          }
+        ]
+      }
+    ],
+    "titles": [
+      "About this service"
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "args": {
+    "id": "piedpiper"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/groups/piedpiper/relationships/administrators",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "user",
+              "id": "richard"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "user",
+        "id": "richard"
+      }
+    ],
+    "ids": [
+      "richard"
+    ],
+    "count": 1,
+    "cursor": null
+  }
+}

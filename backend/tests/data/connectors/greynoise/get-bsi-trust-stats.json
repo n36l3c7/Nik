@@ -1,0 +1,46 @@
+{
+  "args": {
+    "date": "2026-05-12"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/bsi/trust",
+        "query": {
+          "date": "2026-05-12"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "date": "2026-05-12",
+          "source": "db",
+          "stats": {
+            "trust_levels": [
+              {
+                "trust_level": "1",
+                "ip_count": 42315,
+                "cidr_count": 218
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "stats": [
+      {
+        "trust_level": "1",
+        "ip_count": 42315,
+        "cidr_count": 218
+      }
+    ],
+    "date": "2026-05-12",
+    "source": "db"
+  }
+}

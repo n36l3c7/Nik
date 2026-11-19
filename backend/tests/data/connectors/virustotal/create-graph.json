@@ -1,0 +1,81 @@
+{
+  "args": {
+    "attributes": {
+      "graph_data": {
+        "description": "test",
+        "version": "5.0.0"
+      },
+      "private": true,
+      "links": [
+        {
+          "connection_type": "resolutions",
+          "source": "www.hooli.com",
+          "target": "relationships_resolutions_wwwhoolicom"
+        }
+      ],
+      "nodes": [
+        {
+          "index": 0,
+          "entity_id": "www.hooli.com",
+          "text": "Root Node",
+          "x": -18,
+          "y": 65,
+          "type": "domain"
+        }
+      ]
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/graphs",
+        "json": {
+          "data": {
+            "type": "graph",
+            "attributes": {
+              "graph_data": {
+                "description": "test",
+                "version": "5.0.0"
+              },
+              "private": true,
+              "links": [
+                {
+                  "connection_type": "resolutions",
+                  "source": "www.hooli.com",
+                  "target": "relationships_resolutions_wwwhoolicom"
+                }
+              ],
+              "nodes": [
+                {
+                  "index": 0,
+                  "entity_id": "www.hooli.com",
+                  "text": "Root Node",
+                  "x": -18,
+                  "y": 65,
+                  "type": "domain"
+                }
+              ]
+            }
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "g0538d03053194c338643183e315b134ec3463a392330430938033934f3be3f37",
+            "type": "graph"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "g0538d03053194c338643183e315b134ec3463a392330430938033934f3be3f37",
+    "type": "graph"
+  }
+}

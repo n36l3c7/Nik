@@ -1,0 +1,51 @@
+{
+  "args": {
+    "id": "piedpiper",
+    "users": [
+      {
+        "type": "user",
+        "id": "gilfoyle",
+        "context_attributes": {
+          "quota_limits": {
+            "api_requests_daily": {
+              "allowed": 10
+            }
+          }
+        }
+      }
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/api/v3/groups/piedpiper/relationships/users",
+        "json": {
+          "data": [
+            {
+              "type": "user",
+              "id": "gilfoyle",
+              "context_attributes": {
+                "quota_limits": {
+                  "api_requests_daily": {
+                    "allowed": 10
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

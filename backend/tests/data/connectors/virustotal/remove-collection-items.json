@@ -1,0 +1,38 @@
+{
+  "args": {
+    "id": "0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e",
+    "relationship": "domains",
+    "items": [
+      {
+        "type": "domain",
+        "id": "www.hooli.com"
+      }
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v3/collections/0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e/domains",
+        "json": {
+          "data": [
+            {
+              "type": "domain",
+              "id": "www.hooli.com"
+            }
+          ]
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

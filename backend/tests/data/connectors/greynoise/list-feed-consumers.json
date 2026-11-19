@@ -1,0 +1,53 @@
+{
+  "args": {
+    "feed_id": "3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/feeds/3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b/consumers",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "consumers": [
+            {
+              "name": "scheduled-lambda",
+              "has_acknowledged": false,
+              "acknowledged_sequence": 0,
+              "acknowledged_at": null,
+              "updated_at": "2026-08-07T14:21:18Z",
+              "status": "active",
+              "approximate_lag": 12
+            }
+          ],
+          "retention": {
+            "oldest_available_at": "2026-05-09T00:00:00Z",
+            "gap_detected": false
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "consumers": [
+      {
+        "name": "scheduled-lambda",
+        "has_acknowledged": false,
+        "acknowledged_sequence": 0,
+        "acknowledged_at": null,
+        "updated_at": "2026-08-07T14:21:18Z",
+        "status": "active",
+        "approximate_lag": 12
+      }
+    ],
+    "names": [
+      "scheduled-lambda"
+    ],
+    "oldest_available_at": "2026-05-09T00:00:00Z"
+  }
+}

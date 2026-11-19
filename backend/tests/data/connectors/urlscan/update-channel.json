@@ -1,0 +1,52 @@
+{
+  "args": {
+    "channel_id": "6f1c2a9be4b0a1d2c3e4fabc",
+    "name": "Test webhook",
+    "type": "webhook",
+    "is_active": false
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/api/v1/user/channels/6f1c2a9be4b0a1d2c3e4fabc",
+        "json": {
+          "channel": {
+            "name": "Test webhook",
+            "type": "webhook",
+            "isActive": false
+          }
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "channel": {
+            "_id": "6f1c2a9be4b0a1d2c3e4fabc",
+            "type": "webhook",
+            "webhookURL": "https://example.com/cgi-bin/urlscan",
+            "name": "Test webhook",
+            "description": "Webhook testing channel.",
+            "isActive": false,
+            "ignoreTime": false
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6f1c2a9be4b0a1d2c3e4fabc",
+    "channel": {
+      "_id": "6f1c2a9be4b0a1d2c3e4fabc",
+      "type": "webhook",
+      "webhookURL": "https://example.com/cgi-bin/urlscan",
+      "name": "Test webhook",
+      "description": "Webhook testing channel.",
+      "isActive": false,
+      "ignoreTime": false
+    }
+  }
+}

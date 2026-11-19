@@ -1,0 +1,46 @@
+{
+  "args": {
+    "username": "LevelBlue"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/users/LevelBlue",
+        "query": {
+          "detailed": 1
+        },
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "username": "LevelBlue",
+          "pulse_count": 178,
+          "user_id": 16976,
+          "subscriber_count": 7,
+          "member_since": "1343 days ago ",
+          "award_count": 0,
+          "avatar_url": "https://otx.alienvault.com/assets/images/default-avatar.png",
+          "follower_count": 4,
+          "indicator_count": 62545
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "username": "LevelBlue",
+      "pulse_count": 178,
+      "user_id": 16976,
+      "subscriber_count": 7,
+      "member_since": "1343 days ago ",
+      "award_count": 0,
+      "avatar_url": "https://otx.alienvault.com/assets/images/default-avatar.png",
+      "follower_count": 4,
+      "indicator_count": 62545
+    }
+  }
+}

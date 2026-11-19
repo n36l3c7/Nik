@@ -567,3 +567,66 @@ def test_provider_details_have_the_shape_the_page_shows(fake_http):
         "cpes": ["cpe:/a:x"],
         "tags": ["tor"],
     }
+
+
+def test_the_keys_of_a_sources_instances_are_keys_of_the_look_ups_too(admin: TestClient):
+    """Since 6.1 a source is a connector: the key an instance of it holds is used by the automatic
+    look-ups, beside the keys of Settings, and one that is in both counts once."""
+    from app.automation import connector_actions as ca
+    from app.core.models import Connection
+    from app.core.security import now_iso
+
+    source = (
+        "name: VirusTotal\nid: virustotal\nversion: 1\nconfiguration:\n"
+        "  - { name: api_key, type: header, header: x-apikey }\n"
+        'base_url: "https://www.virustotal.com/api/v3"\n'
+        "commands:\n  - name: get-me\n    request: { method: GET, path: /users/me }\n"
+    )
+    other = source.replace("VirusTotal", "URLhaus").replace("id: virustotal", "id: urlhaus")
+    assert admin.post("/api/enrichment/providers/virustotal/keys", json={"key": "vt-key-aaaa-0001"}).status_code == 201
+    with SessionLocal() as db:
+        ca.install(db, source, "admin")
+        ca.install(db, other, "admin")
+        for index, (connector, enabled, secret) in enumerate(
+            (
+                ("virustotal", True, "vt-key-inst-0002"),
+                ("virustotal", False, "vt-key-off-0003"),
+                ("urlhaus", True, "ach-key-0004"),
+            )
+        ):
+            row = Connection(
+                id=f"{index}" * 32, name=f"I{index}", connector_id=connector, config={}, enabled=enabled,
+                created_at=now_iso(), updated_at=now_iso(),
+            )  # fmt: skip
+            ca.store_secrets(row, {"value": secret})
+            db.add(row)
+        db.commit()
+    # A second key of the instance, and the same key as the one of Settings: counted once.
+    saved = admin.put(
+        "/api/automation/instances/" + "0" * 32,
+        json={
+            "keys": [
+                {"name": "second", "secrets": {"value": "vt-key-inst-0005"}},
+                {"name": "same", "secrets": {"value": "vt-key-aaaa-0001"}},
+            ]
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    with SessionLocal() as db:
+        found = service.keys(db)
+        assert [key.secret for key in found["virustotal"]] == [
+            "vt-key-aaaa-0001",
+            "vt-key-inst-0002",
+            "vt-key-inst-0005",
+        ]
+        assert found["virustotal"][1].id.startswith("instance:" + "0" * 32)
+        # abuse.ch gives one key for its three services: an instance of any of them holds it.
+        assert [key.secret for key in found["abusech"]] == ["ach-key-0004"]
+        assert "vt-key-off-0003" not in [key.secret for keys in found.values() for key in keys]
+
+
+def test_a_urlscan_result_is_malicious_in_either_shape_of_the_answer():
+    assert providers._urlscan_malicious({"verdicts": {"malicious": True}})
+    assert providers._urlscan_malicious({"verdicts": {"overall": {"malicious": True}}})
+    assert not providers._urlscan_malicious({"verdicts": {"overall": {"malicious": False}, "malicious": False}})
+    assert not providers._urlscan_malicious({})

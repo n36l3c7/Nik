@@ -1,0 +1,152 @@
+{
+  "args": {
+    "number": 65538
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/autnum/65538",
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "objectClassName": "autnum",
+          "handle": "XXXX-RIR",
+          "startAutnum": 65536,
+          "endAutnum": 65541,
+          "name": "AS-RTR-1",
+          "type": "DIRECT ALLOCATION",
+          "status": [
+            "active"
+          ],
+          "country": "AU",
+          "entities": [
+            {
+              "objectClassName": "entity",
+              "handle": "XXXX",
+              "roles": [
+                "registrant"
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Joe User"
+                  ],
+                  [
+                    "kind",
+                    {},
+                    "text",
+                    "individual"
+                  ]
+                ]
+              ]
+            }
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventDate": "1990-12-31T23:59:59Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "1991-12-31T23:59:59Z"
+            }
+          ]
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "name": "AS-RTR-1",
+    "handle": "XXXX-RIR",
+    "start_autnum": 65536,
+    "end_autnum": 65541,
+    "type": "DIRECT ALLOCATION",
+    "country": "AU",
+    "holder": "Joe User",
+    "abuse_email": null,
+    "holder_abuse_email": null,
+    "registered": "1990-12-31T23:59:59Z",
+    "changed": "1991-12-31T23:59:59Z",
+    "status": [
+      "active"
+    ],
+    "record": {
+      "rdapConformance": [
+        "rdap_level_0"
+      ],
+      "objectClassName": "autnum",
+      "handle": "XXXX-RIR",
+      "startAutnum": 65536,
+      "endAutnum": 65541,
+      "name": "AS-RTR-1",
+      "type": "DIRECT ALLOCATION",
+      "status": [
+        "active"
+      ],
+      "country": "AU",
+      "entities": [
+        {
+          "objectClassName": "entity",
+          "handle": "XXXX",
+          "roles": [
+            "registrant"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Joe User"
+              ],
+              [
+                "kind",
+                {},
+                "text",
+                "individual"
+              ]
+            ]
+          ]
+        }
+      ],
+      "events": [
+        {
+          "eventAction": "registration",
+          "eventDate": "1990-12-31T23:59:59Z"
+        },
+        {
+          "eventAction": "last changed",
+          "eventDate": "1991-12-31T23:59:59Z"
+        }
+      ]
+    }
+  }
+}

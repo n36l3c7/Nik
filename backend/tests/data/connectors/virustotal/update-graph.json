@@ -1,0 +1,90 @@
+{
+  "args": {
+    "id": "g5598743d5f3c699f1c90e76c2c2d541d41f1b56bd8114c06d181ed3f60cfcada",
+    "attributes": {
+      "private": true
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/api/v3/graphs/g5598743d5f3c699f1c90e76c2c2d541d41f1b56bd8114c06d181ed3f60cfcada",
+        "json": {
+          "data": {
+            "type": "graph",
+            "attributes": {
+              "private": true
+            }
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "graph",
+            "id": "g5598743d5f3c699f1c90e76c2c2d541d41f1b56bd8114c06d181ed3f60cfcada",
+            "attributes": {
+              "graph_data": {
+                "description": "Hooli.com investigation",
+                "version": "5.0.0"
+              },
+              "private": false,
+              "creation_date": 1530006951,
+              "links": [
+                {
+                  "connection_type": "resolutions",
+                  "source": "www.hooli.com",
+                  "target": "relationships_resolutions_wwwhoolicom"
+                }
+              ],
+              "nodes": [
+                {
+                  "index": 0,
+                  "entity_id": "www.hooli.com",
+                  "text": "Root Node",
+                  "x": -18,
+                  "y": 65,
+                  "type": "domain"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "g5598743d5f3c699f1c90e76c2c2d541d41f1b56bd8114c06d181ed3f60cfcada",
+    "type": "graph",
+    "attributes": {
+      "graph_data": {
+        "description": "Hooli.com investigation",
+        "version": "5.0.0"
+      },
+      "private": false,
+      "creation_date": 1530006951,
+      "links": [
+        {
+          "connection_type": "resolutions",
+          "source": "www.hooli.com",
+          "target": "relationships_resolutions_wwwhoolicom"
+        }
+      ],
+      "nodes": [
+        {
+          "index": 0,
+          "entity_id": "www.hooli.com",
+          "text": "Root Node",
+          "x": -18,
+          "y": 65,
+          "type": "domain"
+        }
+      ]
+    }
+  }
+}

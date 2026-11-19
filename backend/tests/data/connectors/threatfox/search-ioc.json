@@ -1,0 +1,119 @@
+{
+  "args": {
+    "search_term": "harold.jetos.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/",
+        "json": {
+          "query": "search_ioc",
+          "search_term": "harold.jetos.com",
+          "exact_match": false
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query_status": "ok",
+          "data": [
+            {
+              "id": "4726",
+              "ioc": "http://harold.jetos.com:3606/is-ready",
+              "threat_type": "botnet_cc",
+              "threat_type_desc": "Indicator that identifies a botnet command&control server (C&C)",
+              "ioc_type": "url",
+              "ioc_type_desc": "URL that is used for botnet Command&control (C&C)",
+              "malware": "win.houdini",
+              "malware_printable": "Houdini",
+              "malware_alias": "Hworm,Jenxcus,Kognito,Njw0rm,WSHRAT,dinihou,dunihi",
+              "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/win.houdini",
+              "confidence_level": 100,
+              "first_seen": "2021-03-23 14:50:33 UTC",
+              "last_seen": null,
+              "reference": null,
+              "reporter": "abuse_ch",
+              "tags": [
+                "WSHRAT"
+              ]
+            },
+            {
+              "id": "4727",
+              "ioc": "http://harold.jetos.com:3606/moz-sdk",
+              "threat_type": "botnet_cc",
+              "threat_type_desc": "Indicator that identifies a botnet command&control server (C&C)",
+              "ioc_type": "url",
+              "ioc_type_desc": "URL that is used for botnet Command&control (C&C)",
+              "malware": "win.houdini",
+              "malware_printable": "Houdini",
+              "malware_alias": "Hworm,Jenxcus,Kognito,Njw0rm,WSHRAT,dinihou,dunihi",
+              "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/win.houdini",
+              "confidence_level": 100,
+              "first_seen": "2021-03-23 14:50:35 UTC",
+              "last_seen": null,
+              "reference": null,
+              "reporter": "abuse_ch",
+              "tags": [
+                "WSHRAT"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "iocs": [
+      {
+        "id": "4726",
+        "ioc": "http://harold.jetos.com:3606/is-ready",
+        "threat_type": "botnet_cc",
+        "threat_type_desc": "Indicator that identifies a botnet command&control server (C&C)",
+        "ioc_type": "url",
+        "ioc_type_desc": "URL that is used for botnet Command&control (C&C)",
+        "malware": "win.houdini",
+        "malware_printable": "Houdini",
+        "malware_alias": "Hworm,Jenxcus,Kognito,Njw0rm,WSHRAT,dinihou,dunihi",
+        "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/win.houdini",
+        "confidence_level": 100,
+        "first_seen": "2021-03-23 14:50:33 UTC",
+        "last_seen": null,
+        "reference": null,
+        "reporter": "abuse_ch",
+        "tags": [
+          "WSHRAT"
+        ]
+      },
+      {
+        "id": "4727",
+        "ioc": "http://harold.jetos.com:3606/moz-sdk",
+        "threat_type": "botnet_cc",
+        "threat_type_desc": "Indicator that identifies a botnet command&control server (C&C)",
+        "ioc_type": "url",
+        "ioc_type_desc": "URL that is used for botnet Command&control (C&C)",
+        "malware": "win.houdini",
+        "malware_printable": "Houdini",
+        "malware_alias": "Hworm,Jenxcus,Kognito,Njw0rm,WSHRAT,dinihou,dunihi",
+        "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/win.houdini",
+        "confidence_level": 100,
+        "first_seen": "2021-03-23 14:50:35 UTC",
+        "last_seen": null,
+        "reference": null,
+        "reporter": "abuse_ch",
+        "tags": [
+          "WSHRAT"
+        ]
+      }
+    ],
+    "values": [
+      "http://harold.jetos.com:3606/is-ready",
+      "http://harold.jetos.com:3606/moz-sdk"
+    ],
+    "count": 2,
+    "query_status": "ok"
+  }
+}

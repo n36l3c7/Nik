@@ -1,0 +1,23 @@
+{
+  "args": {
+    "id": "0a49acd622a44982b1986984ba31c15b"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v3/saved_searches/0a49acd622a44982b1986984ba31c15b",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

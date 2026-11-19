@@ -1,0 +1,72 @@
+{
+  "args": {
+    "urls": [
+      "testsafebrowsing.appspot.com/s/malware.html",
+      "example.org/"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v5/urls:search",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456",
+          "urls": [
+            "testsafebrowsing.appspot.com/s/malware.html",
+            "example.org/"
+          ],
+          "alt": "json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "threats": [
+            {
+              "url": "testsafebrowsing.appspot.com/s/malware.html",
+              "threatTypes": [
+                "MALWARE"
+              ]
+            },
+            {
+              "url": "testsafebrowsing.appspot.com/",
+              "threatTypes": [
+                "SOCIAL_ENGINEERING",
+                "MALWARE"
+              ]
+            }
+          ],
+          "cacheDuration": "300s"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "threats": [
+      {
+        "url": "testsafebrowsing.appspot.com/s/malware.html",
+        "threatTypes": [
+          "MALWARE"
+        ]
+      },
+      {
+        "url": "testsafebrowsing.appspot.com/",
+        "threatTypes": [
+          "SOCIAL_ENGINEERING",
+          "MALWARE"
+        ]
+      }
+    ],
+    "urls": [
+      "testsafebrowsing.appspot.com/s/malware.html",
+      "testsafebrowsing.appspot.com/"
+    ],
+    "threat_types": [
+      "MALWARE",
+      "SOCIAL_ENGINEERING"
+    ],
+    "count": 2,
+    "cache_duration": "300s"
+  }
+}

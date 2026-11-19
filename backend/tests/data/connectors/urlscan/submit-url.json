@@ -1,0 +1,42 @@
+{
+  "args": {
+    "url": "https://urlscan.io/",
+    "visibility": "public",
+    "tags": [
+      "phishing"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/scan",
+        "json": {
+          "url": "https://urlscan.io/",
+          "visibility": "public",
+          "tags": [
+            "phishing"
+          ]
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "uuid": "68e26c59-2eae-437b-aeb1-cf750fafe7d7",
+          "visibility": "public",
+          "url": "https://urlscan.io/",
+          "country": "de"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "uuid": "68e26c59-2eae-437b-aeb1-cf750fafe7d7",
+    "url": "https://urlscan.io/",
+    "visibility": "public",
+    "country": "de"
+  }
+}

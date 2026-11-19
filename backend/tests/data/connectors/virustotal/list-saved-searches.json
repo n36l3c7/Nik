@@ -1,0 +1,66 @@
+{
+  "args": {
+    "order": "last_modification_date-"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/saved_searches",
+        "query": {
+          "order": "last_modification_date-",
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "saved_search",
+              "id": "0a49acd622a44982b1986984ba31c15b",
+              "attributes": {
+                "name": "Emotet droppers",
+                "description": "Documents that drop Emotet",
+                "search_query": "entity:file tag:emotet p:5+",
+                "private": true,
+                "tags": [
+                  "emotet"
+                ],
+                "creation_date": 1761562000,
+                "last_modification_date": 1761562000
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "saved_search",
+        "id": "0a49acd622a44982b1986984ba31c15b",
+        "attributes": {
+          "name": "Emotet droppers",
+          "description": "Documents that drop Emotet",
+          "search_query": "entity:file tag:emotet p:5+",
+          "private": true,
+          "tags": [
+            "emotet"
+          ],
+          "creation_date": 1761562000,
+          "last_modification_date": 1761562000
+        }
+      }
+    ],
+    "ids": [
+      "0a49acd622a44982b1986984ba31c15b"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

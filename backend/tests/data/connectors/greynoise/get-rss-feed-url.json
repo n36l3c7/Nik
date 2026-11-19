@@ -1,0 +1,25 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/articles/rss-token",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "feed_url": "https://api.greynoise.io/v3/articles/rss/EXAMPLE-FEED-TOKEN",
+          "public_feed_url": "https://api.greynoise.io/v3/articles/rss"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "feed_url": "https://api.greynoise.io/v3/articles/rss/EXAMPLE-FEED-TOKEN",
+    "public_feed_url": "https://api.greynoise.io/v3/articles/rss"
+  }
+}

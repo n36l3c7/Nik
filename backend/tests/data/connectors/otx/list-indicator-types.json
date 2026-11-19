@@ -1,0 +1,60 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/pulses/indicators/types",
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "detail": [
+            {
+              "slug": "ip",
+              "name": "IPv4",
+              "description": "An IPv4 address indicating the online location of a server or other computer."
+            },
+            {
+              "slug": "domain",
+              "name": "domain",
+              "description": "A domain name for a website or server. Domains encompass a series of hostnames."
+            },
+            {
+              "slug": "file",
+              "name": "FileHash-SHA256",
+              "description": "A SHA-256-format hash that summarizes the architecture and content of a file."
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "types": [
+      {
+        "slug": "ip",
+        "name": "IPv4",
+        "description": "An IPv4 address indicating the online location of a server or other computer."
+      },
+      {
+        "slug": "domain",
+        "name": "domain",
+        "description": "A domain name for a website or server. Domains encompass a series of hostnames."
+      },
+      {
+        "slug": "file",
+        "name": "FileHash-SHA256",
+        "description": "A SHA-256-format hash that summarizes the architecture and content of a file."
+      }
+    ],
+    "names": [
+      "IPv4",
+      "domain",
+      "FileHash-SHA256"
+    ]
+  }
+}

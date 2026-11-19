@@ -1,0 +1,37 @@
+{
+  "args": {
+    "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "blocklist_id": "550e8400-e29b-41d4-a716-446655440000",
+    "size": 2
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/blocklists/550e8400-e29b-41d4-a716-446655440000/ips",
+        "query": {
+          "size": 2
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "ips": [
+            "198.51.100.42",
+            "203.0.113.7"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ips": [
+      "198.51.100.42",
+      "203.0.113.7"
+    ],
+    "count": 2
+  }
+}

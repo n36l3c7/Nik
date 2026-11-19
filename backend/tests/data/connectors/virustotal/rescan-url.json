@@ -1,0 +1,29 @@
+{
+  "args": {
+    "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2/analyse",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "analysis",
+            "id": "u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "analysis_id": "u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101",
+    "type": "analysis"
+  }
+}

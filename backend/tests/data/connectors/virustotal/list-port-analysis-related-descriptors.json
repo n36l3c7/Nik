@@ -1,0 +1,44 @@
+{
+  "args": {
+    "id": "1.2.3.4:443:1718534400",
+    "relationship": "vulnerabilities"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/port_analyses/1.2.3.4:443:1718534400/relationships/vulnerabilities",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "vulnerability",
+              "id": "CVE-2021-23017"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "vulnerability",
+        "id": "CVE-2021-23017"
+      }
+    ],
+    "ids": [
+      "CVE-2021-23017"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

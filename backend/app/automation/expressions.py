@@ -31,11 +31,13 @@ both read ``backend/tests/data/expressions.json``.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 MAX_TEMPLATE = 20_000
 MAX_EXPRESSIONS = 200
@@ -487,8 +489,21 @@ def _regex_extract(value: Any, pattern: Any, group: Any = 0) -> str:
     return part or ""
 
 
+def _urlencode(value: Any) -> str:
+    """A text as it is written inside an address: everything but letters, digits and ``-._~`` percent-encoded,
+    so that a value put in a path or a query cannot change either."""
+    return quote(_text(value), safe="")
+
+
+def _base64url(value: Any) -> str:
+    """A text in base64 as an address takes it (``-`` and ``_``, no padding): how some APIs name a URL."""
+    return base64.urlsafe_b64encode(_text(value).encode("utf-8")).decode("ascii").rstrip("=")
+
+
 FILTERS = {
     "default": None,  # handled by the evaluator: it is the one filter that takes a missing value
+    "urlencode": _urlencode,
+    "base64url": _base64url,
     "severity": _severity,
     "regex_extract": _regex_extract,
     "in_list": None,  # handled by the evaluator: the scope knows the lists

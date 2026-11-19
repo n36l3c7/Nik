@@ -1,0 +1,27 @@
+{
+  "args": {
+    "sha256": "cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/files/cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1/download_url",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": "https://storage.googleapis.com/vtmonitor/cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1?Expires=1524733537"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "data": "https://storage.googleapis.com/vtmonitor/cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1?Expires=1524733537"
+    }
+  }
+}

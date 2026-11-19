@@ -263,6 +263,17 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-61">Upgrading to 6.1</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. Migration
+        <code>0040_instance_keys</code> adds two tables and two columns. Nothing is installed by the upgrade: the packs
+        of the threat-intelligence sources are in the catalogue (<em>Settings → Automation → Content packs</em>,
+        <em>Read again</em>). The keys already set for the automatic look-ups keep working; to use a source in
+        playbooks, install its pack and make an instance with a key (<a href="automation.html#instance-keys"
+          >several keys</a
+        >
+        if you have them).
+      </p>
       <h4 id="upgrading-to-60">Upgrading to 6.0</h4>
       <p>
         <code>git pull</code> and <code>docker compose up -d --build</code>. Migration

@@ -1,0 +1,93 @@
+{
+  "args": {
+    "ip": "203.0.113.77"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/indicators/IPv4/203.0.113.77/general",
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "indicator": "203.0.113.77",
+          "type": "IPv4",
+          "asn": "AS64500 Example Networks",
+          "country_name": "Netherlands",
+          "pulse_info": {
+            "count": 2,
+            "pulses": [
+              {
+                "id": "58f17acb98e10f0199f85c0c",
+                "name": "Example pulse 1",
+                "author": {
+                  "username": "aperson"
+                },
+                "modified": "2017-05-01T15:32:16.030000",
+                "tags": [
+                  "test",
+                  "atag"
+                ],
+                "TLP": "white",
+                "malware_families": [
+                  {
+                    "display_name": "Mirai",
+                    "id": "Mirai",
+                    "target": null
+                  }
+                ]
+              },
+              {
+                "id": "58f15111d3bb0b0b8ac54662",
+                "name": "Example pulse 2",
+                "author": {
+                  "username": "aperson"
+                },
+                "modified": "2017-05-01T15:33:24.178000",
+                "tags": [],
+                "TLP": "green",
+                "malware_families": [
+                  {
+                    "display_name": "Mirai",
+                    "id": "Mirai",
+                    "target": null
+                  }
+                ]
+              }
+            ]
+          },
+          "validation": [],
+          "sections": [
+            "general",
+            "geo",
+            "reputation",
+            "url_list",
+            "passive_dns",
+            "malware",
+            "http_scans"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "suspicious",
+    "summary": "in 2 OTX pulses",
+    "pulse_count": 2,
+    "pulses": [
+      "Example pulse 1",
+      "Example pulse 2"
+    ],
+    "families": [
+      "Mirai"
+    ],
+    "validation": [],
+    "asn": "AS64500 Example Networks",
+    "country": "Netherlands",
+    "link": "https://otx.alienvault.com/indicator/ip/203.0.113.77"
+  }
+}

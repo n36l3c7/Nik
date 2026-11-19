@@ -1,0 +1,6 @@
+{
+  "config": {},
+  "secrets": {
+    "api_key": "shodan-api-key-0123456789abcdef"
+  }
+}

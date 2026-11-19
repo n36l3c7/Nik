@@ -1,0 +1,54 @@
+{
+  "args": {
+    "id": "0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e",
+    "format": "json"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/collections/0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e/aggregations/download/json",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "files": {
+            "contacted_urls": [
+              {
+                "count": 2,
+                "value": "http://ocsp.digicert.com/"
+              }
+            ],
+            "contacted_domains": [
+              {
+                "count": 4,
+                "value": "ocsp.digicert.com"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "export": {
+      "files": {
+        "contacted_urls": [
+          {
+            "count": 2,
+            "value": "http://ocsp.digicert.com/"
+          }
+        ],
+        "contacted_domains": [
+          {
+            "count": 4,
+            "value": "ocsp.digicert.com"
+          }
+        ]
+      }
+    }
+  }
+}

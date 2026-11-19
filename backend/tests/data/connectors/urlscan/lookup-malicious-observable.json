@@ -1,0 +1,34 @@
+{
+  "args": {
+    "type": "url",
+    "value": "https://example.com/path"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/malicious/url/https%3A%2F%2Fexample.com%2Fpath",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "observable": "https://example.com/path",
+          "type": "url",
+          "count": 4,
+          "firstSeen": "2025-03-02T08:15:11.000Z",
+          "lastSeen": "2025-06-19T17:40:02.000Z"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "observable": "https://example.com/path",
+    "type": "url",
+    "count": 4,
+    "first_seen": "2025-03-02T08:15:11.000Z",
+    "last_seen": "2025-06-19T17:40:02.000Z"
+  }
+}

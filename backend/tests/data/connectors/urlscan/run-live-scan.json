@@ -1,0 +1,31 @@
+{
+  "args": {
+    "scanner_id": "de01",
+    "url": "https://urlscan.io/"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/livescan/de01/scan/",
+        "json": {
+          "task": {
+            "url": "https://urlscan.io/"
+          }
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "uuid": "10dae531-a98a-42fc-8c6f-cb8610ec0c10"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "uuid": "10dae531-a98a-42fc-8c6f-cb8610ec0c10"
+  }
+}

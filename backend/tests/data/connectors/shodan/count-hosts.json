@@ -1,0 +1,89 @@
+{
+  "args": {
+    "query": "port:22",
+    "facets": "org,os"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/host/count",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "query": "port:22",
+          "facets": "org,os"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [],
+          "facets": {
+            "org": [
+              {
+                "count": 3012386,
+                "value": "Amazon.com"
+              },
+              {
+                "count": 1322102,
+                "value": "Google Cloud"
+              },
+              {
+                "count": 1075807,
+                "value": "Digital Ocean"
+              }
+            ],
+            "os": [
+              {
+                "count": 601923,
+                "value": "Ubuntu"
+              },
+              {
+                "count": 227851,
+                "value": "Debian"
+              },
+              {
+                "count": 7660,
+                "value": "Raspbian"
+              }
+            ]
+          },
+          "total": 19590274
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "total": 19590274,
+    "facets": {
+      "org": [
+        {
+          "count": 3012386,
+          "value": "Amazon.com"
+        },
+        {
+          "count": 1322102,
+          "value": "Google Cloud"
+        },
+        {
+          "count": 1075807,
+          "value": "Digital Ocean"
+        }
+      ],
+      "os": [
+        {
+          "count": 601923,
+          "value": "Ubuntu"
+        },
+        {
+          "count": 227851,
+          "value": "Debian"
+        },
+        {
+          "count": 7660,
+          "value": "Raspbian"
+        }
+      ]
+    }
+  }
+}

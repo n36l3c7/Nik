@@ -1,0 +1,85 @@
+{
+  "args": {
+    "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/behaviours",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "file_behaviour",
+              "id": "5353e23f3653402339c93a8565307c6308ff378e03fcf23a4378f31c434030b0_Zenbox",
+              "attributes": {
+                "analysis_date": 1669409515,
+                "sandbox_name": "Zenbox",
+                "has_html_report": true,
+                "has_pcap": false,
+                "verdicts": [
+                  "UNKNOWN_VERDICT"
+                ],
+                "calls_highlighted": [
+                  "GetTickCount"
+                ],
+                "files_opened": [
+                  "C:\\WINDOWS\\system32\\winime32.dll"
+                ],
+                "processes_tree": [
+                  {
+                    "process_id": "2248",
+                    "name": "sample.exe"
+                  }
+                ]
+              }
+            }
+          ],
+          "meta": {
+            "count": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "file_behaviour",
+        "id": "5353e23f3653402339c93a8565307c6308ff378e03fcf23a4378f31c434030b0_Zenbox",
+        "attributes": {
+          "analysis_date": 1669409515,
+          "sandbox_name": "Zenbox",
+          "has_html_report": true,
+          "has_pcap": false,
+          "verdicts": [
+            "UNKNOWN_VERDICT"
+          ],
+          "calls_highlighted": [
+            "GetTickCount"
+          ],
+          "files_opened": [
+            "C:\\WINDOWS\\system32\\winime32.dll"
+          ],
+          "processes_tree": [
+            {
+              "process_id": "2248",
+              "name": "sample.exe"
+            }
+          ]
+        }
+      }
+    ],
+    "ids": [
+      "5353e23f3653402339c93a8565307c6308ff378e03fcf23a4378f31c434030b0_Zenbox"
+    ],
+    "count": 1,
+    "cursor": null
+  }
+}

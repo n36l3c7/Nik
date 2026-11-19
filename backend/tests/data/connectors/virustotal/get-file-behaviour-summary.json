@@ -1,0 +1,45 @@
+{
+  "args": {
+    "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/behaviour_summary",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "calls_highlighted": [
+              "GetTickCount"
+            ],
+            "files_opened": [
+              "C:\\WINDOWS\\system32\\winime32.dll"
+            ],
+            "tags": [
+              "DIRECT_CPU_CLOCK_ACCESS"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "behaviour": {
+      "calls_highlighted": [
+        "GetTickCount"
+      ],
+      "files_opened": [
+        "C:\\WINDOWS\\system32\\winime32.dll"
+      ],
+      "tags": [
+        "DIRECT_CPU_CLOCK_ACCESS"
+      ]
+    }
+  }
+}

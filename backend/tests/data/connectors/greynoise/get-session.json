@@ -1,0 +1,57 @@
+{
+  "args": {
+    "session_id": "2505-abcdef123456"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/2505-abcdef123456",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "_id": "2505-abcdef123456",
+          "firstPacket": "2025-01-15T10:30:00Z",
+          "lastPacket": "2025-01-15T10:30:05Z",
+          "source.ip": "203.0.113.45",
+          "source.port": 54321,
+          "destination.ip": "198.51.100.10",
+          "destination.port": 443,
+          "source.bytes": 1024,
+          "source.packets": 10,
+          "destination.bytes": 2048,
+          "destination.packets": 8,
+          "classification": "malicious"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "2505-abcdef123456",
+    "first_packet": "2025-01-15T10:30:00Z",
+    "last_packet": "2025-01-15T10:30:05Z",
+    "source_ip": "203.0.113.45",
+    "source_port": 54321,
+    "destination_ip": "198.51.100.10",
+    "destination_port": 443,
+    "classification": "malicious",
+    "session": {
+      "_id": "2505-abcdef123456",
+      "firstPacket": "2025-01-15T10:30:00Z",
+      "lastPacket": "2025-01-15T10:30:05Z",
+      "source.ip": "203.0.113.45",
+      "source.port": 54321,
+      "destination.ip": "198.51.100.10",
+      "destination.port": 443,
+      "source.bytes": 1024,
+      "source.packets": 10,
+      "destination.bytes": 2048,
+      "destination.packets": 8,
+      "classification": "malicious"
+    }
+  }
+}

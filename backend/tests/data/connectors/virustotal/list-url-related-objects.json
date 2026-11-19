@@ -1,0 +1,78 @@
+{
+  "args": {
+    "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+    "relationship": "last_serving_ip_address"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2/last_serving_ip_address",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "ip_address",
+            "id": "8.8.8.8",
+            "attributes": {
+              "as_owner": "GOOGLE",
+              "asn": 15169,
+              "country": "US",
+              "network": "8.8.8.0/24",
+              "reputation": 530,
+              "last_analysis_stats": {
+                "harmless": 62,
+                "malicious": 0,
+                "suspicious": 0,
+                "timeout": 0,
+                "undetected": 26
+              },
+              "tags": []
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "ip_address",
+        "id": "8.8.8.8",
+        "attributes": {
+          "as_owner": "GOOGLE",
+          "asn": 15169,
+          "country": "US",
+          "network": "8.8.8.0/24",
+          "reputation": 530,
+          "last_analysis_stats": {
+            "harmless": 62,
+            "malicious": 0,
+            "suspicious": 0,
+            "timeout": 0,
+            "undetected": 26
+          },
+          "tags": []
+        },
+        "links": {
+          "self": "https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8"
+        }
+      }
+    ],
+    "ids": [
+      "8.8.8.8"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

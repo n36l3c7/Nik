@@ -1,0 +1,89 @@
+{
+  "args": {
+    "ip": "176.111.173.242"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/reports",
+        "query": {
+          "ipAddress": "176.111.173.242",
+          "maxAgeInDays": 30,
+          "perPage": 100,
+          "page": 1
+        },
+        "headers": {
+          "Key": "abuseipdb-key-0123456789abcdef0123456789abcdef",
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "total": 2,
+            "page": 1,
+            "count": 2,
+            "perPage": 100,
+            "lastPage": 1,
+            "nextPageUrl": null,
+            "previousPageUrl": null,
+            "results": [
+              {
+                "reportedAt": "2022-05-01T21:00:03+00:00",
+                "comment": "Invalid user joseph from 176.111.173.242 port 53860",
+                "categories": [
+                  18,
+                  22
+                ],
+                "reporterId": 43121,
+                "reporterCountryCode": "DE",
+                "reporterCountryName": "Germany"
+              },
+              {
+                "reportedAt": "2022-05-01T13:27:47+00:00",
+                "comment": "Apr 17 18:19:28 roki2 sshd\\[29767\\]: Invalid user gituser from 176.111.173.242",
+                "categories": [
+                  18,
+                  22
+                ],
+                "reporterId": 35071,
+                "reporterCountryCode": "US",
+                "reporterCountryName": "United States of America"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "reports": [
+      {
+        "reportedAt": "2022-05-01T21:00:03+00:00",
+        "comment": "Invalid user joseph from 176.111.173.242 port 53860",
+        "categories": [
+          18,
+          22
+        ],
+        "reporterId": 43121,
+        "reporterCountryCode": "DE",
+        "reporterCountryName": "Germany"
+      },
+      {
+        "reportedAt": "2022-05-01T13:27:47+00:00",
+        "comment": "Apr 17 18:19:28 roki2 sshd\\[29767\\]: Invalid user gituser from 176.111.173.242",
+        "categories": [
+          18,
+          22
+        ],
+        "reporterId": 35071,
+        "reporterCountryCode": "US",
+        "reporterCountryName": "United States of America"
+      }
+    ],
+    "count": 2,
+    "truncated": false
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "args": {
+    "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "url",
+            "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+            "attributes": {
+              "url": "https://www.virustotal.com/",
+              "last_final_url": "https://www.virustotal.com/",
+              "last_http_response_code": 200,
+              "reputation": 12,
+              "last_analysis_stats": {
+                "harmless": 70,
+                "malicious": 2,
+                "suspicious": 0,
+                "timeout": 0,
+                "undetected": 20
+              },
+              "times_submitted": 5,
+              "tags": []
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "suspicious",
+    "summary": "2 malicious, 0 suspicious, 70 harmless, 20 undetected",
+    "malicious": 2,
+    "suspicious": 0,
+    "harmless": 70,
+    "undetected": 20,
+    "stats": {
+      "harmless": 70,
+      "malicious": 2,
+      "suspicious": 0,
+      "timeout": 0,
+      "undetected": 20
+    },
+    "reputation": 12,
+    "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+    "attributes": {
+      "url": "https://www.virustotal.com/",
+      "last_final_url": "https://www.virustotal.com/",
+      "last_http_response_code": 200,
+      "reputation": 12,
+      "last_analysis_stats": {
+        "harmless": 70,
+        "malicious": 2,
+        "suspicious": 0,
+        "timeout": 0,
+        "undetected": 20
+      },
+      "times_submitted": 5,
+      "tags": []
+    },
+    "link": "https://www.virustotal.com/gui/url/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+    "url": "https://www.virustotal.com/"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "args": {
+    "ip": "118.25.6.39"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v2/clear-address",
+        "query": {
+          "ipAddress": "118.25.6.39"
+        },
+        "headers": {
+          "Key": "abuseipdb-key-0123456789abcdef0123456789abcdef",
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "numReportsDeleted": 0
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "reports_deleted": 0
+  }
+}

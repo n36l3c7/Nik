@@ -1,0 +1,53 @@
+{
+  "args": {
+    "id": "334b32b7fa5b47c78369600fad91d1b4"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/operations/334b32b7fa5b47c78369600fad91d1b4",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "operation",
+            "id": "334b32b7fa5b47c78369600fad91d1b4",
+            "attributes": {
+              "status": "running"
+            }
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/operations/334b32b7fa5b47c78369600fad91d1b4",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "operation",
+            "id": "334b32b7fa5b47c78369600fad91d1b4",
+            "attributes": {
+              "status": "finished"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "334b32b7fa5b47c78369600fad91d1b4",
+    "status": "finished"
+  }
+}

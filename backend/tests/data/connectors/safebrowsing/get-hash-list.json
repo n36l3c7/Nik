@@ -1,0 +1,69 @@
+{
+  "args": {
+    "name": "se",
+    "version": "AAAAAAAAB9A=",
+    "max_update_entries": 4096
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v5/hashList/se",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456",
+          "version": "AAAAAAAAB9A=",
+          "sizeConstraints.maxUpdateEntries": 4096,
+          "alt": "json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "name": "se",
+          "version": "AAAAAAAAB9E=",
+          "partialUpdate": true,
+          "additionsFourBytes": {
+            "firstValue": 1543343,
+            "riceParameter": 30,
+            "entriesCount": 2,
+            "encodedData": "t2gMAEAAEA=="
+          },
+          "compressedRemovals": {
+            "firstValue": 3,
+            "riceParameter": 3,
+            "entriesCount": 1,
+            "encodedData": "CA=="
+          },
+          "minimumWaitDuration": "1800s",
+          "sha256Checksum": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "name": "se",
+    "version": "AAAAAAAAB9E=",
+    "partial_update": true,
+    "minimum_wait": "1800s",
+    "checksum": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM=",
+    "hash_list": {
+      "name": "se",
+      "version": "AAAAAAAAB9E=",
+      "partialUpdate": true,
+      "additionsFourBytes": {
+        "firstValue": 1543343,
+        "riceParameter": 30,
+        "entriesCount": 2,
+        "encodedData": "t2gMAEAAEA=="
+      },
+      "compressedRemovals": {
+        "firstValue": 3,
+        "riceParameter": 3,
+        "entriesCount": 1,
+        "encodedData": "CA=="
+      },
+      "minimumWaitDuration": "1800s",
+      "sha256Checksum": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+    }
+  }
+}

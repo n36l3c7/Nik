@@ -1,0 +1,66 @@
+{
+  "args": {
+    "query": "tags:Mirai",
+    "interval": "hour",
+    "start": "2025-11-10T14:00:00Z",
+    "end": "2025-11-10T16:59:59Z"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/gnql/timeseries/stats",
+        "query": {
+          "query": "tags:Mirai",
+          "interval": "hour",
+          "start": "2025-11-10T14:00:00Z",
+          "end": "2025-11-10T16:59:59Z"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "count": 1500,
+          "min": 10,
+          "max": 250,
+          "data": [
+            {
+              "date": "2025-11-10 14:00:00.000",
+              "count": 125
+            },
+            {
+              "date": "2025-11-10 15:00:00.000",
+              "count": 250
+            },
+            {
+              "date": "2025-11-10 16:00:00.000",
+              "count": 180
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "count": 1500,
+    "min": 10,
+    "max": 250,
+    "points": [
+      {
+        "date": "2025-11-10 14:00:00.000",
+        "count": 125
+      },
+      {
+        "date": "2025-11-10 15:00:00.000",
+        "count": 250
+      },
+      {
+        "date": "2025-11-10 16:00:00.000",
+        "count": 180
+      }
+    ]
+  }
+}

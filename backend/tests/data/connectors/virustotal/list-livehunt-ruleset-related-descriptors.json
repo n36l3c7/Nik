@@ -1,0 +1,40 @@
+{
+  "args": {
+    "id": "6425310189355008",
+    "relationship": "editors"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/intelligence/hunting_rulesets/6425310189355008/relationships/editors",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "user",
+              "id": "gilfoyle"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "user",
+        "id": "gilfoyle"
+      }
+    ],
+    "ids": [
+      "gilfoyle"
+    ],
+    "count": 1
+  }
+}

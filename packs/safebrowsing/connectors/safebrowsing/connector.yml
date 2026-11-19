@@ -1,0 +1,416 @@
+# Google Safe Browsing, through its APIs v4 (Lookup and Update) and v5.
+#
+# Written from Google's documentation and from the discovery documents of
+# the service (safebrowsing v4, revision 20230216; v5, revision 20251214):
+#   https://developers.google.com/safe-browsing/v4/lookup-api
+#   https://developers.google.com/safe-browsing/v4/update-api
+#   https://developers.google.com/safe-browsing/v4/lists
+#   https://developers.google.com/safe-browsing/reference/rest
+# Not run against the real service: see "verified" below.
+#
+# The key is an API key of a Google Cloud project where "Safe Browsing API"
+# is enabled; it travels as the "key" query parameter of every request.
+#
+# The v5 methods are asked for JSON ("alt=json", which the discovery document
+# gives as the default); the v5 guide speaks of protocol buffers, which this
+# format cannot read. The v5alpha1 methods (the same five) are not here.
+#
+# Bytes (hash prefixes, full hashes, states, versions) are base64 texts, as
+# the JSON form of the API has them.
+name: Google Safe Browsing
+id: safebrowsing
+version: 1
+description: Checks URLs and hash prefixes against Google's lists of unsafe web resources, and reads the lists themselves.
+api_version: "Safe Browsing API v4 and v5 (safebrowsing.googleapis.com)"
+verified: false
+configuration:
+  - name: api_key
+    label: API key
+    type: secret
+    required: true
+    help: "An API key of a Google Cloud project where the Safe Browsing API is enabled (APIs & Services, Credentials)."
+  - name: client_id
+    label: Client id
+    type: text
+    default: nik
+    help: "The name the v4 requests give as the client (client.clientId)."
+  - name: client_version
+    label: Client version
+    type: text
+    default: "1"
+    help: "The version the v4 requests give as the client (client.clientVersion)."
+base_url: "https://safebrowsing.googleapis.com"
+test:
+  request:
+    method: GET
+    path: /v4/threatLists
+    query: { key: "{{ secret.api_key }}" }
+commands:
+  # ------------------------------------------------------------------ v4 --
+  - name: check-url
+    description: Says whether a URL is on Google's lists of malware, social engineering, unwanted software or harmful applications (v4 threatMatches.find).
+    reputation: url
+    arguments:
+      - { name: url, type: text, required: true, description: "The URL to check, with its scheme; it need not be canonical or encoded" }
+    request:
+      method: POST
+      path: /v4/threatMatches:find
+      query: { key: "{{ secret.api_key }}" }
+      json:
+        client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
+        threatInfo:
+          threatTypes: [MALWARE, SOCIAL_ENGINEERING, UNWANTED_SOFTWARE, POTENTIALLY_HARMFUL_APPLICATION]
+          platformTypes: [ANY_PLATFORM]
+          threatEntryTypes: [URL]
+          threatEntries:
+            - url: "{{ args.url }}"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      verdict: "{{ response.matches | default('') | length | map('0', 'unknown', else='malicious') }}"
+      summary: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort | join(', ') | lower | replace('_', ' ') | map('', 'not on Google Safe Browsing lists') }}"
+      threats: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort }}"
+      matches: "{{ response.matches | default('') | where('threatType') }}"
+      count: "{{ response.matches | default('') | length }}"
+
+  - name: check-domain
+    description: Says whether the home page of a domain, over http and over https, is on Google's lists of unsafe web resources (v4 threatMatches.find).
+    reputation: domain
+    arguments:
+      - { name: domain, type: text, required: true, description: "The domain or host name, without scheme or path" }
+    request:
+      method: POST
+      path: /v4/threatMatches:find
+      query: { key: "{{ secret.api_key }}" }
+      json:
+        client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
+        threatInfo:
+          threatTypes: [MALWARE, SOCIAL_ENGINEERING, UNWANTED_SOFTWARE, POTENTIALLY_HARMFUL_APPLICATION]
+          platformTypes: [ANY_PLATFORM]
+          threatEntryTypes: [URL]
+          threatEntries:
+            - url: "http://{{ args.domain }}/"
+            - url: "https://{{ args.domain }}/"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      verdict: "{{ response.matches | default('') | length | map('0', 'unknown', else='malicious') }}"
+      summary: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort | join(', ') | lower | replace('_', ' ') | map('', 'not on Google Safe Browsing lists') }}"
+      threats: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort }}"
+      matches: "{{ response.matches | default('') | where('threatType') }}"
+      count: "{{ response.matches | default('') | length }}"
+
+  - name: find-threat-matches
+    description: Checks up to 500 entries against the lists named by threat, platform and entry types, and gives those that match (v4 threatMatches.find).
+    arguments:
+      - name: threat_entries
+        type: list
+        required: true
+        description: 'The entries as the API takes them, 500 at most: [{"url": "http://example.org/"}]'
+      - name: threat_types
+        type: list
+        default: [MALWARE, SOCIAL_ENGINEERING, UNWANTED_SOFTWARE, POTENTIALLY_HARMFUL_APPLICATION]
+        description: "The threat types to check: MALWARE, SOCIAL_ENGINEERING, UNWANTED_SOFTWARE, POTENTIALLY_HARMFUL_APPLICATION…"
+      - name: platform_types
+        type: list
+        default: [ANY_PLATFORM]
+        description: "The platforms: ANY_PLATFORM, WINDOWS, LINUX, ANDROID, OSX, IOS, CHROME, ALL_PLATFORMS"
+      - name: threat_entry_types
+        type: list
+        default: [URL]
+        description: "The entry types: URL, EXECUTABLE, IP_RANGE…"
+    request:
+      method: POST
+      path: /v4/threatMatches:find
+      query: { key: "{{ secret.api_key }}" }
+      json:
+        client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
+        threatInfo:
+          threatTypes: "{{ args.threat_types }}"
+          platformTypes: "{{ args.platform_types }}"
+          threatEntryTypes: "{{ args.threat_entry_types }}"
+          threatEntries: "{{ args.threat_entries }}"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      matches: "{{ response.matches | default('') | where('threatType') }}"
+      urls: "{{ response.matches[*].threat.url | unique }}"
+      threats: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort }}"
+      count: "{{ response.matches | default('') | length }}"
+
+  - name: find-full-hashes
+    description: Gives the full hashes on the lists that start with the hash prefixes given, for a client that keeps a local database (v4 fullHashes.find).
+    arguments:
+      - name: threat_entries
+        type: list
+        required: true
+        description: 'The hash prefixes (4 to 32 bytes of a SHA-256, base64) as the API takes them: [{"hash": "WwuJdQ=="}]'
+      - name: client_states
+        type: list
+        description: "The states of the local lists, as the last threatListUpdates.fetch gave them (base64)"
+      - name: threat_types
+        type: list
+        default: [MALWARE, SOCIAL_ENGINEERING, UNWANTED_SOFTWARE, POTENTIALLY_HARMFUL_APPLICATION]
+        description: "The threat types to check"
+      - name: platform_types
+        type: list
+        default: [ANY_PLATFORM]
+        description: "The platforms: ANY_PLATFORM, WINDOWS, LINUX, ANDROID, OSX, IOS, CHROME, ALL_PLATFORMS"
+      - name: threat_entry_types
+        type: list
+        default: [URL]
+        description: "The entry types: URL, EXECUTABLE, IP_RANGE…"
+    request:
+      method: POST
+      path: /v4/fullHashes:find
+      query: { key: "{{ secret.api_key }}" }
+      json:
+        client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
+        clientStates: "{{ args.client_states }}"
+        threatInfo:
+          threatTypes: "{{ args.threat_types }}"
+          platformTypes: "{{ args.platform_types }}"
+          threatEntryTypes: "{{ args.threat_entry_types }}"
+          threatEntries: "{{ args.threat_entries }}"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      matches: "{{ response.matches | default('') | where('threatType') }}"
+      hashes: "{{ response.matches[*].threat.hash | unique }}"
+      count: "{{ response.matches | default('') | length }}"
+      minimum_wait: "{{ response.minimumWaitDuration }}"
+      negative_cache: "{{ response.negativeCacheDuration }}"
+
+  - name: fetch-threat-list-update
+    description: Gives the additions and removals of one threat list since the state given, or the whole list when no state is given (v4 threatListUpdates.fetch).
+    arguments:
+      - { name: threat_type, type: text, required: true, description: "The threat type of the list: MALWARE, SOCIAL_ENGINEERING, UNWANTED_SOFTWARE…" }
+      - { name: platform_type, type: text, required: true, description: "The platform of the list: WINDOWS, LINUX, ANDROID, OSX, IOS, ANY_PLATFORM, CHROME…" }
+      - { name: threat_entry_type, type: text, default: URL, description: "The entry type of the list: URL, EXECUTABLE, IP_RANGE…" }
+      - { name: state, type: text, description: "The state the last update gave (newClientState, base64); empty for the whole list" }
+      - { name: max_update_entries, type: number, description: "The most entries one update may hold: a power of 2 between 1024 and 1048576" }
+      - { name: max_database_entries, type: number, description: "The most entries the local database may hold: a power of 2 between 1024 and 1048576" }
+      - { name: region, type: text, description: "The list for a geographic location, as an ISO 3166-1 alpha-2 code" }
+      - { name: language, type: text, description: "The list for a language, as an ISO 639 alpha-2 code" }
+      - { name: device_location, type: text, description: "Where the client is, as an ISO 3166-1 alpha-2 code" }
+      - { name: supported_compressions, type: list, default: [RAW], description: "The compressions the answer may use: RAW, RICE" }
+    request:
+      method: POST
+      path: /v4/threatListUpdates:fetch
+      query: { key: "{{ secret.api_key }}" }
+      json:
+        client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
+        listUpdateRequests:
+          - threatType: "{{ args.threat_type }}"
+            platformType: "{{ args.platform_type }}"
+            threatEntryType: "{{ args.threat_entry_type }}"
+            state: "{{ args.state }}"
+            constraints:
+              maxUpdateEntries: "{{ args.max_update_entries }}"
+              maxDatabaseEntries: "{{ args.max_database_entries }}"
+              region: "{{ args.region }}"
+              language: "{{ args.language }}"
+              deviceLocation: "{{ args.device_location }}"
+              supportedCompressions: "{{ args.supported_compressions }}"
+    error: { message: "{{ response.error.message }}" }
+    timeout: 120
+    outputs:
+      response_type: "{{ response.listUpdateResponses[0].responseType }}"
+      additions: "{{ response.listUpdateResponses[0].additions }}"
+      removals: "{{ response.listUpdateResponses[0].removals }}"
+      new_client_state: "{{ response.listUpdateResponses[0].newClientState }}"
+      checksum: "{{ response.listUpdateResponses[0].checksum.sha256 }}"
+      minimum_wait: "{{ response.minimumWaitDuration }}"
+      updates: "{{ response.listUpdateResponses }}"
+
+  - name: list-threat-lists
+    description: Lists the Safe Browsing threat lists that can be asked for, each by threat type, platform type and entry type (v4 threatLists.list).
+    request:
+      method: GET
+      path: /v4/threatLists
+      query: { key: "{{ secret.api_key }}" }
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      threat_lists: "{{ response.threatLists }}"
+      threat_types: "{{ response.threatLists | pluck('threatType') | unique | sort }}"
+      count: "{{ response.threatLists | length }}"
+
+  - name: get-encoded-full-hashes
+    description: The same as find-full-hashes, for a request already serialised as a FindFullHashesRequest protocol buffer (v4 encodedFullHashes.get).
+    arguments:
+      - { name: encoded_request, type: text, required: true, description: "The serialised FindFullHashesRequest, in URL-safe base64" }
+    request:
+      method: GET
+      path: "/v4/encodedFullHashes/{{ args.encoded_request }}"
+      query:
+        key: "{{ secret.api_key }}"
+        clientId: "{{ config.client_id }}"
+        clientVersion: "{{ config.client_version }}"
+        alt: json
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      matches: "{{ response.matches | default('') | where('threatType') }}"
+      hashes: "{{ response.matches[*].threat.hash | unique }}"
+      count: "{{ response.matches | default('') | length }}"
+      minimum_wait: "{{ response.minimumWaitDuration }}"
+      negative_cache: "{{ response.negativeCacheDuration }}"
+
+  - name: get-encoded-updates
+    description: The same as fetch-threat-list-update, for a request already serialised as a FetchThreatListUpdatesRequest protocol buffer (v4 encodedUpdates.get).
+    arguments:
+      - { name: encoded_request, type: text, required: true, description: "The serialised FetchThreatListUpdatesRequest, in URL-safe base64" }
+    request:
+      method: GET
+      path: "/v4/encodedUpdates/{{ args.encoded_request }}"
+      query:
+        key: "{{ secret.api_key }}"
+        clientId: "{{ config.client_id }}"
+        clientVersion: "{{ config.client_version }}"
+        alt: json
+    error: { message: "{{ response.error.message }}" }
+    timeout: 120
+    outputs:
+      updates: "{{ response.listUpdateResponses }}"
+      count: "{{ response.listUpdateResponses | length }}"
+      minimum_wait: "{{ response.minimumWaitDuration }}"
+
+  - name: report-threat-hit
+    description: Reports to Google that a client met an entry of a threat list; only projects Google made trusted reporters may use it (v4 threatHits.create).
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: threat_type, type: text, required: true, description: "The threat type of the hit: MALWARE, SOCIAL_ENGINEERING, UNWANTED_SOFTWARE…" }
+      - { name: platform_type, type: text, required: true, description: "The platform it was met on: WINDOWS, LINUX, ANDROID, OSX, IOS, CHROME…" }
+      - { name: url, type: text, description: "The URL that was on the list (this or hash)" }
+      - { name: hash, type: text, description: "The full hash that was on the list, base64 (this or url)" }
+      - name: resources
+        type: list
+        description: 'What led to the hit: [{"url": "…", "type": "MATCHING_URL", "remoteIp": "…", "referrer": "…"}]; type is MATCHING_URL, TAB_URL, TAB_REDIRECT or TAB_RESOURCE'
+      - { name: region_code, type: text, description: "The UN M.49 region code of where the user is" }
+      - { name: user_id, type: text, description: "An identifier of the user, chosen by the client (base64)" }
+    request:
+      method: POST
+      path: /v4/threatHits
+      query: { key: "{{ secret.api_key }}" }
+      json:
+        threatType: "{{ args.threat_type }}"
+        platformType: "{{ args.platform_type }}"
+        entry:
+          url: "{{ args.url }}"
+          hash: "{{ args.hash }}"
+        resources: "{{ args.resources }}"
+        clientInfo: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
+        userInfo:
+          regionCode: "{{ args.region_code }}"
+          userId: "{{ args.user_id }}"
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      status: "{{ status }}"
+    sample: { status: 200 }
+
+  # ------------------------------------------------------------------ v5 --
+  - name: search-urls
+    description: Checks up to 50 URLs, and the host and path expressions made from them, against the threat lists, and gives those that match with their threat types (v5 urls.search).
+    arguments:
+      - { name: urls, type: list, required: true, description: "The URLs to look up, 50 at most" }
+    request:
+      method: GET
+      path: /v5/urls:search
+      query:
+        key: "{{ secret.api_key }}"
+        urls: "{{ args.urls }}"
+        alt: json
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      threats: "{{ response.threats | default('') | where('url') }}"
+      urls: "{{ response.threats | default('') | where('url') | pluck('url') }}"
+      threat_types: "{{ response.threats[*].threatTypes | unique | sort }}"
+      count: "{{ response.threats | default('') | length }}"
+      cache_duration: "{{ response.cacheDuration }}"
+
+  - name: search-hashes
+    description: Gives the full hashes on the threat lists that start with the 4-byte hash prefixes given, each with its threat types and attributes (v5 hashes.search).
+    arguments:
+      - { name: hash_prefixes, type: list, required: true, description: "The hash prefixes, each exactly 4 bytes of a SHA-256 in base64; 1000 at most" }
+    request:
+      method: GET
+      path: /v5/hashes:search
+      query:
+        key: "{{ secret.api_key }}"
+        hashPrefixes: "{{ args.hash_prefixes }}"
+        alt: json
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      full_hashes: "{{ response.fullHashes | default('') | where('fullHash') }}"
+      hashes: "{{ response.fullHashes | default('') | where('fullHash') | pluck('fullHash') }}"
+      count: "{{ response.fullHashes | default('') | length }}"
+      cache_duration: "{{ response.cacheDuration }}"
+
+  - name: list-hash-lists
+    description: Lists the hash lists of the v5 API with what each is (threat types or likely-safe types, hash length), without their contents (v5 hashLists.list).
+    request:
+      method: GET
+      path: /v5/hashLists
+      query:
+        key: "{{ secret.api_key }}"
+        alt: json
+    pagination:
+      type: cursor
+      param: pageToken
+      limit_param: pageSize
+      limit: 100
+      items: "{{ response.hashLists }}"
+      next: "{{ response.nextPageToken }}"
+      max_pages: 10
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      hash_lists: "{{ response.items }}"
+      names: "{{ response.items | pluck('name') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: get-hash-list
+    description: Gives the contents of one hash list (a threat list or the Global Cache), whole or as the change since the version given (v5 hashList.get).
+    arguments:
+      - { name: name, type: text, required: true, description: "The name of the hash list, as list-hash-lists gives it: se, mw-4b, gc…" }
+      - { name: version, type: text, description: "The version the client already has (base64, as the last answer gave it); empty the first time" }
+      - { name: max_update_entries, type: number, description: "The most entries the update may hold; 1024 at least" }
+      - { name: max_database_entries, type: number, description: "The most entries the client is willing to keep for the list" }
+    request:
+      method: GET
+      path: "/v5/hashList/{{ args.name }}"
+      query:
+        key: "{{ secret.api_key }}"
+        version: "{{ args.version }}"
+        sizeConstraints.maxUpdateEntries: "{{ args.max_update_entries }}"
+        sizeConstraints.maxDatabaseEntries: "{{ args.max_database_entries }}"
+        alt: json
+    error: { message: "{{ response.error.message }}" }
+    timeout: 120
+    outputs:
+      name: "{{ response.name }}"
+      version: "{{ response.version }}"
+      partial_update: "{{ response.partialUpdate | default(false) }}"
+      minimum_wait: "{{ response.minimumWaitDuration }}"
+      checksum: "{{ response.sha256Checksum }}"
+      hash_list: "{{ response }}"
+
+  - name: batch-get-hash-lists
+    description: Gives the contents of several hash lists in one request, each whole or as the change since the version given (v5 hashLists.batchGet).
+    arguments:
+      - { name: names, type: list, required: true, description: "The names of the hash lists, none twice: se, mw-4b…" }
+      - { name: versions, type: list, description: "The versions the client already has (base64), in any order; empty the first time" }
+      - { name: max_update_entries, type: number, description: "The most entries the update of each list may hold; 1024 at least" }
+      - { name: max_database_entries, type: number, description: "The most entries the client is willing to keep for each list" }
+    request:
+      method: GET
+      path: /v5/hashLists:batchGet
+      query:
+        key: "{{ secret.api_key }}"
+        names: "{{ args.names }}"
+        version: "{{ args.versions }}"
+        sizeConstraints.maxUpdateEntries: "{{ args.max_update_entries }}"
+        sizeConstraints.maxDatabaseEntries: "{{ args.max_database_entries }}"
+        alt: json
+    error: { message: "{{ response.error.message }}" }
+    timeout: 120
+    outputs:
+      hash_lists: "{{ response.hashLists }}"
+      names: "{{ response.hashLists | pluck('name') }}"
+      count: "{{ response.hashLists | length }}"

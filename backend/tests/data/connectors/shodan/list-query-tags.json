@@ -1,0 +1,59 @@
+{
+  "args": {
+    "size": 3
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/query/tags",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "size": 3
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "count": 209,
+              "value": "webcam"
+            },
+            {
+              "count": 172,
+              "value": "cam"
+            },
+            {
+              "count": 159,
+              "value": "camera"
+            }
+          ],
+          "total": 7580
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tags": [
+      {
+        "count": 209,
+        "value": "webcam"
+      },
+      {
+        "count": 172,
+        "value": "cam"
+      },
+      {
+        "count": 159,
+        "value": "camera"
+      }
+    ],
+    "names": [
+      "webcam",
+      "cam",
+      "camera"
+    ],
+    "total": 7580
+  }
+}

@@ -567,6 +567,26 @@
     {
       "template": "{{ trigger.mail.verdict | map('PHISHING', 1, spam=2) }}",
       "result": 1
+    },
+    {
+      "template": "{{ trigger.mail.subject | urlencode }}",
+      "result": "Invoice%202026"
+    },
+    {
+      "template": "{{ trigger.mail.subject | base64url }}",
+      "result": "SW52b2ljZSAyMDI2"
+    },
+    {
+      "template": "{{ trigger.mail.sender | urlencode }}",
+      "result": "Eve%20%3Ceve%40evil.example%3E"
+    },
+    {
+      "template": "{{ trigger.mail.sender | base64url }}",
+      "result": "RXZlIDxldmVAZXZpbC5leGFtcGxlPg"
+    },
+    {
+      "template": "/x/{{ trigger.mail.sender | urlencode }}/y",
+      "result": "/x/Eve%20%3Ceve%40evil.example%3E/y"
     }
   ]
 }

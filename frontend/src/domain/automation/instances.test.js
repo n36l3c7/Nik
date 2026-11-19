@@ -139,3 +139,64 @@ test('connectors are listed with their instances, and narrowed by words and by a
   assert.deepEqual(connectorRows(connectors, instances, { query: 'zzz' }).counts, { all: 3, enabled: 1, unused: 1 })
   assert.deepEqual(connectorRows(null, null).rows, [])
 })
+
+test('the keys of an instance: what is sent, what stops the form', async () => {
+  const { KEY_MODES, editableKeys, keyFields, keyShare, keyUse, keysPayload, keysProblem, newKey, takesKeys } =
+    await import('./instances.js')
+  const connector = {
+    name: 'Radar',
+    secrets: ['api_key'],
+    configuration: [
+      { name: 'url', type: 'url' },
+      { name: 'api_key', type: 'secret', label: 'API key' },
+    ],
+  }
+  assert.deepEqual(
+    keyFields(connector).map((field) => field.name),
+    ['api_key'],
+  )
+  assert.equal(takesKeys(connector), true)
+  assert.equal(takesKeys({ ...connector, native: 'mail' }), false)
+  assert.equal(takesKeys({ configuration: [{ name: 'url', type: 'url' }], secrets: [] }), false)
+  assert.deepEqual(
+    KEY_MODES.map((mode) => mode.id),
+    ['each', 'until_exhausted', 'least_used', 'reserve'],
+  )
+
+  const instance = {
+    keys: [
+      { id: 'main', name: 'personal', usedToday: 500, state: 'used up' },
+      { id: 'ab12', name: 'lab', usedToday: 190, state: 'in use' },
+    ],
+    keyPolicy: { mode: 'until_exhausted', perMinute: 4, perDay: 500, whenExhausted: 'wait', cacheHours: 24 },
+  }
+  const keys = editableKeys(instance)
+  const added = { ...newKey(connector, keys.length), name: 'spare' }
+  assert.equal(added.isNew, true)
+  assert.deepEqual(added.values, { api_key: '' })
+  assert.equal(keysProblem(connector, [...keys, added], instance.keyPolicy), '"spare" has no credential yet')
+  added.values.api_key = 'k-3'
+  assert.equal(keysProblem(connector, [...keys, added], instance.keyPolicy), null)
+  assert.equal(
+    keysProblem(connector, [...keys, { ...added, name: 'LAB' }], instance.keyPolicy),
+    'Two keys are called "LAB"',
+  )
+  assert.equal(keysProblem(connector, [{ ...keys[0], name: ' ' }], instance.keyPolicy), 'A key needs a name')
+  assert.equal(
+    keysProblem(connector, keys, { ...instance.keyPolicy, perMinute: -1 }),
+    'Requests a minute is a whole number, 0 for none',
+  )
+  // The first key is named, the others are sent in their order; a secret only when it was typed.
+  assert.deepEqual(keysPayload([keys[0], added, keys[1]], { ...instance.keyPolicy, perDay: '500' }), {
+    mainName: 'personal',
+    keys: [
+      { name: 'spare', secrets: { api_key: 'k-3' } },
+      { id: 'ab12', name: 'lab' },
+    ],
+    keyPolicy: { mode: 'until_exhausted', perMinute: 4, perDay: 500, whenExhausted: 'wait', cacheHours: 24 },
+  })
+  assert.equal(keyUse(keys[1], instance.keyPolicy), '190 / 500')
+  assert.equal(keyUse(keys[1], { perDay: 0 }), '190')
+  assert.equal(keyShare(keys[0], instance.keyPolicy), 1)
+  assert.equal(keyShare(keys[1], { perDay: 0 }), 0)
+})

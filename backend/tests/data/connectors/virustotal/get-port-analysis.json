@@ -1,0 +1,39 @@
+{
+  "args": {
+    "id": "1.2.3.4:443:1718534400"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/port_analyses/1.2.3.4:443:1718534400",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "port_analysis",
+            "id": "1.2.3.4:443:1718534400",
+            "attributes": {
+              "date": 1718534400,
+              "port": 443,
+              "service": "https"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "1.2.3.4:443:1718534400",
+    "type": "port_analysis",
+    "attributes": {
+      "date": 1718534400,
+      "port": 443,
+      "service": "https"
+    }
+  }
+}

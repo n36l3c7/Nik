@@ -1,0 +1,69 @@
+{
+  "args": {
+    "euvd_id": "EUVD-2024-02040"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "cvedb.shodan.io",
+        "path": "/euvd/EUVD-2024-02040"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "euvd_id": "EUVD-2024-02040",
+          "description": "A flaw in Example Server lets a remote attacker read files.",
+          "published_time": "2024-01-15T09:00:00",
+          "cvss": 7.5,
+          "cvss_version": "3.1",
+          "epss": 0.0012,
+          "assigner": "mitre",
+          "references": [
+            "https://example.org/advisories/1"
+          ],
+          "products": [
+            "Example Server"
+          ],
+          "vendors": [
+            "Example"
+          ],
+          "cve": {
+            "id": "CVE-2024-0001",
+            "summary": "A flaw in Example Server.",
+            "cvss": 7.5,
+            "kev": false,
+            "cpes": []
+          },
+          "ghsa": null
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "euvd_id": "EUVD-2024-02040",
+    "description": "A flaw in Example Server lets a remote attacker read files.",
+    "cvss": 7.5,
+    "cvss_version": "3.1",
+    "epss": 0.0012,
+    "assigner": "mitre",
+    "products": [
+      "Example Server"
+    ],
+    "vendors": [
+      "Example"
+    ],
+    "references": [
+      "https://example.org/advisories/1"
+    ],
+    "published_time": "2024-01-15T09:00:00",
+    "cve": {
+      "id": "CVE-2024-0001",
+      "summary": "A flaw in Example Server.",
+      "cvss": 7.5,
+      "kev": false,
+      "cpes": []
+    },
+    "ghsa": null
+  }
+}

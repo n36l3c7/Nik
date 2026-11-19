@@ -1,0 +1,34 @@
+{
+  "args": {
+    "days": 3
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/files/callback",
+        "query": {
+          "days": 3,
+          "format": "csv",
+          "profile": "ngsiem"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "source.ip,source.ip.greynoise.callback.is_stage2,source.ip.greynoise.callback.is_stage1,source.ip.greynoise.callback.is_riot,source.ip.greynoise.callback.riot_trust_level,source.ip.greynoise.callback.first_seen,source.ip.greynoise.callback.last_seen,source.ip.greynoise.callback.scanner_count,source.ip.greynoise.callback.file_count,source.ip.greynoise.callback.source_country_code\r\n198.51.100.42,1,0,0,,2026-10-20,2026-10-26,3,1,NL\r\n",
+        "headers": {
+          "x-greynoise-generated-at": "2026-10-26T12:00:00Z",
+          "x-greynoise-row-count": "1"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "text": "source.ip,source.ip.greynoise.callback.is_stage2,source.ip.greynoise.callback.is_stage1,source.ip.greynoise.callback.is_riot,source.ip.greynoise.callback.riot_trust_level,source.ip.greynoise.callback.first_seen,source.ip.greynoise.callback.last_seen,source.ip.greynoise.callback.scanner_count,source.ip.greynoise.callback.file_count,source.ip.greynoise.callback.source_country_code\r\n198.51.100.42,1,0,0,,2026-10-20,2026-10-26,3,1,NL\r\n",
+    "generated_at": "2026-10-26T12:00:00Z",
+    "row_count": "1"
+  }
+}

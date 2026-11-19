@@ -1,0 +1,95 @@
+{
+  "args": {
+    "encoded_request": "Cg0KA25paxIBMRoGCAEQARgB"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v4/encodedUpdates/Cg0KA25paxIBMRoGCAEQARgB",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456",
+          "clientId": "nik",
+          "clientVersion": "1",
+          "alt": "json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "listUpdateResponses": [
+            {
+              "threatType": "MALWARE",
+              "threatEntryType": "URL",
+              "platformType": "WINDOWS",
+              "responseType": "PARTIAL_UPDATE",
+              "additions": [
+                {
+                  "compressionType": "RAW",
+                  "rawHashes": {
+                    "prefixSize": 4,
+                    "rawHashes": "rnGLoQ=="
+                  }
+                }
+              ],
+              "removals": [
+                {
+                  "compressionType": "RAW",
+                  "rawIndices": {
+                    "indices": [
+                      0,
+                      2,
+                      4
+                    ]
+                  }
+                }
+              ],
+              "newClientState": "ChAIBRADGAEiAzAwMSiAEDABEAFGpqhd",
+              "checksum": {
+                "sha256": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+              }
+            }
+          ],
+          "minimumWaitDuration": "593.440s"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "updates": [
+      {
+        "threatType": "MALWARE",
+        "threatEntryType": "URL",
+        "platformType": "WINDOWS",
+        "responseType": "PARTIAL_UPDATE",
+        "additions": [
+          {
+            "compressionType": "RAW",
+            "rawHashes": {
+              "prefixSize": 4,
+              "rawHashes": "rnGLoQ=="
+            }
+          }
+        ],
+        "removals": [
+          {
+            "compressionType": "RAW",
+            "rawIndices": {
+              "indices": [
+                0,
+                2,
+                4
+              ]
+            }
+          }
+        ],
+        "newClientState": "ChAIBRADGAEiAzAwMSiAEDABEAFGpqhd",
+        "checksum": {
+          "sha256": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+        }
+      }
+    ],
+    "count": 1,
+    "minimum_wait": "593.440s"
+  }
+}

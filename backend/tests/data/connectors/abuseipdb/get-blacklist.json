@@ -1,0 +1,79 @@
+{
+  "args": {
+    "confidence_minimum": 90,
+    "only_countries": "US,MX,CA"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/blacklist",
+        "query": {
+          "confidenceMinimum": 90,
+          "onlyCountries": "US,MX,CA"
+        },
+        "headers": {
+          "Key": "abuseipdb-key-0123456789abcdef0123456789abcdef",
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "meta": {
+            "generatedAt": "2021-12-17T22:49:18+00:00"
+          },
+          "data": [
+            {
+              "ipAddress": "192.241.211.135",
+              "countryCode": "US",
+              "abuseConfidenceScore": 100,
+              "lastReportedAt": "2021-12-17T22:16:21+00:00"
+            },
+            {
+              "ipAddress": "189.139.115.232",
+              "countryCode": "MX",
+              "abuseConfidenceScore": 100,
+              "lastReportedAt": "2021-12-17T22:16:20+00:00"
+            },
+            {
+              "ipAddress": "2001:470:1:332::7",
+              "countryCode": "CA",
+              "abuseConfidenceScore": 100,
+              "lastReportedAt": "2021-12-17T07:22:17+00:00"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "generated_at": "2021-12-17T22:49:18+00:00",
+    "entries": [
+      {
+        "ipAddress": "192.241.211.135",
+        "countryCode": "US",
+        "abuseConfidenceScore": 100,
+        "lastReportedAt": "2021-12-17T22:16:21+00:00"
+      },
+      {
+        "ipAddress": "189.139.115.232",
+        "countryCode": "MX",
+        "abuseConfidenceScore": 100,
+        "lastReportedAt": "2021-12-17T22:16:20+00:00"
+      },
+      {
+        "ipAddress": "2001:470:1:332::7",
+        "countryCode": "CA",
+        "abuseConfidenceScore": 100,
+        "lastReportedAt": "2021-12-17T07:22:17+00:00"
+      }
+    ],
+    "ips": [
+      "192.241.211.135",
+      "189.139.115.232",
+      "2001:470:1:332::7"
+    ],
+    "count": 3
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "args": {
+    "ip": "203.0.113.24"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "internetdb.shodan.io",
+        "path": "/203.0.113.24"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "cpes": [
+            "cpe:/a:openbsd:openssh:7.4",
+            "cpe:/a:igor_sysoev:nginx:1.14.0"
+          ],
+          "hostnames": [
+            "mail.example.org"
+          ],
+          "ip": "203.0.113.24",
+          "ports": [
+            22,
+            80,
+            443
+          ],
+          "tags": [
+            "cloud",
+            "compromised"
+          ],
+          "vulns": [
+            "CVE-2018-15919",
+            "CVE-2019-9511"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "malicious",
+    "summary": "ports: 22, 80, 443; CVEs: 2; tags: cloud, compromised",
+    "link": "https://www.shodan.io/host/203.0.113.24",
+    "ports": [
+      22,
+      80,
+      443
+    ],
+    "hostnames": [
+      "mail.example.org"
+    ],
+    "cpes": [
+      "cpe:/a:openbsd:openssh:7.4",
+      "cpe:/a:igor_sysoev:nginx:1.14.0"
+    ],
+    "vulns": [
+      "CVE-2018-15919",
+      "CVE-2019-9511"
+    ],
+    "tags": [
+      "cloud",
+      "compromised"
+    ]
+  }
+}

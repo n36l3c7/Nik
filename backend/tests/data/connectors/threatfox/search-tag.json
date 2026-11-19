@@ -1,0 +1,120 @@
+{
+  "args": {
+    "tag": "Magecart",
+    "limit": 10
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/",
+        "json": {
+          "query": "taginfo",
+          "tag": "Magecart",
+          "limit": 10
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query_status": "ok",
+          "data": [
+            {
+              "id": "29",
+              "ioc": "jquery.su",
+              "threat_type": "cc_skimming",
+              "threat_type_desc": "Indicator that identifies credit card skimming infrastructure (NOT phishing)",
+              "ioc_type": "domain",
+              "ioc_type_desc": "Domain used for credit card skimming (usually related to Magecart attacks)",
+              "malware": "js.magecart",
+              "malware_printable": "magecart",
+              "malware_alias": null,
+              "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/js.magecart",
+              "confidence_level": 50,
+              "first_seen": "2020-12-06 15:04:03 UTC",
+              "last_seen": null,
+              "reference": "https://twitter.com/AffableKraut/status/1335501765031174145",
+              "reporter": "abuse_ch",
+              "tags": [
+                "Magecart"
+              ]
+            },
+            {
+              "id": "28",
+              "ioc": "jquerysapi.com",
+              "threat_type": "cc_skimming",
+              "threat_type_desc": "Indicator that identifies credit card skimming infrastructure (NOT phishing)",
+              "ioc_type": "domain",
+              "ioc_type_desc": "Domain used for credit card skimming (usually related to Magecart attacks)",
+              "malware": "js.magecart",
+              "malware_printable": "magecart",
+              "malware_alias": null,
+              "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/js.magecart",
+              "confidence_level": 50,
+              "first_seen": "2020-12-06 15:04:03 UTC",
+              "last_seen": null,
+              "reference": "https://twitter.com/AffableKraut/status/1335501765031174145",
+              "reporter": "abuse_ch",
+              "tags": [
+                "Magecart"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "iocs": [
+      {
+        "id": "29",
+        "ioc": "jquery.su",
+        "threat_type": "cc_skimming",
+        "threat_type_desc": "Indicator that identifies credit card skimming infrastructure (NOT phishing)",
+        "ioc_type": "domain",
+        "ioc_type_desc": "Domain used for credit card skimming (usually related to Magecart attacks)",
+        "malware": "js.magecart",
+        "malware_printable": "magecart",
+        "malware_alias": null,
+        "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/js.magecart",
+        "confidence_level": 50,
+        "first_seen": "2020-12-06 15:04:03 UTC",
+        "last_seen": null,
+        "reference": "https://twitter.com/AffableKraut/status/1335501765031174145",
+        "reporter": "abuse_ch",
+        "tags": [
+          "Magecart"
+        ]
+      },
+      {
+        "id": "28",
+        "ioc": "jquerysapi.com",
+        "threat_type": "cc_skimming",
+        "threat_type_desc": "Indicator that identifies credit card skimming infrastructure (NOT phishing)",
+        "ioc_type": "domain",
+        "ioc_type_desc": "Domain used for credit card skimming (usually related to Magecart attacks)",
+        "malware": "js.magecart",
+        "malware_printable": "magecart",
+        "malware_alias": null,
+        "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/js.magecart",
+        "confidence_level": 50,
+        "first_seen": "2020-12-06 15:04:03 UTC",
+        "last_seen": null,
+        "reference": "https://twitter.com/AffableKraut/status/1335501765031174145",
+        "reporter": "abuse_ch",
+        "tags": [
+          "Magecart"
+        ]
+      }
+    ],
+    "values": [
+      "jquery.su",
+      "jquerysapi.com"
+    ],
+    "count": 2,
+    "query_status": "ok"
+  }
+}

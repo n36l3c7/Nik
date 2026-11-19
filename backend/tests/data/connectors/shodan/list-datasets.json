@@ -1,0 +1,58 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/data",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "scope": "monthly",
+            "name": "internetdb",
+            "description": "Minified database containing network information about all IPs on the Internet"
+          },
+          {
+            "scope": "monthly",
+            "name": "dnsdb",
+            "description": "DNS data for active domains on the Internet"
+          },
+          {
+            "scope": "daily",
+            "name": "raw-daily",
+            "description": "Data files containing all the information collected during a day"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "datasets": [
+      {
+        "scope": "monthly",
+        "name": "internetdb",
+        "description": "Minified database containing network information about all IPs on the Internet"
+      },
+      {
+        "scope": "monthly",
+        "name": "dnsdb",
+        "description": "DNS data for active domains on the Internet"
+      },
+      {
+        "scope": "daily",
+        "name": "raw-daily",
+        "description": "Data files containing all the information collected during a day"
+      }
+    ],
+    "names": [
+      "internetdb",
+      "dnsdb",
+      "raw-daily"
+    ]
+  }
+}

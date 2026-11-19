@@ -1,0 +1,62 @@
+{
+  "args": {
+    "filter": "action:CLEAN"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor/events",
+        "query": {
+          "filter": "action:CLEAN"
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "action": "CLEAN",
+              "creator_id": "wcoyote",
+              "details": [
+                {
+                  "v": "engine:current:clean"
+                }
+              ],
+              "level": "1",
+              "monitor_key": "L3Rlc3QvdGFjLmV4ZQ",
+              "owner_id": "acme",
+              "source": "ANALYSIS",
+              "subject": "cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1",
+              "timestamp": "20191016T10:00:00"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "events": [
+      {
+        "action": "CLEAN",
+        "creator_id": "wcoyote",
+        "details": [
+          {
+            "v": "engine:current:clean"
+          }
+        ],
+        "level": "1",
+        "monitor_key": "L3Rlc3QvdGFjLmV4ZQ",
+        "owner_id": "acme",
+        "source": "ANALYSIS",
+        "subject": "cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1",
+        "timestamp": "20191016T10:00:00"
+      }
+    ],
+    "count": 1,
+    "meta": null
+  }
+}

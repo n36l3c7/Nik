@@ -201,3 +201,110 @@ export function connectorRows(connectors, instances, { query = '', filter = 'all
   })
   return { rows, counts }
 }
+
+// --------------------------------------------------------------------------- //
+// Several keys for one instance (6.1)                                          //
+// --------------------------------------------------------------------------- //
+
+/** How the keys of an instance take turns, as the form offers it. */
+export const KEY_MODES = [
+  { id: 'each', label: 'One request each', hint: 'The keys take turns, request after request.' },
+  {
+    id: 'until_exhausted',
+    label: 'The same key until it is used up',
+    hint: 'In the order above; the next one starts when the vendor answers "quota exceeded" or the limit below is reached.',
+  },
+  {
+    id: 'least_used',
+    label: 'The one with most left',
+    hint: 'Each request goes to the key that was used least today.',
+  },
+  {
+    id: 'reserve',
+    label: 'First key only, the others in reserve',
+    hint: 'Another key is used only while the first one is used up.',
+  },
+]
+
+export const KEY_POLICY_DEFAULTS = { mode: 'each', perMinute: 0, perDay: 0, whenExhausted: 'wait', cacheHours: 0 }
+
+/** The fields a key is made of: the credentials the connector asks for. */
+export const keyFields = (connector) => fieldsOf(connector).filter((field) => field.kind === 'secret')
+
+/** Whether an instance of this connector can hold more keys than one: it must have credentials. */
+export const takesKeys = (connector) => keyFields(connector).length > 0 && !connector?.native
+
+/**
+ * The keys as the form edits them, from what the API gives: the first is the credentials of the
+ * instance (`main`), the others can be renamed, reordered and removed. `values` is what was typed.
+ */
+export const editableKeys = (instance) => (instance?.keys ?? []).map((key) => ({ ...key, isNew: false, values: {} }))
+
+/** A key that was just added in the form. */
+export const newKey = (connector, count) => ({
+  id: '',
+  name: `Key ${count + 1}`,
+  isNew: true,
+  secrets: {},
+  values: Object.fromEntries(keyFields(connector).map((field) => [field.name, ''])),
+  usedToday: 0,
+  usedThisMinute: 0,
+  total: 0,
+  state: 'new',
+})
+
+/** Why the keys cannot be saved, or null. */
+export function keysProblem(connector, keys, policy) {
+  const names = new Set()
+  for (const key of keys) {
+    const name = String(key.name ?? '').trim()
+    if (!name) return 'A key needs a name'
+    if (names.has(name.toLowerCase())) return `Two keys are called "${name}"`
+    names.add(name.toLowerCase())
+    if (key.isNew && !Object.values(key.values ?? {}).some((value) => String(value ?? '') !== '')) {
+      return `"${name}" has no credential yet`
+    }
+  }
+  for (const [field, label] of [
+    ['perMinute', 'Requests a minute'],
+    ['perDay', 'Requests a day'],
+    ['cacheHours', 'The hours an answer is kept'],
+  ]) {
+    const value = Number(policy?.[field] ?? 0)
+    if (!Number.isInteger(value) || value < 0) return `${label} is a whole number, 0 for none`
+  }
+  return null
+}
+
+/** What PUT /api/automation/instances/{id} takes for the keys: `{ mainName, keys, keyPolicy }`. */
+export function keysPayload(keys, policy) {
+  const [first, ...others] = keys
+  return {
+    mainName: String(first?.name ?? '').trim(),
+    keys: others.map((key) => {
+      const secrets = Object.fromEntries(
+        Object.entries(key.values ?? {}).filter(([, value]) => typeof value === 'string' && value !== ''),
+      )
+      return {
+        ...(key.id ? { id: key.id } : {}),
+        name: String(key.name ?? '').trim(),
+        ...(Object.keys(secrets).length ? { secrets } : {}),
+      }
+    }),
+    keyPolicy: {
+      mode: policy.mode,
+      perMinute: Number(policy.perMinute) || 0,
+      perDay: Number(policy.perDay) || 0,
+      whenExhausted: policy.whenExhausted,
+      cacheHours: Number(policy.cacheHours) || 0,
+    },
+  }
+}
+
+/** "190 / 500" or "190": what a key was used for today, against its limit when there is one. */
+export const keyUse = (key, policy) =>
+  Number(policy?.perDay) > 0 ? `${key.usedToday ?? 0} / ${policy.perDay}` : String(key.usedToday ?? 0)
+
+/** How full the day of a key is, 0 to 1 (0 when there is no limit a day). */
+export const keyShare = (key, policy) =>
+  Number(policy?.perDay) > 0 ? Math.min(1, (key.usedToday ?? 0) / Number(policy.perDay)) : 0

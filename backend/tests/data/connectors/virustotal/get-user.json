@@ -1,0 +1,96 @@
+{
+  "args": {
+    "id": "gilfoyle"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/users/gilfoyle",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "user",
+            "id": "gilfoyle",
+            "attributes": {
+              "first_name": "Bertram",
+              "last_name": "Gilfoyle",
+              "profile_phrase": "",
+              "reputation": 1,
+              "status": "active",
+              "user_since": 1530008602,
+              "email": "gilfoyle@piedpiper.com",
+              "has_2fa": true,
+              "privileges": {
+                "intelligence": {
+                  "granted": true,
+                  "inherited_from": "piedpiper"
+                }
+              },
+              "quotas": {
+                "api_requests_daily": {
+                  "allowed": 500,
+                  "used": 12
+                },
+                "api_requests_hourly": {
+                  "allowed": 240,
+                  "used": 3
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "gilfoyle",
+    "attributes": {
+      "first_name": "Bertram",
+      "last_name": "Gilfoyle",
+      "profile_phrase": "",
+      "reputation": 1,
+      "status": "active",
+      "user_since": 1530008602,
+      "email": "gilfoyle@piedpiper.com",
+      "has_2fa": true,
+      "privileges": {
+        "intelligence": {
+          "granted": true,
+          "inherited_from": "piedpiper"
+        }
+      },
+      "quotas": {
+        "api_requests_daily": {
+          "allowed": 500,
+          "used": 12
+        },
+        "api_requests_hourly": {
+          "allowed": 240,
+          "used": 3
+        }
+      }
+    },
+    "quotas": {
+      "api_requests_daily": {
+        "allowed": 500,
+        "used": 12
+      },
+      "api_requests_hourly": {
+        "allowed": 240,
+        "used": 3
+      }
+    },
+    "privileges": {
+      "intelligence": {
+        "granted": true,
+        "inherited_from": "piedpiper"
+      }
+    }
+  }
+}

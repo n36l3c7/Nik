@@ -1,0 +1,24 @@
+{
+  "args": {
+    "scanner_id": "de01",
+    "scan_id": "92d683cd-1575-4bde-89d1-99cd46ae07a7"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v1/livescan/de01/92d683cd-1575-4bde-89d1-99cd46ae07a7/",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "response": {}
+  }
+}

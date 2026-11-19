@@ -1,0 +1,34 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/protocols",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "afp": "AFP server information grabbing module",
+          "ajp": "Check whether the Tomcat server running AJP protocol",
+          "amqp": "Grab information from an AMQP service"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "protocols": {
+      "afp": "AFP server information grabbing module",
+      "ajp": "Check whether the Tomcat server running AJP protocol",
+      "amqp": "Grab information from an AMQP service"
+    },
+    "names": [
+      "afp",
+      "ajp",
+      "amqp"
+    ]
+  }
+}

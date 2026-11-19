@@ -1,0 +1,40 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "trends.shodan.io",
+        "path": "/api/v1/search/filters",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          "all",
+          "asn",
+          "city",
+          "country",
+          "tag",
+          "title",
+          "version",
+          "vuln"
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "filters": [
+      "all",
+      "asn",
+      "city",
+      "country",
+      "tag",
+      "title",
+      "version",
+      "vuln"
+    ]
+  }
+}

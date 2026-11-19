@@ -1,0 +1,148 @@
+{
+  "args": {
+    "threat_entries": [
+      {
+        "hash": "WwuJdQ=="
+      },
+      {
+        "hash": "771MOg=="
+      },
+      {
+        "hash": "5eOrwQ=="
+      }
+    ],
+    "client_states": [
+      "ChAIARABGAEiAzAwMSiAEDABEAE=",
+      "ChAIAhABGAEiAzAwMSiAEDABEOgH"
+    ],
+    "threat_types": [
+      "MALWARE",
+      "SOCIAL_ENGINEERING"
+    ],
+    "platform_types": [
+      "WINDOWS"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v4/fullHashes:find",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456"
+        },
+        "json": {
+          "client": {
+            "clientId": "nik",
+            "clientVersion": "1"
+          },
+          "clientStates": [
+            "ChAIARABGAEiAzAwMSiAEDABEAE=",
+            "ChAIAhABGAEiAzAwMSiAEDABEOgH"
+          ],
+          "threatInfo": {
+            "threatTypes": [
+              "MALWARE",
+              "SOCIAL_ENGINEERING"
+            ],
+            "platformTypes": [
+              "WINDOWS"
+            ],
+            "threatEntryTypes": [
+              "URL"
+            ],
+            "threatEntries": [
+              {
+                "hash": "WwuJdQ=="
+              },
+              {
+                "hash": "771MOg=="
+              },
+              {
+                "hash": "5eOrwQ=="
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "threatType": "MALWARE",
+              "platformType": "WINDOWS",
+              "threatEntryType": "URL",
+              "threat": {
+                "hash": "WwuJdQx48jP-4lxr4y2Sj82AWoxUVcIRDSk1PC9Rf-4="
+              },
+              "threatEntryMetadata": {
+                "entries": [
+                  {
+                    "key": "bWFsd2FyZV90aHJlYXRfdHlwZQ==",
+                    "value": "TEFORElORw=="
+                  }
+                ]
+              },
+              "cacheDuration": "300.000s"
+            },
+            {
+              "threatType": "SOCIAL_ENGINEERING",
+              "platformType": "WINDOWS",
+              "threatEntryType": "URL",
+              "threat": {
+                "hash": "771MOrRPMn6xPKlCrXx_CrR-wmCk0LgFFoSgGy7zUiA="
+              },
+              "threatEntryMetadata": {
+                "entries": []
+              },
+              "cacheDuration": "300.000s"
+            }
+          ],
+          "minimumWaitDuration": "300.000s",
+          "negativeCacheDuration": "300.000s"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "matches": [
+      {
+        "threatType": "MALWARE",
+        "platformType": "WINDOWS",
+        "threatEntryType": "URL",
+        "threat": {
+          "hash": "WwuJdQx48jP-4lxr4y2Sj82AWoxUVcIRDSk1PC9Rf-4="
+        },
+        "threatEntryMetadata": {
+          "entries": [
+            {
+              "key": "bWFsd2FyZV90aHJlYXRfdHlwZQ==",
+              "value": "TEFORElORw=="
+            }
+          ]
+        },
+        "cacheDuration": "300.000s"
+      },
+      {
+        "threatType": "SOCIAL_ENGINEERING",
+        "platformType": "WINDOWS",
+        "threatEntryType": "URL",
+        "threat": {
+          "hash": "771MOrRPMn6xPKlCrXx_CrR-wmCk0LgFFoSgGy7zUiA="
+        },
+        "threatEntryMetadata": {
+          "entries": []
+        },
+        "cacheDuration": "300.000s"
+      }
+    ],
+    "hashes": [
+      "WwuJdQx48jP-4lxr4y2Sj82AWoxUVcIRDSk1PC9Rf-4=",
+      "771MOrRPMn6xPKlCrXx_CrR-wmCk0LgFFoSgGy7zUiA="
+    ],
+    "count": 2,
+    "minimum_wait": "300.000s",
+    "negative_cache": "300.000s"
+  }
+}

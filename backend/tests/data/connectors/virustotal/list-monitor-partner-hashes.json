@@ -1,0 +1,61 @@
+{
+  "args": {
+    "filter": "engine:acme-av",
+    "limit": 40
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/hashes",
+        "query": {
+          "filter": "engine:acme-av",
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "monitor_hash",
+              "id": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de",
+              "attributes": {
+                "detections_count": 1,
+                "last_analysis_date": 1517474787,
+                "tags": [
+                  "detected",
+                  "acme-av"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "monitor_hash",
+        "id": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de",
+        "attributes": {
+          "detections_count": 1,
+          "last_analysis_date": 1517474787,
+          "tags": [
+            "detected",
+            "acme-av"
+          ]
+        }
+      }
+    ],
+    "ids": [
+      "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de"
+    ],
+    "count": 1,
+    "meta": null
+  }
+}

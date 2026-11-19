@@ -1,0 +1,72 @@
+{
+  "args": {
+    "query": "webcam"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/query/search",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "query": "webcam",
+          "page": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "votes": 2,
+              "description": "",
+              "title": "Webcam",
+              "timestamp": "2019-07-07T02:54:45.194000",
+              "tags": [
+                ""
+              ],
+              "query": "IP Webcam has_screenshot: -port:3269 -port:3288 -port:7000 -port:7001 -port:8000 country:\"KR\""
+            },
+            {
+              "votes": 3,
+              "description": "",
+              "title": "webcam",
+              "timestamp": "2020-10-08T14:54:14.599000",
+              "tags": [
+                ""
+              ],
+              "query": "Test org:\"Test\""
+            }
+          ],
+          "total": 309
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "queries": [
+      {
+        "votes": 2,
+        "description": "",
+        "title": "Webcam",
+        "timestamp": "2019-07-07T02:54:45.194000",
+        "tags": [
+          ""
+        ],
+        "query": "IP Webcam has_screenshot: -port:3269 -port:3288 -port:7000 -port:7001 -port:8000 country:\"KR\""
+      },
+      {
+        "votes": 3,
+        "description": "",
+        "title": "webcam",
+        "timestamp": "2020-10-08T14:54:14.599000",
+        "tags": [
+          ""
+        ],
+        "query": "Test org:\"Test\""
+      }
+    ],
+    "count": 2,
+    "truncated": false
+  }
+}

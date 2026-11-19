@@ -1,0 +1,62 @@
+{
+  "args": {
+    "id": "piedpiper",
+    "quota_name": "api_requests_daily",
+    "period": "2026-11-18",
+    "order": "desc"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/groups/piedpiper/users_consuming_quota/api_requests_daily",
+        "query": {
+          "period": "2026-11-18",
+          "order": "desc",
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "gilfoyle",
+              "type": "user",
+              "attributes": {
+                "first_name": "Bertram",
+                "last_name": "Gilfoyle"
+              },
+              "context_attributes": {
+                "quota_consumed_from_group": 412
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "id": "gilfoyle",
+        "type": "user",
+        "attributes": {
+          "first_name": "Bertram",
+          "last_name": "Gilfoyle"
+        },
+        "context_attributes": {
+          "quota_consumed_from_group": 412
+        }
+      }
+    ],
+    "ids": [
+      "gilfoyle"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

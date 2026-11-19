@@ -1,0 +1,302 @@
+# RDAP, the Registration Data Access Protocol: who registered a domain, who
+# holds an IP network or an AS number, read from the registries.
+#
+# Written from the standard and from what RDAP.org publishes:
+#   RFC 9082 (the queries)   https://www.rfc-editor.org/rfc/rfc9082
+#   RFC 9083 (the answers)   https://www.rfc-editor.org/rfc/rfc9083
+#   RFC 7480 (HTTP usage)    https://www.rfc-editor.org/rfc/rfc7480
+#   https://about.rdap.org/ and https://github.com/rdap-org (the bootstrap
+#   server and its OpenAPI description)
+# Not run against a real server: see "verified" below.
+#
+# No account and no key. The address is https://rdap.org by default: a
+# bootstrap server that holds no data and answers a look-up with a redirect
+# (302) to the RDAP server of the registry that holds the object. A redirect
+# is followed only to a host the instance may reach: "more_hosts" below
+# lists the RDAP servers of the five regional internet registries and of the
+# registries that serve the most top-level domains, each name taken from
+# IANA's bootstrap files (https://data.iana.org/rdap/: dns.json published
+# 2026-11-19, ipv4.json, ipv6.json, asn.json). For a registry that is not
+# listed, the playbook must be allowed its host, or an instance is given the
+# address of that registry's own server (https://rdap.nic.cz …), which needs
+# no redirect.
+#
+# RDAP.org answers the look-ups and "help"; it refuses the searches (400),
+# which belong to a registry's own server, and most registries refuse them
+# or ask for credentials this connector does not send.
+name: RDAP (registration data)
+id: rdap
+version: 1
+description: Registration data of domains, IP networks, AS numbers, name servers and entities, read from the registries over RDAP.
+api_version: "RDAP: RFC 9082 (queries) and RFC 9083 (JSON answers), rdap_level_0"
+verified: false
+configuration:
+  - name: url
+    label: RDAP server
+    type: url
+    default: "https://rdap.org"
+    help: "https://rdap.org finds the registry and redirects to it. Give the address of a registry's own RDAP server to ask it directly."
+base_url: "{{ config.url }}"
+# Where RDAP.org redirects to, from IANA's bootstrap files.
+more_hosts:
+  # The regional internet registries (ipv4.json, ipv6.json, asn.json).
+  - rdap.arin.net
+  - rdap.db.ripe.net
+  - rdap.apnic.net
+  - rdap.lacnic.net
+  - rdap.afrinic.net
+  # Generic top-level domains (dns.json), the servers of the most domains first.
+  - rdap.verisign.com # com, net
+  - rdap.identitydigital.services # info and some 450 others
+  - rdap.centralnic.com # xyz and some 90 others
+  - rdap.nominet.uk # uk, and the generic ones Nominet runs
+  - pubapi.registry.google # dev, app and Google's others
+  - rdap.gmoregistry.net
+  - rdap.zdnsgtld.com # top
+  - rdap.registry.click
+  - tld-rdap.verisign.com # cc, name
+  - rdap.mobile-registry.com
+  - rdap.publicinterestregistry.org # org
+  - rdap.radix.host # online, site
+  - rdap.teleinfo.cn
+  # Country-code top-level domains (dns.json).
+  - rdap.sidn.nl # nl
+  - rdap.nic.fr # fr
+  - rdap.registro.br # br
+  - rdap.cctld.au # au
+  - rdap.ca.fury.ca # ca
+  - rdap.nixiregistry.in # in
+  - rdap.dns.pl # pl
+  - rdap.nic.cz # cz
+  - rdap.norid.no # no
+  - rdap.fi # fi
+  - rdap.hostmaster.ua # ua
+  - rdap.nic.or.kr # kr
+  - ccrdap.twnic.tw # tw
+  - rdap.sgnic.sg # sg
+  - rdap.pandi.id # id
+  - rdap.nic.ar # ar
+  - rdap.nic.tv # tv
+  - rdap.isnic.is # is
+  - rdap.register.si # si
+  - rdap.thains.co.th # th
+headers:
+  Accept: application/rdap+json
+test:
+  request: { method: GET, path: /help }
+commands:
+  - name: get-domain
+    description: The registration of a domain as its registry holds it (registrar, dates, status, name servers, DNSSEC); the verdict is always unknown, since the age cannot be judged here.
+    reputation: domain
+    arguments:
+      - { name: domain, type: text, required: true, description: "The registered domain name (example.com), not a host under it; an IDN as A-labels or U-labels" }
+    request:
+      method: GET
+      path: "/domain/{{ args.domain }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      verdict: unknown
+      summary: "registered {{ response.events | default('') | where('eventAction', 'eq', 'registration') | first | get('eventDate') | regex_extract('^[0-9-]+') | map('', 'on an unknown date') }}, registrar {{ response.entities | default('') | where('roles', 'contains', 'registrar') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') | default('unknown') }}"
+      name: "{{ response.ldhName | lower }}"
+      unicode_name: "{{ response.unicodeName }}"
+      handle: "{{ response.handle }}"
+      registered: "{{ response.events | where('eventAction', 'eq', 'registration') | first | get('eventDate') }}"
+      changed: "{{ response.events | where('eventAction', 'eq', 'last changed') | first | get('eventDate') }}"
+      expires: "{{ response.events | where('eventAction', 'eq', 'expiration') | first | get('eventDate') }}"
+      registrar: "{{ response.entities | where('roles', 'contains', 'registrar') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') }}"
+      registrar_id: "{{ response.entities | where('roles', 'contains', 'registrar') | first | get('publicIds') | where('type', 'contains', 'IANA') | first | get('identifier') }}"
+      registrant: "{{ response.entities | where('roles', 'contains', 'registrant') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') }}"
+      abuse_email: "{{ response.entities[*].entities | where('roles', 'contains', 'abuse') | first | get('vcardArray.1') | where('0', 'eq', 'email') | first | get('3') }}"
+      nameservers: "{{ response.nameservers[*].ldhName | sort }}"
+      status: "{{ response.status }}"
+      dnssec: "{{ response.secureDNS.delegationSigned | default(false) | map('true', 'signed', 'false', 'unsigned') }}"
+      port43: "{{ response.port43 }}"
+      record: "{{ response }}"
+
+  - name: get-ip
+    description: The network an IP address belongs to as its regional registry holds it (name, range, holder, country, dates); the verdict is always unknown.
+    reputation: ip
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IPv4 or IPv6 address" }
+    request:
+      method: GET
+      path: "/ip/{{ args.ip }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      verdict: unknown
+      summary: "network {{ response.name | default('') }} ({{ response.handle | default('') }}), held by {{ response.entities | default('') | where('roles', 'contains', 'registrant') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') | default('an unknown holder') }}"
+      name: "{{ response.name }}"
+      handle: "{{ response.handle }}"
+      start_address: "{{ response.startAddress }}"
+      end_address: "{{ response.endAddress }}"
+      cidrs: "{{ response.cidr0_cidrs }}"
+      ip_version: "{{ response.ipVersion }}"
+      type: "{{ response.type }}"
+      country: "{{ response.country }}"
+      parent_handle: "{{ response.parentHandle }}"
+      holder: "{{ response.entities | where('roles', 'contains', 'registrant') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') }}"
+      abuse_email: "{{ response.entities | where('roles', 'contains', 'abuse') | first | get('vcardArray.1') | where('0', 'eq', 'email') | first | get('3') }}"
+      holder_abuse_email: "{{ response.entities[*].entities | where('roles', 'contains', 'abuse') | first | get('vcardArray.1') | where('0', 'eq', 'email') | first | get('3') }}"
+      registered: "{{ response.events | where('eventAction', 'eq', 'registration') | first | get('eventDate') }}"
+      changed: "{{ response.events | where('eventAction', 'eq', 'last changed') | first | get('eventDate') }}"
+      status: "{{ response.status }}"
+      port43: "{{ response.port43 }}"
+      record: "{{ response }}"
+
+  - name: get-ip-network
+    description: The most specific registered network that holds an address block written as prefix and length (CIDR), as its regional registry holds it.
+    arguments:
+      - { name: prefix, type: text, required: true, description: "The first address of the block: 192.0.2.0 or 2001:db8::" }
+      - { name: length, type: number, required: true, description: "The length of the prefix in bits: 24" }
+    request:
+      method: GET
+      path: "/ip/{{ args.prefix }}/{{ args.length }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      name: "{{ response.name }}"
+      handle: "{{ response.handle }}"
+      start_address: "{{ response.startAddress }}"
+      end_address: "{{ response.endAddress }}"
+      cidrs: "{{ response.cidr0_cidrs }}"
+      ip_version: "{{ response.ipVersion }}"
+      type: "{{ response.type }}"
+      country: "{{ response.country }}"
+      parent_handle: "{{ response.parentHandle }}"
+      holder: "{{ response.entities | where('roles', 'contains', 'registrant') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') }}"
+      abuse_email: "{{ response.entities | where('roles', 'contains', 'abuse') | first | get('vcardArray.1') | where('0', 'eq', 'email') | first | get('3') }}"
+      holder_abuse_email: "{{ response.entities[*].entities | where('roles', 'contains', 'abuse') | first | get('vcardArray.1') | where('0', 'eq', 'email') | first | get('3') }}"
+      registered: "{{ response.events | where('eventAction', 'eq', 'registration') | first | get('eventDate') }}"
+      changed: "{{ response.events | where('eventAction', 'eq', 'last changed') | first | get('eventDate') }}"
+      status: "{{ response.status }}"
+      record: "{{ response }}"
+
+  - name: get-autnum
+    description: The registration of an autonomous system number, or of the block of numbers it is part of, as its regional registry holds it.
+    arguments:
+      - { name: number, type: number, required: true, description: "The AS number, as digits without AS: 65538" }
+    request:
+      method: GET
+      path: "/autnum/{{ args.number }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      name: "{{ response.name }}"
+      handle: "{{ response.handle }}"
+      start_autnum: "{{ response.startAutnum }}"
+      end_autnum: "{{ response.endAutnum }}"
+      type: "{{ response.type }}"
+      country: "{{ response.country }}"
+      holder: "{{ response.entities | where('roles', 'contains', 'registrant') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') }}"
+      abuse_email: "{{ response.entities | where('roles', 'contains', 'abuse') | first | get('vcardArray.1') | where('0', 'eq', 'email') | first | get('3') }}"
+      holder_abuse_email: "{{ response.entities[*].entities | where('roles', 'contains', 'abuse') | first | get('vcardArray.1') | where('0', 'eq', 'email') | first | get('3') }}"
+      registered: "{{ response.events | where('eventAction', 'eq', 'registration') | first | get('eventDate') }}"
+      changed: "{{ response.events | where('eventAction', 'eq', 'last changed') | first | get('eventDate') }}"
+      status: "{{ response.status }}"
+      record: "{{ response }}"
+
+  - name: get-nameserver
+    description: The registration of a name server (a host object) as the registry of its domain holds it, with its addresses.
+    arguments:
+      - { name: nameserver, type: text, required: true, description: "The fully qualified name of the name server: ns1.example.com" }
+    request:
+      method: GET
+      path: "/nameserver/{{ args.nameserver }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      name: "{{ response.ldhName | lower }}"
+      unicode_name: "{{ response.unicodeName }}"
+      handle: "{{ response.handle }}"
+      ipv4: "{{ response.ipAddresses.v4 }}"
+      ipv6: "{{ response.ipAddresses.v6 }}"
+      status: "{{ response.status }}"
+      registered: "{{ response.events | where('eventAction', 'eq', 'registration') | first | get('eventDate') }}"
+      changed: "{{ response.events | where('eventAction', 'eq', 'last changed') | first | get('eventDate') }}"
+      record: "{{ response }}"
+
+  - name: get-entity
+    description: An entity (a registrar, a registrant, a contact) by its handle, as the registry that issued the handle holds it.
+    arguments:
+      - { name: handle, type: text, required: true, description: "The handle of the entity; RDAP.org finds the registry by the tag the handle ends with (XXXX-ARIN)" }
+    request:
+      method: GET
+      path: "/entity/{{ args.handle }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      handle: "{{ response.handle }}"
+      name: "{{ response.vcardArray[1] | where('0', 'eq', 'fn') | first | get('3') }}"
+      organisation: "{{ response.vcardArray[1] | where('0', 'eq', 'org') | first | get('3') }}"
+      kind: "{{ response.vcardArray[1] | where('0', 'eq', 'kind') | first | get('3') }}"
+      email: "{{ response.vcardArray[1] | where('0', 'eq', 'email') | first | get('3') }}"
+      roles: "{{ response.roles }}"
+      public_ids: "{{ response.publicIds }}"
+      status: "{{ response.status }}"
+      registered: "{{ response.events | where('eventAction', 'eq', 'registration') | first | get('eventDate') }}"
+      changed: "{{ response.events | where('eventAction', 'eq', 'last changed') | first | get('eventDate') }}"
+      port43: "{{ response.port43 }}"
+      record: "{{ response }}"
+
+  - name: search-domains
+    description: The domains a registry holds whose name matches a pattern, or that are delegated to a name server by its name or address; give one of the three, to a registry's own server.
+    arguments:
+      - { name: name, type: text, description: "A pattern for the domain name, * for any characters at the end of a label: exam*.com" }
+      - { name: ns_name, type: text, description: "A pattern for the name of a name server of the domains: ns1.exam*.com" }
+      - { name: ns_ip, type: text, description: "An IPv4 or IPv6 address of a name server of the domains" }
+    request:
+      method: GET
+      path: /domains
+      query:
+        name: "{{ args.name }}"
+        nsLdhName: "{{ args.ns_name }}"
+        nsIp: "{{ args.ns_ip }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      domains: "{{ response.domainSearchResults }}"
+      names: "{{ response.domainSearchResults | pluck('ldhName') }}"
+      count: "{{ response.domainSearchResults | length }}"
+      notices: "{{ response.notices }}"
+
+  - name: search-nameservers
+    description: The name servers a registry holds whose name matches a pattern or that have an address; give one of the two, to a registry's own server.
+    arguments:
+      - { name: name, type: text, description: "A pattern for the name of the name server, * for any characters at the end of a label: ns1.exam*.com" }
+      - { name: ip, type: text, description: "An IPv4 or IPv6 address of the name server" }
+    request:
+      method: GET
+      path: /nameservers
+      query:
+        name: "{{ args.name }}"
+        ip: "{{ args.ip }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      nameservers: "{{ response.nameserverSearchResults }}"
+      names: "{{ response.nameserverSearchResults | pluck('ldhName') }}"
+      count: "{{ response.nameserverSearchResults | length }}"
+      notices: "{{ response.notices }}"
+
+  - name: search-entities
+    description: The entities a registry holds whose full name or whose handle matches a pattern; give one of the two, to a registry's own server.
+    arguments:
+      - { name: fn, type: text, description: "A pattern for the full name (the fn of the vCard), * for any characters at the end: Bobby Joe*" }
+      - { name: handle, type: text, description: "A pattern for the handle, * for any characters at the end: CID-40*" }
+    request:
+      method: GET
+      path: /entities
+      query:
+        fn: "{{ args.fn }}"
+        handle: "{{ args.handle }}"
+    error: { message: "{{ response.title }}" }
+    outputs:
+      entities: "{{ response.entitySearchResults }}"
+      handles: "{{ response.entitySearchResults | pluck('handle') }}"
+      count: "{{ response.entitySearchResults | length }}"
+      notices: "{{ response.notices }}"
+
+  - name: get-help
+    description: What the server says of itself (its terms of service, its limits, the extensions it speaks), as the notices of its help answer.
+    request:
+      method: GET
+      path: /help
+    error: { message: "{{ response.title }}" }
+    outputs:
+      conformance: "{{ response.rdapConformance }}"
+      notices: "{{ response.notices }}"
+      titles: "{{ response.notices | pluck('title') }}"

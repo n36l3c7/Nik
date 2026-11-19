@@ -1,0 +1,30 @@
+{
+  "args": {
+    "id": "6425310189355008",
+    "user_id": "dinesh"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/intelligence/hunting_rulesets/6425310189355008/relationships/owner",
+        "json": {
+          "data": {
+            "type": "user",
+            "id": "dinesh"
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

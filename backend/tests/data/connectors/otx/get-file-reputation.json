@@ -1,0 +1,31 @@
+{
+  "args": {
+    "file_hash": "6c5360d41bd2b14b1565f5b18e5c203cf512e493"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/indicators/file/6c5360d41bd2b14b1565f5b18e5c203cf512e493/general",
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 404,
+        "json": {
+          "detail": "Not found"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "unknown",
+    "summary": "in 0 OTX pulses",
+    "pulse_count": 0,
+    "pulses": null,
+    "families": null,
+    "validation": null,
+    "link": "https://otx.alienvault.com/indicator/file/6c5360d41bd2b14b1565f5b18e5c203cf512e493"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "args": {
+    "id": "1.2.3.4:443"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/port_infos/1.2.3.4:443",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "port_info",
+            "id": "1.2.3.4:443",
+            "attributes": {
+              "port": 443,
+              "protocol": "tcp",
+              "service": "https",
+              "last_seen": 1718534400
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "1.2.3.4:443",
+    "type": "port_info",
+    "attributes": {
+      "port": 443,
+      "protocol": "tcp",
+      "service": "https",
+      "last_seen": 1718534400
+    }
+  }
+}

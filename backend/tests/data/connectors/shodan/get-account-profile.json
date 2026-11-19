@@ -1,0 +1,29 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/account/profile",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "member": true,
+          "credits": 0,
+          "display_name": null,
+          "created": "2020-06-15T10:44:43.148000"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "member": true,
+    "credits": 0,
+    "display_name": null,
+    "created": "2020-06-15T10:44:43.148000"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "args": {
+    "filter": "status:finished"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/intelligence/retrohunt_jobs",
+        "query": {
+          "filter": "status:finished",
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "retrohunt_job",
+              "id": "gilfoyle-1545145761",
+              "attributes": {
+                "corpus": "main",
+                "creation_date": 1545145761,
+                "num_matches": 12,
+                "progress": 100,
+                "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+                "scanned_bytes": 4096,
+                "status": "finished"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "retrohunt_job",
+        "id": "gilfoyle-1545145761",
+        "attributes": {
+          "corpus": "main",
+          "creation_date": 1545145761,
+          "num_matches": 12,
+          "progress": 100,
+          "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+          "scanned_bytes": 4096,
+          "status": "finished"
+        }
+      }
+    ],
+    "ids": [
+      "gilfoyle-1545145761"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

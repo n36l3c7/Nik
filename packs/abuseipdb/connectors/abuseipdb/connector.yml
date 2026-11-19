@@ -1,0 +1,209 @@
+# AbuseIPDB, through its API v2.
+#
+# Written from the vendor's reference, https://docs.abuseipdb.com/ (one page:
+# CHECK, REPORTS, BLACKLIST, REPORT, CHECK-BLOCK, CLEAR-ADDRESS, the daily
+# limits and the errors). Not run against the real service: see "verified"
+# below.
+#
+# The key goes in the "Key" header, as the reference recommends. Every
+# endpoint is open to a free account; what a subscription changes is said in
+# the arguments it changes (the size of the blacklist, its filters, the size
+# of a network and the age of the reports in check-block) and in the README.
+#
+# The verdict of check-ip is the one Nik's own enrichment gives for this
+# source: harmless when AbuseIPDB has the address on a whitelist, malicious
+# from a confidence of 75, suspicious from 25, unknown below. An expression
+# has no "if": each word is written by the one piece that holds for it.
+#
+# "verbose" is a flag without a value (the reference sends "-d verbose"), and
+# a query value that is empty is not sent: the flag is written in the path.
+#
+# BULK-REPORT is not here: it takes a CSV file as an upload, and a multipart
+# field of a connector is a text without a file name.
+name: AbuseIPDB
+id: abuseipdb
+version: 1
+description: What AbuseIPDB's users reported of an IP address or a network, its blacklist, and reporting an address.
+api_version: "AbuseIPDB API v2 (api.abuseipdb.com/api/v2)"
+verified: false
+configuration:
+  - name: credentials
+    type: header
+    header: Key
+base_url: "https://api.abuseipdb.com/api/v2"
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /check, query: { ipAddress: 127.0.0.1, maxAgeInDays: 1 } }
+commands:
+  - name: check-ip
+    description: What is known of an IP address, with the confidence that it is abusive (0 to 100) and the reports of the last days.
+    reputation: ip
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IPv4 or IPv6 address" }
+      - { name: max_age_days, type: number, default: 90, description: "How far back the reports are counted, in days: 1 to 365" }
+      - { name: verbose, type: bool, default: true, description: "Also give the reports themselves (10 000 at most) and the name of the country" }
+    request:
+      method: GET
+      path: "/check{{ args.verbose | map('true', '?verbose', else='') }}"
+      query:
+        ipAddress: "{{ args.ip }}"
+        maxAgeInDays: "{{ args.max_age_days }}"
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      verdict: "{{ response.data | where('isWhitelisted') | length | map('1', 'harmless', else='') }}\
+        {{ response.data | where('isWhitelisted', 'ne', true) | where('abuseConfidenceScore', 'gte', 75) | length | map('1', 'malicious', else='') }}\
+        {{ response.data | where('isWhitelisted', 'ne', true) | where('abuseConfidenceScore', 'gte', 25) | where('abuseConfidenceScore', 'lt', 75) | length | map('1', 'suspicious', else='') }}\
+        {{ response.data | where('isWhitelisted', 'ne', true) | where('abuseConfidenceScore', 'lt', 25) | length | map('1', 'unknown', else='') }}"
+      summary: "confidence {{ response.data.abuseConfidenceScore }} %, {{ response.data.totalReports }} reports in {{ args.max_age_days }} days"
+      link: "https://www.abuseipdb.com/check/{{ args.ip }}"
+      score: "{{ response.data.abuseConfidenceScore }}"
+      total_reports: "{{ response.data.totalReports }}"
+      distinct_users: "{{ response.data.numDistinctUsers }}"
+      last_reported: "{{ response.data.lastReportedAt }}"
+      is_whitelisted: "{{ response.data.isWhitelisted }}"
+      is_public: "{{ response.data.isPublic }}"
+      is_tor: "{{ response.data.isTor }}"
+      country: "{{ response.data.countryCode }}"
+      usage_type: "{{ response.data.usageType }}"
+      isp: "{{ response.data.isp }}"
+      domain: "{{ response.data.domain }}"
+      hostnames: "{{ response.data.hostnames }}"
+      reports: "{{ response.data.reports }}"
+
+  - name: list-reports
+    description: The reports made of an IP address, newest first, read page by page (100 a page, 1 000 at most; each page counts against the daily limit).
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IPv4 or IPv6 address" }
+      - { name: max_age_days, type: number, default: 30, description: "How far back the reports go, in days: 1 to 365" }
+    request:
+      method: GET
+      path: /reports
+      query:
+        ipAddress: "{{ args.ip }}"
+        maxAgeInDays: "{{ args.max_age_days }}"
+    pagination:
+      type: page
+      param: page
+      limit_param: perPage
+      limit: 100
+      items: "{{ response.data.results }}"
+      max_pages: 10
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      reports: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: check-block
+    description: The addresses of a network that were reported, each with its confidence of abuse and the number of its reports.
+    arguments:
+      - { name: network, type: text, required: true, description: "A network in CIDR notation: 203.0.113.0/24. A free account may ask for a /24 at most; a Basic subscription a /20, Premium a /16" }
+      - { name: max_age_days, type: number, default: 30, description: "How far back the reports are counted, in days. A free account may ask for 30 at most; a Basic subscription 60, Premium 365" }
+    request:
+      method: GET
+      path: /check-block
+      query:
+        network: "{{ args.network }}"
+        maxAgeInDays: "{{ args.max_age_days }}"
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      network_address: "{{ response.data.networkAddress }}"
+      netmask: "{{ response.data.netmask }}"
+      min_address: "{{ response.data.minAddress }}"
+      max_address: "{{ response.data.maxAddress }}"
+      possible_hosts: "{{ response.data.numPossibleHosts }}"
+      address_space: "{{ response.data.addressSpaceDesc }}"
+      reported: "{{ response.data.reportedAddress }}"
+      reported_ips: "{{ response.data.reportedAddress | pluck('ipAddress') }}"
+      count: "{{ response.data.reportedAddress | length }}"
+
+  - name: get-blacklist
+    description: The most reported IP addresses, each with its confidence of abuse and the time of its last report, highest confidence first.
+    arguments:
+      - { name: confidence_minimum, type: number, description: "The lowest confidence listed: 25 to 100, 100 when left out. Needs a subscription: without one the plain list is given" }
+      - { name: limit, type: number, description: "How many addresses: 10 000 when left out, which is also the most a free account gets; a Basic subscription 100 000, Premium 500 000" }
+      - { name: only_countries, type: text, description: "Only addresses of these countries, as ISO 3166 alpha-2 codes separated by commas: US,MX,CA. Needs a subscription" }
+      - { name: except_countries, type: text, description: "No address of these countries, as ISO 3166 alpha-2 codes separated by commas. Needs a subscription" }
+      - { name: ip_version, type: choice, choices: ["", "4", "6"], default: "", description: "Only IPv4 or only IPv6 addresses; both when left out" }
+    request:
+      method: GET
+      path: /blacklist
+      query:
+        confidenceMinimum: "{{ args.confidence_minimum }}"
+        limit: "{{ args.limit }}"
+        onlyCountries: "{{ args.only_countries }}"
+        exceptCountries: "{{ args.except_countries }}"
+        ipVersion: "{{ args.ip_version }}"
+    error: { message: "{{ response.errors[0].detail }}" }
+    timeout: 120
+    outputs:
+      generated_at: "{{ response.meta.generatedAt }}"
+      entries: "{{ response.data }}"
+      ips: "{{ response.data | pluck('ipAddress') }}"
+      count: "{{ response.data | length }}"
+
+  - name: get-blacklist-text
+    description: The most reported IP addresses as plain text, one address a line, for a firewall that reads such a list.
+    arguments:
+      - { name: confidence_minimum, type: number, description: "The lowest confidence listed: 25 to 100, 100 when left out. Needs a subscription: without one the plain list is given" }
+      - { name: limit, type: number, description: "How many addresses: 10 000 when left out, which is also the most a free account gets; a Basic subscription 100 000, Premium 500 000" }
+      - { name: only_countries, type: text, description: "Only addresses of these countries, as ISO 3166 alpha-2 codes separated by commas: US,MX,CA. Needs a subscription" }
+      - { name: except_countries, type: text, description: "No address of these countries, as ISO 3166 alpha-2 codes separated by commas. Needs a subscription" }
+      - { name: ip_version, type: choice, choices: ["", "4", "6"], default: "", description: "Only IPv4 or only IPv6 addresses; both when left out" }
+    request:
+      method: GET
+      path: /blacklist
+      headers:
+        Accept: text/plain
+      query:
+        confidenceMinimum: "{{ args.confidence_minimum }}"
+        limit: "{{ args.limit }}"
+        onlyCountries: "{{ args.only_countries }}"
+        exceptCountries: "{{ args.except_countries }}"
+        ipVersion: "{{ args.ip_version }}"
+      answer: text
+    timeout: 120
+    outputs:
+      generated_at: "{{ headers['x-generated-at'] }}"
+      text: "{{ response.text }}"
+      ips: "{{ response.text | split('\n') }}"
+      count: "{{ response.text | split('\n') | length }}"
+
+  - name: report-ip
+    description: Report an IP address to AbuseIPDB, with the categories of what it did. The same address can be reported once in 15 minutes.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IPv4 or IPv6 address" }
+      - { name: categories, type: text, required: true, description: "The ids of the categories, separated by commas, 30 at most: 18,22 (brute force, SSH). The list is at www.abuseipdb.com/categories" }
+      - { name: comment, type: text, description: "What was seen: lines of a log, ports. Take out anything that names a person: the comment is public" }
+      - { name: timestamp, type: text, description: "When the attack happened or was first seen, as an ISO 8601 date: 2023-10-18T11:25:11-04:00. Now when left out" }
+    request:
+      method: POST
+      path: /report
+      form:
+        ip: "{{ args.ip }}"
+        categories: "{{ args.categories }}"
+        comment: "{{ args.comment }}"
+        timestamp: "{{ args.timestamp }}"
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      ip: "{{ response.data.ipAddress }}"
+      score: "{{ response.data.abuseConfidenceScore }}"
+    sample: { ip: 203.0.113.7, score: 52 }
+
+  - name: clear-address
+    description: Delete the reports your own account made of an IP address. The reports of other users stay.
+    changes_outside: true
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IPv4 or IPv6 address" }
+    request:
+      method: DELETE
+      path: /clear-address
+      query:
+        ipAddress: "{{ args.ip }}"
+    error: { message: "{{ response.errors[0].detail }}" }
+    outputs:
+      reports_deleted: "{{ response.data.numReportsDeleted }}"
+    sample: { reports_deleted: 1 }

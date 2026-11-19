@@ -1,0 +1,32 @@
+{
+  "args": {
+    "ips": "8.8.8.8,1.1.1.1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/shodan/scan",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        },
+        "form": {
+          "ips": "8.8.8.8,1.1.1.1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "count": 2,
+          "id": "vwWO7P5N1rWF5jbh",
+          "credits_left": 100000
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "vwWO7P5N1rWF5jbh",
+    "count": 2,
+    "credits_left": 100000
+  }
+}

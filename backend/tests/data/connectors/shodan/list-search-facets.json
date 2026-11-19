@@ -1,0 +1,37 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/host/search/facets",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          "asn",
+          "bitcoin.ip",
+          "bitcoin.ip_count",
+          "city",
+          "country",
+          "org",
+          "port"
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "facets": [
+      "asn",
+      "bitcoin.ip",
+      "bitcoin.ip_count",
+      "city",
+      "country",
+      "org",
+      "port"
+    ]
+  }
+}

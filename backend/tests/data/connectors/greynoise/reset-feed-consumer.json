@@ -1,0 +1,37 @@
+{
+  "args": {
+    "feed_id": "3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b",
+    "consumer": "scheduled-lambda"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/feeds/3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b/consumers/scheduled-lambda/reset",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "name": "scheduled-lambda",
+          "has_acknowledged": false,
+          "acknowledged_sequence": 0,
+          "acknowledged_at": null,
+          "updated_at": "2026-08-07T14:21:18Z",
+          "status": "active",
+          "approximate_lag": 12
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "name": "scheduled-lambda",
+    "status": "active",
+    "has_acknowledged": false,
+    "acknowledged_at": null,
+    "approximate_lag": 12,
+    "updated_at": "2026-08-07T14:21:18Z"
+  }
+}

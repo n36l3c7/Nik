@@ -877,6 +877,15 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               </td>
             </tr>
             <tr>
+              <td><code>urlencode</code> · <code>base64url</code></td>
+              <td>
+                A text as it is written inside an address: everything but letters, digits and
+                <code>-._~</code> percent-encoded, so that a value put in a path or a query cannot change either (<code
+                  >/hosts/{{ args.name | urlencode }}</code
+                >) · the text in base64 as an address takes it, without padding: how some APIs name a URL.
+              </td>
+            </tr>
+            <tr>
               <td><code>regex_extract("INC[0-9]+")</code> · <code>regex_extract("user=(\w+)", 1)</code></td>
               <td>
                 The part of a text a pattern finds, or one group of it by number or by name; empty when it finds none.
@@ -1522,6 +1531,31 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           what came back. Credentials are stored encrypted with the vault key and are never shown again, in the screen
           or in the API: to change one, type it again.
         </li>
+        <li id="instance-keys">
+          <strong>Several keys for one instance.</strong> A source that is asked a lot with a free key runs out of it.
+          An instance may hold <strong>more keys than one</strong>: the first is its credentials; <em>Add a key</em>,
+          under the form of an instance, adds another set, which is named, moved up or down and removed there. The keys
+          take turns in one of four ways: <em>one request each</em>; <em>the same key until it is used up</em>, then the
+          next; <em>the one with most left</em> today; or <em>the first key only, the others in reserve</em>. A key is
+          used up when it reached the limit you set (requests a minute, requests a day, for each key), or when the
+          vendor answers 429: it is then left alone, for fifteen minutes when the vendor said so, and the next key is
+          tried for the same request. When every key is used up the command <strong>waits</strong> for the first to come
+          back (the step waits, no worker is held) or <strong>fails</strong>, as the instance says. The page shows what
+          each key was used for today and whether it is in use, waiting or used up; <em>Test every key</em> sends the
+          connector's test request with each. What is counted is by UTC day.
+        </li>
+        <li id="kept-answers">
+          <strong>Answers that are kept.</strong> An instance may keep an answer for some hours and give it back without
+          a request: the same command with the same arguments is then answered from what was kept, and the step says so.
+          Only commands that <strong>change nothing outside</strong> are ever answered this way.
+          <em>Forget the kept answers</em> asks again from then on.
+        </li>
+        <li>
+          <strong>Try it.</strong> Each command of a connector has a <em>Try it</em> link, which opens the
+          <a href="#playground">Playground</a> with the line of that command, its required arguments left to fill and
+          the instance to use: nothing is sent until you press Enter there. A command marked <em>premium</em> is one the
+          vendor gives only to a paid plan; Nik does not refuse it, the vendor does.
+        </li>
         <li>
           <strong>A connector is a package.</strong> Beside its file it may have a <strong>logo</strong> and a
           <strong>README</strong>, and its own scripts and mappers travel with it in a
@@ -1875,11 +1909,11 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
 
       <h3 id="connector-format">The connector file, key by key</h3>
       <p>
-        A file is YAML, at most 1 MB and 400 commands. <strong>A key the format does not know is an error</strong>, so a typo is told
-        and not ignored. A file that says <code>native: mail</code> is of the one kind Nik speaks for itself: it has no
-        <code>base_url</code>, <code>headers</code>, <code>test</code> nor <code>mirror</code>, its commands have no
-        <code>request</code> and are among those Nik has for mail, and its <code>fetch</code> has no request either;
-        everything else (configuration, arguments, outputs, samples, schema) is as below. Texts between
+        A file is YAML, at most 1 MB and 400 commands. <strong>A key the format does not know is an error</strong>, so a
+        typo is told and not ignored. A file that says <code>native: mail</code> is of the one kind Nik speaks for
+        itself: it has no <code>base_url</code>, <code>headers</code>, <code>test</code> nor <code>mirror</code>, its
+        commands have no <code>request</code> and are among those Nik has for mail, and its <code>fetch</code> has no
+        request either; everything else (configuration, arguments, outputs, samples, schema) is as below. Texts between
         <code>{{ }}</code> are <a href="#expressions">expressions</a>; what they can read depends on where they are:
       </p>
       <div class="table-wrap">
@@ -2020,6 +2054,17 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 <code>{ name, type, description }</code> with <code>type</code> one of <code>text</code>,
                 <code>number</code>, <code>bool</code>, <code>date</code>, <code>list</code>, <code>object</code>. The
                 mapper editor offers them; nothing is checked against them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>more_hosts</code></td>
+              <td>
+                Other hosts the commands reach beside the one of <code>base_url</code>: a list of names
+                (<code>[internetdb.shodan.io]</code>), lower case, without a port, never a template or an address, 40 at
+                most. A command reaches one by giving the full <code>https://</code> address as its <code>path</code>; a
+                redirect to one of them is followed. The credentials of the instance are <strong>not</strong> sent
+                there. Installing the connector and making an instance is the permission to reach these hosts, and the
+                page of the connector lists them.
               </td>
             </tr>
             <tr>
@@ -2168,6 +2213,13 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>
                 <code>true</code> when the command changes something on the other side: the node asks a person first
                 (unless that is turned off for it) and is never sent in a dry run. Default <code>false</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>premium</code></td>
+              <td>
+                <code>true</code> for a command the vendor gives only to a paid plan. It is said in the library, on the
+                page of the connector and in the catalogue of packs; nothing is enforced. Default <code>false</code>.
               </td>
             </tr>
             <tr>

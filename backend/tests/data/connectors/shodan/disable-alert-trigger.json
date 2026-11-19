@@ -1,0 +1,26 @@
+{
+  "args": {
+    "id": "0DC55K0N2HHZS3D1",
+    "trigger": "open_database,iot"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/shodan/alert/0DC55K0N2HHZS3D1/trigger/open_database,iot",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

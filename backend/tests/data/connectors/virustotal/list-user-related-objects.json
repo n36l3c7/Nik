@@ -1,0 +1,62 @@
+{
+  "args": {
+    "id": "gilfoyle",
+    "relationship": "groups"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/users/gilfoyle/groups",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "group",
+              "id": "piedpiper",
+              "attributes": {
+                "domain_name": "piedpiper.com",
+                "organization": "Pied Piper",
+                "country": "US",
+                "auto_add_users": []
+              },
+              "links": {
+                "self": "https://www.virustotal.com/api/v3/groups/piedpiper"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "group",
+        "id": "piedpiper",
+        "attributes": {
+          "domain_name": "piedpiper.com",
+          "organization": "Pied Piper",
+          "country": "US",
+          "auto_add_users": []
+        },
+        "links": {
+          "self": "https://www.virustotal.com/api/v3/groups/piedpiper"
+        }
+      }
+    ],
+    "ids": [
+      "piedpiper"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

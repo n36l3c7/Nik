@@ -2155,6 +2155,32 @@ test('a connector is added from its file, a connection is made, and its commands
   const edit = settings.getByRole('complementary', { name: 'Instance Acme test' })
   await expect(edit.getByLabel(/^Password/)).toHaveValue('')
   await expect(edit.getByLabel(/^Password/)).toHaveAttribute('placeholder', 'stored: type to replace it')
+  // More keys than one: a second key is added, the keys take turns as chosen, and nothing of a key is shown again.
+  const keys = edit.getByRole('region', { name: 'Keys' })
+  const held = keys.getByRole('list', { name: 'The keys of the instance' }).getByRole('listitem')
+  await expect(held).toHaveCount(1)
+  await expect(held.first()).toContainText('The credentials of the instance, set above.')
+  await keys.getByRole('button', { name: 'Add a key' }).click()
+  await expect(keys.getByRole('button', { name: 'Save the keys' })).toBeDisabled() // it has no credential yet
+  await expect(keys).toContainText('"Key 2" has no credential yet')
+  await held.nth(1).getByLabel('Name of key 2').fill('lab')
+  await held.nth(1).getByLabel('User name').fill('lab')
+  await held.nth(1).getByLabel('Password').fill('lab-secret-1')
+  await keys.getByRole('radio', { name: /^The same key until it is used up/ }).check()
+  await keys.getByLabel('Requests a minute').fill('4')
+  await keys.getByLabel('Keep an answer for this many hours').fill('24')
+  await keys.getByRole('button', { name: 'Save the keys' }).click()
+  await expect(keys.getByRole('status')).toContainText('The keys were saved.')
+  await expect(held).toHaveCount(2)
+  await expect(held.nth(1).getByLabel('Password')).toHaveValue('')
+  await expect(held.nth(1)).toContainText('stored')
+  await expect(keys.getByRole('button', { name: 'Forget the kept answers' })).toBeVisible()
+  const kept = (await (await page.request.get('/api/automation/instances')).json()).instances.find(
+    (item) => item.name === 'Acme test',
+  )
+  expect(kept.keys.map((key) => key.name)).toEqual(['Key 1', 'lab'])
+  expect(kept.keyPolicy).toMatchObject({ mode: 'until_exhausted', perMinute: 4, cacheHours: 24 })
+  expect(JSON.stringify(kept)).not.toContain('lab-secret-1')
   await edit.getByRole('button', { name: 'Close the instance' }).click()
   // Off and on again: the connector is enabled while one of its instances is on.
   await row.getByRole('switch', { name: 'Acme test is on' }).click()

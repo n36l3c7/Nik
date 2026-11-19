@@ -1,0 +1,60 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/org",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "name": "Shodan Organization",
+          "created": "2020-09-30T15:41:48.073000",
+          "admins": [
+            {
+              "username": "admin",
+              "email": "admin@shodan.io"
+            }
+          ],
+          "members": [
+            {
+              "username": "member",
+              "email": "member@shodan.io"
+            }
+          ],
+          "upgrade_type": "stream-100",
+          "domains": [
+            "shodan.io"
+          ],
+          "logo": false,
+          "id": "p3cEAmoDapAPeP7w"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "p3cEAmoDapAPeP7w",
+    "name": "Shodan Organization",
+    "admins": [
+      {
+        "username": "admin",
+        "email": "admin@shodan.io"
+      }
+    ],
+    "members": [
+      {
+        "username": "member",
+        "email": "member@shodan.io"
+      }
+    ],
+    "domains": [
+      "shodan.io"
+    ],
+    "upgrade_type": "stream-100",
+    "created": "2020-09-30T15:41:48.073000"
+  }
+}

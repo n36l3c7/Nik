@@ -1,0 +1,25 @@
+{
+  "args": {
+    "user": "new-member@shodan.io"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/org/member/new-member@shodan.io",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

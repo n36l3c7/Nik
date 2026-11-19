@@ -1,0 +1,35 @@
+{
+  "args": {
+    "id": "1VxiaJb93Gn8TUnM"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/notifier/1VxiaJb93Gn8TUnM",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "description": "Email notifier",
+          "args": {
+            "to": "jmath@shodan.io"
+          },
+          "provider": "email",
+          "id": "1VxiaJb93Gn8TUnM"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "1VxiaJb93Gn8TUnM",
+    "provider": "email",
+    "description": "Email notifier",
+    "args": {
+      "to": "jmath@shodan.io"
+    }
+  }
+}

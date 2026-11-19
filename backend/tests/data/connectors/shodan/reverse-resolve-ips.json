@@ -1,0 +1,38 @@
+{
+  "args": {
+    "ips": "8.8.8.8,1.1.1.1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/dns/reverse",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "ips": "8.8.8.8,1.1.1.1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "8.8.8.8": [
+            "dns.google"
+          ],
+          "1.1.1.1": [
+            "one.one.one.one"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "hostnames": {
+      "8.8.8.8": [
+        "dns.google"
+      ],
+      "1.1.1.1": [
+        "one.one.one.one"
+      ]
+    }
+  }
+}

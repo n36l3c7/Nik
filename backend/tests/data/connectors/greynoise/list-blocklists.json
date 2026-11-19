@@ -1,0 +1,56 @@
+{
+  "args": {
+    "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/blocklists",
+        "query": {
+          "limit": 100,
+          "offset": 0
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "blocklists": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440000",
+              "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+              "query": "classification:malicious last_seen:1d",
+              "query_hash": "5d41402abc4b2a76",
+              "name": "Malicious scanners",
+              "ip_limit": 1000,
+              "entitlement_level": "enterprise",
+              "enabled": true,
+              "last_ip_count": 427,
+              "created_at": "2026-01-24T10:00:00Z",
+              "updated_at": "2026-01-24T10:00:00Z"
+            }
+          ],
+          "total": 1,
+          "limit": 100,
+          "offset": 0
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ids": [
+      "550e8400-e29b-41d4-a716-446655440000"
+    ],
+    "names": [
+      "Malicious scanners"
+    ],
+    "queries": [
+      "classification:malicious last_seen:1d"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

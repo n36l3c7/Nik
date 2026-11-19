@@ -1,0 +1,218 @@
+# URLhaus (abuse.ch), through its API v1 for automated queries.
+#
+# Written from the documentation at https://urlhaus-api.abuse.ch/ and, for
+# what is said of submissions and feeds, https://urlhaus.abuse.ch/api/. Not
+# run against the real service: see "verified" below.
+#
+# The Auth-Key (free, from https://auth.abuse.ch/, the same for URLhaus,
+# MalwareBazaar and ThreatFox) goes in the "Auth-Key" header. The API
+# answers 200 and says what happened in "query_status" (ok, no_results,
+# invalid_url…): every command gives it as an output.
+#
+# The verdicts are those Nik's own enrichment gives: a URL that URLhaus
+# tracks is malicious; a host on which it saw malware URLs is suspicious
+# (the host may be a compromised site); anything else is unknown. For a
+# file, URLhaus itself says that not every payload it collected is
+# malware (a cleaned-up URL serves anything): a payload with a malware
+# family is malicious, one without is suspicious.
+#
+# The summaries are built without conditions, which the expression
+# language does not have: a field is read as a JSON list ([] when nothing
+# was found, [null] when the field is empty, ["value"] otherwise), the
+# first two are mapped to a sentence and the brackets of the third are
+# replaced.
+#
+# Not here, because the format cannot express them: downloading a payload
+# (a ZIP file), submitting a URL (the submission API is on another host,
+# urlhaus.abuse.ch, and a connector reaches one host), and the feeds and
+# database dumps (files whose address holds the Auth-Key).
+name: URLhaus
+id: urlhaus
+version: 1
+description: Malware distribution URLs tracked by URLhaus (abuse.ch), with the hosts they are on and the payloads they serve.
+api_version: "URLhaus API v1 (urlhaus-api.abuse.ch/v1)"
+verified: false
+configuration:
+  - name: credentials
+    label: Auth-Key
+    type: header
+    header: Auth-Key
+    required: true
+    help: "The Auth-Key of your abuse.ch account, from https://auth.abuse.ch/. One key works for URLhaus, MalwareBazaar and ThreatFox."
+base_url: "https://urlhaus-api.abuse.ch"
+test:
+  request: { method: GET, path: /v1/urls/recent/limit/1/ }
+  expect: { status: 200 }
+commands:
+  - name: get-url-report
+    description: What URLhaus knows of a URL, with a verdict.
+    reputation: url
+    arguments:
+      - { name: url, type: text, required: true, description: "The URL, as it is seen on the wire: http://example.org/file.exe" }
+    request:
+      method: POST
+      path: /v1/url/
+      form: { url: "{{ args.url }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      verdict: "{{ response.query_status | map(ok='malicious', else='unknown') }}"
+      summary: >-
+        {{ response | where('query_status', 'eq', 'ok') | pluck('threat') | json | map('[]', 'not in URLhaus', '[null]', 'URLhaus: malware URL') | replace('["', 'URLhaus: ') | replace('"]', '') }}{{ response | where('query_status', 'eq', 'ok') | pluck('url_status') | json | map('[]', '', '[null]', ' (status unknown)') | replace('["', ' (') | replace('"]', ')') }}
+      link: "{{ response.urlhaus_reference }}"
+      query_status: "{{ response.query_status }}"
+      id: "{{ response.id }}"
+      url_status: "{{ response.url_status }}"
+      host: "{{ response.host }}"
+      date_added: "{{ response.date_added }}"
+      last_online: "{{ response.last_online }}"
+      threat: "{{ response.threat }}"
+      blacklists: "{{ response.blacklists }}"
+      reporter: "{{ response.reporter }}"
+      tags: "{{ response.tags }}"
+      payloads: "{{ response.payloads }}"
+      payload_sha256: "{{ response.payloads | pluck('response_sha256') }}"
+
+  - name: get-url-by-id
+    description: What URLhaus knows of a URL it tracks, by the id of its entry.
+    arguments:
+      - { name: id, type: text, required: true, description: "The id of the URLhaus entry: 233833" }
+    request:
+      method: POST
+      path: /v1/urlid/
+      form: { urlid: "{{ args.id }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      query_status: "{{ response.query_status }}"
+      id: "{{ response.id }}"
+      url: "{{ response.url }}"
+      link: "{{ response.urlhaus_reference }}"
+      url_status: "{{ response.url_status }}"
+      host: "{{ response.host }}"
+      date_added: "{{ response.date_added }}"
+      last_online: "{{ response.last_online }}"
+      threat: "{{ response.threat }}"
+      blacklists: "{{ response.blacklists }}"
+      reporter: "{{ response.reporter }}"
+      tags: "{{ response.tags }}"
+      payloads: "{{ response.payloads }}"
+      payload_sha256: "{{ response.payloads | pluck('response_sha256') }}"
+
+  - name: get-host-report
+    description: The malware URLs URLhaus saw on a host (a domain name, a hostname or an IPv4 address), with a verdict.
+    reputation: domain
+    arguments:
+      - { name: host, type: text, required: true, description: "The domain name, hostname or IPv4 address: vektorex.com" }
+    request:
+      method: POST
+      path: /v1/host/
+      form: { host: "{{ args.host }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      verdict: "{{ response.url_count | default(0) | int | map('0', 'unknown', else='suspicious') }}"
+      summary: "{{ response.url_count | default(0) | int | map('0', 'not in URLhaus', else='URLhaus: ') }}{{ response.url_count | default(0) | int | map('0', '') }}{{ response.url_count | default(0) | int | map('0', '', else=' malware URL(s) on this host') }}"
+      link: "{{ response.urlhaus_reference }}"
+      query_status: "{{ response.query_status }}"
+      url_count: "{{ response.url_count | default(0) | int }}"
+      firstseen: "{{ response.firstseen }}"
+      blacklists: "{{ response.blacklists }}"
+      urls: "{{ response.urls }}"
+      addresses: "{{ response.urls | pluck('url') }}"
+      online: "{{ response.urls | where('url_status', 'eq', 'online') | pluck('url') }}"
+
+  - name: get-file-report
+    description: What URLhaus knows of a payload a malware URL served, by its MD5 or SHA256 hash, with a verdict.
+    reputation: file
+    arguments:
+      - { name: hash, type: text, required: true, description: "The MD5 or SHA256 hash of the file (URLhaus does not take SHA1)" }
+    request:
+      method: POST
+      path: /v1/payload/
+      # The field is md5_hash for a hash of 32 characters, sha256_hash otherwise.
+      form:
+        "{{ args.hash | trim | length | map('32', 'md5_hash', else='sha256_hash') }}": "{{ args.hash | trim }}"
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      verdict: >-
+        {{ response | where('query_status', 'eq', 'ok') | pluck('signature') | json | map('[]', 'unknown', '[null]', 'suspicious', else='malicious') }}
+      summary: >-
+        {{ response | where('query_status', 'eq', 'ok') | pluck('signature') | json | map('[]', 'not in URLhaus', '[null]', 'URLhaus: payload served by a malware URL, no malware family identified') | replace('["', 'URLhaus: ') | replace('"]', '') }}
+      link: "{{ response.urls[0].urlhaus_reference }}"
+      query_status: "{{ response.query_status }}"
+      md5: "{{ response.md5_hash }}"
+      sha256: "{{ response.sha256_hash }}"
+      signature: "{{ response.signature }}"
+      file_type: "{{ response.file_type }}"
+      file_size: "{{ response.file_size }}"
+      firstseen: "{{ response.firstseen }}"
+      lastseen: "{{ response.lastseen }}"
+      url_count: "{{ response.url_count }}"
+      virustotal: "{{ response.virustotal }}"
+      urls: "{{ response.urls }}"
+      addresses: "{{ response.urls | pluck('url') }}"
+
+  - name: list-recent-urls
+    description: The URLs added to URLhaus in the last 3 days, newest first (1000 at most).
+    arguments:
+      - { name: limit, type: number, default: 1000, description: "How many URLs at most: 1000 at most" }
+    request:
+      method: GET
+      path: "/v1/urls/recent/limit/{{ args.limit | default(1000) | int }}/"
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      urls: "{{ response.urls }}"
+      addresses: "{{ response.urls | pluck('url') }}"
+      online: "{{ response.urls | where('url_status', 'eq', 'online') | pluck('url') }}"
+      count: "{{ response.urls | default('') | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: list-recent-payloads
+    description: The payloads URLhaus collected in the last 3 days, newest first (1000 at most).
+    arguments:
+      - { name: limit, type: number, default: 1000, description: "How many payloads at most: 1000 at most" }
+    request:
+      method: GET
+      path: "/v1/payloads/recent/limit/{{ args.limit | default(1000) | int }}/"
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      payloads: "{{ response.payloads }}"
+      sha256: "{{ response.payloads | pluck('sha256_hash') }}"
+      count: "{{ response.payloads | default('') | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: search-tag
+    description: The malware URLs that carry a tag (1000 at most).
+    arguments:
+      - { name: tag, type: text, required: true, description: "The tag, in any case: Retefe" }
+    request:
+      method: POST
+      path: /v1/tag/
+      form: { tag: "{{ args.tag }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      urls: "{{ response.urls }}"
+      addresses: "{{ response.urls | pluck('url') }}"
+      online: "{{ response.urls | where('url_status', 'eq', 'online') | pluck('url') }}"
+      url_count: "{{ response.url_count | default(0) | int }}"
+      firstseen: "{{ response.firstseen }}"
+      lastseen: "{{ response.lastseen }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: search-signature
+    description: The malware URLs that served a malware family, by the signature URLhaus gave their payloads (1000 at most).
+    arguments:
+      - { name: signature, type: text, required: true, description: "The malware family, in any case: Gozi" }
+    request:
+      method: POST
+      path: /v1/signature/
+      form: { signature: "{{ args.signature }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      urls: "{{ response.urls }}"
+      addresses: "{{ response.urls | pluck('url') }}"
+      online: "{{ response.urls | where('url_status', 'eq', 'online') | pluck('url') }}"
+      sha256: "{{ response.urls | pluck('sha256_hash') | unique }}"
+      url_count: "{{ response.url_count | default(0) | int }}"
+      payload_count: "{{ response.payload_count | default(0) | int }}"
+      firstseen: "{{ response.firstseen }}"
+      lastseen: "{{ response.lastseen }}"
+      query_status: "{{ response.query_status }}"

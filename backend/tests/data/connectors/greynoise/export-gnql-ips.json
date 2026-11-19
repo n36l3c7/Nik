@@ -1,0 +1,48 @@
+{
+  "args": {
+    "query": "classification:malicious last_seen:1d",
+    "exclude_riot": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/gnql/ips",
+        "query": {
+          "query": "classification:malicious last_seen:1d",
+          "exclude_riot": "true"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "ips": [
+            "1.2.3.4",
+            "5.6.7.8"
+          ],
+          "request_metadata": {
+            "count": 50000,
+            "query": "classification:malicious last_seen:1d",
+            "adjusted_query": "classification:malicious last_seen:1d last_seen:7d",
+            "message": "No results found.",
+            "restricted_fields": [
+              "metadata.organization"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ips": [
+      "1.2.3.4",
+      "5.6.7.8"
+    ],
+    "count": 50000,
+    "adjusted_query": "classification:malicious last_seen:1d last_seen:7d",
+    "message": "No results found."
+  }
+}

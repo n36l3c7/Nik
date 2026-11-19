@@ -1,0 +1,53 @@
+{
+  "args": {
+    "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "relationship": "contacted_domains"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/relationships/contacted_domains",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "domain",
+              "id": "www.hooli.com"
+            },
+            {
+              "type": "domain",
+              "id": "evil.example"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "domain",
+        "id": "www.hooli.com"
+      },
+      {
+        "type": "domain",
+        "id": "evil.example"
+      }
+    ],
+    "ids": [
+      "www.hooli.com",
+      "evil.example"
+    ],
+    "count": 2,
+    "truncated": false
+  }
+}

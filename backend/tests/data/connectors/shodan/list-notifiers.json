@@ -1,0 +1,46 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/notifier",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "description": null,
+              "args": {
+                "to": "jmath@shodan.io"
+              },
+              "provider": "email",
+              "id": "default"
+            }
+          ],
+          "total": 1
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "notifiers": [
+      {
+        "description": null,
+        "args": {
+          "to": "jmath@shodan.io"
+        },
+        "provider": "email",
+        "id": "default"
+      }
+    ],
+    "ids": [
+      "default"
+    ],
+    "total": 1
+  }
+}

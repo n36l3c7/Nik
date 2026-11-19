@@ -1,0 +1,147 @@
+{
+  "args": {
+    "pulse_id": "58f17acb98e10f0199f85c0c"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/pulses/58f17acb98e10f0199f85c0c",
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "industries": [
+            "Sports Betting"
+          ],
+          "TLP": "red",
+          "name": "Example pulse 1",
+          "tags": [
+            "test",
+            "atag",
+            "stuff"
+          ],
+          "created": "2017-04-15T01:43:39.803000",
+          "modified": "2017-05-01T15:32:16.030000",
+          "author_name": "aperson",
+          "public": false,
+          "references": [
+            "http://google.com/"
+          ],
+          "targeted_countries": [
+            "Algeria",
+            "Bahamas"
+          ],
+          "indicators": [
+            {
+              "access_groups": [],
+              "indicator": "9.9.9.9",
+              "description": "",
+              "title": "",
+              "access_reason": "",
+              "created": "2017-04-15T01:43:40",
+              "is_active": 1,
+              "access_type": "public",
+              "content": "",
+              "role": null,
+              "expiration": null,
+              "type": "IPv4",
+              "id": 9798004,
+              "observations": 1
+            }
+          ],
+          "revision": 11,
+          "adversary": "Imaginary Adversary",
+          "id": "58f17acb98e10f0199f85c0c",
+          "description": "This is a test pulse created as an example"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "58f17acb98e10f0199f85c0c",
+    "name": "Example pulse 1",
+    "description": "This is a test pulse created as an example",
+    "author": "aperson",
+    "tlp": "red",
+    "tags": [
+      "test",
+      "atag",
+      "stuff"
+    ],
+    "references": [
+      "http://google.com/"
+    ],
+    "adversary": "Imaginary Adversary",
+    "modified": "2017-05-01T15:32:16.030000",
+    "indicators": [
+      {
+        "access_groups": [],
+        "indicator": "9.9.9.9",
+        "description": "",
+        "title": "",
+        "access_reason": "",
+        "created": "2017-04-15T01:43:40",
+        "is_active": 1,
+        "access_type": "public",
+        "content": "",
+        "role": null,
+        "expiration": null,
+        "type": "IPv4",
+        "id": 9798004,
+        "observations": 1
+      }
+    ],
+    "indicator_values": [
+      "9.9.9.9"
+    ],
+    "pulse": {
+      "industries": [
+        "Sports Betting"
+      ],
+      "TLP": "red",
+      "name": "Example pulse 1",
+      "tags": [
+        "test",
+        "atag",
+        "stuff"
+      ],
+      "created": "2017-04-15T01:43:39.803000",
+      "modified": "2017-05-01T15:32:16.030000",
+      "author_name": "aperson",
+      "public": false,
+      "references": [
+        "http://google.com/"
+      ],
+      "targeted_countries": [
+        "Algeria",
+        "Bahamas"
+      ],
+      "indicators": [
+        {
+          "access_groups": [],
+          "indicator": "9.9.9.9",
+          "description": "",
+          "title": "",
+          "access_reason": "",
+          "created": "2017-04-15T01:43:40",
+          "is_active": 1,
+          "access_type": "public",
+          "content": "",
+          "role": null,
+          "expiration": null,
+          "type": "IPv4",
+          "id": 9798004,
+          "observations": 1
+        }
+      ],
+      "revision": 11,
+      "adversary": "Imaginary Adversary",
+      "id": "58f17acb98e10f0199f85c0c",
+      "description": "This is a test pulse created as an example"
+    }
+  }
+}

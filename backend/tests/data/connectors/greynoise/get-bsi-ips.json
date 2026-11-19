@@ -1,0 +1,71 @@
+{
+  "args": {
+    "ips": [
+      "8.8.8.8",
+      "203.0.113.45"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/bsi/bulk",
+        "json": {
+          "ips": [
+            "8.8.8.8",
+            "203.0.113.45"
+          ]
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "ip": "8.8.8.8",
+              "matches": [
+                {
+                  "cidr": "8.8.8.0/24",
+                  "name": "Google",
+                  "category": "search_engine",
+                  "trust_level": "1",
+                  "precedence": 10
+                }
+              ]
+            },
+            {
+              "ip": "203.0.113.45",
+              "matches": []
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "results": [
+      {
+        "ip": "8.8.8.8",
+        "matches": [
+          {
+            "cidr": "8.8.8.0/24",
+            "name": "Google",
+            "category": "search_engine",
+            "trust_level": "1",
+            "precedence": 10
+          }
+        ]
+      },
+      {
+        "ip": "203.0.113.45",
+        "matches": []
+      }
+    ],
+    "known": [
+      "8.8.8.8"
+    ]
+  }
+}

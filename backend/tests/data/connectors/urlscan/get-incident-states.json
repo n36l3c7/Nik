@@ -1,0 +1,42 @@
+{
+  "args": {
+    "incident_id": "6f1c2a9be4b0a1d2c3e4fdef"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/user/incidentstates/6f1c2a9be4b0a1d2c3e4fdef/",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "incidentstates": [
+            {
+              "_id": "6f1c2a9be4b0a1d2c3e4f301",
+              "incident": "6f1c2a9be4b0a1d2c3e4fdef",
+              "state": {},
+              "timeStart": "2025-01-21T11:44:52.566Z",
+              "timeEnd": "2025-01-21T12:44:52.566Z"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "states": [
+      {
+        "_id": "6f1c2a9be4b0a1d2c3e4f301",
+        "incident": "6f1c2a9be4b0a1d2c3e4fdef",
+        "state": {},
+        "timeStart": "2025-01-21T11:44:52.566Z",
+        "timeEnd": "2025-01-21T12:44:52.566Z"
+      }
+    ],
+    "count": 1
+  }
+}

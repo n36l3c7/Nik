@@ -1,0 +1,82 @@
+{
+  "args": {
+    "modified_since": "2016-04-25T22:49:03.704867"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/pulses/events",
+        "query": {
+          "modified_since": "2016-04-25T22:49:03.704867",
+          "limit": 100,
+          "page": 1
+        },
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "count": 3,
+          "next": null,
+          "results": [
+            {
+              "action": "subscribe",
+              "object_type": "user",
+              "id": "577c0a187aaa310134fd9c1a",
+              "object_id": "LevelBlue",
+              "created": "2016-07-05T19:27:20.469000"
+            },
+            {
+              "action": "unsubscribe",
+              "object_type": "pulse",
+              "id": "57c1fb61614ce41139315417",
+              "object_id": "57c1f7f81bae72014630887f",
+              "created": "2016-08-27T20:43:13.990000"
+            },
+            {
+              "action": "delete",
+              "object_type": "pulse",
+              "id": "584f3285d4ccbf0026a09f0e",
+              "object_id": "584f3209b187b4155a7c5a88",
+              "created": "2016-12-12T23:28:05.872000"
+            }
+          ],
+          "previous": null
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "events": [
+      {
+        "action": "subscribe",
+        "object_type": "user",
+        "id": "577c0a187aaa310134fd9c1a",
+        "object_id": "LevelBlue",
+        "created": "2016-07-05T19:27:20.469000"
+      },
+      {
+        "action": "unsubscribe",
+        "object_type": "pulse",
+        "id": "57c1fb61614ce41139315417",
+        "object_id": "57c1f7f81bae72014630887f",
+        "created": "2016-08-27T20:43:13.990000"
+      },
+      {
+        "action": "delete",
+        "object_type": "pulse",
+        "id": "584f3285d4ccbf0026a09f0e",
+        "object_id": "584f3209b187b4155a7c5a88",
+        "created": "2016-12-12T23:28:05.872000"
+      }
+    ],
+    "deleted_pulses": [
+      "584f3209b187b4155a7c5a88"
+    ],
+    "count": 3,
+    "truncated": false
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "args": {
+    "start_time": "2025-01-15T00:00:00Z",
+    "end_time": "2025-01-15T23:59:59Z",
+    "interval": "1h"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/timeseries",
+        "query": {
+          "start_time": "2025-01-15T00:00:00Z",
+          "end_time": "2025-01-15T23:59:59Z",
+          "interval": "1h"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "timeseries": [
+            {
+              "timestamp": "2025-01-15T10:00:00Z",
+              "count": 30
+            },
+            {
+              "timestamp": "2025-01-15T11:00:00Z",
+              "count": 12
+            }
+          ],
+          "items": [],
+          "total": 42,
+          "request_metadata": {
+            "start_time": "2025-01-15T00:00:00Z",
+            "end_time": "2025-01-15T23:59:59Z",
+            "query": "",
+            "field": "",
+            "interval": "1h"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "timeseries": [
+      {
+        "timestamp": "2025-01-15T10:00:00Z",
+        "count": 30
+      },
+      {
+        "timestamp": "2025-01-15T11:00:00Z",
+        "count": 12
+      }
+    ],
+    "by_value": [],
+    "total": 42
+  }
+}

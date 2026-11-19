@@ -1,0 +1,18 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/articles/rss"
+      },
+      "response": {
+        "status": 200,
+        "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"><channel><title>GreyNoise Threat Briefs</title><item><title>Mass exploitation of an edge device</title></item></channel></rss>\n"
+      }
+    }
+  ],
+  "outputs": {
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"><channel><title>GreyNoise Threat Briefs</title><item><title>Mass exploitation of an edge device</title></item></channel></rss>\n"
+  }
+}

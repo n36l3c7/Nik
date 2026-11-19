@@ -1,0 +1,44 @@
+{
+  "args": {
+    "sandbox_id": "5353e23f3653402339c93a8565307c6308ff378e03fcf23a4378f31c434030b0_Zenbox",
+    "relationship": "attack_techniques"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/file_behaviours/5353e23f3653402339c93a8565307c6308ff378e03fcf23a4378f31c434030b0_Zenbox/relationships/attack_techniques",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "attack_technique",
+              "id": "T1055"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "attack_technique",
+        "id": "T1055"
+      }
+    ],
+    "ids": [
+      "T1055"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

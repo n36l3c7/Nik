@@ -1,0 +1,55 @@
+{
+  "args": {
+    "domain": "example.org"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v4/threatMatches:find",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456"
+        },
+        "json": {
+          "client": {
+            "clientId": "nik",
+            "clientVersion": "1"
+          },
+          "threatInfo": {
+            "threatTypes": [
+              "MALWARE",
+              "SOCIAL_ENGINEERING",
+              "UNWANTED_SOFTWARE",
+              "POTENTIALLY_HARMFUL_APPLICATION"
+            ],
+            "platformTypes": [
+              "ANY_PLATFORM"
+            ],
+            "threatEntryTypes": [
+              "URL"
+            ],
+            "threatEntries": [
+              {
+                "url": "http://example.org/"
+              },
+              {
+                "url": "https://example.org/"
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "unknown",
+    "summary": "not on Google Safe Browsing lists",
+    "threats": [],
+    "matches": [],
+    "count": 0
+  }
+}

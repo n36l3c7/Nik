@@ -1,0 +1,74 @@
+{
+  "args": {
+    "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/files/11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772/behaviour_mitre_trees",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "Zenbox": {
+              "tactics": [
+                {
+                  "id": "TA0007",
+                  "name": "Discovery",
+                  "link": "https://attack.mitre.org/tactics/TA0007/",
+                  "techniques": [
+                    {
+                      "id": "T1082",
+                      "name": "System Information Discovery",
+                      "link": "https://attack.mitre.org/techniques/T1082/",
+                      "signatures": [
+                        {
+                          "severity": "INFO",
+                          "description": "Reads the computer name"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "sandboxes": {
+      "Zenbox": {
+        "tactics": [
+          {
+            "id": "TA0007",
+            "name": "Discovery",
+            "link": "https://attack.mitre.org/tactics/TA0007/",
+            "techniques": [
+              {
+                "id": "T1082",
+                "name": "System Information Discovery",
+                "link": "https://attack.mitre.org/techniques/T1082/",
+                "signatures": [
+                  {
+                    "severity": "INFO",
+                    "description": "Reads the computer name"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "names": [
+      "Zenbox"
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "args": {
+    "engine_name": "acme-av"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/detections_bundle/acme-av/download_url",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": "https://storage.googleapis.com/vtmonitor-bundles/acme-av/2026-11-18.csv?Expires=1524733537"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "data": "https://storage.googleapis.com/vtmonitor-bundles/acme-av/2026-11-18.csv?Expires=1524733537"
+    }
+  }
+}

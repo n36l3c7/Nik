@@ -1,0 +1,36 @@
+{
+  "args": {
+    "product": "nginx"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "cvedb.shodan.io",
+        "path": "/cpes",
+        "query": {
+          "product": "nginx",
+          "limit": 1000,
+          "skip": 0
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "cpes": [
+            "cpe:2.3:a:f5:nginx:1.18.0",
+            "cpe:2.3:a:f5:nginx:1.20.1"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "cpes": [
+      "cpe:2.3:a:f5:nginx:1.18.0",
+      "cpe:2.3:a:f5:nginx:1.20.1"
+    ],
+    "count": 2,
+    "truncated": false
+  }
+}

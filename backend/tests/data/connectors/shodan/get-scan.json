@@ -1,0 +1,31 @@
+{
+  "args": {
+    "id": "Mo8W7itcWumiy9Ay"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/scan/Mo8W7itcWumiy9Ay",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "count": 1,
+          "status": "DONE",
+          "id": "Mo8W7itcWumiy9Ay",
+          "created": "2021-01-26T08:17:43.794000"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "status": "DONE",
+    "id": "Mo8W7itcWumiy9Ay",
+    "count": 1,
+    "created": "2021-01-26T08:17:43.794000"
+  }
+}

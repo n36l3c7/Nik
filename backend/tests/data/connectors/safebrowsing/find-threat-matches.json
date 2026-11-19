@@ -1,0 +1,149 @@
+{
+  "args": {
+    "threat_entries": [
+      {
+        "url": "http://www.urltocheck1.org/"
+      },
+      {
+        "url": "http://www.urltocheck2.org/"
+      },
+      {
+        "url": "http://www.urltocheck3.com/"
+      }
+    ],
+    "threat_types": [
+      "MALWARE",
+      "SOCIAL_ENGINEERING"
+    ],
+    "platform_types": [
+      "WINDOWS"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v4/threatMatches:find",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456"
+        },
+        "json": {
+          "client": {
+            "clientId": "nik",
+            "clientVersion": "1"
+          },
+          "threatInfo": {
+            "threatTypes": [
+              "MALWARE",
+              "SOCIAL_ENGINEERING"
+            ],
+            "platformTypes": [
+              "WINDOWS"
+            ],
+            "threatEntryTypes": [
+              "URL"
+            ],
+            "threatEntries": [
+              {
+                "url": "http://www.urltocheck1.org/"
+              },
+              {
+                "url": "http://www.urltocheck2.org/"
+              },
+              {
+                "url": "http://www.urltocheck3.com/"
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "threatType": "MALWARE",
+              "platformType": "WINDOWS",
+              "threatEntryType": "URL",
+              "threat": {
+                "url": "http://www.urltocheck1.org/"
+              },
+              "threatEntryMetadata": {
+                "entries": [
+                  {
+                    "key": "malware_threat_type",
+                    "value": "landing"
+                  }
+                ]
+              },
+              "cacheDuration": "300.000s"
+            },
+            {
+              "threatType": "MALWARE",
+              "platformType": "WINDOWS",
+              "threatEntryType": "URL",
+              "threat": {
+                "url": "http://www.urltocheck2.org/"
+              },
+              "threatEntryMetadata": {
+                "entries": [
+                  {
+                    "key": "malware_threat_type",
+                    "value": "landing"
+                  }
+                ]
+              },
+              "cacheDuration": "300.000s"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "matches": [
+      {
+        "threatType": "MALWARE",
+        "platformType": "WINDOWS",
+        "threatEntryType": "URL",
+        "threat": {
+          "url": "http://www.urltocheck1.org/"
+        },
+        "threatEntryMetadata": {
+          "entries": [
+            {
+              "key": "malware_threat_type",
+              "value": "landing"
+            }
+          ]
+        },
+        "cacheDuration": "300.000s"
+      },
+      {
+        "threatType": "MALWARE",
+        "platformType": "WINDOWS",
+        "threatEntryType": "URL",
+        "threat": {
+          "url": "http://www.urltocheck2.org/"
+        },
+        "threatEntryMetadata": {
+          "entries": [
+            {
+              "key": "malware_threat_type",
+              "value": "landing"
+            }
+          ]
+        },
+        "cacheDuration": "300.000s"
+      }
+    ],
+    "urls": [
+      "http://www.urltocheck1.org/",
+      "http://www.urltocheck2.org/"
+    ],
+    "threats": [
+      "MALWARE"
+    ],
+    "count": 2
+  }
+}

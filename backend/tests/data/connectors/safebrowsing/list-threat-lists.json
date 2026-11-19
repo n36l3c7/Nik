@@ -1,0 +1,60 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v4/threatLists",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "threatLists": [
+            {
+              "threatType": "MALWARE",
+              "platformType": "WINDOWS",
+              "threatEntryType": "URL"
+            },
+            {
+              "threatType": "MALWARE",
+              "platformType": "LINUX",
+              "threatEntryType": "URL"
+            },
+            {
+              "threatType": "SOCIAL_ENGINEERING",
+              "platformType": "ANY_PLATFORM",
+              "threatEntryType": "URL"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "threat_lists": [
+      {
+        "threatType": "MALWARE",
+        "platformType": "WINDOWS",
+        "threatEntryType": "URL"
+      },
+      {
+        "threatType": "MALWARE",
+        "platformType": "LINUX",
+        "threatEntryType": "URL"
+      },
+      {
+        "threatType": "SOCIAL_ENGINEERING",
+        "platformType": "ANY_PLATFORM",
+        "threatEntryType": "URL"
+      }
+    ],
+    "threat_types": [
+      "MALWARE",
+      "SOCIAL_ENGINEERING"
+    ],
+    "count": 3
+  }
+}

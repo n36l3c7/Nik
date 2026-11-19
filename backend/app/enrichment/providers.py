@@ -349,6 +349,13 @@ def _lucene(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _urlscan_malicious(result: dict) -> bool:
+    """Whether a search result is judged malicious. The search API documents ``verdicts.malicious``; the
+    result API (and older answers of the search) nest it under ``verdicts.overall``: either is read."""
+    verdicts = result.get("verdicts") or {}
+    return bool(verdicts.get("malicious") or (verdicts.get("overall") or {}).get("malicious"))
+
+
 def urlscan(kind: str, value: str, key: str | None, options: dict | None = None) -> dict[str, Any]:
     query = f"page.domain:{_lucene(value)}" if kind == "domain" else f"page.url:{_lucene(value)}"
     params = urllib.parse.urlencode({"q": query, "size": 10})
@@ -358,7 +365,7 @@ def urlscan(kind: str, value: str, key: str | None, options: dict | None = None)
     link = "https://urlscan.io/search/#" + urllib.parse.quote(query)
     if not results:
         return _result("unknown", "never scanned on urlscan.io", link, raw=answer)
-    malicious = [r for r in results if ((r.get("verdicts") or {}).get("overall") or {}).get("malicious")]
+    malicious = [r for r in results if _urlscan_malicious(r)]
     return _result(
         "malicious" if malicious else "unknown",
         f"{total} public scan{'s' if total != 1 else ''}"
@@ -375,7 +382,7 @@ def urlscan(kind: str, value: str, key: str | None, options: dict | None = None)
                 "server": _text((r.get("page") or {}).get("server"), 80),
                 "title": _text((r.get("page") or {}).get("title"), 160),
                 "status": (r.get("page") or {}).get("status"),
-                "malicious": bool(((r.get("verdicts") or {}).get("overall") or {}).get("malicious")),
+                "malicious": _urlscan_malicious(r),
                 "result": f"https://urlscan.io/result/{r['_id']}/" if r.get("_id") else "",
             }
             for r in results[:10]

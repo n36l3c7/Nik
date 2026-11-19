@@ -1,0 +1,106 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/notifier/provider",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "pagerduty": {
+            "required": [
+              "routing_key"
+            ]
+          },
+          "slack": {
+            "required": [
+              "webhook_url"
+            ]
+          },
+          "telegram": {
+            "required": [
+              "chat_id",
+              "token"
+            ]
+          },
+          "webhook": {
+            "required": [
+              "url"
+            ]
+          },
+          "phone": {
+            "required": [
+              "to"
+            ]
+          },
+          "email": {
+            "required": [
+              "to"
+            ]
+          },
+          "gitter": {
+            "required": [
+              "room_id",
+              "token"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "providers": {
+      "pagerduty": {
+        "required": [
+          "routing_key"
+        ]
+      },
+      "slack": {
+        "required": [
+          "webhook_url"
+        ]
+      },
+      "telegram": {
+        "required": [
+          "chat_id",
+          "token"
+        ]
+      },
+      "webhook": {
+        "required": [
+          "url"
+        ]
+      },
+      "phone": {
+        "required": [
+          "to"
+        ]
+      },
+      "email": {
+        "required": [
+          "to"
+        ]
+      },
+      "gitter": {
+        "required": [
+          "room_id",
+          "token"
+        ]
+      }
+    },
+    "names": [
+      "pagerduty",
+      "slack",
+      "telegram",
+      "webhook",
+      "phone",
+      "email",
+      "gitter"
+    ]
+  }
+}

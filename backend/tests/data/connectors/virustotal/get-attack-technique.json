@@ -1,0 +1,39 @@
+{
+  "args": {
+    "id": "T1055"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/attack_techniques/T1055",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "attack_technique",
+            "id": "T1055",
+            "attributes": {
+              "name": "Process Injection",
+              "link": "https://attack.mitre.org/techniques/T1055/",
+              "revoked": false
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "T1055",
+    "type": "attack_technique",
+    "attributes": {
+      "name": "Process Injection",
+      "link": "https://attack.mitre.org/techniques/T1055/",
+      "revoked": false
+    }
+  }
+}

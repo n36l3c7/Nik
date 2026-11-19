@@ -1,0 +1,90 @@
+{
+  "args": {
+    "hostname": "urlscan.io"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/hostname/urlscan.io",
+        "query": {
+          "limit": 1000
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "seen_on": "2100-01-01",
+              "source": "ct",
+              "sub_id": "",
+              "first_seen": "2023-07-28T11:20:15.617Z",
+              "last_seen": "2023-07-28T11:21:23.599Z",
+              "data_type": null,
+              "data": null
+            },
+            {
+              "seen_on": "2100-01-01",
+              "source": "pdns",
+              "sub_id": "A",
+              "first_seen": "2023-07-28T11:21:20.079Z",
+              "last_seen": "2023-08-04T16:09:09.574Z",
+              "data_type": null,
+              "data": null
+            },
+            {
+              "seen_on": "2100-01-01",
+              "source": "pdns",
+              "sub_id": "MX",
+              "first_seen": "2023-07-28T11:21:20.174Z",
+              "last_seen": "2023-07-31T11:23:22.848Z",
+              "data_type": null,
+              "data": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "observations": [
+      {
+        "seen_on": "2100-01-01",
+        "source": "ct",
+        "sub_id": "",
+        "first_seen": "2023-07-28T11:20:15.617Z",
+        "last_seen": "2023-07-28T11:21:23.599Z",
+        "data_type": null,
+        "data": null
+      },
+      {
+        "seen_on": "2100-01-01",
+        "source": "pdns",
+        "sub_id": "A",
+        "first_seen": "2023-07-28T11:21:20.079Z",
+        "last_seen": "2023-08-04T16:09:09.574Z",
+        "data_type": null,
+        "data": null
+      },
+      {
+        "seen_on": "2100-01-01",
+        "source": "pdns",
+        "sub_id": "MX",
+        "first_seen": "2023-07-28T11:21:20.174Z",
+        "last_seen": "2023-07-31T11:23:22.848Z",
+        "data_type": null,
+        "data": null
+      }
+    ],
+    "count": 3,
+    "sources": [
+      "ct",
+      "pdns"
+    ],
+    "truncated": false
+  }
+}

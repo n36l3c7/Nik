@@ -1,0 +1,44 @@
+{
+  "args": {
+    "id": "0a49acd622a44982b1986984ba31c15b",
+    "relationship": "viewers"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/saved_searches/0a49acd622a44982b1986984ba31c15b/relationship/viewers",
+        "query": {
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "user",
+              "id": "gilfoyle"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "user",
+        "id": "gilfoyle"
+      }
+    ],
+    "ids": [
+      "gilfoyle"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "args": {
+    "search": "edge",
+    "size": 10
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/articles",
+        "query": {
+          "search": "edge",
+          "size": 10
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "metadata": {
+            "total_results": 1,
+            "current_page": 1,
+            "count": 1
+          },
+          "data": [
+            {
+              "id": "a3c5e7f9-1b2d-4c6e-8f0a-2b4d6f8a0c1e",
+              "title": "Mass exploitation of an edge device",
+              "subtitle": "What the sensors saw",
+              "description": "A summary of the activity seen this week.",
+              "category": {
+                "id": "c1",
+                "label": "Community",
+                "value": "community",
+                "color": "#00a37a"
+              },
+              "author": "GreyNoise Research",
+              "link": "https://viz.greynoise.io/articles/a3c5e7f9-1b2d-4c6e-8f0a-2b4d6f8a0c1e",
+              "created_at": "2026-08-01T10:00:00Z",
+              "updated_at": "2026-08-02T10:00:00Z",
+              "published_at": "2026-08-02T10:00:00Z",
+              "is_published": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "articles": [
+      {
+        "id": "a3c5e7f9-1b2d-4c6e-8f0a-2b4d6f8a0c1e",
+        "title": "Mass exploitation of an edge device",
+        "subtitle": "What the sensors saw",
+        "description": "A summary of the activity seen this week.",
+        "category": {
+          "id": "c1",
+          "label": "Community",
+          "value": "community",
+          "color": "#00a37a"
+        },
+        "author": "GreyNoise Research",
+        "link": "https://viz.greynoise.io/articles/a3c5e7f9-1b2d-4c6e-8f0a-2b4d6f8a0c1e",
+        "created_at": "2026-08-01T10:00:00Z",
+        "updated_at": "2026-08-02T10:00:00Z",
+        "published_at": "2026-08-02T10:00:00Z",
+        "is_published": true
+      }
+    ],
+    "titles": [
+      "Mass exploitation of an edge device"
+    ],
+    "ids": [
+      "a3c5e7f9-1b2d-4c6e-8f0a-2b4d6f8a0c1e"
+    ],
+    "total": 1,
+    "page": 1
+  }
+}

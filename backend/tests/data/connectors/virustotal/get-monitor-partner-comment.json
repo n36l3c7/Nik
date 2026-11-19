@@ -1,0 +1,54 @@
+{
+  "args": {
+    "id": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de-acme-av"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/comments/6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de-acme-av",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "monitor_hash_comment",
+              "id": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de-acme-av",
+              "attributes": {
+                "comment": "This is an example comment.",
+                "date": 1519222846,
+                "detection": "confirmed",
+                "engine": "acme-av",
+                "sha256": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "monitor_hash_comment",
+        "id": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de-acme-av",
+        "attributes": {
+          "comment": "This is an example comment.",
+          "date": 1519222846,
+          "detection": "confirmed",
+          "engine": "acme-av",
+          "sha256": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de"
+        }
+      }
+    ],
+    "ids": [
+      "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de-acme-av"
+    ],
+    "count": 1,
+    "meta": null
+  }
+}

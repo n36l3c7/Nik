@@ -1,0 +1,74 @@
+{
+  "args": {
+    "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/behaviour_mitre_trees",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "Zenbox": {
+              "tactics": [
+                {
+                  "id": "TA0005",
+                  "name": "Defense Evasion",
+                  "link": "https://attack.mitre.org/tactics/TA0005/",
+                  "techniques": [
+                    {
+                      "id": "T1055",
+                      "name": "Process Injection",
+                      "link": "https://attack.mitre.org/techniques/T1055/",
+                      "signatures": [
+                        {
+                          "severity": "HIGH",
+                          "description": "Writes to foreign memory regions"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "sandboxes": {
+      "Zenbox": {
+        "tactics": [
+          {
+            "id": "TA0005",
+            "name": "Defense Evasion",
+            "link": "https://attack.mitre.org/tactics/TA0005/",
+            "techniques": [
+              {
+                "id": "T1055",
+                "name": "Process Injection",
+                "link": "https://attack.mitre.org/techniques/T1055/",
+                "signatures": [
+                  {
+                    "severity": "HIGH",
+                    "description": "Writes to foreign memory regions"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "names": [
+      "Zenbox"
+    ]
+  }
+}

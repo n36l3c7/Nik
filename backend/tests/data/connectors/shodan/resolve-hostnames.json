@@ -1,0 +1,34 @@
+{
+  "args": {
+    "hostnames": "google.com,facebook.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/dns/resolve",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "hostnames": "google.com,facebook.com"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "facebook.com": "31.13.93.35",
+          "google.com": "142.251.32.174"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "addresses": {
+      "facebook.com": "31.13.93.35",
+      "google.com": "142.251.32.174"
+    },
+    "ips": [
+      "31.13.93.35",
+      "142.251.32.174"
+    ]
+  }
+}

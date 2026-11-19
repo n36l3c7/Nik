@@ -1,0 +1,109 @@
+{
+  "args": {
+    "is_stage_2": true,
+    "last_seen_after": "2025-03-01",
+    "page_size": 100
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/callback/ips",
+        "json": {
+          "is_stage_2": true,
+          "last_seen_after": "2025-03-01",
+          "page_size": 100
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "items": [
+            {
+              "ip": "198.51.100.42",
+              "source_workspaces": [
+                "GreyNoise"
+              ],
+              "attack_stage": 1,
+              "is_stage_1": true,
+              "is_stage_2": true,
+              "is_riot": true,
+              "riot_trust_level": 1,
+              "scanner_ips": [],
+              "scanner_count": 1,
+              "file_count": 1,
+              "files": [
+                {
+                  "vt_detection_count": 1
+                }
+              ],
+              "enrichment": {
+                "asn": "AS4837",
+                "org": "CHINA UNICOM China169 Backbone",
+                "city": "Qingdao",
+                "region": "Shandong",
+                "country": "China",
+                "country_code": "CN",
+                "latitude": 36.0649,
+                "longitude": 120.3804,
+                "is_tor": true,
+                "route": "119.176.0.0/12",
+                "type": "isp",
+                "domain": "chinaunicom.cn"
+              }
+            }
+          ],
+          "total": 142,
+          "page": 0,
+          "page_size": 100
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "records": [
+      {
+        "ip": "198.51.100.42",
+        "source_workspaces": [
+          "GreyNoise"
+        ],
+        "attack_stage": 1,
+        "is_stage_1": true,
+        "is_stage_2": true,
+        "is_riot": true,
+        "riot_trust_level": 1,
+        "scanner_ips": [],
+        "scanner_count": 1,
+        "file_count": 1,
+        "files": [
+          {
+            "vt_detection_count": 1
+          }
+        ],
+        "enrichment": {
+          "asn": "AS4837",
+          "org": "CHINA UNICOM China169 Backbone",
+          "city": "Qingdao",
+          "region": "Shandong",
+          "country": "China",
+          "country_code": "CN",
+          "latitude": 36.0649,
+          "longitude": 120.3804,
+          "is_tor": true,
+          "route": "119.176.0.0/12",
+          "type": "isp",
+          "domain": "chinaunicom.cn"
+        }
+      }
+    ],
+    "ips": [
+      "198.51.100.42"
+    ],
+    "total": 142,
+    "page": 0,
+    "page_size": 100
+  }
+}

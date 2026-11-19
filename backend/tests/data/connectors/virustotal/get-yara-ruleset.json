@@ -1,0 +1,41 @@
+{
+  "args": {
+    "id": "0005d5b1cd"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/yara_rulesets/0005d5b1cd",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "yara_ruleset",
+            "id": "0005d5b1cd",
+            "attributes": {
+              "name": "apt_turla",
+              "source": "https://github.com/Neo23x0/signature-base",
+              "rules": "rule Turla_APT { condition: false }",
+              "number_of_rules": 1
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "0005d5b1cd",
+    "type": "yara_ruleset",
+    "attributes": {
+      "name": "apt_turla",
+      "source": "https://github.com/Neo23x0/signature-base",
+      "rules": "rule Turla_APT { condition: false }",
+      "number_of_rules": 1
+    }
+  }
+}
