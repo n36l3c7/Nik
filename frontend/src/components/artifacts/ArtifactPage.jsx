@@ -10,6 +10,7 @@ import { AsciiSkull, Badge, Button, EmptyState, ErrorBoundary, Modal } from '../
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import AsIndicator from './AsIndicator.jsx'
+import ExpiryControl from './ExpiryControl.jsx'
 import MailboxPage from './MailboxPage.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import ArtifactRuns from '../automation/ArtifactRuns.jsx'
@@ -76,7 +77,7 @@ function Row({ label, children }) {
  * }} props
  */
 export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
-  const { current, currentId, currentError, openArtifact, closeArtifact, link, unlink, setTags, remove } =
+  const { current, currentId, currentError, openArtifact, closeArtifact, link, unlink, setTags, setExpiry, remove } =
     useArtifacts()
   const { incidents, activeIncidentId, retryActiveIncident } = useIncidents()
   const { showToast } = useToast()
@@ -303,6 +304,16 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           </Row>
 
           <ArtifactRuns artifact={artifact} />
+
+          <Row label="KEPT">
+            <ExpiryControl
+              artifact={artifact}
+              onSet={async (expiresAt) => {
+                await setExpiry(artifact.id, expiresAt)
+                showToast({ message: expiresAt ? `It expires on ${expiresAt}.` : 'It has no expiry any more.' })
+              }}
+            />
+          </Row>
 
           <Row label="TAGS">
             {tagsDraft === null ? (

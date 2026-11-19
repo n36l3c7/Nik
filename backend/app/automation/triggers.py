@@ -113,6 +113,18 @@ def verdict_changed(db: OrmSession, kind: str, value: str, old: str, new: str, s
     _announce(db, "ioc.verdict_changed", data)
 
 
+def artifact_expiring(db: OrmSession, artifact: Artifact, days_left: int) -> None:
+    data, classes = payloads.artifact_expiry(artifact, days_left)
+    publish(db, "artifact.expiring", "artifact", artifact.id, data, classes)
+    _announce(db, "artifact.expiring", data)
+
+
+def artifact_expired(db: OrmSession, artifact: Artifact) -> None:
+    data, classes = payloads.artifact_expiry(artifact, 0)
+    publish(db, "artifact.expired", "artifact", artifact.id, data, classes)
+    _announce(db, "artifact.expired", data)
+
+
 def storage_low(db: OrmSession, total: int, free: int) -> None:
     data, classes = payloads.storage_low(total, free)
     publish(db, "storage.low", "storage", "", data, classes)

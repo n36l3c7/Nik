@@ -213,6 +213,13 @@
           attachment was sent from, or the files extracted from a capture.
         </li>
         <li><strong>Delete</strong>: the file, its analyses and its reference in every incident.</li>
+        <li id="artifact-expiry">
+          <strong>Kept</strong>: an artifact is kept until someone deletes it, unless it is given a date.
+          <em>Set an expiry…</em> offers 30 days, 90 days, a year or a date; <em>Never</em> takes the date away. On that
+          day Nik deletes the artifact as <em>Delete</em> would, and says so in the audit log. One thing stops it: an
+          incident that is <strong>not closed</strong> and still references the artifact. Then the date is put off by a
+          week, and the artifact says why. For a mailbox, the file and its index go; the e-mails imported from it stay.
+        </li>
       </ul>
       <p>
         A file that was already analysed is recognised before the upload: Nik shows who added it and in which incidents
@@ -1360,7 +1367,8 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 How large the disk that holds Nik's files is, how much is free, and what fills the used part: mailboxes,
                 packet captures, files, e-mails, previews, screenshots, the database, and everything else on the disk.
                 The ten largest objects are listed and open their page, where they can be deleted. A warning shows when
-                less than a tenth of the disk is free.
+                less than a tenth of the disk is free. <em>With a date</em> lists the artifacts that will be deleted by
+                themselves, the soonest first, and says how many have no date and how much they take.
               </td>
             </tr>
             <tr>

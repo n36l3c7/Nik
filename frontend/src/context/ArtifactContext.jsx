@@ -175,6 +175,15 @@ export function ArtifactProvider({ children }) {
     [refresh],
   )
 
+  const setExpiry = useCallback(
+    async (id, expiresAt) => {
+      const artifact = await api.put(`/artifacts/${id}/expiry`, { expiresAt })
+      refresh()
+      return artifact
+    },
+    [refresh],
+  )
+
   const remove = useCallback(
     async (id) => {
       await api.del(`/artifacts/${id}`)
@@ -205,6 +214,7 @@ export function ArtifactProvider({ children }) {
       link,
       unlink,
       setTags,
+      setExpiry,
       remove,
     }),
     [
@@ -226,6 +236,7 @@ export function ArtifactProvider({ children }) {
       link,
       unlink,
       setTags,
+      setExpiry,
       remove,
     ],
   )

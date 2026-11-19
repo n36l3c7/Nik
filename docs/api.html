@@ -686,6 +686,18 @@
               </td>
             </tr>
             <tr>
+              <td><code>PUT /api/artifacts/{id}/expiry</code></td>
+              <td>
+                (<strong>write</strong>) Give an artifact a day to be deleted on,
+                <code>{"expiresAt": "2027-01-31"}</code>, or take it away (<code>null</code>). The day must be to come
+                (<code>400</code> otherwise). An artifact says <code>expiresAt</code>, <code>expiresInDays</code> and
+                <code>expiryNote</code>. Nothing has a date unless it is set here. The worker deletes the artifact once
+                the day has come, unless an incident that is not closed references it: then the date is put off by seven
+                days and <code>expiryNote</code> says why. <code>GET /api/storage</code> lists the artifacts with a date
+                in <code>dated</code> and counts the others in <code>undated</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>POST /api/artifacts/mailboxes</code> · <code>GET /api/mailboxes/{id}</code></td>
               <td>
                 Upload a mailbox (multipart <code>file</code>: an mbox, a zip or tar archive of a Maildir, up to
@@ -1753,11 +1765,13 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           <code>note.added</code>, <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an
           indicator of a watched list), <code>mail.analysed</code>, <code>file.analysed</code>,
           <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>,
-          <code>sla.breached</code> (a timer of an incident passed its time); the last six carry what a playbook's
-          trigger reads for the same event (<a href="automation.html#trigger">Automation → Trigger</a>). Each delivery
-          is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds to the address an
-          admin gave, without the checks a playbook's nodes go through: subscribe an address you trust with senders,
-          subjects and file names.
+          <code>sla.breached</code> (a timer of an incident passed its time), <code>artifact.expiring</code> and
+          <code>artifact.expired</code> (an artifact with a date is a week from being deleted, or was); the last eight
+          carry what a playbook's trigger reads for the same event (<a href="automation.html#trigger"
+            >Automation → Trigger</a
+          >). Each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds
+          to the address an admin gave, without the checks a playbook's nodes go through: subscribe an address you trust
+          with senders, subjects and file names.
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

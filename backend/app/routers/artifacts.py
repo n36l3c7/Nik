@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import analysis_links, artifact_transfer, artifacts, query, urlscan
+from .. import analysis_links, artifact_expiry, artifact_transfer, artifacts, query, urlscan
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import (
@@ -106,6 +106,8 @@ def _summary(row: Artifact, incidents: list[dict[str, str]]) -> dict[str, Any]:
         "createdAt": row.created_at,
         "createdBy": row.created_by,
         "incidents": incidents,
+        # The day it is deleted on, when someone gave it one (artifact_expiry.py).
+        **artifact_expiry.out(row),
     }
 
 
@@ -408,6 +410,32 @@ def tag_artifact(
     row = _artifact_or_404(db, artifact_id)
     tags = artifacts.set_tags(db, row, body.tags)
     _audit(db, caller, "artifact.tags", f"Tagged {row.kind} {row.name or row.ref[:12]}: {', '.join(tags) or 'none'}")
+    db.commit()
+    return _one(db, row)
+
+
+class ExpiryIn(BaseModel):
+    # The day the artifact is deleted on (YYYY-MM-DD), or null for no date.
+    expiresAt: str | None = Field(default=None, max_length=40)
+
+
+@router.put("/artifacts/{artifact_id}/expiry")
+def set_artifact_expiry(
+    artifact_id: str,
+    body: ExpiryIn,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Give an artifact a day to be deleted on, or take the date away (``expiresAt: null``). Nothing
+    has a date unless someone sets it. The worker deletes it once the day has come, unless an incident
+    that is not closed still references it: then the date is put off by a week."""
+    row = _artifact_or_404(db, artifact_id)
+    try:
+        day = artifact_expiry.set_expiry(db, row, body.expiresAt)
+    except artifact_expiry.ExpiryError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+    what = f"expires on {day}" if day else "has no expiry any more"
+    _audit(db, caller, "artifact.expiry", f"{row.kind} {row.name or row.ref[:12]} {what}")
     db.commit()
     return _one(db, row)
 

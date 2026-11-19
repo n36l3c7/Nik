@@ -301,6 +301,12 @@ class Artifact(Base):
     tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[str] = mapped_column(String, nullable=False, index=True)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # The day it is deleted on (YYYY-MM-DD), when someone gave it one: there is no default.
+    expires_at: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, index=True)
+    # Why its date was moved ("put off: an open incident references it"), and the date its going
+    # was announced for (artifact_expiry.py).
+    expiry_note: Mapped[str] = mapped_column(String(400), nullable=False, default="", server_default="")
+    expiry_noticed: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
 
 class ArtifactLink(Base):
@@ -1422,7 +1428,10 @@ class IocVerdictChange(Base):
 
 # Created by migration 0034_misc where missing, in this order; and the columns it adds.
 MISC_TABLES = ("script_signatures", "ioc_list_history", "ioc_verdict_changes")
-MISC_COLUMNS: dict[str, tuple[str, ...]] = {"ioc_checks": ("list_id", "baseline")}
+MISC_COLUMNS: dict[str, tuple[str, ...]] = {
+    "ioc_checks": ("list_id", "baseline"),
+    "artifacts": ("expires_at", "expiry_note", "expiry_noticed"),
+}
 
 # Created by migration 0033_dashboards_packs where missing, in this order.
 DASHBOARD_PACK_TABLES = ("dashboards", "packs", "pack_items", "pack_uploads")

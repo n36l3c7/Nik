@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tags on a selection.** *Tag…* in the library adds tags to, and takes
   tags off, every indicator selected or kept by a filter, 5 000 at most
   (`POST /api/iocs/tags`), with one line of the audit log.
+- **An artifact can be given an expiry.** Nothing has a date unless someone
+  sets one on the artifact's page (30 days, 90 days, a year, a date, or
+  never; `PUT /api/artifacts/{id}/expiry`). On that day the worker deletes
+  it as a deletion by hand would, with a line of the audit log and the event
+  `artifact.expired`; a week before, `artifact.expiring` says so once. An
+  artifact an incident that is not closed still references is not deleted:
+  its date is put off by a week and it says why. *Settings → Storage* lists
+  what has a date, the soonest first, and counts what has none.
 
 ### Changed
 

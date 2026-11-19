@@ -69,6 +69,8 @@ EVENTS = (
     "ioc.watch_hit",
     "storage.low",
     "sla.breached",
+    "artifact.expiring",
+    "artifact.expired",
 )
 
 # Names an expression may read besides the nodes before it.
