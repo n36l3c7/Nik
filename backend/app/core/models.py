@@ -1443,6 +1443,11 @@ class Pack(Base):
     author: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # Where it came from: "nik" (part of Nik), "catalogue", "file", "folder" (NIK_PACKS_DIR), "nik-5" (what
+    # came inside Nik before 6.0).
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="file", server_default="file")
+    logo: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    logo_type: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
     installed_at: Mapped[str] = mapped_column(String, nullable=False)
     installed_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False, default="")
@@ -1457,6 +1462,8 @@ class PackItem(Base):
     kind: Mapped[str] = mapped_column(String(20), primary_key=True)
     name: Mapped[str] = mapped_column(String(200), primary_key=True)
     pack_id: Mapped[str] = mapped_column(String(49), ForeignKey("packs.id", ondelete="CASCADE"), nullable=False)
+    # What the item was when the pack gave it (packs.digest): another value now means it was changed here.
+    digest: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
 
 
 class PackUpload(Base):

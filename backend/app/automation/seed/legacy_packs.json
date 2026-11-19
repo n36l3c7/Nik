@@ -1,0 +1,122 @@
+[
+  {
+    "id": "bitbucket-cloud",
+    "name": "Bitbucket Cloud",
+    "vendor": "Atlassian",
+    "category": "Code and knowledge",
+    "description": "Block lists kept as a file in a Bitbucket Cloud repository: the connector, and the playbook that adds a malicious indicator to the list with a commit.",
+    "playbooks": [
+      "Malicious indicator to a block list"
+    ]
+  },
+  {
+    "id": "bitbucket-datacenter",
+    "name": "Bitbucket Data Center",
+    "vendor": "Atlassian",
+    "category": "Code and knowledge",
+    "description": "A file in a Bitbucket Data Center repository, read and written with a commit.",
+    "playbooks": []
+  },
+  {
+    "id": "checkpoint-management",
+    "name": "Check Point Firewall",
+    "vendor": "Check Point",
+    "category": "Network security",
+    "description": "Hosts, groups and domain objects on a Check Point Security Management server, published and installed.",
+    "playbooks": []
+  },
+  {
+    "id": "checkpoint-sase",
+    "name": "Check Point Harmony SASE",
+    "vendor": "Check Point",
+    "category": "Network security",
+    "description": "Lists of addresses and the Internet Access rules of Check Point Harmony SASE.",
+    "playbooks": []
+  },
+  {
+    "id": "confluence-cloud",
+    "name": "Confluence Cloud",
+    "vendor": "Atlassian",
+    "category": "Code and knowledge",
+    "description": "Pages in Confluence Cloud, made and added to.",
+    "playbooks": []
+  },
+  {
+    "id": "confluence-datacenter",
+    "name": "Confluence Data Center",
+    "vendor": "Atlassian",
+    "category": "Code and knowledge",
+    "description": "Pages in Confluence Data Center, made and added to.",
+    "playbooks": []
+  },
+  {
+    "id": "jira-cloud",
+    "name": "Jira Cloud",
+    "vendor": "Atlassian",
+    "category": "Ticketing",
+    "description": "Issues of Jira Cloud as incidents, kept in step both ways: the connector, its classifier and its mappers.",
+    "playbooks": [],
+    "classifier": {
+      "rules": [],
+      "defaultType": null
+    }
+  },
+  {
+    "id": "jira-datacenter",
+    "name": "Jira Data Center",
+    "vendor": "Atlassian",
+    "category": "Ticketing",
+    "description": "Issues of Jira Data Center as incidents, kept in step both ways: the connector, its classifier and its mappers.",
+    "playbooks": [],
+    "classifier": {
+      "rules": [],
+      "defaultType": null
+    }
+  },
+  {
+    "id": "sentinelone-sdl",
+    "name": "SentinelOne SIEM",
+    "vendor": "SentinelOne",
+    "category": "SIEM",
+    "description": "Alerts of the Singularity Operations Center as incidents, and PowerQuery searches in the Singularity Data Lake.",
+    "playbooks": [],
+    "classifier": {
+      "rules": [],
+      "defaultType": null
+    }
+  },
+  {
+    "id": "sentinelone",
+    "name": "SentinelOne EDR",
+    "vendor": "SentinelOne",
+    "category": "Endpoint",
+    "description": "Threats of the SentinelOne console as incidents; agents, the blocklist and Deep Visibility as commands.",
+    "playbooks": [],
+    "classifier": {
+      "rules": [],
+      "defaultType": null
+    }
+  },
+  {
+    "id": "servicenow",
+    "name": "ServiceNow",
+    "vendor": "ServiceNow",
+    "category": "Ticketing",
+    "description": "Incidents of ServiceNow kept in step both ways: the connector, its classifier and mappers, and the playbook that opens a ticket for a serious incident.",
+    "playbooks": [
+      "Incident to ticketing"
+    ],
+    "classifier": {
+      "rules": [],
+      "defaultType": null
+    }
+  },
+  {
+    "id": "zscaler-zia",
+    "name": "Zscaler Internet Access",
+    "vendor": "Zscaler",
+    "category": "Network security",
+    "description": "URL categories, URL look-up and activation in Zscaler Internet Access.",
+    "playbooks": []
+  }
+]

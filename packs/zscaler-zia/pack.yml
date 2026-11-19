@@ -1,0 +1,9 @@
+id: zscaler-zia
+name: Zscaler Internet Access
+vendor: Zscaler
+category: Network security
+version: 1.0.0
+description: >-
+  URL categories, URL look-up and activation in Zscaler Internet Access.
+author: Nik
+nik: ">=6.0"

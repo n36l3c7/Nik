@@ -1,0 +1,9 @@
+id: sentinelone-sdl
+name: SentinelOne SIEM
+vendor: SentinelOne
+category: SIEM
+version: 1.0.0
+description: >-
+  Alerts of the Singularity Operations Center as incidents, and PowerQuery searches in the Singularity Data Lake.
+author: Nik
+nik: ">=6.0"

@@ -694,7 +694,7 @@ def test_migration_0033_adds_the_tables_of_dashboards_and_packs(tmp_path, monkey
         # The run that was there is not a debug run.
         assert conn.execute(sa.text("SELECT debug FROM runs")).scalar() in (0, False)
         assert {"layout", "shared_with", "builtin"} <= {c["name"] for c in inspector.get_columns("dashboards")}
-        assert {"kind", "name", "pack_id"} == {c["name"] for c in inspector.get_columns("pack_items")}
+        assert {"kind", "name", "pack_id"} <= {c["name"] for c in inspector.get_columns("pack_items")}
     command.stamp(cfg, "0032_fetch_mappers")
     command.upgrade(cfg, "0033_dashboards_packs")  # again: nothing to do
     command.downgrade(cfg, "0032_fetch_mappers")
@@ -866,3 +866,29 @@ def test_migration_0038_adds_the_playground(tmp_path, monkeypatch):
     with engine.connect() as conn:
         assert set(sa.inspect(conn).get_table_names()) >= {"incidents"}
         assert "playground_entries" not in sa.inspect(conn).get_table_names()
+
+
+def test_migration_0039_adds_where_a_pack_came_from(tmp_path, monkeypatch):
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE packs (id VARCHAR(49) PRIMARY KEY, name VARCHAR(120))"))
+        conn.execute(sa.text("CREATE TABLE pack_items (kind VARCHAR(20), name VARCHAR(200), pack_id VARCHAR(49))"))
+        conn.execute(sa.text("INSERT INTO packs (id, name) VALUES ('mine', 'Mine')"))
+        conn.execute(sa.text("INSERT INTO pack_items (kind, name, pack_id) VALUES ('scripts', 'One', 'mine')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0038_incident_page")
+    command.upgrade(cfg, "0039_pack_catalogue")
+    with engine.connect() as conn:
+        assert {"source", "logo", "logo_type"} <= {c["name"] for c in sa.inspect(conn).get_columns("packs")}
+        assert conn.execute(sa.text("SELECT source, logo_type FROM packs")).one() == ("file", "")
+        assert conn.execute(sa.text("SELECT digest FROM pack_items")).scalar() == ""
+    command.stamp(cfg, "0038_incident_page")
+    command.upgrade(cfg, "0039_pack_catalogue")  # again: nothing to do
+    command.downgrade(cfg, "0038_incident_page")
+    with engine.connect() as conn:
+        assert {c["name"] for c in sa.inspect(conn).get_columns("packs")} == {"id", "name"}
+        assert "digest" not in {c["name"] for c in sa.inspect(conn).get_columns("pack_items")}
