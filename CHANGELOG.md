@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.1] - 2026-11-19
+
+### Fixed
+
+- The number of an incident was not shown in the list of incidents nor in
+  the header: it was dropped when a document was read, and a new incident
+  did not get it until the list was read again. The search, the tasks and
+  the runs showed it.
+
 ## [5.0.0] - 2026-11-19
 
 ### Changed
@@ -2554,7 +2563,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.0.1...HEAD
+[5.0.1]: https://github.com/n36l3c7/Nik/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/n36l3c7/Nik/compare/v4.7.0...v5.0.0
 [4.7.0]: https://github.com/n36l3c7/Nik/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/n36l3c7/Nik/compare/v4.5.0...v4.6.0
