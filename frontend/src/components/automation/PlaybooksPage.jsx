@@ -25,7 +25,7 @@ const WARNING_COLORS = { 'any host': 'red', 'data opened': 'amber', 'updates ava
  * @param {{
  *   playbooks: object[] | null,                // null while loading
  *   error: string | null,
- *   onOpen: (id: string, tab?: string) => void,
+ *   onOpen: (id: string, tab?: string | null, branch?: string | null) => void,
  *   onReload: () => Promise<void>,
  * }} props
  */
@@ -211,6 +211,25 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
                     </button>
                     {playbook.description && (
                       <span className="block max-w-md text-fg-muted">{playbook.description}</span>
+                    )}
+                    {canEdit && playbook.branches?.length > 0 && (
+                      <ul aria-label={`Branches of ${playbook.name}`} className="mt-1 border-l border-line pl-2">
+                        {playbook.branches.map((branch) => (
+                          <li key={branch.id} className="flex items-baseline gap-2 font-mono text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => onOpen(playbook.id, null, branch.id)}
+                              className="text-left text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                              {branch.name}
+                            </button>
+                            <span className="text-fg-muted">
+                              {branch.createdBy}
+                              {branch.behind ? ' · behind' : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </th>
                   <td className="border-b border-line-soft px-3 py-2 align-top font-mono text-fg-muted">

@@ -385,6 +385,21 @@ test('the addresses of the Automations area', () => {
   assert.equal(automationPath('playbooks', 'a b'), '/automation/playbooks/a%20b')
   assert.equal(automationPath('playbooks', 'ab12', 'canvas'), '/automation/playbooks/ab12')
   assert.equal(automationPath('playbooks', 'ab12', 'versions'), '/automation/playbooks/ab12/versions')
+  // A branch of a playbook has an address of its own, on the canvas.
+  assert.equal(automationPath('playbooks', 'ab12', null, 'b 1'), '/automation/playbooks/ab12/branches/b%201')
+  assert.equal(automationPath('playbooks', 'ab12', 'runs', 'b1'), '/automation/playbooks/ab12/runs')
+  assert.equal(automationPath('runs', 'r1', null, 'b1'), '/automation/runs/r1')
+  assert.deepEqual(automationFromPath('/automation/playbooks/ab12/branches/b%201'), {
+    area: 'playbooks',
+    id: 'ab12',
+    tab: 'canvas',
+    branch: 'b 1',
+  })
+  assert.deepEqual(automationFromPath('/automation/playbooks/ab12/branches'), {
+    area: 'playbooks',
+    id: 'ab12',
+    tab: 'canvas',
+  })
 })
 
 test('a pasted address is listed as its host', () => {

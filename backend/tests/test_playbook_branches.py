@@ -34,6 +34,11 @@ def test_a_branch_is_made_worked_on_and_pushed_over_the_version_in_use(admin: Te
         "admin",
     )
     assert branch["graph"] == admin.get(url).json()["graph"]  # a copy of the version in use
+    # The list of playbooks names the branches of each, without their graphs.
+    listed = {row["id"]: row for row in admin.get(BASE).json()["playbooks"]}
+    assert [(item["name"], item["createdBy"]) for item in listed[pb]["branches"]] == [("louder words", "admin")]
+    assert "graph" not in listed[pb]["branches"][0]
+    assert all(row["branches"] == [] for key, row in listed.items() if key != pb)
     for bad in ("main", "Draft", "   ", "louder WORDS"):
         assert admin.post(f"{url}/branches", json={"name": bad}).status_code in (400, 422), bad
 

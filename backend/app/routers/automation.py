@@ -394,7 +394,17 @@ def _problems(found: list[graph.Problem]) -> JSONResponse:
 def list_playbooks(_caller: Principal = Depends(runner_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Every playbook, with its trigger, its last run, a week of counts and what to watch."""
     rows = db.scalars(select(Playbook).where(Playbook.id != ADHOC_ID).order_by(func.lower(Playbook.name))).all()
-    return {"playbooks": [_summary(db, row) for row in rows], "workerAlive": state.worker_alive(db), **state.read(db)}
+    # The branches of every playbook, read once: the list and the editor show them under it.
+    by_id = {row.id: row for row in rows}
+    branches: dict[str, list[dict[str, Any]]] = {}
+    for branch in db.scalars(select(PlaybookBranch).order_by(func.lower(PlaybookBranch.name))).all():
+        if branch.playbook_id in by_id:
+            branches.setdefault(branch.playbook_id, []).append(_branch(branch, by_id[branch.playbook_id]))
+    return {
+        "playbooks": [{**_summary(db, row), "branches": branches.get(row.id, [])} for row in rows],
+        "workerAlive": state.worker_alive(db),
+        **state.read(db),
+    }
 
 
 @router.post("/playbooks", status_code=status.HTTP_201_CREATED)

@@ -21,9 +21,14 @@ const EDGES = {
 }
 
 /**
- * @param {{ entries: object[], onAdd: (entry: object) => void, disabled?: boolean }} props
+ * @param {{
+ *   entries: object[],
+ *   onAdd: (entry: object) => void,
+ *   disabled?: boolean,
+ *   header?: import('react').ReactNode,   // what stands above the tabs: the playbooks and their branches
+ * }} props
  */
-export default function NodeLibrary({ entries, onAdd, disabled = false }) {
+export default function NodeLibrary({ entries, onAdd, disabled = false, header = null }) {
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState('commands')
   // The groups somebody opened: closed at first, each remembered while the editor is open.
@@ -46,6 +51,7 @@ export default function NodeLibrary({ entries, onAdd, disabled = false }) {
         style={pane.style}
         className="flex min-h-0 w-full shrink-0 flex-col border-r border-line bg-panel md:w-[var(--pane-w)]"
       >
+        {header}
         <div role="tablist" aria-label="Kinds of blocks" className="flex border-b border-line-soft">
           {LIBRARY_TABS.map((item) => (
             <button

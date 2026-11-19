@@ -3417,6 +3417,85 @@ test('a playbook and a script are deleted from their menu, and a draft is thrown
   await area.getByRole('button', { name: 'Close automations' }).click()
 })
 
+test('a branch of a playbook is made, pushed over a main that moved on, and deleted', async () => {
+  const graph = (text) => ({
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'start', config: { manual: true } },
+      { id: 'say', kind: 'action', name: 'say', config: { action: 'nik.add-note', args: { text } } },
+    ],
+    edges: [{ from: 'start', to: 'say' }],
+  })
+  const made = await (await page.request.post('/api/automation/playbooks', { data: { name: 'Branched one' } })).json()
+  const url = `/api/automation/playbooks/${made.id}`
+  expect((await page.request.post(`${url}/versions`, { data: { graph: graph('one') } })).status()).toBe(201)
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('button', { name: 'Branched one' }).click()
+  // The side panel names the playbooks; the one that is open shows main, which is where we are.
+  const tree = area.getByRole('navigation', { name: 'Playbooks and their branches' })
+  await expect(tree.getByRole('button', { name: /^main/ })).toHaveAttribute('aria-current', 'page')
+  await tree.getByRole('button', { name: 'New branch' }).click()
+  const naming = page.getByRole('dialog', { name: 'New branch' })
+  await naming.getByLabel('Name').fill('louder')
+  await naming.getByRole('button', { name: 'Make the branch' }).click()
+
+  // The branch has an address of its own, and the editor says where it is.
+  await expect(page).toHaveURL(/\/automation\/playbooks\/[^/]+\/branches\/[^/]+$/)
+  await expect(area.getByText('branch: louder')).toBeVisible()
+  await expect(tree.getByRole('button', { name: /^louder/ })).toHaveAttribute('aria-current', 'page')
+  await expect(area.getByRole('button', { name: /Save as version/ })).toHaveCount(0)
+  await expect(area.getByRole('button', { name: 'Push to main…' })).toBeVisible()
+
+  // The branch is worked on, and meanwhile main gets a version of its own.
+  const [branch] = (await (await page.request.get(url)).json()).branches
+  expect(branch.name).toBe('louder')
+  await page.request.put(`${url}/branches/${branch.id}`, { data: { graph: graph('two') } })
+  expect((await page.request.post(`${url}/versions`, { data: { graph: graph('three') } })).status()).toBe(201)
+  // Main and back: the editor reads the branch again.
+  await tree.getByRole('button', { name: /^main/ }).click()
+  await expect(area.getByText('branch: louder')).toHaveCount(0)
+  await expect(area.getByText(/playbook · version 2/)).toBeVisible()
+  await tree.getByRole('button', { name: /^louder/ }).click()
+  await expect(area.getByText('branch: louder')).toBeVisible()
+  await expect(area.getByText(/started from version 1/)).toBeVisible()
+
+  // Pushing says the playbook moved on, and replaces it only when told.
+  await area.getByRole('button', { name: 'Push to main…' }).click()
+  const push = page.getByRole('dialog', { name: /Push .louder. to main\?/ })
+  await push.getByLabel('Note').fill('Louder words')
+  await push.getByRole('button', { name: 'Push', exact: true }).click()
+  const moved = page.getByRole('dialog', { name: 'The playbook moved on' })
+  await expect(moved).toContainText('at version 2')
+  expect((await (await page.request.get(url)).json()).version).toBe(2)
+  await moved.getByRole('button', { name: 'Push over it' }).click()
+  await expect(moved).toHaveCount(0)
+  await expect(area.getByText(/playbook · version 3/)).toBeVisible()
+  const after = await (await page.request.get(url)).json()
+  expect(after.version).toBe(3)
+  expect(after.graph.nodes[1].config.args.text).toBe('two')
+  expect(after.branches[0].behind).toBe(false)
+
+  // The list shows the branch under its playbook, and opens it.
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  const branches = area.getByRole('list', { name: 'Branches of Branched one' })
+  await expect(branches).toContainText('louder')
+  await branches.getByRole('button', { name: 'louder' }).click()
+  await expect(area.getByText('branch: louder')).toBeVisible()
+  await area.getByRole('button', { name: 'Delete branch…' }).click()
+  await page
+    .getByRole('dialog', { name: 'Delete this branch?' })
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/automation\/playbooks\/[^/]+$/)
+  await expect(area.getByText('branch: louder')).toHaveCount(0)
+  expect((await (await page.request.get(url)).json()).branches).toEqual([])
+
+  expect((await page.request.delete(url)).status()).toBe(204)
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
 test('the rail: the order of a working day, and the account at its foot', async () => {
   const rail = page.getByRole('navigation', { name: 'Sections' })
   // Every incident of the list has its number, opened in this visit or not.
