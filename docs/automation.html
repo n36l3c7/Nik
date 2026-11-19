@@ -1386,7 +1386,9 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           hash) and <code>!email</code> ask what is known of an indicator: Nik's reputation sources, under the same
           rules that say what is never sent to them, and every command of a connector that declares
           <code>reputation: &lt;kind&gt;</code> in its file, on each of its connections. The answers are put together in
-          one verdict and one score, with each source beside them and those that were not asked, with why.
+          one verdict and one score, with each source beside them and those that were not asked, with why. What is
+          looked up becomes an indicator of the incident: it is in its Indicators with the source
+          <em>War Room · looked up</em>, and in the library, as one found in its evidence would be.
         </li>
       </ul>
       <p>

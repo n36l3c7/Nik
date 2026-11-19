@@ -183,7 +183,7 @@ def run_line(
     """
     from fastapi.responses import JSONResponse
 
-    from .. import commands
+    from .. import commands, iocs
     from .. import fields as registry
     from ..automation import state as automation_state
     from ..core.permissions import AUTOMATION_RUN, WRITE
@@ -264,5 +264,13 @@ def run_line(
     audit.record(
         db, caller.actor, "warroom.command", f"Ran {target.title} in the War Room", incident, target=target.title
     )
+    # What is looked up for an incident is one of its indicators from then on.
+    added = None
+    if target.lookup is not None and caller.has(WRITE):
+        added = iocs.add_manual(db, incident, target.lookup[0], target.lookup[1], "warroom", caller.actor)
     db.commit()
-    return JSONResponse(status_code=201, content={**war_room.out(entry), "runId": run.id})
+    content = {**war_room.out(entry), "runId": run.id}
+    if added:
+        content["indicator"] = {"type": added["type"], "value": added["value"]}
+        emit(db, background_tasks, "incident.updated", {"id": incident.id, "name": incident.name})
+    return JSONResponse(status_code=201, content=content)

@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A reputation command adds its indicator to the incident.** `!ip`,
+  `!domain`, `!url`, `!file` and `!email` in the War Room keep what they
+  looked up among the indicators of the incident (source *War Room · looked
+  up*; `data.iocs.manual` in the document), once, and only for a value
+  typed as it is and valid for its kind.
+- **Indicators in the War Room can be clicked**: an address, a host name, a
+  URL or a hash in a note, a command, a result or the open entry opens the
+  indicator's window and has its right-click menu.
 - **Incidents have a number.** Every incident gets the next number when it
   is created (`number` in the API, `number:42` in a query,
   `GET /api/incidents/by-number/{number}`), and a number is never used

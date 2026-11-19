@@ -66,6 +66,10 @@ export function sourceLabel(source) {
       return `Network · ${id}`
     case 'url':
       return `URL scan · ${id}`
+    case 'warroom':
+      return 'War Room · looked up'
+    case 'manual':
+      return 'Added by hand'
     default:
       return String(source ?? '')
   }

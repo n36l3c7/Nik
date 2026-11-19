@@ -2410,7 +2410,7 @@ test('the War Room holds what was said and done on the incident, and marks evide
   const step = stream.getByRole('listitem').filter({ hasText: 'playbook Ask then note' }).first()
   await expect(step).toBeVisible()
   // The inspector shows what the step was given and gave, and opens its run.
-  await step.getByRole('button').click()
+  await step.getByRole('button', { name: /^automation/ }).click()
   const inspector = page.getByRole('complementary', { name: 'The chosen entry' })
   await expect(inspector.getByRole('heading', { name: 'Result' })).toBeVisible()
   await expect(inspector.getByRole('heading', { name: 'What it was given' })).toBeVisible()
@@ -2419,7 +2419,7 @@ test('the War Room holds what was said and done on the incident, and marks evide
 
   // An entry marked as evidence is found among the evidence.
   await show.getByRole('button', { name: 'Notes' }).click()
-  await note.getByRole('button').click()
+  await note.getByRole('button').first().click()
   await inspector.getByRole('button', { name: 'Mark as evidence' }).click()
   await expect(note).toContainText('evidence')
   await show.getByRole('button', { name: 'Evidence' }).click()
@@ -2452,11 +2452,17 @@ test('the command line of the War Room runs commands, asks before a change outsi
   await expect(command).toHaveCount(1)
   const result = stream.getByRole('listitem').filter({ hasText: /^automation.*nik-get-indicator/ })
   await expect(result).toHaveCount(1, { timeout: 20_000 })
-  await result.getByRole('button').click()
+  await result.getByRole('button').first().click()
   const inspector = page.getByRole('complementary', { name: 'The chosen entry' })
   await expect(inspector.getByRole('heading', { name: 'Result' })).toBeVisible()
   await expect(inspector).toContainText('185.220.101.47')
   await inspector.getByRole('button', { name: 'Close the entry' }).click()
+  // An address in the stream is the indicator: it opens its window.
+  await command.getByRole('button', { name: '185.220.101.47' }).click()
+  const indicator = page.getByRole('dialog', { name: 'Indicator' })
+  await expect(indicator).toContainText('185.220.101.47')
+  await page.keyboard.press('Escape')
+  await expect(indicator).toBeHidden()
 
   // What is wrong with a line is said under it, and nothing runs.
   await line.fill('!nik-get-indicator colour=red')

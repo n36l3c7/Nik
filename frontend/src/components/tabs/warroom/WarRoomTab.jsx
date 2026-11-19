@@ -32,6 +32,7 @@ import {
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
+import IocText from '../../ioc/IocText.jsx'
 
 /*
  * ============================================================================
@@ -96,7 +97,7 @@ function Result({ value }) {
             <tr key={index}>
               {table.columns.map((column) => (
                 <td key={column} className="border-b border-line-soft px-2 py-1 align-top text-fg">
-                  {cell(row[column])}
+                  <IocText text={cell(row[column])} />
                 </td>
               ))}
             </tr>
@@ -204,7 +205,11 @@ function Inspector({ incident, entry, raw, canWrite, onClose, onChanged, onRerun
           </Button>
         )}
       </div>
-      {line.text && <p className="whitespace-pre-wrap break-words text-sm text-fg">{line.text}</p>}
+      {line.text && (
+        <p className="whitespace-pre-wrap break-words text-sm text-fg">
+          <IocText text={line.text} />
+        </p>
+      )}
       {!detail && (
         <p role="status" className="font-mono text-xs text-fg-muted">
           Loading…
@@ -456,36 +461,45 @@ export default function WarRoomTab({ incident }) {
             const Icon = tone.icon
             return (
               <li key={entry.id} className={entry.depth ? 'pl-6' : ''}>
-                <button
-                  type="button"
-                  aria-current={entry.id === chosen ? 'true' : undefined}
+                {/* The row opens the entry wherever it is clicked; the button is how the keyboard does it.
+                    An indicator in the text is a button of its own, so the row cannot be one. */}
+                <div
                   onClick={() => setChosen(entry.id === chosen ? null : entry.id)}
-                  className={`flex w-full items-start gap-2 border-b border-line-soft px-3 py-2 text-left hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${entry.id === chosen ? 'bg-raised' : ''}`}
+                  className={`flex w-full cursor-pointer items-start gap-2 border-b border-line-soft px-3 py-2 text-left hover:bg-raised ${entry.id === chosen ? 'bg-raised' : ''}`}
                 >
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${tone.className}`} aria-hidden="true" />
                   <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-baseline gap-x-2 text-xs text-fg-muted">
+                    <button
+                      type="button"
+                      title="Open the entry"
+                      aria-current={entry.id === chosen ? 'true' : undefined}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setChosen(entry.id === chosen ? null : entry.id)
+                      }}
+                      className="flex flex-wrap items-baseline gap-x-2 text-left text-xs text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
                       <span className="font-medium text-fg">{authorLabel(entry.author)}</span>
                       <span>{formatDateTime(Date.parse(entry.at))}</span>
                       {entry.body?.automation && <Badge color="cyan">automation</Badge>}
                       {entry.tags.includes(EVIDENCE) && <Badge color="amber">evidence</Badge>}
-                    </span>
+                    </button>
                     {line.title && (
                       <span
                         className={`block break-words text-sm ${entry.kind === 'command' ? 'font-mono' : 'font-medium'} text-fg`}
                       >
-                        {line.title}
+                        <IocText text={line.title} />
                       </span>
                     )}
                     {line.text && (
                       <span
                         className={`block whitespace-pre-wrap break-words text-sm ${line.tone === 'error' ? 'text-high-fg' : line.title ? 'text-fg-muted' : 'text-fg'}`}
                       >
-                        {line.text}
+                        <IocText text={line.text} />
                       </span>
                     )}
                   </span>
-                </button>
+                </div>
               </li>
             )
           })}
