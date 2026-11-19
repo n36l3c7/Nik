@@ -427,8 +427,8 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
       >
         <div className="space-y-3">
           <p className="text-sm text-fg-muted">
-            The artifact appears in the incident's {getTabById(kind.tab).label} tab, with its indicators, on the
-            timeline and in the report.
+            The artifact appears in the incident's Evidence, under {getTabById(kind.tab).label}, with its indicators, on
+            the timeline and in the report.
             {artifact.kind === 'pcap' ? ' A capture belongs to one incident at most.' : ''}
           </p>
           <label htmlFor="artifact-link-incident" className="block space-y-1.5">

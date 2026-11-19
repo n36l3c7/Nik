@@ -68,6 +68,7 @@ from .routers import (
     mirror,
     network,
     packs,
+    playground,
     preprocess,
     previews,
     query,
@@ -146,7 +147,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="5.2.0",
+    version="5.3.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -294,6 +295,7 @@ app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")
 app.include_router(context.router, prefix="/api")
 app.include_router(war_room.router, prefix="/api")
+app.include_router(playground.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(lists.router, prefix="/api")
 app.include_router(mappers.router, prefix="/api")

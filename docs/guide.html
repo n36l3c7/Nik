@@ -48,8 +48,8 @@
           <li><a href="#evidence">Add evidence</a></li>
           <li><a href="#artifacts">Analyse without an incident</a></li>
           <li><a href="#ioc-library">The IoC library</a></li>
-          <li><a href="#tabs">The analysis tabs</a></li>
-          <li><a href="#overview-tabs">Summary, Timeline, IOCs</a></li>
+          <li><a href="#tabs">The tabs of an incident</a></li>
+          <li><a href="#overview-tabs">Summary, Timeline, Indicators</a></li>
           <li><a href="#threat-tabs">Mail, Malware, Network, URL</a></li>
           <li><a href="#host-tabs">Endpoint, Event Logs, Browser, Commands</a></li>
           <li><a href="#flags">Flags, comments and the right-click menu</a></li>
@@ -86,15 +86,16 @@
         <li>
           Fill in what you know: the <strong>ticket ID</strong> from your tracker, a <strong>short title</strong>, the
           <strong>host</strong> and the <strong>user</strong>. At least one is needed. Pick the
-          <strong>severity</strong> (a tag, never part of the name) and the host's <strong>operating system</strong>,
-          which decides the artifact paths, shells and collection scripts Nik suggests.
+          <strong>severity</strong> (a tag, never part of the name) and, when the incident is about a machine, the
+          host's <strong>operating system</strong>, which decides the artifact paths, shells and collection scripts Nik
+          suggests. The system is optional: left out, Nik suggests those of Windows.
         </li>
         <li>Click <strong>Create incident</strong>: the incident opens on its Summary tab.</li>
       </ol>
       <p>
         The name is built from the fields: the ticket in square brackets, then the title, or
         <code>host - user</code> when there is no title, for example <code>[INC-2041] Invoice phishing, finance</code>.
-        Everything stays editable from the Summary tab.
+        Everything stays editable: <strong>Edit the incident</strong>, in the details of the Summary, opens the form.
       </p>
       <p>
         Every incident also has a <strong>number</strong>, written before its name: <code>#00042</code>. Nik gives it
@@ -105,10 +106,10 @@
       </p>
       <p>
         Every incident has a <strong>status</strong> (open, in progress or closed) and can be
-        <strong>assigned</strong> to an analyst. Set them from the Summary tab, or right-click an incident in the panel:
-        <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>. The panel
-        shows the status and the assignee under the name, and filters the list by status, to the incidents that are
-        <strong>mine</strong>, or by any <a href="#queries">query</a>. Both are stated in the report.
+        <strong>assigned</strong> to an analyst. Set them in <em>Edit the incident</em>, or right-click an incident in
+        the panel: <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>.
+        The panel shows the status and the assignee under the name, and filters the list by status, to the incidents
+        that are <strong>mine</strong>, or by any <a href="#queries">query</a>. Both are stated in the report.
       </p>
       <h3 id="saving">Saving, and working on the same incident</h3>
       <p>
@@ -138,11 +139,12 @@
         The narrow column of icons on the left edge is the <strong>rail</strong>, in the order of a working day: the
         <strong>incidents</strong>, <strong>your tasks</strong>, the <strong>dashboards</strong>, the
         <strong>IoC library</strong>, the <strong>artifacts</strong> (the files, e-mails and captures analysed so far),
-        the search, then the <strong>automations</strong>. Incidents, the IoC library and the artifacts open a list in
-        the side panel: click the active icon again to close the panel and give the whole width to the analysis. At the
-        foot of the rail are the notifications, the settings and <strong>your account</strong>, which says who is signed
-        in, opens <em>My account</em> and signs out. The audit log, the accounts and the backup are sections of
-        Settings. An entry is there for the accounts whose roles let them use it.
+        the search, the <strong>playground</strong> (a command outside any incident), then the
+        <strong>automations</strong>. Incidents, the IoC library and the artifacts open a list in the side panel: click
+        the active icon again to close the panel and give the whole width to the analysis. At the foot of the rail are
+        the notifications, the settings and <strong>your account</strong>, which says who is signed in, opens
+        <em>My account</em> and signs out. The audit log, the accounts and the backup are sections of Settings. An entry
+        is there for the accounts whose roles let them use it.
       </p>
       <p>
         <strong>Every side panel can be resized</strong>: the lists of the rail, the sections of Settings, the facts of
@@ -159,14 +161,13 @@
         there). It stays while the tabs change. <em>Edit</em> opens a form for those fields; the select changes the type
         of the incident, which keeps every value it holds: what the new type does not show is hidden, not lost. The
         arrow folds the column away, which a wide tab wants, and Nik remembers it; in a narrow window the column is a
-        band above the tabs. The type of an incident also decides the sections of its Summary, the order of its tabs and
-        which are hidden; the tab you last opened is remembered for each type.
+        band above the tabs. The type of an incident also decides <a href="#summary-page">the page of its Summary</a>,
+        the order of its tabs and which are hidden; the tab you last opened is remembered for each type.
       </p>
 
       <p>
-        The lists inside the Mail, Malware, Network and URL tabs close with the button in their corner, and stay closed
-        the next time. When the window is narrow the tab bar shortens its labels, then shows icons only; the open tab
-        always shows its full name, and the others show theirs on hover.
+        When the window is narrow the tab bar shortens its labels, then shows icons only; the open tab always shows its
+        full name, and the others show theirs on hover.
       </p>
 
       <h2 id="evidence">Add evidence</h2>
@@ -276,9 +277,9 @@
         imported or not.
       </p>
       <p>
-        <strong>Put in an incident</strong> sends every imported message to an incident's Mail Analysis tab; tick rows
-        first to send only those. Only the phishing and suspicious messages of a mailbox add indicators: the rest is
-        ordinary mail. Deleting the mailbox removes the file and its index; the e-mails imported from it stay.
+        <strong>Put in an incident</strong> sends every imported message to an incident's Evidence, under Mail Analysis;
+        tick rows first to send only those. Only the phishing and suspicious messages of a mailbox add indicators: the
+        rest is ordinary mail. Deleting the mailbox removes the file and its index; the e-mails imported from it stay.
       </p>
 
       <h3 id="indicator-artifact">Indicators and artifacts</h3>
@@ -410,43 +411,110 @@
         only in incidents gets a record to hold them, as when it is edited alone.
       </p>
 
-      <h2 id="tabs">The analysis tabs</h2>
-      <p>The tab bar groups the tabs in the order of an investigation, separated by a thin rule:</p>
+      <h2 id="tabs">The tabs of an incident</h2>
+      <p>An incident has seven tabs:</p>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Group</th>
-              <th>Tabs</th>
-              <th>What they hold</th>
+              <th>Tab</th>
+              <th>What it holds</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>Overview</td>
-              <td>Summary · Timeline · IOCs</td>
-              <td>What the incident adds up to: details, notes, every event in order, every indicator.</td>
+              <td>Summary</td>
+              <td>The page its type arranges: the details, the fields, the numbers, flags and notes.</td>
             </tr>
             <tr>
-              <td>Threats</td>
-              <td>Mail · Malware · Network · URL</td>
-              <td>The attack itself: the reported e-mail, the samples, the traffic.</td>
+              <td>War Room</td>
+              <td>
+                Everything said and done on the incident, and its command line (<a href="automation.html#command-line"
+                  >Automation</a
+                >).
+              </td>
             </tr>
             <tr>
-              <td>Host</td>
-              <td>Endpoint Artifacts · Event Logs · Browser Forensics · Command History</td>
-              <td>What was collected on the machine.</td>
+              <td>Work plan</td>
+              <td>Its tasks, what its playbooks do step by step, and their runs.</td>
+            </tr>
+            <tr>
+              <td>Context</td>
+              <td>What playbooks read of the incident (<a href="automation.html#context">Automation</a>).</td>
+            </tr>
+            <tr>
+              <td>Indicators</td>
+              <td>Every indicator found in its evidence.</td>
+            </tr>
+            <tr>
+              <td>Timeline</td>
+              <td>Every timestamped event of its evidence, in order.</td>
+            </tr>
+            <tr>
+              <td>Evidence</td>
+              <td>Its files and what was collected on the machine, each in the page of its kind.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <h2 id="overview-tabs">Summary, Timeline, IOCs</h2>
-      <h3>Summary</h3>
+      <h3 id="evidence-tab">Evidence</h3>
       <p>
-        The incident's details (ticket, title, severity, status, assignee, host, user, operating system), the
-        <strong>suspicious window</strong> (start and end of the malicious activity, used to highlight events in every
-        tab), counters per source, the flagged events and the analysts' <strong>notes</strong>.
+        One list at the side holds everything the incident has, kind by kind: the e-mails, the suspicious files, the
+        captures and the addresses, each by its name, and, for what was collected on the machine (endpoint artifacts,
+        event logs, browser history, command history), how many records there are. The box above the list finds a file
+        by its name, its sender or its kind.
+      </p>
+      <ul>
+        <li>
+          <strong>A file</strong> opens alone, in the page of its kind: the analysis of an e-mail, of a sample, of a
+          capture, of an address, as described below. Right-click it for its menu.
+        </li>
+        <li>
+          <strong>The name of a kind</strong> opens the whole of that kind: its own list above the file, where files are
+          added, compared and removed, or, for what was collected on the machine, its page.
+        </li>
+        <li>
+          <strong>Adding</strong> is as before: drop a file anywhere in the window (see
+          <a href="#evidence">Add evidence</a>), or use the drop zone of a kind.
+        </li>
+      </ul>
+      <p>
+        Until 5.3 each kind was a tab of its own. Nothing else changed in them: the sections that follow describe each,
+        and a link or a shortcut that led to one of those tabs leads to it inside Evidence.
+      </p>
+
+      <h2 id="overview-tabs">Summary, Timeline, Indicators</h2>
+      <h3 id="summary-page">Summary</h3>
+      <p>
+        The first page of an incident is a <strong>grid of widgets</strong>, arranged for its type as a
+        <a href="#dashboards">dashboard</a> is. Out of the box it shows:
+      </p>
+      <ul>
+        <li>
+          <strong>Incident details</strong>: the name, ticket, severity, status, owner, host, user, operating system and
+          the <strong>suspicious window</strong> (start and end of the malicious activity, used to highlight events
+          everywhere). <strong>Edit the incident</strong> opens the form that changes them; choosing <em>closed</em>
+          there opens the form of closing;
+        </li>
+        <li><strong>Numbers of the evidence</strong>: counters per source, the flags and the notes;</li>
+        <li>
+          <strong>the sections of its type</strong>, each with its fields and an <em>Edit</em> that opens a form for
+          them;
+        </li>
+        <li><strong>Flags and notes</strong>: what was flagged and written, in order of time.</li>
+      </ul>
+      <p>
+        <strong>Arranging the page.</strong> In <em>Settings → Incidents → Types</em>, open a type and scroll to
+        <strong>The page</strong>. It is the grid of the dashboards, on twelve columns: drag a widget by its grip,
+        resize it by its corner, or focus the grip and use the arrow keys (<kbd>Shift</kbd> to resize); the others make
+        room. <strong>Add a widget</strong> offers the kinds: the four above, and <em>Timers</em> (the SLA),
+        <em>Evidence</em> (the files, each a link into the Evidence tab), <em>War Room</em>, <em>Work plan</em>,
+        <em>Indicators</em>, <em>Playbook buttons</em> (buttons that run the playbooks you choose on the incident) and
+        <em>A text</em> of your own. The pencil of a widget sets its title and what it shows. What does not fit in a
+        widget scrolls inside it. A type that never arranged its page shows the one Nik makes from its sections;
+        <strong>Back to the generated page</strong> returns to it. In a narrow window the widgets are one under the
+        other, in reading order.
       </p>
       <figure class="shot">
         <img src="img/summary.png" alt="The Summary tab" width="1600" height="1000" loading="lazy" />
@@ -462,7 +530,7 @@
         <img src="img/timeline.png" alt="The Timeline tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Timeline: the events of all sources merged.</figcaption>
       </figure>
-      <h3>IOCs</h3>
+      <h3 id="indicators-tab">Indicators</h3>
       <p>
         The server extracts the indicators (IP addresses, domains, URLs, e-mail addresses, MD5 / SHA-1 / SHA-256 hashes)
         from everything in the incident. Click an indicator to open its window: the overall verdict (a score weighted by
@@ -481,11 +549,15 @@
         Indicators that are known good go to the <strong>allowlist</strong> (right-click → Add to the allowlist).
       </p>
       <figure class="shot">
-        <img src="img/iocs.png" alt="The IOCs tab" width="1600" height="1000" loading="lazy" />
-        <figcaption>IOCs: every indicator, with where it was seen.</figcaption>
+        <img src="img/iocs.png" alt="The Indicators tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>Indicators: every indicator, with where it was seen.</figcaption>
       </figure>
 
       <h2 id="threat-tabs">Mail, Malware, Network, URL</h2>
+      <p>
+        These four are kinds of evidence, opened from the list of the <a href="#evidence-tab">Evidence</a> tab. The list
+        of each closes with the button in its corner, and stays closed the next time.
+      </p>
       <h3>Mail Analysis</h3>
       <p>
         Drop the reported e-mail (<code>.eml</code> or Outlook <code>.msg</code>). Nik gives a
@@ -630,6 +702,7 @@
       </figure>
 
       <h2 id="host-tabs">Endpoint, Event Logs, Browser, Commands</h2>
+      <p>What was collected on the machine: four more kinds of evidence, in the same list.</p>
       <h3>Endpoint Artifacts</h3>
       <p>
         Four categories: <strong>program execution</strong>, <strong>persistence</strong>,
@@ -726,8 +799,8 @@
                 <strong>Add to the allowlist</strong>.
               </td>
               <td>
-                Any address, domain, IP, hash or e-mail address: the IOCs tab, a sample's indicators and strings, an
-                e-mail's links, a capture's requests, a scan's redirects.
+                Any address, domain, IP, hash or e-mail address: the Indicators tab, a sample's indicators and strings,
+                an e-mail's links, a capture's requests, a scan's redirects.
               </td>
             </tr>
             <tr>
@@ -1119,8 +1192,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           needs before it is turned on.
         </li>
         <li>
-          <strong>The Automation tab</strong> of an incident lists the runs that worked on it. A run opens on its own
-          page: the playbook as it went, each node coloured by what happened, with what every step got and gave.
+          <strong>The Work plan tab</strong> of an incident lists, under its tasks, the runs that worked on it. A run
+          opens on its own page: the playbook as it went, each node coloured by what happened, with what every step got
+          and gave.
         </li>
         <li id="war-room">
           <strong>The War Room tab</strong> is the log of the incident: the notes people write, each step a playbook ran
@@ -1241,7 +1315,7 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             </tr>
             <tr>
               <td>IOC allowlist</td>
-              <td>Known-good indicators (addresses, networks, domains) left out of the IOCs tab.</td>
+              <td>Known-good indicators (addresses, networks, domains) left out of the Indicators tab.</td>
             </tr>
             <tr>
               <td>Threat intelligence</td>

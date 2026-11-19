@@ -382,8 +382,11 @@ def adhoc_playbook(db: OrmSession) -> Playbook:
     return row
 
 
-def start(db: OrmSession, incident: Incident, line: str, target: Target, parsed: Parsed, actor: str) -> tuple[Any, Run]:
-    """Write the command in the War Room and start its run (the caller commits)."""
+def start(
+    db: OrmSession, incident: Incident | None, line: str, target: Target, parsed: Parsed, actor: str
+) -> tuple[Any, Run]:
+    """Write the command in the War Room of the incident and start its run (the caller commits).
+    With no incident it is written in the Playground of who typed it, and its run works on nothing."""
     playbook = adhoc_playbook(db)
     number = (
         db.scalar(select(func.max(PlaybookVersion.version)).where(PlaybookVersion.playbook_id == playbook.id)) or 0
@@ -394,7 +397,7 @@ def start(db: OrmSession, incident: Incident, line: str, target: Target, parsed:
             {
                 "id": "start",
                 "kind": "trigger",
-                "name": "Typed in the War Room",
+                "name": "Typed in the War Room" if incident is not None else "Typed in the Playground",
                 "position": {"x": 40, "y": 40},
                 "config": {"manual": True},
             },
@@ -413,13 +416,13 @@ def start(db: OrmSession, incident: Incident, line: str, target: Target, parsed:
         )
     )
     db.flush()
-    entry = war_room.add(
-        db,
-        incident.id,
-        "command",
-        {"line": line, "command": target.title, "raw": parsed.raw, "extend": parsed.extend},
-        actor,
-    )
+    said = {"line": line, "command": target.title, "raw": parsed.raw, "extend": parsed.extend}
+    if incident is None:
+        from . import playground
+
+        entry = playground.add(db, actor, "command", said)
+    else:
+        entry = war_room.add(db, incident.id, "command", said, actor)
     now = time.time()
     run = engine.start_run(
         db,
@@ -427,14 +430,17 @@ def start(db: OrmSession, incident: Incident, line: str, target: Target, parsed:
         kind="adhoc",
         payload={"actor": actor, "line": line},
         classes={"actor": ["private_value"]},
-        object_kind="incident",
-        object_id=incident.id,
-        incident_id=incident.id,
+        object_kind="incident" if incident is not None else "",
+        object_id=incident.id if incident is not None else "",
+        incident_id=incident.id if incident is not None else None,
         started_by=actor,
         version=number,
         now=now,
     )
     run.trigger = {**(run.trigger or {}), "entry_id": entry.id, "no_context": bool(parsed.extend)}
+    if incident is None:
+        # Whose Playground the results go to (playground.step_done).
+        run.trigger["playground"] = actor
     flag_modified(run, "trigger")
     entry.run_id = run.id
     return entry, run

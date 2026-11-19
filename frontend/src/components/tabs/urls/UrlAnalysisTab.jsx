@@ -272,7 +272,7 @@ function UrlDetail({ scan, incident, error, onRescan, onRemove, onBrowse, busy }
   )
 }
 
-export default function UrlAnalysisTab({ incident }) {
+export default function UrlAnalysisTab({ incident, focus = null, evidence = false }) {
   const { retryActiveIncident } = useIncidents()
   const { unlink, refresh: refreshArtifacts, openArtifact } = useArtifacts()
   const menu = useItemMenu(incident)
@@ -281,7 +281,14 @@ export default function UrlAnalysisTab({ incident }) {
   const standalone = Boolean(incident.standalone)
   const scans = incident.data.urls?.scans ?? NO_SCANS
 
-  const [selected, setSelected] = useState(scans[0]?.id ?? null)
+  const [selected, setSelected] = useState(focus ?? scans[0]?.id ?? null)
+  // In the Evidence tab a file is chosen in the list at the side: it is shown alone.
+  useEffect(() => {
+    if (focus) setSelected(focus)
+  }, [focus])
+  const alone = standalone || Boolean(focus)
+  // The whole kind, inside the Evidence tab: its list above the file, which keeps the width of the page.
+  const stacked = evidence && !alone
   const [details, setDetails] = useState({})
   const [errors, setErrors] = useState({})
   const [address, setAddress] = useState('')
@@ -409,12 +416,12 @@ export default function UrlAnalysisTab({ incident }) {
   return (
     <div
       className={
-        standalone
+        alone || stacked
           ? 'grid gap-4'
           : `grid gap-4 ${listOpen ? 'lg:grid-cols-[280px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`
       }
     >
-      {standalone ? null : listOpen ? (
+      {alone ? null : listOpen ? (
         <Card
           title={`Addresses · ${scans.length}`}
           icon={Link2}

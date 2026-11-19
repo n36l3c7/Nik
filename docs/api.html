@@ -271,6 +271,29 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET</code> · <code>DELETE /api/playground</code></td>
+              <td>
+                Needs <code>automation.run</code>. The caller's own Playground, oldest first:
+                <code>{entries: [{id, at, author, kind, body, runId, stepId, parentId, tags}]}</code>, the shape of an
+                entry of the War Room, with <code>kind</code> one of <code>command</code>, <code>result</code>,
+                <code>error</code>, <code>note</code>. <code>?show=</code> keeps the <code>notes</code> or the
+                <code>commands</code>; <code>?limit=</code> up to 500 · forget it (the runs stay).
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/playground/command</code> · <code>GET /api/playground/{id}</code></td>
+              <td>
+                <code>{line, confirm?}</code>: <code>!name arg=value …</code> runs a command with no incident, as a run
+                of one node, and answers its entry with <code>runId</code>; plain text and <code>/note</code> write a
+                note. <code>400</code> with what is wrong in the line, and for <code>/assign</code> and
+                <code>/close</code>; <code>409</code> with <code>needsConfirm</code> for a command that changes
+                something outside · one entry with its <code>step</code> (what it got, gave and sent).
+                <code>404</code> for an entry of somebody else (<a href="automation.html#playground"
+                  >Automation → The Playground</a
+                >).
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/incidents/{id}/context</code></td>
               <td>
                 Needs <code>automation.run</code>. What a playbook reads of the incident: <code>incident</code> (its
@@ -316,11 +339,23 @@
                 <code>{name, description, colour, fields, layout, closeReasons, visibleToRoles}</code>; on
                 <code>PUT</code> a key left out keeps what the type has, and <code>layout: null</code> goes back to the
                 generated one. A layout is
-                <code>{sections: [{id, title, key, columns, fields: [names]}], tabs: [ids], hidden: [ids]}</code>: a
-                section names fields the type has, a field is in one section, one section at most is the side panel
-                (<code>key</code>). <code>400</code> says what is wrong. Deleting a type moves its incidents to
-                <code>moveTo</code> (<code>unclassified</code> when not said) with every value they hold;
-                <code>unclassified</code> itself cannot be deleted.
+                <code>{sections: [{id, title, key, columns, fields: [names]}], tabs: [ids], hidden: [ids], grid}</code>:
+                a section names fields the type has, a field is in one section, one section at most is the side panel
+                (<code>key</code>). <code>tabs</code> and <code>hidden</code> name the tabs (<code>summary</code>,
+                <code>war_room</code>, <code>work_plan</code>, <code>context</code>, <code>iocs</code>,
+                <code>timeline</code>, <code>evidence</code>) and the kinds of evidence (<code>mail</code>,
+                <code>malware</code>, <code>network</code>, <code>urls</code>, <code>endpoint</code>,
+                <code>eventlogs</code>, <code>browser</code>, <code>commands</code>), which they order and hide inside
+                the Evidence tab. <code>grid</code>, when there is one, is the Summary:
+                <code>[{id, kind, x, y, w, h, title?, section?, text?, playbooks?}]</code> on twelve columns, thirty
+                widgets at most, <code>kind</code> one of <code>facts</code>, <code>section</code> (with the id of a
+                section that is not the side panel), <code>stats</code>, <code>timeline</code>, <code>timers</code>,
+                <code>evidence</code>, <code>war_room</code>, <code>work_plan</code>, <code>indicators</code>,
+                <code>playbooks</code> (with up to eight ids) and <code>note</code> (with its <code>text</code>); all
+                but <code>section</code>, <code>playbooks</code> and <code>note</code> are on a page once. A layout
+                without a grid is drawn with one made from its sections. <code>400</code> says what is wrong. Deleting a
+                type moves its incidents to <code>moveTo</code> (<code>unclassified</code> when not said) with every
+                value they hold; <code>unclassified</code> itself cannot be deleted.
               </td>
             </tr>
             <tr>

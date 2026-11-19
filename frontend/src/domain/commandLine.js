@@ -39,16 +39,18 @@ export function nameOf(text) {
  * start with it (those that hold it after them); none once it is finished.
  * `[{ value, label, description }]`, `value` being the line it becomes.
  */
-export function completions(commands, text, limit = 8) {
+export function completions(commands, text, limit = 8, slash = SLASH) {
   const { sign, name, done } = nameOf(text)
   if (!sign || done) return []
   const typed = name.toLowerCase()
   if (sign === '/') {
-    return SLASH.filter((item) => item.name.slice(1).startsWith(typed)).map((item) => ({
-      value: `${item.name} `,
-      label: item.hint ? `${item.name} ${item.hint}` : item.name,
-      description: item.description,
-    }))
+    return slash
+      .filter((item) => item.name.slice(1).startsWith(typed))
+      .map((item) => ({
+        value: `${item.name} `,
+        label: item.hint ? `${item.name} ${item.hint}` : item.name,
+        description: item.description,
+      }))
   }
   const all = Array.isArray(commands) ? commands : []
   const starts = all.filter((item) => item.name.toLowerCase().startsWith(typed))

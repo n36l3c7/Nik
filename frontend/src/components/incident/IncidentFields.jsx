@@ -1,6 +1,5 @@
 import OsPicker from '../layout/OsPicker.jsx'
 import { SeverityTag } from '../ui/index.js'
-import { DEFAULT_OS } from '../../config/os.js'
 import { SEVERITIES, deriveIncidentName, hasIdentity } from '../../domain/incidentName.js'
 
 /*
@@ -9,7 +8,8 @@ import { SEVERITIES, deriveIncidentName, hasIdentity } from '../../domain/incide
  * "New incident" dialog and by the dialog of a dropped file.
  */
 
-export const EMPTY_INCIDENT_FIELDS = { ticketId: '', title: '', severity: '', host: '', username: '', os: DEFAULT_OS }
+// The operating system is not asked for: an incident may be a phishing case with no machine in it.
+export const EMPTY_INCIDENT_FIELDS = { ticketId: '', title: '', severity: '', host: '', username: '', os: '' }
 
 const INPUT =
   'w-full border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted ' +
@@ -89,9 +89,13 @@ export default function IncidentFields({ value, onChange, idPrefix = 'new', auto
         </Field>
       </div>
       <div>
-        <span className="mb-1.5 block font-mono text-xs text-fg-muted">Host operating system</span>
+        <span className="mb-1.5 block font-mono text-xs text-fg-muted">
+          Host operating system <span className="text-fg-subtle">· optional</span>
+        </span>
         <OsPicker value={value.os} onChange={(os) => onChange({ ...value, os })} idPrefix={`${idPrefix}-os`} />
-        <p className="mt-1.5 text-xs text-fg-muted">Drives the suggested artifact paths and the available shells.</p>
+        <p className="mt-1.5 text-xs text-fg-muted">
+          Drives the suggested artifact paths and the available shells. Left out, they are those of Windows.
+        </p>
       </div>
       <div className="flex flex-wrap items-center gap-2 border border-line bg-canvas px-3 py-2">
         <span className="font-mono text-[11px] text-fg-muted">name</span>

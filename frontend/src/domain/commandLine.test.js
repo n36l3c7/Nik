@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { argumentHints, commandOf, completions, lineKind, nameOf, recall, remember } from './commandLine.js'
+import { PLAYGROUND_FILTERS, PLAYGROUND_SLASH, isPlaygroundPath } from './playground.js'
 
 const COMMANDS = [
   {
@@ -98,4 +99,24 @@ test('the lines typed before are walked with the arrows', () => {
     ).length,
     50,
   )
+})
+
+test('the Playground has an address, its own chips, and only the / line that needs no incident', () => {
+  assert.equal(isPlaygroundPath('/playground'), true)
+  assert.equal(isPlaygroundPath('/playground/'), true)
+  assert.equal(isPlaygroundPath('/playground?x=1'), true)
+  assert.equal(isPlaygroundPath('/playgrounds'), false)
+  assert.equal(isPlaygroundPath('/incident/playground'), false)
+  assert.equal(isPlaygroundPath(null), false)
+  assert.deepEqual(
+    PLAYGROUND_FILTERS.map((filter) => filter.id),
+    ['all', 'notes', 'commands'],
+  )
+  // On an incident `/` offers three lines; in the Playground, the note alone.
+  assert.equal(completions([], '/').length, 3)
+  assert.deepEqual(
+    completions([], '/', 8, PLAYGROUND_SLASH).map((item) => item.value),
+    ['/note '],
+  )
+  assert.deepEqual(completions([], '/cl', 8, PLAYGROUND_SLASH), [])
 })

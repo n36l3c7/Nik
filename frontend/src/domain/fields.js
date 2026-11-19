@@ -7,6 +7,7 @@
  * tabs: [ids], hidden: [ids] }`. Every edit here returns a new layout and
  * leaves the one it was given as it was.
  */
+import { DETAIL_FIELDS, cleanGrid } from './layoutGrid.js'
 import { storedTimer } from './timers.js'
 
 export const UNCLASSIFIED = 'unclassified'
@@ -354,7 +355,11 @@ export function typePayload(type) {
       required: Boolean(item.required),
       requiredOnClose: Boolean(item.requiredOnClose),
     })),
-    layout: type.layout,
+    // A widget of a section that was taken away goes with it: the server would refuse it.
+    layout:
+      type.layout && Array.isArray(type.layout.grid)
+        ? { ...type.layout, grid: cleanGrid(type.layout.grid, type.layout) }
+        : type.layout,
     closeReasons: list(type.closeReasons)
       .map((reason) => String(reason).trim())
       .filter(Boolean),
@@ -365,8 +370,8 @@ export function typePayload(type) {
 // The incident page                                                           //
 // --------------------------------------------------------------------------- //
 
-/** The fields the Summary's own form already edits: a section does not show them twice. */
-export const IN_SUMMARY_FORM = ['name', 'ticket', 'host', 'username', 'os', 'severity', 'status', 'owner']
+/** The fields "Edit the incident" changes (the Summary's own form until 5.3): a section does not show them twice. */
+export const IN_SUMMARY_FORM = DETAIL_FIELDS
 
 /**
  * The tabs of an incident page, as its type's layout orders them: those the

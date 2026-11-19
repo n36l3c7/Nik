@@ -1,3 +1,4 @@
+import AutomationTab from '../automation/AutomationTab.jsx'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { ListChecks, Plus, RefreshCw, Workflow } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
@@ -348,6 +349,12 @@ export default function WorkPlanTab({ incident }) {
             changed()
           }}
         />
+      )}
+      {can('automation.run') && (
+        // What was the Automation tab: the runs of playbooks on this incident, and the button to run one.
+        <div className="border-t border-line pt-4">
+          <AutomationTab incident={incident} />
+        </div>
       )}
     </div>
   )

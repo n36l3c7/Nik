@@ -263,6 +263,29 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-53">Upgrading to 5.3</h4>
+      <p>
+        Release 5.3 needs nothing more than the two commands above. The migration
+        <code>0038_incident_page</code> runs at start and creates one table, for the Playground. After the update:
+      </p>
+      <ul>
+        <li>
+          <strong>the analysis tabs are inside the Evidence tab</strong>. Nothing was moved in the database: an incident
+          holds what it held, and a link to one of those tabs opens it inside Evidence;
+        </li>
+        <li>
+          <strong>the Summary of every type looks as it did</strong>, as a grid Nik makes from the sections of the type.
+          The layouts of 4.3 are read as they are; a type gets a grid of its own only when somebody arranges its page in
+          <em>Settings → Incidents → Types</em>;
+        </li>
+        <li>
+          <strong>the form of the incident moved</strong> to <em>Edit the incident</em>, in the details of the Summary;
+        </li>
+        <li>
+          an incident created before the update keeps the operating system it had. One that had none (made through the
+          API) showed <em>Windows</em> and now shows <em>not set</em>.
+        </li>
+      </ul>
       <h4 id="upgrading-to-52">Upgrading to 5.2</h4>
       <p>
         Release 5.2 needs nothing more than the two commands above. The migration <code>0037_branches</code> runs at
