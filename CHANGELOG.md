@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-11-19
+
 ### Added
 
 - **Script signatures can be edited.** The signatures the Scripts tab of URL
@@ -2493,7 +2495,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.6.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.7.0...HEAD
+[4.7.0]: https://github.com/n36l3c7/Nik/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/n36l3c7/Nik/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/n36l3c7/Nik/compare/v4.3.0...v4.4.0

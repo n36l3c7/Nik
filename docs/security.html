@@ -112,7 +112,10 @@
             </tr>
             <tr>
               <td><code>docview</code> (LibreOffice, pdfium)</td>
-              <td>previews of documents: macros disabled, links never updated</td>
+              <td>
+                previews of documents: macros disabled, links never updated; an Outlook PST made an mbox, on a volume of
+                its own that holds nothing else
+              </td>
               <td>internal only</td>
               <td>only the document it is sent</td>
             </tr>
@@ -181,6 +184,20 @@
         <li>
           <strong>Reports</strong>: every value is escaped, and the PDF renderer fetches nothing, so a logo or a value
           that points at a URL or a local file is not followed.
+        </li>
+        <li>
+          <strong>Patterns</strong>: a script signature is a regular expression someone with
+          <code>rules.manage</code> wrote, run on scripts an attacker wrote. One that takes too long on hostile texts is
+          refused when it is saved, and a match is stopped after half a second.
+        </li>
+        <li>
+          <strong>Disk</strong>: a PST is converted only when the worker's volume has room for it and what it becomes,
+          and an archive of artifacts holds a set amount of files at most, read and written in pieces on the disk of the
+          store.
+        </li>
+        <li>
+          <strong>Expiry</strong> deletes nothing by default: an artifact has a date only if someone who may change
+          artifacts set one, and the deletion is in the audit log like one made by hand.
         </li>
       </ul>
 

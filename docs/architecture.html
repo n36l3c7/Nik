@@ -300,6 +300,8 @@
 ├── dashboards.py                   # Dashboards: widgets checked and placed on the grid, sharing, the ones shipped
 ├── dashboard_report.py             # A dashboard as a document: each widget asked as the reader, written as a table
 ├── packs.py                        # Content packs: the file, the plan of an import, applying it, what Nik ships
+├── ioc_history.py                  # What a check of a whole list changed: a line a check, a row a changed verdict
+├── artifact_expiry.py              # The optional expiry of an artifact: setting it, the notice, the deletion
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
 ├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
 │                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
@@ -1339,6 +1341,48 @@
       <p>
         Migration <code>0033_dashboards_packs</code>: the tables <code>dashboards</code>, <code>packs</code>,
         <code>pack_items</code> and <code>pack_uploads</code>, and the column <code>runs.debug</code>.
+      </p>
+      <h3 id="housekeeping">Signatures, list history, expiry and large mailboxes (4.7)</h3>
+      <ul>
+        <li>
+          <strong>Script signatures</strong> (<code>script_signatures</code>, <code>jsanalysis.py</code>). The
+          signatures are rows, written from the ones in the code when the table is empty and followed by each release
+          for as long as nobody changed them (<code>updated_by</code> is <code>nik</code>). A scan reads them once
+          (<code>load_signatures</code>). Patterns are compiled with the <code>regex</code> module, which can stop a
+          match: half a second for a signature on a script, and a pattern that takes longer on Nik's own hostile texts
+          is refused when it is saved (<code>pattern_problem</code>).
+        </li>
+        <li>
+          <strong>The history of a list</strong> (<code>ioc_list_history</code>, <code>ioc_verdict_changes</code>,
+          <code>ioc_history.py</code>). A check started for a whole list carries the list and the verdicts as they were
+          (<code>ioc_checks.list_id</code>, <code>baseline</code>); when it ends, <code>finish</code> writes one line
+          and a row for each verdict that is not what it was. A check of a selection writes nothing.
+        </li>
+        <li>
+          <strong>Expiry</strong> (<code>artifacts.expires_at</code>, <code>artifact_expiry.py</code>). A date, in UTC,
+          that only a person sets. The automation worker calls <code>tick</code> with its other periodic work: it emits
+          <code>artifact.expiring</code> once, a week before, and on the day deletes through the function the delete
+          button uses, or puts the date off by a week when an incident that is not closed references the artifact.
+        </li>
+        <li>
+          <strong>Mailboxes in an export</strong> (<code>artifact_transfer.py</code>). The index goes out a message a
+          line (<code>records/&lt;id&gt;.messages.jsonl</code>), the file only with the files. An archive is put
+          together and taken apart on the disk of the store (<code>_transfer</code>), never in memory; an imported index
+          is accepted only if every message lies inside the file that came with it.
+        </li>
+        <li>
+          <strong>PST on disk, and progress</strong> (<code>workers/docview/server.py</code>,
+          <code>workers/previews.py</code>). The worker writes the PST and its mbox under <code>/work</code>, the volume
+          <code>pst-work</code>, after checking the room (<code>pst_refusal</code>), and clears the folder when it
+          starts and after each conversion. The API sends and receives in pieces and counts them; indexing counts the
+          bytes it has read. Both write <code>meta.preparing</code> every two seconds at most, which the page polls.
+        </li>
+      </ul>
+      <p>
+        Migration <code>0034_misc</code>: the tables <code>script_signatures</code>, <code>ioc_list_history</code> and
+        <code>ioc_verdict_changes</code>, and the columns <code>ioc_checks.list_id</code>,
+        <code>ioc_checks.baseline</code>, <code>artifacts.expires_at</code>, <code>artifacts.expiry_note</code> and
+        <code>artifacts.expiry_noticed</code>.
       </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>
