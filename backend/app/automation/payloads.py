@@ -25,21 +25,23 @@ LIST_MAX = 200
 # Above this many hits their values are not looked up one by one: the guard's scan decides.
 HITS_CLASSED = 20
 
-# The fields of an incident a trigger can compare and a playbook can read, and their classes.
-_INCIDENT = {
-    "id": "nik_id",
-    "url": "nik_id",
-    "status": "verdict",
-    "severity": "verdict",
-    "name": "incident_text",
-    "ticket": "incident_text",
-    "host": "private_value",
-    "username": "private_value",
-    "assignee": "private_value",
-    "os": "verdict",
-    "created": "nik_id",
-    "modified": "nik_id",
-}
+# The incident as an event carries it and as a node gives it (``trigger.incident``, the ``incident``
+# of "Get an incident"): each key with its type, what it is, and its class of data. ``incident_data``
+# builds exactly these keys, and the editor lists them under every value that is such an incident.
+_INCIDENT = (
+    ("id", "text", "Its id: what an argument called incident takes", "nik_id"),
+    ("url", "text", "Its address in Nik", "nik_id"),
+    ("name", "text", "Its name", "incident_text"),
+    ("ticket", "text", "The ticket id", "incident_text"),
+    ("status", "text", "open, in_progress or closed", "verdict"),
+    ("severity", "text", "low, medium, high or critical", "verdict"),
+    ("assignee", "text", "Who has it", "private_value"),
+    ("host", "text", "The host", "private_value"),
+    ("username", "text", "The user", "private_value"),
+    ("os", "text", "The operating system", "verdict"),
+    ("created", "text", "When it was created", "nik_id"),
+    ("modified", "text", "When it last changed", "nik_id"),
+)
 
 
 def incident_data(incident: Incident) -> dict[str, Any]:
@@ -48,19 +50,24 @@ def incident_data(incident: Incident) -> dict[str, Any]:
         "url": f"/incident/{incident.id}",
         "name": incident.name,
         "ticket": incident.ticket_id,
-        "host": incident.host,
-        "username": incident.username,
-        "os": incident.os,
         "status": incident.status or "open",
         "severity": incident.severity or "",
         "assignee": incident.assignee or "",
+        "host": incident.host,
+        "username": incident.username,
+        "os": incident.os,
         "created": incident.created_at,
         "modified": incident.updated_at,
     }
 
 
+def incident_shape() -> list[dict[str, str]]:
+    """What is inside an incident a playbook reads, for the editor: name, type, description."""
+    return [{"name": name, "type": kind, "description": said} for name, kind, said, _held in _INCIDENT]
+
+
 def incident_classes(prefix: str = "incident") -> dict[str, list[str]]:
-    return {f"{prefix}.{name}": [held] for name, held in _INCIDENT.items()}
+    return {f"{prefix}.{name}": [held] for name, _kind, _said, held in _INCIDENT}
 
 
 def incident_event(incident: Incident, changed: list[str] | None = None) -> tuple[dict, dict]:

@@ -10,8 +10,8 @@ import { useToast } from './ToastContext.jsx'
  *
  * A component opts in with
  *   onContextMenu={(event) => openMenu(event, { title, items })}
- * where items are { label, icon?, hint?, shortcut?, onSelect, disabled?, indent? } or
- * 'separator'. Everything else keeps the browser's own menu, and so do text
+ * where items are { label, icon?, hint?, shortcut?, onSelect, disabled?, title?, indent? } or
+ * 'separator' (`title` is said when the item is pointed at: why it is disabled). Everything else keeps the browser's own menu, and so do text
  * fields, selected text and Shift + right-click, so copy/paste still works.
  * Arrow keys move, Enter runs, Esc closes. An item whose onSelect returns
  * `{ message, undo }` (a flag removed with its comments) gets a toast with Undo.
@@ -122,6 +122,7 @@ function Menu({ menu, onClose, onResult }) {
             id={`nik-menu-item-${i}`}
             role="menuitem"
             aria-disabled={item.disabled || undefined}
+            title={item.title || undefined}
             onMouseEnter={() => !item.disabled && setCursor(i)}
             onClick={() => !item.disabled && run(item)}
             className={[

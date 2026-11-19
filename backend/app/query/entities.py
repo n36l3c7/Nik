@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy import false, func, select
 
+from .. import fields as registry
 from ..core.models import (
     Approval,
     Artifact,
@@ -22,6 +23,7 @@ from ..core.models import (
     Task,
 )
 from .fields import Context, Entity, FieldSpec, _bad, _boolean, text_matches
+from .incident_fields import spec_of
 from .parser import Value
 
 SEVERITIES = ("low", "medium", "high", "critical")
@@ -44,56 +46,94 @@ def _timer(name: str):
 _TYPE_NAME = select(IncidentType.name).where(IncidentType.id == Incident.type_id).scalar_subquery()
 _SOURCE_NAME = select(Connection.name).where(Connection.id == Incident.source_connection_id).scalar_subquery()
 
+# The fields Nik always had, by the names the language always gave them. Where the registry
+# calls one differently (close_reason, sla_breached, time_to_assign), that name is another name
+# of it here: a field is asked by the name it has in Settings.
+_ALWAYS = (
+    FieldSpec("id", "keyword", "The incident's uuid", aliases=("uuid",), column=Incident.id),
+    FieldSpec("number", "number", "The number it is called by: number:42", aliases=("no",), column=Incident.number),
+    FieldSpec("name", "text", "The name shown in the list", column=Incident.name),
+    FieldSpec("ticket", "text", "The ticket of your tracker", aliases=("ticketId",), column=Incident.ticket_id),
+    FieldSpec("host", "text", "The host the incident is about", column=Incident.host),
+    FieldSpec("username", "text", "The account the incident is about", aliases=("user",), column=Incident.username),
+    FieldSpec("os", "keyword", "The operating system", column=Incident.os),
+    FieldSpec("severity", "ordered", "low, medium, high or critical", column=Incident.severity, values=SEVERITIES),
+    FieldSpec("status", "keyword", "open, in_progress or closed", column=Incident.status, values=STATUSES),
+    FieldSpec(
+        "owner",
+        "keyword",
+        'Who has the incident; owner:"" is nobody',
+        aliases=("assignee",),
+        column=Incident.assignee,
+    ),
+    FieldSpec("hasMail", "bool", "It holds analysed e-mails", aliases=("mail",), column=Incident.has_mail),
+    FieldSpec("created", "date", "When it was created", aliases=("createdAt",), column=Incident.created_at),
+    FieldSpec("modified", "date", "When it last changed", aliases=("updated", "updatedAt"), column=Incident.updated_at),
+    FieldSpec("type", "keyword", "The name of its type of incident", column=_TYPE_NAME, nullable=True),
+    FieldSpec("occurred", "date", "When what it is about happened", column=Incident.occurred_at, nullable=True),
+    FieldSpec("closed", "date", "When it was closed", aliases=("closedAt",), column=Incident.closed_at, nullable=True),
+    FieldSpec("closeReason", "keyword", "Why it was closed", aliases=("close_reason",), column=Incident.close_reason),
+    FieldSpec("close_notes", "text", "What was written when it was closed", column=Incident.close_notes),
+    FieldSpec("source", "keyword", "The connection that fetched it", column=_SOURCE_NAME, nullable=True),
+    FieldSpec(
+        "source_instance",
+        "keyword",
+        "The id of the connection that fetched it",
+        column=Incident.source_connection_id,
+        nullable=True,
+    ),
+    FieldSpec("source_id", "text", "Its id where it was fetched from", column=Incident.source_id, nullable=True),
+    FieldSpec(
+        "slaBreached",
+        "bool",
+        "One of its SLA timers ran past its time",
+        aliases=("breached", "sla_breached"),
+        column=func.coalesce(Incident.fields["sla_breached"].as_boolean(), false()),
+    ),
+    FieldSpec(
+        "timeToAssign",
+        "number",
+        "Seconds its time-to-assign timer counted",
+        aliases=("time_to_assign",),
+        column=_timer("time_to_assign"),
+    ),
+    FieldSpec(
+        "timeToContain",
+        "number",
+        "Seconds its time-to-contain timer counted",
+        aliases=("time_to_contain",),
+        column=_timer("time_to_contain"),
+    ),
+    FieldSpec(
+        "timeToClose",
+        "number",
+        "Seconds its time-to-close timer counted",
+        aliases=("time_to_close",),
+        column=_timer("time_to_close"),
+    ),
+)
+
+
+def _kept_in_fields() -> tuple[FieldSpec, ...]:
+    """The system fields of the registry that are kept in ``incidents.fields`` and had no name
+    in the language: labels, phase, due, tlp, category… Each is what its type makes it."""
+    named = {name.lower() for spec in _ALWAYS for name in (spec.name, *spec.aliases)}
+    found = []
+    for name, system in registry.SYSTEM_FIELDS.items():
+        if name in named or system.where != "json":
+            continue
+        options = {"choices": list(system.options)} if system.options else {}
+        found.append(spec_of(name, system.type, label=system.label, description=system.description, options=options))
+    return tuple(found)
+
+
 INCIDENTS = Entity(
     name="incidents",
     label="Incidents",
     permission="read",
     model=Incident,
     text_fields=("name", "host", "username", "ticket"),
-    fields=(
-        FieldSpec("id", "keyword", "The incident's uuid", aliases=("uuid",), column=Incident.id),
-        FieldSpec("number", "number", "The number it is called by: number:42", aliases=("no",), column=Incident.number),
-        FieldSpec("name", "text", "The name shown in the list", column=Incident.name),
-        FieldSpec("ticket", "text", "The ticket of your tracker", aliases=("ticketId",), column=Incident.ticket_id),
-        FieldSpec("host", "text", "The host the incident is about", column=Incident.host),
-        FieldSpec("username", "text", "The account the incident is about", aliases=("user",), column=Incident.username),
-        FieldSpec("os", "keyword", "The operating system", column=Incident.os),
-        FieldSpec("severity", "ordered", "low, medium, high or critical", column=Incident.severity, values=SEVERITIES),
-        FieldSpec("status", "keyword", "open, in_progress or closed", column=Incident.status, values=STATUSES),
-        FieldSpec(
-            "owner",
-            "keyword",
-            'Who has the incident; owner:"" is nobody',
-            aliases=("assignee",),
-            column=Incident.assignee,
-        ),
-        FieldSpec("hasMail", "bool", "It holds analysed e-mails", aliases=("mail",), column=Incident.has_mail),
-        FieldSpec("created", "date", "When it was created", aliases=("createdAt",), column=Incident.created_at),
-        FieldSpec(
-            "modified", "date", "When it last changed", aliases=("updated", "updatedAt"), column=Incident.updated_at
-        ),
-        FieldSpec("type", "keyword", "The name of its type of incident", column=_TYPE_NAME, nullable=True),
-        FieldSpec("occurred", "date", "When what it is about happened", column=Incident.occurred_at, nullable=True),
-        FieldSpec(
-            "closed", "date", "When it was closed", aliases=("closedAt",), column=Incident.closed_at, nullable=True
-        ),
-        FieldSpec("closeReason", "keyword", "Why it was closed", column=Incident.close_reason),
-        FieldSpec("source", "keyword", "The connection that fetched it", column=_SOURCE_NAME, nullable=True),
-        FieldSpec(
-            "slaBreached",
-            "bool",
-            "One of its SLA timers ran past its time",
-            aliases=("breached",),
-            column=func.coalesce(Incident.fields["sla_breached"].as_boolean(), false()),
-        ),
-        FieldSpec(
-            "timeToAssign", "number", "Seconds its time-to-assign timer counted", column=_timer("time_to_assign")
-        ),
-        FieldSpec(
-            "timeToContain", "number", "Seconds its time-to-contain timer counted", column=_timer("time_to_contain")
-        ),
-        FieldSpec("timeToClose", "number", "Seconds its time-to-close timer counted", column=_timer("time_to_close")),
-    ),
+    fields=(*_ALWAYS, *_kept_in_fields()),
 )
 
 

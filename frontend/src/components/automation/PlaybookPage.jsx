@@ -12,14 +12,17 @@ import {
   MAX_NODES,
   portName,
   addNode,
+  arrange,
   connect,
   copyOf,
+  disconnect,
+  disconnectNodes,
   edgesFrom,
   historyOf,
-  moveNodes,
   nodeOf,
   normalise,
   paste,
+  pasteAt,
   record,
   redo,
   removeNodes,
@@ -28,6 +31,7 @@ import {
 } from '../../domain/automation/graph.js'
 import { tidy } from '../../domain/automation/layout.js'
 import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import AddNodeDialog from './AddNodeDialog.jsx'
 import BranchCompare from './BranchCompare.jsx'
 import BranchTree from './BranchTree.jsx'
 import Canvas from './Canvas.jsx'
@@ -37,6 +41,7 @@ import NodeLibrary from './NodeLibrary.jsx'
 import PlaybookSettingsTab from './PlaybookSettingsTab.jsx'
 import PlaybookVersionsTab from './PlaybookVersionsTab.jsx'
 import RunsPage from './RunsPage.jsx'
+import { useEditorMenu } from './useEditorMenu.js'
 import { Field, Seg, Switch, TextInput } from './fields.jsx'
 
 /*
@@ -52,6 +57,12 @@ import { Field, Seg, Switch, TextInput } from './fields.jsx'
  *
  * An account that may run playbooks but not build them sees the same canvas,
  * read-only.
+ *
+ * What is done to a node, to several, to a line and to the canvas itself is
+ * also in a right-click menu (6.4), beside the keys that do the same: Ctrl+C,
+ * X, V and D, Ctrl+A, Ctrl+Z, Delete. The menu and the keys call the same
+ * functions here. Where nothing can be changed the menu still opens, with what
+ * cannot be done greyed and why.
  *
  * A **branch** (5.2) is a copy of the graph somebody works on beside all that:
  * it has an address of its own, saves itself like the draft, and "Push to
@@ -196,6 +207,7 @@ export default function PlaybookPage({
   const [listOpen, setListOpen] = useState(false)
   const [savingVersion, setSavingVersion] = useState(false)
   const [debugging, setDebugging] = useState(false)
+  const [adding, setAdding] = useState(null) // { position }: "Add a node here…" asks which, for that place
   const [playbookNames, setPlaybookNames] = useState([])
 
   const savedGraph = useRef(null) // the graph the server has as the draft
@@ -337,8 +349,9 @@ export default function PlaybookPage({
   const tidyUp = useCallback(async () => {
     const current = latestGraph.current
     if (!current) return
-    const positions = await tidy(current)
-    if (latestGraph.current === current) apply(moveNodes(current, positions))
+    // Where each node goes, and the way each line takes round the nodes it does not join.
+    const layout = await tidy(current)
+    if (latestGraph.current === current) apply(arrange(current, layout))
   }, [apply])
 
   const remove = useCallback(
@@ -351,29 +364,94 @@ export default function PlaybookPage({
     [apply, select],
   )
 
-  // Undo, redo, copy and paste, when the keys are not typing into a field.
+  // ---- Copy, cut, paste, duplicate: by the keys and by the right-click menu -----------
+  const copy = useCallback((ids) => {
+    const copied = copyOf(latestGraph.current, ids)
+    if (copied.nodes.length) clipboard.current = copied
+    return copied
+  }, [])
+
+  /** Add what a paste made, unless the playbook would hold too many nodes. True when it was added. */
+  const addPasted = useCallback(
+    (result) => {
+      if (result.ids.length === 0) return false
+      if (result.graph.nodes.length > MAX_NODES) {
+        refuse(`A playbook has at most ${MAX_NODES} nodes`)
+        return false
+      }
+      apply(result.graph)
+      select(result.ids)
+      return true
+    },
+    [apply, refuse, select],
+  )
+
+  /** Paste what was copied: beside where it was, or with its first node at `position`. */
+  const pasteCopied = useCallback(
+    (position = null) => {
+      const current = latestGraph.current
+      if (!current || !canDraw || !clipboard.current?.nodes.length) return
+      if (position) {
+        addPasted(pasteAt(current, clipboard.current, position))
+        return
+      }
+      const result = paste(current, clipboard.current)
+      // Pasted again, the next copy lands beside this one and not on it.
+      if (addPasted(result)) clipboard.current = copyOf(result.graph, result.ids)
+    },
+    [addPasted, canDraw],
+  )
+
+  const duplicate = useCallback(
+    (ids) => {
+      const current = latestGraph.current
+      if (current && canDraw) addPasted(paste(current, copyOf(current, ids)))
+    },
+    [addPasted, canDraw],
+  )
+
+  const cut = useCallback(
+    (ids) => {
+      if (canDraw && copy(ids).nodes.length) remove(ids)
+    },
+    [canDraw, copy, remove],
+  )
+
+  const selectAll = useCallback(() => select((latestGraph.current?.nodes ?? []).map((node) => node.id)), [select])
+
+  // The keys, when they are not typing into a field. Copy and "select all" change nothing: they
+  // work on a canvas that is read-only too.
   useEffect(() => {
-    if (!canDraw || activeTab !== 'canvas' || comparing) return undefined
+    if (activeTab !== 'canvas' || comparing) return undefined
     const onKeyDown = (event) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || isTypingTarget(event.target)) return
       if (!wrapper.current?.contains(event.target) && event.target !== document.body) return
       const key = event.key.toLowerCase()
-      if (key === 'z' || key === 'y') {
+      const textChosen = Boolean(window.getSelection()?.toString())
+      if (key === 'a') {
+        event.preventDefault()
+        selectAll()
+      } else if (key === 'c' && selected.length && !textChosen) {
+        copy(selected)
+      } else if (!canDraw) {
+        return
+      } else if (key === 'z' || key === 'y') {
         event.preventDefault()
         setHistory((before) => (before ? (key === 'y' || event.shiftKey ? redo(before) : undo(before)) : before))
-      } else if (key === 'c' && selected.length && !window.getSelection()?.toString()) {
-        clipboard.current = copyOf(latestGraph.current, selected)
+      } else if (key === 'x' && selected.length && !textChosen) {
+        event.preventDefault()
+        cut(selected)
+      } else if (key === 'd' && selected.length) {
+        event.preventDefault()
+        duplicate(selected)
       } else if (key === 'v' && clipboard.current?.nodes.length) {
         event.preventDefault()
-        const result = paste(latestGraph.current, clipboard.current)
-        clipboard.current = copyOf(result.graph, result.ids)
-        apply(result.graph)
-        select(result.ids)
+        pasteCopied()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canDraw, activeTab, comparing, selected, apply, select])
+  }, [canDraw, activeTab, comparing, selected, copy, cut, duplicate, pasteCopied, selectAll])
 
   // ---- Versions, on and off ------------------------------------------------------
   const saveVersion = async () => {
@@ -545,6 +623,55 @@ export default function PlaybookPage({
       showToast({ message: failure.message })
     }
   }
+
+  // ---- The right-click menu of the canvas -------------------------------------------
+  const idsOf = (target) => (target.kind === 'node' ? [target.id] : target.ids)
+  const canDebug = can('automation.debug') && Boolean(branchId ? branch : detail?.version || detail?.draft)
+  const whyReadOnly = canDraw
+    ? null
+    : !canEdit
+      ? 'Your account runs playbooks and does not change them'
+      : `This is the branch of ${branch?.createdBy ?? 'somebody else'}: only they, or an admin, change it`
+  const onMenu = useEditorMenu(
+    () => ({
+      graph: latestGraph.current,
+      readOnly: whyReadOnly,
+      copied: clipboard.current?.nodes.length ?? 0,
+      canUndo: (history?.past.length ?? 0) > 0,
+      canRedo: (history?.future.length ?? 0) > 0,
+      canDebug,
+    }),
+    {
+      open: (target) => {
+        select([target.id])
+        // The first thing of the inspector that can be changed gets the focus.
+        requestAnimationFrame(() =>
+          wrapper.current?.querySelector('aside[aria-label="Inspector"] :is(input, textarea, select)')?.focus(),
+        )
+      },
+      debug: (target) => {
+        // The nodes selected on the canvas are where a debug run stops.
+        select(idsOf(target))
+        flush().then(
+          () => setDebugging(true),
+          (failure) => showToast({ message: failure.message }),
+        )
+      },
+      duplicate: (target) => duplicate(idsOf(target)),
+      copy: (target) => copy(idsOf(target)),
+      cut: (target) => cut(idsOf(target)),
+      disconnect: (target) => apply(disconnectNodes(latestGraph.current, idsOf(target))),
+      remove: (target) => remove(idsOf(target)),
+      removeLine: (target) => apply(disconnect(latestGraph.current, target.from, target.port, target.to)),
+      add: (target) => setAdding({ position: target.position }),
+      paste: (target) => pasteCopied(target.position),
+      selectAll,
+      fit: (_target, view) => view.fit(),
+      tidy: tidyUp,
+      undo: () => setHistory(undo),
+      redo: () => setHistory(redo),
+    },
+  )
 
   const draftChanged = useMemo(
     () => Boolean(detail && graph && (!detail.version || !sameGraph(graph, normalise(detail.graph)))),
@@ -912,6 +1039,7 @@ export default function PlaybookPage({
                   if (entry) addEntry(entry, position)
                 }}
                 onRefused={refuse}
+                onMenu={onMenu}
               />
             </div>
             {listOpen && (
@@ -928,6 +1056,7 @@ export default function PlaybookPage({
             graph={graph}
             nodeId={selectedId}
             catalog={catalog.nodes}
+            shapes={catalog.shapes}
             events={catalog.events}
             connections={catalog.instances ?? {}}
             playbooks={playbookNames}
@@ -965,6 +1094,12 @@ export default function PlaybookPage({
           <PlaybookSettingsTab playbook={detail} canEdit={canEdit} onChanged={adopt} onDeleted={onDeleted} />
         </div>
       )}
+      <AddNodeDialog
+        open={adding !== null}
+        entries={catalog.nodes}
+        onClose={() => setAdding(null)}
+        onAdd={(entry) => addEntry(entry, adding.position)}
+      />
       <Modal
         open={discarding}
         onClose={() => setDiscarding(false)}

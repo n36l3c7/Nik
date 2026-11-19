@@ -20,7 +20,7 @@
 # the fields to change as an object: {"u_site": "Milan", "state": "2"}.
 name: ServiceNow
 id: servicenow
-version: 3
+version: 4
 description: Incidents and their comments in ServiceNow.
 api_version: "Table API (/api/now/table), release Australia"
 verified: false
@@ -169,7 +169,7 @@ fetch:
     method: GET
     path: /api/now/table/incident
     query:
-      sysparm_query: "sys_created_on>{{ state.last_time }}^ORDERBYsys_created_on"
+      sysparm_query: "sys_created_on>={{ since.epoch | date('%Y-%m-%d %H:%M:%S') }}^ORDERBYsys_created_on"
   error: { message: "{{ response.error.message }}" }
   pagination:
     type: offset
@@ -180,10 +180,7 @@ fetch:
     max_pages: 2
   item_id: "{{ item.sys_id }}"
   occurred: "{{ item.opened_at }}"
-  first_state:
-    last_time: "{{ first.epoch | date('%Y-%m-%d %H:%M:%S') }}"
-  next_state:
-    last_time: "{{ items | last | get('sys_created_on') }}"
+  item_time: "{{ item.sys_created_on }}"
 
 schema:
   incoming:

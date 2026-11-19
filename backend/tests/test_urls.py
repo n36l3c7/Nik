@@ -194,7 +194,7 @@ def test_url_scan_errors(admin: TestClient, monkeypatch):
         admin.post("/api/artifacts/urls", headers=key, json={"url": "https://e.com", "incident": "x"}).status_code
         == 404
     )
-    read_only = make_key(admin, scopes=["read"])
+    read_only = make_key(admin, roles=["viewer"])
     assert admin.post("/api/artifacts/urls", headers=read_only, json={"url": "https://example.com"}).status_code == 403
 
     # Without the isolated browser the address is kept, with the reason it was not visited.

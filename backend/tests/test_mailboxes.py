@@ -278,7 +278,7 @@ def test_import_takes_five_hundred_at_a_time_and_needs_a_writer(admin: TestClien
 
     from tests.conftest import make_key
 
-    reader = make_key(admin, scopes=["read"])
+    reader = make_key(admin, roles=["viewer"])
     other = TestClient(admin.app)
     assert other.get(f"/api/mailboxes/{box['id']}", headers=reader).status_code == 200
     assert other.post(f"/api/mailboxes/{box['id']}/import", headers=reader, json={}).status_code == 403

@@ -2,7 +2,8 @@ id: greynoise
 name: GreyNoise
 vendor: GreyNoise
 category: Threat intelligence
-version: 1.0.0
+tags: [threat-intelligence, ip, scanning]
+version: 1.0.1
 description: >-
   What GreyNoise knows of an IP address (internet scanner, common business
   service, classification), and the rest of its API: GNQL searches, CVEs,

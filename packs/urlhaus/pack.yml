@@ -2,7 +2,8 @@ id: urlhaus
 name: URLhaus
 vendor: abuse.ch
 category: Threat intelligence
-version: 1.0.0
+tags: [threat-intelligence, url, domain, file]
+version: 1.0.1
 description: >-
   Malware distribution URLs tracked by URLhaus: a verdict for a URL, a host
   and a file hash, the recent additions, and searches by tag and malware family.

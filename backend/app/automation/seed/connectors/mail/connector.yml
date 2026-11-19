@@ -16,7 +16,7 @@
 # Belongs to no product, so it has no logo.
 name: Mail listener / sender
 id: mail
-version: 2
+version: 3
 description: A mailbox read over IMAP and messages sent over SMTP. Each new message can become an incident.
 api_version: "IMAP4rev1 (RFC 3501), SMTP (RFC 5321)"
 verified: false
@@ -78,7 +78,7 @@ commands:
       message_id: The Message-ID it was sent with
     sample: { sent: false, recipients: 1, message_id: "" }
   - name: reply
-    description: Answer a message of the mailbox, in its conversation.
+    description: Answer a message of the mailbox, in its conversation. The playbook must be allowed to send its subject.
     changes_outside: true
     idempotent: false
     arguments:
@@ -90,9 +90,12 @@ commands:
       sent: The server took the message
       recipients: How many recipients
       message_id: The Message-ID it was sent with
-    sample: { sent: false, recipients: 1, message_id: "" }
+      quoted_held: "What the data guard held back of the message answered: subject, or nothing"
+    sample: { sent: false, recipients: 1, message_id: "", quoted_held: [] }
   - name: forward
-    description: Send the text of a message of the mailbox to other recipients, with its attachments when asked.
+    description: >-
+      Send the text of a message of the mailbox to other recipients, with its attachments when asked.
+      The playbook must be allowed to send what is quoted: e-mail bodies, e-mail addresses, e-mail subjects.
     changes_outside: true
     idempotent: false
     arguments:
@@ -110,7 +113,8 @@ commands:
       message_id: The Message-ID it was sent with
       attachments: How many attachments it carried
       attachments_held: How many the data guard held back
-    sample: { sent: false, recipients: 1, message_id: "", attachments: 0, attachments_held: 0 }
+      quoted_held: "The parts of the message the data guard held back: subject, from, to, text"
+    sample: { sent: false, recipients: 1, message_id: "", attachments: 0, attachments_held: 0, quoted_held: [] }
   - name: search
     description: The messages of a folder that match, the newest first.
     arguments:

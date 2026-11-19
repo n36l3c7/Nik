@@ -640,10 +640,13 @@
         an incident, narrowed to what this incident shares with the others. In its settings choose the dashboard, the
         widget, and <strong>one field</strong>: the query of the widget gets that field with what the incident holds for
         it (<code>host:"WS-0231"</code>), so a chart of the incidents by day becomes the incidents on this host by day.
-        The field is one the <a href="#queries">query language</a> knows for what the chart counts. An incident that
-        holds nothing for the field shows no chart, and says so: a chart of everything would say nothing of this
-        incident. The dashboard is read as the person looking: choose one that is shared, or only you will see its
-        chart.
+        The field is any one the <a href="#queries">query language</a> knows for what the chart counts, and for
+        incidents that is every field of the registry, those made in Settings included: with a field
+        <code>sender_domain</code>, a chart of the incidents by day becomes the incidents from this sender's domain by
+        day. A field that holds several values (tags, several choices) narrows to the incidents that hold any of them.
+        An incident that holds nothing for the field shows no chart, and says so: a chart of everything would say
+        nothing of this incident. The dashboard is read as the person looking: choose one that is shared, or only you
+        will see its chart.
       </p>
       <p>
         <strong>Linked incidents</strong> lists the incidents that have to do with this one, ten at most: first those
@@ -1165,16 +1168,36 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         </li>
       </ul>
       <p>
-        The fields of incidents: <code>name</code>, <code>ticket</code>, <code>host</code>, <code>user</code>,
-        <code>os</code>, <code>severity</code>, <code>status</code>, <code>owner</code>, <code>hasMail</code>,
-        <code>created</code>, <code>modified</code>. Of artifacts: <code>kind</code>, <code>name</code>,
-        <code>hash</code>, <code>verdict</code>, <code>score</code>, <code>detail</code>, <code>size</code>,
-        <code>tags</code>, <code>created</code>, <code>createdBy</code>, <code>linked</code>, <code>incident</code>. Of
-        indicators: <code>type</code>, <code>value</code>, <code>verdict</code>, <code>score</code>,
-        <code>origin</code>, <code>incidents</code>, <code>tags</code>, <code>note</code>, <code>tlp</code>,
-        <code>list</code>, <code>expired</code>, <code>expires</code>, <code>firstSeen</code>, <code>checked</code>,
-        <code>allowlisted</code>, <code>analysed</code>, <code>addedBy</code>. The same language is in the
-        <a href="api.html#query">API</a>.
+        <strong>Every field of an incident can be asked, the ones you made too.</strong> A field made in
+        <em>Settings → All fields</em> is asked by its name there, and means what its type means on a field Nik always
+        had: a text contains the value, a choice or a user is the value, a number and a date are compared, tags hold the
+        value, a yes / no is <code>true</code> or <code>false</code>. The box offers it as you type, with its label
+        beside it and its choices after the colon; the chips' <em>Field…</em>, the builder and the widgets of a
+        dashboard (their query, what they are grouped by, the number they measure) list it with the others.
+      </p>
+      <pre><code>customer:acme amount:&gt;=10000 !region:EMEA       a text, a number, a choice made in Settings
+sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a date from the 1st on</code></pre>
+      <p>
+        A table and a JSON field are searched as text: <code>contacts:rossi</code> finds the word anywhere in it, and
+        that is all that can be asked of them. An indicator field is asked by its value, a timer by the seconds it
+        counted. A name the language already uses keeps its meaning (<code>number</code> is the number of the incident,
+        <code>user</code> its account, <code>source</code> the connection that fetched it): a field of yours with such a
+        name is written <code>field.number</code>, which works for every field you made. A query, a saved filter or a
+        widget that names a field deleted since says so, by the name of the field.
+      </p>
+      <p>
+        The fields of incidents Nik always had: <code>name</code>, <code>ticket</code>, <code>host</code>,
+        <code>user</code>, <code>os</code>, <code>severity</code>, <code>status</code>, <code>owner</code>,
+        <code>type</code>, <code>hasMail</code>, <code>created</code>, <code>modified</code>, <code>occurred</code>,
+        <code>closed</code>, and those of the registry under the names Settings shows (<code>labels</code>,
+        <code>phase</code>, <code>due</code>, <code>tlp</code>, <code>category</code>, <code>close_reason</code>…). Of
+        artifacts: <code>kind</code>, <code>name</code>, <code>hash</code>, <code>verdict</code>, <code>score</code>,
+        <code>detail</code>, <code>size</code>, <code>tags</code>, <code>created</code>, <code>createdBy</code>,
+        <code>linked</code>, <code>incident</code>. Of indicators: <code>type</code>, <code>value</code>,
+        <code>verdict</code>, <code>score</code>, <code>origin</code>, <code>incidents</code>, <code>tags</code>,
+        <code>note</code>, <code>tlp</code>, <code>list</code>, <code>expired</code>, <code>expires</code>,
+        <code>firstSeen</code>, <code>checked</code>, <code>allowlisted</code>, <code>analysed</code>,
+        <code>addedBy</code>. The same language is in the <a href="api.html#query">API</a>.
       </p>
 
       <h2 id="search">Search</h2>
@@ -1423,7 +1446,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         <li id="notifications">
           <strong>The bell</strong> on the rail is what you were told: a task given to you or overdue, an approval that
           waits, a colleague who wrote <code>@you</code> in a War Room, a timer of an incident you own past its time.
-          Opening one goes where it points.
+          Opening one goes where it points. An administrator is also told when a worker of the server stops answering (the
+          automation worker, or one of the analysis workers), and again when it is back, with how long it was down:
+          once each, never in between.
         </li>
         <li>
           <strong>Commands.</strong> The same line runs a command when it starts with <code>!</code>:
@@ -1566,23 +1591,6 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               </td>
             </tr>
             <tr>
-              <td>Classifiers and mappers <em>(who manages connectors)</em></td>
-              <td>
-                How what a connector's product calls things becomes Nik's fields and context, and back: a table of rules
-                for each connector, tried on a sample before it is saved; and for an instance that brings alerts in,
-                which type of incident each becomes (<a href="automation.html#mappers">Classifiers and mappers</a>).
-              </td>
-            </tr>
-            <tr>
-              <td>Fetch status <em>(who manages connectors)</em></td>
-              <td>
-                The instances that bring alerts in as incidents: on or off, fetching, failing or paused and why, what
-                the last cycle found, and what became of each item fetched lately (<a href="automation.html#fetching"
-                  >Fetching</a
-                >).
-              </td>
-            </tr>
-            <tr>
               <td>Content packs <em>(admins)</em></td>
               <td>
                 What Nik is taught, carried from one Nik to another as one file: the packs that are installed with what
@@ -1633,7 +1641,15 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>
                 The products playbooks can talk to, each a file, with their instances under them: an instance is an
                 address and credentials, turned on and off, with <em>Test</em>. Credentials are stored encrypted and
-                never shown again. See <a href="automation.html#connectors">Automation → Connectors</a>.
+                never shown again. The form of an instance has a tab for each of its parts and one <em>Save</em>: its
+                connection, its keys and, for a product that brings alerts in, <em>Fetch</em> (whether it fetches, how
+                often, how far back the first time, the look-back, how it goes, <em>Reset last run</em>, what it
+                fetched), <em>Classifier</em> (which type of incident an alert becomes) and <em>Mappers</em> (how the
+                product's names become Nik's fields, and back). <em>Fetch status</em> and
+                <em>Classifiers and mappers</em> were pages of their own until 6.4. See
+                <a href="automation.html#connectors">Automation → Connectors</a>,
+                <a href="automation.html#fetch-status">Fetching</a> and
+                <a href="automation.html#mappers">Classifiers and mappers</a>.
               </td>
             </tr>
             <tr>
@@ -1667,6 +1683,16 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 The ten largest objects are listed and open their page, where they can be deleted. A warning shows when
                 less than a tenth of the disk is free. <em>With a date</em> lists the artifacts that will be deleted by
                 themselves, the soonest first, and says how many have no date and how much they take.
+              </td>
+            </tr>
+            <tr>
+              <td>Workers <em>(admins)</em></td>
+              <td>
+                The processes Nik hands work to: the automation worker (playbooks, fetching, timers) and the analysis
+                workers (analyzer, capa, documents, isolated browser, packet capture, script sandbox). Each says
+                whether it answers, is not answering and for how long, or is not configured on this server. The server
+                checks them every half minute; when one has not answered for two minutes every administrator gets a
+                notification, and one more when it answers again.
               </td>
             </tr>
             <tr>

@@ -155,8 +155,10 @@ FETCHING = [connector for _text, connector in SHIPPED if connector.fetch is not 
 
 @pytest.mark.parametrize("connector", FETCHING, ids=[connector.id for connector in FETCHING])
 def test_a_shipped_fetch_asks_what_the_documentation_says_and_its_mapper_reads_the_answer(connector, client):
-    """``fetch.json`` beside the commands: the state a cycle starts from, the requests it must send,
-    the ids and the next state it must give, and what the shipped mapper makes of the first item."""
+    """``fetch.json`` beside the commands: the moment a cycle asks from (``since``) or the state it
+    starts from, the requests it must send, the ids, how far the cycle reached or the next state it
+    must give, and what the shipped mapper makes of the first item."""
+    from app import fetch as fetching
     from app import fields as registry
     from app import mapping
     from app.automation import expressions as ex
@@ -172,12 +174,18 @@ def test_a_shipped_fetch_asks_what_the_documentation_says_and_its_mapper_reads_t
         connector, config, connection["secrets"], egress.Policy(mode="listed", hosts=frozenset({host})), send=wire
     )
     spec = connector.fetch
-    state = fixture["state"]
-    found = runtime.fetch(
-        spec, state, {"iso": "", "epoch": 0, "epoch_ms": 0}, {"iso": "", "epoch": 0, "epoch_ms": 0}, 200
-    )
+    state = fixture.get("state", {})
+    nothing = {"iso": "", "epoch": 0, "epoch_ms": 0}
+    # A fetch by time is given the moment to ask from, and keeps no state of its own.
+    assert spec.by_time == ("since" in fixture)
+    since = fetching._moment(fixture["since"]["epoch"]) if spec.by_time else None
+    found = runtime.fetch(spec, state, nothing, nothing, 200, since=since)
     assert wire.exchanges == [], "the fetch sent fewer requests than the documentation says"
     items = found["items"]
+    if spec.by_time:
+        # The time of each item is read, so that the next cycle asks from the newest.
+        times = [fetching._time_of(spec, item, state) for item in items]
+        assert None not in times and fetching._moment(max(times))["iso"] == fixture["reached"]
 
     def of_item(template: str, item) -> str:
         return str(ex.render_text(template, ex.Scope(values={"item": item, "config": config, "state": state})).data)
@@ -189,12 +197,14 @@ def test_a_shipped_fetch_asks_what_the_documentation_says_and_its_mapper_reads_t
     now = {"iso": "", "epoch": at, "epoch_ms": at * 1000}
     held = {"config": config, "state": state, "response": found["response"], "items": items, "now": now}
     scope = ex.Scope(values=held)
-    assert {key: ex.render(value, scope).data for key, value in spec.next_state.items()} == fixture["next_state"]
-    # Before the first cycle: the state its request needs, from the moment first_fetch ago.
-    start = fixture["first_state_for"]
-    moment = {"iso": start.get("iso", ""), "epoch": start["epoch"], "epoch_ms": start["epoch"] * 1000}
-    first = ex.render(spec.first_state, ex.Scope(values={"config": config, "first": moment, "now": moment})).data
-    assert first == start["state"]
+    next_state = {key: ex.render(value, scope).data for key, value in spec.next_state.items()}
+    assert next_state == fixture.get("next_state", {})
+    if spec.first_state:
+        # Before the first cycle: the state its request needs, from the moment first_fetch ago.
+        start = fixture["first_state_for"]
+        moment = {"iso": start.get("iso", ""), "epoch": start["epoch"], "epoch_ms": start["epoch"] * 1000}
+        first = ex.render(spec.first_state, ex.Scope(values={"config": config, "first": moment, "now": moment})).data
+        assert first == start["state"]
 
     shipped = vendor.mappers()[connector.id]
     with SessionLocal() as db:

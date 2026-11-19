@@ -15,8 +15,9 @@ Those named come first, then those that share the most indicators: ten at most.
 names a widget of a dashboard and ONE field; the query of that widget gets
 ``<field>:"<what this incident holds>"`` added, so the chart counts what this
 incident shares with the others. The field is one the query language knows
-for the entity the chart counts (``query.entities``); the dashboard is read as
-the person looking, so one that is not shared with them is not found.
+for the entity the chart counts (``query.entities``), a custom field of the
+registry included; the dashboard is read as the person looking, so one that
+is not shared with them is not found.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from . import fields as registry
 from . import query as ql
 from .core.models import Connection, Incident, IncidentType, IocEntry
 from .iocs import Allowlist
+from .query.incident_fields import PREFIX as FIELD_PREFIX
 
 LINKED_MAX = 10
 SHOWN_INDICATORS = 3
@@ -191,7 +193,18 @@ def value_of(db: OrmSession, incident: Incident, name: str) -> Any:
         "updatedat": "modified",
         "updated": "modified",
     }
-    return held.get(aliases.get(lowered, name), held.get(lowered))
+    # A custom field whose name the language had taken is written field.<name> there.
+    plain = name[len(FIELD_PREFIX) :] if lowered.startswith(FIELD_PREFIX) else name
+    value = held.get(aliases.get(lowered, plain), held.get(lowered))
+    if isinstance(value, dict):
+        # An indicator is asked by its value; a timer or a JSON value is nothing a chart is narrowed by.
+        value = value.get("value") if isinstance(value.get("value"), str) else None
+    if isinstance(value, list):
+        # A table is rows, not values: only what a tags field holds is asked one by one.
+        value = [item for item in value if isinstance(item, (str, int, float)) and not isinstance(item, bool)]
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return value
 
 
 def chart(db: OrmSession, incident: Incident, dashboard_id: str, widget_id: str, field: str, caller: Any) -> dict:
@@ -211,7 +224,7 @@ def chart(db: OrmSession, incident: Incident, dashboard_id: str, widget_id: str,
     if widget.get("type") not in dashboards.ASKING:
         raise ChartError("This widget asks no query: there is nothing to narrow to the incident")
     try:
-        entity = ql.entity_of(str(widget.get("entity") or ""))
+        entity = ql.entity_of(str(widget.get("entity") or ""), db)
     except ql.QueryError as error:
         raise ChartError(error.message) from None
     spec = entity.field(field) if field else None

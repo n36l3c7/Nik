@@ -2,7 +2,8 @@ id: checkpoint-management
 name: Check Point Firewall
 vendor: Check Point
 category: Network security
-version: 1.0.0
+tags: [firewall]
+version: 1.0.1
 description: >-
   Hosts, groups and domain objects on a Check Point Security Management server, published and installed.
 author: Nik

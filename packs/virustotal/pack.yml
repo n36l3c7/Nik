@@ -2,7 +2,8 @@ id: virustotal
 name: VirusTotal
 vendor: Google
 category: Threat intelligence
-version: 1.0.0
+tags: [threat-intelligence, file, url, domain, ip, sandbox]
+version: 1.0.1
 description: >-
   What VirusTotal knows of a file, a URL, a domain or an IP address, as a verdict and as commands: reports,
   relationships, comments, votes, sandbox behaviour and search, with the premium services (Intelligence,

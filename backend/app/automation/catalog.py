@@ -198,6 +198,47 @@ def entries(db: OrmSession) -> list[dict[str, Any]]:
     return [*FLOW, *found, *script_entries(db)]
 
 
+def shapes(db: OrmSession) -> dict[str, Any]:
+    """What is inside the values an expression reads, said once for the editor to offer.
+
+    ``incident``  the incident an event carries and a node gives (``trigger.incident.…``,
+                  ``get_incident.incident.…``): the keys ``payloads.incident_data`` builds.
+    ``fields``    the fields of the registry that are of incidents, system and custom, as
+                  ``{{ incident.… }}`` reads them from the incident of the run. Read from the
+                  database, so a field made in Settings is offered at once. A field is there
+                  when it has a value: an empty one leads nowhere.
+    ``context``   the entities of the common schema, each with its keys.
+
+    An output of an action names one of the first two with ``shape`` (see actions.py).
+    """
+    from .. import context as incident_context
+    from .. import fields as registry
+    from . import payloads
+
+    found = []
+    for name, row in registry.registry(db).items():
+        if row.applies_to != "incident":
+            continue
+        said = row.label if not row.description else f"{row.label}. {row.description}"
+        found.append(
+            {"name": name, "type": row.type, "description": said if row.system else f"{said} (a field of yours)"}
+        )
+        # What is inside the two types that are not one plain value.
+        if row.type == "indicator":
+            found.append({"name": f"{name}.type", "type": "text", "description": f"The type of {row.label}"})
+            found.append({"name": f"{name}.value", "type": "text", "description": f"The value of {row.label}"})
+        elif row.type == "list":
+            for column in (row.options or {}).get("columns") or []:
+                where = f"{name}[0].{column['name']}"
+                said = f"{column.get('label') or column['name']}, in the first row of {row.label}"
+                found.append({"name": where, "type": column.get("type") or "text", "description": said})
+    return {
+        "incident": payloads.incident_shape(),
+        "fields": found,
+        "context": {entity: list(keys) for entity, (keys, _told_apart) in incident_context.SCHEMA.items()},
+    }
+
+
 def updates(db: OrmSession, shape: dict) -> list[dict[str, Any]]:
     """The nodes of a graph whose script has a newer version than the one they stay on."""
     current = {entry["script"]: entry["version"] for entry in script_entries(db)}

@@ -2,7 +2,8 @@ id: rdap
 name: RDAP (registration data)
 vendor: IETF
 category: Threat intelligence
-version: 1.0.0
+tags: [registration, domain, ip]
+version: 1.0.1
 description: >-
   Who registered a domain and when, who holds an IP network or an AS number:
   registration data read from the registries over RDAP, without a key.

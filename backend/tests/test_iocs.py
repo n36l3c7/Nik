@@ -100,7 +100,7 @@ def test_allowlist():
 
 
 def test_index_lookup_shared_and_export(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     a = incident_doc("ioc-a", browser=BROWSER, commands=COMMANDS)
     b = incident_doc("ioc-b", eventlogs=EVENTLOGS)
     assert admin.post("/api/incidents", headers=key, json=a).status_code == 201
@@ -178,7 +178,7 @@ def test_backfill_indexes_existing_incidents(admin: TestClient):
     from app.core.models import IocEntry
     from app.iocs import backfill
 
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     admin.post("/api/incidents", headers=key, json=incident_doc("old", commands=COMMANDS))
     with SessionLocal() as db:
         db.execute(delete(IocEntry))

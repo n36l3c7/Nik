@@ -23,7 +23,10 @@ import { DurationInput, Field, NumberInput, SectionTitle, Seg, Switch, TextInput
  *            every playbook (Settings → Automation), or any host;
  *   Data     the classes of data its nodes may send. Hashes, public
  *            indicators, verdicts and Nik's own ids always leave; the others
- *            are closed until opened here, and some can never be opened.
+ *            are closed until opened here. E-mail bodies, attachments and
+ *            samples are whole messages and whole files: they are listed
+ *            apart, under a warning of their own, for the playbook that must
+ *            forward them. TLP:RED data is not offered at all.
  *
  * Opening either beyond the default asks twice (DataGuardDialog) and is
  * written in the audit log. Limits and the name are for who builds playbooks.
@@ -32,6 +35,10 @@ import { DurationInput, Field, NumberInput, SectionTitle, Seg, Switch, TextInput
  * random token in a URL. Nik shows it once, when it is created, and keeps
  * only its hash: an address that was lost is replaced, not read again.
  */
+
+// Said over the classes that are whole messages and whole files, and again before one is opened.
+const WHOLE_WARNING =
+  'What is opened here leaves Nik whole, as it is: the text of an e-mail, an attachment as it was sent, a sample as it is held. A sample is live malware.'
 
 function Box({ title, children, aside = null }) {
   return (
@@ -259,6 +266,40 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
 
   if (!limits) return null
   const opened = new Set(playbook.dataAllow)
+  const known = classes?.classes ?? []
+  // E-mail bodies, attachments and samples: offered apart from the classes that are words and names.
+  const whole = known.filter((item) => item.sensitive && item.apart)
+
+  /** A class an admin opens and closes: what it is, whether it may leave, the button. */
+  const classRow = (item) => (
+    <li key={item.id} className="flex items-center justify-between gap-3 px-2 py-1.5">
+      <span className="min-w-0">
+        {item.label}
+        <span className="block text-xs text-fg-muted">{item.warning}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        {opened.has(item.id) ? <Badge color="amber">may leave</Badge> : <Badge>closed</Badge>}
+        {isAdmin && (
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={busy}
+            aria-label={opened.has(item.id) ? `Close: ${item.label}` : `Open: ${item.label}`}
+            onClick={() =>
+              opened.has(item.id)
+                ? run(
+                    () => api.put(`${base}/data-allow`, { class: item.id, allow: false }),
+                    `${item.label}: closed again.`,
+                  )
+                : setGuard({ kind: 'data', item })
+            }
+          >
+            {opened.has(item.id) ? 'Close' : 'Open…'}
+          </Button>
+        )}
+      </span>
+    </li>
+  )
 
   return (
     <div className="grid max-w-6xl gap-4 lg:grid-cols-2">
@@ -471,47 +512,33 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
             <dt className="mb-1 text-xs text-fg-muted">Closed unless opened here</dt>
             <dd>
               <ul className="flex flex-col divide-y divide-line-soft border border-line-soft">
-                {(classes?.classes ?? [])
-                  .filter((item) => !item.sensitive)
-                  .map((item) => (
-                    <li key={item.id} className="flex items-center justify-between gap-3 px-2 py-1.5">
-                      <span className="min-w-0">
-                        {item.label}
-                        <span className="block text-xs text-fg-muted">{item.warning}</span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        {opened.has(item.id) ? <Badge color="amber">may leave</Badge> : <Badge>closed</Badge>}
-                        {isAdmin && (
-                          <Button
-                            variant="secondary"
-                            size="xs"
-                            disabled={busy}
-                            aria-label={opened.has(item.id) ? `Close: ${item.label}` : `Open: ${item.label}`}
-                            onClick={() =>
-                              opened.has(item.id)
-                                ? run(
-                                    () => api.put(`${base}/data-allow`, { class: item.id, allow: false }),
-                                    `${item.label}: closed again.`,
-                                  )
-                                : setGuard({ kind: 'data', item })
-                            }
-                          >
-                            {opened.has(item.id) ? 'Close' : 'Open…'}
-                          </Button>
-                        )}
-                      </span>
-                    </li>
-                  ))}
+                {known.filter((item) => !item.sensitive).map(classRow)}
               </ul>
             </dd>
           </div>
+          {whole.length > 0 && (
+            <div>
+              <dt className="mb-1 text-xs text-fg-muted">
+                Whole messages and files, closed unless an admin opens them here
+              </dt>
+              <dd className="flex flex-col gap-2">
+                <p className="border border-high-line bg-high-soft px-3 py-2 text-sm text-high-fg">{WHOLE_WARNING}</p>
+                <ul
+                  aria-label="Whole messages and files that may leave"
+                  className="flex flex-col divide-y divide-line-soft border border-line-soft"
+                >
+                  {whole.map(classRow)}
+                </ul>
+              </dd>
+            </div>
+          )}
           <div>
             <dt className="mb-1 text-xs text-fg-muted">Never, in any playbook</dt>
             <dd className="text-fg">
-              {(classes?.classes ?? [])
-                .filter((item) => item.sensitive)
-                .map((item) => item.label.toLowerCase())
-                .join(', ') || 'Samples, attachments, e-mail bodies, TLP:RED data'}
+              {known
+                .filter((item) => item.sensitive && !item.apart)
+                .map((item) => item.label)
+                .join(', ') || 'TLP:RED data'}
               .
             </dd>
           </div>
@@ -530,7 +557,9 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
         }
         warning={
           guard?.kind === 'data'
-            ? guard.item.warning
+            ? guard.item.apart
+              ? `${guard.item.warning} ${WHOLE_WARNING}`
+              : guard.item.warning
             : 'Its HTTP and e-mail nodes will be able to connect to any address on the internet, not only to the hosts you listed.'
         }
         destinations={
@@ -542,7 +571,9 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
         }
         acknowledge={
           guard?.kind === 'data'
-            ? 'These systems are ours, or may hold this data.'
+            ? guard.item.apart
+              ? 'These systems are ours, or are made to receive this.'
+              : 'These systems are ours, or may hold this data.'
             : 'I know which hosts this playbook contacts, and listing them is not possible.'
         }
         confirmLabel={guard?.kind === 'data' ? `Allow ${guard.item.label.toLowerCase()}` : 'Allow any host'}

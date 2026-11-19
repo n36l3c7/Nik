@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Braces } from 'lucide-react'
-import { problemOf } from '../../domain/automation/expressions.js'
+import { complete, completions, problemOf, typedAt } from '../../domain/automation/expressions.js'
 import { useLayer } from '../../lib/layers.js'
 import { INPUT } from './fields.jsx'
 
@@ -13,10 +13,56 @@ import { INPUT } from './fields.jsx'
  * caret. What is typed is checked as it is typed: an expression that cannot
  * be read says why under the field. The server checks again, and decides.
  *
- * With `braces`, typing "{{" opens the same list, and the choice completes
- * what was typed (the settings of a script button, where a field of the
- * incident is the usual thing to write).
+ * Typing "{{" offers the same values under the field, and what is typed after
+ * the braces narrows them: "{{ incident." lists the fields of the incident,
+ * "{{ create_incident.incident." what is inside the incident that node gave.
+ * The arrows move in the list, Enter or Tab takes one, Escape closes it; the
+ * focus never leaves the field.
+ *
+ * With `braces`, typing "{{" opens "Pick a value" itself instead, and the
+ * choice completes what was typed (the settings of a script button, where a
+ * field of the incident is the usual thing to write).
  */
+
+/** What completes the path being typed: a list under the field, moved in from the field itself. */
+function Completion({ id, items, active, onPick, onActive }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    ref.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+  return (
+    <ul
+      ref={ref}
+      id={id}
+      role="listbox"
+      aria-label="Values that complete what is typed"
+      className="absolute left-0 right-8 top-full z-30 mt-1 max-h-64 overflow-y-auto border border-line bg-raised py-1 shadow-lg shadow-sunken/60"
+    >
+      {items.map((item, index) => (
+        <li
+          key={item.path}
+          id={`${id}-${index}`}
+          role="option"
+          aria-selected={index === active}
+          title={item.description || undefined}
+          // The pointer goes down on the list without taking the focus from the field.
+          onMouseDown={(event) => {
+            event.preventDefault()
+            onPick(item.path)
+          }}
+          onMouseEnter={() => onActive(index)}
+          className={[
+            'flex cursor-default items-baseline justify-between gap-2 px-3 py-1',
+            index === active ? 'bg-accent-soft' : '',
+          ].join(' ')}
+        >
+          <span className="min-w-0 break-all font-mono text-xs text-info">{item.path}</span>
+          <span className="shrink-0 font-mono text-[10px] text-fg-subtle">{item.type}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 function ValuePicker({ tree, onPick, onClose }) {
   const ref = useRef(null)
@@ -88,7 +134,7 @@ function ValuePicker({ tree, onPick, onClose }) {
  *   placeholder?: string,
  *   disabled?: boolean,
  *   label?: string,        // the accessible name, when no <label> points at `id`
- *   braces?: boolean,      // typing "{{" opens "Pick a value"
+ *   braces?: boolean,      // typing "{{" opens "Pick a value", and not the list under the field
  * }} props
  */
 export default function ExpressionInput({
@@ -103,7 +149,10 @@ export default function ExpressionInput({
   braces = false,
 }) {
   const inputRef = useRef(null)
+  const listId = useId()
   const [open, setOpen] = useState(false)
+  // The path being typed between braces, while its completions are offered: { typed, active }.
+  const [typing, setTyping] = useState(null)
   const text = typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value)
   const problem = problemOf(text)
 
@@ -124,6 +173,19 @@ export default function ExpressionInput({
     })
   }
 
+  const offered = useMemo(() => (typing ? completions(tree, typing.typed) : []), [tree, typing])
+  const completing = offered.length > 0
+  const take = (path) => {
+    const input = inputRef.current
+    const done = complete(text, input?.selectionStart ?? text.length, path)
+    onChange(done.text)
+    setTyping(null)
+    requestAnimationFrame(() => {
+      input?.focus()
+      input?.setSelectionRange(done.caret, done.caret)
+    })
+  }
+
   const shared = {
     id,
     ref: inputRef,
@@ -132,6 +194,9 @@ export default function ExpressionInput({
     placeholder,
     'aria-label': label,
     'aria-invalid': problem ? true : undefined,
+    'aria-autocomplete': !braces && tree.length > 0 ? 'list' : undefined,
+    'aria-controls': completing ? listId : undefined,
+    'aria-activedescendant': completing ? `${listId}-${typing.active}` : undefined,
     autoComplete: 'off',
     spellCheck: false,
     onChange: (event) => {
@@ -139,8 +204,28 @@ export default function ExpressionInput({
       const caret = event.target.selectionStart ?? next.length
       // Two braces typed where there were none: what can be read is offered.
       if (braces && tree.length > 0 && next.length > text.length && next.slice(0, caret).endsWith('{{')) setOpen(true)
+      if (!braces && tree.length > 0) {
+        const at = typedAt(next, caret)
+        setTyping(at ? { typed: at.typed, active: 0 } : null)
+      }
       onChange(next)
     },
+    onKeyDown: (event) => {
+      if (!completing) return
+      const move = { ArrowDown: 1, ArrowUp: -1 }[event.key]
+      if (move) {
+        event.preventDefault()
+        setTyping({ ...typing, active: (typing.active + move + offered.length) % offered.length })
+      } else if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault()
+        take(offered[typing.active].path)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setTyping(null)
+      }
+    },
+    onBlur: () => setTyping(null),
     className: `${INPUT} ${problem ? 'border-high-line' : ''}`,
   }
 
@@ -162,6 +247,15 @@ export default function ExpressionInput({
           </button>
         )}
         {open && <ValuePicker tree={tree} onPick={pick} onClose={() => setOpen(false)} />}
+        {completing && !open && (
+          <Completion
+            id={listId}
+            items={offered}
+            active={typing.active}
+            onPick={take}
+            onActive={(active) => setTyping((before) => (before ? { ...before, active } : before))}
+          />
+        )}
       </div>
       {problem && (
         <p role="alert" className="text-xs text-high-fg">

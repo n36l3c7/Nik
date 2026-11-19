@@ -3,7 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { CHIPS, addCondition, applyChip, chipChoices, chipCondition, otherFields } from '../../domain/incidentChips.js'
 import { emptyRow, isComplete, opLabel, opsFor } from '../../domain/query/builder.js'
-import { fieldOf } from '../../domain/query/complete.js'
+import { fieldCaption, fieldOf } from '../../domain/query/complete.js'
 import { Button, Modal } from '../ui/index.js'
 
 /*
@@ -93,11 +93,11 @@ function ConditionDialog({ schema, onAdd, onClose }) {
               const allowed = opsFor(next?.kind ?? 'text')
               setRow({ ...emptyRow(event.target.value), op: allowed.some((op) => op.id === row.op) ? row.op : '=' })
             }}
-            className={`${CONTROL} max-w-[12rem]`}
+            className={`${CONTROL} max-w-[16rem]`}
           >
             {fields.map((field) => (
               <option key={field.name} value={field.name}>
-                {field.name}
+                {fieldCaption(field)}
               </option>
             ))}
           </select>

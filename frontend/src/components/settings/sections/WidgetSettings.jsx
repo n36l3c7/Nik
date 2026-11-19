@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { chartWidgets } from '../../../domain/linked.js'
+import { fieldCaption } from '../../../domain/query/complete.js'
 import {
   BUTTONS_MAX,
   CONTRAST_MIN,
@@ -431,13 +432,14 @@ export function ChartSettings({ widget, onChange }) {
           <option value="">Choose a field…</option>
           {fields.map((field) => (
             <option key={field.name} value={field.name} title={field.description}>
-              {field.name}
+              {fieldCaption(field)}
             </option>
           ))}
         </select>
         <span className="text-xs text-fg-muted">
           The query of the widget gets this field with what the incident holds for it: the chart counts what this
-          incident shares with the others. An incident that holds nothing for it shows no chart.
+          incident shares with the others. An incident that holds nothing for it shows no chart. Every field a query can
+          ask is here, those made in Settings too.
         </span>
       </label>
       {error && (

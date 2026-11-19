@@ -30,7 +30,7 @@ def test_public_docs_and_unauth(client: TestClient):
 
 def test_first_run_and_login(client: TestClient):
     r = client.post("/api/users", json=ADMIN)
-    assert r.status_code == 201 and r.json()["user"]["role"] == "admin"
+    assert r.status_code == 201 and r.json()["user"]["roles"] == ["admin"]
     r = client.post("/api/auth/login", json=ADMIN)
     assert r.status_code == 200 and "nik_session" in client.cookies
 
@@ -44,11 +44,11 @@ def test_api_key_permissions(admin: TestClient):
     assert k.get("/api/users", headers=analyst).status_code == 403
     assert k.get("/api/backup/export", headers=analyst).status_code == 403
     # admin key allowed
-    adm = make_key(admin, label="adm", role="admin")
+    adm = make_key(admin, label="adm", roles=["admin"])
     assert k.get("/api/users", headers=adm).status_code == 200
     assert k.get("/api/backup/export", headers=adm).status_code == 200
     # read-only key can't write
-    ro = make_key(admin, label="ro", scopes=["read"])
+    ro = make_key(admin, label="ro", roles=["viewer"])
     assert k.get("/api/incidents", headers=ro).status_code == 200
     assert k.post("/api/incidents", headers=ro, json={"id": "x", "data": {}}).status_code == 403
 

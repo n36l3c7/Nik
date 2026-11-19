@@ -94,3 +94,54 @@ test('comparisons and lookups behave as on the server', () => {
   assert.ok(compare({ a: 1 }, 'eq', { a: 1 }))
   assert.ok(!compare({ a: 1 }, 'eq', '{"a":1}'))
 })
+
+test('what is typed between braces is completed from the values a node can read', async () => {
+  const { complete, completions, typedAt } = await import('./expressions.js')
+  // The path at the caret, while its braces are open.
+  assert.deepEqual(typedAt('Seen on {{ incident.ho', 22), { start: 8, typed: 'incident.ho' })
+  assert.deepEqual(typedAt('{{', 2), { start: 0, typed: '' })
+  assert.deepEqual(typedAt('{{ made.lists[0].na', 19), { start: 0, typed: 'made.lists[0].na' })
+  assert.deepEqual(typedAt('{{ a }} and {{ b', 16), { start: 12, typed: 'b' })
+  // Outside braces, after they close, and past the path (a filter is being typed): nothing.
+  assert.equal(typedAt('plain text', 5), null)
+  assert.equal(typedAt('{{ a }} and', 11), null)
+  assert.equal(typedAt('{{ a | up', 9), null)
+  assert.equal(typedAt('{{ a b', 6), null)
+
+  const tree = [
+    {
+      name: 'made',
+      label: 'Create an incident',
+      fields: [
+        { path: 'made.incident', type: 'object', description: 'The incident' },
+        { path: 'made.incident.id', type: 'text', description: 'Its id' },
+        { path: 'made.incident.name', type: 'text' },
+      ],
+    },
+    { name: 'incident', label: 'The incident, now', fields: [{ path: 'incident.id', type: 'text' }] },
+  ]
+  const paths = (typed, limit) => completions(tree, typed, limit).map((entry) => entry.path)
+  assert.deepEqual(paths(''), ['made.incident', 'made.incident.id', 'made.incident.name', 'incident.id'])
+  // What starts with it first, then what holds it; the object itself stays among them.
+  assert.deepEqual(paths('incident.'), ['incident.id', 'made.incident.id', 'made.incident.name'])
+  assert.deepEqual(paths('made.incident'), ['made.incident', 'made.incident.id', 'made.incident.name'])
+  assert.deepEqual(paths('MADE.INCIDENT.N'), ['made.incident.name'])
+  assert.deepEqual(paths('nothing'), [])
+  assert.deepEqual(paths('', 2), ['made.incident', 'made.incident.id'])
+  assert.deepEqual(completions(tree, 'made.incident.id')[0], {
+    path: 'made.incident.id',
+    type: 'text',
+    description: 'Its id',
+    label: 'Create an incident',
+  })
+  assert.deepEqual(completions(null, ''), [])
+
+  // The choice replaces what was typed, braces included, and the caret goes after it.
+  assert.deepEqual(complete('Seen on {{ incident.ho', 22, 'incident.host'), {
+    text: 'Seen on {{ incident.host }}',
+    caret: 27,
+  })
+  // Braces that already close it are not written twice, and what follows is kept.
+  assert.deepEqual(complete('{{ inc }} later', 6, 'incident.id'), { text: '{{ incident.id }} later', caret: 17 })
+  assert.deepEqual(complete('a {{ b }} {{', 12, 'run.id'), { text: 'a {{ b }} {{ run.id }}', caret: 22 })
+})

@@ -172,3 +172,203 @@ test('the catalogue and what is installed make one list of cards', async () => {
     },
   )
 })
+
+const FOUND = {
+  packs: [
+    {
+      id: 'jira-cloud',
+      name: 'Jira Cloud',
+      vendor: 'Atlassian',
+      category: 'Ticketing',
+      tags: ['ticketing'],
+      connectors: ['Jira Cloud'],
+      version: '1.3.0',
+      installed: '1.2.0',
+      update: true,
+    },
+    {
+      id: 'servicenow',
+      name: 'ServiceNow',
+      vendor: 'ServiceNow',
+      category: 'Ticketing',
+      tags: ['ticketing', 'itsm'],
+      connectors: ['ServiceNow'],
+      description: 'Incidents kept in step both ways.',
+      version: '1.0.1',
+    },
+    {
+      id: 'virustotal',
+      name: 'VirusTotal',
+      vendor: 'Google',
+      category: 'Threat intelligence',
+      tags: ['threat-intelligence', 'file', 'url'],
+      connectors: ['VirusTotal v3'],
+      version: '1.0.1',
+    },
+    {
+      id: 'urlhaus',
+      name: 'URLhaus',
+      vendor: 'abuse.ch',
+      tags: ['threat-intelligence', 'url'],
+      version: '1.0.1',
+      installed: '1.0.1',
+    },
+    { id: 'tomorrow', name: 'Tomorrow', vendor: 'Acme', tags: ['siem'], version: '2.0.0', needsNik: '9.0' },
+  ],
+}
+const HERE = [
+  { id: 'nik', name: 'Nik built-in', version: '6.4.0', builtin: true, items: [] },
+  { id: 'jira-cloud', name: 'Jira Cloud', version: '1.2.0', tags: ['ticketing'], items: [] },
+  { id: 'urlhaus', name: 'URLhaus', version: '1.0.1', tags: ['threat-intelligence', 'url'], items: [] },
+  {
+    id: 'ours',
+    name: 'Ours',
+    version: '0.1.0',
+    tags: ['edr'],
+    source: 'file',
+    items: [{ kind: 'connectors', name: 'our-desk' }],
+  },
+]
+
+test('a pack is looked for by what is typed, by tags, and without the installed ones', async () => {
+  const { filterCards, packCards, searchText, tagCounts, toggled } = await import('./packs.js')
+  const cards = packCards(FOUND, HERE)
+  const ids = (found) => found.map((card) => card.id).sort()
+
+  // The search looks in the name, the vendor, the category, the tags, the description and the connectors.
+  assert.deepEqual(ids(filterCards(cards, 'all', 'google')), ['virustotal'])
+  assert.deepEqual(ids(filterCards(cards, 'all', 'TICKETING')), ['jira-cloud', 'servicenow'])
+  assert.deepEqual(ids(filterCards(cards, 'all', 'itsm')), ['servicenow'])
+  assert.deepEqual(ids(filterCards(cards, 'all', 'in step')), ['servicenow'])
+  assert.deepEqual(ids(filterCards(cards, 'all', 'v3')), ['virustotal'])
+  // An installed pack that is not in the catalogue is found by the connector it gave.
+  assert.deepEqual(ids(filterCards(cards, 'all', 'our-desk')), ['ours'])
+  // Every word must be found, wherever it is.
+  assert.deepEqual(ids(filterCards(cards, 'all', 'threat  url abuse')), ['urlhaus'])
+  assert.deepEqual(ids(filterCards(cards, 'all', 'ticketing google')), [])
+  assert.match(searchText(cards[0]), /jira cloud atlassian ticketing ticketing/)
+
+  // A card must have every tag chosen: two tags narrow.
+  assert.deepEqual(ids(filterCards(cards, 'all', '', { tags: ['threat-intelligence'] })), ['urlhaus', 'virustotal'])
+  assert.deepEqual(ids(filterCards(cards, 'all', '', { tags: ['threat-intelligence', 'file'] })), ['virustotal'])
+  assert.deepEqual(ids(filterCards(cards, 'all', 'haus', { tags: ['url'] })), ['urlhaus'])
+
+  // Hiding the installed ones leaves what there is to install; it says nothing of the other two filters.
+  assert.deepEqual(ids(filterCards(cards, 'all', '', { hideInstalled: true })), [
+    'servicenow',
+    'tomorrow',
+    'virustotal',
+  ])
+  assert.deepEqual(ids(filterCards(cards, 'installed', '', { hideInstalled: true })), [
+    'jira-cloud',
+    'nik',
+    'ours',
+    'urlhaus',
+  ])
+  assert.deepEqual(ids(filterCards(cards, 'updates', '', { hideInstalled: true })), ['jira-cloud'])
+  assert.deepEqual(ids(filterCards(cards, 'all', '', { hideInstalled: true, tags: ['url'] })), ['virustotal'])
+
+  // The tags there are among the cards shown, each with its count; a chosen one is always listed.
+  assert.deepEqual(tagCounts(cards), [
+    { tag: 'threat-intelligence', count: 2, chosen: false },
+    { tag: 'ticketing', count: 2, chosen: false },
+    { tag: 'url', count: 2, chosen: false },
+    { tag: 'edr', count: 1, chosen: false },
+    { tag: 'file', count: 1, chosen: false },
+    { tag: 'itsm', count: 1, chosen: false },
+    { tag: 'siem', count: 1, chosen: false },
+  ])
+  const narrowed = filterCards(cards, 'all', '', { tags: ['file'] })
+  assert.deepEqual(
+    tagCounts(narrowed, ['file']).map((entry) => `${entry.tag} ${entry.count}${entry.chosen ? ' *' : ''}`),
+    ['file 1 *', 'threat-intelligence 1', 'url 1'],
+  )
+  assert.deepEqual(tagCounts([], ['edr']), [{ tag: 'edr', count: 0, chosen: true }])
+  assert.deepEqual(toggled(['a'], 'b'), ['a', 'b'])
+  assert.deepEqual(toggled(['a', 'b'], 'a'), ['b'])
+})
+
+test('a selection of packs says what can be done with it', async () => {
+  const { packCards, selectShown, selectable, selectionActions, filterCards } = await import('./packs.js')
+  const cards = packCards(FOUND, HERE)
+  const by = Object.fromEntries(cards.map((card) => [card.id, card]))
+  // The pack of Nik and one for a later Nik cannot be chosen.
+  assert.equal(selectable(by.nik), false)
+  assert.equal(selectable(by.tomorrow), false)
+  assert.equal(selectable(by.servicenow), true)
+  const names = (found) => found.map((card) => card.id).sort()
+  const all = selectShown([], cards)
+  assert.deepEqual([...all].sort(), ['jira-cloud', 'ours', 'servicenow', 'urlhaus', 'virustotal'])
+  const actions = selectionActions(cards, all)
+  assert.deepEqual(names(actions.install), ['servicenow', 'virustotal'])
+  assert.deepEqual(names(actions.update), ['jira-cloud'])
+  // One with an update is installed too: it can be uninstalled.
+  assert.deepEqual(names(actions.uninstall), ['jira-cloud', 'ours', 'urlhaus'])
+  assert.equal(actions.chosen.length, 5)
+  // "Select all shown" adds what is shown to what was chosen, once.
+  const shown = filterCards(cards, 'all', '', { tags: ['ticketing'] })
+  assert.deepEqual(selectShown(['urlhaus', 'servicenow'], shown).sort(), ['jira-cloud', 'servicenow', 'urlhaus'])
+  // A pack that is not listed any more counts for nothing.
+  assert.equal(selectionActions(cards, ['gone', 'nik']).chosen.length, 0)
+})
+
+test('several packs at once: what is asked of the server and what it answers', async () => {
+  const { bulkApplyBody, bulkCounts, bulkPlanBody, bulkPlanLine, bulkResultLine, bulkTitle } =
+    await import('./packs.js')
+  assert.deepEqual(bulkPlanBody('install', [{ id: 'b' }, { id: 'a' }]), {
+    action: 'install',
+    packs: [{ id: 'b' }, { id: 'a' }],
+  })
+  assert.equal(bulkTitle('install', 3), 'Install 3 packs')
+  assert.equal(bulkTitle('uninstall', 1), 'Uninstall 1 pack')
+  // The order is the one the server gave (a pack after the ones it requires): it is kept, and what the
+  // plan left out is not sent.
+  const plan = {
+    action: 'install',
+    packs: [
+      { id: 'base', name: 'Base', ok: true, token: 't-base', counts: { add: 3, update: 1, same: 0, conflict: 0 } },
+      { id: 'clash', name: 'Clash', ok: false, why: '1 of its items is in conflict', token: 't-clash' },
+      {
+        id: 'extras',
+        name: 'Extras',
+        ok: true,
+        token: 't-extras',
+        counts: { add: 0, update: 0, same: 2, conflict: 0 },
+      },
+    ],
+  }
+  assert.deepEqual(bulkApplyBody(plan), {
+    action: 'install',
+    packs: [
+      { id: 'base', token: 't-base' },
+      { id: 'extras', token: 't-extras' },
+    ],
+  })
+  assert.deepEqual(
+    bulkApplyBody({
+      action: 'uninstall',
+      packs: [
+        { id: 'extras', ok: true },
+        { id: 'base', ok: false },
+      ],
+    }),
+    {
+      action: 'uninstall',
+      packs: [{ id: 'extras' }],
+    },
+  )
+  assert.deepEqual(bulkCounts(plan.packs), { ok: 2, left: 1 })
+  assert.deepEqual(bulkCounts(undefined), { ok: 0, left: 0 })
+  assert.equal(bulkPlanLine('install', plan.packs[0]), '3 to add, 1 to update')
+  assert.equal(bulkPlanLine('install', plan.packs[1]), '')
+  assert.equal(bulkPlanLine('uninstall', { counts: { remove: 4, keep: 1, gone: 0 } }), '4 to remove, 1 to keep')
+  assert.equal(bulkPlanLine('uninstall', { counts: { remove: 2, keep: 0, gone: 1 } }), '2 to remove, 1 no longer here')
+  assert.equal(bulkResultLine('install', { ok: true, added: 3, updated: 0, same: 1 }), 'installed: 3 added, 1 the same')
+  assert.equal(bulkResultLine('update', { ok: true, added: 0, updated: 2, same: 0 }), 'updated: 2 updated')
+  assert.equal(bulkResultLine('uninstall', { ok: true, removed: 4, kept: 1 }), 'uninstalled: 4 removed, 1 kept')
+  assert.equal(bulkResultLine('uninstall', { ok: false, why: 'It is in use' }), 'not uninstalled: it is in use')
+  assert.equal(
+    bulkResultLine('install', { ok: false, why: 'It requires the pack "base", which is not installed' }),
+    'not installed: it requires the pack "base", which is not installed',
+  )
+})

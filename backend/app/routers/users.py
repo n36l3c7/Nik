@@ -26,7 +26,7 @@ from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Incident, User
 from ..core.models import Session as SessionModel
-from ..core.permissions import ADMIN, SYSTEM_ROLE, SYSTEM_USER, RoleError, clean_roles, legacy_role, stored_roles
+from ..core.permissions import ADMIN, SYSTEM_ROLE, SYSTEM_USER, RoleError, clean_roles, stored_roles
 from ..core.schemas import PasswordChange, UserCreate, UserEnvelope, UsersEnvelope, UserUpdate
 from ..core.security import (
     Principal,
@@ -46,13 +46,12 @@ router = APIRouter(prefix="/users", tags=["users"])
 MIN_PASSWORD_LENGTH = 8
 
 
-def _wanted_roles(roles: list[str] | None, role: str | None) -> list[str] | None:
-    """The roles a request asks for: ``roles``, or the single ``role`` of
-    releases before 4.0; None when it names neither."""
-    if roles is None and role is None:
+def _wanted_roles(roles: list[str] | None) -> list[str] | None:
+    """The roles a request asks for, as they are stored; None when it names none."""
+    if roles is None:
         return None
     try:
-        return clean_roles(roles if roles is not None else [role])
+        return clean_roles(roles)
     except RoleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
@@ -135,7 +134,7 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
             raise HTTPException(status_code=401, detail="Not authenticated")
         if not caller.has(ADMIN):
             raise HTTPException(status_code=403, detail="Admin privileges required")
-        roles = _wanted_roles(body.roles, body.role) or ["analyst"]
+        roles = _wanted_roles(body.roles) or ["analyst"]
         created_by = caller.actor
 
     if _name_taken(db, username):
@@ -146,7 +145,6 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
         username=username,
         password_hash=hash_password(body.password),
         roles=roles,
-        role=legacy_role(roles),
         created_at=now_iso(),
         created_by=created_by,
     )
@@ -221,7 +219,7 @@ def update_user(
     changes: list[str] = []
 
     current_roles = stored_roles(target.roles)
-    roles = _wanted_roles(body.roles, body.role) or current_roles
+    roles = _wanted_roles(body.roles) or current_roles
     disabled = target.disabled if body.disabled is None else body.disabled
     loses_admin = _is_admin(target) and not target.disabled and ("admin" not in roles or disabled)
     if loses_admin and is_self:
@@ -248,7 +246,6 @@ def update_user(
     if roles != current_roles:
         changes.append(f"roles {', '.join(current_roles) or 'none'} → {', '.join(roles)}")
         target.roles = roles
-        target.role = legacy_role(roles)
         target.session_epoch = (target.session_epoch or 0) + 1
 
     if body.password is not None:

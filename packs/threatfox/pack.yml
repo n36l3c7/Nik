@@ -2,7 +2,8 @@ id: threatfox
 name: ThreatFox
 vendor: abuse.ch
 category: Threat intelligence
-version: 1.0.0
+tags: [threat-intelligence, ip, domain, url, file]
+version: 1.0.1
 description: >-
   Indicators of compromise shared on ThreatFox: a verdict for an IP address,
   a domain, a URL and a file hash, searches by tag and malware family, and

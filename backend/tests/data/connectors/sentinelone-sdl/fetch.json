@@ -1,9 +1,6 @@
 {
-  "state": {
-    "since_ms": 1794816000000
-  },
-  "now": {
-    "epoch": 1794823200
+  "since": {
+    "epoch": 1794816000
   },
   "exchanges": [
     {
@@ -85,15 +82,7 @@
     "2026-11-16T08:30:05Z",
     "2026-11-16T09:10:40Z"
   ],
-  "next_state": {
-    "since_ms": 1794822900000
-  },
-  "first_state_for": {
-    "epoch": 1794816000,
-    "state": {
-      "since_ms": 1794816000000
-    }
-  },
+  "reached": "2026-11-16T09:10:40Z",
   "mapped": {
     "fields": {
       "name": "Suspicious PowerShell",

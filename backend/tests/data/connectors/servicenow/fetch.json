@@ -1,6 +1,6 @@
 {
-  "state": {
-    "last_time": "2026-11-16 08:00:00"
+  "since": {
+    "epoch": 1794816000
   },
   "exchanges": [
     {
@@ -8,7 +8,7 @@
         "method": "GET",
         "path": "/api/now/table/incident",
         "query": {
-          "sysparm_query": "sys_created_on>2026-11-16 08:00:00^ORDERBYsys_created_on",
+          "sysparm_query": "sys_created_on>=2026-11-16 08:00:00^ORDERBYsys_created_on",
           "sysparm_limit": 100,
           "sysparm_offset": 0
         },
@@ -59,15 +59,7 @@
     "2026-11-16 08:30:00",
     "2026-11-16 09:10:00"
   ],
-  "next_state": {
-    "last_time": "2026-11-16 09:10:00"
-  },
-  "first_state_for": {
-    "epoch": 1794816000,
-    "state": {
-      "last_time": "2026-11-16 08:00:00"
-    }
-  },
+  "reached": "2026-11-16T09:10:00Z",
   "mapped": {
     "fields": {
       "name": "Phishing: Invoice 2026",

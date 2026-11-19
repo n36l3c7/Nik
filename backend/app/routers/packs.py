@@ -10,8 +10,11 @@
   /packs/catalogue/refresh`` reads them again; ``POST /packs/catalogue/{id}/inspect`` takes one from
   the catalogue and answers like ``/packs/inspect``; ``PUT /packs/catalogue/address`` (admin) sets
   where the catalogue is.
-- ``GET /packs/{id}/uninstall``: what uninstalling would remove and what it would keep, and why;
-  ``DELETE /packs/{id}?remove=true`` does it. Without ``remove`` the pack is only taken off the list.
+- ``GET /packs/{id}/uninstall``: what uninstalling would remove and what it would keep, and what is in
+  use and holds the pack; ``DELETE /packs/{id}?remove=true`` does it, unless the pack is held (409 with
+  what holds it). Without ``remove`` the pack is only taken off the list.
+- ``POST /packs/bulk/plan {action, packs}`` and ``POST /packs/bulk/apply``: several packs at once
+  (``app/pack_bulk.py``): what would happen to each, then each done on its own.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import pack_bulk as bulk
 from .. import pack_catalogue as catalogue
 from .. import packs
 from ..core import audit
@@ -33,7 +37,7 @@ from ..core.permissions import CONTENT_MANAGE
 from ..core.security import Principal, admin_principal, require
 
 router = APIRouter(prefix="/packs", tags=["content packs"])
-CATALOGUE_MARK = "catalogue:"  # how the file of an inspection says it came from the catalogue
+CATALOGUE_MARK = bulk.CATALOGUE_MARK
 manage_principal = require(CONTENT_MANAGE)
 
 
@@ -69,7 +73,21 @@ class AddressIn(BaseModel):
     key: str = Field(default="", max_length=100)
 
 
+class BulkPackIn(BaseModel):
+    id: str = Field(min_length=2, max_length=49)
+    # What the plan answered for a pack to install: the file that was looked at.
+    token: str = Field(default="", max_length=100)
+
+
+class BulkIn(BaseModel):
+    action: str = Field(max_length=20)
+    packs: list[BulkPackIn] = Field(min_length=1, max_length=bulk.MAX_PACKS)
+
+
 def _refuse(error: packs.PackError | catalogue.CatalogueError) -> HTTPException:
+    if isinstance(error, packs.PackHeld):
+        # Said as a sentence and as the list: the page shows each thing with what to do first.
+        return HTTPException(status_code=error.status, detail={"message": error.message, "held": error.held})
     return HTTPException(status_code=error.status, detail=error.message)
 
 
@@ -134,7 +152,8 @@ def export_pack(
 @router.get("/catalogue")
 def read_catalogue(_caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The catalogue as it was last read: ``{address, custom, fetchedAt, error, read, packs: [{id, name,
-    vendor, category, version, description, contents, logo, installed, update, needsNik}]}``. Nothing
+    vendor, category, tags, version, description, contents, connectors, logo, installed, update,
+    needsNik}]}``. Nothing
     goes out: ``refresh`` does."""
     return catalogue.shown(db)
 
@@ -288,37 +307,67 @@ def pack_logo(
     )
 
 
+@router.post("/bulk/plan")
+def bulk_plan(body: BulkIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """What installing, updating or uninstalling several packs would do (``action``; ``packs: [{id}]``),
+    in the order they would be done: ``{action, packs: [{id, name, version, installed, ok, why, counts,
+    items, token? | held?}]}``. ``ok`` is false, with ``why``, for one that would be left out. To install
+    or update, each pack is taken from the catalogue and kept: its ``token`` is given back to apply it.
+    Nothing else is changed."""
+    ids = [entry.id for entry in body.packs]
+    if body.action == "uninstall":
+        return {"action": body.action, "packs": bulk.plan_uninstall(db, ids)}
+    if body.action not in bulk.ACTIONS:
+        raise HTTPException(status_code=400, detail="The action is install, update or uninstall")
+    found = bulk.plan_install(db, body.action, ids, caller.actor)
+    db.commit()
+    return {"action": body.action, "packs": found}
+
+
+@router.post("/bulk/apply")
+def bulk_apply(body: BulkIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """Do it: the packs one after the other, each in its own transaction, a pack after the ones it
+    requires (before them, to uninstall). ``{action, packs: [{id, name, ok, why, …}]}``: one that failed
+    says why (``held`` lists what uses a pack that was not uninstalled), and undoes none of the others."""
+    if body.action == "uninstall":
+        return {
+            "action": body.action,
+            "packs": bulk.apply_uninstall(db, [entry.id for entry in body.packs], caller.actor),
+        }
+    if body.action not in bulk.ACTIONS:
+        raise HTTPException(status_code=400, detail="The action is install, update or uninstall")
+    chosen = [{"id": entry.id, "token": entry.token} for entry in body.packs]
+    return {"action": body.action, "packs": bulk.apply_install(db, body.action, chosen, caller.actor)}
+
+
 @router.get("/{pack_id}/uninstall")
 def uninstall_plan(
-    pack_id: str,
-    instances: bool = False,
-    _caller: Principal = Depends(manage_principal),
-    db: OrmSession = Depends(get_db),
+    pack_id: str, _caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """What uninstalling the pack would do: ``{items: [{kind, name, label, action: remove | keep | gone,
-    why}], instances}``. ``instances`` asks what it would be if the instances of its connectors went too."""
+    why}], held: [{kind, name, label, what, todo}]}``. ``held`` is what is in use, each with what to do
+    first: while it is not empty the pack is not uninstalled."""
     row = db.get(Pack, pack_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Pack not found")
     try:
-        found = packs.uninstall_plan(db, row, instances=instances)
+        return packs.uninstall_plan(db, row)
     except packs.PackError as error:
         raise _refuse(error) from None
-    return {"items": found, "instances": packs.instances_of(db, row)}
 
 
 @router.delete("/{pack_id}", response_model=None)
 def remove_pack(
     pack_id: str,
     remove: bool = False,
-    instances: bool = False,
     caller: Principal = Depends(manage_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response | dict:
     """Without ``remove``: take the pack off the list (``204``); what it brought stays, and is no pack's
-    any more. With ``remove``: uninstall it. What it gave is deleted, except what was changed here or is
-    used by something else, which stays and is no pack's any more; ``instances`` deletes the instances of
-    its connectors with their credentials too. Answers ``{removed, kept, instances}``."""
+    any more. With ``remove``: uninstall it. What it gave is deleted, except what was changed here, which
+    stays and is no pack's any more. Answers ``{removed, kept}``. A pack of which something is in use (an
+    instance of its connector, a playbook that is on…) is not uninstalled: ``409`` with ``detail:
+    {message, held}``."""
     row = db.get(Pack, pack_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Pack not found")
@@ -329,14 +378,13 @@ def remove_pack(
             audit.record(db, caller.actor, "pack.forget", f'Took the pack "{name}" off the list', target=pack_id)
             db.commit()
             return Response(status_code=status.HTTP_204_NO_CONTENT)
-        done = packs.uninstall(db, row, instances=instances)
+        done = packs.uninstall(db, row)
     except packs.PackError as error:
         db.rollback()
         raise _refuse(error) from None
     audit.record(
         db, caller.actor, "pack.uninstall",
-        f'Uninstalled the pack "{name}": {len(done["removed"])} removed, {len(done["kept"])} kept'
-        + (f", {done['instances']} instance(s) deleted" if done["instances"] else ""),
+        f'Uninstalled the pack "{name}": {len(done["removed"])} removed, {len(done["kept"])} kept',
         target=pack_id,
     )  # fmt: skip
     db.commit()

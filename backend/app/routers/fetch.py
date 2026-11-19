@@ -1,9 +1,12 @@
 """Fetching (``connectors.manage``): which connections bring alerts in, and how it goes.
 
 ``GET /api/fetch`` is the status of every connection whose connector can
-fetch; a connection is told to fetch or not, made to fetch now, and let go on
-after it was paused. The items it fetched are listed with what became of
-each, and the last one is kept as a sample for the mapper editor.
+fetch; a connection is told to fetch or not, made to fetch now, let go on
+after it was paused, and made to start again from its first fetch. The items
+it fetched are listed with what became of each, and the last one is kept as a
+sample for the mapper editor. How often it fetches, how far back the first
+time and its look-back are saved with the instance
+(``PUT /api/automation/instances/{id}``, ``fetch``).
 """
 
 from __future__ import annotations
@@ -95,6 +98,28 @@ def resume_fetching(
     connection = _connection(db, connection_id)
     fetch.resume(db, connection, time.time())
     audit.record(db, caller.actor, "fetch.resume", f'Fetching from "{connection.name}" goes on', target=connection.name)
+    db.commit()
+    return fetch.out(db, connection)
+
+
+@router.post("/{connection_id}/reset")
+def reset_last_run(
+    connection_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Forget where the last run of a connection stopped: its next cycle reads again from as far
+    back as its first fetch says. What it fetched before is still known by its id and is skipped,
+    so no incident is made twice."""
+    connection = _connection(db, connection_id)
+    if not fetch.out(db, connection)["canFetch"]:
+        raise HTTPException(status_code=400, detail="The connector of this instance does not say how to fetch")
+    fetch.reset(db, connection)
+    audit.record(
+        db,
+        caller.actor,
+        "fetch.reset",
+        f'Reset the last run of "{connection.name}": its next cycle starts from the first fetch',
+        target=connection.name,
+    )
     db.commit()
     return fetch.out(db, connection)
 

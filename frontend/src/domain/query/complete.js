@@ -26,6 +26,19 @@ export function fieldOf(schema, name) {
   )
 }
 
+/**
+ * How a field is listed where one is chosen: its name, which is what the query
+ * holds, and for a field made in Settings what it is called there when that
+ * says more than the name.
+ */
+export function fieldCaption(field) {
+  const name = String(field?.name ?? '')
+  const label = String(field?.label ?? '').trim()
+  const plain = name.replace(/^field\./, '').replace(/_/g, ' ')
+  if (!field?.custom || !label || label.toLowerCase() === plain.toLowerCase()) return name
+  return `${name} · ${label}`
+}
+
 /** Candidates that start with the prefix first, then those that hold it. */
 function rank(items, prefix, key) {
   const wanted = prefix.toLowerCase()

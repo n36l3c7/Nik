@@ -89,6 +89,9 @@ DIFF_MAX = 8000
 
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,48}$")
 VERSION_RE = re.compile(r"^(\d{1,5})\.(\d{1,5})\.(\d{1,5})$")
+# A tag says what the product is or what it is used on ("ticketing", "threat-intelligence", "url").
+TAG_RE = re.compile(r"^[a-z][a-z0-9-]{1,29}$")
+TAGS_MAX = 8
 # The kinds, in the order they are applied: what others name comes first.
 KINDS = (
     "fields",
@@ -176,6 +179,12 @@ def clean_manifest(raw: Any) -> dict[str, Any]:
         if need.get("version") is not None and version_of(need.get("version")) is None:
             raise PackError(f'The version "{need.get("version")}" a pack requires is three numbers')
         requires.append({"pack": str(need["pack"]), "version": str(need.get("version") or "0.0.0")})
+    tags = raw.get("tags") or []
+    if not isinstance(tags, list) or not all(isinstance(tag, str) and TAG_RE.match(tag) for tag in tags):
+        raise PackError('"tags" is a list of lower-case words (a letter, then letters, digits or -): [ticketing, itsm]')
+    tags = list(dict.fromkeys(tags))
+    if len(tags) > TAGS_MAX:
+        raise PackError(f"A pack has {TAGS_MAX} tags at most")
     nik = str(raw.get("nik") or "").strip()
     if nik and not re.fullmatch(r">=\s*\d{1,3}\.\d{1,3}(\.\d{1,3})?", nik):
         raise PackError('"nik" says the oldest Nik the pack is for: ">=4.6"')
@@ -187,6 +196,7 @@ def clean_manifest(raw: Any) -> dict[str, Any]:
         "version": str(raw["version"]).strip(),
         "description": str(raw.get("description") or "")[:2000],
         "author": str(raw.get("author") or "")[:200],
+        "tags": tags,
         "requires": requires[:50],
         "nik": nik.replace(" ", ""),
     }
@@ -810,12 +820,14 @@ def _diff(kind: str, before: Any, after: Any) -> str:
     return text if len(text) <= DIFF_MAX else text[:DIFF_MAX] + "\n… (cut)"
 
 
-def _conflict(db: OrmSession, pack: PackFile, item: Item, here: Any) -> str | None:
+def _conflict(db: OrmSession, pack: PackFile, item: Item, here: Any, coming: Coming | None = None) -> str | None:
     """Why an item cannot be applied at all, or None."""
     kind, data = item.kind, item.data
 
     def there(need_kind: str, need_name: str) -> bool:
-        return pack.has(need_kind, need_name) or current(db, need_kind, need_name, with_items=False) is not None
+        if pack.has(need_kind, need_name) or (coming is not None and coming.has(need_kind, need_name)):
+            return True
+        return current(db, need_kind, need_name, with_items=False) is not None
 
     if kind == "fields":
         if item.name in registry.SYSTEM_FIELDS:
@@ -848,7 +860,7 @@ def _conflict(db: OrmSession, pack: PackFile, item: Item, here: Any) -> str | No
         known = set(registry.registry(db))
         for entry in data.get("fields") or []:
             name = str((entry or {}).get("name") or "")
-            if name not in known and not pack.has("fields", name):
+            if name not in known and not there("fields", name):
                 return f'It has the field "{name}", which is neither here nor in the pack'
         if data.get("defaultPlaybook") and not there("playbooks", str(data["defaultPlaybook"])):
             return f'Its playbook "{data["defaultPlaybook"]}" is neither here nor in the pack'
@@ -884,24 +896,41 @@ def _shape_problem(item: Item) -> str | None:
     return None
 
 
-def requirement_problems(db: OrmSession, manifest: dict[str, Any]) -> list[str]:
+@dataclass
+class Coming:
+    """What the packs installed just before this one, in the same go, will have brought: a pack of several
+    installed together is judged against them too, since it is applied after them."""
+
+    packs: dict[str, str] = field(default_factory=dict)  # id → version
+    items: set[tuple[str, str]] = field(default_factory=set)  # (kind, name in lower case)
+
+    def has(self, kind: str, name: str) -> bool:
+        return (kind, name.lower()) in self.items
+
+    def add(self, pack: PackFile) -> None:
+        self.packs[pack.manifest["id"]] = pack.manifest["version"]
+        self.items.update((item.kind, item.name.lower()) for item in pack.items)
+
+
+def requirement_problems(db: OrmSession, manifest: dict[str, Any], coming: Coming | None = None) -> list[str]:
     found = []
     wanted = re.findall(r"\d+", manifest.get("nik") or "")
     if wanted and tuple(int(part) for part in (wanted + ["0"])[:3]) > NIK_VERSION:
         found.append(f"The pack is for Nik {manifest['nik'][2:]} or later")
     for need in manifest.get("requires") or []:
         row = db.get(Pack, need["pack"])
-        if row is None:
+        # One that comes in the same go replaces the one that is here.
+        has = (coming.packs.get(need["pack"]) if coming is not None else None) or (row.version if row else None)
+        if has is None:
             found.append(f'It requires the pack "{need["pack"]}", which is not installed')
-        elif (version_of(row.version) or (0, 0, 0)) < (version_of(need["version"]) or (0, 0, 0)):
-            found.append(
-                f'It requires version {need["version"]} of the pack "{need["pack"]}": {row.version} is installed'
-            )
+        elif (version_of(has) or (0, 0, 0)) < (version_of(need["version"]) or (0, 0, 0)):
+            found.append(f'It requires version {need["version"]} of the pack "{need["pack"]}": {has} is installed')
     return found
 
 
-def plan(db: OrmSession, pack: PackFile) -> dict[str, Any]:
-    """What applying the pack would do, item by item. Nothing is written."""
+def plan(db: OrmSession, pack: PackFile, coming: Coming | None = None) -> dict[str, Any]:
+    """What applying the pack would do, item by item. Nothing is written. ``coming`` is what the packs
+    installed before it in the same go bring: what it requires of them is not missing."""
     origin = {(row.kind, row.name.lower()): row.pack_id for row in db.scalars(select(PackItem)).all()}
     items = []
     for item in pack.items:
@@ -916,7 +945,7 @@ def plan(db: OrmSession, pack: PackFile) -> dict[str, Any]:
         if wrong is None and here is not None and theirs == ours:
             entry["action"] = "same"  # as the pack has it: nothing to do, whatever else is true of it
         else:
-            wrong = wrong or _conflict(db, pack, item, here)
+            wrong = wrong or _conflict(db, pack, item, here, coming)
             if wrong is not None:
                 entry.update(action="conflict", why=wrong)
             elif here is None:
@@ -933,7 +962,7 @@ def plan(db: OrmSession, pack: PackFile) -> dict[str, Any]:
     return {
         "pack": pack.manifest,
         "installed": installed.version if installed is not None else None,
-        "problems": requirement_problems(db, pack.manifest),
+        "problems": requirement_problems(db, pack.manifest, coming),
         "items": items,
         "counts": {
             action: sum(1 for entry in items if entry["action"] == action)
@@ -1208,6 +1237,7 @@ def out(db: OrmSession, row: Pack) -> dict[str, Any]:
         "author": row.author,
         "vendor": (row.manifest or {}).get("vendor") or "",
         "category": (row.manifest or {}).get("category") or "",
+        "tags": (row.manifest or {}).get("tags") or [],
         "source": row.source or "file",
         "hasLogo": bool(row.logo),
         "builtin": bool(row.builtin),
@@ -1245,7 +1275,7 @@ def forget(db: OrmSession, row: Pack) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Uninstalling: what the pack gave goes, except what is another thing now      #
+# Uninstalling: what the pack gave goes, unless something of it is in use      #
 # --------------------------------------------------------------------------- #
 def _node_users(db: OrmSession, wanted) -> list[str]:
     """The names of the playbooks whose current version or draft has a node ``wanted`` says yes to."""
@@ -1259,118 +1289,200 @@ def _node_users(db: OrmSession, wanted) -> list[str]:
     return found
 
 
-def _in_use(db: OrmSession, kind: str, name: str, going, instances: bool) -> str:
-    """Why an item of a pack that is being uninstalled stays, or "" when nothing holds it.
-    ``going(kind, name)`` says whether another item leaves with the pack: what only it uses does not hold."""
+@dataclass
+class _Use:
+    """One thing that uses an item of a pack: what it is (``what``, a sentence) and what to do about it
+    first (``todo``). ``by`` names it when it is itself something a pack gives (a playbook, a type): one
+    that leaves with the pack does not hold. ``stays`` is for what only makes the item stay behind (it is
+    Nik's own, its connector stays) and stops nothing."""
 
-    def others(names: list[str]) -> list[str]:
-        return [found for found in names if not going("playbooks", found)]
+    what: str
+    todo: str = ""
+    by: tuple[str, str] | None = None
+    stays: bool = False
+
+
+def _uses(db: OrmSession, kind: str, name: str) -> list[_Use]:
+    """Everything that uses an item, whoever gave it."""
 
     def config(node: dict) -> dict:
         return node.get("config") or {}
 
+    def playbooks(wanted, what: str, todo: str) -> list[_Use]:
+        return [_Use(what.format(found), todo, by=("playbooks", found)) for found in _node_users(db, wanted)]
+
+    found: list[_Use] = []
     if kind == "connectors":
-        count = db.scalar(select(func.count()).select_from(Connection).where(Connection.connector_id == name)) or 0
-        if count and not instances:
-            return f"It has {count} instance{'s' if count != 1 else ''}"
-        users = others(
-            _node_users(
-                db,
-                lambda node: (
-                    node.get("kind") == "action" and str(config(node).get("action") or "").startswith(name + ".")
-                ),
+        for held in db.scalars(select(Connection).where(Connection.connector_id == name).order_by(Connection.name)):
+            found.append(
+                _Use(
+                    f'The instance "{held.name}" of its connector "{name}" is turned {"on" if held.enabled else "off"}',
+                    "Delete the instance first: it holds credentials that are yours.",
+                )
             )
+        found += playbooks(
+            lambda node: node.get("kind") == "action" and str(config(node).get("action") or "").startswith(name + "."),
+            f'The playbook "{{}}" uses its connector "{name}"',
+            "Take the connector out of the playbook, or delete the playbook.",
         )
-        return f'The playbook "{users[0]}" uses it' if users else ""
-    if kind == "mappers":
-        return "" if db.get(Connector, name) is None or going("connectors", name) else "Its connector stays"
-    if kind == "scripts":
+    elif kind == "mappers":
+        if db.get(Connector, name) is not None:
+            found.append(_Use("Its connector stays", by=("connectors", name), stays=True))
+    elif kind == "scripts":
         row = _script(db, name)
         if row is not None and row.builtin:
-            return "It is a script of Nik"
-        users = others(
-            _node_users(db, lambda node: node.get("kind") == "script" and config(node).get("script") == name)
+            found.append(_Use("It is a script of Nik", stays=True))
+        found += playbooks(
+            lambda node: node.get("kind") == "script" and config(node).get("script") == name,
+            f'The playbook "{{}}" runs its script "{name}"',
+            "Take the script out of the playbook, or delete the playbook.",
         )
-        return f'The playbook "{users[0]}" uses it' if users else ""
-    if kind == "playbooks":
+        for rule in preprocess.every(db):
+            if str((rule.params or {}).get("script") or "") == name:
+                found.append(
+                    _Use(
+                        f'The pre-processing rule "{rule.name}" runs its script "{name}"',
+                        "Delete the rule, or give it another script.",
+                        by=("preprocess_rules", rule.name),
+                    )
+                )
+    elif kind == "playbooks":
         row = _playbook(db, name)
         if row is None:
-            return ""
+            return found
+        if row.enabled:
+            found.append(_Use(f'Its playbook "{row.name}" is turned on', "Turn the playbook off first."))
         active = db.scalar(
             select(func.count())
             .select_from(Run)
             .where(Run.playbook_id == row.id, Run.status.notin_(automation_engine.FINISHED))
         )
         if active:
-            return "A run of it is in progress"
+            found.append(
+                _Use(f'A run of its playbook "{row.name}" is in progress', "Wait for the run to end, or stop it.")
+            )
         for held in db.scalars(select(IncidentType).where(IncidentType.default_playbook_id == row.id)):
-            if not going("incident_types", held.name):
-                return f'It is the playbook of the type "{held.name}"'
-        users = [
-            found
-            for found in others(
-                _node_users(
-                    db,
-                    lambda node: node.get("kind") == "playbook" and config(node).get("playbook") in (row.name, row.id),
+            found.append(
+                _Use(
+                    f'Its playbook "{row.name}" is the playbook of the type "{held.name}"',
+                    "Give the type another playbook, or none.",
+                    by=("incident_types", held.name),
                 )
             )
-            if found.lower() != row.name.lower()
+        found += [
+            use
+            for use in playbooks(
+                lambda node: node.get("kind") == "playbook" and config(node).get("playbook") in (row.name, row.id),
+                f'The playbook "{{}}" runs its playbook "{row.name}"',
+                "Take it out of that playbook, or delete that playbook.",
+            )
+            if use.by is not None and use.by[1].lower() != row.name.lower()
         ]
-        return f'The playbook "{users[0]}" runs it' if users else ""
-    if kind == "incident_types":
+    elif kind == "incident_types":
         row = _type(db, name)
         if row is None:
-            return ""
+            return found
         if row.id == types.UNCLASSIFIED or row.builtin:
-            return "It is a type of Nik"
+            found.append(_Use("It is a type of Nik", stays=True))
         count = db.scalar(select(func.count()).select_from(Incident).where(Incident.type_id == row.id)) or 0
-        return f"{count} incident{'s are' if count != 1 else ' is'} of this type" if count else ""
-    if kind == "fields":
+        if count:
+            found.append(
+                _Use(
+                    f'{count} incident{"s are" if count != 1 else " is"} of its type "{row.name}"',
+                    "Give them another type, or delete them.",
+                )
+            )
+    elif kind == "fields":
         row = db.scalars(select(Field).where(Field.name == name)).first()
         if row is None:
-            return ""
+            return found
         if row.system:
-            return "It is a field of Nik"
+            found.append(_Use("It is a field of Nik", stays=True))
         used = registry.used_by(db, row)
-        kept = [found for found in used["types"] if not going("incident_types", found)]
-        if kept:
-            return f'The type "{kept[0]}" lists it'
-        return f"{used['incidents']} incident(s) hold a value of it" if used["incidents"] else ""
-    if kind == "lists":
+        for type_name in used["types"]:
+            found.append(
+                _Use(
+                    f'The type "{type_name}" lists its field "{name}"',
+                    "Take the field off the type.",
+                    by=("incident_types", type_name),
+                )
+            )
+        if used["incidents"]:
+            count = used["incidents"]
+            found.append(
+                _Use(
+                    f'{count} incident{"s hold" if count != 1 else " holds"} a value of its field "{name}"',
+                    "Empty the field on them, or delete them.",
+                )
+            )
+    elif kind == "lists":
         row = named_lists.find(db, name)
         if row is None:
-            return ""
+            return found
         if row.builtin:
-            return "It is a list of Nik"
-        used = named_lists.used_by(db, row.name)
-        return "It is used by: " + "; ".join(used[:3]) if used else ""
-    if kind == "dashboards":
+            found.append(_Use("It is a list of Nik", stays=True))
+        for where in named_lists.used_by(db, row.name):
+            if where.startswith("Playbook "):
+                playbook = where[len("Playbook ") :]
+                found.append(
+                    _Use(
+                        f'The playbook "{playbook}" reads its list "{name}"',
+                        "Take the list out of the playbook, or delete the playbook.",
+                        by=("playbooks", playbook),
+                    )
+                )
+            else:
+                found.append(
+                    _Use(f'Its list "{name}" is read by a setting: {where}', "Point the setting to another list.")
+                )
+    elif kind == "dashboards":
         row = _dashboard(db, name)
-        return "It is a dashboard of Nik" if row is not None and row.builtin else ""
-    return ""
+        if row is not None and row.builtin:
+            found.append(_Use("It is a dashboard of Nik", stays=True))
+    return found
 
 
-def instances_of(db: OrmSession, row: Pack) -> int:
-    """How many instances the connectors of a pack have."""
-    names = [
-        item.name
-        for item in db.scalars(select(PackItem).where(PackItem.pack_id == row.id))
-        if item.kind == "connectors"
-    ]
-    if not names:
-        return 0
-    return db.scalar(select(func.count()).select_from(Connection).where(Connection.connector_id.in_(names))) or 0
+@dataclass
+class Leaving:
+    """What the packs uninstalled just before this one, in the same go, take with them: none of it holds a
+    pack that is uninstalled after them."""
+
+    packs: set[str] = field(default_factory=set)
+    items: set[tuple[str, str]] = field(default_factory=set)  # (kind, name in lower case)
+
+    def add(self, pack_id: str, items: list[dict[str, Any]]) -> None:
+        self.packs.add(pack_id)
+        self.items.update((entry["kind"], entry["name"].lower()) for entry in items if entry["action"] == "remove")
 
 
-def uninstall_plan(db: OrmSession, row: Pack, *, instances: bool = False) -> list[dict[str, Any]]:
-    """What uninstalling the pack would do to each thing it gave: ``remove`` it, ``keep`` it (with why:
-    it was changed here, or something else uses it), or nothing, for what is ``gone`` already.
-    ``instances`` says the instances of its connectors go too, with their credentials."""
+def uninstall_plan(db: OrmSession, row: Pack, leaving: Leaving | None = None) -> dict[str, Any]:
+    """What uninstalling the pack would do: ``{items, held}``.
+
+    ``items`` is each thing it gave with what happens to it: ``remove``; ``keep``, with why (it was changed
+    here and is yours now, or something of the pack that stays needs it); or ``gone``, for what is not here
+    any more.
+
+    ``held`` is what is **in use**: each thing outside the pack that uses something of it (an instance of
+    its connector, a playbook of yours that runs its script, incidents of its type, another pack that
+    requires it…) or shows it is at work (a playbook of it that is turned on), with what to do first. While
+    there is one the pack is not uninstalled: nothing that is used is pulled from under what uses it.
+    ``leaving`` is what goes just before, when several packs are uninstalled together."""
     if row.builtin:
         raise PackError("A pack Nik ships is part of Nik", 409)
-    needed = _requiring(db, row)
-    if needed:
-        raise PackError(f'The pack "{needed[0]}" requires it', 409)
+    leaving = leaving or Leaving()
+    held: list[dict[str, Any]] = []
+    for other in sorted(db.scalars(select(Pack)).all(), key=lambda found: found.name.lower()):
+        requires = any(need.get("pack") == row.id for need in (other.manifest or {}).get("requires") or [])
+        if other.id != row.id and requires and other.id not in leaving.packs:
+            held.append(
+                {
+                    "kind": "packs",
+                    "name": other.name,
+                    "label": "Pack",
+                    "what": f'The pack "{other.name}" requires it',
+                    "todo": "Uninstall that pack first.",
+                }
+            )
     entries: dict[tuple[str, str], dict[str, Any]] = {}
     for item in db.scalars(select(PackItem).where(PackItem.pack_id == row.id)).all():
         entry = {"kind": item.kind, "name": item.name, "label": LABELS.get(item.kind, item.kind), "why": ""}
@@ -1382,39 +1494,71 @@ def uninstall_plan(db: OrmSession, row: Pack, *, instances: bool = False) -> lis
         else:
             entry["action"] = "remove"
         entries[(item.kind, item.name.lower())] = entry
+    ordered = sorted(entries.values(), key=lambda entry: (_order(entry["kind"]), entry["name"].lower()))
+    uses = {
+        (entry["kind"], entry["name"].lower()): _uses(db, entry["kind"], entry["name"])
+        for entry in ordered
+        if entry["action"] != "gone"
+    }
 
-    def going(kind: str, name: str) -> bool:
-        return entries.get((kind, str(name).lower()), {}).get("action") == "remove"
+    def user(use: _Use) -> dict[str, Any] | None:
+        return entries.get((use.by[0], use.by[1].lower())) if use.by is not None else None
 
+    def leaves(use: _Use) -> bool:
+        """Whether what uses the item goes too: with this pack, or with one uninstalled just before."""
+        if use.by is None:
+            return False
+        found = user(use)
+        return (found is not None and found["action"] == "remove") or (use.by[0], use.by[1].lower()) in leaving.items
+
+    # What stays of the pack keeps what it needs of the pack: found again until nothing more stays.
     settled = False
-    while not settled:  # what holds an item may itself turn out to stay
+    while not settled:
         settled = True
-        for entry in entries.values():
+        for entry in ordered:
             if entry["action"] != "remove":
                 continue
-            why = _in_use(db, entry["kind"], entry["name"], going, instances)
-            if why:
-                entry.update(action="keep", why=why)
+            for use in uses[(entry["kind"], entry["name"].lower())]:
+                if leaves(use) or not (use.stays or user(use) is not None):
+                    continue
+                needed_by = f'The {LABELS.get(use.by[0], use.by[0]).lower()} "{use.by[1]}", which stays, needs it'
+                entry.update(action="keep", why=use.what if use.stays else needed_by)
                 settled = False
-    return sorted(entries.values(), key=lambda entry: (_order(entry["kind"]), entry["name"].lower()))
+                break
+    for entry in ordered:
+        for use in uses.get((entry["kind"], entry["name"].lower()), []):
+            if use.stays or leaves(use) or user(use) is not None:
+                continue
+            held.append(
+                {"kind": entry["kind"], "name": entry["name"], "label": entry["label"], "what": use.what,
+                 "todo": use.todo}
+            )  # fmt: skip
+    return {"items": ordered, "held": held}
 
 
-def uninstall(db: OrmSession, row: Pack, *, instances: bool = False) -> dict[str, Any]:
+class PackHeld(PackError):
+    """A pack that is not uninstalled because something of it is in use: ``held`` says what."""
+
+    def __init__(self, name: str, held: list[dict[str, Any]]):
+        more = f", and {len(held) - 1} more" if len(held) > 1 else ""
+        super().__init__(f'"{name}" is in use and was not uninstalled. {held[0]["what"]}{more}.', 409)
+        self.held = held
+
+
+def uninstall(db: OrmSession, row: Pack) -> dict[str, Any]:
     """Uninstall a pack (the caller commits): what the plan removes is deleted, what it keeps stays and is
-    no pack's any more. Returns ``{removed, kept, instances}``, the first two as lists of entries."""
-    found = uninstall_plan(db, row, instances=instances)
-    removed, dropped = [], 0
+    no pack's any more. A pack that is held is not touched: ``PackHeld`` says by what. Returns
+    ``{removed, kept}``, as lists of entries."""
+    found = uninstall_plan(db, row)
+    if found["held"]:
+        raise PackHeld(row.name, found["held"])
+    removed = []
     # What uses goes before what is used.
-    for entry in sorted(found, key=lambda entry: -_order(entry["kind"])):
+    for entry in sorted(found["items"], key=lambda entry: -_order(entry["kind"])):
         if entry["action"] != "remove":
             continue
         kind, name = entry["kind"], entry["name"]
         if kind == "connectors":
-            for connection in db.scalars(select(Connection).where(Connection.connector_id == name)).all():
-                connector_actions.forget_tokens(connection.id)
-                db.delete(connection)
-                dropped += 1
-            db.flush()
             db.delete(db.get(Connector, name))
             mapping.forget_default_classifier(db, name)
         elif kind == "mappers":
@@ -1439,7 +1583,29 @@ def uninstall(db: OrmSession, row: Pack, *, instances: bool = False) -> dict[str
     db.execute(delete(PackItem).where(PackItem.pack_id == row.id))
     db.delete(row)
     db.flush()
-    return {"removed": removed, "kept": [entry for entry in found if entry["action"] == "keep"], "instances": dropped}
+    return {"removed": removed, "kept": [entry for entry in found["items"] if entry["action"] == "keep"]}
+
+
+def in_order(needs: dict[str, list[str]], names: dict[str, str] | None = None, *, reverse: bool = False) -> list[str]:
+    """The packs of ``needs`` (id → the ids it requires) in the order to install them: each after the ones
+    it requires, and by name where nothing decides. ``reverse`` is the order to uninstall them: each before
+    the ones it requires. Packs that require each other in a circle come last, by name."""
+    names = names or {}
+
+    def by_name(pack_id: str) -> tuple[str, str]:
+        return (names.get(pack_id, pack_id).lower(), pack_id)
+
+    waiting, done = sorted(needs, key=by_name), []
+    while waiting:
+        ready = [
+            pack_id for pack_id in waiting if not any(need in waiting and need != pack_id for need in needs[pack_id])
+        ]
+        if not ready:
+            done += waiting
+            break
+        done.append(ready[0])
+        waiting.remove(ready[0])
+    return done[::-1] if reverse else done
 
 
 # --------------------------------------------------------------------------- #
@@ -1496,6 +1662,7 @@ def builtin_manifest() -> tuple[dict[str, Any], list[tuple[str, str]]]:
         "description": "What Nik ships: its types of incident and lists, its scripts, playbooks and dashboards, "
         "and the Mail connector.",
         "author": "Nik",
+        "tags": [],
         "requires": [],
         "nik": "",
     }

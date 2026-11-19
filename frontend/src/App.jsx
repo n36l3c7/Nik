@@ -986,6 +986,7 @@ export default function App() {
                           kinds={evidenceKinds}
                           kind={resolved.kind}
                           onKind={chooseTab}
+                          onAddFile={canWrite ? (file) => placeFile(file, { asEvidence: true }) : undefined}
                         />
                       ) : (
                         <ActiveTabComponent incident={activeIncident} />

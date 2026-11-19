@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { authOf, fieldsOf, formProblem, payloadOf, problemLines, startingValues } from './instances.js'
+import { authOf, fieldsOf, formProblem, instanceTabs, payloadOf, problemLines, startingValues } from './instances.js'
 
 const CONNECTOR = {
   id: 'acme',
@@ -199,4 +199,25 @@ test('the keys of an instance: what is sent, what stops the form', async () => {
   assert.equal(keyUse(keys[1], { perDay: 0 }), '190')
   assert.equal(keyShare(keys[0], instance.keyPolicy), 1)
   assert.equal(keyShare(keys[1], { perDay: 0 }), 0)
+})
+
+test('the form of an instance has the parts its connector gives it, as tabs', () => {
+  const ids = (connector, instance) => instanceTabs(connector, instance).map((tab) => tab.id)
+  // A connector that only has commands: its connection, and its keys when it signs in.
+  assert.deepEqual(ids(CONNECTOR, { id: 'i1' }), ['connection', 'keys'])
+  assert.deepEqual(ids({ ...CONNECTOR, native: true }, { id: 'i1' }), ['connection'])
+  // One that fetches: how it fetches, its classifier and the mappers of its connector.
+  const fetching = { ...CONNECTOR, fetch: { intervalSeconds: 120 } }
+  assert.deepEqual(ids(fetching, { id: 'i1' }), ['connection', 'keys', 'fetch', 'classifier', 'mappers'])
+  // A new instance has no classifier to edit yet: it is made first.
+  assert.deepEqual(ids(fetching, null), ['connection', 'keys', 'fetch'])
+  // One that mirrors and does not fetch has mappers and no classifier.
+  assert.deepEqual(ids({ ...CONNECTOR, mirror: {} }, { id: 'i1' }), ['connection', 'keys', 'mappers'])
+  // The tables take the width of the page.
+  assert.deepEqual(
+    instanceTabs(fetching, { id: 'i1' })
+      .filter((tab) => tab.wide)
+      .map((tab) => tab.id),
+    ['classifier', 'mappers'],
+  )
 })

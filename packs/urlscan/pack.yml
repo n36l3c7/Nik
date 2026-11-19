@@ -2,7 +2,8 @@ id: urlscan
 name: urlscan.io
 vendor: urlscan
 category: Threat intelligence
-version: 1.0.0
+tags: [threat-intelligence, url, domain, scanning]
+version: 1.0.1
 description: >-
   Scans of web pages on urlscan.io as commands: submit an address and read the result, search the scans that
   exist, the reputation of an address or a domain from them, and the urlscan Pro endpoints.

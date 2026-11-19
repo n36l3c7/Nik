@@ -303,6 +303,7 @@
 ├── dashboard_report.py             # A dashboard as a document: each widget asked as the reader, written as a table
 ├── packs.py                        # Content packs: the file, the plan of an import, applying and uninstalling it, what Nik ships
 ├── pack_catalogue.py               # The catalogue: the signed index, a pack taken from it and checked
+├── pack_bulk.py                    # Several packs at once: the plan in the order of what they require, each applied on its own
 ├── pack_build.py                   # python -m app.pack_build: a folder of packs as a signed catalogue
 ├── ioc_history.py                  # What a check of a whole list changed: a line a check, a row a changed verdict
 ├── artifact_expiry.py              # The optional expiry of an artifact: setting it, the notice, the deletion
@@ -316,6 +317,8 @@
 ├── ioc_library.py                  # The Indicators page: one row per indicator, reading pastes and files,
 │                                   #   lists, export with chosen fields, alerts of watched lists
 ├── urlscan.py                      # URL scans: the isolated browser's visit, the findings and the verdict
+├── urlscan_queue.py                # The scans a playbook asked for, taken and run by the API process
+├── worker_watch.py                 # Workers that stop answering: the check, and the notices to the admins
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
 ├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&amp;CK) and PDF (WeasyPrint)
@@ -989,10 +992,9 @@
         flowing. Sessions expire after <code>SESSION_TTL_HOURS</code>.
       </p>
       <p>
-        User shape: <code>{ id, username, roles, permissions, createdAt, createdBy, disabled }</code> (and
-        <code>role</code>, the single role of releases before 4.0, until 5.0) — the password hash never leaves the
-        backend. A sign-in that names an unknown account does the same hashing work as a wrong password, ten wrong
-        passwords in a row lock the account for five minutes (<code>users.failed_logins</code>,
+        User shape: <code>{ id, username, roles, permissions, createdAt, createdBy, disabled }</code> — the password
+        hash never leaves the backend. A sign-in that names an unknown account does the same hashing work as a wrong
+        password, ten wrong passwords in a row lock the account for five minutes (<code>users.failed_logins</code>,
         <code>users.locked_until</code>), and expired sessions are purged at each sign-in.
       </p>
       <p>
@@ -1287,11 +1289,17 @@
         </li>
         <li>
           <strong>Fetching</strong> (<code>fetch.py</code>, <code>fetched_items</code>, the columns
-          <code>fetch_enabled</code>, <code>fetch_state</code> and <code>fetch_status</code> of a connection). The
-          automation worker runs the cycles that are due in its pool, one at a time for a connection. An item is told
-          apart by <code>item_id</code> and kept in <code>fetched_items</code> with what became of it; the state of the
-          next cycle is saved only when the whole cycle was read. 200 items a cycle; 500 incidents an hour, then the
-          connection is paused; a failure is tried again after longer and longer, an hour at most.
+          <code>fetch_enabled</code>, <code>fetch_state</code>, <code>fetch_status</code> and
+          <code>fetch_settings</code> of a connection). The automation worker runs the cycles that are due in its pool,
+          one at a time for a connection. An item is told apart by <code>item_id</code> and kept in
+          <code>fetched_items</code> with what became of it; the state of the next cycle is saved only when the whole
+          cycle was read. 200 items a cycle; 500 incidents an hour, then the connection is paused; a failure is tried
+          again after longer and longer, an hour at most. How often an instance fetches, how far back the first time and
+          its look-back are in <code>fetch_settings</code> where they differ from its connector
+          (<code>fetch.settings_of</code>). The moment a fetch by time asks from, <code>since</code>, is worked out by
+          the engine (<code>fetch.since_of</code>): it keeps how far the cycles reached in
+          <code>fetch_state</code> under <code>_since</code>, beside what the connector keeps there, and
+          <code>fetch.reset</code> empties both while <code>fetched_items</code> stays.
         </li>
         <li>
           <strong>Pre-processing rules</strong> (<code>preprocess_rules</code>, <code>preprocess.py</code>) are tried in
@@ -1465,16 +1473,42 @@
           current version; nothing is merged.
         </li>
         <li>
-          <strong>The corners of a connection</strong> are <code>edges[].points</code> in the graph, checked by
-          <code>graph.validate</code> (a list of at most twenty <code>{x, y}</code>) and ignored by the engine. In the
-          client, <code>domain/automation/routing.js</code> holds the geometry and <code>RoutedEdge.jsx</code> draws the
-          line, its × and its handles.
+          <strong>Tidy up</strong> (<code>domain/automation/layout.js</code>) gives ELK the playbook as the canvas draws
+          it: each node with its size and its ports at fixed places (the input in the middle of the top, each output
+          along the bottom, <em>on error</em> on the right side: <code>handlePlaces</code>, which the canvas draws its
+          handles from as well), each line with the size of its words, layered, top to bottom, with orthogonal routing.
+          It keeps the place of each node and, on each line, the route ELK gave (<code>edges[].route</code>:
+          <code>{points, label?}</code>, checked by <code>graph.validate</code>, never read by the engine, ignored by
+          the comparison of two graphs). <code>moveNodes</code> drops the route of the lines of a node that moves and
+          <code>copyOf</code> does not copy routes, so a route is only ever the layout's, for the positions the layout
+          gave. <code>crossings</code> is the check that no line passes over the box of a node it does not join and no
+          words sit on a node; the unit tests hold the layout to it on a loop, branches that join, far errors, several
+          answers and the shipped playbooks, and the E2E suite on the page itself.
+        </li>
+        <li>
+          <strong>A connection</strong> is drawn by <code>CanvasEdge.jsx</code>: along its route when it has one, else
+          as a stepped line the canvas routes; and its ×. From 5.2 to 6.3 a line could hold corners,
+          <code>edges[].points</code> in the graph; <code>graph.validate</code> still accepts them (a list of at most
+          twenty <code>{x, y}</code>) so that the versions that have them stay valid, the engine never read them, and
+          the client leaves them behind when it reads a graph (<code>normalise</code> in
+          <code>domain/automation/graph.js</code>): they are gone from a draft or a branch the next time it is saved.
+        </li>
+        <li>
+          <strong>The right-click menu of the editor</strong> is the menu of the rest of the product
+          (<code>ContextMenuContext</code>). <code>domain/automation/editorMenu.js</code> decides the entries of a node,
+          a selection, a line and the canvas, their keys and why one cannot be done; <code>useEditorMenu.js</code> gives
+          each what it runs, which are the functions the keys call.
         </li>
         <li>
           <strong>Sub-fields</strong>: the catalog gives each command its <code>outputs</code> and, for a command of a
           connector, the <code>sample</code> of its file;
           <code>domain/automation/catalog.js</code> (<code>subFields</code>) turns them into the paths suggested in
-          <code>{{ }}</code>. The library (<code>libraryOf</code>) is the same catalog split in tabs.
+          <code>{{ }}</code>. An output of an action written in code says what is inside it with <code>shape</code>: a
+          list of <code>{name, type, description}</code>, or the name of a shape the catalog carries once in
+          <code>shapes</code> (<code>incident</code>, what <code>payloads.incident_data</code> builds for a trigger and
+          for a node alike; <code>fields</code>, the registry's fields of incidents, read from the database;
+          <code>context</code>, the keys of the common schema). <code>tests/test_automation_shapes.py</code> reads every
+          such path in a run, real and dry. The library (<code>libraryOf</code>) is the same catalog split in tabs.
         </li>
         <li>
           <strong>The address of a branch</strong> is read by <code>domain/automationNav.js</code>; the editor is

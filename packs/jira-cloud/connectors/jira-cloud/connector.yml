@@ -19,7 +19,7 @@
 # the texts as plain text, not in the document format.
 name: Jira Cloud
 id: jira-cloud
-version: 3
+version: 4
 description: Issues, comments and transitions in Jira Cloud.
 api_version: "Jira Cloud platform REST API v3 (/rest/api/3)"
 verified: false
@@ -207,7 +207,7 @@ fetch:
     method: GET
     path: /rest/api/2/search/jql
     query:
-      jql: "({{ config.fetch_jql }}) AND created >= \"{{ state.last_time }}\" ORDER BY created ASC"
+      jql: "({{ config.fetch_jql }}) AND created >= \"{{ since.epoch | date('%Y-%m-%d %H:%M') }}\" ORDER BY created ASC"
       fields: "summary,description,status,priority,labels,issuetype,created,updated"
   error: { message: "{{ response.errorMessages | join('; ') }}" }
   pagination:
@@ -220,10 +220,6 @@ fetch:
     max_pages: 2
   item_id: "{{ item.id }}"
   occurred: "{{ item.fields.created | date('%Y-%m-%dT%H:%M:%SZ') }}"
-  first_state:
-    last_time: "{{ first.epoch | date('%Y-%m-%d %H:%M') }}"
-  next_state:
-    last_time: "{{ items | last | get('fields.created') | regex_extract('^[0-9-]+T[0-9]+:[0-9]+') | replace('T', ' ') }}"
 
 schema:
   incoming:

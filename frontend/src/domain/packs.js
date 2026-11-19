@@ -171,6 +171,8 @@ export function packCards(catalogue, installed) {
       name: entry.name,
       vendor: entry.vendor || 'Other',
       category: entry.category ?? '',
+      tags: entry.tags ?? [],
+      connectors: entry.connectors ?? [],
       description: entry.description ?? '',
       version: entry.version,
       installed: pack?.version ?? null,
@@ -191,6 +193,8 @@ export function packCards(catalogue, installed) {
       name: pack.name,
       vendor: pack.builtin ? 'Nik' : pack.vendor || 'Other',
       category: pack.category ?? '',
+      tags: pack.tags ?? [],
+      connectors: (pack.items ?? []).filter((item) => item.kind === 'connectors').map((item) => item.name),
       description: pack.description ?? '',
       version: pack.version,
       installed: pack.version,
@@ -215,17 +219,132 @@ export const cardCounts = (cards) => ({
   updates: cards.filter((card) => card.state === 'update').length,
 })
 
-/** The cards a filter (`all`, `installed`, `updates`) and what was typed keep. */
-export function filterCards(cards, show = 'all', query = '') {
-  const wanted = String(query ?? '')
-    .trim()
+/** Everything of a card that the search box looks in, as one lower-case text. */
+export const searchText = (card) =>
+  [card.name, card.vendor, card.category, ...(card.tags ?? []), card.description, ...(card.connectors ?? []), card.id]
+    .join(' ')
     .toLowerCase()
+
+/**
+ * The cards that are left by a filter (`all`, `installed`, `updates`), by what was typed, by the tags
+ * chosen and by "hide the installed ones". Every word typed must be found somewhere in the card (its
+ * name, vendor, category, tags, description, the names of its connectors); a card must have **every** tag
+ * chosen, so that each choice narrows, as everything else on the page does. Hiding the installed ones is
+ * for looking for something to install: it applies to `all` only (the other two show installed packs).
+ */
+export function filterCards(cards, show = 'all', query = '', { tags = [], hideInstalled = false } = {}) {
+  const words = String(query ?? '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
   return cards.filter((card) => {
     if (show === 'installed' && !card.installed) return false
     if (show === 'updates' && card.state !== 'update') return false
-    if (!wanted) return true
-    return `${card.name} ${card.vendor} ${card.category} ${card.description} ${card.id}`.toLowerCase().includes(wanted)
+    if (show === 'all' && hideInstalled && card.installed) return false
+    if (tags.some((tag) => !(card.tags ?? []).includes(tag))) return false
+    if (!words.length) return true
+    const text = searchText(card)
+    return words.every((word) => text.includes(word))
   })
+}
+
+/**
+ * The tags to offer for the cards that are shown, each with how many of them have it: `[{ tag, count,
+ * chosen }]`, the most frequent first. A tag that is chosen is always listed, so that it can be taken off.
+ */
+export function tagCounts(shown, chosen = []) {
+  const counts = new Map(chosen.map((tag) => [tag, 0]))
+  for (const card of shown) for (const tag of card.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count, chosen: chosen.includes(tag) }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+}
+
+/** A list with one value put in or taken out. */
+export const toggled = (list, value) =>
+  list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]
+
+// --------------------------------------------------------------------------- //
+// Several packs at once                                                        //
+// --------------------------------------------------------------------------- //
+
+/** Whether something can be done to a pack with others: not to the pack of Nik, not to one for a later Nik. */
+export const selectable = (card) => !card.builtin && card.state !== 'later'
+
+/** The ids chosen, with every card shown that can be chosen added. */
+export const selectShown = (selected, shown) => [
+  ...new Set([...selected, ...shown.filter(selectable).map((card) => card.id)]),
+]
+
+/**
+ * What the selection allows, as the cards each button is for: `install` the ones that are not installed,
+ * `update` the ones with a newer version in the catalogue, `uninstall` the ones that are installed. A
+ * pack that left the lists since it was chosen counts for nothing.
+ */
+export function selectionActions(cards, selected) {
+  const chosen = cards.filter((card) => selected.includes(card.id) && selectable(card))
+  return {
+    chosen,
+    install: chosen.filter((card) => card.state === 'available'),
+    update: chosen.filter((card) => card.state === 'update'),
+    uninstall: chosen.filter((card) => card.installed),
+  }
+}
+
+export const BULK = {
+  install: { verb: 'Install', doing: 'Installing…', done: 'installed' },
+  update: { verb: 'Update', doing: 'Updating…', done: 'updated' },
+  uninstall: { verb: 'Uninstall', doing: 'Uninstalling…', done: 'uninstalled' },
+}
+
+/** "Install 3 packs", "Uninstall 1 pack": the name of the confirmation. */
+export const bulkTitle = (action, count) => `${BULK[action].verb} ${count} ${count === 1 ? 'pack' : 'packs'}`
+
+/** What POST /api/packs/bulk/plan takes. The server puts the packs in order and decides for each. */
+export const bulkPlanBody = (action, cards) => ({ action, packs: cards.map((card) => ({ id: card.id })) })
+
+/**
+ * What POST /api/packs/bulk/apply takes: the packs the plan did not leave out, in the order the server
+ * gave, each with the token of the file that was looked at.
+ */
+export const bulkApplyBody = (plan) => ({
+  action: plan.action,
+  packs: plan.packs
+    .filter((line) => line.ok)
+    .map((line) => (line.token ? { id: line.id, token: line.token } : { id: line.id })),
+})
+
+/** How many packs of a plan (or of a result) go on and how many are left: `{ ok, left }`. */
+export const bulkCounts = (lines) => ({
+  ok: (lines ?? []).filter((line) => line.ok).length,
+  left: (lines ?? []).filter((line) => !line.ok).length,
+})
+
+/** What a plan would do to one pack, in a line: the counts of its items. */
+export function bulkPlanLine(action, line) {
+  if (!line.counts) return ''
+  if (action !== 'uninstall') return planSummary(line.counts)
+  const { remove = 0, keep = 0, gone = 0 } = line.counts
+  return [`${remove} to remove`, keep ? `${keep} to keep` : '', gone ? `${gone} no longer here` : '']
+    .filter(Boolean)
+    .join(', ')
+}
+
+/** What was done to one pack, in a line: "installed: 3 added, 1 updated", "not uninstalled: it is in use". */
+export function bulkResultLine(action, line) {
+  if (!line.ok) {
+    const why = String(line.why ?? '')
+    return `not ${BULK[action].done}: ${why.charAt(0).toLowerCase()}${why.slice(1)}`
+  }
+  if (action === 'uninstall') {
+    return `uninstalled: ${line.removed ?? 0} removed${line.kept ? `, ${line.kept} kept` : ''}`
+  }
+  const parts = [
+    line.added ? `${line.added} added` : '',
+    line.updated ? `${line.updated} updated` : '',
+    line.same ? `${line.same} the same` : '',
+  ].filter(Boolean)
+  return `${BULK[action].done}${parts.length ? `: ${parts.join(', ')}` : ''}`
 }
 
 /** Cards by vendor: Nik first, then the vendors by name, "Other" last. `[{ vendor, cards }]`. */

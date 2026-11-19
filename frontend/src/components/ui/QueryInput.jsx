@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Plus, SlidersHorizontal, X } from 'lucide-react'
 import { modern, tryParse } from '../../domain/query/parse.js'
 import { tokenize } from '../../domain/query/tokenize.js'
-import { applyCompletion, completions, fieldOf } from '../../domain/query/complete.js'
+import { applyCompletion, completions, fieldCaption, fieldOf } from '../../domain/query/complete.js'
 import { emptyRow, opLabel, opsFor, toModel, toText } from '../../domain/query/builder.js'
 import { useQuerySchema } from '../../services/querySchema.js'
 
@@ -120,7 +120,7 @@ function Row({ row, schema, onChange, onRemove, label }) {
         {row.field && !spec && <option value={row.field}>{row.field}</option>}
         {(schema?.fields ?? []).map((field) => (
           <option key={field.name} value={field.name} title={field.description}>
-            {field.name}
+            {fieldCaption(field)}
           </option>
         ))}
       </select>

@@ -22,7 +22,7 @@ def _disassembled(admin: TestClient, key: dict, incident_id: str) -> str:
 
 
 def test_annotations_are_shared_audited_and_removed_with_the_sample(admin: TestClient, worker):  # noqa: F811
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _disassembled(admin, key, "a1")
     url = f"/api/samples/{sha}/annotations"
 
@@ -36,7 +36,7 @@ def test_annotations_are_shared_audited_and_removed_with_the_sample(admin: TestC
 
     assert admin.put(f"{url}/{0x999999}", headers=key, json={"name": "x"}).status_code == 404
     assert admin.put(f"{url}/{ENTRY}", headers=key, json={"name": "two\nlines"}).status_code == 400
-    read_only = make_key(admin, role="analyst", scopes=["read"])
+    read_only = make_key(admin, roles=["viewer"])
     assert admin.put(f"{url}/{ENTRY}", headers=read_only, json={"name": "x"}).status_code == 403
 
     # Both fields empty removes it.
@@ -56,13 +56,13 @@ def test_annotations_are_shared_audited_and_removed_with_the_sample(admin: TestC
 
 
 def test_annotations_need_a_disassembly(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _disassembled(admin, key, "a3")  # analyzer not configured: no disassembly
     assert admin.put(f"/api/samples/{sha}/annotations/{ENTRY}", headers=key, json={"name": "x"}).status_code == 409
 
 
 def test_flirt_signatures_are_validated_stored_and_passed_to_the_worker(admin: TestClient, monkeypatch):
-    analyst = make_key(admin, role="analyst")
+    analyst = make_key(admin, roles=["analyst"])
     upload = admin.post("/api/flirt-signatures", data={"name": "  tokio 1.38 "}, files={"file": ("tokio.sig", SIG)})
     assert upload.status_code == 201, upload.text
     sig = upload.json()

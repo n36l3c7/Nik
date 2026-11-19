@@ -196,7 +196,7 @@ def test_keys_are_encrypted_and_never_returned(admin: TestClient):
     with SessionLocal() as db:
         assert [k.secret for k in service.keys(db)["virustotal"]] == ["vt-secret-key-123"]
 
-    analyst = make_key(admin, role="analyst")
+    analyst = make_key(admin, roles=["analyst"])
     assert (
         admin.put("/api/enrichment/providers/abuseipdb/key", headers=analyst, json={"key": "x" * 10}).status_code == 403
     )
@@ -230,7 +230,7 @@ def test_several_keys_per_provider_are_rotated(admin: TestClient, monkeypatch):
         assert r.status_code == 201 and r.json()["hint"] == secret[-4:] and "key" not in r.json()
     assert admin.post("/api/enrichment/providers/virustotal/keys", json={"key": "vt-key-aaaa-0001"}).status_code == 409
     assert admin.post("/api/enrichment/providers/internetdb/keys", json={"key": "x" * 10}).status_code == 404
-    analyst = make_key(admin, role="analyst")
+    analyst = make_key(admin, roles=["analyst"])
     denied = admin.post("/api/enrichment/providers/virustotal/keys", headers=analyst, json={"key": "y" * 12})
     assert denied.status_code == 403
 

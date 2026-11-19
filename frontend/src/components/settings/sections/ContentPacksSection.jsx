@@ -1,12 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Download, PackageOpen, PackagePlus, RefreshCw, Trash2, Upload } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  PackageOpen,
+  PackagePlus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
 import { api, apiUrl, postForBlob, upload } from '../../../services/api.js'
 import { saveBlob } from '../../../lib/download.js'
 import { formatRelative } from '../../../lib/time.js'
+import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import {
+  BULK,
   SOURCES,
   actionBadge,
+  bulkApplyBody,
+  bulkCounts,
+  bulkPlanBody,
+  bulkPlanLine,
+  bulkResultLine,
+  bulkTitle,
   byKind,
   byVendor,
   cardCounts,
@@ -22,9 +41,14 @@ import {
   packProblem,
   planSummary,
   plural,
+  selectShown,
+  selectable,
+  selectionActions,
+  tagCounts,
+  toggled,
   uninstallCounts,
 } from '../../../domain/packs.js'
-import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, Modal } from '../../ui/index.js'
 
 /*
  * Automation → Content packs (who manages content).
@@ -34,8 +58,14 @@ import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
  * app/pack_catalogue.py) beside the ones that are installed, by vendor. A pack
  * of the catalogue or a file is inspected, shown item by item with what
  * applying it would do, and then applied, all of it or nothing; an installed
- * one is opened, updated or uninstalled; and a pack is made from items chosen
- * here, with what they need.
+ * one is opened, updated or uninstalled (never while something of it is in
+ * use: the dialog then says what holds it); and a pack is made from items
+ * chosen here, with what they need.
+ *
+ * A pack is looked for from the search box, the tags and "Hide the installed
+ * ones". Several can be ticked and installed, updated or uninstalled in one
+ * go: the server says what would happen to each, in the order they would be
+ * done, and then does each on its own (app/pack_bulk.py).
  */
 
 const FIELD =
@@ -396,11 +426,23 @@ const STATE_BADGE = {
 }
 
 /** One pack: what it is, what it holds, and what can be done with it here. */
-function PackCard({ card, busy, onInstall, onOpen, onUninstall }) {
+function PackCard({ card, busy, selected, onSelect, onInstall, onOpen, onUninstall }) {
   const badge = STATE_BADGE[card.state]
   return (
-    <li aria-label={card.name} className="flex flex-col gap-2 border border-line bg-panel p-3">
+    <li
+      aria-label={card.name}
+      className={`flex flex-col gap-2 border bg-panel p-3 ${selected ? 'border-accent' : 'border-line'}`}
+    >
       <div className="flex items-start gap-2.5">
+        {selectable(card) && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onSelect(card)}
+            aria-label={`Select ${card.name}`}
+            className="mt-2.5 h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+          />
+        )}
         <PackLogo card={card} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-fg">{card.name}</p>
@@ -411,6 +453,15 @@ function PackCard({ card, busy, onInstall, onOpen, onUninstall }) {
         {badge && <Badge color={badge.color}>{card.state === 'update' ? `update ${card.version}` : badge.label}</Badge>}
       </div>
       <p className="text-xs text-fg-muted">{contentsLine(card.contents, card.premium)}</p>
+      {card.tags.length > 0 && (
+        <p aria-label={`Tags of ${card.name}`} className="flex flex-wrap gap-1">
+          {card.tags.map((tag) => (
+            <span key={tag} className="border border-line-soft px-1.5 font-mono text-[11px] leading-4 text-fg-muted">
+              {tag}
+            </span>
+          ))}
+        </p>
+      )}
       {card.needsNik && <p className="text-xs text-fg-muted">For Nik {card.needsNik} or later.</p>}
       <div className="mt-auto flex flex-wrap gap-2 pt-1">
         {card.state === 'available' && (
@@ -512,23 +563,40 @@ function PackDetails({ card, onClose, onDownload }) {
   )
 }
 
-/** Uninstalling: what would go and what would stay is shown first, and the instances are asked about. */
+/** What is in use of a pack, each thing with what to do about it first. */
+function HeldList({ held, label }) {
+  return (
+    <ul aria-label={label} className="divide-y divide-line-soft border border-high-line">
+      {held.map((entry, index) => (
+        <li key={index} className="px-3 py-1.5">
+          <p className="text-fg">{entry.what}</p>
+          <p className="text-xs text-fg-muted">{entry.todo}</p>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * Uninstalling: what would go and what would stay is shown first. A pack of which something is in use is
+ * not uninstalled: the dialog lists what holds it, with what to do first, and offers no Uninstall.
+ */
 function UninstallDialog({ card, onClose, onDone }) {
   const [plan, setPlan] = useState(null)
-  const [instances, setInstances] = useState(false)
+  const [asked, setAsked] = useState(0) // raised to read the plan again
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const path = `/packs/${encodeURIComponent(card.id)}`
   useEffect(() => {
     let alive = true
-    api.get(`${path}/uninstall?instances=${instances}`).then(
+    api.get(`${path}/uninstall`).then(
       (found) => alive && setPlan(found),
       (failure) => alive && setError(failure.message),
     )
     return () => {
       alive = false
     }
-  }, [path, instances])
+  }, [path, asked])
   const run = (query, said) => {
     setBusy(true)
     setError(null)
@@ -536,11 +604,17 @@ function UninstallDialog({ card, onClose, onDone }) {
       .del(`${path}${query}`)
       .then(
         (done) => onDone(said(done)),
-        (failure) => setError(failure.message),
+        (failure) => {
+          // Something began to use it since the dialog was opened: the server says what, and the plan is read again.
+          const held = failure.data?.detail?.held
+          if (held) setAsked((count) => count + 1)
+          else setError(failure.message)
+        },
       )
       .finally(() => setBusy(false))
   }
   const counts = uninstallCounts(plan?.items)
+  const held = plan?.held ?? []
   return (
     <Modal
       open
@@ -558,28 +632,26 @@ function UninstallDialog({ card, onClose, onDone }) {
             Only take it off the list
           </Button>
           <Button variant="secondary" onClick={onClose} disabled={busy}>
-            Cancel
+            {held.length ? 'Close' : 'Cancel'}
           </Button>
-          <Button
-            variant="danger"
-            disabled={busy || !plan}
-            onClick={() =>
-              run(`?remove=true&instances=${instances}`, (done) => {
-                const kept = done?.kept?.length ?? 0
-                return `${card.name} was uninstalled: ${done?.removed?.length ?? 0} removed${kept ? `, ${kept} kept` : ''}.`
-              })
-            }
-          >
-            {busy ? 'Uninstalling…' : 'Uninstall'}
-          </Button>
+          {plan && held.length === 0 && (
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() =>
+                run('?remove=true', (done) => {
+                  const kept = done?.kept?.length ?? 0
+                  return `${card.name} was uninstalled: ${done?.removed?.length ?? 0} removed${kept ? `, ${kept} kept` : ''}.`
+                })
+              }
+            >
+              {busy ? 'Uninstalling…' : 'Uninstall'}
+            </Button>
+          )}
         </>
       }
     >
       <div className="space-y-3 text-sm">
-        <p className="text-fg-muted">
-          What the pack gave is removed. What was changed here, or is used by something else, stays and is no
-          pack&apos;s any more.
-        </p>
         {error && (
           <p role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-high-fg">
             {error}
@@ -590,8 +662,24 @@ function UninstallDialog({ card, onClose, onDone }) {
             Loading…
           </p>
         )}
-        {plan && (
+        {plan && held.length > 0 && (
           <>
+            <p role="status" className="border border-high-line bg-high-soft px-3 py-2 text-high-fg">
+              {card.name} is in use: it cannot be uninstalled yet.
+            </p>
+            <p className="text-fg-muted">
+              Nothing is taken from under what uses it. Settle {held.length === 1 ? 'this' : 'each of these'} first,
+              then uninstall it.
+            </p>
+            <HeldList held={held} label="What holds the pack" />
+          </>
+        )}
+        {plan && held.length === 0 && (
+          <>
+            <p className="text-fg-muted">
+              What the pack gave is removed. What was changed here stays, with what it needs, and is no pack&apos;s any
+              more.
+            </p>
             <p role="status" className="text-xs text-fg-muted">
               {counts.remove} to remove, {counts.keep} to keep{counts.gone ? `, ${counts.gone} no longer here` : ''}.
             </p>
@@ -605,24 +693,171 @@ function UninstallDialog({ card, onClose, onDone }) {
                 </li>
               ))}
             </ul>
-            {plan.instances > 0 && (
-              <label className="flex items-start gap-2 text-fg">
-                <input
-                  type="checkbox"
-                  checked={instances}
-                  onChange={(event) => setInstances(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
-                />
-                <span>
-                  Also delete {plan.instances === 1 ? 'its instance' : `its ${plan.instances} instances`}, with the
-                  credentials {plan.instances === 1 ? 'it holds' : 'they hold'}
-                  <span className="block text-xs text-fg-muted">
-                    Without this a connector that has an instance stays, with its instance.
-                  </span>
-                </span>
-              </label>
-            )}
           </>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+const BULK_INTRO = {
+  install:
+    'Each pack is taken from the catalogue and installed on its own, a pack after the ones it requires. One that fails does not undo the others.',
+  update:
+    'Each pack is taken from the catalogue and updated on its own, a pack after the ones it requires. One that fails does not undo the others.',
+  uninstall:
+    'Each pack is uninstalled on its own, a pack before the ones it requires. One that is in use is left as it is.',
+}
+
+/**
+ * Several packs at once. The server says what would happen to each, in the order they would be done, and
+ * which ones it leaves out and why; after the confirmation it does each on its own and says how each went.
+ */
+function BulkDialog({ action, cards, onClose }) {
+  const [plan, setPlan] = useState(null)
+  const [result, setResult] = useState(null)
+  const [open, setOpen] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const asked = JSON.stringify(bulkPlanBody(action, cards))
+  useEffect(() => {
+    let alive = true
+    api.post('/packs/bulk/plan', JSON.parse(asked)).then(
+      (found) => alive && setPlan(found),
+      (failure) => alive && setError(failure.message),
+    )
+    return () => {
+      alive = false
+    }
+  }, [asked])
+  const apply = () => {
+    setBusy(true)
+    setError(null)
+    api
+      .post('/packs/bulk/apply', bulkApplyBody(plan))
+      .then(setResult, (failure) => setError(failure.message))
+      .finally(() => setBusy(false))
+  }
+  const words = BULK[action]
+  const lines = (result ?? plan)?.packs ?? []
+  // What was left out of the plan was not sent: it is still shown beside what was done.
+  const left = result ? plan.packs.filter((line) => !line.ok) : []
+  const counts = bulkCounts(lines)
+  const close = () => onClose(result ? bulkCounts(result.packs) : null)
+  return (
+    <Modal
+      open
+      onClose={busy ? undefined : close}
+      title={bulkTitle(action, cards.length)}
+      maxWidth="max-w-3xl"
+      footer={
+        result ? (
+          <Button onClick={close}>Close</Button>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={close} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              variant={action === 'uninstall' ? 'danger' : 'primary'}
+              disabled={busy || !plan || counts.ok === 0}
+              onClick={apply}
+            >
+              {busy ? words.doing : `${words.verb} (${counts.ok})`}
+            </Button>
+          </>
+        )
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <p className="text-fg-muted">{BULK_INTRO[action]}</p>
+        {error && (
+          <p role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-high-fg">
+            {error}
+          </p>
+        )}
+        {!plan && !error && (
+          <p role="status" className="font-mono text-xs text-fg-muted">
+            {action === 'uninstall' ? 'Loading…' : 'Taking the packs from the catalogue…'}
+          </p>
+        )}
+        {plan && (
+          <p role="status" className="text-xs text-fg-muted">
+            {result
+              ? `${counts.ok} ${words.done}, ${counts.left + left.length} not.`
+              : `${counts.ok} to ${words.verb.toLowerCase()}, ${counts.left} left out.`}
+          </p>
+        )}
+        {plan && (
+          <ul aria-label="The packs" className="divide-y divide-line-soft border border-line">
+            {[...lines, ...left].map((line) => {
+              const shown = open.includes(line.id)
+              const items = line.items ?? []
+              return (
+                <li key={line.id} aria-label={line.name} className="px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      aria-expanded={shown}
+                      aria-label={`What ${line.name} holds`}
+                      disabled={!items.length}
+                      onClick={() => setOpen((old) => toggled(old, line.id))}
+                      className="text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                    >
+                      {shown ? (
+                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
+                    <span className="min-w-0 truncate font-medium text-fg">{line.name}</span>
+                    <span className="font-mono text-xs text-fg-muted">{line.version}</span>
+                    <span className="min-w-0 flex-1 text-xs text-fg-muted">
+                      {result && lines.includes(line) ? bulkResultLine(action, line) : bulkPlanLine(action, line)}
+                    </span>
+                    {result && lines.includes(line) ? (
+                      <Badge color={line.ok ? 'emerald' : 'red'}>{line.ok ? words.done : 'failed'}</Badge>
+                    ) : (
+                      !line.ok && <Badge color={line.held?.length ? 'amber' : 'red'}>left out</Badge>
+                    )}
+                  </div>
+                  {!line.ok && !line.held?.length && <p className="mt-1 pl-6 text-xs text-high-fg">{line.why}</p>}
+                  {!line.ok && line.held?.length > 0 && (
+                    <div className="mt-1 space-y-1 pl-6">
+                      <p className="text-xs text-high-fg">It is in use, and stays as it is:</p>
+                      <HeldList held={line.held} label={`What holds ${line.name}`} />
+                    </div>
+                  )}
+                  {shown && (
+                    <ul aria-label={`The items of ${line.name}`} className="mt-2 space-y-0.5 pl-6">
+                      {items.map((item) => {
+                        const badge = action === 'uninstall' ? null : actionBadge(item.action)
+                        return (
+                          <li key={itemKey(item)} className="flex flex-wrap items-center gap-2">
+                            <span className="w-32 shrink-0 text-xs text-fg-muted">{item.label}</span>
+                            <span className="min-w-0 flex-1 truncate text-fg">{item.name}</span>
+                            {item.why && <span className="text-xs text-fg-muted">{item.why}</span>}
+                            {badge ? (
+                              <Badge color={badge.color} title={badge.hint}>
+                                {badge.label}
+                              </Badge>
+                            ) : (
+                              <Badge color={item.action === 'remove' ? 'red' : 'slate'}>{item.action}</Badge>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        {plan && !result && action !== 'uninstall' && (
+          <p className="text-xs text-fg-muted">
+            To read what changes line by line, or to leave an item out, install a pack on its own.
+          </p>
         )}
       </div>
     </Modal>
@@ -720,6 +955,40 @@ const FILTERS = [
   { id: 'updates', label: 'Updates' },
 ]
 
+/** The box a pack is looked for from: the first thing on the page, as wide as it. */
+function PackSearch({ value, onChange }) {
+  return (
+    <div className="relative">
+      <Search
+        className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-fg-muted"
+        aria-hidden="true"
+      />
+      <input
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Search the packs: a name, a vendor, a tag, a connector…"
+        aria-label="Search the packs"
+        className={[
+          'h-12 w-full border border-line bg-canvas pl-11 pr-10 text-base text-fg placeholder:text-fg-muted',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          '[&::-webkit-search-cancel-button]:hidden',
+        ].join(' ')}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          aria-label="Clear the search"
+          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function ContentPacksSection() {
   const { can } = useAuth()
   const fileRef = useRef(null)
@@ -727,6 +996,12 @@ export default function ContentPacksSection() {
   const [catalogue, setCatalogue] = useState(null)
   const [show, setShow] = useState('all')
   const [query, setQuery] = useState('')
+  const [tags, setTags] = useState([])
+  // The one thing the page keeps for the person, in this browser: whoever looks for something to install
+  // does not want to see again what is installed.
+  const [hideInstalled, setHideInstalled] = useStoredBoolean('nik.packs.hide-installed', false)
+  const [selected, setSelected] = useState([]) // the ids of the packs that are ticked
+  const [bulk, setBulk] = useState(null) // { action, cards }: what is being done to several
   const [plan, setPlan] = useState(null)
   const [exporting, setExporting] = useState(false)
   const [opened, setOpened] = useState(null) // the card in "Open"
@@ -804,7 +1079,11 @@ export default function ContentPacksSection() {
 
   const cards = packCards(catalogue, packs)
   const counts = cardCounts(cards)
-  const groups = byVendor(filterCards(cards, show, query))
+  const shown = filterCards(cards, show, query, { tags, hideInstalled })
+  const groups = byVendor(shown)
+  const offered = tagCounts(shown, tags)
+  const chosen = selectionActions(cards, selected)
+  const narrowed = Boolean(query || tags.length || show !== 'all' || hideInstalled)
   const loading = packs === null || catalogue === null
 
   return (
@@ -925,26 +1204,104 @@ export default function ContentPacksSection() {
       )}
       {exporting && <ExportForm onClose={() => setExporting(false)} onError={setError} />}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div role="group" aria-label="Which packs" className="flex gap-2">
-          {FILTERS.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              aria-pressed={show === filter.id}
-              onClick={() => setShow(filter.id)}
-              className={[
-                'border px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                show === filter.id ? 'border-accent text-accent-fg' : 'border-line bg-panel text-fg hover:bg-raised',
-              ].join(' ')}
+      <div role="search" aria-label="Find a pack" className="space-y-2">
+        <PackSearch value={query} onChange={setQuery} />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div role="group" aria-label="Which packs" className="flex gap-2">
+            {FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                aria-pressed={show === filter.id}
+                onClick={() => setShow(filter.id)}
+                className={[
+                  'border px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                  show === filter.id ? 'border-accent text-accent-fg' : 'border-line bg-panel text-fg hover:bg-raised',
+                ].join(' ')}
+              >
+                {filter.label} {counts[filter.id]}
+              </button>
+            ))}
+          </div>
+          <label
+            className={`flex items-center gap-2 text-sm ${show === 'all' ? 'text-fg' : 'text-fg-muted'}`}
+            title={show === 'all' ? undefined : 'It applies to All: the other two show installed packs'}
+          >
+            <input
+              type="checkbox"
+              checked={hideInstalled}
+              disabled={show !== 'all'}
+              onChange={(event) => setHideInstalled(event.target.checked)}
+              className="h-4 w-4 accent-[var(--color-accent)]"
+            />
+            Hide the installed ones
+          </label>
+          <span className="flex-1" />
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={!shown.some(selectable)}
+            onClick={() => setSelected((old) => selectShown(old, shown))}
+          >
+            Select all shown
+          </Button>
+          <Button size="xs" variant="ghost" disabled={!selected.length} onClick={() => setSelected([])}>
+            Select none
+          </Button>
+        </div>
+        {offered.length > 0 && (
+          <div
+            role="group"
+            aria-label="Tags"
+            title="A pack must have every tag that is chosen"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <span className="mr-1 font-mono text-[11px] uppercase tracking-wider text-fg-muted">Tags</span>
+            {offered.map((entry) => (
+              <button
+                key={entry.tag}
+                type="button"
+                aria-pressed={entry.chosen}
+                onClick={() => setTags((old) => toggled(old, entry.tag))}
+                className={[
+                  'border px-2 py-0.5 font-mono text-[11px] leading-5',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                  entry.chosen ? 'border-accent text-accent-fg' : 'border-line bg-panel text-fg-muted hover:bg-raised',
+                ].join(' ')}
+              >
+                {entry.tag} {entry.count}
+              </button>
+            ))}
+            {tags.length > 0 && (
+              <Button size="xs" variant="ghost" onClick={() => setTags([])}>
+                Clear the tags
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {chosen.chosen.length > 0 && (
+        <div
+          role="toolbar"
+          aria-label="The packs that are selected"
+          className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border border-accent bg-panel px-3 py-2 text-sm"
+        >
+          <span className="text-fg">{chosen.chosen.length} selected</span>
+          <span className="flex-1" />
+          {['install', 'update', 'uninstall'].map((action) => (
+            <Button
+              key={action}
+              size="sm"
+              variant={action === 'uninstall' ? 'danger' : action === 'install' ? 'primary' : 'secondary'}
+              disabled={!chosen[action].length}
+              onClick={() => setBulk({ action, cards: chosen[action] })}
             >
-              {filter.label} {counts[filter.id === 'all' ? 'all' : filter.id]}
-            </button>
+              {BULK[action].verb} ({chosen[action].length})…
+            </Button>
           ))}
         </div>
-        <span className="flex-1" />
-        <SearchInput value={query} onChange={setQuery} placeholder="Search the packs…" className="w-64 max-w-full" />
-      </div>
+      )}
 
       {loading && !error && (
         <p role="status" className="py-6 text-center font-mono text-sm text-fg-muted">
@@ -953,7 +1310,7 @@ export default function ContentPacksSection() {
       )}
       {!loading && groups.length === 0 && (
         <p className="border border-line px-3 py-6 text-center text-sm text-fg-muted">
-          {query || show !== 'all' ? 'No pack matches.' : 'No pack yet.'}
+          {narrowed ? 'No pack matches.' : 'No pack yet.'}
         </p>
       )}
       {groups.map((group) => (
@@ -965,6 +1322,8 @@ export default function ContentPacksSection() {
                 key={card.id}
                 card={card}
                 busy={busy === card.id}
+                selected={selected.includes(card.id)}
+                onSelect={(found) => setSelected((old) => toggled(old, found.id))}
                 onInstall={take}
                 onOpen={setOpened}
                 onUninstall={setRemoving}
@@ -982,6 +1341,24 @@ export default function ContentPacksSection() {
           onDone={(said) => {
             setRemoving(null)
             setMessage(said)
+            reload()
+          }}
+        />
+      )}
+      {bulk && (
+        <BulkDialog
+          action={bulk.action}
+          cards={bulk.cards}
+          onClose={(done) => {
+            const words = BULK[bulk.action]
+            setBulk(null)
+            if (!done) return
+            // The selection is spent: the dialog that just closed said how each pack went.
+            setSelected([])
+            setError(null)
+            setMessage(
+              `${done.ok} ${done.ok === 1 ? 'pack' : 'packs'} ${words.done}${done.left ? `, ${done.left} not` : ''}.`,
+            )
             reload()
           }}
         />

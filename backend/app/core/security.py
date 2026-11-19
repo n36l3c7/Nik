@@ -37,7 +37,6 @@ from .permissions import (
     READ,
     RULES_MANAGE,
     WRITE,
-    legacy_role,
     permissions_of,
     stored_roles,
 )
@@ -233,11 +232,6 @@ class Principal:
         """True when the caller holds at least one of the permissions."""
         return any(permission in self.permissions for permission in wanted)
 
-    @property
-    def role(self) -> str:
-        """The single role of releases before 4.0 (for messages and old clients)."""
-        return legacy_role(self.roles)
-
 
 def _key_expired(row: ApiKey) -> bool:
     if not row.expires_at:
@@ -353,8 +347,6 @@ def user_to_dict(user: User) -> dict:
         "id": user.id,
         "username": user.username,
         "roles": roles,
-        # The single role of releases before 4.0, for clients that still read it.
-        "role": legacy_role(roles),
         "permissions": sorted(permissions_of(roles)),
         "createdAt": user.created_at,
         "createdBy": user.created_by,

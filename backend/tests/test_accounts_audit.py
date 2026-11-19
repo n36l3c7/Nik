@@ -18,7 +18,7 @@ MERGE = {"Content-Type": "application/merge-patch+json"}
 
 
 def _user(admin: TestClient, username: str = "anna", password: str = "password1", role: str = "analyst") -> dict:
-    res = admin.post("/api/users", json={"username": username, "password": password, "role": role})
+    res = admin.post("/api/users", json={"username": username, "password": password, "roles": [role]})
     assert res.status_code == 201, res.text
     return res.json()["user"]
 
@@ -42,13 +42,12 @@ def test_an_admin_changes_name_role_and_password_of_an_account(admin: TestClient
     session = _signed_in("anna", "password1")
     admin.post("/api/incidents", json={"id": "i1", "data": {}, "assignee": "anna"})
 
-    res = admin.patch(f"/api/users/{anna['id']}", json={"username": "anna.b", "role": "admin"})
+    res = admin.patch(f"/api/users/{anna['id']}", json={"username": "anna.b", "roles": ["admin"]})
     assert res.status_code == 200
     assert res.json()["user"] == {
         **anna,
         "username": "anna.b",
         "roles": ["admin"],
-        "role": "admin",
         "permissions": sorted(ALL),
         "disabled": False,
     }
@@ -78,9 +77,9 @@ def test_account_changes_are_validated(admin: TestClient):
     url = f"/api/users/{anna['id']}"
     assert admin.patch(url, json={"username": "  "}).status_code == 400
     assert admin.patch(url, json={"username": "ADMIN"}).json()["detail"] == "Username already exists"
-    assert admin.patch(url, json={"role": "root"}).status_code == 400
+    assert admin.patch(url, json={"roles": ["root"]}).status_code == 400
     assert admin.patch(url, json={"password": "short"}).status_code == 400
-    assert admin.patch("/api/users/nope", json={"role": "admin"}).status_code == 404
+    assert admin.patch("/api/users/nope", json={"roles": ["admin"]}).status_code == 404
     # The same name in another case is the account's own: allowed.
     assert admin.patch(url, json={"username": "Anna"}).json()["user"]["username"] == "Anna"
     # Nothing to change: accepted, and not logged.
@@ -89,25 +88,25 @@ def test_account_changes_are_validated(admin: TestClient):
     assert len(_actions(admin)) == before
     # Only admins change accounts.
     analyst = _signed_in("anna", "password1")
-    assert analyst.patch(f"/api/users/{me['id']}", json={"role": "analyst"}).status_code == 403
+    assert analyst.patch(f"/api/users/{me['id']}", json={"roles": ["analyst"]}).status_code == 403
 
 
 def test_there_is_always_an_admin_that_can_sign_in(admin: TestClient):
     me = admin.get("/api/auth/me").json()["user"]
-    for change in ({"role": "analyst"}, {"disabled": True}):
+    for change in ({"roles": ["analyst"]}, {"disabled": True}):
         res = admin.patch(f"/api/users/{me['id']}", json=change)
         assert res.status_code == 400 and "your own account" in res.json()["detail"]
     # Through an admin key there is no "own account": the last admin is still protected.
-    key = make_key(admin, label="adm", role="admin")
+    key = make_key(admin, label="adm", roles=["admin"])
     k = TestClient(fastapi_app)
-    for change in ({"role": "analyst"}, {"disabled": True}):
+    for change in ({"roles": ["analyst"]}, {"disabled": True}):
         res = k.patch(f"/api/users/{me['id']}", headers=key, json=change)
         assert res.status_code == 400 and "at least one admin" in res.json()["detail"]
     _user(admin)
     assert k.delete(f"/api/users/{me['id']}", headers=key).json()["detail"].startswith("There must be")
     # With a second admin the first can be demoted.
     _user(admin, "boss", role="admin")
-    assert k.patch(f"/api/users/{me['id']}", headers=key, json={"role": "analyst"}).status_code == 200
+    assert k.patch(f"/api/users/{me['id']}", headers=key, json={"roles": ["analyst"]}).status_code == 200
 
 
 def test_a_disabled_account_cannot_sign_in_or_keep_working(admin: TestClient):
@@ -305,7 +304,9 @@ def test_analysts_change_the_working_settings_admins_the_rest(admin: TestClient)
     # A key with the write scope can save settings; a read-only one cannot.
     k = TestClient(fastapi_app)
     assert k.put("/api/settings", headers=make_key(admin, label="rw"), json=current).status_code == 200
-    assert k.put("/api/settings", headers=make_key(admin, label="ro", scopes=["read"]), json=current).status_code == 403
+    assert (
+        k.put("/api/settings", headers=make_key(admin, label="ro", roles=["viewer"]), json=current).status_code == 403
+    )
 
 
 # --------------------------------------------------------------------------- #

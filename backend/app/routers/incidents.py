@@ -246,7 +246,7 @@ def list_incidents(
     """
     # `q` is the query language (app/query); the older parameters below are kept
     # for API clients and add their conditions to it.
-    conditions = query.sql("incidents", q, caller) if q and q.strip() else []
+    conditions = query.sql("incidents", q, caller, db=db) if q and q.strip() else []
     if conditions:
         query.statement_timeout(db)
     if host:

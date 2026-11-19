@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api.js'
 import { byName } from '../domain/fields.js'
+import { refreshQuerySchema } from '../services/querySchema.js'
 import { useAuth } from './AuthContext.jsx'
 
 /*
@@ -28,6 +29,8 @@ export function FieldsProvider({ children }) {
       setFields(registry.fields)
       setTypes(found.types)
       setReady(true)
+      // Every field of the registry can be asked in a query: the inputs that list them read them again.
+      refreshQuerySchema()
     } catch {
       // The page still works without them: it shows what it always showed.
       setReady(true)
