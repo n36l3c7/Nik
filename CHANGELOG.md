@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A logo set**: the mark Nik already had, as files to use elsewhere
+  (`frontend/public/brand/`: the mark, a one-colour version, the mark with
+  the name for dark and light backgrounds, PNG icons of 192 and 512 px).
+  The rail draws the same mark.
 - **Right-click on what is not evidence**: a playbook, a script, a run, a
   task, a dashboard and an entry of the War Room have a menu, built the
   same way everywhere: what the object does, then *Copy link* and what else

@@ -12,6 +12,7 @@ import {
   Users,
   Workflow,
 } from 'lucide-react'
+import NikMark from '../ui/NikMark.jsx'
 
 /*
  * ============================================================================
@@ -94,12 +95,7 @@ export default function Rail({
       aria-label="Sections"
       className="flex h-full w-14 shrink-0 flex-col items-stretch border-r border-line bg-sunken py-3"
     >
-      <span
-        aria-hidden="true"
-        className="mx-auto mb-3 bg-accent px-2 py-1 font-mono text-sm font-extrabold leading-tight text-canvas"
-      >
-        &gt;_
-      </span>
+      <NikMark className="mx-auto mb-3 h-7 w-7 shrink-0" />
       {canRead && (
         <>
           <RailButton
