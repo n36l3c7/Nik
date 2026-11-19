@@ -25,7 +25,16 @@ Rules that hold here:
 - A value put in an IMAP command (a folder, a word to search) is quoted, and
   refused when it holds a quote, a backslash or a line break.
 - A message is read up to ``MAX_MESSAGE`` bytes and never opened further than
-  parsing it: an attachment is described (name, type, size, SHA-256), not kept.
+  parsing it: an attachment is described (name, type, size, SHA-256).
+- Three things need a message whole, and read it up to the limit of an upload,
+  refusing one that is larger: ``get-attachments``, which hands what is
+  attached to Nik's store; ``forward`` when it carries the attachments; and
+  the listener, which keeps the message it made an incident from. An
+  attachment is bytes from end to end: stored, or attached again, never opened.
+- What ``forward`` carries leaves Nik, so the data guard judges it first
+  (``judge``, given by who runs the command for a playbook). A runtime that
+  was given no judge carries nothing; one that was given no store (``keep``)
+  describes the attachments and keeps none.
 - Deleting marks the message deleted and expunges it; the file says the command
   changes something outside, so a playbook asks for approval by default.
 """
@@ -42,6 +51,7 @@ from email.message import EmailMessage
 from email.utils import getaddresses, make_msgid, parsedate_to_datetime
 from typing import Any
 
+from ..core.config import settings
 from . import egress
 from .connector_runtime import Answer, CommandError
 
@@ -49,10 +59,14 @@ MAX_RECIPIENTS = 50
 MAX_MESSAGE = 2 * 1024 * 1024  # what is read of one message
 MAX_TEXT = 20_000  # what a command gives of its text
 MAX_FOUND = 200  # messages a search or a fetch reads at most
+MAX_ATTACHMENTS = 50  # attachments of one message that are described, kept or carried
+MAX_CARRIED = 20 * 1024 * 1024  # what a forward carries: base64 adds a third, and most servers stop at 25 MB
 TIMEOUT = 30
 _UNSAFE = re.compile(r'["\\\r\n\x00]')
 _TAG = re.compile(r"<[^>]{0,2000}>")
 _UID = re.compile(r"UID (\d+)")
+_TOKEN = re.compile(r"[A-Za-z0-9!#$&^_.+-]{1,100}")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _quoted(value: Any, what: str) -> str:
@@ -119,25 +133,47 @@ def _iso(header: Any) -> str:
     return moment.astimezone(timezone.utc).isoformat()
 
 
-def describe(raw: bytes, uid: int, folder: str) -> dict[str, Any]:
-    """A message as a command gives it: who, what, when, its text and what is attached."""
-    message = email.message_from_bytes(raw[:MAX_MESSAGE], policy=email.policy.default)
-    attachments = []
+def files_of(message: email.message.EmailMessage) -> tuple[list[dict[str, Any]], bool]:
+    """What is attached to a message: for each, its name, type, size, SHA-256, its bytes (``data``)
+    and whether they could be read (``readable``); and whether there are more than are given. An
+    attached message is the bytes of that message, as the mail analysis takes it out."""
+    found: list[dict[str, Any]] = []
     for part in message.iter_attachments() if message.is_multipart() else []:
+        if len(found) >= MAX_ATTACHMENTS:
+            return found, True
+        readable = True
         try:
-            data = part.get_payload(decode=True) or b""
-        except (ValueError, LookupError):
-            data = b""
-        attachments.append(
+            if part.get_content_type() == "message/rfc822":
+                inner = part.get_payload()
+                data = inner[0].as_bytes() if isinstance(inner, list) and inner else b""
+            elif part.is_multipart():
+                data, readable = b"", False  # parts within a part: there is no one file to take
+            else:
+                data = part.get_payload(decode=True) or b""
+        except (ValueError, LookupError, TypeError):
+            data, readable = b"", False
+        found.append(
             {
                 "name": str(part.get_filename() or "")[:300],
                 "type": part.get_content_type(),
                 "size": len(data),
                 "sha256": hashlib.sha256(data).hexdigest(),
+                "data": data,
+                "readable": readable,
             }
         )
-        if len(attachments) >= 50:
-            break
+    return found, False
+
+
+def _shown(item: dict[str, Any]) -> dict[str, Any]:
+    """An attachment as a command describes it: without its bytes."""
+    return {key: item[key] for key in ("name", "type", "size", "sha256")}
+
+
+def describe(raw: bytes, uid: int, folder: str) -> dict[str, Any]:
+    """A message as a command gives it: who, what, when, its text and what is attached."""
+    message = email.message_from_bytes(raw[:MAX_MESSAGE], policy=email.policy.default)
+    attachments = [_shown(item) for item in files_of(message)[0]]
     return {
         "uid": uid,
         "folder": folder,
@@ -166,6 +202,12 @@ class MailRuntime:
         self.config = self._config(config or {})
         self.records: list[dict] = []
         self._imap: Any = None
+        self._selected: tuple[str, bool] | None = None
+        # Given by who runs a command for a playbook (connector_actions.py): the data guard for the
+        # files a message would carry, and Nik's store for those it is asked to keep.
+        self.judge: Any = None
+        self.keep: Any = None
+        self.classes: dict[str, list] = {}  # of the outputs of the command that ran
 
     def _config(self, given: dict[str, Any]) -> dict[str, Any]:
         out = {}
@@ -217,6 +259,7 @@ class MailRuntime:
         if status != "OK":
             raise CommandError(f'There is no folder "{folder}" in this mailbox')
         self.records.append({"method": "IMAP", "host": self._imap_host(), "path": folder, "status": "ok"})
+        self._selected = (folder, readonly)
         return client
 
     def _ask(self, call, *args):
@@ -242,7 +285,7 @@ class MailRuntime:
     def close(self) -> None:
         if self._imap is None:
             return
-        client, self._imap = self._imap, None
+        client, self._imap, self._selected = self._imap, None, None
         try:
             client.logout()
         except (egress.IMAP_ERROR, OSError):
@@ -257,6 +300,18 @@ class MailRuntime:
             if status == "OK" and isinstance(raw, (bytes, bytearray)):
                 found.append(describe(bytes(raw), uid, folder))
         return found
+
+    def _whole(self, client: Any, uid: int) -> bytes:
+        """A message as the server holds it, all of it: what is kept or carried must not be cut.
+        One above the limit of an upload is refused, not read by halves."""
+        most = settings.SAMPLE_MAX_MB * 1024 * 1024
+        status, data = self._ask(client.uid, "FETCH", str(uid), f"(BODY.PEEK[]<0.{most + 1}>)")
+        raw = next((part[1] for part in data or [] if isinstance(part, tuple) and len(part) > 1), None)
+        if status != "OK" or not isinstance(raw, (bytes, bytearray)):
+            raise CommandError("There is no message with this uid in the folder")
+        if len(raw) > most:
+            raise CommandError(f"The message exceeds the {settings.SAMPLE_MAX_MB} MB limit")
+        return bytes(raw)
 
     def _search(self, client: Any, criteria: list[str]) -> list[int]:
         status, data = self._ask(client.uid, "SEARCH", *(criteria or ["ALL"]))
@@ -292,7 +347,52 @@ class MailRuntime:
                     f"{domain} is not among the hosts this playbook may reach: list it to write to its addresses"
                 )
 
-    def _send(self, to: list[str], subject: str, text: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    def _carried(self, raw: bytes) -> tuple[list[dict[str, Any]], int]:
+        """The attachments a forward may carry: all of them, or none. What cannot be judged whole
+        (one that could not be read, more than are looked at, more than a server takes) is refused
+        with a sentence, and the guard decides on the rest. Gives them, and how many the guard held back."""
+        found, more = files_of(email.message_from_bytes(raw, policy=email.policy.default))
+        if not found:
+            return [], 0
+        without = 'forward it with "attachments" off'
+        if more:
+            raise CommandError(f"The message has more than {MAX_ATTACHMENTS} attachments: {without}")
+        if not all(item["readable"] for item in found):
+            raise CommandError(f"An attachment of the message could not be read, so it cannot be judged: {without}")
+        if sum(item["size"] for item in found) > MAX_CARRIED:
+            raise CommandError(
+                f"The attachments are more than {MAX_CARRIED // (1024 * 1024)} MB together, "
+                f"more than a mail server takes: {without}"
+            )
+        if self.judge is None:
+            raise CommandError("Attachments leave only where the data guard judges them: in a playbook")
+        return (found, 0) if self.judge([_shown(item) for item in found]) else ([], len(found))
+
+    @staticmethod
+    def _attach(message: EmailMessage, item: dict[str, Any]) -> None:
+        """Attach a file as bytes. Its name and type are the sender's words: the name loses what
+        could break a header, a type that is not written as one becomes a plain binary."""
+        name = " ".join(_CONTROL.sub(" ", item["name"]).split())[:200] or "attachment"
+        if item["type"] == "message/rfc822":
+            try:
+                inner = email.message_from_bytes(item["data"], policy=email.policy.default)
+                message.add_attachment(inner, filename=name)
+                return
+            except (ValueError, LookupError, TypeError):
+                pass  # it goes as the bytes it is
+        maintype, _, subtype = item["type"].partition("/")
+        if maintype in ("message", "multipart") or not (_TOKEN.fullmatch(maintype) and _TOKEN.fullmatch(subtype)):
+            maintype, subtype = "application", "octet-stream"
+        message.add_attachment(item["data"], maintype=maintype, subtype=subtype, filename=name)
+
+    def _send(
+        self,
+        to: list[str],
+        subject: str,
+        text: str,
+        headers: dict[str, str] | None = None,
+        files: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         host = self._smtp_host()
         port = int(self.config.get("smtp_port") or 587)
         security = str(self.config.get("smtp_security") or "starttls")
@@ -305,7 +405,11 @@ class MailRuntime:
             if value:
                 message[name] = " ".join(str(value).split())[:2000]
         message.set_content(str(text or ""))
+        for item in files or []:
+            self._attach(message, item)
         record = {"method": "SMTP", "host": host, "path": f"{len(to)} recipient(s)"}
+        if files:
+            record["attachments"] = len(files)
         try:
             client, context = egress.smtp_client(host, port, security, self._ca(), TIMEOUT)
             with client:
@@ -345,11 +449,12 @@ class MailRuntime:
         missing = [a.name for a in command.arguments if a.required and args.get(a.name) in (None, "", [])]
         if missing:
             raise CommandError("Needed: " + ", ".join(missing))
+        self.classes = {}
         try:
             outputs = getattr(self, "_do_" + name.replace("-", "_"))(args)
         finally:
             self.close()
-        return Answer(outputs=outputs, records=list(self.records))
+        return Answer(outputs=outputs, records=list(self.records), classes=dict(self.classes))
 
     def _do_send(self, args: dict[str, Any]) -> dict[str, Any]:
         to = recipients(args.get("to"))
@@ -371,7 +476,16 @@ class MailRuntime:
     def _do_forward(self, args: dict[str, Any]) -> dict[str, Any]:
         to = recipients(args.get("to"))
         self._allowed(to)
-        original = self._original(args)
+        files: list[dict[str, Any]] = []
+        held = 0
+        if args.get("attachments"):
+            # With what is attached: the message is read whole, and the guard says whether it goes.
+            folder, uid = self._folder(args), self._uid(args)
+            raw = self._whole(self._select(folder, readonly=True), uid)
+            original = describe(raw, uid, folder)
+            files, held = self._carried(raw)
+        else:
+            original = self._original(args)
         subject = original["subject"]
         subject = subject if subject.lower().startswith(("fw:", "fwd:")) else f"Fwd: {subject}"
         quoted = (
@@ -379,7 +493,8 @@ class MailRuntime:
             f"From: {original['from']}\nDate: {original['date']}\nSubject: {original['subject']}\n"
             f"To: {', '.join(original['to'])}\n\n{original['text']}"
         )
-        return self._send(to, subject, quoted.strip())
+        sent = self._send(to, subject, quoted.strip(), files=files)
+        return {**sent, "attachments": len(files), "attachments_held": held}
 
     def _do_search(self, args: dict[str, Any]) -> dict[str, Any]:
         folder = self._folder(args)
@@ -394,6 +509,36 @@ class MailRuntime:
 
     def _do_get_message(self, args: dict[str, Any]) -> dict[str, Any]:
         return self._original(args)
+
+    def _do_get_attachments(self, args: dict[str, Any]) -> dict[str, Any]:
+        folder, uid = self._folder(args), self._uid(args)
+        raw = self._whole(self._select(folder, readonly=True), uid)
+        message = email.message_from_bytes(raw, policy=email.policy.default)
+        found, more = files_of(message)
+        said = {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "subject": " ".join(str(message.get("Subject") or "").split())[:500],
+            "uid": uid,
+            "folder": folder,
+        }
+        if self.keep is not None and found:
+            kept = self.keep(found, said, args.get("incident"))
+        else:
+            kept = [{"artifact": "", "linked": False, "note": "There is no store to keep it in here"} for _ in found]
+        attachments = [{**_shown(item), **entry} for item, entry in zip(found, kept, strict=True)]
+        self.classes = {
+            "attachments.name": ["attachment_name"],
+            "attachments.sha256": ["hash"],
+            "attachments.artifact": ["nik_id"],
+            "artifacts": ["nik_id"],
+        }
+        return {
+            "attachments": attachments,
+            "artifacts": [entry["artifact"] for entry in attachments if entry["artifact"]],
+            "count": len(attachments),
+            "stored": sum(1 for entry in attachments if entry["artifact"]),
+            "truncated": more,
+        }
 
     def _do_move(self, args: dict[str, Any]) -> dict[str, Any]:
         uid, target = self._uid(args), _quoted(args.get("to"), "The folder to move to")
@@ -484,6 +629,19 @@ class MailRuntime:
             return {"ok": False, "status": 0, "message": error.message}
         finally:
             self.close()
+
+    def evidence(self, item: Any) -> tuple[str, bytes] | None:
+        """The message an item of the listener was read from, whole: what is kept as evidence of the
+        incident it became. The mailbox stays open from one item to the next, and whoever asks closes
+        it at the end of the cycle. None for what is not an item of this listener."""
+        try:
+            uid, folder = int(item.get("uid")), str(item.get("folder") or "")
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if uid <= 0 or not folder:
+            return None
+        client = self._imap if self._selected == (folder, True) else self._select(folder, readonly=True)
+        return f"message-{uid}.eml", self._whole(client, uid)
 
     def fetch(self, spec: Any, state: dict[str, Any], first: dict[str, Any], now: dict[str, Any], limit: int) -> dict:
         """The messages that arrived since the last cycle: those with a uid above ``state.uid``; the

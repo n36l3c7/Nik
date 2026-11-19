@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Bug, GitBranch, LayoutGrid, List, Play, Redo2, Undo2 } from 'lucide-react'
+import { ArrowLeft, Bug, GitBranch, GitCompareArrows, LayoutGrid, List, Play, Redo2, Undo2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -28,6 +28,7 @@ import {
 } from '../../domain/automation/graph.js'
 import { tidy } from '../../domain/automation/layout.js'
 import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import BranchCompare from './BranchCompare.jsx'
 import BranchTree from './BranchTree.jsx'
 import Canvas from './Canvas.jsx'
 import DebugDialog from './DebugDialog.jsx'
@@ -58,6 +59,12 @@ import { Field, Seg, Switch, TextInput } from './fields.jsx'
  * kept as it was. Graphs are not merged: when the playbook got a newer version
  * since the branch started, the push says so and asks before replacing it.
  * Who edits playbooks sees every branch; who made one (or an admin) changes it.
+ *
+ * A branch **runs only in the debugger** (6.3): on a branch there is no "Run…"
+ * and no switch, and the trigger drawn on it starts nothing until it is
+ * pushed. "Debug…" runs the branch as it is saved. "Compare with main" puts
+ * main as it is now beside the branch (BranchCompare.jsx), to see what a push
+ * would replace before pushing.
  */
 
 const TAB_LABELS = { canvas: 'Canvas', runs: 'Runs', versions: 'Versions', settings: 'Settings' }
@@ -173,6 +180,7 @@ export default function PlaybookPage({
   const [naming, setNaming] = useState(null) // the name of the branch being made
   const [pushing, setPushing] = useState(null) // { note, moved } while "Push to main" asks
   const [removingBranch, setRemovingBranch] = useState(false)
+  const [comparing, setComparing] = useState(null) // { main, graph }: the two graphs compared, while that is open
   const [busy, setBusy] = useState(false)
   const { catalog, loadCatalog, askRun } = useAutomation()
   const { showToast } = useToast()
@@ -345,7 +353,7 @@ export default function PlaybookPage({
 
   // Undo, redo, copy and paste, when the keys are not typing into a field.
   useEffect(() => {
-    if (!canDraw || activeTab !== 'canvas') return undefined
+    if (!canDraw || activeTab !== 'canvas' || comparing) return undefined
     const onKeyDown = (event) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || isTypingTarget(event.target)) return
       if (!wrapper.current?.contains(event.target) && event.target !== document.body) return
@@ -365,7 +373,7 @@ export default function PlaybookPage({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canDraw, activeTab, selected, apply, select])
+  }, [canDraw, activeTab, comparing, selected, apply, select])
 
   // ---- Versions, on and off ------------------------------------------------------
   const saveVersion = async () => {
@@ -479,6 +487,7 @@ export default function PlaybookPage({
       setBranch((before) => ({ ...before, ...(found.branches ?? []).find((item) => item.id === branchId) }))
       setProblems([])
       setPushing(null)
+      setComparing(null)
       showToast({
         message: `Version ${found.version} saved from the branch “${branch?.name}”: it is what runs from now on.`,
       })
@@ -487,6 +496,8 @@ export default function PlaybookPage({
       const found = failure.data?.problems
       if (failure.status === 422 && Array.isArray(found)) {
         setPushing(null)
+        // What is to fix is shown on the canvas of the branch.
+        setComparing(null)
         setProblems(found)
         const first = found.find((problem) => problem.node)
         select(first ? [first.node] : [])
@@ -498,6 +509,23 @@ export default function PlaybookPage({
       } else {
         showToast({ message: failure.message })
       }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Main as it is now beside the branch as it is saved: both are read again, since either may have moved. */
+  const openCompare = async () => {
+    setBusy(true)
+    try {
+      await flush()
+      const [found, onBranch] = await Promise.all([api.get(playbookUrl), api.get(target)])
+      setDetail(found)
+      setBranch(onBranch)
+      setPushing(null)
+      setComparing({ main: normalise(found.graph), graph: normalise(onBranch.graph) })
+    } catch (failure) {
+      showToast({ message: failure.message })
     } finally {
       setBusy(false)
     }
@@ -550,6 +578,83 @@ export default function PlaybookPage({
   const nextVersion = (detail.version ?? 0) + 1
   const selectedId = selected.length === 1 ? selected[0] : null
 
+  // "Push to main…" asks here: from the editor of the branch, and from the comparison.
+  const pushDialog = (
+    <Modal
+      open={pushing !== null}
+      onClose={() => setPushing(null)}
+      title={pushing?.moved ? 'The playbook moved on' : `Push “${branch?.name ?? ''}” to main?`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => setPushing(null)}>
+            Cancel
+          </Button>
+          {pushing?.moved ? (
+            <Button key="over" variant="danger" disabled={busy} onClick={() => pushBranch(true)}>
+              Push over it
+            </Button>
+          ) : (
+            <Button key="push" disabled={busy} onClick={() => pushBranch(false)}>
+              {busy ? 'Checking…' : 'Push'}
+            </Button>
+          )}
+        </>
+      }
+    >
+      {pushing?.moved ? (
+        <p role="alert" className="text-sm text-fg">
+          The playbook is at version {pushing.moved.currentVersion ?? 0} and this branch started from version{' '}
+          {pushing.moved.baseVersion ?? 0}. Graphs are not merged: pushing makes the branch version {nextVersion} and
+          what was saved since is left in the earlier versions, where it can be restored.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-fg">
+            The branch is checked and becomes version {nextVersion}: it is what runs from then on. The branch stays, to
+            go on from; the draft of main is not touched.
+          </p>
+          {!comparing && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={openCompare}
+              className="self-start text-sm text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Compare with main first
+            </button>
+          )}
+          <Field label="Note" hint="What changed, for who reads the versions.">
+            {(fieldId) => (
+              <TextInput
+                id={fieldId}
+                value={pushing?.note ?? ''}
+                maxLength={500}
+                onChange={(value) => setPushing((before) => (before ? { ...before, note: value } : before))}
+              />
+            )}
+          </Field>
+        </div>
+      )}
+    </Modal>
+  )
+
+  if (comparing && branch) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <BranchCompare
+          playbook={detail}
+          branch={branch}
+          main={comparing.main}
+          graph={comparing.graph}
+          catalog={catalog.nodes}
+          onBack={() => setComparing(null)}
+          onPush={canDraw ? () => setPushing({ note: '', moved: null }) : null}
+        />
+        {pushDialog}
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5">
@@ -569,6 +674,7 @@ export default function PlaybookPage({
               {!branchId && draftChanged && detail.version ? ' · draft changed' : ''}
               {branch && !mine ? ` · ${branch.createdBy}’s branch, read-only` : ''}
               {branch?.behind ? ` · started from version ${branch.baseVersion ?? 0}` : ''}
+              {branchId ? ' · runs only in the debugger' : ''}
               {!branchId && canEdit && detail.draft && detail.version ? (
                 <>
                   {' · '}
@@ -607,46 +713,66 @@ export default function PlaybookPage({
             onChange={onTab}
             options={TABS.map((item) => ({ value: item, label: TAB_LABELS[item] }))}
           />
-          <label className="flex items-center gap-2 text-xs text-fg-muted">
-            <Switch
-              label={detail.enabled ? 'The playbook is on: turn it off' : 'The playbook is off: turn it on'}
-              checked={detail.enabled}
-              disabled={!canEdit || (!detail.version && !detail.enabled)}
-              onChange={setEnabled}
-            />
-            {detail.enabled ? 'on' : 'off'}
-          </label>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={Play}
-            disabled={!detail.version}
-            title={
-              detail.version
-                ? 'Run version ' +
-                  detail.version +
-                  ' by hand, or try it as a dry run' +
-                  (branchId ? ': the version in use, not this branch' : '')
-                : 'Save a version first: a run uses a version, not the draft'
-            }
-            onClick={() => askRun({ playbookId: detail.id, dryRun: !detail.triggerConfig?.manual })}
-          >
-            Run…
-          </Button>
+          {/* A branch is not turned on and not run: it is debugged, and pushed when it is ready. */}
+          {!branchId && (
+            <label className="flex items-center gap-2 text-xs text-fg-muted">
+              <Switch
+                label={detail.enabled ? 'The playbook is on: turn it off' : 'The playbook is off: turn it on'}
+                checked={detail.enabled}
+                disabled={!canEdit || (!detail.version && !detail.enabled)}
+                onChange={setEnabled}
+              />
+              {detail.enabled ? 'on' : 'off'}
+            </label>
+          )}
+          {!branchId && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Play}
+              disabled={!detail.version}
+              title={
+                detail.version
+                  ? 'Run version ' + detail.version + ' by hand, or try it as a dry run'
+                  : 'Save a version first: a run uses a version, not the draft'
+              }
+              onClick={() => askRun({ playbookId: detail.id, dryRun: !detail.triggerConfig?.manual })}
+            >
+              Run…
+            </Button>
+          )}
           {can('automation.debug') && (
             <Button
               variant="secondary"
               size="sm"
               icon={Bug}
-              disabled={Boolean(branchId) || (!detail.version && !detail.draft)}
+              disabled={branchId ? !branch : !detail.version && !detail.draft}
               title={
                 branchId
-                  ? 'Debug runs the draft or the version of main: push the branch, or open main'
+                  ? 'A debug run of this branch as it is saved, the only way a branch runs: step through it, change what a node is given, skip a node'
                   : 'A run that stops before its nodes: step through it, change what a node is given, skip a node'
               }
-              onClick={() => setDebugging(true)}
+              onClick={() =>
+                // The branch is debugged as it is saved: what is on the canvas is saved first.
+                flush().then(
+                  () => setDebugging(true),
+                  (failure) => showToast({ message: failure.message }),
+                )
+              }
             >
               Debug…
+            </Button>
+          )}
+          {canEdit && branch && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={GitCompareArrows}
+              disabled={busy}
+              title="Main as it is now beside this branch: what a push would replace"
+              onClick={openCompare}
+            >
+              Compare with main
             </Button>
           )}
           {canEdit && !branchId && (
@@ -693,6 +819,7 @@ export default function PlaybookPage({
       {debugging && (
         <DebugDialog
           playbook={detail}
+          branch={branch}
           breakpoints={selected.filter((nodeId) => nodeId !== 'start')}
           onClose={() => setDebugging(false)}
           onStarted={(runId) => {
@@ -895,52 +1022,7 @@ export default function PlaybookPage({
           </Field>
         </form>
       </Modal>
-      <Modal
-        open={pushing !== null}
-        onClose={() => setPushing(null)}
-        title={pushing?.moved ? 'The playbook moved on' : `Push “${branch?.name ?? ''}” to main?`}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setPushing(null)}>
-              Cancel
-            </Button>
-            {pushing?.moved ? (
-              <Button key="over" variant="danger" disabled={busy} onClick={() => pushBranch(true)}>
-                Push over it
-              </Button>
-            ) : (
-              <Button key="push" disabled={busy} onClick={() => pushBranch(false)}>
-                {busy ? 'Checking…' : 'Push'}
-              </Button>
-            )}
-          </>
-        }
-      >
-        {pushing?.moved ? (
-          <p role="alert" className="text-sm text-fg">
-            The playbook is at version {pushing.moved.currentVersion ?? 0} and this branch started from version{' '}
-            {pushing.moved.baseVersion ?? 0}. Graphs are not merged: pushing makes the branch version {nextVersion} and
-            what was saved since is left in the earlier versions, where it can be restored.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-fg">
-              The branch is checked and becomes version {nextVersion}: it is what runs from then on. The branch stays,
-              to go on from; the draft of main is not touched.
-            </p>
-            <Field label="Note" hint="What changed, for who reads the versions.">
-              {(fieldId) => (
-                <TextInput
-                  id={fieldId}
-                  value={pushing?.note ?? ''}
-                  maxLength={500}
-                  onChange={(value) => setPushing((before) => (before ? { ...before, note: value } : before))}
-                />
-              )}
-            </Field>
-          </div>
-        )}
-      </Modal>
+      {pushDialog}
       <Modal
         open={removingBranch}
         onClose={() => setRemovingBranch(false)}

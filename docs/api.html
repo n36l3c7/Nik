@@ -1115,7 +1115,10 @@
             </tr>
             <tr>
               <td><code>PUT /api/automation/playbooks/{id}/enabled</code></td>
-              <td><code>{enabled}</code>: on or off. A playbook needs a version to be turned on.</td>
+              <td>
+                <code>{enabled}</code>: on or off. A playbook needs a version to be turned on. What is on is the version
+                in use: <code>400</code> when the body names a <code>branch</code>.
+              </td>
             </tr>
             <tr>
               <td><code>POST /api/automation/playbooks/{id}/run</code></td>
@@ -1124,7 +1127,8 @@
                 empty, <code>incident</code>, <code>artifact</code> (an analysed e-mail, file or address, by its
                 artifact id) or <code>indicator</code> (<code>objectId</code> is <code>type:value</code>, as in
                 <code>domain:evil.example</code>). <code>201</code> with the run; <code>400</code> when the playbook is
-                not meant to be run by hand (a dry run always can) or its event is about another kind of object;
+                not meant to be run by hand (a dry run always can), its event is about another kind of object, or the
+                body names a <code>branch</code> (a branch runs only in the debugger, see <code>POST …/debug</code>);
                 <code>404</code> when the object does not exist; <code>409</code> when automation is stopped;
                 <code>429</code> with the limit that refused it.
               </td>
@@ -1288,9 +1292,10 @@
               <td><code>GET /api/automation/runs</code></td>
               <td>
                 Runs, newest first. Query: <code>playbook</code>, <code>status</code> (running, waiting, done, failed,
-                stopped), <code>incident</code>, <code>limit</code>, <code>offset</code>.
-                <code>GET /api/incidents/{id}/runs</code> is the runs of one incident with the approvals that wait on
-                them.
+                stopped), <code>incident</code>, <code>limit</code>, <code>offset</code>. Each run has
+                <code>branch</code>: <code>{id, name}</code> for a debug run of a branch, <code>null</code> for every
+                other run. <code>GET /api/incidents/{id}/runs</code> is the runs of one incident with the approvals that
+                wait on them.
               </td>
             </tr>
             <tr>
@@ -1563,10 +1568,13 @@
               <td>
                 (<strong>automation.debug</strong>) The <a href="automation.html#debugger">debugger</a>. Start a debug
                 run of a playbook on an object:
-                <code>{objectKind, objectId, inputs, breakpoints: [node ids], stepMode, draft}</code>
-                (<code>draft: true</code> runs the draft as it is drawn; <code>400</code> with its
-                <code>problems</code> when it cannot run). It stops before the nodes named, or before every node with
-                <code>stepMode</code>; what goes outside is held as in a dry run · tell it what to do:
+                <code>{objectKind, objectId, inputs, breakpoints: [node ids], stepMode, draft, branch}</code>
+                (<code>draft: true</code> runs the draft as it is drawn; <code>branch</code>, the id of a branch of the
+                playbook, runs that branch as it is saved, which also needs <strong>automation.edit</strong> and is the
+                only way a branch runs; <code>400</code> with its <code>problems</code> when the draft or the branch
+                cannot run, or when both are asked; <code>404</code> when the playbook has no such branch). It stops
+                before the nodes named, or before every node with <code>stepMode</code>; what goes outside is held as in
+                a dry run · tell it what to do:
                 <code>{action, stepId, overrides, sendForReal, contextPatch, breakpoints}</code>, where
                 <code>action</code> is <code>step</code>, <code>continue</code>, <code>skip</code>,
                 <code>rerun</code> (a node that is over, by <code>stepId</code>), <code>stop</code>, or
@@ -1577,10 +1585,11 @@
                   >{"&lt;node id&gt;": output, "inputs": {…}}</code
                 >). <code>GET /api/automation/runs/{id}</code>
                 of a debug run adds
-                <code>debug: {breakpoints, stepMode, at: [{step, node}], draft, context}</code>, and a step it is
-                stopped at has <code>waiting: "debug"</code> with what the node would be given in <code>input</code>.
-                Debug runs are listed with <code>GET /api/automation/runs?debug=true</code>, to who started them and to
-                an admin; they count for no limit and no statistic and are deleted after a week.
+                <code>debug: {breakpoints, stepMode, at: [{step, node}], draft, branch, context}</code>
+                (<code>branch</code> is the name of the branch it runs, or <code>null</code>), and a step it is stopped
+                at has <code>waiting: "debug"</code> with what the node would be given in <code>input</code>. Debug runs
+                are listed with <code>GET /api/automation/runs?debug=true</code>, to who started them and to an admin;
+                they count for no limit and no statistic and are deleted after a week.
               </td>
             </tr>
             <tr>

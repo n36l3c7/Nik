@@ -21,10 +21,44 @@ Turn on *fetch* for the instance and each message that arrives in the folder
 becomes an incident, through the mapper of the connector: the subject is its
 name, the text its details. A message is told apart by its Message-ID.
 
+The message itself is kept as evidence: it becomes an e-mail of the incident,
+analysed as an uploaded `.eml` is (headers, SPF/DKIM/DMARC, links,
+attachments, verdict), and the Evidence tab shows it. A message Nik holds
+already is not analysed twice. Nothing is kept for a message a pre-processing
+rule dropped; one a rule linked to an incident there was becomes evidence of
+that incident. A message above the size limit of an upload is not kept, and
+the item says so.
+
 ## Commands
 
-`send`, `reply`, `forward`, `search`, `get-message`, `move`, `mark-read`,
-`mark-unread`, `delete`, `list-folders`. Those that send write only to
-addresses whose domain the playbook may reach. `delete` cannot be taken back.
+`send`, `reply`, `forward`, `search`, `get-message`, `get-attachments`, `move`,
+`mark-read`, `mark-unread`, `delete`, `list-folders`. Those that send write
+only to addresses whose domain the playbook may reach. `delete` cannot be
+taken back.
 
 An attachment is described (name, type, size, SHA-256) and never opened.
+
+### get-attachments
+
+Keeps what is attached to a message as files in Nik: each is stored under its
+SHA-256 and analysed as an uploaded file is, never run. The files go in the
+incident the run works on (or the one named in `incident`); with no incident
+they are kept on their own. The command gives one entry for each attachment
+(`name`, `type`, `size`, `sha256`, `artifact`, `linked`, `note`) and the list
+of the ids in `artifacts`, for a loop to go over. An attachment that is empty,
+that could not be read or that is above the size limit of a sample is listed
+with a `note` and no `artifact`. A message above that limit is refused, and
+fifty attachments at most are looked at.
+
+### forward with attachments
+
+`forward` carries the attachments of the message when `attachments` is on. It
+is off by default: a file that leaves Nik is judged by the data guard, and
+*attachments* is a class no playbook sends unless an admin opened it for that
+playbook. The guard judges each file by what it is, its name, its size and its
+hash, without opening it: it is an attachment, its name is a file name, and a
+file Nik holds as a sample is a sample. When something is held the step fails
+and says what; a node set to send without what is held sends the text alone
+and says how many files stayed (`attachments_held`). An attachment that could
+not be read, more than fifty attachments, or more than 20 MB of them are
+refused: forward such a message with `attachments` off.

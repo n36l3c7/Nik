@@ -59,6 +59,7 @@ NATIVE: dict[str, frozenset[str]] = {
             "forward",
             "search",
             "get-message",
+            "get-attachments",
             "move",
             "mark-read",
             "mark-unread",

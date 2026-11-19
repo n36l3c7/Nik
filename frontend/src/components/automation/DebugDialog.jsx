@@ -8,6 +8,9 @@ import { Button, Modal } from '../ui/index.js'
  * Debug on…: start a debug run of a playbook, of its saved version or of its
  * draft as it is drawn, on an incident or on nothing. The run opens on its
  * page, stopped before its first node.
+ *
+ * On a branch there is nothing to choose: the branch is what runs, as it is
+ * saved, and a debug run is the only run it has.
  */
 
 const FIELD =
@@ -17,12 +20,13 @@ const FIELD =
 /**
  * @param {{
  *   playbook: { id: string, name: string, version: number | null, draft: object | null },
+ *   branch?: { id: string, name: string } | null,  // the branch on the canvas: it is what is debugged
  *   breakpoints?: string[],            // the nodes selected on the canvas: where to stop
  *   onStarted: (runId: string) => void,
  *   onClose: () => void,
  * }} props
  */
-export default function DebugDialog({ playbook, breakpoints = [], onStarted, onClose }) {
+export default function DebugDialog({ playbook, branch = null, breakpoints = [], onStarted, onClose }) {
   const { incidents, activeIncidentId } = useIncidents()
   const hasDraft = Boolean(playbook.draft)
   const [what, setWhat] = useState(hasDraft ? 'draft' : 'version')
@@ -40,7 +44,7 @@ export default function DebugDialog({ playbook, breakpoints = [], onStarted, onC
       .post(`/automation/playbooks/${encodeURIComponent(playbook.id)}/debug`, {
         objectKind: incident ? 'incident' : '',
         objectId: incident,
-        draft: what === 'draft',
+        ...(branch ? { branch: branch.id } : { draft: what === 'draft' }),
         stepMode: every,
         breakpoints,
       })
@@ -76,31 +80,42 @@ export default function DebugDialog({ playbook, breakpoints = [], onStarted, onC
           A debug run stops before its nodes and waits to be told what to do. What it would send outside is held, as in
           a dry run, unless you let one node through. It counts for no limit and is deleted after a week.
         </p>
-        <fieldset className="space-y-1.5">
-          <legend className="mb-1 text-xs font-medium text-fg-muted">What to run</legend>
-          <label className="flex items-center gap-2 text-fg">
-            <input
-              type="radio"
-              name="debug-what"
-              checked={what === 'draft'}
-              disabled={!hasDraft}
-              onChange={() => setWhat('draft')}
-              className="h-4 w-4 accent-[var(--color-accent)]"
-            />
-            The draft, as it is drawn now{hasDraft ? '' : ' (there is none)'}
-          </label>
-          <label className="flex items-center gap-2 text-fg">
-            <input
-              type="radio"
-              name="debug-what"
-              checked={what === 'version'}
-              disabled={!playbook.version}
-              onChange={() => setWhat('version')}
-              className="h-4 w-4 accent-[var(--color-accent)]"
-            />
-            {playbook.version ? `Version ${playbook.version}, the one in use` : 'The saved version (there is none yet)'}
-          </label>
-        </fieldset>
+        {branch && (
+          <p className="text-fg">
+            <span className="mb-1 block text-xs font-medium text-fg-muted">What to run</span>
+            The branch <span className="font-mono">{branch.name}</span>, as it is saved. A branch runs only here: no
+            trigger, no schedule and no “Run…” starts it until it is pushed to main.
+          </p>
+        )}
+        {!branch && (
+          <fieldset className="space-y-1.5">
+            <legend className="mb-1 text-xs font-medium text-fg-muted">What to run</legend>
+            <label className="flex items-center gap-2 text-fg">
+              <input
+                type="radio"
+                name="debug-what"
+                checked={what === 'draft'}
+                disabled={!hasDraft}
+                onChange={() => setWhat('draft')}
+                className="h-4 w-4 accent-[var(--color-accent)]"
+              />
+              The draft, as it is drawn now{hasDraft ? '' : ' (there is none)'}
+            </label>
+            <label className="flex items-center gap-2 text-fg">
+              <input
+                type="radio"
+                name="debug-what"
+                checked={what === 'version'}
+                disabled={!playbook.version}
+                onChange={() => setWhat('version')}
+                className="h-4 w-4 accent-[var(--color-accent)]"
+              />
+              {playbook.version
+                ? `Version ${playbook.version}, the one in use`
+                : 'The saved version (there is none yet)'}
+            </label>
+          </fieldset>
+        )}
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-fg-muted">On</span>
           <select value={incident} onChange={(event) => setIncident(event.target.value)} className={FIELD}>

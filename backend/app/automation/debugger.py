@@ -16,6 +16,10 @@ the breakpoints or changes the context without moving the run.
 
 Debug runs count for no limit and no statistic, are shown to who started
 them (and to an admin), and are deleted after a week.
+
+A debug run is also the only run a branch of a playbook ever has: it is given
+the graph of the branch as it was saved, the way it is given a draft, and
+``run.trigger["branch"]`` keeps which branch that was.
 """
 
 from __future__ import annotations
@@ -53,6 +57,14 @@ def clean_breakpoints(shape: dict, raw: Any) -> list[str]:
 def settings_of(run: Run) -> dict[str, Any]:
     held = (run.state or {}).get("debug")
     return held if isinstance(held, dict) else {"breakpoints": [], "step": False}
+
+
+def branch_of(run: Run) -> dict[str, str] | None:
+    """The branch a debug run was started on (``{"id", "name"}``, as it was called then), if any."""
+    held = (run.trigger or {}).get("branch")
+    if not isinstance(held, dict):
+        return None
+    return {"id": str(held.get("id") or ""), "name": str(held.get("name") or "")}
 
 
 def _preview(db: OrmSession, run: Run, shape: dict, node: dict, step: RunStep) -> dict[str, Any]:
@@ -228,11 +240,13 @@ def out(db: OrmSession, run: Run) -> dict[str, Any] | None:
         return None
     held = settings_of(run)
     context = {key: value for key, value in (run.context or {}).items() if not str(key).startswith("__")}
+    branch = branch_of(run)
     return {
         "breakpoints": list(held.get("breakpoints") or []),
         "stepMode": bool(held.get("step")),
         "at": [{"step": step.id, "node": step.node_id, "itemIndex": step.item_index} for step in parked(db, run)],
-        "draft": isinstance((run.state or {}).get("graph"), dict),
+        "draft": branch is None and isinstance((run.state or {}).get("graph"), dict),
+        "branch": branch["name"] if branch else None,
         "context": engine._cut(context),
     }
 

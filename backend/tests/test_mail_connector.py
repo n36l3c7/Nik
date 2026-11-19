@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import hashlib
 from email.message import EmailMessage
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from app.automation import actions, egress, mail_runtime
 from app.automation import connector_actions as ca
 from app.automation import connectors as files
-from app.automation import egress, mail_runtime
 from app.automation.connector_runtime import CommandError
+from app.core.config import settings
 
 MAIL = next(connector for _text, connector in ca.shipped() if connector.id == "mail")
 CONFIG = {
@@ -26,7 +28,19 @@ CONFIG = {
 SECRETS = {"username": "soc", "password": "app-pass-1234"}
 
 
-def message(uid: int, subject: str, sender: str = "anna@partner.example", text: str = "Hello", attach: bool = False):
+EXE = b"MZ\x90\x00"
+EXE_SHA = hashlib.sha256(EXE).hexdigest()
+NOTE = b"Wire the amount today.\n"
+
+
+def message(
+    uid: int,
+    subject: str,
+    sender: str = "anna@partner.example",
+    text: str = "Hello",
+    attach: bool = False,
+    more: tuple = (),
+):
     made = EmailMessage()
     made["From"] = f"Anna <{sender}>"
     made["To"] = "soc@acme.example, bruno@acme.example"
@@ -35,7 +49,9 @@ def message(uid: int, subject: str, sender: str = "anna@partner.example", text: 
     made["Message-ID"] = f"<m{uid}@partner.example>"
     made.set_content(text)
     if attach:
-        made.add_attachment(b"MZ\x90\x00", maintype="application", subtype="octet-stream", filename="invoice.exe")
+        made.add_attachment(EXE, maintype="application", subtype="octet-stream", filename="invoice.exe")
+    for name, data in more:
+        made.add_attachment(data, maintype="application", subtype="octet-stream", filename=name)
     return made.as_bytes()
 
 
@@ -161,6 +177,13 @@ def box(monkeypatch):
     monkeypatch.setattr(egress.imaplib, "IMAP4_SSL", lambda *args, **kwargs: mailbox)
     monkeypatch.setattr(egress.smtplib, "SMTP", Smtp)
     Smtp.sent, Smtp.logins = [], []
+    # A message kept as evidence is analysed: its DNS checks ask nobody here.
+    from app.mail import verify
+
+    monkeypatch.setattr(verify, "txt_lookup", lambda name: [])
+    monkeypatch.setattr(
+        verify, "verify_spf", lambda ip, mail_from, helo: {"result": "none", "detail": "", "domain": ""}
+    )
     return mailbox
 
 
@@ -184,6 +207,9 @@ def test_the_mail_connector_is_native_and_names_only_commands_nik_has():
         assert command.sample is not None, command.name
     changing = {command.name for command in MAIL.commands if command.changes_outside}
     assert changing == {"send", "reply", "forward", "move", "mark-read", "mark-unread", "delete"}
+    # A forward carries the attachments only when it is asked to.
+    carried = next(a for a in MAIL.command("forward").arguments if a.name == "attachments")
+    assert carried.type == "bool" and carried.default is False and MAIL.version == 2
     # It ships as a package, with its README, and without a logo: it belongs to no product.
     assert set(ca.shipped_extras()["mail"]) == {"readme"}
     assert ca.host_of(MAIL, CONFIG) == "imap.acme.example"
@@ -325,6 +351,266 @@ def test_a_reply_stays_in_its_conversation_and_a_forward_quotes_the_message(box)
 
 
 # --------------------------------------------------------------------------- #
+# For a playbook: the attachments kept, and those a forward carries           #
+# --------------------------------------------------------------------------- #
+def instance(db) -> None:
+    """The Mail connector installed, with the mailbox of the tests as its instance."""
+    from app import mapping
+    from app.core.models import Connection
+    from app.core.security import now_iso
+
+    ca.seed(db)
+    db.flush()
+    mapping.seed(db)
+    row = Connection(
+        id="m" * 32, name="SOC mailbox", connector_id="mail", config=dict(CONFIG), fetch_enabled=True,
+        created_at=now_iso(), updated_at=now_iso(),
+    )  # fmt: skip
+    ca.store_secrets(row, SECRETS)
+    db.add(row)
+    db.commit()
+
+
+@pytest.fixture()
+def desk(admin, box):
+    """A playbook that may write to acme.example and sends no class of data, and the instance."""
+    from app.core.db import SessionLocal
+    from app.core.models import Playbook
+    from tests.test_automation_engine import playbook
+
+    with SessionLocal() as db:
+        instance(db)
+    playbook_id = playbook(admin, "Mail desk", [], [])
+    with SessionLocal() as db:
+        db.get(Playbook, playbook_id).egress_hosts = ["acme.example"]
+        db.commit()
+    return SimpleNamespace(admin=admin, box=box, playbook=playbook_id)
+
+
+def step(desk, name: str, opened=(), incident: str | None = None, **more) -> actions.Result:
+    """A command run as a step of a run of the playbook, which was opened these classes of data."""
+    from app.core.db import SessionLocal
+    from app.core.models import Playbook
+
+    args = more.pop("args")
+    with SessionLocal() as db:
+        row = db.get(Playbook, desk.playbook)
+        row.data_allow = list(opened)
+        db.commit()
+        call = actions.Call(
+            db=db,
+            args=args,
+            classes=frozenset(),
+            arg_classes={},
+            dry_run=more.pop("dry_run", False),
+            run=SimpleNamespace(id="run-1", incident_id=incident, trigger={"playbook": "Mail desk"}),
+            playbook=row,
+            connection="SOC mailbox",
+            **more,
+        )
+        result = ca.run_command("mail", name, call)
+        db.commit()
+        return result
+
+
+def test_the_attachments_of_a_message_are_kept_as_files_of_the_incident(desk, monkeypatch):
+    from app.core.db import SessionLocal
+    from app.core.models import AuditEntry, Sample
+    from app.malware.samples import read_sample
+
+    admin, box = desk.admin, desk.box
+    box.folders["INBOX"][5] = [
+        message(5, "Two files", attach=True, more=(("note.txt", NOTE), ("empty.bin", b""))),
+        set(),
+    ]
+    assert admin.post("/api/incidents", json={"id": "case", "name": "Case", "data": {}}).status_code == 201
+
+    # A dry run reads nothing and keeps nothing: the step gives what an answer looks like.
+    dry = step(desk, "get-attachments", args={"uid": 5}, dry_run=True, incident="case")
+    assert dry.output == MAIL.command("get-attachments").sample and dry.request["dry_run"] is True
+    assert box.calls == []
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Sample)) == 0
+
+    kept = step(desk, "get-attachments", args={"uid": 5}, incident="case")
+    found = kept.output
+    assert (found["count"], found["stored"], found["truncated"]) == (3, 2, False)
+    assert found["artifacts"] == [f"file-{EXE_SHA}", f"file-{hashlib.sha256(NOTE).hexdigest()}"]
+    assert found["attachments"][0] == {
+        "name": "invoice.exe",
+        "type": "application/octet-stream",
+        "size": 4,
+        "sha256": EXE_SHA,
+        "artifact": f"file-{EXE_SHA}",
+        "linked": True,
+        "note": "",
+    }
+    # One that holds nothing is listed and not kept.
+    empty = found["attachments"][2]
+    assert (empty["name"], empty["artifact"], empty["linked"], empty["note"]) == ("empty.bin", "", False, "It is empty")
+    # What a later node sends is judged by what it is: a name is a file name, a hash and an id leave.
+    assert kept.classes["attachments.name"] == ["attachment_name"] and kept.classes["artifacts"] == ["nik_id"]
+    # Stored as the bytes they are, analysed as an upload is, in the incident, and in the audit log.
+    assert read_sample(EXE_SHA) == EXE
+    detail = admin.get(f"/api/artifacts/file-{EXE_SHA}").json()
+    assert detail["name"] == "invoice.exe" and [item["id"] for item in detail["incidents"]] == ["case"]
+    refs = admin.get("/api/incidents/case").json()["data"]["malware"]["samples"]
+    assert [(ref["fileName"], ref["origin"]) for ref in refs] == [
+        ("invoice.exe", "e-mail “Two files”"),
+        ("note.txt", "e-mail “Two files”"),
+    ]
+    with SessionLocal() as db:
+        said = db.scalars(select(AuditEntry.details).where(AuditEntry.action == "mail.attachments.keep")).one()
+    assert said == 'Kept 2 attachment(s) of the message 5 of INBOX (playbook "Mail desk", run run-1)'
+    # The mailbox was read, not changed.
+    assert all(call[2] is True for call in box.calls if call[0] == "select")
+
+    # A run that works on no incident keeps the files on their own; one that names an incident uses it.
+    alone = step(desk, "get-attachments", args={"uid": 4})
+    assert alone.output["attachments"][0]["linked"] is False and alone.output["artifacts"] == [f"file-{EXE_SHA}"]
+    assert admin.post("/api/incidents", json={"id": "other", "name": "Other", "data": {}}).status_code == 201
+    named = step(desk, "get-attachments", args={"uid": 4, "incident": "other"}, incident="case")
+    assert named.output["attachments"][0]["linked"] is True
+    both = admin.get(f"/api/artifacts/file-{EXE_SHA}").json()["incidents"]
+    assert sorted(item["id"] for item in both) == ["case", "other"]
+    assert step(desk, "get-attachments", args={"uid": 9}).output == {
+        "attachments": [], "artifacts": [], "count": 0, "stored": 0, "truncated": False,
+    }  # fmt: skip
+
+    for args, why in (
+        ({"uid": 99}, "no message with this uid"),
+        ({"uid": 4, "incident": "nowhere"}, "The incident does not exist"),
+        ({}, "Needed: uid"),
+    ):
+        with pytest.raises(actions.ActionError) as caught:
+            step(desk, "get-attachments", args=args)
+        assert why in caught.value.message, caught.value.message
+    # A message above the limit of an upload is refused, not read by halves.
+    with monkeypatch.context() as patch, pytest.raises(actions.ActionError) as caught:
+        patch.setattr(settings, "SAMPLE_MAX_MB", 0)
+        step(desk, "get-attachments", args={"uid": 4})
+    assert "exceeds the 0 MB limit" in caught.value.message
+
+    # More than are looked at: the first fifty, and it says so. With no store at hand, they are described.
+    many = tuple((f"part-{number}.bin", bytes([number])) for number in range(mail_runtime.MAX_ATTACHMENTS + 1))
+    box.folders["INBOX"][6] = [message(6, "Many", more=many), set()]
+    described = runtime().run("get-attachments", {"uid": 6}).outputs
+    assert (described["count"], described["stored"], described["truncated"]) == (50, 0, True)
+    assert described["attachments"][0]["artifact"] == "" and "no store" in described["attachments"][0]["note"]
+
+
+def test_a_forward_carries_the_attachments_only_when_the_data_guard_lets_them_leave(desk, monkeypatch):
+    box = desk.box
+    forward = {"uid": 4, "to": "bruno@acme.example", "text": "See below."}
+
+    # As before: asked for nothing more, a forward quotes the text and carries nothing.
+    plain = step(desk, "forward", args=forward)
+    assert (plain.output["sent"], plain.output["attachments"], plain.output["attachments_held"]) == (True, 0, 0)
+    assert list(Smtp.sent[-1].iter_attachments()) == []
+
+    # A dry run sends nothing and reads nothing.
+    calls = len(box.calls)
+    dry = step(desk, "forward", args={**forward, "attachments": True}, dry_run=True)
+    assert dry.output == MAIL.command("forward").sample and len(Smtp.sent) == 1 and len(box.calls) == calls
+
+    # A playbook that sends no class of data: the attachment stays, and the step says what was held.
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "attachments": True})
+    assert caught.value.message.startswith("Held back: 1 × file and attachment names, 1 × attachments.")
+    assert caught.value.retry is False and len(Smtp.sent) == 1
+    held = caught.value.request["held"]
+    assert held["held"] == ["attachment", "attachment_name"] and held["files"] == {"count": 1, "bytes": 4}
+    # The names alone are not the files.
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "attachments": True}, opened=["attachment_name"])
+    assert caught.value.message.startswith("Held back: 1 × attachments.") and len(Smtp.sent) == 1
+
+    # A node told to send without what is held sends the text alone, and says how many stayed.
+    without = step(desk, "forward", args={**forward, "attachments": True}, held="drop")
+    assert (without.output["attachments"], without.output["attachments_held"]) == (0, 1)
+    assert without.request["held"]["dropped"] is True and "attachments" not in without.request
+    assert list(Smtp.sent[-1].iter_attachments()) == [] and "Please pay." in Smtp.sent[-1].get_body().get_content()
+
+    # Opened for the playbook, the file goes as the bytes it is, under its name.
+    opened = ["attachment_name", "attachment"]
+    carried = step(desk, "forward", args={**forward, "attachments": True}, opened=opened)
+    assert (carried.output["attachments"], carried.output["attachments_held"]) == (1, 0)
+    assert carried.request["attachments"] == 1 and carried.request["held"]["held"] == []
+    (part,) = Smtp.sent[-1].iter_attachments()
+    assert (part.get_filename(), part.get_content_type()) == ("invoice.exe", "application/octet-stream")
+    assert part.get_payload(decode=True) == EXE
+    body = Smtp.sent[-1].get_body().get_content()
+    assert (
+        body.startswith("See below.") and "Please pay." in body and Smtp.sent[-1]["Subject"] == "Fwd: Invoice overdue"
+    )
+    # A message with nothing attached has nothing to judge.
+    assert step(desk, "forward", args={**forward, "uid": 9, "attachments": True}).output["attachments"] == 0
+    sent = len(Smtp.sent)
+
+    # A name is read as any text that leaves is: an address in it is an address.
+    box.folders["INBOX"][5] = [message(5, "Named", more=(("for anna@partner.example.txt", NOTE),)), set()]
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "uid": 5, "attachments": True}, opened=opened)
+    assert caught.value.message.startswith("Held back: 1 × e-mail addresses.")
+    # A file Nik holds as a sample is a sample, by its hash: it leaves only where samples do.
+    step(desk, "get-attachments", args={"uid": 4})
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "attachments": True}, opened=opened)
+    assert caught.value.message.startswith("Held back: 1 × samples.")
+    assert step(desk, "forward", args={**forward, "attachments": True}, opened=[*opened, "sample"]).output["sent"]
+    sent += 1
+    assert len(Smtp.sent) == sent
+
+    # What cannot be judged whole is refused, whatever was opened; outside a playbook nothing is carried.
+    with monkeypatch.context() as patch, pytest.raises(actions.ActionError) as caught:
+        patch.setattr(mail_runtime, "MAX_CARRIED", 3)
+        step(desk, "forward", args={**forward, "attachments": True}, opened=[*opened, "sample"])
+    assert "more than a mail server takes" in caught.value.message
+    many = tuple((f"part-{number}.bin", bytes([number])) for number in range(mail_runtime.MAX_ATTACHMENTS + 1))
+    box.folders["INBOX"][6] = [message(6, "Many", more=many), set()]
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "uid": 6, "attachments": True}, opened=opened)
+    assert "more than 50 attachments" in caught.value.message
+    with pytest.raises(CommandError) as caught:
+        runtime().run("forward", {**forward, "attachments": True})
+    assert "only where the data guard judges them" in caught.value.message
+    assert len(Smtp.sent) == sent
+    # A recipient is still a destination.
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "to": "eve@elsewhere.example", "attachments": True}, opened=opened)
+    assert "elsewhere.example is not among the hosts" in caught.value.message
+
+
+def test_an_attached_message_and_a_name_that_breaks_a_header_are_carried_as_bytes(box):
+    inner = EmailMessage()
+    inner["From"], inner["Subject"] = "eve@elsewhere.example", "The original"
+    inner.set_content("Click here.")
+    made = EmailMessage()
+    made["From"], made["To"], made["Subject"] = "anna@partner.example", "soc@acme.example", "Reported"
+    made["Message-ID"] = "<m5@partner.example>"
+    made.set_content("I got this.")
+    made.add_attachment(inner)
+    made.add_attachment(b"%PDF-1.7", maintype="application", subtype="pdf", filename="a\tb.pdf")
+    box.folders["INBOX"][5] = [made.as_bytes(), set()]
+
+    judged = []
+    mailbox = runtime()
+    mailbox.judge = lambda found: judged.append(found) or True
+    assert (
+        mailbox.run("forward", {"uid": 5, "to": "bruno@acme.example", "attachments": True}).outputs["attachments"] == 2
+    )
+    # The guard is given what a file is, never its bytes.
+    assert [sorted(item) for item in judged[0]] == [["name", "sha256", "size", "type"]] * 2
+    first, second = Smtp.sent[-1].iter_attachments()
+    assert first.get_content_type() == "message/rfc822" and first.get_payload(0)["Subject"] == "The original"
+    assert (second.get_filename(), second.get_payload(decode=True)) == ("a b.pdf", b"%PDF-1.7")
+    # What get-message says of an attached message is what is kept and carried: the bytes of that message.
+    described = run("get-message", uid=5)["attachments"][0]
+    assert described["type"] == "message/rfc822" and described["size"] == judged[0][0]["size"] > 0
+    assert described["sha256"] == judged[0][0]["sha256"]
+
+
+# --------------------------------------------------------------------------- #
 # The test of an instance, and the listener                                   #
 # --------------------------------------------------------------------------- #
 def test_the_test_of_an_instance_opens_the_mailbox_and_asks_the_smtp_server(box):
@@ -368,22 +654,12 @@ def test_the_last_word_of_a_folder_line_is_read_from_its_end():
 def test_the_listener_makes_each_message_that_arrives_an_incident(admin, box):
     """From the mailbox to the list of incidents: the fetch of an instance, the mapper the connector
     ships with, and the incident marked with what brought it in."""
-    from app import fetch, mapping
+    from app import fetch
     from app.core.db import SessionLocal
     from app.core.models import Connection, Incident
-    from app.core.security import now_iso
 
     with SessionLocal() as db:
-        ca.seed(db)
-        db.flush()
-        mapping.seed(db)
-        row = Connection(
-            id="m" * 32, name="SOC mailbox", connector_id="mail", config=dict(CONFIG), fetch_enabled=True,
-            created_at=now_iso(), updated_at=now_iso(),
-        )  # fmt: skip
-        ca.store_secrets(row, SECRETS)
-        db.add(row)
-        db.commit()
+        instance(db)
         first = fetch.cycle(db, db.get(Connection, "m" * 32))
         assert (first["fetched"], first["created"]) == (3, 3), first
         assert db.get(Connection, "m" * 32).fetch_state == {"uid": 9}
@@ -406,3 +682,110 @@ def test_the_listener_makes_each_message_that_arrives_an_incident(admin, box):
         db.get(Connection, "m" * 32).enabled = False
         db.commit()
         assert "m" * 32 not in fetch.due(db, 9e12)
+
+
+def test_a_message_the_listener_read_is_kept_as_an_e_mail_of_its_incident(admin, box, monkeypatch):
+    """The Evidence tab of an incident the listener made shows the message it was made from."""
+    from app import fetch
+    from app.core.db import SessionLocal
+    from app.core.models import Connection, FetchedItem, Mail
+    from app.malware.samples import read_mail
+
+    def cycle() -> dict:
+        with SessionLocal() as db:
+            return fetch.cycle(db, db.get(Connection, "m" * 32))
+
+    def by_name() -> dict:
+        return {row["name"]: row["id"] for row in admin.get("/api/incidents?view=summary").json()["incidents"]}
+
+    def mails() -> int:
+        with SessionLocal() as db:
+            return db.scalar(select(func.count()).select_from(Mail))
+
+    def outcomes() -> dict:
+        with SessionLocal() as db:
+            return {row.item_id: (row.outcome, row.note) for row in db.scalars(select(FetchedItem))}
+
+    with SessionLocal() as db:
+        instance(db)
+    # One of the messages was uploaded by an analyst before the listener read it.
+    known = box.folders["INBOX"][7][0]
+    uploaded = admin.post("/api/artifacts/mails", files={"file": ("ticket.eml", known)})
+    assert uploaded.status_code == 201 and uploaded.json()["incidents"] == []
+    first = cycle()
+    assert (first["created"], first["incomplete"]) == (3, 0), first
+    assert box.logged_out and all(call[2] is True for call in box.calls if call[0] == "select")
+    # The mailbox is opened once more for what is kept, not once for each message.
+    assert len([call for call in box.calls if call[0] == "login"]) == 2
+
+    raw = box.folders["INBOX"][4][0]
+    sha = hashlib.sha256(raw).hexdigest()
+    (ref,) = admin.get(f"/api/incidents/{by_name()['Invoice overdue']}").json()["data"]["mail"]["messages"]
+    assert (ref["sha256"], ref["subject"], ref["from"]) == (sha, "Invoice overdue", "anna@partner.example")
+    assert (ref["fileName"], ref["importedBy"], ref["format"]) == ("message-4.eml", "connector:mail", "eml")
+    # As it was received, with the analysis an uploaded .eml gets, and as an artifact of the incident.
+    assert read_mail(sha) == raw
+    analysed = admin.get(f"/api/mails/{sha}").json()
+    assert analysed["analysis"]["attachments"][0]["name"] == "invoice.exe" and analysed["verdict"]
+    assert [item["name"] for item in analysed["incidents"]] == ["Invoice overdue"]
+    artifact = admin.get(f"/api/artifacts/mail-{sha}").json()
+    assert artifact["kind"] == "mail" and [item["name"] for item in artifact["incidents"]] == ["Invoice overdue"]
+    assert mails() == 3
+    # The message Nik held already is not analysed twice: it is the analyst's, and now of the incident too.
+    held = admin.get(f"/api/mails/{hashlib.sha256(known).hexdigest()}").json()
+    assert held["createdBy"] != "connector:mail" and [item["name"] for item in held["incidents"]] == ["Re: your ticket"]
+
+    # A file taken out of it by a playbook afterwards is recorded as taken out of this e-mail.
+    from app.core.models import Playbook
+    from tests.test_automation_engine import playbook
+
+    playbook_id = playbook(admin, "Mail desk", [], [])
+    with SessionLocal() as db:
+        call = actions.Call(
+            db=db, args={"uid": 4}, classes=frozenset(), arg_classes={}, dry_run=False,
+            run=SimpleNamespace(id="run-1", incident_id=by_name()["Invoice overdue"], trigger={}),
+            playbook=db.get(Playbook, playbook_id), connection="SOC mailbox",
+        )  # fmt: skip
+        ca.run_command("mail", "get-attachments", call)
+        db.commit()
+    assert [(item["relation"], item["id"]) for item in admin.get(f"/api/artifacts/mail-{sha}").json()["children"]] == [
+        ("attachment", f"file-{EXE_SHA}")
+    ]
+
+    # One a rule drops is not kept; one a rule links is evidence of the incident it was linked to.
+    box.folders["INBOX"][13] = [message(13, "Newsletter of the week"), set()]
+    box.folders["INBOX"][14] = [message(14, "Phishing report", text="Another one"), set()]
+    for body in (
+        {
+            "name": "Newsletters are noise",
+            "when": {"all": [{"left": "{{ item.subject }}", "op": "contains", "right": "Newsletter"}]},
+            "action": "drop",
+        },
+        {
+            "name": "Same report, same case",
+            "when": {"all": [{"left": "{{ item.subject }}", "op": "eq", "right": "Phishing report"}]},
+            "action": "link_to_existing",
+            "params": {"same": ["name"], "within_hours": 48},
+        },
+    ):
+        assert admin.post("/api/preprocess-rules", json=body).status_code == 201
+    second = cycle()
+    assert (second["created"], second["dropped"], second["linked"]) == (0, 1, 1), second
+    assert mails() == 4  # the linked one; the dropped one added nothing
+    linked = admin.get(f"/api/incidents/{by_name()['Phishing report']}").json()["data"]["mail"]["messages"]
+    assert [item["fileName"] for item in linked] == ["message-9.eml", "message-14.eml"]
+    dropped = hashlib.sha256(box.folders["INBOX"][13][0]).hexdigest()
+    assert admin.get(f"/api/mails/{dropped}").status_code == 404
+
+    # A message above the limit of an upload still becomes an incident, and the item says what is missing.
+    box.folders["INBOX"][15] = [message(15, "Too large"), set()]
+    with monkeypatch.context() as patch:
+        patch.setattr(settings, "SAMPLE_MAX_MB", 0)
+        third = cycle()
+    assert (third["created"], third["incomplete"]) == (0, 1), third
+    outcome, note = outcomes()["<m15@partner.example>15"]
+    assert (
+        outcome == "incomplete" and note == "The message was not kept as evidence: The message exceeds the 0 MB limit"
+    )
+    assert "Too large" in by_name() and mails() == 4
+    assert "mail" not in admin.get(f"/api/incidents/{by_name()['Too large']}").json()["data"]

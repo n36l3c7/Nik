@@ -3713,6 +3713,132 @@ test('a branch of a playbook is made, pushed over a main that moved on, and dele
   await area.getByRole('button', { name: 'Close automations' }).click()
 })
 
+test('a branch is compared with main before it is pushed, and runs only in the debugger', async () => {
+  const start = { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } }
+  const note = (id, name, y, text) => ({
+    id,
+    kind: 'action',
+    name,
+    position: { x: 40, y },
+    config: { action: 'nik.add-note', args: { text } },
+  })
+  const main = (text) => ({ nodes: [start, note('say', 'Say it', 160, text)], edges: [{ from: 'start', to: 'say' }] })
+  // The branch says something else, and says more after it.
+  const longer = {
+    nodes: [start, note('say', 'Say it', 160, 'two'), note('more', 'Say more', 280, 'and more')],
+    edges: [
+      { from: 'start', to: 'say' },
+      { from: 'say', to: 'more' },
+    ],
+  }
+  const made = await (await page.request.post('/api/automation/playbooks', { data: { name: 'Compared one' } })).json()
+  const url = `/api/automation/playbooks/${made.id}`
+  expect((await page.request.post(`${url}/versions`, { data: { graph: main('one') } })).status()).toBe(201)
+  const branch = await page.request.post(`${url}/branches`, { data: { name: 'longer', graph: longer } })
+  expect(branch.status()).toBe(201)
+  const branchId = (await branch.json()).id
+  // Nothing but the debugger starts a branch, whoever asks.
+  expect((await page.request.post(`${url}/run`, { data: { branch: branchId, dryRun: true } })).status()).toBe(400)
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('list', { name: 'Branches of Compared one' }).getByRole('button', { name: 'longer' }).click()
+  await expect(area.getByText('branch: longer')).toBeVisible()
+  // On a branch nothing runs but the debugger: no "Run…", no switch.
+  await expect(area.getByText(/runs only in the debugger/)).toBeVisible()
+  await expect(area.getByRole('button', { name: 'Debug…' })).toBeEnabled()
+  await expect(area.getByRole('button', { name: 'Run…' })).toHaveCount(0)
+  await expect(area.getByRole('switch', { name: /^The playbook is / })).toHaveCount(0)
+
+  // Main beside the branch: the counts, the marks on each side, the list of the changes.
+  await area.getByRole('button', { name: 'Compare with main', exact: true }).click()
+  const compare = area.getByRole('region', { name: 'Compare with main' })
+  await expect(compare.getByRole('heading', { name: /Compare main v1 with the branch longer/ })).toBeVisible()
+  const counts = compare.getByRole('list', { name: 'What differs' })
+  await expect(counts).toContainText('+1 added')
+  await expect(counts).toContainText('~1 changed')
+  await expect(counts).not.toContainText('removed')
+  await expect(compare.getByRole('note')).toHaveCount(0)
+  await expect(compare.getByRole('region', { name: 'Main' }).locator('.react-flow__node')).toHaveCount(2)
+  await expect(
+    compare.getByRole('region', { name: 'Main' }).locator('.react-flow__node[aria-label$=", changed"]'),
+  ).toHaveCount(1)
+  const right = compare.getByRole('region', { name: 'Branch' })
+  await expect(right.locator('.react-flow__node')).toHaveCount(3)
+  await expect(right.locator('.react-flow__node[aria-label$=", added"]')).toContainText('+')
+  await expect(right.locator('.react-flow__node[aria-label$=", changed"]')).toContainText('~')
+  const changes = compare.getByRole('list', { name: 'All the changes' })
+  await expect(changes.getByRole('listitem')).toHaveCount(2)
+  await expect(changes.getByRole('button', { name: '+ Say more, added' })).toBeVisible()
+  // The changed node, field by field: what it was, what it is.
+  await changes.getByRole('button', { name: '~ Say it, changed' }).click()
+  await expect(changes.getByRole('button', { name: '~ Say it, changed' })).toHaveAttribute('aria-pressed', 'true')
+  const fields = compare.getByLabel('Fields of the chosen node')
+  await expect(fields).toContainText('args.text')
+  await expect(fields).toContainText('- one')
+  await expect(fields).toContainText('+ two')
+  await expect(fields).toContainText('nik.add-note · same')
+  await compare.getByRole('button', { name: 'Back to the branch' }).click()
+  await expect(compare).toHaveCount(0)
+
+  // Main gets a version meanwhile. The push offers the comparison, which says the left side is main as it is now.
+  expect((await page.request.post(`${url}/versions`, { data: { graph: main('uno') } })).status()).toBe(201)
+  await area.getByRole('button', { name: 'Push to main…' }).click()
+  await page
+    .getByRole('dialog', { name: /Push .longer. to main\?/ })
+    .getByRole('button', { name: 'Compare with main first' })
+    .click()
+  await expect(compare.getByRole('note')).toContainText('main moved since this branch was made (v1 to v2)')
+  await compare.getByRole('button', { name: '~ Say it, changed' }).click()
+  await expect(compare.getByLabel('Fields of the chosen node')).toContainText('- uno')
+  await compare.getByRole('button', { name: 'Push to main…' }).click()
+  await page
+    .getByRole('dialog', { name: /Push .longer. to main\?/ })
+    .getByRole('button', { name: 'Push', exact: true })
+    .click()
+  await page
+    .getByRole('dialog', { name: 'The playbook moved on' })
+    .getByRole('button', { name: 'Push over it' })
+    .click()
+  // Pushed: back on the branch, which is what main is now.
+  await expect(compare).toHaveCount(0)
+  await expect(area.getByText(/playbook · version 3/)).toBeVisible()
+  const after = await (await page.request.get(url)).json()
+  expect(after.version).toBe(3)
+  expect(after.graph.nodes.map((item) => item.id)).toEqual(['start', 'say', 'more'])
+  await area.getByRole('button', { name: 'Compare with main', exact: true }).click()
+  await expect(compare.getByRole('list', { name: 'What differs' })).toHaveText('nothing differs')
+  await compare.getByRole('button', { name: 'Back to the branch' }).click()
+
+  // "Debug…" on the branch: a debug run of the branch, which says so.
+  await area.getByRole('button', { name: 'Debug…' }).click()
+  const ask = page.getByRole('dialog', { name: 'Debug "Compared one"' })
+  await expect(ask).toContainText('The branch longer, as it is saved')
+  await ask.getByRole('button', { name: 'Start debugging' }).click()
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  await expect(area.getByText('branch: longer')).toBeVisible()
+  const debug = area.getByRole('region', { name: 'Debugger' })
+  await expect(debug.getByRole('status')).toContainText('Stopped before Say it.', { timeout: 20_000 })
+  await expect(debug.getByRole('status')).toContainText('It runs the branch longer')
+  const runId = page.url().split('/').pop()
+  const run = await (await page.request.get(`/api/automation/runs/${runId}`)).json()
+  expect(run.branch).toEqual({ id: branchId, name: 'longer' })
+  expect(run.debug.branch).toBe('longer')
+  expect((await page.request.post(`/api/automation/runs/${runId}/debug`, { data: { action: 'stop' } })).status()).toBe(
+    200,
+  )
+  // The list of the debug runs names the branch; from the run, the playbook opens on it.
+  await area.getByRole('button', { name: 'its branch longer' }).click()
+  await expect(page).toHaveURL(new RegExp(`/automation/playbooks/${made.id}/branches/${branchId}$`))
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Runs' }).click()
+  await area.getByLabel('Debug runs').check()
+  await expect(area.getByRole('row').filter({ hasText: 'Compared one' })).toContainText('branch: longer')
+
+  expect((await page.request.delete(url)).status()).toBe(204)
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Playbooks' }).click()
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
 test('the rail: the order of a working day, and the account at its foot', async () => {
   const rail = page.getByRole('navigation', { name: 'Sections' })
   // Every incident of the list has its number, opened in this visit or not.

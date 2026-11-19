@@ -11,11 +11,12 @@
 #
 # Fetching makes each message that arrives in the folder an incident (the
 # listener): the messages with a uid above the last one read, oldest first.
+# The message itself is kept as an e-mail artifact of that incident.
 #
 # Belongs to no product, so it has no logo.
 name: Mail listener / sender
 id: mail
-version: 1
+version: 2
 description: A mailbox read over IMAP and messages sent over SMTP. Each new message can become an incident.
 api_version: "IMAP4rev1 (RFC 3501), SMTP (RFC 5321)"
 verified: false
@@ -91,19 +92,25 @@ commands:
       message_id: The Message-ID it was sent with
     sample: { sent: false, recipients: 1, message_id: "" }
   - name: forward
-    description: Send the text of a message of the mailbox to other recipients.
+    description: Send the text of a message of the mailbox to other recipients, with its attachments when asked.
     changes_outside: true
     idempotent: false
     arguments:
       - { name: uid, type: number, required: true, description: The uid of the message to forward }
       - { name: to, type: list, required: true, description: "Recipients: a list, or addresses separated by commas" }
       - { name: text, type: text, description: What to say before the forwarded message }
+      - name: attachments
+        type: bool
+        default: false
+        description: "Carry what is attached to it. The playbook must be allowed to send attachments."
       - { name: folder, type: text, description: "The folder the message is in (default: the instance's)" }
     outputs:
       sent: The server took the message
       recipients: How many recipients
       message_id: The Message-ID it was sent with
-    sample: { sent: false, recipients: 1, message_id: "" }
+      attachments: How many attachments it carried
+      attachments_held: How many the data guard held back
+    sample: { sent: false, recipients: 1, message_id: "", attachments: 0, attachments_held: 0 }
   - name: search
     description: The messages of a folder that match, the newest first.
     arguments:
@@ -147,6 +154,27 @@ commands:
       attachments:
         - { name: "", type: "", size: 0, sha256: "" }
       message_id: ""
+  - name: get-attachments
+    description: Keep what is attached to a message as files in Nik, analysed and never opened.
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message }
+      - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }
+      - name: incident
+        type: text
+        description: "The incident to put the files in; the incident of the run when left empty"
+    outputs:
+      attachments: "One for each: name, type, size, sha256, artifact (its id in Nik), linked, note"
+      artifacts: The ids of the files that were kept
+      count: How many attachments the message has
+      stored: How many were kept
+      truncated: The message has more attachments than were looked at
+    sample:
+      attachments:
+        - { name: "", type: "", size: 0, sha256: "", artifact: "", linked: false, note: "" }
+      artifacts: [""]
+      count: 0
+      stored: 0
+      truncated: false
   - name: move
     description: Move a message to another folder.
     changes_outside: true

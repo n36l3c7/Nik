@@ -57,7 +57,7 @@ from ..core.models import (
     Script,
     ScriptVersion,
 )
-from ..core.permissions import AUTOMATION_DEBUG, AUTOMATION_RUN
+from ..core.permissions import AUTOMATION_DEBUG, AUTOMATION_EDIT, AUTOMATION_RUN
 from ..core.ratelimit import limiter
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, require, runner_principal
 
@@ -120,9 +120,13 @@ class VersionIn(BaseModel):
 
 class EnabledIn(BaseModel):
     enabled: bool
+    # Never accepted: a branch is not turned on. Named so that asking is answered, not ignored.
+    branch: str | None = Field(default=None, max_length=32)
 
 
 class RunIn(BaseModel):
+    # Never accepted: a branch runs only in the debugger. Named so that asking is answered, not ignored.
+    branch: str | None = Field(default=None, max_length=32)
     # An artifact by its id (mail-…, file-…, url-…); an indicator as "type:value".
     objectKind: Literal["", "incident", "artifact", "indicator"] = ""
     objectId: str = Field(default="", max_length=1100)
@@ -139,6 +143,8 @@ class DebugStartIn(BaseModel):
     stepMode: bool = True
     # The draft of the playbook, as it is being drawn, instead of its saved version.
     draft: bool = False
+    # A branch of the playbook, by its id, as it was last saved: the only way a branch runs.
+    branch: str | None = Field(default=None, max_length=32)
 
 
 class DebugIn(BaseModel):
@@ -308,6 +314,9 @@ def _detail(db: OrmSession, row: Playbook) -> dict[str, Any]:
     }
 
 
+BRANCH_ONLY_DEBUG = "A branch runs only in the debugger: push it to main to run it, turn it on or schedule it"
+
+
 def _run_summary(run: Run) -> dict[str, Any]:
     return {
         "id": run.id,
@@ -318,6 +327,8 @@ def _run_summary(run: Run) -> dict[str, Any]:
         "trigger": (run.trigger or {}).get("kind", ""),
         "dryRun": bool(run.dry_run),
         "debug": bool(run.debug),
+        # The branch a debug run was started on, as it was called then; no other run has one.
+        "branch": debugger.branch_of(run),
         "objectKind": run.object_kind,
         "objectId": run.object_id,
         "incidentId": run.incident_id,
@@ -815,8 +826,11 @@ def restore_version(
 def set_enabled(
     playbook_id: str, body: EnabledIn, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
-    """Turn a playbook on or off. Off: its triggers start nothing; runs in progress go on."""
+    """Turn a playbook on or off. Off: its triggers start nothing; runs in progress go on. What is
+    turned on is the version in use: the trigger and the schedule drawn on a branch start nothing."""
     row = _get(db, playbook_id)
+    if body.branch is not None:
+        raise HTTPException(status_code=400, detail=BRANCH_ONLY_DEBUG)
     if body.enabled and not row.current_version:
         raise HTTPException(status_code=400, detail="Save a version before turning the playbook on")
     if bool(row.enabled) != body.enabled:
@@ -838,6 +852,8 @@ def run_playbook(
     """Run a playbook by hand, on an object or on nothing. A dry run sends nothing
     outside and changes nothing in Nik: each step shows what it would have done."""
     row = _get(db, playbook_id)
+    if body.branch is not None:
+        raise HTTPException(status_code=400, detail=BRANCH_ONLY_DEBUG)
     if not row.current_version:
         raise HTTPException(status_code=400, detail="The playbook has no saved version")
     config = triggers.trigger_config(db, row)
@@ -1155,12 +1171,29 @@ def get_run(run_id: str, caller: Principal = Depends(runner_principal), db: OrmS
 def debug_playbook(
     playbook_id: str, body: DebugStartIn, caller: Principal = Depends(debug_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
-    """Start a debug run of a playbook (its saved version, or its draft) on an object: a run that stops
-    before the nodes named, or before every node. What goes outside is held, as in a dry run, unless one
-    node is let through. It counts for no limit and no statistic, and is deleted after a week."""
+    """Start a debug run of a playbook (its saved version, its draft, or one of its branches) on an
+    object: a run that stops before the nodes named, or before every node. What goes outside is held,
+    as in a dry run, unless one node is let through. It counts for no limit and no statistic, and is
+    deleted after a week. A branch is debugged as it was last saved, by who may edit playbooks; this
+    is the only way a branch runs."""
     row = _get(db, playbook_id)
     shape = None
-    if body.draft:
+    branch = None
+    if body.branch is not None:
+        if body.draft:
+            raise HTTPException(status_code=400, detail="Debug the draft or a branch, not both")
+        if not caller.has(AUTOMATION_EDIT):
+            raise HTTPException(status_code=403, detail="Debugging a branch needs the permission to edit playbooks")
+        _playbook, branch = _get_branch(db, row.id, body.branch)
+        shape = branch.graph
+        problems = graph.validate(shape, catalog.Library(db), row.name)
+        if problems:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "The branch cannot run yet", "problems": [p.as_dict() for p in problems]},
+            )
+        shape = shipped.with_script_versions(db, shape)
+    elif body.draft:
         shape = row.draft
         if not isinstance(shape, dict):
             raise HTTPException(status_code=400, detail="The playbook has no draft: debug its saved version")
@@ -1195,11 +1228,11 @@ def debug_playbook(
         inputs=body.inputs,
         debug={"breakpoints": debugger.clean_breakpoints(used, body.breakpoints), "step": body.stepMode},
         shape=shape,
+        branch={"id": branch.id, "name": branch.name} if branch is not None else None,
         now=time.time(),
     )
-    audit.record(
-        db, caller.actor, "playbook.debug", f'Started a debug run of the playbook "{row.name}"', target=row.name
-    )
+    what = f'the branch "{branch.name}" of the playbook' if branch is not None else "the playbook"
+    audit.record(db, caller.actor, "playbook.debug", f'Started a debug run of {what} "{row.name}"', target=row.name)
     db.commit()
     return _run_summary(run)
 
