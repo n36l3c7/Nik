@@ -336,7 +336,7 @@
 │                                   #   base + scrollbar
 ├── assets/fonts/                   # Inter + JetBrains Mono (woff2, OFL-1.1 licence files)
 ├── App.jsx                         # Shell + auth gate: Rail | side panel | Header + TabBar + tab content,
-│                                   #   or the artifact opened on its own
+│                                   #   or the artifact opened on its own, or the list of incidents
 │
 ├── config/                         # ★ DECLARATIVE EXTENSION POINTS ★
 │   ├── tabs.js                     # ANALYSIS_TABS registry: the ONLY file to touch
@@ -456,7 +456,9 @@
     ├── keyboard/                   # KeyboardShortcuts (F flag, C comment on the row under the pointer,
     │                               #   run through that row's menu; ? lists them)
     ├── report/                     # ReportDialog (options, preview, PDF/HTML download)
-    ├── layout/                     # Rail (icons), Sidebar (incidents panel), Header, TabBar (grouped tabs
+    ├── incidents/                  # IncidentsPage (the list as a page: table, saved filters, chips, columns),
+    │                               #   QuickView (the panel a click on a row opens)
+    ├── layout/                     # Rail (icons), Sidebar (artifacts or indicators), Header, TabBar (grouped tabs
     │                               #   that shorten to fit),
     │                               #   OsPicker, IncidentLoadingState
     ├── iocs/                       # IocsPanel (filters, alerts, lists), IocLibraryPage (table, selection),
@@ -616,8 +618,10 @@
         be flagged straight from the timeline.
       </p>
       <p>
-        The <strong>sidebar is resizable</strong>: drag its right edge to widen the incident list up to a quarter of the
-        window; the width is remembered per browser.
+        The <strong>list of incidents is a page</strong> (<code>/incidents</code>): what is shown while no incident,
+        artifact or page of the indicators is open. Its rows are the light list; its quick view reads
+        <code>GET /api/incidents/{id}/quick</code>, never a document. Every side panel is resizable, and its width is
+        remembered per browser.
       </p>
       <p>
         The <strong>IOCs</strong> tab lists the incident's indicators of compromise. The server builds them

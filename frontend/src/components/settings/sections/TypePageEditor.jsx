@@ -1,65 +1,79 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, RotateCcw } from 'lucide-react'
+import { Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { compactGrid } from '../../../domain/dashboards.js'
 import {
   NOTE_MAX,
-  PLAYBOOKS_MAX,
   WIDGET_KINDS,
   addWidget,
   canAdd,
+  drawnWidgets,
   freeSections,
   gridOf,
   gridSections,
   kindOf,
   widgetTitle,
 } from '../../../domain/layoutGrid.js'
+import { PAGE_NAME_MAX, pageName, pageOf, removePage, renamePage, setPageGrid } from '../../../domain/typePages.js'
 import { Button, Modal } from '../../ui/index.js'
 import Grid from '../../dashboards/Grid.jsx'
 import { WidgetPreview } from '../../tabs/summary/LayoutWidgets.jsx'
+import { ButtonsSettings, ChartSettings, buttonsProblem } from './WidgetSettings.jsx'
 
 /*
  * ============================================================================
- * THE PAGE OF A TYPE — the Summary of its incidents, arranged like a dashboard
+ * A PAGE OF A TYPE — the Summary of its incidents, or a page of its own,
+ * arranged like a dashboard
  * ============================================================================
  *
  * The same grid as the dashboards: a widget is dragged by its grip, resized
  * by its corner, moved and resized with the arrow keys on the grip; the
  * others make room. "Add a widget" offers the kinds there are; the pencil of
- * a widget sets its title and what it shows (which section, which playbooks,
- * which text).
+ * a widget sets its title and what it shows (which section, which text, which
+ * buttons, which chart).
  *
- * A type that never arranged its page shows the one Nik makes from its
- * sections. The first change keeps the page as it is drawn then; "Back to the
- * generated page" lets Nik make it again.
+ * The Summary of a type that never arranged it is the page Nik makes from
+ * its sections. The first change keeps the page as it is drawn then; "Back
+ * to the generated page" lets Nik make it again. A page of the type's own
+ * (6.2) starts empty, has a name, which is what its tab is called, and can be
+ * deleted.
  */
 
 const INPUT =
   'w-full border border-line bg-canvas px-3 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 /**
- * @param {{ layout: object, onLayout: (layout: object) => void }} props
+ * @param {{
+ *   layout: object,
+ *   onLayout: (layout: object) => void,
+ *   pageId?: string | null,          // the page of the type to arrange; the Summary when left out
+ *   fields?: object[],               // the fields of the type, for the templates of script buttons
+ *   onDeleted?: () => void,          // after the page was deleted
+ * }} props
  */
-export default function TypePageEditor({ layout, onLayout }) {
-  const { grid, custom } = useMemo(() => gridOf({ layout }), [layout])
+export default function TypePageEditor({ layout, onLayout, pageId = null, fields = [], onDeleted = null }) {
+  const page = pageId ? pageOf(layout, pageId) : null
+  const { grid, custom } = useMemo(
+    () => (pageId ? { grid: pageOf(layout, pageId)?.grid ?? [], custom: true } : gridOf({ layout })),
+    [layout, pageId],
+  )
   const [adding, setAdding] = useState('')
   const [editing, setEditing] = useState(null) // the widget in the form
+  const [problem, setProblem] = useState(null)
   const [said, setSaid] = useState('')
-  const [playbooks, setPlaybooks] = useState(null) // null: not read yet; false: may not be read
+  const [boards, setBoards] = useState(null) // the dashboards, to name the chart a widget shows
+  const [deleting, setDeleting] = useState(false)
 
-  const setGrid = (next) => onLayout({ ...layout, grid: next })
+  const setGrid = (next) => onLayout(pageId ? setPageGrid(layout, pageId, next) : { ...layout, grid: next })
   const byId = useMemo(() => new Map(grid.map((widget) => [widget.id, widget])), [grid])
-  // The grid of the dashboards names a widget by its title and its type.
-  const drawn = useMemo(
-    () => grid.map((widget) => ({ ...widget, type: widget.kind, title: widgetTitle(widget, layout) })),
-    [grid, layout],
-  )
+  const drawn = useMemo(() => drawnWidgets(grid, layout), [grid, layout])
   /** What the grid gives back after a move, as the layout keeps it: without what was added to draw it. */
   const kept = (widgets) =>
     widgets.map((widget) => ({ ...byId.get(widget.id), x: widget.x, y: widget.y, w: widget.w, h: widget.h }))
 
   const free = freeSections(grid, layout)
   const offered = WIDGET_KINDS.filter((kind) => canAdd(grid, kind.id) && (kind.id !== 'section' || free.length > 0))
+  const name = page ? pageName(page) : 'Summary'
 
   const add = () => {
     if (!adding) return
@@ -70,35 +84,68 @@ export default function TypePageEditor({ layout, onLayout }) {
     setAdding('')
   }
 
-  // The playbooks, for the buttons: read when a widget of buttons is opened.
+  // The dashboards, with their widgets: read when the page shows a chart, to say which.
+  const charts = grid.some((widget) => widget.kind === 'chart')
   useEffect(() => {
-    if (editing?.kind !== 'playbooks' || playbooks !== null) return undefined
+    if (!charts || boards !== null) return undefined
     let alive = true
     api
-      .get('/automation/playbooks')
-      .then((found) => alive && setPlaybooks(found.playbooks))
-      .catch(() => alive && setPlaybooks(false))
+      .get('/dashboards')
+      .then((found) =>
+        Promise.all(
+          found.dashboards.map((board) =>
+            api.get(`/dashboards/${encodeURIComponent(board.id)}`).catch(() => ({ ...board, widgets: [] })),
+          ),
+        ),
+      )
+      .then((found) => alive && setBoards(found))
+      .catch(() => alive && setBoards([]))
     return () => {
       alive = false
     }
-  }, [editing, playbooks])
+  }, [charts, boards])
 
   const saveEdited = (event) => {
     event.preventDefault()
+    const wrong = editing.kind === 'buttons' ? buttonsProblem(editing.buttons) : null
+    if (wrong) {
+      setProblem(wrong)
+      return
+    }
     setGrid(grid.map((widget) => (widget.id === editing.id ? editing : widget)))
     setEditing(null)
   }
+  const edit = (widget) => {
+    setProblem(null)
+    setEditing(widget)
+  }
 
+  if (pageId && !page) return null
   return (
-    <section aria-label="The page" className="flex flex-col gap-3 border border-line bg-panel p-3">
+    <section aria-label="The page" className="flex min-w-0 flex-col gap-3 border border-line bg-panel p-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">The page</h3>
+          <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">Page: {name}</h3>
           <p className="text-sm text-fg-muted">
-            The Summary of an incident of this type, on twelve columns. Drag a widget by its grip, resize it by its
-            corner. {custom ? 'This page was arranged by hand.' : 'This is the page Nik makes from the sections.'}
+            {page ? 'A page of this type, shown as a tab of its incidents' : 'The Summary of an incident of this type'},
+            on twelve columns. Drag a widget by its grip, resize it by its corner.{' '}
+            {page ? '' : custom ? 'This page was arranged by hand.' : 'This is the page Nik makes from the sections.'}
           </p>
         </div>
+        {page && (
+          <label className="flex flex-col gap-1 text-xs text-fg-muted" htmlFor="page-name">
+            Name
+            <input
+              id="page-name"
+              type="text"
+              value={page.name}
+              maxLength={PAGE_NAME_MAX}
+              autoComplete="off"
+              onChange={(event) => onLayout(renamePage(layout, pageId, event.target.value))}
+              className={`${INPUT} w-48`}
+            />
+          </label>
+        )}
         <label className="flex flex-col gap-1 text-xs text-fg-muted" htmlFor="page-add-kind">
           Add a widget
           <span className="flex gap-2">
@@ -120,7 +167,7 @@ export default function TypePageEditor({ layout, onLayout }) {
             </Button>
           </span>
         </label>
-        {custom && (
+        {!page && custom && (
           <Button
             variant="ghost"
             size="sm"
@@ -135,33 +182,51 @@ export default function TypePageEditor({ layout, onLayout }) {
             Back to the generated page
           </Button>
         )}
+        {page && (
+          <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleting(true)}>
+            Delete the page…
+          </Button>
+        )}
       </div>
       {adding && <p className="text-xs text-fg-muted">{kindOf(adding)?.hint}</p>}
       <p role="status" className="sr-only">
         {said}
       </p>
-      <Grid
-        widgets={drawn}
-        editing
-        onChange={(next) => setGrid(kept(next))}
-        onEdit={(widget) => setEditing({ ...byId.get(widget.id) })}
-        onDuplicate={(widget) => {
-          const source = byId.get(widget.id)
-          if (!canAdd(grid, source.kind) || source.kind === 'section') {
-            setSaid(`${widgetTitle(source, layout)} is on a page once.`)
-            return
-          }
-          const { id: _id, x: _x, y: _y, ...copied } = source
-          setGrid(addWidget(grid, source.kind, copied))
-        }}
-        onRemove={(widget) => setGrid(compactGrid(grid.filter((item) => item.id !== widget.id)))}
-        render={(widget) => <WidgetPreview widget={byId.get(widget.id) ?? widget} layout={layout} />}
-      />
+      {grid.length === 0 && (
+        <p className="border border-dashed border-line px-3 py-6 text-center text-sm text-fg-muted">
+          Nothing on this page yet: add a widget.
+        </p>
+      )}
+      {/* Arranged on its twelve columns whatever the room: under 860 px the grid would be one column, with nothing to drag. */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[860px]">
+          <Grid
+            widgets={drawn}
+            editing
+            onChange={(next) => setGrid(kept(next))}
+            onEdit={(widget) => edit({ ...byId.get(widget.id) })}
+            onDuplicate={(widget) => {
+              const source = byId.get(widget.id)
+              if (!canAdd(grid, source.kind) || source.kind === 'section') {
+                setSaid(`${widgetTitle(source, layout)} is on a page once.`)
+                return
+              }
+              const { id: _id, x: _x, y: _y, ...copied } = source
+              setGrid(addWidget(grid, source.kind, copied))
+            }}
+            onRemove={(widget) => setGrid(compactGrid(grid.filter((item) => item.id !== widget.id)))}
+            render={(widget) => (
+              <WidgetPreview widget={byId.get(widget.id) ?? widget} layout={layout} boards={boards} />
+            )}
+          />
+        </div>
+      </div>
 
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={editing ? `Widget: ${kindOf(editing.kind)?.label}` : 'Widget'}
+        maxWidth={editing?.kind === 'buttons' ? 'max-w-2xl' : 'max-w-lg'}
         footer={
           <>
             <Button variant="secondary" onClick={() => setEditing(null)}>
@@ -207,7 +272,7 @@ export default function TypePageEditor({ layout, onLayout }) {
                     ))}
                 </select>
                 <span className="text-xs text-fg-muted">
-                  The fields of a section are chosen above, where the sections are.
+                  The fields of a section are chosen under “Fields and sections”.
                 </span>
               </label>
             )}
@@ -224,44 +289,54 @@ export default function TypePageEditor({ layout, onLayout }) {
                 />
               </label>
             )}
-            {editing.kind === 'playbooks' && (
-              <fieldset className="flex flex-col gap-1 text-sm">
-                <legend className="mb-1 text-fg-muted">Playbooks, {PLAYBOOKS_MAX} at most</legend>
-                {playbooks === null && <p className="font-mono text-xs text-fg-muted">Loading…</p>}
-                {playbooks === false && (
-                  <p className="text-xs text-fg-muted">Your roles do not include reading the playbooks.</p>
-                )}
-                {Array.isArray(playbooks) && playbooks.length === 0 && (
-                  <p className="text-xs text-fg-muted">There is no playbook yet.</p>
-                )}
-                {Array.isArray(playbooks) &&
-                  playbooks.map((playbook) => {
-                    const chosen = (editing.playbooks ?? []).includes(playbook.id)
-                    return (
-                      <label key={playbook.id} className="flex items-center gap-2 text-fg">
-                        <input
-                          type="checkbox"
-                          checked={chosen}
-                          disabled={!chosen && (editing.playbooks ?? []).length >= PLAYBOOKS_MAX}
-                          onChange={(event) =>
-                            setEditing({
-                              ...editing,
-                              playbooks: event.target.checked
-                                ? [...(editing.playbooks ?? []), playbook.id]
-                                : (editing.playbooks ?? []).filter((id) => id !== playbook.id),
-                            })
-                          }
-                          className="accent-accent"
-                        />
-                        {playbook.name}
-                        {!playbook.version && <span className="text-xs text-fg-muted">· no version yet</span>}
-                      </label>
-                    )
-                  })}
-              </fieldset>
+            {editing.kind === 'buttons' && (
+              <ButtonsSettings
+                buttons={editing.buttons ?? []}
+                fields={fields}
+                onChange={(buttons) => {
+                  setProblem(null)
+                  setEditing({ ...editing, buttons })
+                }}
+              />
+            )}
+            {editing.kind === 'chart' && (
+              <ChartSettings widget={editing} onChange={(changes) => setEditing({ ...editing, ...changes })} />
+            )}
+            {problem && (
+              <p role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-sm text-high-fg">
+                {problem}
+              </p>
             )}
           </form>
         )}
+      </Modal>
+
+      <Modal
+        open={deleting}
+        onClose={() => setDeleting(false)}
+        title={`Delete the page ${name}?`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setDeleting(false)
+                onLayout(removePage(layout, pageId))
+                onDeleted?.()
+              }}
+            >
+              Delete the page
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">
+          Its tab leaves the incidents of this type when the type is saved. What the widgets showed stays where it is: a
+          page only arranges it.
+        </p>
       </Modal>
     </section>
   )

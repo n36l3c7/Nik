@@ -4,19 +4,24 @@
  *
  * A layout keeps, beside its sections of fields and the order of its tabs,
  *
- *   grid: [{ id, kind, x, y, w, h, title?, section?, text?, playbooks? }]
+ *   grid: [{ id, kind, x, y, w, h, title?, section?, text?, buttons?, dashboard?, widget?, field? }]
  *
  * on the twelve columns of the dashboards (domain/dashboards.js: rows of
  * 80 px). A type that has no grid, which is every type made before 5.3, gets
  * `defaultGrid`: the details of the incident, the numbers of its evidence,
  * its sections of fields in their order, then its flags and notes: what the
  * Summary showed, in the same order.
+ *
+ * Since 6.2 a type has pages of its own beside the Summary (domain/typePages.js):
+ * each is a grid of the same widgets. The playbook buttons of 5.3 are gone:
+ * a widget of script buttons (domain/scriptButtons.js) took their place, and a
+ * stored widget of the old kind is left out like any kind this file does not know.
  */
 import { COLUMNS, MAX_HEIGHT, gridHeight } from './dashboards.js'
+import { cleanButtons } from './scriptButtons.js'
 
 export const GRID_MAX = 30
 export const NOTE_MAX = 2000
-export const PLAYBOOKS_MAX = 8
 
 /**
  * The kinds of widget, in the order the editor offers them. `w` and `h` are
@@ -74,11 +79,26 @@ export const WIDGET_KINDS = [
   { id: 'work_plan', label: 'Work plan', w: 6, h: 6, once: true, hint: 'The tasks and the steps of the playbooks.' },
   { id: 'indicators', label: 'Indicators', w: 12, h: 6, once: true, hint: 'The indicators found in the evidence.' },
   {
-    id: 'playbooks',
-    label: 'Playbook buttons',
+    id: 'buttons',
+    label: 'Script buttons',
     w: 4,
     h: 2,
-    hint: 'Buttons that run the playbooks you choose on the incident.',
+    hint: 'Buttons that run a script on the incident, with arguments filled from its fields or asked.',
+  },
+  {
+    id: 'chart',
+    label: 'Chart of a dashboard',
+    w: 6,
+    h: 4,
+    hint: 'A widget of a dashboard, narrowed to what this incident shares with the others.',
+  },
+  {
+    id: 'linked',
+    label: 'Linked incidents',
+    w: 6,
+    h: 3,
+    once: true,
+    hint: 'The incidents related to this one, and those that hold the same indicators.',
   },
   { id: 'note', label: 'A text', w: 4, h: 2, hint: 'A text of your own: what to check first, who to call.' },
 ]
@@ -158,8 +178,11 @@ export function cleanGrid(grid, layout) {
     if (title) widget.title = title
     if (kind.id === 'section') widget.section = raw.section
     if (kind.id === 'note') widget.text = String(raw.text ?? '').slice(0, NOTE_MAX)
-    if (kind.id === 'playbooks') {
-      widget.playbooks = [...new Set(list(raw.playbooks).map(String).filter(Boolean))].slice(0, PLAYBOOKS_MAX)
+    if (kind.id === 'buttons') widget.buttons = cleanButtons(raw.buttons)
+    if (kind.id === 'chart') {
+      widget.dashboard = String(raw.dashboard ?? '').slice(0, 64)
+      widget.widget = String(raw.widget ?? '').slice(0, 64)
+      widget.field = String(raw.field ?? '').slice(0, 64)
     }
     out.push(widget)
   }
@@ -172,6 +195,10 @@ export function gridOf(type) {
   const kept = Array.isArray(layout?.grid) ? cleanGrid(layout.grid, layout) : []
   return kept.length > 0 ? { grid: kept, custom: true } : { grid: defaultGrid(layout), custom: false }
 }
+
+/** A widget as the grid of the dashboards draws it: named by its title and its type. */
+export const drawnWidgets = (grid, layout) =>
+  list(grid).map((widget) => ({ ...widget, type: widget.kind, title: widgetTitle(widget, layout) }))
 
 /** What a widget is called on the page: its own title, the title of its section, or its kind. */
 export function widgetTitle(widget, layout) {
@@ -198,7 +225,8 @@ export function addWidget(grid, kindId, extras = {}) {
   while (all.some((widget) => widget.id === `${kind.id}-${number}`)) number += 1
   const widget = { id: `${kind.id}-${number}`, kind: kind.id, x: 0, y: gridHeight(all), w: kind.w, h: kind.h }
   if (kind.id === 'note') widget.text = ''
-  if (kind.id === 'playbooks') widget.playbooks = []
+  if (kind.id === 'buttons') widget.buttons = []
+  if (kind.id === 'chart') Object.assign(widget, { dashboard: '', widget: '', field: '' })
   return [...all, { ...widget, ...extras }]
 }
 

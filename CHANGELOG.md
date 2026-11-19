@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-11-19
+
+The page of an incident and the list of incidents: a type arranges its
+tabs and adds pages of its own, the list is a page with a quick view and
+saved filters, and a button on a page runs a script.
+
+### Added
+
+- **The list of incidents is a page.** The first entry of the rail opens a
+  table that takes the whole area: number, title, type, severity, status,
+  owner, dates; a click on a heading orders it. *New incident*, *Import
+  incident* and the right-click menu of a row are there.
+- **The quick view.** One click on a row opens a panel over the right side
+  of the list, without moving the table: the number, type, title, severity,
+  status and the nearest SLA timer, then the blocks the type of the incident
+  chose (by default its details, its first section, the numbers of its
+  evidence and the last three lines of its War Room). The arrow keys move
+  from row to row, Esc closes it, and its foot has *Open the incident*,
+  *Assign to me* and *Close…*. A double click or Enter opens the incident.
+- **Saved filters.** The query on screen is saved under a name, with the
+  order and the columns. Each person has their own, an administrator shares
+  one with everyone, and each person chooses one default, which is what the
+  list opens with. A filter that was changed is marked and can be put back.
+- **Chips and columns.** *Type*, *Severity*, *Status*, *Owner*, *Opened*
+  and *Field…* write a condition into the query and show the one it has.
+  *Columns…* chooses and orders the columns, any field of the registry that
+  applies to incidents among them; the choice is remembered in the browser
+  and kept by a saved filter.
+- **The pages of a type.** *Settings → Incidents → Types → Pages*: a type
+  orders the tabs of its incidents, hides the ones it does not need, and
+  adds up to ten pages of its own, each a named grid of the same widgets as
+  the Summary. Until now the order of the tabs could be set through the API
+  only.
+- **The close form.** A type chooses which of its sections the *Close*
+  dialog shows, with their fields ready to edit. The fields the type wants
+  filled to close are required there, and a line says how many tasks of
+  the work plan are still open.
+- **The quick view of a type.** A type chooses the blocks of the panel
+  opened from a row of the list.
+- **Script buttons** on the Summary and on the pages of a type. A button
+  has its text, its colours (the contrast is shown, with a warning that
+  stops nothing) and a script. Each argument of the script is left empty,
+  to be asked when the button is pressed, or filled from the incident with
+  `{{ field }}`; a field that holds several values runs the script once for
+  each, with a warning above fifty. For who may run scripts; every run is a
+  command of the War Room and a line of the audit log.
+- **Two more widgets.** *Chart of a dashboard* shows one widget of a
+  dashboard narrowed by one field to what this incident holds. *Linked
+  incidents* lists the incidents related to this one and those that share
+  its indicators.
+- **A dialog asks which system an incident is about.** Endpoint, Event
+  logs, Browser and Commands depend on the operating system: when the
+  incident has none, a dialog asks for it instead of showing Windows paths.
+  It closes only by choosing, or by going back to the files.
+
+### Changed
+
+- **The side panel of incidents is gone**: the list is the page above. The
+  side panels of artifacts and indicators are as they were.
+- **Playbook buttons are script buttons.** The widget *Playbook buttons* of
+  5.3 no longer exists; one in a stored layout is left out when the layout
+  is read. A playbook is started from the work plan, the War Room or its
+  own page.
+- The *Close* dialog has its note after the sections, and marks a field
+  that must be filled with "required".
+- Actions that change an incident are not offered in the list to an
+  account that may only read (they were offered, and failed).
+
+### API
+
+- `/api/filters` (list, create, change, delete, default, sharing);
+  `GET /api/incidents/{id}/quick`; `fields=` on
+  `GET /api/incidents?view=summary`.
+- `GET /api/script-buttons/scripts`;
+  `POST /api/incidents/{id}/script-buttons/plan`, `/run`, `/status`;
+  `GET /api/incidents/{id}/linked`, `/chart`.
+- A layout takes `pages`, `close`, `quick`, the tab ids `page:<id>`, and
+  the widget kinds `buttons`, `chart` and `linked`.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migration `0041_saved_filters` adds two tables.
+- A type that had playbook buttons on its Summary shows the page without
+  them: add script buttons in *Settings → Incidents → Types → Pages*.
+
 ## [6.1.0] - 2026-11-19
 
 The sources of threat intelligence are connectors, each in a content pack of
@@ -2900,7 +2986,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.1.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.2.0...HEAD
+[6.2.0]: https://github.com/n36l3c7/Nik/compare/v6.1.0...v6.2.0
 [6.1.0]: https://github.com/n36l3c7/Nik/compare/v6.0.0...v6.1.0
 [6.0.0]: https://github.com/n36l3c7/Nik/compare/v5.4.0...v6.0.0
 [5.4.0]: https://github.com/n36l3c7/Nik/compare/v5.3.0...v5.4.0

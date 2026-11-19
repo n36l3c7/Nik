@@ -27,9 +27,10 @@ import { describeRoles, rolesOf } from '../../domain/permissions.js'
  * it. The entries are in the order of a working day: what there is to work on
  * (incidents, one's tasks, the dashboards), what the work is done with
  * (indicators, artifacts, the search, the playground for a command outside
- * any incident), then what is built (automations). An
- * entry that lists things opens the side panel; clicking it again closes the
- * panel, so the rail is also how the side panel collapses.
+ * any incident), then what is built (automations). The incidents are a page
+ * (the list, from which one is opened); the indicators and the artifacts open
+ * the side panel, and clicking their entry again closes it, so the rail is
+ * also how the side panel collapses.
  *
  * At the foot: the notifications, Settings, and the account. Nothing here
  * opens a single section of Settings: those are reached from Settings.
@@ -64,8 +65,11 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
 
 /**
  * @param {{
- *   panel: 'incidents' | 'artifacts' | 'iocs' | null,   // the open side panel
+ *   panel: 'artifacts' | 'iocs' | null,   // the open side panel
  *   onPanel: (panel: string | null) => void,
+ *   onIncidents: () => void,                       // the list of incidents, a page of its own
+ *   incidentsOpen?: boolean,                       // that page is what the main area shows, alone
+ *   incidentsLeave?: boolean,                      // …and its entry goes back to what was open before it
  *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number, approvals: number,
  *             tasks: number, tasksOverdue: number, unread: number },
  *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
@@ -78,6 +82,9 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
 export default function Rail({
   panel,
   onPanel,
+  onIncidents,
+  incidentsOpen = false,
+  incidentsLeave = false,
   counts,
   can,
   onSearch,
@@ -119,10 +126,10 @@ export default function Rail({
       {canRead && (
         <RailButton
           icon={FolderClosed}
-          label={open === 'incidents' ? 'Hide the incidents' : 'Incidents'}
-          active={open === 'incidents'}
+          label={incidentsOpen && incidentsLeave ? 'Hide the incidents' : 'Incidents'}
+          active={incidentsOpen}
           count={counts.incidents}
-          onClick={() => toggle('incidents')}
+          onClick={onIncidents}
         />
       )}
       {canRead && (

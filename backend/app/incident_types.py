@@ -8,7 +8,11 @@ given no other, so that nothing that exists changes.
 
     layout = {"sections": [{"id", "title", "key": bool, "columns": 1|2, "fields": [names]}],
               "tabs": [ids in order], "hidden": [ids],
-              "grid": [{"id", "kind", "x", "y", "w", "h", "title"?, "section"?, "text"?, "playbooks"?}]}
+              "grid": [{"id", "kind", "x", "y", "w", "h", "title"?, "section"?, "text"?, "buttons"?,
+                        "dashboard"?, "widget"?, "field"?}],
+              "pages": [{"id", "name", "grid": [...]}],
+              "close": {"sections": [ids]},
+              "quick": [{"kind", "section"?, "text"?}]}
 
 The first section flagged ``key`` is the side panel of the incident page. A
 type without a layout gets a generated one: its fields, in order.
@@ -18,6 +22,16 @@ columns: each widget is of a kind (``GRID_KINDS``), and a ``section`` widget
 shows one of the sections. A layout without a grid, which is every layout made
 before 5.3, is drawn by the page with a grid made from its sections, in their
 order: nothing is converted in the database, and nothing has to be.
+
+Since 6.2 a type has **pages** of its own beside the Summary: each a name and
+a grid, shown as a tab of the incident (``page:<id>`` in ``tabs`` and
+``hidden``). ``close`` names the sections the form of closing shows, in order,
+and ``quick`` the blocks of the quick view, the panel a row of the incident
+list opens. A layout that has none of the three is drawn as it always was.
+
+A widget of **script buttons** (``buttons``) replaced the playbook buttons of
+5.3: the kind ``playbooks`` no longer exists, and a stored widget of it is
+left out when a layout is read and when one is saved (``without_gone``).
 """
 
 from __future__ import annotations
@@ -69,10 +83,24 @@ GRID_KINDS = {
     "war_room": True,
     "work_plan": True,
     "indicators": True,
-    "playbooks": False,
+    "buttons": False,
+    "chart": False,
+    "linked": True,
     "note": False,
 }
+# Kinds there were: a widget of one is dropped without a word, where a kind nobody ever had is refused.
+GONE_KINDS = ("playbooks",)
 GRID_MAX, GRID_COLUMNS, GRID_HEIGHT, NOTE_MAX, BUTTONS_MAX = 30, 12, 12, 2000, 8
+PAGES_MAX, PAGE_PREFIX, QUICK_MAX = 10, "page:", 12
+PAGE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+# The blocks of the quick view (frontend/src/domain/quickView.js draws them), one narrow column.
+QUICK_KINDS = ("facts", "section", "stats", "timers", "last", "linked", "note")
+# A script button: its text, its two colours, the script under it and a template for each argument.
+LABEL_MAX, TEMPLATE_MAX, ARGS_MAX = 40, 2000, 30
+COLOUR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+SCRIPT_RE = re.compile(r"^[A-Z][A-Za-z0-9]{2,48}$")
+ARGUMENT_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+BUTTON_BACKGROUND, BUTTON_COLOUR = "#21262d", "#e6edf3"
 # What the side panel shows of an incident of any type, and the Summary under it.
 KEY_FIELDS = ("status", "severity", "owner", "ticket", "occurred", "tlp")
 MORE_FIELDS = ("host", "username", "os", "category", "labels", "affected_hosts", "affected_users", "details")
@@ -246,10 +274,15 @@ def clean_layout(known: dict[str, Field], own: set[str], layout: Any) -> dict[st
         )
     if sum(1 for section in cleaned if section["key"]) > 1:
         raise TypeError_("One section at most is the side panel")
+    pages = clean_pages(layout.get("pages"), cleaned)
+    page_tabs = {PAGE_PREFIX + page["id"] for page in pages}
     tabs = [str(tab) for tab in layout.get("tabs") or []]
     hidden = [str(tab) for tab in layout.get("hidden") or []]
     for tab in (*tabs, *hidden):
-        if tab not in TABS:
+        if tab.startswith(PAGE_PREFIX):
+            if tab not in page_tabs:
+                raise TypeError_(f'The tabs name the page "{tab[len(PAGE_PREFIX) :]}", which this type does not have')
+        elif tab not in TABS:
             raise TypeError_(f'There is no tab called "{tab}": ' + ", ".join(TABS))
     if len(set(tabs)) != len(tabs):
         raise TypeError_("A tab is listed twice")
@@ -260,7 +293,135 @@ def clean_layout(known: dict[str, Field], own: set[str], layout: Any) -> dict[st
     grid = clean_grid(layout.get("grid"), cleaned)
     if grid:
         out["grid"] = grid
+    # The pages, the close form and the quick view: each kept only when the type has one.
+    if pages:
+        out["pages"] = pages
+    close = clean_close(layout.get("close"), cleaned)
+    if close:
+        out["close"] = close
+    quick = clean_quick(layout.get("quick"), cleaned)
+    if quick:
+        out["quick"] = quick
     return out
+
+
+def clean_pages(pages: Any, sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The pages a type adds to its incidents: each an id read in addresses, a name and a grid."""
+    if pages is None:
+        return []
+    if not isinstance(pages, list) or len(pages) > PAGES_MAX:
+        raise TypeError_(f"A type has {PAGES_MAX} pages of its own at most")
+    cleaned: list[dict[str, Any]] = []
+    ids: set[str] = set()
+    for page in pages:
+        if not isinstance(page, dict):
+            raise TypeError_("A page is an object with an id, a name and a grid")
+        page_id = str(page.get("id") or "")
+        if not PAGE_ID_RE.match(page_id):
+            raise TypeError_("The id of a page is a lower-case letter, then lower-case letters, digits or dashes")
+        if page_id in ids:
+            raise TypeError_("Two pages have the same id")
+        ids.add(page_id)
+        name = _text(page.get("name"), 40)
+        if not name:
+            raise TypeError_("A page needs a name: it is what its tab is called")
+        cleaned.append({"id": page_id, "name": name, "grid": clean_grid(page.get("grid"), sections)})
+    return cleaned
+
+
+def clean_close(close: Any, sections: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The close form: the sections of the layout the form of closing shows, in the order given."""
+    if close is None:
+        return None
+    named = close.get("sections") if isinstance(close, dict) else None
+    if not isinstance(named, list) or len(named) > SECTIONS_MAX:
+        raise TypeError_("The close form is a list of sections of the type")
+    have = {section["id"] for section in sections}
+    chosen: list[str] = []
+    for item in named:
+        section_id = str(item or "")
+        if section_id not in have:
+            raise TypeError_(f'The close form shows the section "{section_id}", which this layout does not have')
+        if section_id in chosen:
+            raise TypeError_("A section is in the close form twice")
+        chosen.append(section_id)
+    return {"sections": chosen} if chosen else None
+
+
+def clean_quick(quick: Any, sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The quick view: blocks one under the other, each of a kind there is. A text is there as
+    often as wanted and a section once each (never the side panel: its fields are the details);
+    every other kind is there once. It is what ``quickBlocks`` of the page reads."""
+    if quick is None:
+        return []
+    if not isinstance(quick, list) or len(quick) > QUICK_MAX:
+        raise TypeError_(f"The quick view has {QUICK_MAX} blocks at most")
+    shown = {section["id"] for section in sections if not section["key"]}
+    cleaned: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for block in quick:
+        kind = str(block.get("kind") or "") if isinstance(block, dict) else ""
+        if kind not in QUICK_KINDS:
+            raise TypeError_(f'There is no block of the kind "{kind}" in a quick view: ' + ", ".join(QUICK_KINDS))
+        item: dict[str, Any] = {"kind": kind}
+        once = kind
+        if kind == "section":
+            section_id = str(block.get("section") or "")
+            if section_id not in shown:
+                raise TypeError_(f'The quick view shows the section "{section_id}", which this layout does not have')
+            item["section"] = section_id
+            once = f"section:{section_id}"
+        elif kind == "note":
+            item["text"] = str(block.get("text") or "")[:NOTE_MAX]
+            once = ""
+        if once and once in seen:
+            raise TypeError_(f'The block "{kind}" is in a quick view once' + (" for a section" if ":" in once else ""))
+        seen.add(once)
+        cleaned.append(item)
+    return cleaned
+
+
+def clean_buttons(buttons: Any) -> list[dict[str, Any]]:
+    """The buttons of a widget: what each says, how it is drawn, the script it runs and with what."""
+    from .automation import expressions
+
+    if buttons is None:
+        return []
+    if not isinstance(buttons, list) or len(buttons) > BUTTONS_MAX:
+        raise TypeError_(f"A widget has {BUTTONS_MAX} script buttons at most")
+    cleaned = []
+    for button in buttons:
+        if not isinstance(button, dict):
+            raise TypeError_("A script button is an object with a text, two colours and a script")
+        label = _text(button.get("label"), LABEL_MAX)
+        if not label:
+            raise TypeError_("A script button needs its text")
+        background = str(button.get("background") or BUTTON_BACKGROUND)
+        colour = str(button.get("color") or BUTTON_COLOUR)
+        if not COLOUR_RE.match(background) or not COLOUR_RE.match(colour):
+            raise TypeError_(f'The colours of the button "{label}" are written #rrggbb')
+        script = str(button.get("script") or "")
+        if script and not SCRIPT_RE.match(script):
+            raise TypeError_(f'The button "{label}" names a script that cannot exist: "{script}"')
+        given = button.get("args") or {}
+        if not isinstance(given, dict) or len(given) > ARGS_MAX:
+            raise TypeError_(f'The arguments of the button "{label}" are names with a text each')
+        args: dict[str, str] = {}
+        for name, template in given.items():
+            if not ARGUMENT_RE.match(str(name)):
+                raise TypeError_(f'The button "{label}" has an argument that cannot be one: "{name}"')
+            text = str(template if template is not None else "")[:TEMPLATE_MAX]
+            if not text.strip():
+                continue  # left empty: asked when the button is pressed
+            try:
+                expressions.parse(text)
+            except expressions.ExpressionError as error:
+                raise TypeError_(f'The button "{label}", argument {name}: {error.message}') from None
+            args[str(name)] = text
+        cleaned.append(
+            {"label": label, "background": background.lower(), "color": colour.lower(), "script": script, "args": args}
+        )
+    return cleaned
 
 
 def _whole(value: Any, low: int, high: int, what: str) -> int:
@@ -272,11 +433,15 @@ def _whole(value: Any, low: int, high: int, what: str) -> int:
 
 
 def clean_grid(grid: Any, sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The widgets of the Summary: each of a kind there is, inside the twelve columns, a section
-    widget for a section of this layout that is not the side panel."""
+    """The widgets of a page (the Summary, or a page of the type): each of a kind there is, inside
+    the twelve columns, a section widget for a section of this layout that is not the side panel."""
     if grid is None:
         return []
-    if not isinstance(grid, list) or len(grid) > GRID_MAX:
+    if not isinstance(grid, list):
+        raise TypeError_(f"The page of a type has {GRID_MAX} widgets at most")
+    # A widget of a kind that is gone is not counted, and not kept.
+    grid = [widget for widget in grid if not (isinstance(widget, dict) and widget.get("kind") in GONE_KINDS)]
+    if len(grid) > GRID_MAX:
         raise TypeError_(f"The page of a type has {GRID_MAX} widgets at most")
     shown = {section["id"] for section in sections if not section["key"]}
     cleaned: list[dict[str, Any]] = []
@@ -314,13 +479,38 @@ def clean_grid(grid: Any, sections: list[dict[str, Any]]) -> list[dict[str, Any]
             out["section"] = section
         elif kind == "note":
             out["text"] = str(widget.get("text") or "")[:NOTE_MAX]
-        elif kind == "playbooks":
-            named = widget.get("playbooks") or []
-            if not isinstance(named, list) or len(named) > BUTTONS_MAX:
-                raise TypeError_(f"A widget has {BUTTONS_MAX} playbook buttons at most")
-            out["playbooks"] = list(dict.fromkeys(str(item) for item in named if item))
+        elif kind == "buttons":
+            out["buttons"] = clean_buttons(widget.get("buttons"))
+        elif kind == "chart":
+            # Which widget of which dashboard, and the field of the incident its query is narrowed by.
+            out["dashboard"] = _text(widget.get("dashboard"), 64)
+            out["widget"] = _text(widget.get("widget"), 64)
+            out["field"] = _text(widget.get("field"), 64)
         cleaned.append(out)
     return cleaned
+
+
+def without_gone(layout: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A stored layout as it is read: without the widgets of a kind that no longer exists. A layout
+    saved before 6.2 may hold playbook buttons; nothing is rewritten in the database for them."""
+    if not isinstance(layout, dict):
+        return layout
+
+    def kept(grid: Any) -> Any:
+        if not isinstance(grid, list):
+            return grid
+        return [widget for widget in grid if not (isinstance(widget, dict) and widget.get("kind") in GONE_KINDS)]
+
+    out = dict(layout)
+    if "grid" in out:
+        out["grid"] = kept(out["grid"])
+        if not out["grid"]:
+            del out["grid"]  # nothing is left of it: the page is the generated one again
+    if isinstance(out.get("pages"), list):
+        out["pages"] = [
+            {**page, "grid": kept(page.get("grid"))} if isinstance(page, dict) else page for page in out["pages"]
+        ]
+    return out
 
 
 def generated_layout(known: dict[str, Field], kind: IncidentType | None) -> dict[str, Any]:
@@ -502,7 +692,7 @@ def out(db: OrmSession, row: IncidentType, known: dict[str, Field] | None = None
             if item.get("name") in known
         ],
         # What the page is drawn from: the saved layout, or one made from the fields.
-        "layout": row.layout or generated_layout(known, row),
+        "layout": without_gone(row.layout) or generated_layout(known, row),
         "customLayout": bool(row.layout),
         "sla": _sla_out(row.sla),
         "closeReasons": row.close_reasons or [],

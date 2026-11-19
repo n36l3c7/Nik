@@ -54,7 +54,9 @@ from .routers import (
     enrichment,
     fetch,
     fields,
+    filters,
     flirt,
+    incident_page,
     incident_types,
     incidents,
     ioc_library,
@@ -147,7 +149,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="6.1.0",
+    version="6.2.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -299,6 +301,7 @@ app.include_router(connectors.router, prefix="/api")
 app.include_router(fields.router, prefix="/api")
 app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")
+app.include_router(incident_page.router, prefix="/api")
 app.include_router(context.router, prefix="/api")
 app.include_router(war_room.router, prefix="/api")
 app.include_router(playground.router, prefix="/api")
@@ -309,6 +312,7 @@ app.include_router(fetch.router, prefix="/api")
 app.include_router(preprocess.router, prefix="/api")
 app.include_router(mirror.router, prefix="/api")
 app.include_router(dashboards.router, prefix="/api")
+app.include_router(filters.router, prefix="/api")
 app.include_router(packs.router, prefix="/api")
 app.include_router(script_signatures.router, prefix="/api")
 app.include_router(report.router, prefix="/api")

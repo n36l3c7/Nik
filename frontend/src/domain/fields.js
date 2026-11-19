@@ -4,10 +4,13 @@
  * called, how a value is shown and typed, and the edits of a type's layout.
  *
  * A layout is `{ sections: [{ id, title, key, columns, fields: [names] }],
- * tabs: [ids], hidden: [ids] }`. Every edit here returns a new layout and
+ * tabs: [ids], hidden: [ids] }`, with the grid of its Summary
+ * (domain/layoutGrid.js) and, since 6.2, its pages, its close form and its
+ * quick view (domain/typePages.js). Every edit here returns a new layout and
  * leaves the one it was given as it was.
  */
-import { DETAIL_FIELDS, cleanGrid } from './layoutGrid.js'
+import { DETAIL_FIELDS } from './layoutGrid.js'
+import { layoutForSaving } from './typePages.js'
 import { storedTimer } from './timers.js'
 
 export const UNCLASSIFIED = 'unclassified'
@@ -355,11 +358,8 @@ export function typePayload(type) {
       required: Boolean(item.required),
       requiredOnClose: Boolean(item.requiredOnClose),
     })),
-    // A widget of a section that was taken away goes with it: the server would refuse it.
-    layout:
-      type.layout && Array.isArray(type.layout.grid)
-        ? { ...type.layout, grid: cleanGrid(type.layout.grid, type.layout) }
-        : type.layout,
+    // What names a section or a page that was taken away goes with it: the server would refuse it.
+    layout: layoutForSaving(type.layout),
     closeReasons: list(type.closeReasons)
       .map((reason) => String(reason).trim())
       .filter(Boolean),
