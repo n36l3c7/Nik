@@ -453,15 +453,18 @@
             </tr>
             <tr>
               <td>
-                <code>GET /api/query/schema</code> · <code>POST /api/query</code> · <code>POST /api/query/check</code>
+                <code>GET /api/query/schema</code> · <code>POST /api/query</code> · <code>POST /api/query/check</code> ·
+                <code>POST /api/query/aggregate</code>
               </td>
               <td>
                 <a href="#query">The query language</a>. <code>schema</code> (<code>?entity=</code> for one) lists the
                 entities the caller may query and their fields. <code>POST /api/query</code> takes
                 <code>{ entity, query, limit, offset }</code> (<code>incidents</code>, <code>artifacts</code>,
-                <code>indicators</code>, <code>audit</code>) and returns <code>{ entity, total, items }</code>.
-                <code>check</code> reads <code>{ entity, query }</code> without running it and returns its tree. Any
-                signed-in caller; the permission of the entity is checked.
+                <code>indicators</code>, <code>audit</code>, <code>runs</code>, <code>approvals</code>,
+                <code>tasks</code>) and returns <code>{ entity, total, items }</code>. <code>check</code> reads
+                <code>{ entity, query }</code> without running it and returns its tree. <code>aggregate</code>
+                <a href="#query-aggregate">counts or measures</a> what a query finds. Any signed-in caller; the
+                permission of the entity is checked.
               </td>
             </tr>
             <tr>
@@ -1335,6 +1338,108 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET</code> · <code>POST /api/dashboards</code> · <code>GET</code> · <code>PUT</code> ·
+                <code>DELETE /api/dashboards/{id}</code> · <code>POST …/duplicate</code> · <code>GET …/export</code> ·
+                <code>POST /api/dashboards/import</code>
+              </td>
+              <td>
+                (<strong>read</strong>) The dashboards the caller sees, without their widgets: Nik's, their own and
+                those shared with them · make one of one's own:
+                <code>{name, description, widgets, timeRange, refreshSeconds, filter, filterEntity}</code>, a widget
+                being <code>{id, title, type, entity, query, groupBy, measure, options, x, y, w, h}</code> on a grid of
+                12 columns (<code>type</code>: <code>number</code>, <code>trend</code>, <code>bar</code>,
+                <code>stacked_bar</code>, <code>pie</code>, <code>top</code>, <code>table</code>, <code>duration</code>,
+                <code>gauge</code>, <code>text</code>, <code>storage</code>, <code>fetch</code>). Each widget is checked
+                as <a href="#query-aggregate"><code>/api/query/aggregate</code></a> would check it, and widgets are
+                moved so that none covers another · one dashboard with its widgets · change it (its owner; once it is
+                shared, whoever may share dashboards; never one Nik ships) · delete it · a copy of one's own · the
+                dashboard as a file, without whose it is · make one from such a file. A dashboard that is not yours and
+                not shared with you answers <code>404</code>. The numbers are not here: a page asks
+                <code>/api/query/aggregate</code> for each widget as the person looking.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/dashboards/{id}/report</code></td>
+              <td>
+                (<strong>read</strong>) The dashboard as a document: <code>{format: "pdf" | "html", timeRange}</code>.
+                Each widget is asked on the server <strong>as the caller</strong> and written with its answer, a chart
+                as its table; one the caller may not ask says so. <code>timeRange</code> replaces the one the dashboard
+                opens on. Written to the audit log.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/dashboards/{id}/sharing</code></td>
+              <td>
+                (<strong>dashboards.share</strong>) Who else sees a dashboard:
+                <code>{everyone, roles, users}</code>; all empty, nobody else. Written to the audit log.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/automation/playbooks/{id}/debug</code> ·
+                <code>POST /api/automation/runs/{id}/debug</code>
+              </td>
+              <td>
+                (<strong>automation.debug</strong>) The <a href="automation.html#debugger">debugger</a>. Start a debug
+                run of a playbook on an object:
+                <code>{objectKind, objectId, inputs, breakpoints: [node ids], stepMode, draft}</code>
+                (<code>draft: true</code> runs the draft as it is drawn; <code>400</code> with its
+                <code>problems</code> when it cannot run). It stops before the nodes named, or before every node with
+                <code>stepMode</code>; what goes outside is held as in a dry run · tell it what to do:
+                <code>{action, stepId, overrides, sendForReal, contextPatch, breakpoints}</code>, where
+                <code>action</code> is <code>step</code>, <code>continue</code>, <code>skip</code>,
+                <code>rerun</code> (a node that is over, by <code>stepId</code>), <code>stop</code>, or
+                <code>set</code> (only move the breakpoints or change the context); <code>overrides</code> gives the
+                node other arguments, <code>sendForReal</code> lets that one node really send (it also needs
+                <strong>automation.run</strong>, and the approval the node normally asks),
+                <code>contextPatch</code> changes what later nodes read (<code
+                  >{"&lt;node id&gt;": output, "inputs": {…}}</code
+                >). <code>GET /api/automation/runs/{id}</code>
+                of a debug run adds
+                <code>debug: {breakpoints, stepMode, at: [{step, node}], draft, context}</code>, and a step it is
+                stopped at has <code>waiting: "debug"</code> with what the node would be given in <code>input</code>.
+                Debug runs are listed with <code>GET /api/automation/runs?debug=true</code>, to who started them and to
+                an admin; they count for no limit and no statistic and are deleted after a week.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/packs</code> · <code>POST /api/packs/inspect</code> ·
+                <code>POST /api/packs/import</code> · <code>GET /api/packs/{id}/download</code> ·
+                <code>DELETE /api/packs/{id}</code>
+              </td>
+              <td>
+                (<strong>content.manage</strong>) <a href="automation.html#packs">Content packs</a>. The packs that are
+                installed, Nik's own first, each with the items that came from it · read a <code>.nikpack</code> file
+                (multipart <code>file</code>, 20 MB at most) and say what applying it would do, changing nothing:
+                <code
+                  >{token, pack, installed, problems, items: [{kind, name, action, diff?, why?, note?, from?}],
+                  counts}</code
+                >, where <code>action</code> is <code>add</code>, <code>update</code> (with the difference),
+                <code>same</code> or <code>conflict</code> (with why) · apply it:
+                <code>{token, choices: {"kind/name": "skip"}}</code>, all in one transaction or nothing (<code
+                  >409</code
+                >
+                for a conflict that was not skipped, <code>410</code> for a token older than an hour or of someone else)
+                · an installed pack as a file again · take a pack off the list (what it brought stays;
+                <code>409</code> for one Nik ships or one another pack requires).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/packs/items</code> · <code>POST /api/packs/dependencies</code> ·
+                <code>POST /api/packs/export</code>
+              </td>
+              <td>
+                (<strong>content.manage</strong>) What there is to put in a pack, by kind · what a choice of items
+                brings with it, <code>{items: [{kind, name}]}</code> (the scripts and connectors of a playbook, the
+                fields and the playbook of a type…) · the file:
+                <code>{id, name, version, description, author, requires, items, listItems}</code>. A list goes without
+                its items unless <code>listItems</code> is true. Never a connection or a secret.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET</code> · <code>PUT /api/automation/state</code></td>
               <td>
                 Whether automation is on and its worker alive · the general switch,
@@ -1386,8 +1491,9 @@
 
       <h2 id="query">The query language</h2>
       <p>
-        One language asks incidents, artifacts, indicators and the audit log. It is what the <code>q</code> parameter of
-        their list endpoints takes, and what <code>POST /api/query</code> runs on any of them:
+        One language asks incidents, artifacts, indicators, the audit log, the runs of playbooks, their approvals and
+        the tasks. It is what the <code>q</code> parameter of the list endpoints of the first four takes, and what
+        <code>POST /api/query</code> runs on any of them:
       </p>
       <pre><code>status:open severity:&gt;=high owner:"" -host:srv-*
 kind:mail verdict:phishing created:&gt;=now-7d
@@ -1477,7 +1583,53 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
         Limits: 2 000 characters, 20 levels of parentheses, 200 conditions, 8 wildcards in a value, pages of at most 500
         from <code>POST /api/query</code>, and ten seconds for the database to answer. A query is compiled to bound
         parameters, never to SQL text; who may query an entity is checked when it is compiled (<code>audit</code> needs
-        <code>audit.read</code>, the others <code>read</code>).
+        <code>audit.read</code>, <code>runs</code> and <code>approvals</code> need <code>automation.run</code>, the
+        others <code>read</code>).
+      </p>
+      <h3 id="query-aggregate">Counting and measuring</h3>
+      <p>
+        <code>POST /api/query/aggregate</code> answers with numbers instead of rows: it is what a widget of a dashboard
+        asks. The query is compiled as above, so the answer never counts what the caller may not read.
+      </p>
+      <pre><code>{ "entity": "incidents", "query": "status:open",
+  "groupBy": ["created@day", "severity"], "measure": "count",
+  "timeField": "created", "timeRange": "30d", "compare": "previous", "limit": 50 }
+
+{ "entity": "incidents", "columns": [{ "name": "created", "kind": "date", "bucket": "day" }, …],
+  "rows": [["2026-11-17", "high", 2], …], "total": 14, "previous": { "total": 9, "range": {…} },
+  "more": 0, "truncated": false, "range": { "from": "…", "to": "…" } }</code></pre>
+      <ul>
+        <li>
+          <code>groupBy</code>: two fields at most. A date is grouped by a stretch of time,
+          <code>field@hour|day|week|month|year</code> (a week is named by its Monday, times are UTC); a field of tags
+          counts a row under each of its tags. With no group the answer is its <code>total</code> alone.
+        </li>
+        <li>
+          <code>measure</code>: <code>count</code> (the default), or <code>sum</code>, <code>avg</code>,
+          <code>min</code>, <code>max</code>, <code>median</code>, <code>p90</code> of a number field
+          (<code>avg:score</code>) or of the seconds between two dates, <code>median:duration(created,closed)</code>;
+          <code>duration(asked,now)</code> is an age. A row that lacks the number or one of the dates is not measured.
+        </li>
+        <li>
+          <code>timeRange</code> on <code>timeField</code>: a length of time back from now (<code>24h</code>,
+          <code>7d</code>, <code>12w</code>, <code>6m</code>, <code>1y</code>) or <code>{from, to}</code>.
+          <code>compare: "previous"</code> adds the total of the period of the same length before it. When the one group
+          is the time field itself, the stretches with nothing in them are given as zeros.
+        </li>
+        <li>
+          Rows come by time when the first group is a date, in the order of the field when it has one (severity, the
+          worst first), otherwise the largest first; <code>limit</code> (50, at most 500) keeps the first and
+          <code>more</code> says how many groups were left out.
+        </li>
+        <li>
+          A plain count is grouped by the database. Anything else is worked out from the rows that match, 100 000 at
+          most: past that, <code>truncated</code> is true.
+        </li>
+      </ul>
+      <p>
+        For incidents the fields <code>type</code>, <code>closed</code>, <code>closeReason</code>,
+        <code>occurred</code>, <code>source</code>, <code>slaBreached</code> and the seconds the SLA timers counted
+        (<code>timeToAssign</code>, <code>timeToContain</code>, <code>timeToClose</code>) can be asked and measured too.
       </p>
 
       <h2 id="uploads">Uploading files</h2>

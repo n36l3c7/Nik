@@ -125,6 +125,8 @@ class Entity:
     fields: tuple[FieldSpec, ...]
     text_fields: tuple[str, ...]
     model: Any = None  # the table (None for an entity assembled in rows)
+    # Conditions every query on the entity carries: what is never part of it.
+    base: tuple = ()
     _index: dict = field(default_factory=dict, compare=False)
 
     def __post_init__(self):

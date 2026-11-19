@@ -1,0 +1,233 @@
+{
+  "nik": "dashboard",
+  "version": 1,
+  "name": "SOC overview",
+  "description": "What is open, what comes in, and how long it takes.",
+  "timeRange": "30d",
+  "refreshSeconds": 300,
+  "filter": "",
+  "filterEntity": "incidents",
+  "widgets": [
+    {
+      "id": "open",
+      "title": "Open incidents",
+      "type": "number",
+      "x": 0,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "-status:closed",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "new",
+      "title": "New incidents",
+      "type": "number",
+      "x": 3,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true
+      }
+    },
+    {
+      "id": "breaches",
+      "title": "SLA breaches",
+      "type": "number",
+      "x": 6,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "slaBreached:true",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true
+      }
+    },
+    {
+      "id": "unowned",
+      "title": "Open with no owner",
+      "type": "number",
+      "x": 9,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "-status:closed owner:\"\"",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "by-type",
+      "title": "Open by type and severity",
+      "type": "stacked_bar",
+      "x": 0,
+      "y": 2,
+      "w": 6,
+      "h": 4,
+      "entity": "incidents",
+      "query": "-status:closed",
+      "groupBy": [
+        "type",
+        "severity"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true,
+        "limit": 12
+      }
+    },
+    {
+      "id": "per-day",
+      "title": "New per day",
+      "type": "trend",
+      "x": 6,
+      "y": 2,
+      "w": 6,
+      "h": 4,
+      "entity": "incidents",
+      "query": "",
+      "groupBy": [
+        "created@day"
+      ],
+      "measure": "count",
+      "options": {}
+    },
+    {
+      "id": "tta",
+      "title": "Mean time to assign",
+      "type": "duration",
+      "x": 0,
+      "y": 6,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "",
+      "groupBy": [],
+      "measure": "avg:timeToAssign",
+      "options": {}
+    },
+    {
+      "id": "ttc",
+      "title": "Median time to close",
+      "type": "duration",
+      "x": 3,
+      "y": 6,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "status:closed",
+      "groupBy": [],
+      "measure": "median:duration(created,closed)",
+      "options": {
+        "timeField": "closed"
+      }
+    },
+    {
+      "id": "ttc90",
+      "title": "Time to close, 90th percentile",
+      "type": "duration",
+      "x": 6,
+      "y": 6,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "status:closed",
+      "groupBy": [],
+      "measure": "p90:duration(created,closed)",
+      "options": {
+        "timeField": "closed"
+      }
+    },
+    {
+      "id": "closed",
+      "title": "Closed",
+      "type": "number",
+      "x": 9,
+      "y": 6,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "status:closed",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true,
+        "timeField": "closed"
+      }
+    },
+    {
+      "id": "owners",
+      "title": "Open by owner",
+      "type": "top",
+      "x": 0,
+      "y": 8,
+      "w": 4,
+      "h": 4,
+      "entity": "incidents",
+      "query": "-status:closed",
+      "groupBy": [
+        "owner"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "reasons",
+      "title": "Why they were closed",
+      "type": "pie",
+      "x": 4,
+      "y": 8,
+      "w": 4,
+      "h": 4,
+      "entity": "incidents",
+      "query": "status:closed",
+      "groupBy": [
+        "closeReason"
+      ],
+      "measure": "count",
+      "options": {
+        "timeField": "closed"
+      }
+    },
+    {
+      "id": "worst",
+      "title": "Open, high or critical",
+      "type": "table",
+      "x": 8,
+      "y": 8,
+      "w": 4,
+      "h": 4,
+      "entity": "incidents",
+      "query": "-status:closed severity:>=high",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true,
+        "columns": [
+          "name",
+          "severity",
+          "owner"
+        ],
+        "limit": 8
+      }
+    }
+  ]
+}

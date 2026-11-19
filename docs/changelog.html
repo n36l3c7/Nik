@@ -40,6 +40,42 @@
       </p>
 
       <section class="release">
+        <h3>4.6.0 <span class="date">2026-11-19</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Dashboards.</strong> Pages of widgets, each a question asked of
+            what Nik holds and drawn as a number, a trend, bars, a donut, a list or a table, on a grid you arrange. A
+            value opens the objects behind it; a dashboard is yours until it is shared, and whoever sees it sees only
+            what their own roles let them read. Four ship with Nik, and any can be made a PDF (<a
+              href="guide.html#dashboards"
+              >Dashboards</a
+            >).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Counting in the query language</strong>:
+            <code>POST /api/query/aggregate</code> groups and measures what a query finds, over a time range and against
+            the period before. Runs, approvals and tasks can be queried (<a href="api.html#query-aggregate"
+              >Counting and measuring</a
+            >).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Content packs.</strong> Connectors, playbooks and their
+            scripts, types and fields, mappers, lists, dashboards and pre-processing rules travel as one
+            <code>.nikpack</code> file. A pack is inspected before anything changes, item by item, with the difference
+            of what it would update, and applied whole or not at all. What Nik ships is listed as packs (<a
+              href="automation.html#packs"
+              >Content packs</a
+            >).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>A debugger for playbooks</strong>: a run that stops before its
+            nodes, shows what each is about to be given, takes other arguments, skips a node, runs one again, and holds
+            what goes outside unless one node is let through (<a href="automation.html#debugger">The debugger</a>).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>4.5.0 <span class="date">2026-11-18</span></h3>
         <ul>
           <li>

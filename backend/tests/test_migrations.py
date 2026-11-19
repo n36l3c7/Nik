@@ -671,3 +671,33 @@ def test_migration_0032_adds_the_tables_and_columns_of_fetching(tmp_path, monkey
         inspector = sa.inspect(conn)
         assert not set(FETCH_TABLES) & set(inspector.get_table_names())
         assert {c["name"] for c in inspector.get_columns("connections")} == {"id", "name"}
+
+
+def test_migration_0033_adds_the_tables_of_dashboards_and_packs(tmp_path, monkeypatch):
+    from app.core.models import DASHBOARD_PACK_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        # A run as releases before this one knew it.
+        conn.execute(sa.text("CREATE TABLE runs (id VARCHAR(32) PRIMARY KEY, status VARCHAR(10))"))
+        conn.execute(sa.text("INSERT INTO runs (id, status) VALUES ('r1', 'done')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0032_fetch_mappers")
+    command.upgrade(cfg, "0033_dashboards_packs")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(DASHBOARD_PACK_TABLES) <= set(inspector.get_table_names())
+        # The run that was there is not a debug run.
+        assert conn.execute(sa.text("SELECT debug FROM runs")).scalar() in (0, False)
+        assert {"layout", "shared_with", "builtin"} <= {c["name"] for c in inspector.get_columns("dashboards")}
+        assert {"kind", "name", "pack_id"} == {c["name"] for c in inspector.get_columns("pack_items")}
+    command.stamp(cfg, "0032_fetch_mappers")
+    command.upgrade(cfg, "0033_dashboards_packs")  # again: nothing to do
+    command.downgrade(cfg, "0032_fetch_mappers")
+    with engine.connect() as conn:
+        assert not set(DASHBOARD_PACK_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert {c["name"] for c in sa.inspect(conn).get_columns("runs")} == {"id", "status"}

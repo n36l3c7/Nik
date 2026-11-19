@@ -569,7 +569,7 @@ def test_the_indicator_library_takes_a_query(admin: TestClient):
 
 def test_the_query_endpoints_say_what_can_be_asked_and_run_it(admin: TestClient, stored):
     entities = {e["entity"]: e for e in admin.get("/api/query/schema").json()["entities"]}
-    assert sorted(entities) == ["artifacts", "audit", "incidents", "indicators"]
+    assert sorted(entities) == ["approvals", "artifacts", "audit", "incidents", "indicators", "runs", "tasks"]
     severity = next(f for f in entities["incidents"]["fields"] if f["name"] == "severity")
     assert severity["kind"] == "ordered" and severity["values"] == ["low", "medium", "high", "critical"]
     owner = next(f for f in entities["incidents"]["fields"] if f["name"] == "owner")

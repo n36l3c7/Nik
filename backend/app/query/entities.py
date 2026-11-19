@@ -1,16 +1,26 @@
 """The entities a query can be asked of, and the fields each exposes.
 
-Incidents, artifacts and the audit log are tables; the indicator library is
-assembled in rows (``ioc_library.library``), so its fields read a row. Later
-releases add entities here (runs, tasks, the War Room, connections) and let
-the field registry add the custom fields of incidents.
+Incidents, artifacts, the audit log, the runs of playbooks, their approvals
+and the tasks are tables; the indicator library is assembled in rows
+(``ioc_library.library``), so its fields read a row.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import false, func, select
 
-from ..core.models import Artifact, ArtifactLink, AuditEntry, Incident
+from ..core.models import (
+    Approval,
+    Artifact,
+    ArtifactLink,
+    AuditEntry,
+    Connection,
+    Incident,
+    IncidentType,
+    Playbook,
+    Run,
+    Task,
+)
 from .fields import Context, Entity, FieldSpec, _bad, _boolean, text_matches
 from .parser import Value
 
@@ -26,6 +36,14 @@ TLPS = ("clear", "green", "amber", "red")
 # --------------------------------------------------------------------------- #
 # Incidents                                                                   #
 # --------------------------------------------------------------------------- #
+def _timer(name: str):
+    """The seconds an SLA timer counted before its last stretch: all of them, once it stopped."""
+    return Incident.fields[name]["accumulated_s"].as_float()
+
+
+_TYPE_NAME = select(IncidentType.name).where(IncidentType.id == Incident.type_id).scalar_subquery()
+_SOURCE_NAME = select(Connection.name).where(Connection.id == Incident.source_connection_id).scalar_subquery()
+
 INCIDENTS = Entity(
     name="incidents",
     label="Incidents",
@@ -53,6 +71,27 @@ INCIDENTS = Entity(
         FieldSpec(
             "modified", "date", "When it last changed", aliases=("updated", "updatedAt"), column=Incident.updated_at
         ),
+        FieldSpec("type", "keyword", "The name of its type of incident", column=_TYPE_NAME, nullable=True),
+        FieldSpec("occurred", "date", "When what it is about happened", column=Incident.occurred_at, nullable=True),
+        FieldSpec(
+            "closed", "date", "When it was closed", aliases=("closedAt",), column=Incident.closed_at, nullable=True
+        ),
+        FieldSpec("closeReason", "keyword", "Why it was closed", column=Incident.close_reason),
+        FieldSpec("source", "keyword", "The connection that fetched it", column=_SOURCE_NAME, nullable=True),
+        FieldSpec(
+            "slaBreached",
+            "bool",
+            "One of its SLA timers ran past its time",
+            aliases=("breached",),
+            column=func.coalesce(Incident.fields["sla_breached"].as_boolean(), false()),
+        ),
+        FieldSpec(
+            "timeToAssign", "number", "Seconds its time-to-assign timer counted", column=_timer("time_to_assign")
+        ),
+        FieldSpec(
+            "timeToContain", "number", "Seconds its time-to-contain timer counted", column=_timer("time_to_contain")
+        ),
+        FieldSpec("timeToClose", "number", "Seconds its time-to-close timer counted", column=_timer("time_to_close")),
     ),
 )
 
@@ -245,4 +284,100 @@ INDICATORS = Entity(
     ),
 )
 
-ENTITIES: dict[str, Entity] = {entity.name: entity for entity in (INCIDENTS, ARTIFACTS, INDICATORS, AUDIT)}
+# --------------------------------------------------------------------------- #
+# Automation: runs, approvals, tasks                                          #
+# --------------------------------------------------------------------------- #
+_PLAYBOOK_NAME = select(Playbook.name).where(Playbook.id == Run.playbook_id).scalar_subquery()
+_APPROVAL_PLAYBOOK = (
+    select(Playbook.name).join(Run, Run.playbook_id == Playbook.id).where(Run.id == Approval.run_id).scalar_subquery()
+)
+
+RUNS = Entity(
+    name="runs",
+    label="Runs",
+    permission="automation.run",
+    model=Run,
+    base=(Run.debug.is_(False),),  # a run of the debugger is nobody's statistics
+    text_fields=("playbook", "error", "startedBy"),
+    fields=(
+        FieldSpec("id", "keyword", "The run's identifier", column=Run.id),
+        FieldSpec("playbook", "text", "The name of the playbook", column=_PLAYBOOK_NAME, nullable=True),
+        FieldSpec(
+            "status",
+            "keyword",
+            "queued, running, waiting, done, failed or stopped",
+            column=Run.status,
+            values=("queued", "running", "waiting", "done", "failed", "stopped"),
+        ),
+        FieldSpec("dryRun", "bool", "It was a dry run", aliases=("dry",), column=Run.dry_run),
+        FieldSpec("on", "keyword", "What it ran on: incident, artifact, indicator…", column=Run.object_kind),
+        FieldSpec("incident", "keyword", "The id of the incident it ran on", column=Run.incident_id, nullable=True),
+        FieldSpec("startedBy", "keyword", "Who or what started it", aliases=("by",), column=Run.started_by),
+        FieldSpec("started", "date", "When it started", aliases=("startedAt",), column=Run.started_at),
+        FieldSpec("finished", "date", "When it ended", aliases=("finishedAt",), column=Run.finished_at, nullable=True),
+        FieldSpec("error", "text", "Why it failed", column=Run.error, nullable=True),
+    ),
+)
+
+APPROVALS = Entity(
+    name="approvals",
+    label="Approvals",
+    permission="automation.run",
+    model=Approval,
+    base=(select(Run.id).where(Run.id == Approval.run_id, Run.debug.is_(False)).exists(),),
+    text_fields=("question", "playbook"),
+    fields=(
+        FieldSpec("id", "keyword", "The approval's identifier", column=Approval.id),
+        FieldSpec(
+            "status",
+            "keyword",
+            "waiting, approved, rejected or expired",
+            column=Approval.status,
+            values=("waiting", "approved", "rejected", "expired"),
+        ),
+        FieldSpec("question", "text", "What is asked", column=Approval.question),
+        FieldSpec("playbook", "text", "The name of the playbook that asks", column=_APPROVAL_PLAYBOOK, nullable=True),
+        FieldSpec("asked", "date", "When it was asked", aliases=("askedAt",), column=Approval.asked_at),
+        FieldSpec(
+            "answered",
+            "date",
+            "When it was answered",
+            aliases=("answeredAt",),
+            column=Approval.answered_at,
+            nullable=True,
+        ),
+        FieldSpec("answeredBy", "keyword", "Who answered", aliases=("by",), column=Approval.answered_by, nullable=True),
+    ),
+)
+
+TASKS = Entity(
+    name="tasks",
+    label="Tasks",
+    permission="read",
+    model=Task,
+    text_fields=("title", "assignee"),
+    fields=(
+        FieldSpec("id", "keyword", "The task's identifier", column=Task.id),
+        FieldSpec("kind", "keyword", "task or ask (a question)", column=Task.kind, values=("task", "ask")),
+        FieldSpec(
+            "status",
+            "keyword",
+            "open, overdue, done or skipped",
+            column=Task.status,
+            values=("open", "overdue", "done", "skipped"),
+        ),
+        FieldSpec("title", "text", "What is to do", column=Task.title),
+        FieldSpec("assignee", "keyword", "The account it is for", aliases=("user",), column=Task.assignee_user),
+        FieldSpec("role", "keyword", "The role it is for", column=Task.assignee_role),
+        FieldSpec("incident", "keyword", "The id of its incident", column=Task.incident_id, nullable=True),
+        FieldSpec("created", "date", "When it was given", aliases=("createdAt",), column=Task.created_at),
+        FieldSpec(
+            "completed", "date", "When it was done", aliases=("completedAt",), column=Task.completed_at, nullable=True
+        ),
+        FieldSpec("completedBy", "keyword", "Who did it", column=Task.completed_by),
+    ),
+)
+
+ENTITIES: dict[str, Entity] = {
+    entity.name: entity for entity in (INCIDENTS, ARTIFACTS, INDICATORS, AUDIT, RUNS, APPROVALS, TASKS)
+}

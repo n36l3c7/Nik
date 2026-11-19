@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-11-19
+
+Additive: nothing that worked with 4.5 changes.
+
+### Added
+
+- **Counting and measuring what a query finds.** `POST /api/query/aggregate`
+  groups what a query finds by one or two fields, a date by hour, day, week,
+  month or year, and counts it or measures it: the sum, mean, minimum,
+  maximum, median or 90th percentile of a number or of the time between two
+  dates, over a time range and against the period before. It runs as the
+  caller, so it never counts what they may not read.
+- The query language asks three more things: the **runs** of playbooks and
+  their **approvals** (for who may run playbooks) and the **tasks**.
+  Incidents can be asked by `type`, `closed`, `closeReason`, `occurred`,
+  `source`, `slaBreached` and by the seconds their SLA timers counted.
+- **Dashboards, as data.** A dashboard is a set of widgets on a grid of 12
+  columns, each a question in the query language with how it is grouped,
+  measured and shown (`/api/dashboards`). It is personal until someone with
+  `dashboards.share` shares it with everyone, with roles or with accounts; a
+  widget is always asked as the person looking, so a shared dashboard never
+  shows what their roles cannot read. A dashboard goes out as a JSON file and
+  comes back as one's own.
+- **The Dashboards page**, on the rail: the dashboards you see on the left,
+  the open one with its time range on the right. Widgets are a number (with
+  its change against the period before), a trend line, bars, stacked bars, a
+  donut, a list of top values, a table, a duration, a gauge against a target,
+  a note, and two of Nik itself (storage, and the health of what fetches).
+  Charts are Nik's own SVG, each readable as a table; a value opens the
+  objects behind it with their query. In edit mode widgets are dragged and
+  resized on 12 columns, by pointer or by keyboard, and a widget is edited
+  with its answer beside it. A dashboard can be the page that opens at
+  sign-in.
+- **Four dashboards ship with Nik**, seen by everyone and changed by nobody:
+  *SOC overview*, *Automation*, *Indicators* and *Storage and system*.
+  Duplicate one to make it yours.
+- **A dashboard as a document**: `POST /api/dashboards/{id}/report` (the
+  *Report* button) makes a PDF or an HTML page of it, each widget asked on
+  the server as whoever wants the report and written with its answer.
+- **Content packs.** What Nik is taught travels as one `.nikpack` file: a
+  zip with `pack.yml` and a folder for each kind of item (connectors,
+  scripts, playbooks, fields, incident types, mappers, lists, dashboards,
+  pre-processing rules), never a connection or a secret. Importing is two
+  steps (`/api/packs`): *inspect* says for each item whether it would be
+  added, updated (with the difference), is the same, or conflicts and why;
+  *import* applies what was chosen in one transaction, all or nothing. A
+  playbook or a script that exists gets a new version. Exporting picks items
+  and brings what they need with them. The file is read defensively: no path
+  out of the pack, no links, limits on size and count, YAML read safely.
+- **What Nik ships is listed as packs**: *Nik: incidents*, *automation*,
+  *connectors* and *dashboards*, each downloadable as a file that reads back
+  as what is installed.
+- **A debugger for playbooks.** A debug run of a playbook, of its saved
+  version or of its draft, stops before the nodes that are breakpoints, or
+  before every node: it shows what the node would be given, goes one node on
+  or to the next breakpoint, skips a node, runs a node with other arguments,
+  changes what later nodes read, and runs a finished node again. What goes
+  outside is held as in a dry run unless one node is let through, with the
+  approval it normally needs. Debug runs count for no limit and no statistic,
+  are shown to who started them, and are deleted after a week
+  (`automation.debug`).
+
+### Changed
+
+- A time range of the query language's aggregate, of a dashboard and of its
+  report includes the second it ends in, so what happened a moment ago is
+  counted.
+- `GET /api/automation/runs`, the numbers of a playbook and the limits of
+  runs leave the runs of the debugger out.
+
 ## [4.5.0] - 2026-11-18
 
 Additive: nothing that worked with 4.4 changes, and nothing is fetched or
@@ -2375,7 +2445,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.5.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.6.0...HEAD
+[4.6.0]: https://github.com/n36l3c7/Nik/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/n36l3c7/Nik/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/n36l3c7/Nik/compare/v4.2.0...v4.3.0

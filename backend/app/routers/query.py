@@ -5,6 +5,8 @@
 - ``POST /query`` runs a query on an entity and returns a page of it, in the
   shape the entity's own list endpoint uses.
 - ``POST /query/check`` reads a query without running it.
+- ``POST /query/aggregate`` counts or measures what a query finds, by group
+  and over time: what a widget of a dashboard shows.
 
 The list endpoints of incidents, artifacts, indicators and the audit log take
 the same language in their ``q`` parameter.
@@ -12,7 +14,7 @@ the same language in their ``q`` parameter.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -24,6 +26,7 @@ from .. import query as ql
 from ..core.db import get_db
 from ..core.models import Artifact, AuditEntry, Incident
 from ..core.security import Principal, principal
+from ..query import aggregate as agg
 from .settings import read_settings
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -39,6 +42,17 @@ class QueryIn(BaseModel):
 class CheckIn(BaseModel):
     entity: str = Field(max_length=40)
     query: str = Field(default="", max_length=ql.parser.MAX_LENGTH)
+
+
+class AggregateIn(BaseModel):
+    entity: str = Field(max_length=40)
+    query: str = Field(default="", max_length=ql.parser.MAX_LENGTH - 200)
+    groupBy: list[str] = Field(default_factory=list, max_length=agg.MAX_GROUPS)
+    measure: str = Field(default="count", max_length=120)
+    timeField: str | None = Field(default=None, max_length=60)
+    timeRange: str | dict[str, str] | None = None
+    compare: Literal["previous"] | None = None
+    limit: int = Field(default=50, ge=1, le=agg.MAX_LIMIT)
 
 
 @router.get("/schema")
@@ -118,6 +132,45 @@ _TABLES = {
     "artifacts": (Artifact, Artifact.created_at.desc(), _artifact_row),
     "audit": (AuditEntry, AuditEntry.at.desc(), _audit_row),
 }
+# The entities with no list of their own here are given by their fields, newest first.
+_NEWEST = {"runs": "started", "approvals": "asked", "tasks": "created"}
+
+
+def _by_fields(db: OrmSession, item, conditions: list, body: QueryIn) -> list[dict[str, Any]]:
+    specs = [spec for spec in item.fields if spec.column is not None]
+    order = item.field(_NEWEST[item.name]).column.desc()
+    found = db.execute(
+        select(*(spec.column.label(f"c{index}") for index, spec in enumerate(specs)))
+        .select_from(item.model)
+        .where(*conditions)
+        .order_by(order)
+        .offset(body.offset)
+        .limit(body.limit)
+    ).all()
+    return [{spec.name: value for spec, value in zip(specs, row, strict=True)} for row in found]
+
+
+@router.post("/aggregate")
+def aggregate(body: AggregateIn, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
+    """Count or measure what a query finds: ``{columns, rows, total, previous?, more, truncated,
+    range}``. ``groupBy`` holds two fields at most, a date as ``field@hour|day|week|month|year``;
+    ``measure`` is ``count`` or ``sum|avg|min|max|median|p90:<number field>`` or
+    ``…:duration(from,to)`` in seconds; ``timeRange`` is a length of time back from now (``7d``)
+    or ``{from, to}``, on ``timeField``; ``compare: "previous"`` adds the total of the period
+    before. The caller needs the permission of the entity, as for ``POST /query``."""
+    return agg.run(
+        db,
+        body.entity,
+        body.query,
+        caller,
+        group_by=body.groupBy,
+        measure=body.measure,
+        time_field=body.timeField,
+        time_range_=body.timeRange,
+        compare=body.compare,
+        limit=body.limit,
+        source=lambda: lib.library(db, read_settings(db)),
+    )
 
 
 @router.post("")
@@ -131,8 +184,11 @@ def run(body: QueryIn, caller: Principal = Depends(principal), db: OrmSession = 
         kept = lib.select_rows([row for row in lib.library(db, read_settings(db)) if keep(row)], {})
         return {"entity": item.name, "total": len(kept), "items": kept[body.offset : body.offset + body.limit]}
     conditions = ql.sql(item.name, body.query, caller)
-    model, order, serialise = _TABLES[item.name]
     ql.statement_timeout(db)
+    if item.name in _NEWEST:
+        total = db.scalar(select(func.count()).select_from(item.model).where(*conditions)) or 0
+        return {"entity": item.name, "total": total, "items": _by_fields(db, item, conditions, body)}
+    model, order, serialise = _TABLES[item.name]
     total = db.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
     found = db.scalars(select(model).where(*conditions).order_by(order).offset(body.offset).limit(body.limit)).all()
     return {"entity": item.name, "total": total, "items": [serialise(row) for row in found]}

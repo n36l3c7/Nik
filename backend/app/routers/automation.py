@@ -30,6 +30,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..automation import (
     catalog,
+    debugger,
     egress,
     engine,
     graph,
@@ -46,14 +47,16 @@ from ..core import audit, vault
 from ..core.config import settings as app_settings
 from ..core.db import get_db
 from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep, Script, ScriptVersion
+from ..core.permissions import AUTOMATION_DEBUG, AUTOMATION_RUN
 from ..core.ratelimit import limiter
-from ..core.security import Principal, admin_principal, editor_principal, now_iso, runner_principal
+from ..core.security import Principal, admin_principal, editor_principal, now_iso, require, runner_principal
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 # What automation adds to an incident (its runs), under the incident's own address.
 incident_router = APIRouter(prefix="/incidents", tags=["automation"])
 
 MAX_GRAPH_BYTES = 1_000_000
+debug_principal = require(AUTOMATION_DEBUG)
 
 
 # --------------------------------------------------------------------------- #
@@ -93,6 +96,29 @@ class RunIn(BaseModel):
     objectId: str = Field(default="", max_length=1100)
     dryRun: bool = False
     inputs: dict[str, Any] = Field(default_factory=dict)
+
+
+class DebugStartIn(BaseModel):
+    objectKind: Literal["", "incident", "artifact", "indicator"] = ""
+    objectId: str = Field(default="", max_length=1100)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    # The nodes to stop before; with stepMode it stops before every node.
+    breakpoints: list[str] = Field(default_factory=list, max_length=200)
+    stepMode: bool = True
+    # The draft of the playbook, as it is being drawn, instead of its saved version.
+    draft: bool = False
+
+
+class DebugIn(BaseModel):
+    action: Literal["step", "continue", "skip", "stop", "rerun", "set"]
+    stepId: str | None = Field(default=None, max_length=32)
+    # Arguments to give the node instead of the ones its templates give: {name: value}.
+    overrides: dict[str, Any] | None = None
+    # Let this one node really send what it sends (with the approval it normally needs).
+    sendForReal: bool = False
+    # What the nodes after read: {"<node id>": its output, "inputs": {...}}.
+    contextPatch: dict[str, Any] | None = None
+    breakpoints: list[str] | None = Field(default=None, max_length=200)
 
 
 class StateIn(BaseModel):
@@ -141,12 +167,14 @@ def _summary(db: OrmSession, row: Playbook) -> dict[str, Any]:
     version = db.get(PlaybookVersion, (row.id, row.current_version)) if row.current_version else None
     shape = version.graph if version else None
     trigger = (graph.trigger_of(shape) or {}).get("config") or {} if shape else {}
-    last = db.scalars(select(Run).where(Run.playbook_id == row.id).order_by(Run.started_at.desc()).limit(1)).first()
+    last = db.scalars(
+        select(Run).where(Run.playbook_id == row.id, Run.debug.is_(False)).order_by(Run.started_at.desc()).limit(1)
+    ).first()
     since = engine.iso(time.time() - 7 * 86400)
     counts = dict(
         db.execute(
             select(Run.status, func.count())
-            .where(Run.playbook_id == row.id, Run.started_at >= since)
+            .where(Run.playbook_id == row.id, Run.started_at >= since, Run.debug.is_(False))
             .group_by(Run.status)
         ).all()
     )
@@ -199,6 +227,7 @@ def _run_summary(run: Run) -> dict[str, Any]:
         "status": run.status,
         "trigger": (run.trigger or {}).get("kind", ""),
         "dryRun": bool(run.dry_run),
+        "debug": bool(run.debug),
         "objectKind": run.object_kind,
         "objectId": run.object_id,
         "incidentId": run.incident_id,
@@ -794,10 +823,13 @@ def list_runs(
     artifact: str | None = Query(None, max_length=80),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    _caller: Principal = Depends(runner_principal),
+    debug: bool = Query(False, description="The debug runs instead: one's own, or everyone's for an admin."),
+    caller: Principal = Depends(runner_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    conditions = []
+    conditions = [Run.debug.is_(debug)]
+    if debug and not caller.has("admin"):
+        conditions.append(Run.started_by == caller.actor)
     if playbook:
         conditions.append(Run.playbook_id == playbook)
     if run_status:
@@ -812,11 +844,12 @@ def list_runs(
 
 
 @router.get("/runs/{run_id}")
-def get_run(run_id: str, _caller: Principal = Depends(runner_principal), db: OrmSession = Depends(get_db)) -> dict:
+def get_run(run_id: str, caller: Principal = Depends(runner_principal), db: OrmSession = Depends(get_db)) -> dict:
     """A run with the graph of the version it uses and every step: what went in, what
-    came out, what was sent, the tries."""
+    came out, what was sent, the tries. A debug run also says where it stops and what it holds
+    (``debug``); it is its starter's, and an admin's."""
     run = db.get(Run, run_id)
-    if run is None:
+    if run is None or not debugger.may_see(run, caller):
         raise HTTPException(status_code=404, detail="Run not found")
     steps = db.scalars(select(RunStep).where(RunStep.run_id == run.id).order_by(RunStep.seq)).all()
     approvals = db.scalars(select(Approval).where(Approval.run_id == run.id).order_by(Approval.asked_epoch)).all()
@@ -825,7 +858,101 @@ def get_run(run_id: str, _caller: Principal = Depends(runner_principal), db: Orm
         "graph": engine.graph_of(db, run),
         "steps": [_step(step) for step in steps],
         "approvals": [_approval(db, approval) for approval in approvals],
+        "debug": debugger.out(db, run),
     }
+
+
+@router.post("/playbooks/{playbook_id}/debug", status_code=status.HTTP_201_CREATED)
+def debug_playbook(
+    playbook_id: str, body: DebugStartIn, caller: Principal = Depends(debug_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Start a debug run of a playbook (its saved version, or its draft) on an object: a run that stops
+    before the nodes named, or before every node. What goes outside is held, as in a dry run, unless one
+    node is let through. It counts for no limit and no statistic, and is deleted after a week."""
+    row = _get(db, playbook_id)
+    shape = None
+    if body.draft:
+        shape = row.draft
+        if not isinstance(shape, dict):
+            raise HTTPException(status_code=400, detail="The playbook has no draft: debug its saved version")
+        problems = graph.validate(shape, catalog.Library(db), row.name)
+        if problems:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "The draft cannot run yet", "problems": [p.as_dict() for p in problems]},
+            )
+        shape = shipped.with_script_versions(db, shape)
+    elif not row.current_version:
+        raise HTTPException(status_code=400, detail="The playbook has no saved version: debug its draft")
+    if not state.enabled(db):
+        raise HTTPException(status_code=409, detail="Automation is stopped: an admin can start it again in Settings")
+    found = triggers.manual_object(db, body.objectKind, body.objectId, caller.actor)
+    if found is None:
+        raise HTTPException(status_code=404, detail="The object to run the playbook on does not exist")
+    data, classes, _what, incident_id = found
+    used = shape if shape is not None else db.get(PlaybookVersion, (row.id, row.current_version)).graph
+    run = engine.start_run(
+        db,
+        row,
+        kind="debug",
+        payload=data,
+        classes=classes,
+        object_kind=body.objectKind,
+        object_id=body.objectId,
+        incident_id=incident_id or None,
+        artifact_id=body.objectId if body.objectKind == "artifact" else None,
+        dry_run=True,
+        started_by=caller.actor,
+        inputs=body.inputs,
+        debug={"breakpoints": debugger.clean_breakpoints(used, body.breakpoints), "step": body.stepMode},
+        shape=shape,
+        now=time.time(),
+    )
+    audit.record(
+        db, caller.actor, "playbook.debug", f'Started a debug run of the playbook "{row.name}"', target=row.name
+    )
+    db.commit()
+    return _run_summary(run)
+
+
+@router.post("/runs/{run_id}/debug")
+def debug_run(
+    run_id: str, body: DebugIn, caller: Principal = Depends(debug_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Tell a debug run what to do: ``step`` (go one node on), ``continue`` (to the next breakpoint),
+    ``skip`` the node it is stopped at, ``rerun`` a node that is over, ``stop``, or ``set`` (only move the
+    breakpoints or change the context: the run stays where it is). ``overrides`` gives the
+    node other arguments; ``sendForReal`` lets this one node really send, which needs the permission to run
+    playbooks and the approval the node normally asks; ``contextPatch`` changes what later nodes read."""
+    run = db.get(Run, run_id)
+    if run is None or not run.debug or not debugger.may_see(run, caller):
+        raise HTTPException(status_code=404, detail="Run not found")
+    if body.sendForReal and not caller.has(AUTOMATION_RUN):
+        raise HTTPException(status_code=403, detail="Sending for real needs the permission to run playbooks")
+    try:
+        debugger.act(
+            db,
+            run,
+            body.action,
+            by=caller.actor,
+            now=time.time(),
+            step_id=body.stepId,
+            overrides=body.overrides,
+            send_for_real=body.sendForReal,
+            context_patch=body.contextPatch,
+            breakpoints=body.breakpoints,
+        )
+    except debugger.DebugError as error:
+        db.rollback()
+        raise HTTPException(status_code=error.status, detail=error.message) from None
+    if body.sendForReal:
+        name = (run.trigger or {}).get("playbook", "")
+        audit.record(
+            db, caller.actor, "playbook.debug.real", f'Let a node of a debug run of "{name}" send for real', target=name
+        )
+    db.commit()
+    db.refresh(run)
+    return {**_run_summary(run), "debug": debugger.out(db, run)}
 
 
 @router.post("/runs/{run_id}/stop")
@@ -906,7 +1033,10 @@ def incident_runs(
     if db.get(Incident, incident_id) is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     rows = db.scalars(
-        select(Run).where(Run.incident_id == incident_id).order_by(Run.started_at.desc()).limit(limit)
+        select(Run)
+        .where(Run.incident_id == incident_id, Run.debug.is_(False))
+        .order_by(Run.started_at.desc())
+        .limit(limit)
     ).all()
     waiting = db.scalars(
         select(Approval)

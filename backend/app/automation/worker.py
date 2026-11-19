@@ -193,6 +193,11 @@ def housekeeping(db, now: float) -> None:
 
     if lists.prune(db, now):
         db.commit()
+    # Debug runs are kept a week.
+    from . import debugger
+
+    if debugger.prune(db, now):
+        db.commit()
     reclaim(db, now)
     global _storage_looked
     if abs(now - _storage_looked) >= STORAGE_LOOK_EVERY:

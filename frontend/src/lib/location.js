@@ -50,4 +50,4 @@ export function onLocationChange(handler) {
  * the incident, the artifact or the library under them stays as it is, and is
  * there again when they are left.
  */
-export const isOverlayPage = (pathname) => /^\/(ioc|settings|automation|tasks)(\/|$)/.test(pathname)
+export const isOverlayPage = (pathname) => /^\/(ioc|settings|automation|tasks|dashboards)(\/|$)/.test(pathname)

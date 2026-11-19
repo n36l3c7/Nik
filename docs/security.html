@@ -398,6 +398,31 @@
           classes opened for that mirror, by someone who may open them. What a person set in Nik is not written over by
           the other side unless the mapper says the field is authoritative.
         </li>
+        <li id="dashboards-security">
+          <strong>Dashboards.</strong> A dashboard holds questions, never answers: each widget is asked of the server
+          <strong>as the person looking</strong>, through the same compiler as every query, so sharing a dashboard
+          cannot show anyone what their roles do not let them read (a widget they may not ask says so). The same holds
+          for a dashboard made into a report: it is written with what its reader may see. A dashboard that is not yours
+          and not shared with you answers "not found". Sharing needs <code>dashboards.share</code> and is written to the
+          audit log. What a chart shows of a value (a name of an incident, a tag) is drawn as text.
+        </li>
+        <li id="packs-security">
+          <strong>Content packs.</strong> A pack is a file from someone else and is read as one: at most 20 MB and 2 000
+          files, 100 MB unpacked, no path that leaves the pack, no links, only the folders Nik knows, YAML read without
+          building objects. Reading it changes nothing; applying it needs <code>content.manage</code>, happens in one
+          transaction and is written to the audit log. A pack <strong>cannot widen what Nik may do</strong>: it never
+          carries a connection, a credential, an allowed host or an opened class of data; a playbook it brings arrives
+          off, reaching only listed hosts and sending no class of data; it does not replace the items of the lists Nik's
+          own settings read, nor a field of Nik's own. A script in a pack is code: it runs where every script runs, in
+          the sandbox, and its difference is shown before it is imported.
+        </li>
+        <li id="debugger-security">
+          <strong>The debugger.</strong> A debug run holds what goes outside, as a dry run does. Letting one node send
+          for real needs the permission to run playbooks besides <code>automation.debug</code>, asks the approval the
+          node normally needs, passes the data guard and the egress rules like any run, and is written to the audit log;
+          it applies to that node and that step only. Arguments typed in the debugger are values, not templates: they
+          are never evaluated. A debug run is shown to who started it and to an administrator.
+        </li>
         <li id="lists-security">
           <strong>Lists</strong> are read by whoever reads incidents and changed with <code>lists.manage</code> (the
           roles <em>admin</em> and <em>playbooks</em>). A playbook writes only to a list that says it may, which no list

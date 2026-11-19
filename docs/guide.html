@@ -56,6 +56,7 @@
           <li><a href="#shortcuts">Keyboard shortcuts</a></li>
           <li><a href="#queries">Filter the lists with a query</a></li>
           <li><a href="#search">Search</a></li>
+          <li><a href="#dashboards">Dashboards</a></li>
           <li><a href="#report">The incident report</a></li>
           <li><a href="#share">Export, import and backup</a></li>
           <li><a href="#automations">Automations</a></li>
@@ -876,6 +877,95 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         <figcaption>The search palette: an address found across the incident.</figcaption>
       </figure>
 
+      <h2 id="dashboards">Dashboards</h2>
+      <p>
+        <strong>Dashboards</strong>, on the rail, are pages of <em>widgets</em>: each widget is one question asked of
+        what Nik holds, and shows the answer as a number, a line, bars, a donut, a list or a table. How many incidents
+        are open and how serious, how many were opened each day, how long they take to be assigned and closed, which
+        playbooks fail, which tasks are overdue. The address of a dashboard is its own
+        (<code>/dashboards/&lt;id&gt;</code>), so it can be bookmarked and sent.
+      </p>
+      <ul>
+        <li>
+          <strong>Reading one.</strong> The <em>time range</em> at the top (the last 24 hours, 7, 30 or 90 days, a year,
+          or all time) applies to every widget, unless a widget says it ignores it. A number can show its
+          <em>change against the period before</em>: the same length of time, just earlier. Point at a bar, a slice or a
+          place on a line to read its figures; the button at the top right of a chart shows the
+          <strong>same figures as a table</strong>. <strong>Click a value</strong> to see what is behind it: the
+          <a href="#queries">query</a> that finds those objects, which can be copied, and the first of them (an incident
+          opens from there). The house button makes a dashboard the page that <strong>opens when you sign in</strong>,
+          in this browser.
+        </li>
+        <li>
+          <strong>Making one.</strong> <em>New</em> starts an empty dashboard of your own; <em>Edit</em> changes one of
+          yours. <em>Add a widget</em> asks for its type, then opens its editor: what it is asked of (incidents,
+          artifacts, indicators, tasks, the audit log, the runs of playbooks and their approvals, each for who may read
+          it), which ones, as a <a href="#queries">query</a> you write or build, how the answer is grouped (by a field;
+          a date by hour, day, week, month or year) and what is measured: a count, or the mean, median, 90th percentile,
+          sum, least or most of a number or of the <em>time between two dates</em>. The widget is shown beside the form
+          as it will be, with your data. A dashboard can also have one <strong>filter</strong> for all the widgets of
+          one kind of object (only the incidents of a customer, say), which a widget may ignore.
+        </li>
+        <li>
+          <strong>Arranging it.</strong> While editing, drag a widget by the grip in its corner and resize it by the
+          opposite corner: it snaps to twelve columns, and the others make room. With the grip focused the
+          <kbd>arrow keys</kbd> move the widget and <kbd>Shift</kbd> with the arrow keys resizes it. On a narrow window
+          the widgets are one under the other, in reading order.
+        </li>
+        <li>
+          <strong>Whose it is.</strong> A dashboard is yours alone until it is shared, which needs the
+          <a href="#roles">Dashboards</a> role (or an administrator): with everyone, with the holders of some roles, or
+          with some accounts. Whoever sees a shared dashboard sees in each widget
+          <strong>only what their own roles let them read</strong>: sharing shows the questions, never more of the
+          answers. A dashboard you see and do not own can be <em>duplicated</em> into one of yours;
+          <em>Export</em> saves it as a file that <em>Import</em> takes, here or in another Nik.
+        </li>
+        <li>
+          <strong>As a document.</strong> <em>Report</em> makes a PDF of the dashboard over the time range that is
+          chosen: every widget with its answer, a chart as its table. It holds what <em>you</em> see: a widget your
+          roles do not let you ask says so.
+        </li>
+      </ul>
+      <p>Nik ships four dashboards, seen by everyone and changed by nobody: duplicate one to make it yours.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Dashboard</th>
+              <th>What it shows</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SOC overview</td>
+              <td>
+                Open incidents by type and severity, new ones per day, SLA breaches, the mean time to assign and the
+                median and 90th percentile of the time to close, who owns what is open, why incidents were closed.
+              </td>
+            </tr>
+            <tr>
+              <td>Automation <em>(who may run playbooks)</em></td>
+              <td>
+                Runs per day by how they ended, failures by playbook, the approvals that wait and how old the oldest is,
+                the tasks that are overdue.
+              </td>
+            </tr>
+            <tr>
+              <td>Indicators</td>
+              <td>The IoC library by verdict, type and origin, what is new per day, the most used tags and lists.</td>
+            </tr>
+            <tr>
+              <td>Storage and system</td>
+              <td>
+                How full the file store is and with what <em>(administrators)</em>, how each connection that fetches
+                goes <em>(who manages connectors)</em>, the incidents fetched by connection, and what is done in Nik per
+                day <em>(who reads the audit log)</em>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <h2 id="report">The incident report</h2>
       <p>
         The report button in the header opens the report: write the executive summary, choose the sections, the TLP
@@ -1154,6 +1244,17 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 The connections that bring alerts in as incidents: on or off, fetching, failing or paused and why, what
                 the last cycle found, and what became of each item fetched lately (<a href="automation.html#fetching"
                   >Fetching</a
+                >).
+              </td>
+            </tr>
+            <tr>
+              <td>Content packs <em>(admins)</em></td>
+              <td>
+                What Nik is taught, carried from one Nik to another as one file: the packs that are installed with what
+                came from each, a pack file inspected item by item (added, updated with the difference, the same, or in
+                conflict and why) and then imported whole or not at all, and a pack made from items chosen here (<a
+                  href="automation.html#packs"
+                  >Content packs</a
                 >).
               </td>
             </tr>

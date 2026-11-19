@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, LayoutGrid, List, Play, Redo2, Undo2 } from 'lucide-react'
+import { ArrowLeft, Bug, LayoutGrid, List, Play, Redo2, Undo2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -29,6 +29,7 @@ import {
 import { tidy } from '../../domain/automation/layout.js'
 import { AsciiSkull, Badge, Button, EmptyState } from '../ui/index.js'
 import Canvas from './Canvas.jsx'
+import DebugDialog from './DebugDialog.jsx'
 import Inspector from './Inspector.jsx'
 import NodeLibrary from './NodeLibrary.jsx'
 import PlaybookSettingsTab from './PlaybookSettingsTab.jsx'
@@ -150,6 +151,7 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
   const [selection, setSelection] = useState(null) // what the page asks the canvas to select
   const [listOpen, setListOpen] = useState(false)
   const [savingVersion, setSavingVersion] = useState(false)
+  const [debugging, setDebugging] = useState(false)
   const [playbookNames, setPlaybookNames] = useState([])
 
   const savedGraph = useRef(null) // the graph the server has as the draft
@@ -472,6 +474,18 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
           >
             Run…
           </Button>
+          {can('automation.debug') && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Bug}
+              disabled={!detail.version && !detail.draft}
+              title="A run that stops before its nodes: step through it, change what a node is given, skip a node"
+              onClick={() => setDebugging(true)}
+            >
+              Debug…
+            </Button>
+          )}
           {canEdit && (
             <Button
               size="sm"
@@ -484,6 +498,17 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
         </div>
       </div>
 
+      {debugging && (
+        <DebugDialog
+          playbook={detail}
+          breakpoints={selected.filter((nodeId) => nodeId !== 'start')}
+          onClose={() => setDebugging(false)}
+          onStarted={(runId) => {
+            setDebugging(false)
+            onOpenRun(runId)
+          }}
+        />
+      )}
       {activeTab === 'canvas' && (
         <div ref={wrapper} className="flex min-h-0 flex-1 flex-col md:flex-row">
           {canEdit && <NodeLibrary entries={catalog.nodes} onAdd={(entry) => addEntry(entry)} />}

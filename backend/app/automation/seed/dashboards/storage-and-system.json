@@ -1,0 +1,164 @@
+{
+  "nik": "dashboard",
+  "version": 1,
+  "name": "Storage and system",
+  "description": "The file store, what fetches, and what Nik itself records.",
+  "timeRange": "7d",
+  "refreshSeconds": 300,
+  "filter": "",
+  "filterEntity": "incidents",
+  "widgets": [
+    {
+      "id": "storage",
+      "title": "Storage",
+      "type": "storage",
+      "x": 0,
+      "y": 0,
+      "w": 4,
+      "h": 4,
+      "options": {}
+    },
+    {
+      "id": "fetch",
+      "title": "Fetch health",
+      "type": "fetch",
+      "x": 4,
+      "y": 0,
+      "w": 8,
+      "h": 4,
+      "options": {}
+    },
+    {
+      "id": "artifacts",
+      "title": "Artifacts",
+      "type": "number",
+      "x": 0,
+      "y": 4,
+      "w": 3,
+      "h": 2,
+      "entity": "artifacts",
+      "query": "",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "size",
+      "title": "Their size",
+      "type": "number",
+      "x": 3,
+      "y": 4,
+      "w": 3,
+      "h": 2,
+      "entity": "artifacts",
+      "query": "",
+      "groupBy": [],
+      "measure": "sum:size",
+      "options": {
+        "ignoreRange": true,
+        "format": "bytes"
+      }
+    },
+    {
+      "id": "fetched",
+      "title": "Incidents fetched",
+      "type": "number",
+      "x": 6,
+      "y": 4,
+      "w": 3,
+      "h": 2,
+      "entity": "incidents",
+      "query": "source:*",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true
+      }
+    },
+    {
+      "id": "audit",
+      "title": "Audit entries",
+      "type": "number",
+      "x": 9,
+      "y": 4,
+      "w": 3,
+      "h": 2,
+      "entity": "audit",
+      "query": "",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true
+      }
+    },
+    {
+      "id": "kinds",
+      "title": "Artifacts by kind",
+      "type": "bar",
+      "x": 0,
+      "y": 6,
+      "w": 4,
+      "h": 4,
+      "entity": "artifacts",
+      "query": "",
+      "groupBy": [
+        "kind"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "sources",
+      "title": "Incidents fetched, by connection",
+      "type": "stacked_bar",
+      "x": 4,
+      "y": 6,
+      "w": 8,
+      "h": 4,
+      "entity": "incidents",
+      "query": "source:*",
+      "groupBy": [
+        "created@day",
+        "source"
+      ],
+      "measure": "count",
+      "options": {}
+    },
+    {
+      "id": "activity",
+      "title": "What is done in Nik, per day",
+      "type": "trend",
+      "x": 0,
+      "y": 10,
+      "w": 8,
+      "h": 4,
+      "entity": "audit",
+      "query": "",
+      "groupBy": [
+        "at@day"
+      ],
+      "measure": "count",
+      "options": {}
+    },
+    {
+      "id": "actors",
+      "title": "Who acts most",
+      "type": "top",
+      "x": 8,
+      "y": 10,
+      "w": 4,
+      "h": 4,
+      "entity": "audit",
+      "query": "",
+      "groupBy": [
+        "actor"
+      ],
+      "measure": "count",
+      "options": {}
+    }
+  ]
+}

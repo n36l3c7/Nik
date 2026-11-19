@@ -50,6 +50,7 @@ from .routers import (
     capa_rules,
     connectors,
     context,
+    dashboards,
     enrichment,
     fetch,
     fields,
@@ -66,6 +67,7 @@ from .routers import (
     mappers,
     mirror,
     network,
+    packs,
     preprocess,
     previews,
     query,
@@ -143,7 +145,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="4.5.0",
+    version="4.6.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -185,9 +187,10 @@ def on_startup() -> None:
     with SessionLocal() as db:
         try:
             # The types Nik ships too, each added once.
+            from . import dashboards as boards
             from . import lists as named_lists
 
-            if field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db):
+            if field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db) + boards.seed(db):
                 db.commit()
         except IntegrityError:
             db.rollback()  # another process of the server added them at the same moment
@@ -216,6 +219,15 @@ def on_startup() -> None:
             except IntegrityError:
                 # Another process of the server added them at the same moment.
                 db.rollback()
+    # What Nik ships is written down as packs, once everything above is there.
+    from . import packs as content_packs
+
+    with SessionLocal() as db:
+        try:
+            if content_packs.register_builtin(db):
+                db.commit()
+        except IntegrityError:
+            db.rollback()  # another process of the server wrote them at the same moment
     # Playbooks: the loop runs here only when there is no automation container.
     if app_settings.AUTOMATION_WORKER == "inline":
         from .automation import worker as automation_worker
@@ -281,6 +293,8 @@ app.include_router(mappers.router, prefix="/api")
 app.include_router(fetch.router, prefix="/api")
 app.include_router(preprocess.router, prefix="/api")
 app.include_router(mirror.router, prefix="/api")
+app.include_router(dashboards.router, prefix="/api")
+app.include_router(packs.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

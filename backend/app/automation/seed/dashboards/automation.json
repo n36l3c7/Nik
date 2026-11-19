@@ -1,0 +1,217 @@
+{
+  "nik": "dashboard",
+  "version": 1,
+  "name": "Automation",
+  "description": "What the playbooks do, what fails, and what waits for a person.",
+  "timeRange": "30d",
+  "refreshSeconds": 300,
+  "filter": "",
+  "filterEntity": "incidents",
+  "widgets": [
+    {
+      "id": "runs",
+      "title": "Runs",
+      "type": "number",
+      "x": 0,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "runs",
+      "query": "dryRun:false",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true
+      }
+    },
+    {
+      "id": "failed",
+      "title": "Failed runs",
+      "type": "number",
+      "x": 3,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "runs",
+      "query": "status:failed dryRun:false",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true
+      }
+    },
+    {
+      "id": "approvals",
+      "title": "Approvals waiting",
+      "type": "number",
+      "x": 6,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "approvals",
+      "query": "status:waiting",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "overdue",
+      "title": "Tasks overdue",
+      "type": "number",
+      "x": 9,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "tasks",
+      "query": "status:overdue",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "per-day",
+      "title": "Runs per day, by how they ended",
+      "type": "stacked_bar",
+      "x": 0,
+      "y": 2,
+      "w": 8,
+      "h": 4,
+      "entity": "runs",
+      "query": "dryRun:false",
+      "groupBy": [
+        "started@day",
+        "status"
+      ],
+      "measure": "count",
+      "options": {}
+    },
+    {
+      "id": "oldest",
+      "title": "Oldest approval waiting",
+      "type": "duration",
+      "x": 8,
+      "y": 2,
+      "w": 4,
+      "h": 2,
+      "entity": "approvals",
+      "query": "status:waiting",
+      "groupBy": [],
+      "measure": "max:duration(asked,now)",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "took",
+      "title": "Median run time",
+      "type": "duration",
+      "x": 8,
+      "y": 4,
+      "w": 4,
+      "h": 2,
+      "entity": "runs",
+      "query": "status:done dryRun:false",
+      "groupBy": [],
+      "measure": "median:duration(started,finished)",
+      "options": {}
+    },
+    {
+      "id": "failures",
+      "title": "Failures by playbook",
+      "type": "bar",
+      "x": 0,
+      "y": 6,
+      "w": 4,
+      "h": 4,
+      "entity": "runs",
+      "query": "status:failed dryRun:false",
+      "groupBy": [
+        "playbook"
+      ],
+      "measure": "count",
+      "options": {}
+    },
+    {
+      "id": "by-playbook",
+      "title": "Runs by playbook",
+      "type": "top",
+      "x": 4,
+      "y": 6,
+      "w": 4,
+      "h": 4,
+      "entity": "runs",
+      "query": "dryRun:false",
+      "groupBy": [
+        "playbook"
+      ],
+      "measure": "count",
+      "options": {}
+    },
+    {
+      "id": "tasks",
+      "title": "Open tasks by who they are for",
+      "type": "top",
+      "x": 8,
+      "y": 6,
+      "w": 4,
+      "h": 4,
+      "entity": "tasks",
+      "query": "status:open or status:overdue",
+      "groupBy": [
+        "assignee"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "waiting",
+      "title": "Approvals that wait",
+      "type": "table",
+      "x": 0,
+      "y": 10,
+      "w": 6,
+      "h": 4,
+      "entity": "approvals",
+      "query": "status:waiting",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true,
+        "columns": [
+          "question",
+          "playbook",
+          "asked"
+        ],
+        "limit": 8
+      }
+    },
+    {
+      "id": "late",
+      "title": "Tasks overdue",
+      "type": "table",
+      "x": 6,
+      "y": 10,
+      "w": 6,
+      "h": 4,
+      "entity": "tasks",
+      "query": "status:overdue",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true,
+        "columns": [
+          "title",
+          "assignee",
+          "created"
+        ],
+        "limit": 8
+      }
+    }
+  ]
+}

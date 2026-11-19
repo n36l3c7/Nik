@@ -91,6 +91,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/query/schema"): "signed-in",
     ("POST", "/api/query/check"): "signed-in",
     ("POST", "/api/query"): "signed-in",
+    ("POST", "/api/query/aggregate"): "signed-in",
     ("GET", "/api/automation/playbooks"): ("automation.run",),
     ("POST", "/api/automation/playbooks"): ("automation.edit",),
     ("GET", "/api/automation/playbooks/{playbook_id}"): ("automation.run",),
@@ -103,6 +104,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/automation/playbooks/{playbook_id}/versions/{number}/restore"): ("automation.edit",),
     ("PUT", "/api/automation/playbooks/{playbook_id}/enabled"): ("automation.edit",),
     ("POST", "/api/automation/playbooks/{playbook_id}/run"): ("automation.run",),
+    ("POST", "/api/automation/playbooks/{playbook_id}/debug"): ("automation.debug",),
+    ("POST", "/api/automation/runs/{run_id}/debug"): ("automation.debug",),
     ("POST", "/api/automation/playbooks/{playbook_id}/hook"): ("automation.edit",),
     ("DELETE", "/api/automation/playbooks/{playbook_id}/hook"): ("automation.edit",),
     # The address a system outside starts a playbook at: the token in the path is the credential.
@@ -148,6 +151,26 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     # SLA timers of an incident, and what an account was told.
     ("GET", "/api/incidents/{incident_id}/timers"): ("read",),
     ("POST", "/api/incidents/{incident_id}/timers/{field}/{what}"): ("write",),
+    # Dashboards: everyone has their own; sharing one is a permission.
+    ("GET", "/api/dashboards"): ("read",),
+    ("POST", "/api/dashboards"): ("read",),
+    ("POST", "/api/dashboards/import"): ("read",),
+    ("GET", "/api/dashboards/{dashboard_id}"): ("read",),
+    ("PUT", "/api/dashboards/{dashboard_id}"): ("read",),
+    ("DELETE", "/api/dashboards/{dashboard_id}"): ("read",),
+    ("POST", "/api/dashboards/{dashboard_id}/duplicate"): ("read",),
+    ("GET", "/api/dashboards/{dashboard_id}/export"): ("read",),
+    ("POST", "/api/dashboards/{dashboard_id}/report"): ("read",),
+    ("PUT", "/api/dashboards/{dashboard_id}/sharing"): ("dashboards.share",),
+    # Content packs.
+    ("GET", "/api/packs"): ("content.manage",),
+    ("GET", "/api/packs/items"): ("content.manage",),
+    ("POST", "/api/packs/dependencies"): ("content.manage",),
+    ("POST", "/api/packs/export"): ("content.manage",),
+    ("POST", "/api/packs/inspect"): ("content.manage",),
+    ("POST", "/api/packs/import"): ("content.manage",),
+    ("GET", "/api/packs/{pack_id}/download"): ("content.manage",),
+    ("DELETE", "/api/packs/{pack_id}"): ("content.manage",),
     # Lists: read by whoever reads incidents, changed by whoever manages lists.
     ("GET", "/api/lists"): ("read",),
     ("GET", "/api/lists/{name}"): ("read",),

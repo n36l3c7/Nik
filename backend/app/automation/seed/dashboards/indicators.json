@@ -1,0 +1,205 @@
+{
+  "nik": "dashboard",
+  "version": 1,
+  "name": "Indicators",
+  "description": "The IoC library: what it holds, what the sources say, where it comes from.",
+  "timeRange": "30d",
+  "refreshSeconds": 300,
+  "filter": "",
+  "filterEntity": "incidents",
+  "widgets": [
+    {
+      "id": "all",
+      "title": "Indicators",
+      "type": "number",
+      "x": 0,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "indicators",
+      "query": "",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "bad",
+      "title": "Malicious",
+      "type": "number",
+      "x": 3,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "indicators",
+      "query": "verdict:malicious",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "unchecked",
+      "title": "Not checked yet",
+      "type": "number",
+      "x": 6,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "indicators",
+      "query": "verdict:\"\"",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "new",
+      "title": "New",
+      "type": "number",
+      "x": 9,
+      "y": 0,
+      "w": 3,
+      "h": 2,
+      "entity": "indicators",
+      "query": "",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "compare": true
+      }
+    },
+    {
+      "id": "verdicts",
+      "title": "By verdict",
+      "type": "pie",
+      "x": 0,
+      "y": 2,
+      "w": 4,
+      "h": 4,
+      "entity": "indicators",
+      "query": "",
+      "groupBy": [
+        "verdict"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "types",
+      "title": "By type",
+      "type": "bar",
+      "x": 4,
+      "y": 2,
+      "w": 4,
+      "h": 4,
+      "entity": "indicators",
+      "query": "",
+      "groupBy": [
+        "type"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "origins",
+      "title": "Where they come from",
+      "type": "bar",
+      "x": 8,
+      "y": 2,
+      "w": 4,
+      "h": 4,
+      "entity": "indicators",
+      "query": "",
+      "groupBy": [
+        "origin"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "per-day",
+      "title": "First seen, per day",
+      "type": "trend",
+      "x": 0,
+      "y": 6,
+      "w": 8,
+      "h": 4,
+      "entity": "indicators",
+      "query": "",
+      "groupBy": [
+        "firstSeen@day"
+      ],
+      "measure": "count",
+      "options": {}
+    },
+    {
+      "id": "tags",
+      "title": "Top tags",
+      "type": "top",
+      "x": 8,
+      "y": 6,
+      "w": 4,
+      "h": 4,
+      "entity": "indicators",
+      "query": "",
+      "groupBy": [
+        "tags"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "lists",
+      "title": "By list",
+      "type": "top",
+      "x": 0,
+      "y": 10,
+      "w": 4,
+      "h": 4,
+      "entity": "indicators",
+      "query": "list:*",
+      "groupBy": [
+        "listNames"
+      ],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true
+      }
+    },
+    {
+      "id": "seen",
+      "title": "Malicious, seen in most incidents",
+      "type": "table",
+      "x": 4,
+      "y": 10,
+      "w": 8,
+      "h": 4,
+      "entity": "indicators",
+      "query": "verdict:malicious incidents:>0",
+      "groupBy": [],
+      "measure": "count",
+      "options": {
+        "ignoreRange": true,
+        "columns": [
+          "value",
+          "type",
+          "incidents",
+          "tags"
+        ],
+        "limit": 8
+      }
+    }
+  ]
+}

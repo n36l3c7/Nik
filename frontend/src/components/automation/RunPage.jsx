@@ -19,6 +19,7 @@ import { formatDateTime } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import ApprovalBanner from './ApprovalBanner.jsx'
 import Canvas from './Canvas.jsx'
+import DebugPanel, { DebugStepTools } from './DebugPanel.jsx'
 import { SectionTitle } from './fields.jsx'
 
 /*
@@ -33,7 +34,8 @@ import { SectionTitle } from './fields.jsx'
  * seconds; an approval that waits is answered here.
  *
  * A dry run stops before every action that would change or send something
- * and shows what it would have done.
+ * and shows what it would have done. A debug run also stops before its
+ * nodes, and is told what to do from the debugger above the canvas.
  */
 
 const REFRESH_MS = 2000
@@ -245,7 +247,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
                   onClick={() => onOpenPlaybook(run.playbookId)}
                   className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  version {run.version}
+                  {run.debug?.draft ? 'its draft' : `version ${run.version}`}
                 </button>
               ) : (
                 `version ${run.version}`
@@ -274,13 +276,17 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {run.dryRun && <Badge color="violet">dry run</Badge>}
+          {run.dryRun && !run.debug && <Badge color="violet">dry run</Badge>}
           <span role="status" aria-label="Status of the run">
             <Badge color={RUN_COLORS[run.status] ?? 'slate'}>
-              {run.status === 'waiting' && waiting.length ? 'waiting for approval' : run.status}
+              {run.status === 'waiting' && waiting.length
+                ? 'waiting for approval'
+                : run.status === 'waiting' && run.debug?.at?.length
+                  ? 'stopped at a node'
+                  : run.status}
             </Badge>
           </span>
-          {going && (
+          {going && !run.debug && (
             <Button variant="secondary" size="sm" icon={OctagonX} onClick={() => setConfirmStop(true)}>
               Stop the run
             </Button>
@@ -300,6 +306,8 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
           ))}
         </div>
       )}
+
+      {run.debug && <DebugPanel run={run} graph={graph} onChanged={load} />}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="min-h-[300px] min-w-0 flex-1">
@@ -369,6 +377,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {step && run.debug && <DebugStepTools run={run} graph={graph} step={step} onChanged={load} />}
             {step ? (
               <StepDetail
                 step={step}
