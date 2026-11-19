@@ -26,6 +26,7 @@ def test_summary_view_includes_os_without_document_body(admin: TestClient):
     assert rows == [
         {
             "id": "s1",
+            "number": 1,
             "name": "wks01",
             "host": "wks01",
             "username": "",

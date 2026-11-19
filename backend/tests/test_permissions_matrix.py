@@ -50,6 +50,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("DELETE", "/api/keys/{key_id}"): ("admin",),
     ("GET", "/api/incidents"): ("read",),
     ("GET", "/api/incidents/{incident_id}"): ("read",),
+    ("GET", "/api/incidents/by-number/{number}"): ("read",),
     ("POST", "/api/incidents"): ("write",),
     ("PATCH", "/api/incidents/{incident_id}"): ("write",),
     ("DELETE", "/api/incidents/{incident_id}"): ("write",),

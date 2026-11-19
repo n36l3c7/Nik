@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-11-19
+
 ### Changed
+
+- **The rail is in the order of a working day**: incidents, your tasks,
+  dashboards, the IoC library, artifacts, the search, then automations. At
+  its foot are the notifications, Settings and the account, which leaves
+  the header: it says who is signed in, opens *My account* and signs out.
+  The buttons that only opened a section of Settings (Audit log, Users,
+  Full backup) are gone; the sections are where they were, in Settings.
 
 - **"Is not" is written before the field in a query**: `!status:closed`.
   The writing of 4.x, `status:!closed`, is still read through 5.x, means the
@@ -2545,7 +2554,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.7.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/n36l3c7/Nik/compare/v4.7.0...v5.0.0
 [4.7.0]: https://github.com/n36l3c7/Nik/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/n36l3c7/Nik/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0

@@ -1577,8 +1577,10 @@ test('roles are tags: an account sees and does what its roles grant together', a
   const rita = await signIn('rita')
   const ritaRail = rita.getByRole('navigation', { name: 'Sections' })
   await expect(ritaRail.getByRole('button', { name: /incidents/i })).toBeVisible()
+  // The foot of the rail is the same for everyone: no shortcut to a section of Settings.
   await expect(ritaRail.getByRole('button', { name: 'Audit log' })).toHaveCount(0)
   await expect(ritaRail.getByRole('button', { name: 'Users' })).toHaveCount(0)
+  await expect(ritaRail.getByRole('button', { name: /^Account: rita/ })).toBeVisible()
   await expect(rita.getByText('read-only', { exact: true })).toBeVisible()
   await expect(rita.getByRole('button', { name: 'New incident' })).toHaveCount(0)
   expect((await rita.request.post('/api/incidents', { data: { id: 'by-rita', data: {} } })).status()).toBe(403)
@@ -1601,9 +1603,13 @@ test('roles are tags: an account sees and does what its roles grant together', a
   const otto = await signIn('otto')
   await expect(otto.getByText('Nothing to open here')).toBeVisible()
   const ottoRail = otto.getByRole('navigation', { name: 'Sections' })
-  await expect(ottoRail.getByRole('button')).toHaveCount(2) // the audit log and the settings
-  await ottoRail.getByRole('button', { name: 'Audit log' }).click()
+  await expect(ottoRail.getByRole('button')).toHaveCount(2) // the settings and the account
+  await ottoRail.getByRole('button', { name: 'Open platform settings' }).click()
   const ottoSettings = otto.getByRole('region', { name: 'Settings' })
+  await ottoSettings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByRole('button', { name: 'Audit log' })
+    .click()
   await expect(ottoSettings.getByText('user.create').first()).toBeVisible()
   await expect(ottoSettings.getByRole('button', { name: /clear/i })).toHaveCount(0)
   await expect(ottoSettings.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')).toHaveText([
@@ -3259,6 +3265,34 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
   await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Open', 'Copy link', 'Copy the name'])
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Close dashboards' }).first().click()
+})
+
+test('the rail: the order of a working day, and the account at its foot', async () => {
+  const rail = page.getByRole('navigation', { name: 'Sections' })
+  const labels = await rail
+    .getByRole('button')
+    .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label').replace(/ \(.*$/, '')))
+  const order = ['incidents', 'My tasks', 'Dashboards', 'IoC library', 'Artifacts', 'Search', 'Automations']
+  const found = order.map((name) => labels.findIndex((label) => label.toLowerCase().includes(name.toLowerCase())))
+  expect(found.every((index) => index >= 0)).toBe(true)
+  expect([...found].sort((a, b) => a - b)).toEqual(found)
+  // The foot: notifications, Settings, the account. No shortcut to a section of Settings.
+  expect(labels.slice(-3).map((label) => label.split(':')[0])).toEqual([
+    'Notifications',
+    'Open platform settings',
+    'Account',
+  ])
+  for (const gone of ['Audit log', 'Users', 'Full backup']) {
+    await expect(rail.getByRole('button', { name: gone, exact: true })).toHaveCount(0)
+  }
+  // The account says who is signed in, opens one's own section and signs out.
+  await rail.getByRole('button', { name: /^Account: admin/ }).click()
+  const menu = page.getByRole('menu')
+  await expect(menu).toContainText('admin')
+  await expect(menu.getByRole('menuitem')).toHaveText(['My account', 'Sign out'])
+  await menu.getByRole('menuitem', { name: 'My account' }).click()
+  await expect(page).toHaveURL(/\/settings\/.*my-account$/)
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
 test('a side panel is made wider and narrower with its handle, and remembers its width', async () => {

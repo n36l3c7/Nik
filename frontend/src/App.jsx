@@ -719,9 +719,7 @@ export default function App() {
         }}
         can={can}
         onSearch={() => setPaletteOpen(true)}
-        onAudit={() => openSettings('audit')}
-        onUsers={() => openSettings('accounts')}
-        onBackup={() => openSettings('backup')}
+        onAccount={() => openSettings('account')}
         onSettings={() => (settings ? closeSettings() : openSettings('detection'))}
         settingsOpen={Boolean(settings)}
         onAutomation={() => (automationShown ? closeAutomation() : openAutomation())}

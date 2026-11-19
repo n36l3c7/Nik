@@ -263,6 +263,28 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-50">Upgrading to 5.0</h4>
+      <p>
+        Release 5.0 needs nothing more than the two commands above. The migration
+        <code>0035_incident_numbers</code> runs at start. After the update:
+      </p>
+      <ul>
+        <li>
+          <strong>every incident has a number</strong>, given in the order the incidents were created. Addresses, API
+          calls and exports made before keep working: the id of an incident is what it was, and is now called its uuid;
+        </li>
+        <li>
+          <strong>"is not" in a query is <code>!field:value</code></strong
+          >. Queries saved in dashboards are rewritten by the migration; <code>field:!value</code> typed by hand, or
+          held by a script or an API client, is read until 6.0. A script that looked for a word starting with
+          <code>!</code>, or for the three words <code>field in (…)</code>, has to quote them;
+        </li>
+        <li>
+          the audit log, the accounts and the backup are opened from Settings: their buttons on the rail are gone, and
+          the account moved from the header to the foot of the rail;
+        </li>
+        <li>the width of the list of incidents is kept; the other side panels start at the width they had.</li>
+      </ul>
       <h4 id="upgrading-to-47">Upgrading to 4.7</h4>
       <p>
         Release 4.7 needs nothing more than the two commands above. The migration <code>0034_misc</code> runs at start.

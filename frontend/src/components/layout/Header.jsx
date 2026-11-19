@@ -1,8 +1,7 @@
-import { FileText, Keyboard, LogOut, Search, UserCircle } from 'lucide-react'
+import { FileText, Keyboard, Search } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
-import { describeRoles, rolesOf } from '../../domain/permissions.js'
 import { formatRelative } from '../../lib/time.js'
 import { SeverityTag, StatusTag } from '../ui/index.js'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
@@ -31,7 +30,7 @@ export default function Header({
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
-  const { currentUser, logout, can } = useAuth()
+  const { currentUser, can } = useAuth()
 
   const os = activeIncident ? getOsById(activeIncident.os) : null
   const OsIcon = os?.icon
@@ -123,22 +122,6 @@ export default function Header({
             read-only
           </span>
         )}
-
-        {currentUser && (
-          <div
-            className="hidden h-9 items-center gap-2 border border-line px-2.5 sm:flex"
-            title={`Signed in as ${currentUser.username} (${describeRoles(rolesOf(currentUser))})`}
-          >
-            <UserCircle className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
-            <p className="max-w-40 truncate font-mono text-xs text-fg">
-              {currentUser.username} <span className="text-fg-muted">· {describeRoles(rolesOf(currentUser))}</span>
-            </p>
-          </div>
-        )}
-
-        <button type="button" onClick={logout} aria-label="Sign out" title="Sign out" className={iconButton}>
-          <LogOut className="h-4 w-4" />
-        </button>
       </div>
     </header>
   )

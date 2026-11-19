@@ -166,8 +166,15 @@ the history of a list of indicators, an optional expiry for artifacts,
 mailboxes in the export of artifacts and Outlook PST files of several
 gigabytes.
 
-Not done yet, and next: scripts for playbooks written in JavaScript, engines
-that run scripts on another host, and custom fields on indicators.
+The 5.x series reworks how the platform is used. 5.0 gave incidents a
+number, moved "is not" before the field in a query and added lists to it,
+made every side panel resizable and put a right-click menu on what is not
+evidence. Next in 5.x: connectors with instances on one page and mail as a
+connector, the playbook editor (branches, free connections), the page of an
+incident with layouts made like dashboards, and a playground for commands.
+
+Not planned yet: scripts for playbooks written in JavaScript, engines that
+run scripts on another host, and custom fields on indicators.
 
 ## Contributing
 

@@ -1384,6 +1384,36 @@
         <code>ioc_checks.baseline</code>, <code>artifacts.expires_at</code>, <code>artifacts.expiry_note</code> and
         <code>artifacts.expiry_noticed</code>.
       </p>
+      <h3 id="identity-shell">Numbers, the query language and the shell (5.0)</h3>
+      <ul>
+        <li>
+          <strong>The number of an incident</strong> (<code>incidents.number</code>, <code>sequences</code>). The key of
+          an incident is its uuid, as before; the number is given by a <code>before_insert</code> listener of the model,
+          so every way of creating an incident gets one. The counter is a row that is updated first, which makes two
+          creations wait for each other, and it only goes up.
+        </li>
+        <li>
+          <strong>The query language.</strong> <code>!field:value</code> gives the same node
+          <code>field:!value</code> gave (one condition, empty fields included); <code>!</code> before anything else is
+          a negation. A list is read as the conditions it shortens, so nothing after the parser knows of it. The two
+          parsers (<code>query/parser.py</code>, <code>domain/query/parse.js</code>) share their test vectors, and each
+          has <code>modern</code>, which rewrites the old writing.
+        </li>
+        <li>
+          <strong>Indicators added by hand</strong> (<code>data.iocs.manual</code> in the document,
+          <code>iocs.add_manual</code>): what a reputation command looked up. <code>extract</code> reads them with the
+          rest of the evidence.
+        </li>
+        <li>
+          <strong>Side panels</strong> share one handle (<code>ui/ResizeHandle.jsx</code>,
+          <code>domain/panes.js</code>); <strong>menus</strong> of what is not evidence share
+          <code>menu/useObjectMenu.js</code> and <code>domain/menus.js</code>.
+        </li>
+      </ul>
+      <p>
+        Migration <code>0035_incident_numbers</code>: the column <code>incidents.number</code> with its unique index,
+        the table <code>sequences</code>, and the queries of the dashboards rewritten.
+      </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>
         A browser history of a few hundred thousand visits has to stay usable, so the Browser tab keeps its per-row work
