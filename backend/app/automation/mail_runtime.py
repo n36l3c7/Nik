@@ -2,7 +2,8 @@
 
 A connector file speaks HTTP; a mailbox does not. The mail connector's file
 names its commands, their arguments and what they give, as any other, and this
-module runs them: SMTP to send, IMAP to read. ``MailRuntime`` has the shape of
+module runs them: SMTP to send, IMAP to read, both opened by ``egress.py`` like everything that
+leaves. ``MailRuntime`` has the shape of
 ``connector_runtime.Runtime`` (``run``, ``would_send``, ``test``, ``fetch``,
 ``close``), so that a node, the War Room, "Test" and the fetch of an instance
 use it without knowing.
@@ -34,9 +35,7 @@ from __future__ import annotations
 import email
 import email.policy
 import hashlib
-import imaplib
 import re
-import smtplib
 import ssl
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -91,13 +90,6 @@ def recipients(value: Any) -> list[str]:
         if not name or not egress.clean_host(domain) or any(char in address for char in " \r\n<>,"):
             raise CommandError("A recipient is not an e-mail address")
     return found
-
-
-def _context(ca_pem: str | None) -> ssl.SSLContext:
-    context = ssl.create_default_context()
-    if ca_pem:
-        context.load_verify_locations(cadata=ca_pem)
-    return context
 
 
 def _text_of(message: email.message.EmailMessage) -> str:
@@ -173,7 +165,7 @@ class MailRuntime:
         self.secrets = {key: str(value) for key, value in (secrets or {}).items() if value}
         self.config = self._config(config or {})
         self.records: list[dict] = []
-        self._imap: imaplib.IMAP4 | None = None
+        self._imap: Any = None
 
     def _config(self, given: dict[str, Any]) -> dict[str, Any]:
         out = {}
@@ -185,6 +177,9 @@ class MailRuntime:
         return out
 
     # ---------------------------------------------------------------- servers --
+    def _ca(self) -> str | None:
+        return str(self.config.get("ca_pem") or "") or None
+
     def _smtp_host(self) -> str:
         host = egress.clean_host(str(self.config.get("smtp_host") or ""))
         if not host or not self.config.get("sender"):
@@ -197,7 +192,7 @@ class MailRuntime:
             raise CommandError("This instance has no IMAP server: it cannot read a mailbox")
         return host
 
-    def _open(self) -> imaplib.IMAP4:
+    def _open(self) -> Any:
         if self._imap is not None:
             return self._imap
         host = self._imap_host()
@@ -205,15 +200,9 @@ class MailRuntime:
         security = str(self.config.get("imap_security") or "tls")
         record = {"method": "IMAP", "host": host, "path": ""}
         try:
-            context = _context(str(self.config.get("ca_pem") or "") or None)
-            if security == "tls":
-                client = imaplib.IMAP4_SSL(host, port, ssl_context=context, timeout=TIMEOUT)
-            else:
-                client = imaplib.IMAP4(host, port, timeout=TIMEOUT)
-                if security == "starttls":
-                    client.starttls(ssl_context=context)
+            client = egress.imap_client(host, port, security, self._ca(), TIMEOUT)
             client.login(self.secrets.get("username", ""), self.secrets.get("password", ""))
-        except imaplib.IMAP4.error:
+        except egress.IMAP_ERROR:
             raise CommandError("The IMAP server refused the user name or the password", record=record) from None
         except ssl.SSLError:
             raise CommandError(f"The certificate of {host} could not be verified", record=record) from None
@@ -222,7 +211,7 @@ class MailRuntime:
         self._imap = client
         return client
 
-    def _select(self, folder: str, *, readonly: bool) -> imaplib.IMAP4:
+    def _select(self, folder: str, *, readonly: bool) -> Any:
         client = self._open()
         status, _data = self._ask(client.select, _quoted(folder, "The folder"), readonly)
         if status != "OK":
@@ -233,7 +222,7 @@ class MailRuntime:
     def _ask(self, call, *args):
         try:
             return call(*args)
-        except imaplib.IMAP4.error as error:
+        except egress.IMAP_ERROR as error:
             raise CommandError(f"The mailbox refused: {str(error)[:200]}") from None
         except OSError:
             raise CommandError("The connection to the mailbox was lost", retry=True) from None
@@ -256,11 +245,11 @@ class MailRuntime:
         client, self._imap = self._imap, None
         try:
             client.logout()
-        except (imaplib.IMAP4.error, OSError):
+        except (egress.IMAP_ERROR, OSError):
             pass
 
     # ---------------------------------------------------------------- reading --
-    def _read(self, client: imaplib.IMAP4, uids: list[int], folder: str) -> list[dict[str, Any]]:
+    def _read(self, client: Any, uids: list[int], folder: str) -> list[dict[str, Any]]:
         found = []
         for uid in uids:
             status, data = self._ask(client.uid, "FETCH", str(uid), f"(BODY.PEEK[]<0.{MAX_MESSAGE + 1}>)")
@@ -269,7 +258,7 @@ class MailRuntime:
                 found.append(describe(bytes(raw), uid, folder))
         return found
 
-    def _search(self, client: imaplib.IMAP4, criteria: list[str]) -> list[int]:
+    def _search(self, client: Any, criteria: list[str]) -> list[int]:
         status, data = self._ask(client.uid, "SEARCH", *(criteria or ["ALL"]))
         if status != "OK":
             raise CommandError("The mailbox could not search")
@@ -318,24 +307,20 @@ class MailRuntime:
         message.set_content(str(text or ""))
         record = {"method": "SMTP", "host": host, "path": f"{len(to)} recipient(s)"}
         try:
-            context = _context(str(self.config.get("ca_pem") or "") or None)
-            if security == "tls":
-                client = smtplib.SMTP_SSL(host, port, timeout=TIMEOUT, context=context)
-            else:
-                client = smtplib.SMTP(host, port, timeout=TIMEOUT)
+            client, context = egress.smtp_client(host, port, security, self._ca(), TIMEOUT)
             with client:
                 if security == "starttls":
                     client.starttls(context=context)
                 if self.secrets.get("username"):
                     client.login(self.secrets["username"], self.secrets.get("password", ""))
                 refused = client.send_message(message)
-        except smtplib.SMTPAuthenticationError:
+        except egress.SMTP_AUTH_ERROR:
             raise CommandError("The SMTP server refused the user name or the password", record=record) from None
-        except smtplib.SMTPRecipientsRefused:
+        except egress.SMTP_RECIPIENTS_REFUSED:
             raise CommandError("The SMTP server refused every recipient", record=record) from None
         except ssl.SSLError:
             raise CommandError(f"The certificate of {host} could not be verified", record=record) from None
-        except (OSError, smtplib.SMTPException):
+        except (OSError, egress.SMTP_ERROR):
             # It may have left before the connection broke: the engine does not send it twice by itself.
             raise CommandError(
                 f"The SMTP server {host} could not be reached", retry=True, sent=True, record=record
@@ -477,23 +462,19 @@ class MailRuntime:
                 host = self._smtp_host()
                 port = int(self.config.get("smtp_port") or 587)
                 security = str(self.config.get("smtp_security") or "starttls")
-                context = _context(str(self.config.get("ca_pem") or "") or None)
                 try:
-                    if security == "tls":
-                        client = smtplib.SMTP_SSL(host, port, timeout=TIMEOUT, context=context)
-                    else:
-                        client = smtplib.SMTP(host, port, timeout=TIMEOUT)
+                    client, context = egress.smtp_client(host, port, security, self._ca(), TIMEOUT)
                     with client:
                         if security == "starttls":
                             client.starttls(context=context)
                         if self.secrets.get("username"):
                             client.login(self.secrets["username"], self.secrets.get("password", ""))
                         client.noop()
-                except smtplib.SMTPAuthenticationError:
+                except egress.SMTP_AUTH_ERROR:
                     raise CommandError("The SMTP server refused the user name or the password") from None
                 except ssl.SSLError:
                     raise CommandError(f"The certificate of {host} could not be verified") from None
-                except (OSError, smtplib.SMTPException):
+                except (OSError, egress.SMTP_ERROR):
                     raise CommandError(f"The SMTP server {host} could not be reached") from None
                 said.append("the SMTP server took the credentials")
             if not said:

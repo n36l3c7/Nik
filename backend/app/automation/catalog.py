@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..core.models import Connection, Playbook, PlaybookVersion, Script, ScriptVersion
+from ..core.models import Connection, Connector, Playbook, PlaybookVersion, Script, ScriptVersion
 from . import actions, graph
 
 FLOW = [
@@ -112,6 +112,10 @@ for _entry in FLOW:
     _entry.setdefault("arguments", [])
 
 
+# Kept for the graphs that name them, not offered in the library (5.1: mail is a connector).
+RETIRED = frozenset({"email.send"})
+
+
 class Library:
     """The actions, scripts and playbooks a graph can name, read from the database."""
 
@@ -174,8 +178,24 @@ def script_entries(db: OrmSession) -> list[dict[str, Any]]:
 
 
 def entries(db: OrmSession) -> list[dict[str, Any]]:
-    """Every node of the library."""
-    return [*FLOW, *(spec.entry() for spec in actions.every(db)), *script_entries(db)]
+    """Every node of the library. An entry of a connector says which one (``connector``) and
+    whether it can be used now (``available``: one of its instances is on); one kept only for the
+    playbooks made before is ``retired`` and is not offered for new nodes."""
+    from . import connector_actions
+
+    connectors = set(db.scalars(select(Connector.id)))
+    enabled = connector_actions.enabled_connectors(db)
+    found = []
+    for spec in actions.every(db):
+        entry = spec.entry()
+        head = spec.id.split(".", 1)[0]
+        if head in connectors:
+            entry["connector"] = head
+            entry["available"] = head in enabled
+        if spec.id in RETIRED:
+            entry["retired"] = True
+        found.append(entry)
+    return [*FLOW, *found, *script_entries(db)]
 
 
 def updates(db: OrmSession, shape: dict) -> list[dict[str, Any]]:

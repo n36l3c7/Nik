@@ -205,6 +205,52 @@ def logos_by_connection(db: OrmSession) -> dict[str, dict[str, Any]]:
     return found
 
 
+ADOPTED_NAME = "Mail (from Settings)"
+
+
+def adopt_smtp(db: OrmSession) -> bool:
+    """Make the SMTP server of the settings of 4.x an instance of the Mail connector, once (the caller
+    commits). Until 5.1 the e-mail node read that server; mail is a connector now, and its instances
+    are where a server is set. Nothing is done when there is no server, when the Mail connector has
+    an instance already, or when this was done before (the instance may have been deleted since)."""
+    from . import state
+
+    settings = state.read(db)
+    smtp = dict(settings.get("smtp") or {})
+    if settings.get("smtp_adopted") or not smtp.get("host") or not smtp.get("sender"):
+        return False
+    if db.get(Connector, "mail") is None:
+        return False
+    state.write(db, smtp_adopted=True)
+    if db.scalars(select(Connection.id).where(Connection.connector_id == "mail")).first() is not None:
+        return True
+    name, count = ADOPTED_NAME, 2
+    while db.scalars(select(Connection.id).where(func.lower(Connection.name) == name.lower())).first() is not None:
+        name, count = f"{ADOPTED_NAME} {count}", count + 1
+    now = now_iso()
+    row = Connection(
+        id=hashlib.sha256(f"mail-adopted-{now}".encode()).hexdigest()[:32],
+        name=name,
+        connector_id="mail",
+        config={
+            "smtp_host": str(smtp.get("host") or ""),
+            "smtp_port": int(smtp.get("port") or 587),
+            "smtp_security": str(smtp.get("security") or "starttls"),
+            "sender": str(smtp.get("sender") or ""),
+            **({"ca_pem": str(smtp["ca_pem"])} if smtp.get("ca_pem") else {}),
+        },
+        created_at=now,
+        created_by="nik",
+        updated_at=now,
+        updated_by="nik",
+    )
+    password = vault.decrypt(smtp["password"]) if smtp.get("password") else ""
+    secrets = {"username": str(smtp.get("username") or ""), "password": password or ""}
+    store_secrets(row, {key: value for key, value in secrets.items() if value})
+    db.add(row)
+    return True
+
+
 def enabled_connectors(db: OrmSession) -> set[str]:
     """The connectors that have an instance that is on: the ones whose commands can be used."""
     return set(db.scalars(select(Connection.connector_id).where(Connection.enabled.is_(True)).distinct()))
@@ -312,7 +358,13 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         )
 
     args = {key: value for key, value in call.args.items() if value is not None}
-    args, decided = outbound.guarded(call, args)
+    # The recipients of a message are where it goes, judged by the hosts the playbook may reach;
+    # what the guard judges is what is said.
+    where = {"to"} & set(args) if connector.native == "mail" else set()
+    said, decided = outbound.guarded(
+        call, {key: value for key, value in args.items() if key not in where}, dict.fromkeys(where, "_")
+    )
+    args = {**said, **{key: args[key] for key in where}}
     try:
         runtime = runtime_for(db, connector, connection, call.playbook, call.now)
         if call.dry_run:

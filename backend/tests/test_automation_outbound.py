@@ -192,7 +192,7 @@ def test_no_other_module_of_the_package_opens_a_socket():
     """Everything that leaves goes through egress.py: nothing else imports a network library."""
     package = Path(egress.__file__).parent
     forbidden = re.compile(
-        r"^\s*(?:import|from)\s+(socket|http\.client|http|urllib\.request|urllib3|requests|httpx|smtplib|ftplib|telnetlib|asyncio)\b",
+        r"^\s*(?:import|from)\s+(socket|http\.client|http|urllib\.request|urllib3|requests|httpx|smtplib|imaplib|poplib|ftplib|telnetlib|asyncio)\b",
         re.M,
     )
     for path in sorted(package.glob("*.py")):
@@ -427,7 +427,9 @@ def test_the_email_node_writes_to_listed_domains_through_the_configured_server(a
     )
     admin.put(f"/api/automation/playbooks/{pb}/egress", json={"mode": "listed", "hosts": ["corp.example"]})
     run = go(admin, pb, objectKind="incident", objectId="i1")
-    assert run["error"] == "mail: No SMTP server is configured: an admin sets it in Settings"
+    assert run["error"] == (
+        "mail: No instance of the Mail connector is on: add one in Settings, Connectors, to send e-mail"
+    )
 
     smtp = {
         "host": "smtp.corp.example",
@@ -480,6 +482,78 @@ def test_the_email_node_writes_to_listed_domains_through_the_configured_server(a
             [edge("start", "mail")],
         )
         assert go(admin, broken)["status"] == "failed"
+
+
+def test_the_email_node_of_before_sends_through_an_instance_of_the_mail_connector(admin: TestClient, outside):
+    """5.1: mail is a connector. The node of 4.x is kept for the playbooks that have it, and sends
+    through an instance; the SMTP server of the settings becomes one when the server starts."""
+    from app.automation import connector_actions as ca
+    from app.automation import state
+    from app.core.models import Connection
+
+    with SessionLocal() as db:
+        ca.seed(db)  # the connectors Nik ships, the Mail connector among them
+        db.commit()
+    assert admin.get("/api/automation/connectors/mail").json()["native"] == "mail"
+    entries = {entry["id"]: entry for entry in admin.get("/api/automation/catalog").json()["nodes"]}
+    # The old node is not offered any more; the commands of the connector are, once an instance is on.
+    assert entries["email.send"]["retired"] is True
+    assert entries["mail.send"]["connector"] == "mail" and entries["mail.send"]["available"] is False
+
+    smtp = {"host": "smtp.corp.example", "port": 465, "security": "tls", "username": "nik", "password": "s3cret-pw",
+            "sender": "nik@corp.example"}  # fmt: skip
+    admin.put("/api/automation/settings", json={"smtp": smtp})
+    with SessionLocal() as db:
+        assert ca.adopt_smtp(db) is True
+        db.commit()
+        (row,) = db.scalars(select(Connection).where(Connection.connector_id == "mail")).all()
+        assert (row.name, row.enabled, row.created_by) == ("Mail (from Settings)", True, "nik")
+        assert row.config == {
+            "smtp_host": "smtp.corp.example", "smtp_port": 465, "smtp_security": "tls", "sender": "nik@corp.example",
+        }  # fmt: skip
+        assert ca.secrets_of(row) == {"username": "nik", "password": "s3cret-pw"} and "s3cret-pw" not in row.secrets
+        # Once: an instance deleted afterwards does not come back.
+        assert ca.adopt_smtp(db) is False and state.read(db)["smtp_adopted"] is True
+    entries = {entry["id"]: entry for entry in admin.get("/api/automation/catalog").json()["nodes"]}
+    assert entries["mail.send"]["available"] is True
+
+    old = act("mail", "email.send", to="soc@corp.example", subject="Old node", text="Still works")
+    # A command that sends changes something outside and asks first by default: not here.
+    new = act(
+        "mail",
+        "mail.send",
+        approval={"ask": False},
+        to="soc@corp.example",
+        subject="New command",
+        text="Through the connector",
+    )
+    for name, node_ in (("Old mail node", old), ("New mail command", new)):
+        pb = playbook(admin, name, [node_], [edge("start", "mail")])
+        refused = go(admin, pb)
+        assert "corp.example is not among the hosts this playbook may reach" in str(refused["error"]), (name, refused)
+        admin.put(f"/api/automation/playbooks/{pb}/egress", json={"mode": "listed", "hosts": ["corp.example"]})
+        run = go(admin, pb)
+        assert run["status"] == "done", run
+        step = steps(run)["mail"]
+        assert step["output"]["sent"] is True and step["output"]["recipients"] == 1
+        assert step["request"]["connection"] == "Mail (from Settings)" and step["request"]["method"] == "SMTP"
+        assert "s3cret" not in str(step)
+    assert [(m["subject"], m["from"], m["login"]) for m in outside.mails] == [
+        ("Old node", "nik@corp.example", ("nik", "s3cret-pw")),
+        ("New command", "nik@corp.example", ("nik", "s3cret-pw")),
+    ]
+
+    # The instance turned off: the command says so; the old node falls back to the server of the settings.
+    with SessionLocal() as db:
+        db.scalars(select(Connection).where(Connection.connector_id == "mail")).one().enabled = False
+        db.commit()
+    pb = playbook(admin, "Off", [new], [edge("start", "mail")])
+    admin.put(f"/api/automation/playbooks/{pb}/egress", json={"mode": "listed", "hosts": ["corp.example"]})
+    # It names no instance and none is on: it has nowhere to send. Named, it is told that it is off.
+    assert "Choose an instance" in go(admin, pb)["error"]
+    named = dict(new, config={**new["config"], "connection": "Mail (from Settings)"})
+    pb = playbook(admin, "Off, named", [named], [edge("start", "mail")])
+    assert "is off: turn it on in Settings, Connectors" in go(admin, pb)["error"]
 
 
 # --------------------------------------------------------------------------- #

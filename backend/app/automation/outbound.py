@@ -161,11 +161,50 @@ def _recipients(value: Any) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+def _mail_instance(call: Call):
+    """The instance of the Mail connector a node of 4.x sends through: the one it names, or the only
+    one that is on. None when there is none (the SMTP server of the settings is then used)."""
+    from . import connector_actions
+
+    found = connector_actions.find_connection(call.db, "mail", call.connection)
+    return found if found is not None and found.enabled else None
+
+
+def _send_through(call: Call, instance, to: list[str], subject: str, text: str, decided: dict) -> Result:
+    from ..core.models import Connector
+    from . import connector_actions
+    from .connector_runtime import CommandError
+
+    row = call.db.get(Connector, "mail")
+    connector = connector_actions.parsed(row) if row is not None else None
+    if connector is None:
+        raise ActionError("The Mail connector is not installed", retry=False)
+    runtime = connector_actions.runtime_for(call.db, connector, instance, call.playbook, call.now)
+    args = {"to": to, "subject": subject, "text": text}
+    try:
+        if call.dry_run:
+            would = {**runtime.would_send("send", args), "held": decided, "connection": instance.name}
+            return Result(output={"sent": False, "recipients": len(to)}, request=would)
+        answer = runtime.run("send", args)
+    except CommandError as error:
+        raise ActionError(
+            error.message,
+            retry=error.retry,
+            unknown_outcome=error.sent and error.retry,
+            request={**(error.record or {}), "held": decided, "connection": instance.name},
+        ) from None
+    record = {**(answer.records[-1] if answer.records else {}), "held": decided, "connection": instance.name}
+    return Result(output={"sent": True, "recipients": len(to)}, request=record)
+
+
 @action(
     "email.send",
     group="E-mail",
     name="Send an e-mail",
-    description="Send a message through the SMTP server set in Settings, to recipients the playbook may write to.",
+    description=(
+        "Send a message through an instance of the Mail connector, to recipients the playbook may write to. "
+        "Kept for the playbooks made before 5.1: new ones use the send command of the Mail connector."
+    ),
     arguments=[
         {
             "name": "to",
@@ -201,7 +240,17 @@ def email_send(call: Call) -> Result:
     # The recipients are where it goes; what is judged is what is said.
     payload, decided = guarded(call, {"subject": call.args.get("subject"), "text": call.args.get("text")}, {"to": "_"})
     subject, text = str(payload.get("subject") or "(no subject)"), str(payload.get("text") or "")
+    # Since 5.1 mail is a connector: an instance of it that is on sends. The SMTP server of the
+    # settings of 4.x is used while there is none (it is made an instance when the server starts).
+    instance = _mail_instance(call)
+    if instance is not None:
+        return _send_through(call, instance, to, subject, text, decided)
     server = smtp_settings(call.db)
+    if not server.get("host") and not call.dry_run:
+        raise ActionError(
+            "No instance of the Mail connector is on: add one in Settings, Connectors, to send e-mail",
+            retry=False,
+        )
     if call.dry_run:
         would = {"method": "SMTP", "host": server.get("host") or "(not configured)", "path": f"{len(to)} recipient(s)"}
         return Result(

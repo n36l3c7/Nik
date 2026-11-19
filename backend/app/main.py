@@ -219,6 +219,8 @@ def on_startup() -> None:
 
                 changed += mapping.seed(db)
                 changed += shipped.seed(db)
+                # The SMTP server the e-mail node of 4.x used becomes an instance of the Mail connector.
+                changed += int(connector_actions.adopt_smtp(db))
                 if changed:
                     db.commit()
             except IntegrityError:

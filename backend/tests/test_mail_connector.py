@@ -59,7 +59,7 @@ class Mailbox:
     def login(self, user, password):
         self.calls.append(("login", user))
         if (user, password) != (SECRETS["username"], SECRETS["password"]):
-            raise mail_runtime.imaplib.IMAP4.error("LOGIN failed")
+            raise egress.IMAP_ERROR("LOGIN failed")
         return "OK", [b""]
 
     def select(self, folder, readonly=False):
@@ -144,7 +144,7 @@ class Smtp:
     def login(self, user, password):
         Smtp.logins.append((user, password))
         if password != SECRETS["password"]:
-            raise mail_runtime.smtplib.SMTPAuthenticationError(535, b"no")
+            raise egress.SMTP_AUTH_ERROR(535, b"no")
 
     def send_message(self, made):
         Smtp.sent.append(made)
@@ -157,8 +157,8 @@ class Smtp:
 @pytest.fixture()
 def box(monkeypatch):
     mailbox = Mailbox()
-    monkeypatch.setattr(mail_runtime.imaplib, "IMAP4_SSL", lambda *args, **kwargs: mailbox)
-    monkeypatch.setattr(mail_runtime.smtplib, "SMTP", Smtp)
+    monkeypatch.setattr(egress.imaplib, "IMAP4_SSL", lambda *args, **kwargs: mailbox)
+    monkeypatch.setattr(egress.smtplib, "SMTP", Smtp)
     Smtp.sent, Smtp.logins = [], []
     return mailbox
 
