@@ -3314,6 +3314,49 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
   await page.getByRole('button', { name: 'Close dashboards' }).first().click()
 })
 
+test('a connection of the canvas shows an × that removes it, and handles to route it', async () => {
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('button', { name: 'Note on high' }).click()
+  const edges = area.locator('.react-flow__edge')
+  // The pointer on the middle of a line: an SVG path of no width is not something to hover by itself.
+  const over = async (edge) => {
+    const middle = await edge.locator('.react-flow__edge-interaction').evaluate((path) => {
+      const box = path.getBoundingClientRect()
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    })
+    await page.mouse.move(middle.x, middle.y)
+  }
+  await expect(edges.first()).toBeAttached()
+  const before = await edges.count()
+  // Nothing is shown until the pointer is on the line.
+  await expect(area.getByRole('button', { name: /^Remove the connection/ })).toHaveCount(0)
+  await over(edges.first())
+  const remove = area.getByRole('button', { name: /^Remove the connection/ })
+  await expect(remove).toBeVisible()
+  // A line that draws itself has one handle, to give it its first corner.
+  await expect(area.getByRole('button', { name: 'Drag to make a corner here' })).toHaveCount(1)
+  const handle = area.getByRole('button', { name: 'Drag to make a corner here' })
+  const box = await handle.boundingBox()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  // To the side, clear of the nodes: a corner under a node cannot be reached.
+  await page.mouse.move(box.x + 240, box.y + 4, { steps: 6 })
+  await page.mouse.up()
+  await over(edges.first())
+  await expect(area.getByRole('button', { name: /^Corner 1 of the connection/ })).toHaveCount(1)
+  // Double-click takes the corner away; the × takes the connection.
+  await area.getByRole('button', { name: /^Corner 1 of the connection/ }).dblclick()
+  await expect(area.getByRole('button', { name: /^Corner 1 of the connection/ })).toHaveCount(0)
+  await over(edges.first())
+  await remove.click()
+  await expect(edges).toHaveCount(before - 1)
+  // The playbook is left as it was.
+  for (let step = 0; step < 3; step += 1) await area.getByRole('button', { name: 'Undo' }).click()
+  await expect(edges).toHaveCount(before)
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
 test('the rail: the order of a working day, and the account at its foot', async () => {
   const rail = page.getByRole('navigation', { name: 'Sections' })
   // Every incident of the list has its number, opened in this visit or not.

@@ -26,6 +26,8 @@ import {
   removeNodes,
 } from '../../domain/automation/graph.js'
 import { NODE_WIDTH } from '../../domain/automation/layout.js'
+import { setEdgePoints } from '../../domain/automation/routing.js'
+import RoutedEdge from './RoutedEdge.jsx'
 
 /*
  * ============================================================================
@@ -157,6 +159,8 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
 
 const NODE_TYPES = { playbook: PlaybookNode }
 
+const EDGE_TYPES = { routed: RoutedEdge }
+
 const edgeId = (edge, graph) => `${edge.from}\u0000${portOf(edge, graph)}\u0000${edge.to}`
 const edgeParts = (id) => {
   const [from, port, to] = id.split('\u0000')
@@ -234,24 +238,30 @@ function Flow({
         const label = portLabel(nodeOf(graph, edge.from), port)
         const failing = port === 'error'
         const stroke = failing ? '#f85149' : '#6e7681'
+        const same = (other) => other.from === edge.from && other.to === edge.to && portOf(other, graph) === port
         return {
           id,
           source: edge.from,
           target: edge.to,
           sourceHandle: port,
-          type: 'smoothstep',
+          // Drawn by RoutedEdge: by itself, or through the corners somebody gave it.
+          type: 'routed',
           selected: chosen.edges.has(id),
-          label: label || undefined,
-          labelStyle: { fill: LABEL_COLORS[port] ?? '#9da7b3', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
-          labelBgStyle: { fill: '#0d1117' },
-          labelBgPadding: [3, 1],
-          labelBgBorderRadius: 0,
+          data: {
+            points: edge.points,
+            label: label || '',
+            labelColor: LABEL_COLORS[port] ?? '#9da7b3',
+            name: `from ${edge.from} to ${edge.to}`,
+            editable: !readOnly,
+            onPoints: (points) => onChange?.(setEdgePoints(graph, same, points)),
+            onRemove: () => onChange?.(disconnect(graph, edge.from, port, edge.to)),
+          },
           style: { stroke, strokeWidth: 1.5, strokeDasharray: failing ? '4 3' : undefined },
           markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 14, height: 14 },
           ariaLabel: `From ${edge.from} to ${edge.to}${label ? `, ${label}` : ''}`,
         }
       }),
-    [graph, chosen.edges],
+    [graph, chosen.edges, readOnly, onChange],
   )
 
   const commitDrag = useCallback(() => {
@@ -378,6 +388,7 @@ function Flow({
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}
+      edgeTypes={EDGE_TYPES}
       forceColorMode="dark"
       fitView
       fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
