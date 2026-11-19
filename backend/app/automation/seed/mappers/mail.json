@@ -1,0 +1,24 @@
+{
+  "incoming": [
+    {
+      "to": "name",
+      "from": "{{ item.subject }}"
+    },
+    {
+      "to": "details",
+      "from": "From {{ item.from }}\n\n{{ item.text }}"
+    },
+    {
+      "to": "occurred",
+      "from": "{{ item.date }}"
+    },
+    {
+      "to": "source_id",
+      "from": "{{ item.message_id }}"
+    }
+  ],
+  "classifier": {
+    "rules": [],
+    "defaultType": null
+  }
+}

@@ -29,7 +29,9 @@ from app.automation import connector_runtime as rt
 from app.automation import egress
 
 DATA = Path(__file__).parent / "data" / "connectors"
-SHIPPED = ca.shipped()
+# The connectors that speak HTTP: each command has a recorded exchange. The native ones (mail) are
+# run by Nik's own code and have tests of their own (test_mail_connector.py).
+SHIPPED = [(text, connector) for text, connector in ca.shipped() if connector.native is None]
 CASES = [(connector, command.name) for _text, connector in SHIPPED for command in connector.commands]
 
 
@@ -228,7 +230,8 @@ def test_the_products_that_raise_alerts_and_keep_tickets_are_fetched():
     }  # fmt: skip
     from app import mapping
 
-    assert set(mapping.shipped()) == {connector.id for connector in FETCHING}
+    fetching = {connector.id for _text, connector in ca.shipped() if connector.fetch is not None}
+    assert set(mapping.shipped()) == fetching and "mail" in fetching
 
 
 def test_the_mirror_of_a_shipped_connector_names_commands_that_take_what_it_gives():

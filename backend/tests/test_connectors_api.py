@@ -213,8 +213,15 @@ def test_the_samples_are_the_shipped_files_in_a_zip(admin: TestClient):
     assert res.status_code == 200 and res.headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(res.content)) as archive:
         names = archive.namelist()
-        assert names == sorted(path.name for path in ca.SEED_DIR.glob("*.yml"))
-        for name in names:
+        files = sorted(path.name for path in ca.SEED_DIR.glob("*.yml"))
+        # A connector kept as a package goes as its folder.
+        folders = sorted(
+            f"{path.parent.name}/{item.name}"
+            for path in ca.SEED_DIR.glob("*/connector.yml")
+            for item in path.parent.iterdir()
+        )
+        assert names == files + folders and "mail/connector.yml" in names
+        for name in (name for name in names if name.endswith(".yml")):
             ca.load(archive.read(name))  # each is a connector that loads
 
 

@@ -50,6 +50,23 @@ OPERATORS = ("eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "exists", "
 # What a connection is asked for. The first six are plain values; the others are credentials.
 VALUE_TYPES = ("url", "text", "number", "bool", "choice", "secret")
 AUTH_TYPES = ("basic", "bearer", "header", "oauth2_client", "session", "zscaler")
+# The commands Nik's own code has for each kind of native connector (automation/mail_runtime.py).
+NATIVE: dict[str, frozenset[str]] = {
+    "mail": frozenset(
+        {
+            "send",
+            "reply",
+            "forward",
+            "search",
+            "get-message",
+            "move",
+            "mark-read",
+            "mark-unread",
+            "delete",
+            "list-folders",
+        }
+    ),
+}
 ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice")
 
 MAX_PAGES = 100
@@ -232,7 +249,9 @@ class Command(_Strict):
     def _shape(self):
         if not COMMAND_RE.match(self.name):
             raise ValueError("a command's name is lower-case letters, digits and -: create-incident")
-        if (self.request is None) == (self.steps is None):
+        # One or the other for a connector that speaks HTTP; neither for one Nik speaks for
+        # (``native``), which the connector file checks: it is the one that knows which it is.
+        if self.request is not None and self.steps is not None:
             raise ValueError('a command has "request" or "steps"')
         if self.steps is not None:
             if not self.steps:
@@ -262,7 +281,8 @@ class FetchSpec(_Strict):
 
     interval_seconds: int = Field(default=120, ge=FETCH_MIN_INTERVAL, le=86_400)
     first_fetch: str = Field(default="3 days", max_length=40)
-    request: RequestSpec
+    # None for a native connector, whose runtime knows how to read what is new.
+    request: RequestSpec | None = None
     success: Success | None = None
     error: ErrorSpec | None = None
     pagination: Pagination | None = None
@@ -277,7 +297,7 @@ class FetchSpec(_Strict):
     def _shape(self):
         if first_fetch_seconds(self.first_fetch) is None:
             raise ValueError('"first_fetch" is a length of time: 30 minutes, 12 hours, 3 days')
-        if (self.pagination is None) == (self.items is None):
+        if self.request is not None and (self.pagination is None) == (self.items is None):
             raise ValueError('a fetch says where its items are: "items", or the "items" of its "pagination"')
         if "{{" not in self.item_id:
             raise ValueError('"item_id" is a template over the item: "{{ item.id }}"')
@@ -427,7 +447,10 @@ class ConnectorFile(_Strict):
     api_version: str = Field(default="", max_length=200)  # the vendor's API this was written against
     verified: bool = False  # run against a real system by someone
     configuration: list[ConfigParam] = Field(default_factory=list, max_length=30)
-    base_url: str = Field(min_length=1, max_length=2000)
+    # What Nik speaks for, when the product is not reached over HTTP: the file then names the
+    # commands, their arguments and what they give, and Nik's own code runs them (``NATIVE``).
+    native: Literal["mail"] | None = None
+    base_url: str = Field(default="", max_length=2000)
     headers: dict[str, str] = Field(default_factory=dict)
     test: TestSpec | None = None
     commands: list[Command] = Field(min_length=1, max_length=100)
@@ -455,6 +478,27 @@ class ConnectorFile(_Strict):
         commands = [command.name for command in self.commands]
         if len(set(commands)) != len(commands):
             raise ValueError("two commands have the same name")
+        if self.native is None:
+            if not self.base_url:
+                raise ValueError('"base_url" is missing')
+            for command in self.commands:
+                if command.request is None and command.steps is None:
+                    raise ValueError(f'the command "{command.name}" has neither "request" nor "steps"')
+            if self.fetch is not None and self.fetch.request is None:
+                raise ValueError('"fetch" has no "request"')
+        else:
+            if self.base_url or self.headers or self.test is not None or self.mirror is not None:
+                raise ValueError('a native connector has no "base_url", "headers", "test" nor "mirror"')
+            known = NATIVE[self.native]
+            for command in self.commands:
+                if command.request is not None or command.steps is not None:
+                    raise ValueError(f'the command "{command.name}" of a native connector has no request')
+                if command.name not in known:
+                    raise ValueError(
+                        f'"{command.name}" is not a command Nik has for {self.native}: {", ".join(sorted(known))}'
+                    )
+            if self.fetch is not None and (self.fetch.request is not None or self.fetch.pagination is not None):
+                raise ValueError('the "fetch" of a native connector has no request')
         ext = [item.name for item in self.ext_fields]
         if len(set(ext)) != len(ext):
             raise ValueError("two ext fields have the same name")
@@ -847,6 +891,7 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
         "description": connector.description,
         "apiVersion": connector.api_version,
         "verified": connector.verified,
+        "native": connector.native,
         # What it can do besides commands: bring alerts in, keep an object in step.
         "fetch": (
             {"intervalSeconds": connector.fetch.interval_seconds, "firstFetch": connector.fetch.first_fetch}

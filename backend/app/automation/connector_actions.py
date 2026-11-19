@@ -215,6 +215,9 @@ def host_of(connector: ConnectorFile, config: dict[str, Any]) -> str | None:
     # With the defaults of what was left out, as the runtime reads it (a region that has a default).
     values = {param.name: param.default for param in connector.configuration if not param.is_auth}
     values.update({key: value for key, value in (config or {}).items() if value not in (None, "")})
+    if connector.native == "mail":
+        # A mailbox: the server it is read from, or the one it sends through.
+        return egress.clean_host(str(values.get("imap_host") or values.get("smtp_host") or "")) or None
     try:
         base = ex.render_text(connector.base_url, ex.Scope(values={"config": values})).data
     except ex.ExpressionError:
@@ -254,6 +257,13 @@ def runtime_for(
         policy = egress.Policy(mode="listed", hosts=frozenset({host} if host else set()))
     # The engine's clock when it runs a step (its waits are counted on it); the wall clock otherwise.
     clock = (lambda: now) if now else time.time
+    if connector.native == "mail":
+        from .mail_runtime import MailRuntime
+
+        # A recipient is judged by the playbook's own policy: the host of the mailbox is not one.
+        if playbook is not None:
+            policy = outbound.policy_for(db, playbook)
+        return MailRuntime(connector, connection.config or {}, secrets_of(connection), policy)
     return Runtime(
         connector, connection.config or {}, secrets_of(connection), policy, token_key=connection.id, clock=clock
     )
