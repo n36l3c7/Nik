@@ -10,6 +10,7 @@ import { matchActions, searchIncident, tabForSource } from '../../domain/search.
 import { buildTimelineEvents, TIMELINE_SOURCE_META } from '../../domain/timeline.js'
 import { formatDateTime } from '../../lib/time.js'
 import { useLayer } from '../../lib/layers.js'
+import { numberedName } from '../../domain/incidentName.js'
 
 /*
  * Global search palette (Ctrl/Cmd+K or "/"): a `nik>` prompt that searches
@@ -113,7 +114,7 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
         items: remote.data.incidents.map((incident) => ({
           key: `incident:${incident.id}`,
           icon: FolderOpen,
-          primary: incident.name || incident.id,
+          primary: numberedName(incident),
           secondary: [incident.username, incident.os].filter(Boolean).join(' · '),
           run: run(() => selectIncident(incident.id)),
         })),

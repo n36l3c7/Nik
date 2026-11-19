@@ -89,3 +89,14 @@ def test_a_backup_gives_every_incident_the_number_it_had(admin: TestClient):
     assert restored["dddd-old"] > third["number"]
     assert first["number"] not in restored.values()
     assert _create(admin, id="dddd-4")["number"] == restored["dddd-old"] + 1
+
+
+def test_the_search_finds_an_incident_by_its_number(admin: TestClient):
+    made = _create(admin, id="eeee-1", name="found by number")
+    _create(admin, id="eeee-2", name=f"mentions {made['number']:05d} in its name")
+    for text in (f"#{made['number']}", f"{made['number']:05d}", f"#{made['number']:05d}"):
+        found = admin.get("/api/search", params={"q": text}).json()["incidents"]
+        # The one with the number comes first; a name that holds the digits is found as before.
+        assert found[0]["id"] == "eeee-1" and found[0]["number"] == made["number"], text
+    by_name = admin.get("/api/search", params={"q": "found by"}).json()["incidents"]
+    assert [(row["id"], row["number"]) for row in by_name] == [("eeee-1", made["number"])]

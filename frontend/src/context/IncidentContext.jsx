@@ -269,6 +269,7 @@ function syncUrl(incidentId, { replace = false } = {}) {
 function toSummary(incident) {
   return {
     id: incident.id,
+    number: incident.number ?? null,
     name: incident.name,
     host: incident.host,
     username: incident.username,
@@ -533,8 +534,26 @@ export function IncidentProvider({ children }) {
   // merged with what was edited here). Switching to another incident aborts a
   // pending first download.
   const lastCheckRef = useRef(0)
+  // An address written with the number (/incident/42) is sent to the incident's own.
   useEffect(() => {
-    if (loading || !activeIncidentId) return undefined
+    if (loading || !isAuthenticated || !/^\d{1,9}$/.test(activeIncidentId ?? '')) return undefined
+    let live = true
+    api
+      .get(`/incidents/by-number/${activeIncidentId}`)
+      .then((found) => {
+        if (!live) return
+        setActiveIncidentId(found.id)
+        syncUrl(found.id, { replace: true })
+      })
+      .catch(() => {
+        if (live) setActiveLoadError('There is no incident with this number.')
+      })
+    return () => {
+      live = false
+    }
+  }, [activeIncidentId, loading, isAuthenticated])
+  useEffect(() => {
+    if (loading || !activeIncidentId || /^\d{1,9}$/.test(activeIncidentId)) return undefined
     setActiveLoadError(null)
     setActiveLoadProgress(null)
     lastCheckRef.current = Date.now()

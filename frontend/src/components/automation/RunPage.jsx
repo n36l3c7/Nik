@@ -21,6 +21,7 @@ import ApprovalBanner from './ApprovalBanner.jsx'
 import Canvas from './Canvas.jsx'
 import DebugPanel, { DebugStepTools } from './DebugPanel.jsx'
 import { SectionTitle } from './fields.jsx'
+import { numberedName } from '../../domain/incidentName.js'
 
 /*
  * ============================================================================
@@ -263,7 +264,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
                       onClick={() => onOpenIncident(run.incidentId)}
                       className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      {incident.name}
+                      {numberedName(incident)}
                     </button>
                   ) : (
                     'an incident that is gone'

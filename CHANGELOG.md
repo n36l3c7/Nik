@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the order they were created (migration `0035_incident_numbers`). A
   full backup carries the numbers and a restore gives them back; an
   incident that arrives from another Nik gets a number of this one and
-  keeps the other as `importedNumber`.
+  keeps the other as `importedNumber`. The number is written before the
+  name (`#00042`) in the list, the header, the search, the tasks and the
+  runs; `#42` in Search opens the incident, and so does `/incident/42`.
 - **Lists in the query language**: `field IN (a, b, "c d")` and
   `field NOT IN (...)`, the same as writing a condition for each value.
   Values are separated by commas or spaces, take wildcards, and are

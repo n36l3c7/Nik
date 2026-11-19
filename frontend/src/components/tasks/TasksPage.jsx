@@ -5,6 +5,7 @@ import { api } from '../../services/api.js'
 import { byUrgency, dueText, statusBadge } from '../../domain/tasks.js'
 import { AsciiSkull, Badge, EmptyState } from '../ui/index.js'
 import TaskCard from './TaskCard.jsx'
+import { numberedName } from '../../domain/incidentName.js'
 
 /*
  * ============================================================================
@@ -154,7 +155,10 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident })
                       </span>
                       <span className="text-sm font-medium text-fg">{task.title}</span>
                       <span className="truncate text-xs text-fg-muted">
-                        {task.incidentName || 'no incident'} · for {task.for}
+                        {task.incidentName
+                          ? numberedName({ number: task.incidentNumber, name: task.incidentName })
+                          : 'no incident'}{' '}
+                        · for {task.for}
                       </span>
                     </button>
                   </li>

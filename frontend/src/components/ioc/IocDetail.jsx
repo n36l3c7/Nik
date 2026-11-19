@@ -16,6 +16,7 @@ import {
   verdictShares,
 } from '../../domain/enrichment.js'
 import { formatDateTime, formatRelative } from '../../lib/time.js'
+import IncidentNumber from '../ui/IncidentNumber.jsx'
 
 /*
  * Everything Nik knows about one indicator, in two columns:
@@ -136,6 +137,7 @@ function SeenIn({ lookup, activeIncidentId, onOpenIncident, onOpenArtifact }) {
         return (
           <li key={incident.id} className="space-y-1 px-3 py-2">
             <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-fg">
+              <IncidentNumber number={incident.number} className="text-xs" />
               <span className="min-w-0 break-words">{incident.name || incident.id}</span>
               {current && <Badge color="emerald">this incident</Badge>}
               {!current && (
