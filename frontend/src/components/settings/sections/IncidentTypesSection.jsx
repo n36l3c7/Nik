@@ -19,6 +19,7 @@ import {
 } from '../../../domain/fields.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import NewFieldDialog from '../../fields/NewFieldDialog.jsx'
+import TypePageEditor from './TypePageEditor.jsx'
 
 /*
  * ============================================================================
@@ -413,6 +414,8 @@ function Builder({ type: saved, fields, colours, types, onBack, onSaved, onDelet
           </label>
         </div>
       </div>
+
+      <TypePageEditor layout={layout} onLayout={setLayout} />
 
       {newField && (
         <NewFieldDialog

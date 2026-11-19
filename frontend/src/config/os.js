@@ -40,7 +40,12 @@ export function getOsById(osId) {
   return OS_LIST.find((os) => os.id === osId) ?? null
 }
 
-/** Coerce an arbitrary value to a valid OS id (legacy incidents → windows). */
+/**
+ * The OS of an incident as it is kept: one of the three, or '' when none was
+ * said. Since 5.3 an incident need not name one; what needs a system to show
+ * something (the paths where an artifact is found, the shells there are)
+ * falls back to DEFAULT_OS by itself.
+ */
 export function normalizeOs(value) {
-  return getOsById(value) ? value : DEFAULT_OS
+  return getOsById(value) ? value : ''
 }

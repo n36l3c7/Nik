@@ -27,7 +27,7 @@ export const WIDGET_KINDS = [
     id: 'facts',
     label: 'Incident details',
     w: 7,
-    h: 4,
+    h: 3,
     once: true,
     hint: 'Name, ticket, severity, status, owner, host: with the button that edits them.',
   },
@@ -42,7 +42,7 @@ export const WIDGET_KINDS = [
     id: 'stats',
     label: 'Numbers of the evidence',
     w: 5,
-    h: 4,
+    h: 3,
     once: true,
     hint: 'How many events, commands, artifacts, flags and notes.',
   },
@@ -89,10 +89,17 @@ const list = (value) => (Array.isArray(value) ? value : [])
 const whole = (value, fallback) => (Number.isFinite(Number(value)) ? Math.round(Number(value)) : fallback)
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
-/** The rows a section of fields needs: its title, then a line for each field (two a line when it has two columns). */
+/** The fields "Edit the incident" changes: the details show them, a section does not show them twice. */
+export const DETAIL_FIELDS = ['name', 'ticket', 'host', 'username', 'os', 'severity', 'status', 'owner']
+
+/**
+ * The rows a section of fields needs: its title and its "Edit", then a line for
+ * each field it shows (two a line when it has two columns).
+ */
 export function sectionHeight(section) {
-  const lines = Math.ceil(list(section?.fields).length / (section?.columns === 2 ? 2 : 1))
-  return clamp(1 + Math.ceil((lines * 34 + 40) / 80), 2, MAX_HEIGHT)
+  const shown = list(section?.fields).filter((name) => !DETAIL_FIELDS.includes(name))
+  const lines = Math.ceil(shown.length / (section?.columns === 2 ? 2 : 1))
+  return clamp(Math.ceil((90 + lines * 28) / 80), 2, MAX_HEIGHT)
 }
 
 /** The sections a grid can show: every one but the side panel. */
@@ -104,10 +111,10 @@ export const gridSections = (layout) => list(layout?.sections).filter((section) 
  */
 export function defaultGrid(layout) {
   const grid = [
-    { id: 'facts', kind: 'facts', x: 0, y: 0, w: 7, h: 4 },
-    { id: 'stats', kind: 'stats', x: 7, y: 0, w: 5, h: 4 },
+    { id: 'facts', kind: 'facts', x: 0, y: 0, w: 7, h: 3 },
+    { id: 'stats', kind: 'stats', x: 7, y: 0, w: 5, h: 3 },
   ]
-  let y = 4
+  let y = 3
   for (const section of gridSections(layout)) {
     const h = sectionHeight(section)
     grid.push({ id: `section-${section.id}`, kind: 'section', section: section.id, x: 0, y, w: COLUMNS, h })

@@ -30,9 +30,9 @@ test('a type that arranged no page gets what the Summary showed, in the same ord
     [
       ['facts', null, 0, 0, 7],
       ['stats', null, 7, 0, 5],
-      ['section', 'about', 0, 4, 12],
-      ['section', 'more', 0, 4 + sectionHeight(LAYOUT.sections[1]), 12],
-      ['timeline', null, 0, 4 + sectionHeight(LAYOUT.sections[1]) + sectionHeight(LAYOUT.sections[2]), 12],
+      ['section', 'about', 0, 3, 12],
+      ['section', 'more', 0, 3 + sectionHeight(LAYOUT.sections[1]), 12],
+      ['timeline', null, 0, 3 + sectionHeight(LAYOUT.sections[1]) + sectionHeight(LAYOUT.sections[2]), 12],
     ],
   )
   // The side panel's section is not on the page; nothing overlaps.
@@ -46,7 +46,10 @@ test('a type that arranged no page gets what the Summary showed, in the same ord
   assert.equal(gridOf(null).custom, false)
   // A section is as tall as its fields ask, within the limits of a widget.
   assert.equal(sectionHeight({ fields: [], columns: 1 }), 2)
-  assert.equal(sectionHeight({ fields: ['a', 'b', 'c', 'd'], columns: 2 }), 3)
+  assert.equal(sectionHeight({ fields: ['a', 'b', 'c', 'd'], columns: 2 }), 2)
+  assert.equal(sectionHeight({ fields: ['a', 'b', 'c', 'd'], columns: 1 }), 3)
+  // What the details already show does not make a section taller.
+  assert.equal(sectionHeight({ fields: ['host', 'username', 'os', 'status', 'a'], columns: 1 }), 2)
   assert.equal(sectionHeight({ fields: Array.from({ length: 80 }, (_, index) => `f${index}`), columns: 1 }), 12)
 })
 

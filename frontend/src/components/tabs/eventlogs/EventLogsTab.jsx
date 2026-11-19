@@ -127,7 +127,7 @@ export default function EventLogsTab({ incident }) {
   const [confirmClear, setConfirmClear] = useState(false)
 
   const channels = incident.data.eventlogs?.channels ?? NO_CHANNELS
-  const isWindows = (incident.os ?? 'windows') === 'windows'
+  const isWindows = (incident.os || 'windows') === 'windows'
 
   const events = useMemo(() => buildEventLogEvents({ channels, engine }), [channels, engine])
   const stats = useMemo(() => computeSocStats(events), [events])

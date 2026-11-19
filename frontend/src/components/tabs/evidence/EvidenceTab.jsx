@@ -24,7 +24,9 @@ import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
  * A file dropped anywhere in the window is added as before.
  */
 
-const VERDICT_DOTS = { malicious: 'bg-high', suspicious: 'bg-med', clean: 'bg-accent', benign: 'bg-accent' }
+// The colour of what an analysis concluded, as the badges of the artifacts use them: "clean" has none
+// (no detection is not a clean bill).
+const VERDICT_DOTS = { high: 'bg-high', phishing: 'bg-high', medium: 'bg-med', suspicious: 'bg-med' }
 
 const ROW =
   'flex w-full items-baseline gap-2 px-3 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'

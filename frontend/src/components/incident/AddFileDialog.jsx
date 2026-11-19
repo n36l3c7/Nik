@@ -73,7 +73,7 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drop])
 
-  const os = target === 'current' ? (activeIncident?.os ?? DEFAULT_OS) : fields.os
+  const os = (target === 'current' ? activeIncident?.os : fields.os) || DEFAULT_OS
 
   // Choices for the selected tab, defaulted from the detection.
   const browsers = useMemo(() => BROWSERS.filter((b) => !params.engine || b.engine === params.engine), [params.engine])
