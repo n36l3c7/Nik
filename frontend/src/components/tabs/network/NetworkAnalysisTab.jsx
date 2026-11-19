@@ -73,7 +73,7 @@ function CaptureList({ captures, selected, onSelect, flags = {}, onMenu }) {
  *   `onReference` receives the capture's fresh reference when the tab shows
  *   one artifact on its own (there is no incident to keep it).
  */
-export default function NetworkAnalysisTab({ incident, onReference }) {
+export default function NetworkAnalysisTab({ incident, onReference, focus = null, evidence = false }) {
   const incidents = useIncidents()
   const { syncCaptures, removeCapture, attachSample, toggleFlag } = incidents
   const { openArtifact, refresh: refreshArtifacts } = useArtifacts()
@@ -89,7 +89,14 @@ export default function NetworkAnalysisTab({ incident, onReference }) {
   const { requests, take, goTo } = useNavigation()
   const captures = incident.data.network?.captures ?? NO_CAPTURES
 
-  const [selected, setSelected] = useState(captures[0]?.id ?? null)
+  const [selected, setSelected] = useState(focus ?? captures[0]?.id ?? null)
+  // In the Evidence tab a file is chosen in the list at the side: it is shown alone.
+  useEffect(() => {
+    if (focus) setSelected(focus)
+  }, [focus])
+  const alone = standalone || Boolean(focus)
+  // The whole kind, inside the Evidence tab: its list above the file, which keeps the width of the page.
+  const stacked = evidence && !alone
   const [details, setDetails] = useState({})
   const [errors, setErrors] = useState({})
   const [progress, setProgress] = useState(null)
@@ -272,12 +279,12 @@ export default function NetworkAnalysisTab({ incident, onReference }) {
   return (
     <div
       className={
-        standalone
+        alone || stacked
           ? 'grid gap-4'
           : `grid gap-4 ${listOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`
       }
     >
-      {standalone ? null : listOpen ? (
+      {alone ? null : listOpen ? (
         <Card
           title={`Captures · ${captures.length}`}
           icon={Network}

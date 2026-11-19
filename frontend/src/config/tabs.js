@@ -3,6 +3,7 @@ import {
   Braces,
   Bug,
   Crosshair,
+  FolderSearch,
   Globe,
   HardDrive,
   LayoutDashboard,
@@ -14,7 +15,6 @@ import {
   Network,
   ScrollText,
   TerminalSquare,
-  Workflow,
 } from 'lucide-react'
 import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
 import { buildDefaultShellsMap, SHELLS } from './shells.js'
@@ -22,7 +22,7 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
 
 /*
  * ============================================================================
- * ANALYSIS TAB REGISTRY — the single file to edit to add a new analysis tab.
+ * TAB REGISTRY — the tabs of an incident, and the kinds of evidence under Evidence.
  * ============================================================================
  *
  * Each entry describes a tab:
@@ -41,6 +41,11 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
  *  - defaultData: initial data structure for a new incident
  *  - permission:  shown only to the accounts that hold it (every reader
  *                 sees a tab that names none)
+ *  - evidence:    true for a KIND OF EVIDENCE (5.3): it is not on the tab bar
+ *                 but in the list of the Evidence tab, and its component is
+ *                 the page a file of that kind opens in. It is given
+ *                 `focus`, the file chosen in that list (null for the whole
+ *                 kind), and `evidence` (true), beside `incident`.
  *
  * To add a tab: create the component under src/components/tabs/ and add an
  * entry below, in its group. See README.md § "Add a new analysis tab".
@@ -57,7 +62,6 @@ const IocsTab = lazy(() => import('../components/tabs/iocs/IocsTab.jsx'))
 const TimelineTab = lazy(() => import('../components/tabs/timeline/TimelineTab.jsx'))
 const NetworkAnalysisTab = lazy(() => import('../components/tabs/network/NetworkAnalysisTab.jsx'))
 const UrlAnalysisTab = lazy(() => import('../components/tabs/urls/UrlAnalysisTab.jsx'))
-const AutomationTab = lazy(() => import('../components/tabs/automation/AutomationTab.jsx'))
 const ContextTab = lazy(() => import('../components/tabs/context/ContextTab.jsx'))
 const WarRoomTab = lazy(() => import('../components/tabs/warroom/WarRoomTab.jsx'))
 const WorkPlanTab = lazy(() => import('../components/tabs/workplan/WorkPlanTab.jsx'))
@@ -71,18 +75,6 @@ export const ANALYSIS_TABS = [
     icon: LayoutDashboard,
     component: SummaryTab,
     dataKey: 'summary',
-    defaultData: {},
-  },
-  {
-    id: 'timeline',
-    label: 'Timeline',
-    short: 'Timeline',
-    group: 'overview',
-    icon: ListTree,
-    component: TimelineTab,
-    dataKey: 'timelineView',
-    // The Timeline aggregates timestamped events from every other tab; it
-    // stores no data of its own (this key just holds view preferences, if any).
     defaultData: {},
   },
   {
@@ -104,16 +96,6 @@ export const ANALYSIS_TABS = [
     // What the playbooks of the incident do step by step, and its tasks: read when the tab opens.
   },
   {
-    id: 'automation',
-    label: 'Automation',
-    short: 'Auto',
-    group: 'overview',
-    icon: Workflow,
-    component: AutomationTab,
-    // The runs are the server's: nothing of this tab is kept in the incident.
-    permission: 'automation.run',
-  },
-  {
     id: 'context',
     label: 'Context',
     short: 'Ctx',
@@ -125,7 +107,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'iocs',
-    label: 'IOCs',
+    label: 'Indicators',
     short: 'IOCs',
     group: 'overview',
     icon: Crosshair,
@@ -136,7 +118,29 @@ export const ANALYSIS_TABS = [
     defaultData: {},
   },
   {
+    id: 'timeline',
+    label: 'Timeline',
+    short: 'Timeline',
+    group: 'overview',
+    icon: ListTree,
+    component: TimelineTab,
+    dataKey: 'timelineView',
+    // The Timeline aggregates timestamped events from every other tab; it
+    // stores no data of its own (this key just holds view preferences, if any).
+    defaultData: {},
+  },
+  {
+    id: 'evidence',
+    label: 'Evidence',
+    short: 'Files',
+    group: 'overview',
+    icon: FolderSearch,
+    // Drawn by the page itself (App.jsx): the list of every file, and the kind that opens it.
+    component: null,
+  },
+  {
     id: 'mail',
+    evidence: true,
     label: 'Mail Analysis',
     short: 'Mail',
     group: 'threats',
@@ -153,6 +157,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'malware',
+    evidence: true,
     label: 'Malware Analysis',
     short: 'Malware',
     group: 'threats',
@@ -169,6 +174,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'network',
+    evidence: true,
     label: 'Network Analysis',
     short: 'Network',
     group: 'threats',
@@ -185,6 +191,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'urls',
+    evidence: true,
     label: 'URL Analysis',
     short: 'URL',
     group: 'threats',
@@ -200,6 +207,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'endpoint',
+    evidence: true,
     label: 'Endpoint Artifacts',
     short: 'Endpoint',
     group: 'host',
@@ -215,6 +223,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'eventlogs',
+    evidence: true,
     label: 'Event Logs',
     short: 'Events',
     group: 'host',
@@ -230,6 +239,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'browser',
+    evidence: true,
     label: 'Browser Forensics',
     short: 'Browser',
     group: 'host',
@@ -246,6 +256,7 @@ export const ANALYSIS_TABS = [
   },
   {
     id: 'commands',
+    evidence: true,
     label: 'Command History',
     short: 'Commands',
     group: 'host',

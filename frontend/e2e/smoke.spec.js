@@ -52,6 +52,12 @@ test.afterAll(async () => {
   await page.close()
 })
 
+/** Open a kind of evidence of the incident on screen: the Evidence tab, then the kind in its list. */
+async function openEvidence(kind) {
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Evidence' }).getByRole('button', { name: kind, exact: true }).click()
+}
+
 test('first run creates the admin account', async () => {
   await page.goto('/')
   await expect(page.getByText('first run')).toBeVisible()
@@ -86,7 +92,7 @@ test('the tab bar fits the window and every tab keeps its name', async () => {
     await page.setViewportSize({ width, height: original.height })
     // Shorter labels, then icons only: the bar never needs to scroll sideways.
     await expect.poll(fits).toBe(true)
-    await expect(nav.getByRole('button', { name: 'Command History', exact: true })).toBeVisible()
+    await expect(nav.getByRole('button', { name: 'Evidence', exact: true })).toBeVisible()
   }
   await page.setViewportSize(original)
   // Controls side by side share one height.
@@ -97,7 +103,7 @@ test('the tab bar fits the window and every tab keeps its name', async () => {
 })
 
 test('evidence files dropped on the app fill the analysis tabs', async () => {
-  const current = page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')
+  const current = page.locator('nav[aria-label="Evidence"] [aria-current="page"]')
   const files = [
     ['Bookmarks', 'Browser Forensics', /^Bookmarks/],
     ['bash_history', 'Command History'],
@@ -129,7 +135,7 @@ test('the timeline merges the events of every tab', async () => {
 })
 
 test('the IOCs tab gathers the indicators and shows where they were seen', async () => {
-  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'IOCs', exact: true }).click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
   const attacker = page.getByRole('button', { name: '185.220.101.47', exact: true })
   await expect(attacker).toBeVisible({ timeout: 20_000 })
   await attacker.click()
@@ -157,7 +163,7 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
   await page.getByRole('dialog', { name: 'Indicator' }).getByRole('button', { name: 'Open', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Indicator' })).toHaveCount(0)
   expect(new URL(page.url()).pathname).toBe(before)
-  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'IOCs', exact: true }).click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
 })
 
 test('threat intelligence is configured in Settings, keys never shown', async () => {
@@ -199,7 +205,7 @@ test('threat intelligence is configured in Settings, keys never shown', async ()
 })
 
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {
-  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'IOCs', exact: true }).click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
   const value = page.getByRole('button', { name: '185.220.101.47', exact: true })
   await expect(value).toBeVisible({ timeout: 20_000 })
   await value.click({ button: 'right' })
@@ -226,7 +232,7 @@ test('a file dropped anywhere goes to the right tab', async () => {
   await expect(dialog).toContainText('Shell history')
   await expect(dialog.getByLabel('Shell')).toHaveValue('zsh')
   await dialog.getByRole('button', { name: 'Import' }).click()
-  await expect(page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')).toContainText('Command History')
+  await expect(page.locator('nav[aria-label="Evidence"] [aria-current="page"]')).toContainText('Command History')
   await expect(page.getByText('whoami /priv').first()).toBeVisible()
 })
 
@@ -268,10 +274,7 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   // With the real workers this test waits for rizin, two capa rule checks
   // (~10 s each) and a second capa run: more than the 60 s default.
   if (process.env.E2E_ANALYZER_URL || process.env.E2E_CAPA_URL) test.setTimeout(300_000)
-  await page
-    .locator('nav[aria-label="Analysis tabs"]')
-    .getByRole('button', { name: 'Malware Analysis', exact: true })
-    .click()
+  await openEvidence('Malware Analysis')
   await expect(page.getByText('No samples yet')).toBeVisible()
   await page.getByRole('button', { name: 'Upload malware samples' }).locator('input[type=file]').setInputFiles({
     name: 'invoice_0423.pdf.exe',
@@ -281,6 +284,31 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
   await expect(page.getByRole('list', { name: 'Samples' })).toContainText('invoice_0423.pdf.exe')
   await expect(page.getByText('PE32 executable, Intel 80386').first()).toBeVisible()
   await expect(page.locator('dd', { hasText: /^[0-9a-f]{64}/ }).first()).toBeVisible()
+
+  // The Evidence tab: seven tabs on the bar, the kinds of evidence in one list at the side.
+  const bar = page.locator('nav[aria-label="Analysis tabs"]')
+  await expect(bar.getByRole('button')).toHaveCount(7)
+  await expect(bar.locator('[aria-current="page"]')).toContainText('Evidence')
+  const evidence = page.getByRole('navigation', { name: 'Evidence' })
+  await expect(evidence.locator('[aria-current="page"]')).toContainText('Malware Analysis')
+  // A file of the list opens alone, in the page of its kind: the list of that kind steps aside.
+  const file = evidence.getByRole('list', { name: 'Files of Malware Analysis' }).getByRole('button')
+  await expect(file).toHaveText(['invoice_0423.pdf.exe'])
+  await file.click()
+  await expect(file).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('list', { name: 'Samples' })).toHaveCount(0)
+  await expect(page.locator('dd', { hasText: /^[0-9a-f]{64}/ }).first()).toBeVisible()
+  // The list is searched by the name of a file and by the kind.
+  const find = evidence.getByRole('searchbox', { name: 'Find a file of the incident' })
+  await find.fill('invoice')
+  await expect(evidence.getByRole('button', { name: 'Malware Analysis', exact: true })).toBeVisible()
+  await expect(evidence.getByRole('button', { name: 'Command History', exact: true })).toHaveCount(0)
+  await find.fill('nothing like this')
+  await expect(evidence).toContainText('No file matches')
+  await find.fill('')
+  // The name of the kind opens the whole of it again, with its own list.
+  await evidence.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Samples' })).toContainText('invoice_0423.pdf.exe')
   await page.getByRole('tab', { name: /^IOC/ }).click()
   await expect(page.locator('tbody tr', { hasText: 'gate.php' })).toBeVisible()
   await expect(page.getByText('process injection').first()).toBeVisible()
@@ -386,7 +414,7 @@ test('a reported e-mail is triaged: verdict, sandboxed body, attachment sent to 
   const dialog = page.getByRole('dialog', { name: 'Add a file' })
   await expect(dialog).toContainText('E-mail (.eml)')
   await dialog.getByRole('button', { name: 'Import' }).click()
-  await expect(page.locator('nav[aria-label="Analysis tabs"] [aria-current="page"]')).toContainText('Mail Analysis')
+  await expect(page.locator('nav[aria-label="Evidence"] [aria-current="page"]')).toContainText('Mail Analysis')
   await expect(page.getByRole('list', { name: 'Messages' })).toContainText('Your account will be suspended', {
     timeout: 60_000,
   })
@@ -450,10 +478,7 @@ test('attachments are previewed by the isolated workers', async () => {
     '--b2--',
     '',
   ].join('\r\n')
-  await page
-    .locator('nav[aria-label="Analysis tabs"]')
-    .getByRole('button', { name: 'Mail Analysis', exact: true })
-    .click()
+  await openEvidence('Mail Analysis')
   await page
     .getByRole('button', { name: 'Upload e-mails' })
     .locator('input[type=file]')
@@ -506,10 +531,7 @@ test('attachments are previewed by the isolated workers', async () => {
     await expect(remote.locator('tbody tr', { hasText: 'logo.png' }).first()).toContainText('blocked')
     await remote.getByRole('button', { name: 'Close' }).click()
     // The session becomes a capture of the incident.
-    await page
-      .locator('nav[aria-label="Analysis tabs"]')
-      .getByRole('button', { name: 'Network Analysis', exact: true })
-      .click()
+    await openEvidence('Network Analysis')
     await expect(page.getByRole('list', { name: 'Captures' })).toContainText('attachment secure.html', {
       timeout: 30_000,
     })
@@ -519,10 +541,7 @@ test('attachments are previewed by the isolated workers', async () => {
 })
 
 test('a packet capture opens as in Wireshark', async () => {
-  await page
-    .locator('nav[aria-label="Analysis tabs"]')
-    .getByRole('button', { name: 'Network Analysis', exact: true })
-    .click()
+  await openEvidence('Network Analysis')
   await page
     .getByRole('button', { name: 'Upload packet captures' })
     .locator('input[type=file]')
@@ -616,10 +635,7 @@ test('a file is analysed on its own, tagged, then linked to the incident', async
   await expect(linked).toBeVisible()
   // The incident now holds the sample.
   await linked.click()
-  await page
-    .locator('nav[aria-label="Analysis tabs"]')
-    .getByRole('button', { name: 'Malware Analysis', exact: true })
-    .click()
+  await openEvidence('Malware Analysis')
   await expect(page.getByRole('list', { name: 'Samples' })).toContainText('dropper.bin', { timeout: 20_000 })
 
   // Dropped again, the file is recognised as already analysed.
@@ -691,10 +707,7 @@ test('an address is scanned on its own, then linked to the incident', async () =
     .getByRole('button', { name: 'Link', exact: true })
     .click()
   await artifact.getByRole('button', { name: 'WKS-FINANCE-01 - m.rossi', exact: true }).click()
-  await page
-    .locator('nav[aria-label="Analysis tabs"]')
-    .getByRole('button', { name: 'URL Analysis', exact: true })
-    .click()
+  await openEvidence('URL Analysis')
   await expect(page.getByRole('list', { name: 'Addresses' })).toContainText('nik-e2e-scan.invalid/login', {
     timeout: 20_000,
   })
@@ -706,7 +719,7 @@ test('right-click works on lists, indicators and artifacts', async () => {
   const menu = page.getByRole('menu')
 
   // A sample in the incident's list: its own actions, and the flag.
-  await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  await openEvidence('Malware Analysis')
   const samples = page.getByRole('list', { name: 'Samples' })
   await samples.getByText('dropper.bin').click({ button: 'right' })
   await expect(menu).toContainText('Open as an artifact')
@@ -715,7 +728,7 @@ test('right-click works on lists, indicators and artifacts', async () => {
   await expect(samples.getByLabel('Flagged')).toHaveCount(1)
 
   // An indicator is flagged by hand from its menu, wherever it is shown.
-  await tabs.getByRole('button', { name: 'IOCs', exact: true }).click()
+  await tabs.getByRole('button', { name: 'Indicators', exact: true }).click()
   const address = page.getByRole('button', { name: '185.220.101.47', exact: true })
   await expect(address).toBeVisible({ timeout: 20_000 })
   // The list reloads after the flag above: a menu closes when the page moves under it.
@@ -1344,8 +1357,7 @@ test('a query filters the lists: typed, completed, built from rows; the filters 
 })
 
 test('keyboard shortcuts: F flags the row under the pointer, C comments, ? lists them', async () => {
-  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
-  await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  await openEvidence('Malware Analysis')
   const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
   const flag = sample.getByLabel('Flagged')
   // The tab may have just been drawn: read the flag once the sample is there.
@@ -1867,8 +1879,8 @@ test('a playbook runs on an incident: the approval is asked where the incident i
   await expect(banner).toBeHidden()
   await expect(page.getByRole('button', { name: 'Automations', exact: true })).toBeVisible()
 
-  // The incident's Automation tab lists its runs; a run opens on its page.
-  await tabs.getByRole('button', { name: 'Automation', exact: true }).click()
+  // The work plan of the incident lists its runs; a run opens on its page.
+  await tabs.getByRole('button', { name: 'Work plan', exact: true }).click()
   const onIncident = page.getByRole('table', { name: 'Runs on this incident' })
   await expect(onIncident.getByRole('row').filter({ hasText: 'Ask then note' })).toContainText('done', {
     timeout: 15_000,
@@ -3666,8 +3678,7 @@ test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus 
 })
 
 test('single-key shortcuts can be turned off and on again', async () => {
-  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
-  await tabs.getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  await openEvidence('Malware Analysis')
   const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
   const flag = sample.getByLabel('Flagged')
   // The row first: its flag is counted once the list is there.
@@ -3698,8 +3709,7 @@ test('single-key shortcuts can be turned off and on again', async () => {
 })
 
 test('an address from the evidence is opened only after asking', async () => {
-  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
-  await tabs.getByRole('button', { name: 'Browser Forensics', exact: true }).click()
+  await openEvidence('Browser Forensics')
   await page
     .getByRole('navigation', { name: 'Browser analysis sections' })
     .getByRole('button', { name: /^Bookmarks/ })

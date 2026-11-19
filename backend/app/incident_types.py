@@ -7,10 +7,17 @@ closed. Seven ship; ``Unclassified`` is the type of every incident that was
 given no other, so that nothing that exists changes.
 
     layout = {"sections": [{"id", "title", "key": bool, "columns": 1|2, "fields": [names]}],
-              "tabs": [ids in order], "hidden": [ids]}
+              "tabs": [ids in order], "hidden": [ids],
+              "grid": [{"id", "kind", "x", "y", "w", "h", "title"?, "section"?, "text"?, "playbooks"?}]}
 
 The first section flagged ``key`` is the side panel of the incident page. A
 type without a layout gets a generated one: its fields, in order.
+
+``grid`` (5.3) is the Summary itself, arranged like a dashboard on twelve
+columns: each widget is of a kind (``GRID_KINDS``), and a ``section`` widget
+shows one of the sections. A layout without a grid, which is every layout made
+before 5.3, is drawn by the page with a grid made from its sections, in their
+order: nothing is converted in the database, and nothing has to be.
 """
 
 from __future__ import annotations
@@ -29,8 +36,11 @@ from .core.security import now_iso
 UNCLASSIFIED = registry.UNCLASSIFIED
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,31}$")
 COLOURS = ("slate", "red", "amber", "emerald", "cyan", "blue", "violet", "pink")
-# The tabs of the incident page a layout can order and hide (frontend/src/config/tabs.js).
+# The tabs of the incident page a layout can order and hide (frontend/src/config/tabs.js). Since 5.3 the
+# analysis ones are kinds of evidence inside the Evidence tab, ordered and hidden there; "automation" is
+# still read, for the layouts of 4.x, and means nothing: its runs are in the work plan.
 TABS = (
+    "evidence",
     "summary",
     "timeline",
     "war_room",
@@ -48,6 +58,21 @@ TABS = (
     "commands",
 )
 SECTIONS_MAX, FIELDS_MAX, REASONS_MAX = 20, 100, 30
+# The widgets of the Summary (frontend/src/domain/layoutGrid.js): True for a kind that is on a page once.
+GRID_KINDS = {
+    "facts": True,
+    "section": False,
+    "stats": True,
+    "timeline": True,
+    "timers": True,
+    "evidence": True,
+    "war_room": True,
+    "work_plan": True,
+    "indicators": True,
+    "playbooks": False,
+    "note": False,
+}
+GRID_MAX, GRID_COLUMNS, GRID_HEIGHT, NOTE_MAX, BUTTONS_MAX = 30, 12, 12, 2000, 8
 # What the side panel shows of an incident of any type, and the Summary under it.
 KEY_FIELDS = ("status", "severity", "owner", "ticket", "occurred", "tlp")
 MORE_FIELDS = ("host", "username", "os", "category", "labels", "affected_hosts", "affected_users", "details")
@@ -230,7 +255,72 @@ def clean_layout(known: dict[str, Field], own: set[str], layout: Any) -> dict[st
         raise TypeError_("A tab is listed twice")
     if "summary" in hidden:
         raise TypeError_("The Summary cannot be hidden: it is where the fields are")
-    return {"sections": cleaned, "tabs": tabs, "hidden": sorted(set(hidden))}
+    out: dict[str, Any] = {"sections": cleaned, "tabs": tabs, "hidden": sorted(set(hidden))}
+    # The Summary as a grid: kept only when one was arranged.
+    grid = clean_grid(layout.get("grid"), cleaned)
+    if grid:
+        out["grid"] = grid
+    return out
+
+
+def _whole(value: Any, low: int, high: int, what: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value:
+        raise TypeError_(f"{what} of a widget is a whole number")
+    if not low <= int(value) <= high:
+        raise TypeError_(f"{what} of a widget is between {low} and {high}")
+    return int(value)
+
+
+def clean_grid(grid: Any, sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The widgets of the Summary: each of a kind there is, inside the twelve columns, a section
+    widget for a section of this layout that is not the side panel."""
+    if grid is None:
+        return []
+    if not isinstance(grid, list) or len(grid) > GRID_MAX:
+        raise TypeError_(f"The page of a type has {GRID_MAX} widgets at most")
+    shown = {section["id"] for section in sections if not section["key"]}
+    cleaned: list[dict[str, Any]] = []
+    ids: set[str] = set()
+    once: set[str] = set()
+    for index, widget in enumerate(grid):
+        if not isinstance(widget, dict):
+            raise TypeError_("A widget is an object with a kind and a place")
+        kind = str(widget.get("kind") or "")
+        if kind not in GRID_KINDS:
+            raise TypeError_(f'There is no widget of the kind "{kind}": ' + ", ".join(GRID_KINDS))
+        if GRID_KINDS[kind] and kind in once:
+            raise TypeError_(f'The widget "{kind}" is on a page once')
+        once.add(kind)
+        widget_id = _text(widget.get("id"), 40) or f"{kind}-{index + 1}"
+        if widget_id in ids:
+            raise TypeError_("Two widgets have the same id")
+        ids.add(widget_id)
+        width = _whole(widget.get("w"), 1, GRID_COLUMNS, "The width")
+        out: dict[str, Any] = {
+            "id": widget_id,
+            "kind": kind,
+            "x": _whole(widget.get("x"), 0, GRID_COLUMNS - width, "The column"),
+            "y": _whole(widget.get("y"), 0, 10_000, "The row"),
+            "w": width,
+            "h": _whole(widget.get("h"), 1, GRID_HEIGHT, "The height"),
+        }
+        title = _text(widget.get("title"), 80)
+        if title:
+            out["title"] = title
+        if kind == "section":
+            section = str(widget.get("section") or "")
+            if section not in shown:
+                raise TypeError_(f'A widget shows the section "{section}", which this layout does not have')
+            out["section"] = section
+        elif kind == "note":
+            out["text"] = str(widget.get("text") or "")[:NOTE_MAX]
+        elif kind == "playbooks":
+            named = widget.get("playbooks") or []
+            if not isinstance(named, list) or len(named) > BUTTONS_MAX:
+                raise TypeError_(f"A widget has {BUTTONS_MAX} playbook buttons at most")
+            out["playbooks"] = list(dict.fromkeys(str(item) for item in named if item))
+        cleaned.append(out)
+    return cleaned
 
 
 def generated_layout(known: dict[str, Field], kind: IncidentType | None) -> dict[str, Any]:

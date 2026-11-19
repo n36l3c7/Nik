@@ -61,11 +61,13 @@ import CloseIncidentDialog from './components/fields/CloseIncidentDialog.jsx'
 import IncidentPanel from './components/fields/IncidentPanel.jsx'
 import { useFields } from './context/FieldsContext.jsx'
 import { orderTabs, typeOf } from './domain/fields.js'
+import { EVIDENCE_TAB, resolveTab } from './domain/evidence.js'
 import ResizeHandle, { useResizablePane } from './components/ui/ResizeHandle.jsx'
 
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
 const TasksPage = lazy(() => import('./components/tasks/TasksPage.jsx'))
+const EvidenceTab = lazy(() => import('./components/tabs/evidence/EvidenceTab.jsx'))
 const DashboardsPage = lazy(() => import('./components/dashboards/DashboardsPage.jsx'))
 const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage.jsx'))
 
@@ -552,13 +554,18 @@ export default function App() {
   // The tabs of the incident on screen: those its type shows, in the order its type gives them.
   const { types: incidentTypes } = useFields()
   const activeType = typeOf(incidentTypes, activeIncident ?? activeSummary)
+  const allTabs = useMemo(() => orderTabs(visibleTabs(can), activeType?.layout), [can, activeType])
+  // The bar holds the tabs; the kinds of evidence are inside the Evidence tab, in the same order.
   const shownTabs = useMemo(() => {
-    const ordered = orderTabs(visibleTabs(can), activeType?.layout)
-    ordered.ordered = Boolean(activeType?.layout?.tabs?.length)
-    return ordered
-  }, [can, activeType])
-  // A tab the account may not see (its roles changed, a link named it), or that the type hides, falls back to the first.
-  const activeTab = shownTabs.find((tab) => tab.id === activeTabId) ?? shownTabs[0] ?? getTabById(ANALYSIS_TABS[0].id)
+    const bar = allTabs.filter((tab) => !tab.evidence)
+    bar.ordered = Boolean(activeType?.layout?.tabs?.length)
+    return bar
+  }, [allTabs, activeType])
+  const evidenceKinds = useMemo(() => allTabs.filter((tab) => tab.evidence), [allTabs])
+  // A tab the account may not see (its roles changed, a link named it), or that the type hides, falls back to the
+  // first; the address of a kind of evidence (mail, malware…) is the Evidence tab on that kind.
+  const resolved = resolveTab(allTabs, activeTabId)
+  const activeTab = resolved.bar ?? getTabById(ANALYSIS_TABS[0].id)
   const ActiveTabComponent = activeTab.component
   // The tab is remembered for each type of incident: a phishing case opens on Mail if that is where one works.
   const typeKey = activeType?.id ?? null
@@ -657,7 +664,7 @@ export default function App() {
         ]
       : []),
     ...(activeIncident
-      ? shownTabs.map((tab) => ({
+      ? allTabs.map((tab) => ({
           id: `tab:${tab.id}`,
           label: `Go to ${tab.label}`,
           icon: tab.icon,
@@ -918,7 +925,16 @@ export default function App() {
                     }
                   >
                     <ErrorBoundary resetKey={`${activeTabId}:${activeIncident.id}`}>
-                      <ActiveTabComponent incident={activeIncident} />
+                      {activeTab.id === EVIDENCE_TAB ? (
+                        <EvidenceTab
+                          incident={activeIncident}
+                          kinds={evidenceKinds}
+                          kind={resolved.kind}
+                          onKind={chooseTab}
+                        />
+                      ) : (
+                        <ActiveTabComponent incident={activeIncident} />
+                      )}
                     </ErrorBoundary>
                   </Suspense>
                 ) : activeLoading ? (

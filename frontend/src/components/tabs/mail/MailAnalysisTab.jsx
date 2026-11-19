@@ -65,7 +65,7 @@ function MessageList({ messages, selected, onSelect, flags = {}, onMenu }) {
   )
 }
 
-export default function MailAnalysisTab({ incident }) {
+export default function MailAnalysisTab({ incident, focus = null, evidence = false }) {
   const { attachMail, detachMail, attachSample } = useIncidents()
   const { openArtifact, refresh: refreshArtifacts } = useArtifacts()
   // An artifact opened on its own (ArtifactPage): `incident` is a stand-in
@@ -75,7 +75,14 @@ export default function MailAnalysisTab({ incident }) {
   const { requests, take, goTo } = useNavigation()
   const messages = incident.data.mail?.messages ?? NO_MESSAGES
 
-  const [selected, setSelected] = useState(messages[0]?.sha256 ?? null)
+  const [selected, setSelected] = useState(focus ?? messages[0]?.sha256 ?? null)
+  // In the Evidence tab a file is chosen in the list at the side: it is shown alone.
+  useEffect(() => {
+    if (focus) setSelected(focus)
+  }, [focus])
+  const alone = standalone || Boolean(focus)
+  // The whole kind, inside the Evidence tab: its list above the file, which keeps the width of the page.
+  const stacked = evidence && !alone
   const [details, setDetails] = useState({})
   const [detailErrors, setDetailErrors] = useState({})
   const [progress, setProgress] = useState(null)
@@ -250,12 +257,12 @@ export default function MailAnalysisTab({ incident }) {
   return (
     <div
       className={
-        standalone
+        alone || stacked
           ? 'grid gap-4'
           : `grid gap-4 ${listOpen ? 'lg:grid-cols-[280px_minmax(0,1fr)]' : 'lg:grid-cols-[auto_minmax(0,1fr)]'}`
       }
     >
-      {standalone ? null : listOpen ? (
+      {alone ? null : listOpen ? (
         <Card
           title={`E-mails · ${messages.length}`}
           icon={Mail}
