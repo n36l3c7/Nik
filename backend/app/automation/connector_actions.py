@@ -139,6 +139,11 @@ def connections_of(db: OrmSession, connector_id: str) -> list[Connection]:
     return list(db.scalars(select(Connection).where(Connection.connector_id == connector_id).order_by(Connection.name)))
 
 
+def enabled_connectors(db: OrmSession) -> set[str]:
+    """The connectors that have an instance that is on: the ones whose commands can be used."""
+    return set(db.scalars(select(Connection.connector_id).where(Connection.enabled.is_(True)).distinct()))
+
+
 def host_of(connector: ConnectorFile, config: dict[str, Any]) -> str | None:
     """``host`` or ``host:port`` of a connection, as the egress policy lists it; None when it has no address."""
     # With the defaults of what was left out, as the runtime reads it (a region that has a default).
@@ -157,13 +162,15 @@ def host_of(connector: ConnectorFile, config: dict[str, Any]) -> str | None:
 
 
 def find_connection(db: OrmSession, connector_id: str, wanted: str) -> Connection | None:
-    """The connection a node names (by id or by name); the only one of the connector when it names none."""
+    """The instance a node names (by id or by name), on or off; when it names none, the only one of
+    the connector that is on."""
     rows = db.scalars(
         select(Connection).where(Connection.connector_id == connector_id).order_by(func.lower(Connection.name))
     ).all()
     if wanted:
         return next((row for row in rows if wanted in (row.id, row.name)), None)
-    return rows[0] if len(rows) == 1 else None
+    on = [row for row in rows if row.enabled]
+    return on[0] if len(on) == 1 else None
 
 
 def runtime_for(
@@ -220,8 +227,13 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         raise actions.ActionError("This command is not in the connector any more", retry=False)
     connection = find_connection(db, connector_id, call.connection)
     if connection is None:
-        what = f'The connection "{call.connection}" does not exist' if call.connection else "Choose a connection"
+        what = f'The instance "{call.connection}" does not exist' if call.connection else "Choose an instance"
         raise actions.ActionError(f"{what}: {connector.name} needs one to know where to send", retry=False)
+    if not connection.enabled:
+        raise actions.ActionError(
+            f'The instance "{connection.name}" of {connector.name} is off: turn it on in Settings, Connectors',
+            retry=False,
+        )
 
     args = {key: value for key, value in call.args.items() if value is not None}
     args, decided = outbound.guarded(call, args)

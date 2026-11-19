@@ -170,7 +170,7 @@ def test_what_a_playbook_uses_cannot_be_removed(admin: TestClient):
         assert res.status_code == 409 and res.json()["detail"] == "Used by: Uses Acme"
     # The library of the canvas lists the connections of each connector.
     assert admin.get(f"{BASE}/catalog").json()["connections"] == {
-        "acme": [{"id": made["id"], "name": "Acme production"}]
+        "acme": [{"id": made["id"], "name": "Acme production", "enabled": True}]
     }
     assert admin.delete(f"{BASE}/playbooks/{playbook_id}").status_code == 204
     # A connector goes with its connections.
@@ -188,7 +188,13 @@ def test_who_builds_playbooks_sees_the_names_of_connections_and_no_more(admin: T
     with TestClient(fastapi_app) as other:
         names = other.get(f"{BASE}/connections", headers=builder).json()["connections"]
         assert names == [
-            {"id": made["id"], "name": "Acme production", "connector": "acme", "connectorName": "Acme Desk"}
+            {
+                "id": made["id"],
+                "name": "Acme production",
+                "connector": "acme",
+                "connectorName": "Acme Desk",
+                "enabled": True,
+            }
         ]
         assert other.get(f"{BASE}/connections", headers=viewer).status_code == 403
         assert other.get(f"{BASE}/connectors", headers=builder).status_code == 403
@@ -232,3 +238,49 @@ def test_the_secrets_of_automation_follow_a_change_of_the_key(admin: TestClient,
         from app.automation import outbound
 
         assert outbound.smtp_settings(db)["password"] == "smtp-pass"
+
+
+# --------------------------------------------------------------------------- #
+# Instances (5.1)                                                             #
+# --------------------------------------------------------------------------- #
+def test_a_connector_has_instances_and_is_enabled_when_one_is_on(admin: TestClient):
+    install(admin)
+    listed = admin.get(f"{BASE}/connectors").json()["connectors"][0]
+    assert (listed["instances"], listed["instancesOn"], listed["enabled"]) == (0, 0, False)
+
+    # An instance is made under its connector; it is the connection of before, and on.
+    body = {"config": {"url": "https://desk.example.com/api"}, "secrets": {"username": "svc", "password": "p"}}
+    first = admin.post(f"{BASE}/connectors/acme/instances", json={"name": "Production", **body})
+    assert first.status_code == 201, first.text
+    assert first.json()["enabled"] is True and first.json()["connector"] == "acme"
+    second = admin.post(f"{BASE}/connectors/acme/instances", json={"name": "Test", "enabled": False, **body})
+    assert second.status_code == 201 and second.json()["enabled"] is False
+    assert admin.post(f"{BASE}/connectors/acme/instances", json={"name": "production", **body}).status_code == 400
+    assert admin.post(f"{BASE}/connectors/nope/instances", json={"name": "x", **body}).status_code == 404
+
+    names = [(i["name"], i["enabled"]) for i in admin.get(f"{BASE}/connectors/acme/instances").json()["instances"]]
+    assert names == [("Production", True), ("Test", False)]
+    assert admin.get(f"{BASE}/connectors/nope/instances").status_code == 404
+    listed = admin.get(f"{BASE}/connectors").json()["connectors"][0]
+    assert (listed["instances"], listed["instancesOn"], listed["enabled"], listed["connections"]) == (2, 1, True, 2)
+    # Who builds playbooks sees which instance is on, to choose one.
+    assert {c["name"]: c["enabled"] for c in admin.get(f"{BASE}/connections").json()["connections"]} == {
+        "Production": True,
+        "Test": False,
+    }
+
+    # Turned off: it keeps what it was set up with, and the connector is enabled no more.
+    off = admin.put(f"{BASE}/connections/{first.json()['id']}", json={"enabled": False}).json()
+    assert off["enabled"] is False and off["secrets"] == {"username": True, "password": True}
+    assert off["host"] == "desk.example.com"
+    assert admin.get(f"{BASE}/connectors").json()["connectors"][0]["enabled"] is False
+    audit = admin.get("/api/audit", params={"q": "action:connection.update"}).json()["entries"]
+    assert any("turned off" in entry["details"] for entry in audit)
+    with SessionLocal() as db:
+        assert ca.enabled_connectors(db) == set()
+        db.get(Connection, second.json()["id"]).enabled = True
+        db.commit()
+        assert ca.enabled_connectors(db) == {"acme"}
+        # A node that names no instance takes the only one that is on.
+        assert ca.find_connection(db, "acme", "").name == "Test"
+        assert ca.find_connection(db, "acme", "Production").enabled is False

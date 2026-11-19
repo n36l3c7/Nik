@@ -249,6 +249,17 @@ def test_a_command_of_a_connector_names_its_connection_and_writes_to_the_context
     incident(admin)
     desk.answer("desk.example.com", 200, {"id": "t-9", "state": "open"}, path="/tickets/T-9")
     # A connector id may hold a dash; with two connections, which one is asked.
+    # An instance that is off is not one a command can use.
+    with SessionLocal() as db:
+        for row in db.scalars(select(Connection)):
+            row.enabled = row.name != "Desk test"
+        db.commit()
+    refused = typed(admin, '!acme-desk-get-ticket number=T-1 using="Desk test"').json()["detail"]
+    assert refused.startswith("There is no such connection")
+    with SessionLocal() as db:
+        for row in db.scalars(select(Connection)):
+            row.enabled = True
+        db.commit()
     which = typed(admin, "!acme-desk-get-ticket number=T-9")
     assert which.json()["detail"] == 'Which connection? using="Desk" or using="Desk test"'
     assert typed(admin, "!acme-desk-get-ticket number=T-9 using=Nope").json()["detail"] == (

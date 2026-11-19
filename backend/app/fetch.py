@@ -110,7 +110,9 @@ def resume(db: OrmSession, connection: Connection, now: float) -> None:
 def due(db: OrmSession, now: float) -> list[str]:
     """The connections whose time to fetch has come."""
     found = []
-    for connection in db.scalars(select(Connection).where(Connection.fetch_enabled.is_(True))):
+    # An instance that is off fetches nothing, and goes on from where it was when it is on again.
+    wanted = select(Connection).where(Connection.fetch_enabled.is_(True), Connection.enabled.is_(True))
+    for connection in db.scalars(wanted):
         status = status_of(connection)
         if status.get("state") == "paused":
             continue

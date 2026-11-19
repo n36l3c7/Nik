@@ -287,9 +287,13 @@ def _arguments(declared: list[dict], parsed: Parsed) -> dict[str, Any]:
 
 
 def _connection(db: OrmSession, connector_id: str, using: str) -> str:
-    rows = db.scalars(select(Connection).where(Connection.connector_id == connector_id).order_by(Connection.name)).all()
+    rows = db.scalars(
+        select(Connection)
+        .where(Connection.connector_id == connector_id, Connection.enabled.is_(True))
+        .order_by(Connection.name)
+    ).all()
     if not rows:
-        raise CommandError("This command needs a connection, and its connector has none yet")
+        raise CommandError("This command needs an instance of its connector that is on, and there is none")
     if using:
         found = next((row for row in rows if row.name.lower() == using.lower()), None)
         if found is None:

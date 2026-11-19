@@ -194,9 +194,10 @@ def updates(db: OrmSession, shape: dict) -> list[dict[str, Any]]:
     return found
 
 
-def connections(db: OrmSession) -> dict[str, list[dict[str, str]]]:
-    """connector id → its connections (id and name), for the inspector of a connector's node."""
-    found: dict[str, list[dict[str, str]]] = {}
-    for row in db.execute(select(Connection.id, Connection.name, Connection.connector_id).order_by(Connection.name)):
-        found.setdefault(row[2], []).append({"id": row[0], "name": row[1]})
+def connections(db: OrmSession) -> dict[str, list[dict[str, Any]]]:
+    """connector id → its instances (id, name, whether it is on), for the inspector of a connector's node."""
+    found: dict[str, list[dict[str, Any]]] = {}
+    wanted = select(Connection.id, Connection.name, Connection.connector_id, Connection.enabled)
+    for row in db.execute(wanted.order_by(Connection.name)):
+        found.setdefault(row[2], []).append({"id": row[0], "name": row[1], "enabled": bool(row[3])})
     return found

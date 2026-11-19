@@ -101,7 +101,7 @@ def _parts(db: OrmSession, state: dict[str, Any]) -> tuple[Connection, Connector
 def mirroring_connections(db: OrmSession) -> list[dict[str, Any]]:
     """The connections an incident can be mirrored with, and what each can do."""
     found = []
-    for connection in db.scalars(select(Connection).order_by(Connection.name)):
+    for connection in db.scalars(select(Connection).where(Connection.enabled.is_(True)).order_by(Connection.name)):
         row = db.get(Connector, connection.connector_id)
         connector = store.parsed(row) if row is not None else None
         if connector is None or connector.mirror is None:
