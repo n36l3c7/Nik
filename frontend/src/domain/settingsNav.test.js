@@ -52,7 +52,13 @@ test('an account sees the sections its permissions open, and a group with none i
     visibleSettings(canOf('audit.read')).map((group) => group.id),
     ['access', 'system'],
   )
-  assert.deepEqual(ids(visibleSettings(canOf('rules.manage'))), ['yara', 'capa', 'flirt', 'account'])
+  assert.deepEqual(ids(visibleSettings(canOf('rules.manage'))), [
+    'yara',
+    'capa',
+    'flirt',
+    'scriptSignatures',
+    'account',
+  ])
   assert.deepEqual(ids(visibleSettings(() => false)), ['account'])
 })
 
@@ -75,7 +81,7 @@ test('the search box narrows the sections by label, group and keywords', () => {
   const all = visibleSettings(() => true)
   assert.deepEqual(ids(filterSettings(all, '')), ids(all))
   assert.deepEqual(ids(filterSettings(all, 'yara')), ['yara'])
-  assert.deepEqual(ids(filterSettings(all, 'RULE sets')), ['yara', 'capa', 'flirt']) // the group's name
+  assert.deepEqual(ids(filterSettings(all, 'RULE sets')), ['yara', 'capa', 'flirt', 'scriptSignatures']) // the group's name
   assert.deepEqual(ids(filterSettings(all, 'password')), ['account'])
   assert.deepEqual(ids(filterSettings(all, 'api keys')), ['intel', 'apikeys'])
   assert.deepEqual(ids(filterSettings(all, 'restore')), ['backup'])

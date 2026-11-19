@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Script signatures can be edited.** The signatures the Scripts tab of URL
+  Analysis checks are rows now (*Settings → Rule sets → Script signatures*,
+  `/api/script-signatures`, `rules.manage`): one Nik ships is turned off,
+  changed and put back as it shipped, never deleted; your own are added
+  beside them. A pattern is tried on long hostile texts before it is saved,
+  and can be tried on a piece of code. Changes apply to the scans made from
+  then on.
+
+### Changed
+
+- A signature is matched with a time limit: one that takes more than half a
+  second on a script is left out of that script and named in what the scan
+  returns (`timedOut`), instead of holding the scan.
+
 ## [4.6.0] - 2026-11-19
 
 Additive: nothing that worked with 4.5 changes.

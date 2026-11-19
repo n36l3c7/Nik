@@ -162,6 +162,13 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/dashboards/{dashboard_id}/export"): ("read",),
     ("POST", "/api/dashboards/{dashboard_id}/report"): ("read",),
     ("PUT", "/api/dashboards/{dashboard_id}/sharing"): ("dashboards.share",),
+    # Script signatures: read with the rules, changed by who manages them.
+    ("GET", "/api/script-signatures"): ("read", "rules.manage"),
+    ("POST", "/api/script-signatures"): ("rules.manage",),
+    ("POST", "/api/script-signatures/validate"): ("rules.manage",),
+    ("PUT", "/api/script-signatures/{signature_id}"): ("rules.manage",),
+    ("POST", "/api/script-signatures/{signature_id}/restore"): ("rules.manage",),
+    ("DELETE", "/api/script-signatures/{signature_id}"): ("rules.manage",),
     # Content packs.
     ("GET", "/api/packs"): ("content.manage",),
     ("GET", "/api/packs/items"): ("content.manage",),

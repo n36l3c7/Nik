@@ -772,6 +772,25 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET/POST /api/script-signatures</code> · <code>PUT/DELETE …/{id}</code> ·
+                <code>POST …/{id}/restore</code> · <code>POST …/validate</code>
+              </td>
+              <td>
+                The signatures the scripts of a scanned page are checked against:
+                <code>{key, title, severity: "high" | "medium" | "low", points, pattern, also, enabled}</code>, where
+                <code>also</code> is a second pattern that must match somewhere in the script too. One Nik ships
+                (<code>builtin</code>; <code>changed</code> when it differs from what ships) keeps its key, is not
+                deleted (<code>409</code>) and is put back with <code>restore</code>. A pattern that does not compile,
+                matches an empty text or takes too long on a long text is refused with
+                <code>400 {detail: {message, field}}</code>. <code>validate</code> takes the same body and
+                <code>code</code>: <code>{ok, problem?, field?, matches?, finding?, timedOut?}</code>. They apply to the
+                scans made from then on; a script a signature took more than half a second on lists it in
+                <code>timedOut</code> (<code>rules.manage</code> to change; listed with <code>read</code> or
+                <code>rules.manage</code>).
+              </td>
+            </tr>
+            <tr>
               <td><code>GET/POST /api/flirt-signatures</code> · <code>PUT/DELETE …/{id}</code></td>
               <td>
                 FLIRT signatures (<code>.sig</code> or <code>.pat</code>, multipart <code>name</code> +

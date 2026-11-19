@@ -73,6 +73,7 @@ from .routers import (
     query,
     report,
     samples,
+    script_signatures,
     search,
     settings,
     storage,
@@ -188,9 +189,13 @@ def on_startup() -> None:
         try:
             # The types Nik ships too, each added once.
             from . import dashboards as boards
+            from . import jsanalysis
             from . import lists as named_lists
+            from .core.security import now_iso as stamp
 
-            if field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db) + boards.seed(db):
+            seeded = field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db) + boards.seed(db)
+            # The script signatures Nik ships (those nobody changed here follow a release).
+            if seeded + jsanalysis.seed(db, stamp()):
                 db.commit()
         except IntegrityError:
             db.rollback()  # another process of the server added them at the same moment
@@ -295,6 +300,7 @@ app.include_router(preprocess.router, prefix="/api")
 app.include_router(mirror.router, prefix="/api")
 app.include_router(dashboards.router, prefix="/api")
 app.include_router(packs.router, prefix="/api")
+app.include_router(script_signatures.router, prefix="/api")
 app.include_router(report.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(samples.router, prefix="/api")

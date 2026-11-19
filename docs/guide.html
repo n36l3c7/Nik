@@ -1201,6 +1201,17 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>Your own rules and signatures for Malware Analysis (the Rules role, or an admin).</td>
             </tr>
             <tr>
+              <td>Script signatures</td>
+              <td>
+                What the scripts of a scanned page are checked against in <em>URL Analysis → Scripts</em>: a regular
+                expression, a severity, and the points it adds to the score of the scan. A signature Nik ships can be
+                turned off, changed and put back as it shipped; your own are added beside them. A pattern is tried on
+                long texts before it is saved, so that it cannot stall a scan, and can be tried on a piece of code
+                first. Changes apply to the scans made from then on: <em>Analyse again</em> on an address reads it with
+                the signatures as they are now (the Rules role, or an admin).
+              </td>
+            </tr>
+            <tr>
               <th colspan="2" scope="colgroup">Incidents</th>
             </tr>
             <tr>
@@ -1426,7 +1437,7 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             </tr>
             <tr>
               <td>Rules</td>
-              <td>Add, change and remove the YARA rules, capa rules and FLIRT signatures.</td>
+              <td>Add, change and remove the YARA rules, capa rules, FLIRT signatures and script signatures.</td>
             </tr>
             <tr>
               <td>Audit</td>

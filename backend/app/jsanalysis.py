@@ -7,8 +7,11 @@ and recognised when it is a well-known library.
 
 A signature is a regular expression with a severity and the points it adds
 to the scan's score; some need a second expression to match too (a key
-listener is a keylogger only if the script also sends something out). The
-set is built in; editing it from Settings is on the roadmap.
+listener is a keylogger only if the script also sends something out). Nik
+ships the set below; it is kept in ``script_signatures``, where whoever
+manages rules turns one off, changes it or adds their own
+(``load_signatures``). A signature is matched with a time limit: one that
+takes too long on a script is left out of that script, never of the scan.
 """
 
 from __future__ import annotations
@@ -16,8 +19,12 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
+
+import regex
 
 from .iocs import normalize, text_iocs
 
@@ -32,20 +39,36 @@ _SENDS = (
 )
 
 
+SEVERITIES = ("high", "medium", "low")
+KEY_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,60}$")
+PATTERN_MAX = 2000
+MATCH_TIMEOUT = 0.5  # seconds one signature is given on one script
+_FLAGS = regex.IGNORECASE | regex.DOTALL
+CACHE_SECONDS = 5.0
+
+
 @dataclass(frozen=True)
 class Signature:
     id: str
     severity: str  # high | medium | low
     points: int
     title: str
-    pattern: re.Pattern[str]
-    also: re.Pattern[str] | None = None  # must match somewhere in the script too
+    pattern: Any  # compiled with the ``regex`` module, which can be given a time limit
+    also: Any = None  # must match somewhere in the script too
+    source: str = ""  # the patterns as they were written
+    also_source: str = ""
 
 
 def _sig(key: str, severity: str, points: int, title: str, pattern: str, also: str | None = None) -> Signature:
-    flags = re.IGNORECASE | re.DOTALL
     return Signature(
-        key, severity, points, title, re.compile(pattern, flags), re.compile(also, flags) if also else None
+        key,
+        severity,
+        points,
+        title,
+        regex.compile(pattern, _FLAGS),
+        regex.compile(also, _FLAGS) if also else None,
+        pattern,
+        also or "",
     )
 
 
@@ -228,13 +251,23 @@ def library(code: str, host: str) -> str | None:
     return None
 
 
-def findings(code: str) -> list[dict[str, Any]]:
+def findings(
+    code: str, signatures: Iterable[Signature] | None = None, timed_out: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Every signature that matches, with where and what: ``{id, severity,
-    points, title, start, end, line, excerpt}`` (the first match of each)."""
+    points, title, start, end, line, excerpt}`` (the first match of each).
+
+    ``signatures`` are the ones in use (``load_signatures(db)``); Nik's own when left out. A signature
+    that does not finish in ``MATCH_TIMEOUT`` on this script is left out of it and named in ``timed_out``."""
     found = []
-    for signature in SIGNATURES:
-        match = signature.pattern.search(code)
-        if not match or (signature.also is not None and not signature.also.search(code)):
+    for signature in SIGNATURES if signatures is None else signatures:
+        try:
+            match = signature.pattern.search(code, timeout=MATCH_TIMEOUT)
+            if not match or (signature.also is not None and not signature.also.search(code, timeout=MATCH_TIMEOUT)):
+                continue
+        except TimeoutError:
+            if timed_out is not None:
+                timed_out.append(signature.id)
             continue
         start, end = match.start(), min(match.end(), match.start() + 400)
         left = max(0, start - 20)
@@ -266,12 +299,21 @@ def indicators(code: str, limit: int = 40) -> list[dict[str, str]]:
     return [{"type": kind, "value": value} for kind, value in seen]
 
 
-def analyse(code: str, *, kind: str, url: str = "", host: str = "", page_host: str = "") -> dict[str, Any]:
+def analyse(
+    code: str,
+    *,
+    kind: str,
+    url: str = "",
+    host: str = "",
+    page_host: str = "",
+    signatures: Iterable[Signature] | None = None,
+) -> dict[str, Any]:
     """What the Scripts tab lists for one script (without its code)."""
     raw = code.encode("utf-8", "replace")
     kept = code[:MAX_CODE]
     known = library(kept, host)
-    found = findings(kept)
+    slow: list[str] = []
+    found = findings(kept, signatures, slow)
     score = obfuscation(kept)
     if score >= 25 and not any(f["id"].startswith("obf.") for f in found) and not known:
         found.append(
@@ -301,6 +343,8 @@ def analyse(code: str, *, kind: str, url: str = "", host: str = "", page_host: s
         "findings": found,
         "severity": worst,
         "iocs": indicators(kept),
+        # The signatures that took too long on this script and were left out of it.
+        **({"timedOut": slow} if slow else {}),
     }
 
 
@@ -329,3 +373,225 @@ def score_findings(scripts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         more = f" and {len(where) - 1} more" if len(where) > 1 else ""
         out.append({**entry, "text": f"script {where[0]}{more}: {title[0].lower()}{title[1:]}"})
     return out
+
+
+# --------------------------------------------------------------------------- #
+# The signatures in use: Nik's own, as changed here, and the ones added here  #
+# --------------------------------------------------------------------------- #
+class SignatureError(ValueError):
+    """A signature that cannot be saved: a sentence safe to show, and the field it is about."""
+
+    def __init__(self, message: str, field: str = ""):
+        super().__init__(message)
+        self.message = message
+        self.field = field
+
+
+BUILTIN = {signature.id: signature for signature in SIGNATURES}
+# Long texts a pattern is tried on before it is saved: the shapes that make a careless expression
+# take for ever (one character repeated, nested brackets, quotes never closed, a minified line).
+_ADVERSARIAL = (
+    "a" * 40_000 + "!",
+    " " * 40_000 + "x",
+    "(" * 20_000 + ")" * 20_000,
+    "'" + "\\'" * 20_000,
+    "aA1_" * 10_000 + "\n",
+    'var a="' + "x" * 30_000 + '";' + "b=a+a;" * 2_000,
+    "0x41," * 8_000 + "\n" + "<" * 8_000,
+)
+
+
+def clean(body: dict[str, Any]) -> dict[str, Any]:
+    """What a signature is saved with, checked. Raises ``SignatureError``."""
+    key = str(body.get("key") or "").strip()
+    if not KEY_RE.match(key):
+        raise SignatureError(
+            "A key is a lower-case letter, then lower-case letters, digits, dots, - or _ (2 to 61)", "key"
+        )
+    title = " ".join(str(body.get("title") or "").split())[:200]
+    if not title:
+        raise SignatureError("A signature needs a title: what it says of a script that matches", "title")
+    severity = str(body.get("severity") or "")
+    if severity not in SEVERITIES:
+        raise SignatureError("A severity is high, medium or low", "severity")
+    points = body.get("points")
+    if isinstance(points, bool) or not isinstance(points, int) or not 0 <= points <= 100:
+        raise SignatureError("The points are a whole number from 0 to 100", "points")
+    pattern = str(body.get("pattern") or "")
+    also = str(body.get("also") or "")
+    if not pattern.strip():
+        raise SignatureError("A signature needs a pattern", "pattern")
+    for name, source in (("pattern", pattern), ("also", also)):
+        if len(source) > PATTERN_MAX:
+            raise SignatureError(f"A pattern is {PATTERN_MAX} characters at most", name)
+        if source:
+            problem = pattern_problem(source)
+            if problem:
+                raise SignatureError(problem, name)
+    return {
+        "key": key,
+        "title": title,
+        "severity": severity,
+        "points": points,
+        "pattern": pattern,
+        "also": also,
+        "enabled": bool(body.get("enabled", True)),
+    }
+
+
+def pattern_problem(source: str) -> str | None:
+    """Why a pattern cannot be used: it does not compile, it matches nothing at all of a text (the
+    empty text), or it takes too long on a long hostile one."""
+    try:
+        compiled = regex.compile(source, _FLAGS)
+    except regex.error as error:
+        return f"The pattern cannot be read: {error}"
+    if compiled.search("") is not None:
+        return "The pattern matches an empty text: it would match every script"
+    for text in _ADVERSARIAL:
+        try:
+            compiled.search(text, timeout=MATCH_TIMEOUT)
+        except TimeoutError:
+            return "The pattern takes too long on a long text: it would stall the analysis of a page"
+    return None
+
+
+def compiled(definition: dict[str, Any]) -> Signature:
+    return _sig(
+        definition["key"],
+        definition["severity"],
+        int(definition["points"]),
+        definition["title"],
+        definition["pattern"],
+        definition.get("also") or None,
+    )
+
+
+def builtin_definition(key: str) -> dict[str, Any] | None:
+    """A signature of Nik's own, as it ships."""
+    signature = BUILTIN.get(key)
+    if signature is None:
+        return None
+    return {
+        "key": signature.id,
+        "title": signature.title,
+        "severity": signature.severity,
+        "points": signature.points,
+        "pattern": signature.source,
+        "also": signature.also_source,
+        "enabled": True,
+    }
+
+
+def changed(row: Any) -> bool:
+    """Whether a signature of Nik's own was changed here (anything but its being on or off)."""
+    shipped = builtin_definition(row.key)
+    if shipped is None:
+        return False
+    return any(getattr(row, name) != shipped[name] for name in ("title", "severity", "points", "pattern", "also"))
+
+
+def out(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "key": row.key,
+        "title": row.title,
+        "severity": row.severity,
+        "points": row.points,
+        "pattern": row.pattern,
+        "also": row.also or "",
+        "enabled": bool(row.enabled),
+        "builtin": bool(row.builtin),
+        "changed": bool(row.builtin) and changed(row),
+        "updatedAt": row.updated_at,
+        "updatedBy": row.updated_by,
+    }
+
+
+def seed(db: Any, now: str) -> int:
+    """Add the signatures Nik ships that are missing, bring up to date those nobody changed here, and
+    let go of those a release no longer ships (the caller commits)."""
+    from sqlalchemy import select
+
+    from .core.models import ScriptSignature
+
+    held = {row.key: row for row in db.scalars(select(ScriptSignature)).all()}
+    count = 0
+    for key in BUILTIN:
+        shipped = builtin_definition(key)
+        row = held.get(key)
+        if row is None:
+            db.add(
+                ScriptSignature(
+                    id=hashlib.sha256(f"script-signature:{key}".encode()).hexdigest()[:32],
+                    key=key,
+                    title=shipped["title"],
+                    severity=shipped["severity"],
+                    points=shipped["points"],
+                    pattern=shipped["pattern"],
+                    also=shipped["also"],
+                    enabled=True,
+                    builtin=True,
+                    updated_at=now,
+                    updated_by="nik",
+                )
+            )
+            count += 1
+        elif row.builtin and row.updated_by == "nik" and changed(row):
+            # Nobody changed it here: it follows the release.
+            for name in ("title", "severity", "points", "pattern", "also"):
+                setattr(row, name, shipped[name])
+            row.updated_at = now
+            count += 1
+        elif not row.builtin:
+            row.builtin = True  # someone had made one with the key a release now ships: it is kept, as an override
+            count += 1
+    for key, row in held.items():
+        if row.builtin and key not in BUILTIN:
+            row.builtin = False  # no longer shipped: it stays, as one of yours
+            count += 1
+    if count:
+        clear_cache()
+    return count
+
+
+_cache: tuple[float, tuple[Signature, ...]] | None = None
+
+
+def clear_cache() -> None:
+    global _cache
+    _cache = None
+
+
+def load_signatures(db: Any) -> tuple[Signature, ...]:
+    """The signatures in use, compiled: the rows of ``script_signatures`` that are on. Kept for a few
+    seconds, and dropped when this process changes one; Nik's own when the table is empty."""
+    global _cache
+    if _cache is not None and time.monotonic() - _cache[0] < CACHE_SECONDS:
+        return _cache[1]
+    from sqlalchemy import select
+
+    from .core.models import ScriptSignature
+
+    rows = db.scalars(select(ScriptSignature).order_by(ScriptSignature.key)).all()
+    if not rows:
+        found = SIGNATURES
+    else:
+        kept = []
+        for row in rows:
+            if not row.enabled:
+                continue
+            try:
+                kept.append(compiled(out(row)))
+            except regex.error:
+                continue  # a pattern a newer regex module no longer reads: left out rather than breaking a scan
+        found = tuple(kept)
+    _cache = (time.monotonic(), found)
+    return found
+
+
+def try_on(definition: dict[str, Any], code: str) -> dict[str, Any]:
+    """What a signature finds in a piece of code: ``{matches, finding?, timedOut}``."""
+    slow: list[str] = []
+    found = findings(code[:MAX_CODE], [compiled(definition)], slow)
+    return {"matches": bool(found), "finding": found[0] if found else None, "timedOut": bool(slow)}

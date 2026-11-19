@@ -1364,6 +1364,30 @@ class PackUpload(Base):
     created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
 
+class ScriptSignature(Base):
+    """A signature the scripts of a scanned page are checked against. The ones Nik ships are
+    ``builtin``: turned off or changed here, never deleted. ``updated_by == "nik"`` says nobody
+    changed it here, so it follows the releases."""
+
+    __tablename__ = "script_signatures"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    key: Mapped[str] = mapped_column(String(61), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    severity: Mapped[str] = mapped_column(String(10), nullable=False, default="medium")
+    points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pattern: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    also: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+# Created by migration 0034_misc where missing, in this order; and the columns it adds.
+MISC_TABLES = ("script_signatures",)
+MISC_COLUMNS: dict[str, tuple[str, ...]] = {}
+
 # Created by migration 0033_dashboards_packs where missing, in this order.
 DASHBOARD_PACK_TABLES = ("dashboards", "packs", "pack_items", "pack_uploads")
 DASHBOARD_PACK_COLUMNS = {"runs": ("debug",)}

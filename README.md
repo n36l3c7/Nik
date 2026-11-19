@@ -165,9 +165,6 @@ playbooks.
 
 Also planned, not built yet:
 
-- **Editable script signatures.** The signatures the Scripts tab of URL
-  Analysis checks are built in (`backend/app/jsanalysis.py`); adding, changing
-  and disabling them from Settings, as YARA and capa rules are managed.
 - **History of a list**: how many of its indicators changed verdict since the
   last check.
 - **Tags on a selection** of indicators at once.

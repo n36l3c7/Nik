@@ -115,11 +115,12 @@ _JS_TYPES = ("", "text/javascript", "application/javascript", "module", "text/ec
 
 
 def collect_scripts(
-    entries: list[dict[str, Any]], page: dict[str, Any], final_url: str
+    entries: list[dict[str, Any]], page: dict[str, Any], final_url: str, signatures: Any = None
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """The scripts of the visit, analysed: those the page loaded (their bodies
     are in the network log) and those written in it. Returns what the Scripts
-    tab lists and, in the same order, the code. Nothing is run."""
+    tab lists and, in the same order, the code. Nothing is run. ``signatures``
+    are the ones in use (``jsanalysis.load_signatures``); Nik's own when left out."""
     page_host = links.host_of(final_url)
     found: list[tuple[dict[str, Any], str]] = []
     seen: set[str] = set()
@@ -138,7 +139,9 @@ def collect_scripts(
         if address in seen or not code.strip():
             continue
         seen.add(address)
-        meta = jsanalysis.analyse(code, kind="external", url=address, host=links.host_of(address), page_host=page_host)
+        meta = jsanalysis.analyse(
+            code, kind="external", url=address, host=links.host_of(address), page_host=page_host, signatures=signatures
+        )
         found.append((meta, code[: jsanalysis.MAX_CODE]))
     number = 0
     for script in page.get("inlineScripts") or []:
@@ -148,7 +151,9 @@ def collect_scripts(
         if not code.strip():
             continue
         number += 1
-        meta = jsanalysis.analyse(code, kind="inline", url="", host=page_host, page_host=page_host)
+        meta = jsanalysis.analyse(
+            code, kind="inline", url="", host=page_host, page_host=page_host, signatures=signatures
+        )
         meta["name"] = f"inline #{number}"
         found.append((meta, code[: jsanalysis.MAX_CODE]))
     kept_meta, kept_code = [], []
@@ -366,7 +371,7 @@ def run_scan(scan: str, actor: str) -> None:
                 own,
                 allowlist,
             )
-            scripts, code = collect_scripts(entries, page, final_url)
+            scripts, code = collect_scripts(entries, page, final_url, jsanalysis.load_signatures(db))
             verdict = with_scripts(verdict, scripts)
             if code:
                 scripts_path(scan).write_text(json.dumps(code), encoding="utf-8")
