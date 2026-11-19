@@ -28,7 +28,7 @@ export default function IocAllowlistSection() {
         <p className="mt-1 text-xs text-fg-muted">
           An entry is a domain (also matches its subdomains, and URLs and e-mail addresses on it), an IP address or CIDR
           network (<code>10.0.0.0/8</code>), or an exact value such as a hash. An item starting with <code>#</code> is a
-          comment. Matching indicators are hidden by default in the IOCs tab and never exported.
+          comment. Matching indicators are hidden by default in the Indicators tab and never exported.
         </p>
       </div>
       <ListPicker

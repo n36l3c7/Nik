@@ -95,7 +95,7 @@ def try_rules(body: TryIn, _caller: Principal = Depends(configure_principal), db
     connection = db.get(Connection, body.connectionId)
     connector = fetch.connector_of(db, connection) if connection is not None else None
     if connection is None or connector is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
+        raise HTTPException(status_code=404, detail="Instance not found")
     made = fetch.candidate(db, connection, connector, body.item)
     return {
         "incident": preprocess.as_incident(made),

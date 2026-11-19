@@ -88,7 +88,7 @@ export function argumentHints(commands, text) {
   const rest = (command.arguments ?? []).filter((argument) => !used.has(argument.name))
   const hints = [...rest.filter((argument) => argument.required), ...rest.filter((argument) => !argument.required)]
   if (command.needsConnection && !used.has('using')) {
-    hints.push({ name: 'using', type: 'text', required: false, description: 'The connection to send through' })
+    hints.push({ name: 'using', type: 'text', required: false, description: 'The instance to send through' })
   }
   return hints
 }

@@ -12,7 +12,7 @@ import IncidentPicker from '../ui/IncidentPicker.jsx'
  * "Run a playbook…": choose the playbook, what it runs on, what it is given,
  * and whether it is a dry run.
  *
- * Opened from an incident (its right-click menu, its Automation tab): the
+ * Opened from an incident (its right-click menu, its work plan): the
  * incident is set, the playbook is chosen among those that can be run by
  * hand. Opened from a playbook (its page, its row): it runs that playbook and
  * no other, and the incident is found by typing its title or its number. Opened from an analysed e-mail, file or address, or from

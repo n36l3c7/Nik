@@ -197,7 +197,7 @@ def destination(policy: Policy, url: str, *, allow_http: bool = False) -> tuple[
     if parts.scheme not in ("https", "http"):
         raise EgressError("Only https addresses can be reached", refused=True)
     if parts.scheme == "http" and not allow_http:
-        raise EgressError("Plain http is refused: use https, or allow http on the connection", refused=True)
+        raise EgressError("Plain http is refused: use https, or allow http on the instance", refused=True)
     if parts.username or parts.password:
         raise EgressError("An address with a user name in it is refused", refused=True)
     host = clean_host(parts.hostname or "")
@@ -265,7 +265,7 @@ def _context(ca_pem: str | None) -> ssl.SSLContext:
         try:
             context.load_verify_locations(cadata=ca_pem)
         except ssl.SSLError:
-            raise EgressError("The CA certificate of the connection is not valid PEM", refused=True) from None
+            raise EgressError("The CA certificate of the instance is not valid PEM", refused=True) from None
     return context
 
 

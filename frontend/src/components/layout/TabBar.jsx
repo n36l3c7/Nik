@@ -5,13 +5,14 @@ import { visibleTabs } from '../../config/tabs.js'
 
 /*
  * ============================================================================
- * TABBAR — navigation across the analysis tabs (terminal style: monospace,
+ * TABBAR — navigation across the tabs of an incident (terminal style: monospace,
  * green underline, a "›" prompt on the active tab)
  * ============================================================================
  *
- * Tabs come from the ANALYSIS_TABS registry: adding an entry there makes the
- * tab appear here automatically, without touching this file. A thin rule
- * separates the registry's groups (overview, threats, host).
+ * Tabs come from the ANALYSIS_TABS registry: an entry there that is not a kind
+ * of evidence appears here, without touching this file (the kinds of evidence
+ * are listed inside the Evidence tab). A thin rule separates the registry's
+ * groups, when the tabs shown are of more than one.
  *
  * The bar never scrolls sideways while it can avoid it: when the full labels
  * do not fit it switches to the one-word labels, then to icons only, and

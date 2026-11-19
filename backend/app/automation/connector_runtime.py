@@ -200,7 +200,7 @@ class Runtime:
         self.base_url = str(base or "").strip().rstrip("/")
         parts = urlsplit(self.base_url)
         if parts.scheme not in ("https", "http") or not parts.hostname:
-            raise CommandError("The address of the connection is not an https:// address")
+            raise CommandError("The address of the instance is not an https:// address")
         self.host = parts.hostname.lower()
         self.allow_http = parts.scheme == "http"
         self.ca_pem = str(self.config.get("ca_pem") or "") or None
@@ -234,7 +234,7 @@ class Runtime:
         target = path if path.startswith(("http://", "https://")) else self.base_url + "/" + path.lstrip("/")
         parts = urlsplit(target)
         if (parts.hostname or "").lower() != self.host:
-            raise CommandError(f"A request of this connector goes to {parts.hostname}, not to its connection")
+            raise CommandError(f"A request of this connector goes to {parts.hostname}, not to its instance")
         return target
 
     def _raw(self, spec: RequestSpec, scope: ex.Scope, auth: bool = True, timeout: float = 60) -> dict[str, Any]:

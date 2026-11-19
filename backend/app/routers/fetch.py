@@ -33,7 +33,7 @@ class EnabledIn(BaseModel):
 def _connection(db: OrmSession, connection_id: str) -> Connection:
     row = db.get(Connection, connection_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
+        raise HTTPException(status_code=404, detail="Instance not found")
     return row
 
 
@@ -77,7 +77,7 @@ def fetch_now(
     The connection must be one that fetches."""
     connection = _connection(db, connection_id)
     if not connection.fetch_enabled:
-        raise HTTPException(status_code=409, detail="This connection does not fetch: turn fetching on first")
+        raise HTTPException(status_code=409, detail="This instance does not fetch: turn fetching on first")
     try:
         result = fetch.cycle(db, connection, time.time())
     except fetch.FetchError as error:

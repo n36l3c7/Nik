@@ -15,6 +15,10 @@ settings (``shippedPlaybooks``), by the name of its file.
 
 A script node in a file names its script and no version: it takes the version
 the script has here.
+
+One thing of a playbook already added does follow a release: a sentence of its
+description that sends to a place of Settings which is no longer there
+(``REWORDED``). The sentence alone is replaced, wherever it still stands.
 """
 
 from __future__ import annotations
@@ -37,6 +41,39 @@ logger = logging.getLogger("nik.automation")
 
 SEED_DIR = Path(__file__).parent / "seed" / "playbooks"
 ACTOR = "nik"
+
+
+# Where the descriptions of the shipped playbooks sent before 5.1, and where the same thing is now: connections
+# became instances on the Connectors page, and the SMTP server an instance of the Mail connector.
+REWORDED = (
+    (
+        "make a Bitbucket connection (Settings, Connections)",
+        "add an instance of the Bitbucket connector (Settings, Connectors)",
+    ),
+    (
+        "make a ServiceNow connection (Settings, Connections)",
+        "add an instance of the ServiceNow connector (Settings, Connectors)",
+    ),
+    (
+        "set the SMTP server (Settings, Automation)",
+        "add an instance of the Mail connector with an SMTP server (Settings, Connectors)",
+    ),
+)
+
+
+def reword(db: OrmSession) -> int:
+    """Put right the directions in the descriptions of the playbooks Nik shipped; returns how many changed
+    (the caller commits). Nothing else of a playbook is touched, and a description rewritten by hand, which
+    no longer holds the old sentence, is left as it is."""
+    changed = 0
+    for row in db.scalars(select(Playbook).where(Playbook.builtin.is_(True))).all():
+        text = row.description or ""
+        for old, new in REWORDED:
+            text = text.replace(old, new)
+        if text != (row.description or ""):
+            row.description = text[:2000]
+            changed += 1
+    return changed
 
 
 def files() -> list[tuple[str, dict[str, Any]]]:
@@ -116,4 +153,5 @@ def seed(db: OrmSession) -> int:
         added += 1
     if known != list(state.read(db).get("shippedPlaybooks") or []):
         state.write(db, shippedPlaybooks=known)
+    reword(db)
     return added

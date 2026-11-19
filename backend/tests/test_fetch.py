@@ -329,7 +329,7 @@ def test_the_worker_fetches_the_connections_whose_time_has_come(admin: TestClien
     refused = admin.put(f"/api/fetch/{quiet['id']}", json={"enabled": True})
     assert (refused.status_code, refused.json()["detail"]) == (
         400,
-        "The connector of this connection does not say how to fetch",
+        "The connector of this instance does not say how to fetch",
     )
     assert [row["connection"] for row in admin.get("/api/fetch").json()["connections"]] == ["Radar SOC"]
 

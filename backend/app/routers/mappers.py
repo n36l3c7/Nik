@@ -61,7 +61,7 @@ def _refuse(error: mapping.MappingError) -> HTTPException:
 def _connection(db: OrmSession, connection_id: str) -> Connection:
     row = db.get(Connection, connection_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
+        raise HTTPException(status_code=404, detail="Instance not found")
     return row
 
 

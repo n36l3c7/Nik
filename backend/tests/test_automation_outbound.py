@@ -63,8 +63,7 @@ def test_a_listed_playbook_reaches_its_hosts_and_no_other(outside):
     assert egress.destination(ANY, "https://other.example.com/")[1] == "other.example.com"
 
     assert (
-        refused(LISTED, "http://api.example.com/")
-        == "Plain http is refused: use https, or allow http on the connection"
+        refused(LISTED, "http://api.example.com/") == "Plain http is refused: use https, or allow http on the instance"
     )
     assert egress.destination(LISTED, "http://api.example.com/", allow_http=True)[0] == "http"
     assert refused(LISTED, "ftp://api.example.com/") == "Only https addresses can be reached"

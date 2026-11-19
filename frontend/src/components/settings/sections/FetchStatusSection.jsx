@@ -155,7 +155,7 @@ export default function FetchStatusSection() {
           a connector file).
         </p>
       ) : (
-        <ul aria-label="Connections that can fetch" className="flex flex-col border border-line">
+        <ul aria-label="Instances that can fetch" className="flex flex-col border border-line">
           {(connections ?? []).map((connection) => {
             const badge = stateBadge(connection)
             const expanded = open === connection.connectionId

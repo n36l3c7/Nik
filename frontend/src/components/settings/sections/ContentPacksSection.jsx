@@ -343,7 +343,7 @@ function ExportForm({ onClose, onError }) {
           Cancel
         </Button>
         <p className="text-xs text-fg-muted">
-          {problem ?? 'Never a connection, a credential, or what a playbook may reach and send.'}
+          {problem ?? 'Never an instance, a credential, or what a playbook may reach and send.'}
         </p>
       </div>
     </section>

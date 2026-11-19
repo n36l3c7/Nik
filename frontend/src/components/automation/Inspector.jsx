@@ -1092,11 +1092,11 @@ function KindSettings({
           {entry.description && <p className="text-xs text-fg-muted">{entry.description}</p>}
           {entry.needsConnection && (
             <Field
-              label="Connection"
+              label="Instance"
               required
               hint={
                 (connections[entry.connector] ?? []).length === 0
-                  ? `No connection to ${entry.group} yet: one is made in Settings → Automation → Connections.`
+                  ? `No instance of ${entry.group} is on yet: add one in Settings → Automation → Connectors.`
                   : 'The system this node talks to. The playbook may reach its host.'
               }
               problem={problemAt('connection')}
@@ -1111,7 +1111,7 @@ function KindSettings({
                     {
                       value: '',
                       label:
-                        (connections[entry.connector] ?? []).length === 1 ? '(the only one)' : '(choose a connection)',
+                        (connections[entry.connector] ?? []).length === 1 ? '(the only one)' : '(choose an instance)',
                     },
                     ...(connections[entry.connector] ?? []).map((connection) => ({
                       value: connection.name,

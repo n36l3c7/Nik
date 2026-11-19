@@ -135,7 +135,7 @@ def test_a_request_never_leaves_the_host_of_the_connection():
     wire = Wire()
     with pytest.raises(rt.CommandError) as caught:
         runtime(found, wire).run("fetch", {"where": "https://evil.example.net/steal"})
-    assert caught.value.message == "A request of this connector goes to evil.example.net, not to its connection"
+    assert caught.value.message == "A request of this connector goes to evil.example.net, not to its instance"
     assert wire.sent == []  # nothing left, and the credentials with it
     # A full address on the connection's own host is fine.
     wire.answer(200, {"ok": True})
@@ -300,7 +300,7 @@ def test_pages_are_read_to_the_end_or_to_the_limit():
     wire = Wire().answer(200, {"result": ["r1"]}, {"link": '<https://evil.example.net/rows>; rel="next"'})
     with pytest.raises(rt.CommandError) as caught:
         runtime(link, wire).run("list", {})
-    assert caught.value.message == "A request of this connector goes to evil.example.net, not to its connection"
+    assert caught.value.message == "A request of this connector goes to evil.example.net, not to its instance"
 
 
 PUBLISH = """\

@@ -479,6 +479,12 @@
           <a href="#evidence">Add evidence</a>), or use the drop zone of a kind.
         </li>
       </ul>
+      <figure class="shot">
+        <img src="img/evidence.png" alt="The Evidence tab" width="1600" height="1000" loading="lazy" />
+        <figcaption>
+          Evidence: every file of the incident at the side, one of them open in the page of its kind.
+        </figcaption>
+      </figure>
       <p>
         Until 5.3 each kind was a tab of its own. Nothing else changed in them: the sections that follow describe each,
         and a link or a shortcut that led to one of those tabs leads to it inside Evidence.
@@ -518,7 +524,9 @@
       </p>
       <figure class="shot">
         <img src="img/summary.png" alt="The Summary tab" width="1600" height="1000" loading="lazy" />
-        <figcaption>Summary: the incident details and the counters of each source.</figcaption>
+        <figcaption>
+          Summary: the page of the type, with the details, the numbers and the sections of fields.
+        </figcaption>
       </figure>
       <h3>Timeline</h3>
       <p>
@@ -1085,9 +1093,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             <tr>
               <td>Storage and system</td>
               <td>
-                How full the file store is and with what <em>(administrators)</em>, how each connection that fetches
-                goes <em>(who manages connectors)</em>, the incidents fetched by connection, and what is done in Nik per
-                day <em>(who reads the audit log)</em>.
+                How full the file store is and with what <em>(administrators)</em>, how each instance that fetches goes
+                <em>(who manages connectors)</em>, the incidents fetched by instance, and what is done in Nik per day
+                <em>(who reads the audit log)</em>.
               </td>
             </tr>
           </tbody>
@@ -1153,14 +1161,14 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           log in one file, restored from the same section. It does <strong>not</strong> contain the files: samples,
           e-mails, captures, mailboxes and their analyses stay on the server, and so do the IoC library's own indicators
           and lists, and what automation is made of (playbooks, scripts and connectors travel as files, or as a
-          <a href="automation.html#packs">content pack</a>; connections hold secrets and are never exported). Restoring
+          <a href="automation.html#packs">content pack</a>; instances hold secrets and are never exported). Restoring
           replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
           <a href="deployment.html#docker-podman-in-production">Deployment</a>).
         </li>
         <li>
-          <strong>Audit log</strong> (on the rail): who did what, when, on which incident. It is written by the server
-          as things happen, so it cannot be edited from the app; an admin can clear it, and the new log starts by saying
-          who did.
+          <strong>Audit log</strong> (Settings → System → Audit log): who did what, when, on which incident. It is
+          written by the server as things happen, so it cannot be edited from the app; an admin can clear it, and the
+          new log starts by saying who did.
         </li>
       </ul>
 
@@ -1228,7 +1236,7 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         </li>
         <li id="mirror">
           <strong>Mirror</strong>, in the same panel, keeps the incident in step with a ticket or an issue of another
-          product: <em>Mirror with…</em> asks for the connection, the id of the object there, and which way.
+          product: <em>Mirror with…</em> asks for the instance, the id of the object there, and which way.
           <em>Read now</em> reads the other side at once and says what changed and what was kept because you set it
           here; a note tagged <code>mirror</code> is sent to the other side as a comment (<a
             href="automation.html#mirroring"
@@ -1354,9 +1362,11 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 The types of incident. A type opens in a builder: the fields of the registry on the left, to add with a
                 click or by dragging; the sections of the Summary on the right, one of which can be the side panel of
                 the incident page; for a field of your own, whether it is required, or required before closing; the
-                reasons an incident of this type is closed with. Seven types ship (<em>Unclassified</em>, the type of
-                every incident that was given none, <em>Phishing</em>, <em>Malware</em>, <em>Network intrusion</em>,
-                <em>Data leak</em>, <em>Access abuse</em>, <em>Vulnerability</em>); they are yours to change.
+                reasons an incident of this type is closed with; and <strong>the page</strong>, the grid of widgets that
+                is the <a href="#summary-page">Summary</a> of its incidents. Seven types ship (<em>Unclassified</em>,
+                the type of every incident that was given none, <em>Phishing</em>, <em>Malware</em>,
+                <em>Network intrusion</em>, <em>Data leak</em>, <em>Access abuse</em>, <em>Vulnerability</em>); they are
+                yours to change.
               </td>
             </tr>
             <tr>
@@ -1379,14 +1389,14 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>Classifiers and mappers <em>(who manages connectors)</em></td>
               <td>
                 How what a connector's product calls things becomes Nik's fields and context, and back: a table of rules
-                for each connector, tried on a sample before it is saved; and for a connection that brings alerts in,
+                for each connector, tried on a sample before it is saved; and for an instance that brings alerts in,
                 which type of incident each becomes (<a href="automation.html#mappers">Classifiers and mappers</a>).
               </td>
             </tr>
             <tr>
               <td>Fetch status <em>(who manages connectors)</em></td>
               <td>
-                The connections that bring alerts in as incidents: on or off, fetching, failing or paused and why, what
+                The instances that bring alerts in as incidents: on or off, fetching, failing or paused and why, what
                 the last cycle found, and what became of each item fetched lately (<a href="automation.html#fetching"
                   >Fetching</a
                 >).
@@ -1406,8 +1416,8 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             <tr>
               <td>Pre-processing rules <em>(admins)</em></td>
               <td>
-                What is done with an alert a connection brings in before it becomes an incident: dropped as noise,
-                linked to the open incident it belongs to, closed as a duplicate, or left to a script (<a
+                What is done with an alert an instance brings in before it becomes an incident: dropped as noise, linked
+                to the open incident it belongs to, closed as a duplicate, or left to a script (<a
                   href="automation.html#preprocessing"
                   >Before an item becomes an incident</a
                 >).
@@ -1560,8 +1570,8 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             <tr>
               <td>Connectors</td>
               <td>
-                Install connectors and make connections to other products, with their credentials. It does not build
-                playbooks by itself: give it with Playbooks to who does both.
+                Install connectors and add their instances, with the credentials of the other products. It does not
+                build playbooks by itself: give it with Playbooks to who does both.
               </td>
             </tr>
             <tr>

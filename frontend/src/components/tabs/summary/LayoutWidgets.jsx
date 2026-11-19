@@ -35,6 +35,8 @@ import IncidentTimeline from './IncidentTimeline.jsx'
 
 const MUTED = 'text-sm text-fg-muted'
 const TERM = 'font-mono text-[11px] uppercase tracking-wider text-fg-muted'
+// The button of a widget stands in the line of its title, which the grid draws: the box is left to what it shows.
+const IN_TITLE = 'absolute -top-8 right-0 flex h-8 items-center'
 
 function Line({ label, children }) {
   return (
@@ -72,8 +74,8 @@ function Facts({ incident }) {
         </Line>
       </dl>
       {can('write') && (
-        <div>
-          <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditing(true)}>
+        <div className={IN_TITLE}>
+          <Button variant="ghost" size="xs" icon={Pencil} onClick={() => setEditing(true)}>
             Edit the incident
           </Button>
         </div>
@@ -102,7 +104,7 @@ function Section({ incident, type, widget }) {
         <FieldList fields={fields} values={values} columns={section.columns} />
       </div>
       {can('write') && (
-        <div>
+        <div className={IN_TITLE}>
           <Button
             variant="ghost"
             size="xs"
@@ -158,7 +160,7 @@ function Stats({ incident }) {
     ]
   }, [incident.data, incident.flags, incident.notes])
   return (
-    <dl className="grid h-full grid-cols-2 content-start gap-2 overflow-y-auto @md:grid-cols-3">
+    <dl className="grid h-full grid-cols-2 content-start gap-2 overflow-y-auto @xs:grid-cols-3">
       {figures.map(([label, value]) => (
         <div key={label} className="border border-line-soft bg-canvas px-3 py-2">
           <dd className={`font-mono text-xl ${label === 'Flagged' && value > 0 ? 'text-accent' : 'text-fg'}`}>
@@ -308,7 +310,7 @@ export default function LayoutWidget({ widget, incident, type }) {
   if (!draw) return <p className={MUTED}>This version of Nik does not know this widget.</p>
   return (
     <ErrorBoundary resetKey={`${incident.id}:${widget.id}`}>
-      <div className="@container h-full">{draw({ widget, incident, type })}</div>
+      <div className="@container relative h-full">{draw({ widget, incident, type })}</div>
     </ErrorBoundary>
   )
 }
