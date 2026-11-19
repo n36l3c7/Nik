@@ -79,6 +79,20 @@ def _without_positions_moved(old: str, new: str):
     return to_json(parse(new))
 
 
+def test_a_long_run_of_spaces_after_a_name_costs_nothing():
+    """What follows a name is read a character at a time: a query made of spaces is read at once."""
+    import time
+
+    for text in ("status" + " \t" * 900 + "x", "status" + " " * 900 + "not" + " " * 900 + "x", "a" + " " * 1500 + "in"):
+        started = time.perf_counter()
+        parse(text)
+        assert time.perf_counter() - started < 0.5, text[:20]
+    # And a list is still a list, however it is spaced.
+    assert to_json(parse("status \t\n NOT \t in \n ( a ,, b )")) == to_json(parse("status not in (a, b)"))
+    assert to_json(parse("status notin (a)"))["and"][0]["text"]["text"] == "status"
+    assert "and" in to_json(parse("status india (a)"))
+
+
 def test_dates_are_spans_of_time():
     def span(text):
         return dates.span(text, NOW)

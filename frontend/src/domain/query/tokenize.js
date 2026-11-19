@@ -9,10 +9,11 @@
  * of a list (`field IN (a, b)`) are value tokens of that field.
  */
 
+import { listOpening } from './parse.js'
+
 const SPACE = ' \t\r\n'
 const OPS = ['>=', '<=', '>', '<', '!']
 const NAME = /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/y
-const LIST = /([ \t\r\n]+)(?:(not)([ \t\r\n]+))?(in)([ \t\r\n]*)\(/iy
 
 function keywordAt(text, i) {
   for (const word of ['and', 'or', 'not']) {
@@ -135,22 +136,23 @@ export function tokenize(text) {
       continue
     }
     if (name) {
-      LIST.lastIndex = NAME.lastIndex
-      const listed = LIST.exec(source)
+      const listed = listOpening(source, NAME.lastIndex)
       if (listed) {
         const field = name[0]
         push('field', i, NAME.lastIndex)
+        // The words between the name and the parenthesis, and the spaces around them.
         let j = NAME.lastIndex
-        for (const [piece, type] of [
-          [listed[1], 'space'],
-          [listed[2], 'keyword'],
-          [listed[3], 'space'],
-          [listed[4], 'keyword'],
-          [listed[5], 'space'],
+        for (const [at, length] of [
+          [listed.not, 3],
+          [listed.in, 2],
         ]) {
-          if (piece) push(type, j, j + piece.length)
-          j += piece ? piece.length : 0
+          if (at === -1) continue
+          push('space', j, at)
+          push('keyword', at, at + length)
+          j = at + length
         }
+        push('space', j, listed.paren)
+        j = listed.paren
         push('paren', j, j + 1)
         j += 1
         // The values, up to the parenthesis that closes the list (or the end, while it is typed).

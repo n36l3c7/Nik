@@ -68,6 +68,26 @@ test('"is not" written as before 5.0 is rewritten, and means the same', () => {
   assert.equal(modern(null), '')
 })
 
+test('a long run of spaces after a name costs nothing, and a list is a list however it is spaced', () => {
+  for (const text of [`status${' \t'.repeat(900)}x`, `status${' '.repeat(900)}not${' '.repeat(900)}x`]) {
+    const started = performance.now()
+    parse(text)
+    tokenize(text)
+    assert.ok(performance.now() - started < 500)
+  }
+  const bare = (node) => JSON.parse(JSON.stringify(node, (key, value) => (key === 'position' ? undefined : value)))
+  assert.deepEqual(bare(parse('status \t\n NOT \t in \n ( a ,, b )')), bare(parse('status not in (a, b)')))
+  assert.equal(parse('status notin (a)').and[0].text.text, 'status')
+  assert.ok(parse('status india (a)').and)
+  const spaced = 'owner  NOT   IN  (a'
+  assert.equal(
+    tokenize(spaced)
+      .map((token) => token.text)
+      .join(''),
+    spaced,
+  )
+})
+
 test('a list and a leading ! are coloured as what they are', () => {
   const types = (text) => tokenize(text).map((token) => `${token.type}:${token.text}`)
   assert.deepEqual(types('!status:closed'), ['not:!', 'field:status', 'op::', 'value:closed'])

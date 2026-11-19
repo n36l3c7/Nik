@@ -55,8 +55,35 @@ const OPS = ['>=', '<=', '>', '<', '!']
 // What a backslash takes literally in a bare value; before anything else it is itself.
 const ESCAPED = '*?()" '
 const NAME = /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/y
-// `field IN (` and `field NOT IN (`, after the name of a field.
-const LIST = /[ \t\r\n]+(?:(not)[ \t\r\n]+)?in[ \t\r\n]*\(/iy
+
+/**
+ * `field IN (` and `field NOT IN (`, read after the name of a field: where its
+ * words are (`not` is -1 when it is not there) and where the values start, or
+ * null when what follows the name is not a list. Read a character at a time,
+ * like the rest: no expression runs over what a person typed.
+ *
+ * @returns {{ not: number, in: number, paren: number, end: number, negated: boolean } | null}
+ */
+export function listOpening(text, at) {
+  const spaces = (i) => {
+    while (i < text.length && SPACE.includes(text[i])) i += 1
+    return i
+  }
+  let i = spaces(at)
+  if (i === at) return null
+  let not = -1
+  if (text.slice(i, i + 3).toLowerCase() === 'not') {
+    const after = spaces(i + 3)
+    if (after === i + 3) return null
+    not = i
+    i = after
+  }
+  if (text.slice(i, i + 2).toLowerCase() !== 'in') return null
+  const word = i
+  i = spaces(i + 2)
+  if (text[i] !== '(') return null
+  return { not, in: word, paren: i, end: i + 1, negated: not !== -1 }
+}
 
 const isSpace = (char) => char !== '' && SPACE.includes(char)
 
@@ -210,9 +237,8 @@ class Reader {
       return { field: name[0], op, value, position: start }
     }
     if (name) {
-      LIST.lastIndex = NAME.lastIndex
-      const listed = LIST.exec(this.text)
-      if (listed) return this.listed(name[0], start, LIST.lastIndex, Boolean(listed[1]))
+      const listed = listOpening(this.text, NAME.lastIndex)
+      if (listed) return this.listed(name[0], start, listed.end, listed.negated)
     }
     return { text: this.bare(), position: start }
   }

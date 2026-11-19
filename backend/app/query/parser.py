@@ -171,8 +171,35 @@ def literal(text: str) -> Value:
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
 _SPACE = " \t\r\n"
 _OPS = (">=", "<=", ">", "<", "!")
-# ``field IN (`` and ``field NOT IN (``, after the name of a field.
-_LIST = re.compile(r"[ \t\r\n]+(?:(not)[ \t\r\n]+)?in[ \t\r\n]*\(", re.IGNORECASE)
+
+
+def _list_opening(text: str, at: int) -> tuple[int, bool] | None:
+    """``field IN (`` and ``field NOT IN (``, read after the name of a field: where the values start
+    and whether the list is negated, or None when what follows the name is not a list. Read a
+    character at a time, like the rest: no expression runs over what a person typed."""
+
+    def spaces(i: int) -> int:
+        while i < len(text) and text[i] in _SPACE:
+            i += 1
+        return i
+
+    i = spaces(at)
+    if i == at:
+        return None
+    negated = False
+    if text[i : i + 3].lower() == "not":
+        after = spaces(i + 3)
+        if after == i + 3:
+            return None
+        negated, i = True, after
+    if text[i : i + 2].lower() != "in":
+        return None
+    i = spaces(i + 2)
+    if i < len(text) and text[i] == "(":
+        return i + 1, negated
+    return None
+
+
 # What a backslash takes literally in a bare value; before anything else it is itself.
 _ESCAPED = '*?()" '
 
@@ -308,9 +335,9 @@ class _Reader:
                 raise QueryError("missing_value", at)
             return Term(name.group(), op, value, start, self.text[start : self.i])
         if name:
-            listed = _LIST.match(self.text, name.end())
+            listed = _list_opening(self.text, name.end())
             if listed:
-                return self.listed(name.group(), start, listed.end(), bool(listed.group(1)))
+                return self.listed(name.group(), start, listed[0], listed[1])
         return Text(self.bare(), start)
 
     def listed(self, name: str, start: int, opened: int, negated: bool):
