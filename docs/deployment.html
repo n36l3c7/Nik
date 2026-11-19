@@ -263,6 +263,33 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-47">Upgrading to 4.7</h4>
+      <p>
+        Release 4.7 needs nothing more than the two commands above. The migration <code>0034_misc</code> runs at start.
+        After the update:
+      </p>
+      <ul>
+        <li>
+          <strong>a new volume, <code>pst-work</code></strong
+          >, is created for the document worker: an Outlook PST is converted there instead of in memory, and the largest
+          PST accepted goes from 500 MB to 4 GB (<code>PST_MAX_MB</code>; if your <code>.env</code> sets it, it keeps
+          your value). The volume is empty except while a PST is being converted, and then needs about two and a half
+          times the PST: the worker checks before it starts. It is not part of a backup: nothing is kept in it;
+        </li>
+        <li>
+          <strong>no artifact gets an expiry</strong>: one is deleted by itself only if someone gives it a date on its
+          page. The automation worker does the deleting, so with it stopped nothing expires;
+        </li>
+        <li>
+          the signatures the Scripts tab of URL Analysis checks are in
+          <em>Settings → Rule sets → Script signatures</em>, as they were built in. Scans made before are not read again
+          by themselves;
+        </li>
+        <li>
+          the history of a list of indicators starts with its next check as a whole: nothing is rebuilt from the checks
+          of before.
+        </li>
+      </ul>
       <h4 id="upgrading-to-46">Upgrading to 4.6</h4>
       <p>
         Release 4.6 needs nothing more than the two commands above. The migration

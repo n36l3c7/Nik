@@ -97,7 +97,7 @@ services:
       PCAP_MAX_MB: ${PCAP_MAX_MB:-500}
       # Mailboxes (mbox, Maildir archive) and Outlook PST files, read as many e-mails.
       MAILBOX_MAX_MB: ${MAILBOX_MAX_MB:-2048}
-      PST_MAX_MB: ${PST_MAX_MB:-500}
+      PST_MAX_MB: ${PST_MAX_MB:-4096}
       # Playbooks run in the `automation` container; `off` records no event and runs nothing.
       AUTOMATION_WORKER: ${AUTOMATION_WORKER:-container}
       AUTOMATION_MAX_ACTIVE_RUNS: ${AUTOMATION_MAX_ACTIVE_RUNS:-200}
@@ -264,8 +264,11 @@ services:
     build: ./workers/docview
     environment:
       DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
-      # A PST is converted here, in /tmp (memory): it and its mbox must fit in DOCVIEW_MEMORY.
-      DOCVIEW_PST_MAX_MB: ${PST_MAX_MB:-500}
+      # A PST is converted here, on the `pst-work` volume (a disk, not memory): the worker checks
+      # that it has room for the file and its mbox before it starts, and empties it afterwards.
+      DOCVIEW_PST_MAX_MB: ${PST_MAX_MB:-4096}
+    volumes:
+      - pst-work:/work
     networks: [analysis]
     read_only: true
     tmpfs: [/tmp]
@@ -366,6 +369,8 @@ volumes:
   # with `podman volume rm <project>_db-data` once you no longer need a rollback.
   db-data:
   sample-store:
+  # Where the document worker converts a PST: holds a file only while one is being converted.
+  pst-work:
   web-certs:
 
 networks:

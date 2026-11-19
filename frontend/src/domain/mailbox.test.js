@@ -103,3 +103,17 @@ test('dates and the plan of an import read plainly', () => {
     '1 message matches · 1 too large · 40 over the limit of 500, left for the next time.',
   )
 })
+
+test('how far the reading of a mailbox is, in words', async () => {
+  const { preparingPercent, preparingText } = await import('./mailbox.js')
+  assert.equal(preparingText(null), 'Reading the mailbox: finding its messages and conversations…')
+  const indexing = { phase: 'indexing', bytes: 410, totalBytes: 1000, messages: 7400 }
+  assert.equal(preparingText(indexing), 'Indexing… 41 % · 7,400 messages')
+  assert.equal(preparingPercent(indexing), 41)
+  assert.equal(preparingText({ phase: 'converting', bytes: 990, totalBytes: 1000, messages: 0 }), 'Converting… 99 %')
+  // A Maildir archive does not say how large its messages are together: the count alone.
+  const maildir = { phase: 'converting', bytes: 5000, totalBytes: 0, messages: 1 }
+  assert.equal(preparingText(maildir), 'Converting… · 1 message')
+  assert.equal(preparingPercent(maildir), null)
+  assert.equal(preparingPercent({ phase: 'indexing', bytes: 2000, totalBytes: 1000 }), 100)
+})

@@ -113,9 +113,10 @@ def _maildir_members(path: Path) -> Iterator[tuple[str, BinaryIO, int]]:
         raise MailboxError("Not a zip or tar archive of a Maildir.") from exc
 
 
-def maildir_to_mbox(archive: Path, target: Path, limit_bytes: int) -> int:
+def maildir_to_mbox(archive: Path, target: Path, limit_bytes: int, progress=None) -> int:
     """Write the messages of a Maildir archive one after the other as an mbox
-    (``From `` lines of a body are escaped, as mboxrd does). Returns how many."""
+    (``From `` lines of a body are escaped, as mboxrd does). Returns how many.
+    ``progress(bytes written, messages)`` is told how far it is."""
     count = written = 0
     with open(target, "wb") as out:
         for _name, stream, size in _maildir_members(archive):
@@ -131,6 +132,8 @@ def maildir_to_mbox(archive: Path, target: Path, limit_bytes: int) -> int:
                 last = line
             out.write(b"\n" if last.endswith(b"\n") else b"\n\n")
             count += 1
+            if progress is not None:
+                progress(written, count)
             if count >= MESSAGES_MAX:
                 break
     if count == 0:
@@ -312,8 +315,9 @@ def thread(rows: list[dict[str, Any]]) -> None:
             row["thread"] = index[row["duplicate_of"]].get("thread", 0)
 
 
-def index(db: OrmSession, mailbox: Mailbox) -> int:
-    """Read the stored mbox and (re)build the index of its messages."""
+def index(db: OrmSession, mailbox: Mailbox, progress=None) -> int:
+    """Read the stored mbox and (re)build the index of its messages.
+    ``progress(bytes read, messages)`` is told how far the reading is."""
     path = mbox_path(mailbox.id)
     rows: list[dict[str, Any]] = []
     for seq, message in enumerate(iter_messages(path)):
@@ -321,6 +325,8 @@ def index(db: OrmSession, mailbox: Mailbox) -> int:
             break
         rows.append({"seq": seq, **{k: message[k] for k in ("offset", "length", "sha256", "attachments")}})
         rows[-1].update(describe(message["headers"]))
+        if progress is not None:
+            progress(message["offset"] + message["length"], seq + 1)
     if not rows:
         raise MailboxError("No message found: the file is not an mbox, or it is empty.")
     thread(rows)

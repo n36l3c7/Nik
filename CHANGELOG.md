@@ -39,9 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It is imported only with its file, copied in pieces and never held in
   memory, and only when every message of the index lies inside that file.
   The export dialog says how large the files are.
+- **The page of a mailbox says how far its reading is**: *Converting… 41 %*
+  for a PST or a Maildir archive, then *Indexing… 41 % · 7,400 messages*
+  (`preparing` in `GET /api/mailboxes/{id}`).
 
 ### Changed
 
+- **An Outlook PST is converted on disk, not in memory.** The document
+  worker has a volume of its own (`pst-work`, mounted at `/work`), checks
+  that it has room for the file and its mbox (about 2.5 times the PST)
+  before it starts, and empties it afterwards. The largest PST accepted goes
+  from 500 MB to 4 GB (`PST_MAX_MB=4096`). Without the volume the worker
+  converts in memory as before, and takes 500 MB at most.
 - A signature is matched with a time limit: one that takes more than half a
   second on a script is left out of that script and named in what the scan
   returns (`timedOut`), instead of holding the scan.

@@ -130,9 +130,9 @@ class Settings:
         # tool output) accepted by POST /incidents/{id}/upload.
         self.ARTIFACT_MAX_MB: int = _get_int("ARTIFACT_MAX_MB", 500)
         # A mailbox (mbox, Maildir archive) can be much larger than any other upload;
-        # a PST is converted in the document worker's memory, so it has a limit of its own.
+        # a PST is converted by the document worker, on its work volume, so it has a limit of its own.
         self.MAILBOX_MAX_MB: int = _get_int("MAILBOX_MAX_MB", 2048)
-        self.PST_MAX_MB: int = _get_int("PST_MAX_MB", 500)
+        self.PST_MAX_MB: int = _get_int("PST_MAX_MB", 4096)
         # Directory of the built-in YARA rule files (*.yar); admin rules live in
         # the database and are compiled together with these.
         self.YARA_RULES: str = os.getenv(

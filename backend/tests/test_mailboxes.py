@@ -238,7 +238,7 @@ def test_a_maildir_archive_and_a_pst_end_as_the_same_mailbox(admin: TestClient, 
 
     seen = {}
 
-    def convert(source, target):
+    def convert(source, target, progress=None):
         seen["head"] = Path(source).read_bytes()[:4]
         Path(target).write_bytes(mbox(MESSAGES[:2]))
 
@@ -246,7 +246,7 @@ def test_a_maildir_archive_and_a_pst_end_as_the_same_mailbox(admin: TestClient, 
     pst = _upload(admin, b"!BDN" + b"\x00" * 600, "archive.pst")
     assert seen["head"] == b"!BDN" and pst["format"] == "pst" and pst["status"] == "ready" and pst["total"] == 2
 
-    def refuse(source, target):
+    def refuse(source, target, progress=None):
         raise previews.WorkerError("The document worker is not configured (DOCVIEW_URL): a PST cannot be read.", 503)
 
     monkeypatch.setattr(previews, "convert_pst", refuse)
@@ -283,3 +283,89 @@ def test_import_takes_five_hundred_at_a_time_and_needs_a_writer(admin: TestClien
     assert other.get(f"/api/mailboxes/{box['id']}", headers=reader).status_code == 200
     assert other.post(f"/api/mailboxes/{box['id']}/import", headers=reader, json={}).status_code == 403
     assert other.post("/api/artifacts/mailboxes", headers=reader, files={"file": ("a.mbox", mbox())}).status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# How far the reading of a mailbox is                                         #
+# --------------------------------------------------------------------------- #
+def test_reading_a_mailbox_says_how_far_it_is(admin: TestClient, monkeypatch):
+    from app.core.db import SessionLocal
+    from app.core.models import Mailbox
+    from app.routers import mailboxes as routes
+
+    box = _upload(admin)
+    # Once it is read, nothing is left of the note.
+    assert box["status"] == "ready" and box["preparing"] is None
+    told: list[tuple[int, int]] = []
+    with SessionLocal() as db:
+        row = db.get(Mailbox, box["id"])
+        size = mailboxes.mbox_path(row.id).stat().st_size
+        mailboxes.index(db, row, progress=lambda read, count: told.append((read, count)))
+        db.rollback()
+    # A note for each message, going forward, ending at the end of the file.
+    assert [count for _read, count in told] == list(range(1, len(told) + 1))
+    assert [read for read, _count in told] == sorted(read for read, _count in told) and size - told[-1][0] <= 1
+
+    # The note is written every two seconds at most, and shown while the mailbox is being read.
+    clock = [100.0]
+    monkeypatch.setattr(routes.time, "monotonic", lambda: clock[0])
+    with SessionLocal() as db:
+        row = db.get(Mailbox, box["id"])
+        row.status = "indexing"
+        tell = routes._said(db, row, "indexing")
+        tell(10, 1000, 1)
+        clock[0] += 1.0
+        tell(500, 1000, 40)  # too soon: not written
+        assert row.meta["preparing"] == {"phase": "indexing", "bytes": 10, "totalBytes": 1000, "messages": 1}
+        clock[0] += 1.5
+        tell(900, 1000, 70)
+        db.commit()
+    shown = admin.get(f"/api/mailboxes/{box['id']}").json()
+    assert shown["preparing"] == {"phase": "indexing", "bytes": 900, "totalBytes": 1000, "messages": 70}
+    with SessionLocal() as db:
+        db.get(Mailbox, box["id"]).status = "ready"
+        db.commit()
+    assert admin.get(f"/api/mailboxes/{box['id']}").json()["preparing"] is None
+
+
+def test_a_pst_is_sent_and_its_mbox_received_in_pieces_that_are_counted(monkeypatch, tmp_path):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from app.core.config import settings
+    from app.workers import previews
+
+    answer = mbox(MESSAGES[:2])
+
+    class Worker(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - http.server naming
+            self.rfile.read(int(self.headers["Content-Length"]))
+            if self.headers.get("X-Docview-Token") != "t":
+                self.send_response(401)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(answer)))
+            self.end_headers()
+            self.wfile.write(answer)
+
+        def log_message(self, *args):
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Worker)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        monkeypatch.setattr(settings, "DOCVIEW_URL", f"http://127.0.0.1:{httpd.server_address[1]}")
+        monkeypatch.setattr(settings, "DOCVIEW_TOKEN", "t")
+        source, target = tmp_path / "in.pst", tmp_path / "out.mbox"
+        source.write_bytes(b"!BDN" + b"\x00" * 5000)
+        told: list[tuple[int, int]] = []
+        previews.convert_pst(source, target, progress=lambda done, total: told.append((done, total)))
+    finally:
+        httpd.shutdown()
+    assert target.read_bytes() == answer
+    size = source.stat().st_size
+    # First the PST as it is sent (the mbox is taken to be as large), then the mbox as it comes back.
+    assert told[0][1] == size * 2 and any(done == size for done, _total in told)
+    assert told[-1] == (size + len(answer), size + len(answer))
+    assert [done for done, _total in told] == sorted(done for done, _total in told)
