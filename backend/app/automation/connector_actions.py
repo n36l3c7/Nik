@@ -411,6 +411,7 @@ def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
         run=lambda call: run_command(connector_id, name, call),
         extra={
             "connector": connector.id,
+            "premium": command.premium,
             "connectorVersion": connector.version,
             "needsConnection": True,
             # What an answer looks like, when the file says: the editor reads the sub-fields from it.

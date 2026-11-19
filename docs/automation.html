@@ -1875,7 +1875,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
 
       <h3 id="connector-format">The connector file, key by key</h3>
       <p>
-        A file is YAML, at most 256 kB. <strong>A key the format does not know is an error</strong>, so a typo is told
+        A file is YAML, at most 1 MB and 400 commands. <strong>A key the format does not know is an error</strong>, so a typo is told
         and not ignored. A file that says <code>native: mail</code> is of the one kind Nik speaks for itself: it has no
         <code>base_url</code>, <code>headers</code>, <code>test</code> nor <code>mirror</code>, its commands have no
         <code>request</code> and are among those Nik has for mail, and its <code>fetch</code> has no request either;

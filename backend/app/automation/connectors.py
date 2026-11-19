@@ -40,7 +40,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from . import expressions as ex
 
-MAX_BYTES = 256_000
+MAX_BYTES = 1_000_000  # a connector with every command of a large API is a long file
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 COMMAND_RE = re.compile(r"^[a-z][a-z0-9-]{1,48}$")
@@ -230,6 +230,9 @@ class Command(_Strict):
     description: str = Field(default="", max_length=500)
     changes_outside: bool = False
     idempotent: bool = True
+    # The vendor gives this command only to a paid plan: said in the library and on the node, never enforced
+    # here (the vendor answers what it answers to the key it is asked with).
+    premium: bool = False
     arguments: list[Argument] = Field(default_factory=list, max_length=40)
     request: RequestSpec | None = None
     steps: list[Step] | None = Field(default=None, max_length=MAX_STEPS)
@@ -453,7 +456,7 @@ class ConnectorFile(_Strict):
     base_url: str = Field(default="", max_length=2000)
     headers: dict[str, str] = Field(default_factory=dict)
     test: TestSpec | None = None
-    commands: list[Command] = Field(min_length=1, max_length=100)
+    commands: list[Command] = Field(min_length=1, max_length=400)
     # Bringing alerts in, the names the product uses, what it adds to the context, two-way sync.
     fetch: FetchSpec | None = None
     schema_: SchemaSpec | None = Field(default=None, alias="schema")
@@ -922,6 +925,7 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
                 "name": command.name,
                 "description": command.description,
                 "changesOutside": command.changes_outside,
+                "premium": command.premium,
                 "arguments": [argument.model_dump(exclude_none=True) for argument in command.arguments],
                 "outputs": sorted(command.outputs),
             }
