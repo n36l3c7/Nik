@@ -895,6 +895,9 @@ class Run(Base):
     parent_run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     parent_step_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # A run of the debugger: it stops before nodes, counts for no limit and no statistic, and is
+    # shown to who started it. ``state["debug"]`` says where it stops.
+    debug: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
 class RunStep(Base):
@@ -1363,6 +1366,7 @@ class PackUpload(Base):
 
 # Created by migration 0033_dashboards_packs where missing, in this order.
 DASHBOARD_PACK_TABLES = ("dashboards", "packs", "pack_items", "pack_uploads")
+DASHBOARD_PACK_COLUMNS = {"runs": ("debug",)}
 
 # Created by migration 0032_fetch_mappers where missing, in this order; and the columns it adds.
 FETCH_TABLES = ("classifiers", "mappers", "fetched_items", "preprocess_rules", "mirror_queue")

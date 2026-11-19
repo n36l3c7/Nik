@@ -154,7 +154,7 @@ def sql(name: str, query: str | None, principal: Any = None, *, extra=(), now: d
             return or_(*parts)
         return not_(parts[0])
 
-    return [_walk(node, entity, ctx, leaf, combine) for node in nodes] or [true()]
+    return [*entity.base, *(_walk(node, entity, ctx, leaf, combine) for node in nodes)] or [true()]
 
 
 def rows(name: str, query: str | None, principal: Any = None, *, now: datetime | None = None) -> Callable[[dict], bool]:

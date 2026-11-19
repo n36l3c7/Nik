@@ -55,6 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **What Nik ships is listed as packs**: *Nik: incidents*, *automation*,
   *connectors* and *dashboards*, each downloadable as a file that reads back
   as what is installed.
+- **A debugger for playbooks.** A debug run of a playbook, of its saved
+  version or of its draft, stops before the nodes that are breakpoints, or
+  before every node: it shows what the node would be given, goes one node on
+  or to the next breakpoint, skips a node, runs a node with other arguments,
+  changes what later nodes read, and runs a finished node again. What goes
+  outside is held as in a dry run unless one node is let through, with the
+  approval it normally needs. Debug runs count for no limit and no statistic,
+  are shown to who started them, and are deleted after a week
+  (`automation.debug`).
 
 ## [4.5.0] - 2026-11-18
 

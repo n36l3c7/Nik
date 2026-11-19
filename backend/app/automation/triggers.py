@@ -171,6 +171,7 @@ def _active_for(db: OrmSession, playbook: Playbook, object_kind: str, object_id:
                 Run.object_id == object_id,
                 Run.status.notin_(engine.FINISHED),
                 Run.parent_run_id.is_(None),
+                Run.debug.is_(False),
             )
         )
         or 0
@@ -179,7 +180,8 @@ def _active_for(db: OrmSession, playbook: Playbook, object_kind: str, object_id:
 
 def refusal(db: OrmSession, playbook: Playbook, object_kind: str, object_id: str, now: float) -> str | None:
     """Why a run of the playbook cannot start now (None when it can)."""
-    active = db.scalar(select(func.count()).select_from(Run).where(Run.status.notin_(engine.FINISHED))) or 0
+    real = Run.debug.is_(False)  # a debug run counts for no limit
+    active = db.scalar(select(func.count()).select_from(Run).where(Run.status.notin_(engine.FINISHED), real)) or 0
     if active >= settings.AUTOMATION_MAX_ACTIVE_RUNS:
         return "Too many runs are in progress on this server"
     since = engine.iso(now - 3600)
@@ -187,7 +189,7 @@ def refusal(db: OrmSession, playbook: Playbook, object_kind: str, object_id: str
         db.scalar(
             select(func.count())
             .select_from(Run)
-            .where(Run.playbook_id == playbook.id, Run.started_at >= since, Run.parent_run_id.is_(None))
+            .where(Run.playbook_id == playbook.id, Run.started_at >= since, Run.parent_run_id.is_(None), real)
         )
         or 0
     )

@@ -297,6 +297,7 @@ RUNS = Entity(
     label="Runs",
     permission="automation.run",
     model=Run,
+    base=(Run.debug.is_(False),),  # a run of the debugger is nobody's statistics
     text_fields=("playbook", "error", "startedBy"),
     fields=(
         FieldSpec("id", "keyword", "The run's identifier", column=Run.id),
@@ -323,6 +324,7 @@ APPROVALS = Entity(
     label="Approvals",
     permission="automation.run",
     model=Approval,
+    base=(select(Run.id).where(Run.id == Approval.run_id, Run.debug.is_(False)).exists(),),
     text_fields=("question", "playbook"),
     fields=(
         FieldSpec("id", "keyword", "The approval's identifier", column=Approval.id),

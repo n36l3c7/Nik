@@ -1377,6 +1377,34 @@
             </tr>
             <tr>
               <td>
+                <code>POST /api/automation/playbooks/{id}/debug</code> ·
+                <code>POST /api/automation/runs/{id}/debug</code>
+              </td>
+              <td>
+                (<strong>automation.debug</strong>) The <a href="automation.html#debugger">debugger</a>. Start a debug
+                run of a playbook on an object:
+                <code>{objectKind, objectId, inputs, breakpoints: [node ids], stepMode, draft}</code>
+                (<code>draft: true</code> runs the draft as it is drawn; <code>400</code> with its
+                <code>problems</code> when it cannot run). It stops before the nodes named, or before every node with
+                <code>stepMode</code>; what goes outside is held as in a dry run · tell it what to do:
+                <code>{action, stepId, overrides, sendForReal, contextPatch, breakpoints}</code>, where
+                <code>action</code> is <code>step</code>, <code>continue</code>, <code>skip</code>,
+                <code>rerun</code> (a node that is over, by <code>stepId</code>), <code>stop</code>, or
+                <code>set</code> (only move the breakpoints or change the context); <code>overrides</code> gives the
+                node other arguments, <code>sendForReal</code> lets that one node really send (it also needs
+                <strong>automation.run</strong>, and the approval the node normally asks),
+                <code>contextPatch</code> changes what later nodes read (<code
+                  >{"&lt;node id&gt;": output, "inputs": {…}}</code
+                >). <code>GET /api/automation/runs/{id}</code>
+                of a debug run adds
+                <code>debug: {breakpoints, stepMode, at: [{step, node}], draft, context}</code>, and a step it is
+                stopped at has <code>waiting: "debug"</code> with what the node would be given in <code>input</code>.
+                Debug runs are listed with <code>GET /api/automation/runs?debug=true</code>, to who started them and to
+                an admin; they count for no limit and no statistic and are deleted after a week.
+              </td>
+            </tr>
+            <tr>
+              <td>
                 <code>GET /api/packs</code> · <code>POST /api/packs/inspect</code> ·
                 <code>POST /api/packs/import</code> · <code>GET /api/packs/{id}/download</code> ·
                 <code>DELETE /api/packs/{id}</code>

@@ -119,6 +119,9 @@ def locked_run(db: OrmSession, run_id: str) -> Run | None:
 
 
 def graph_of(db: OrmSession, run: Run) -> dict:
+    held = (run.state or {}).get("graph")
+    if isinstance(held, dict):
+        return held  # a debug run of a draft carries the graph it was started with
     row = db.get(PlaybookVersion, (run.playbook_id, run.version))
     return row.graph if row else {"nodes": [], "edges": []}
 
@@ -220,11 +223,17 @@ def start_run(
     depth: int = 0,
     parent: tuple[Run, RunStep] | None = None,
     version: int | None = None,
+    debug: dict | None = None,
+    shape: dict | None = None,
     now: float,
 ) -> Run:
-    """Create a run of the playbook's current version and its first steps (the caller commits)."""
-    number = version or playbook.current_version
-    shape = db.get(PlaybookVersion, (playbook.id, number)).graph
+    """Create a run of the playbook's current version and its first steps (the caller commits).
+    ``debug`` (``{"breakpoints": [...], "step": bool}``) makes it a debug run, which stops before
+    nodes (debugger.py); ``shape`` runs a graph that is no saved version: a draft being debugged."""
+    number = version or playbook.current_version or 0
+    carried = shape is not None
+    if shape is None:
+        shape = db.get(PlaybookVersion, (playbook.id, number)).graph
     run = Run(
         id=new_id(),
         playbook_id=playbook.id,
@@ -245,7 +254,14 @@ def start_run(
         dry_run=dry_run,
         context={"trigger": payload or {}, "inputs": inputs or {}},
         context_classes={"trigger": classes or {}},
-        state={"edges": {}, "each": {}, "seq": 0},
+        state={
+            "edges": {},
+            "each": {},
+            "seq": 0,
+            **({"debug": debug} if debug is not None else {}),
+            **({"graph": shape} if carried else {}),
+        },
+        debug=debug is not None,
         started_at=iso(now),
         deadline=now + (playbook.max_seconds or 86400),
         started_by=started_by,
@@ -805,10 +821,14 @@ def _perform(
             raise StepFailed("This action does not exist any more", retry=False)
         rendered = ex.render(config.get("args") or {}, scope)
         args = actions.argument_values(spec, rendered)
+        if isinstance(waiting.get("override"), dict):
+            args = {**args, **waiting["override"]}  # typed by who debugs the run
         arg_classes = ex.render_classes(config.get("args") or {}, scope)
         shown = {"action": spec.id, "args": _cut(args)}
         approved_by = waiting.get("approved_by")
-        if _needs_approval(node, spec, playbook, args) and not approved_by and not run.dry_run:
+        # A debug run holds what goes outside, as a dry run does, unless this one node was let through.
+        dry = bool(run.dry_run) and not waiting.get("real")
+        if _needs_approval(node, spec, playbook, args) and not approved_by and not dry:
             approval = config.get("approval") if isinstance(config.get("approval"), dict) else {}
             question = f"{node.get('name') or spec.name}: go ahead?"
             outcome = _ask(
@@ -817,7 +837,7 @@ def _perform(
             outcome.input = shown
             return outcome
         call = actions.Call(
-            db=db, args=args, classes=rendered.classes, arg_classes=arg_classes, dry_run=bool(run.dry_run),
+            db=db, args=args, classes=rendered.classes, arg_classes=arg_classes, dry_run=dry,
             run=run, playbook=playbook, step_id=step.id, approved_by=approved_by, now=now,
             held="drop" if config.get("held") == "drop" else "fail",
             connection=str(config.get("connection") or ""),
@@ -846,6 +866,8 @@ def _perform(
             raise StepFailed("Scripts cannot run here: the sandbox is not configured", retry=False)
         rendered = ex.render(config.get("args") or {}, scope)
         args = rendered.data if isinstance(rendered.data, dict) else {}
+        if isinstance(waiting.get("override"), dict):
+            args = {**args, **waiting["override"]}  # typed by who debugs the run
         output, log = script_runner(db, str(config.get("script")), config.get("script_version"), args, run)
         # The outputs the script declares a context path for go to the context of the incident.
         log = _with(log, _to_context(db, run, script_context(db, config, output), ""))
@@ -968,6 +990,12 @@ def execute(db: OrmSession, step_id: str, now: float) -> None:
                 step.finished_at = iso(now)
                 db.commit()
                 return
+            if run.debug and _is_try(step) and step.attempt <= 1:
+                from . import debugger
+
+                if debugger.park(db, run, shape, node, step, now):
+                    db.commit()
+                    return
             outcome = _perform(db, run, playbook, shape, node, step, now)
         except StepFailed as error:
             failure = error
@@ -1019,7 +1047,9 @@ def _apply(db: OrmSession, run: Run, shape: dict, step: RunStep, outcome: Outcom
         return
     if outcome.wait is not None:
         step.status = "waiting"
-        step.waiting = outcome.wait
+        # What who debugs the run said of this step stays with it while it waits.
+        kept = {key: value for key, value in (step.waiting or {}).items() if key in ("released", "override", "real")}
+        step.waiting = {**kept, **outcome.wait}
         step.next_at = outcome.next_at
         step.claimed_by = None
         if outcome.wait.get("kind") == "each":
@@ -1065,7 +1095,11 @@ def answer(db: OrmSession, approval: Approval, verdict: str, by: str, comment: s
                 # An approval nobody answered is never an approval.
                 _complete(db, run, shape, step, "approved" if verdict == "approved" else "refused", result, now)
         elif verdict == "approved":
-            step.waiting = {"approved_by": by}
+            # What who debugs the run said of this step stays with it through the approval.
+            kept = {
+                key: value for key, value in (step.waiting or {}).items() if key in ("released", "override", "real")
+            }
+            step.waiting = {**kept, "approved_by": by}
             step.status = "pending"
             step.next_at = now
         elif verdict == "expired" and approval.on_expire == "stop":
