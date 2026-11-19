@@ -105,7 +105,7 @@ LABELS = {
     "dashboards": "Dashboard",
 }
 YAML_KINDS = frozenset({"connectors", "scripts"})
-NIK_VERSION = (5, 0, 1)
+NIK_VERSION = (5, 1, 0)
 
 
 class PackError(ValueError):

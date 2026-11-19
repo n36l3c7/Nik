@@ -10,6 +10,7 @@ import hashlib
 from email.message import EmailMessage
 
 import pytest
+from sqlalchemy import select
 
 from app.automation import connector_actions as ca
 from app.automation import connectors as files
@@ -362,3 +363,46 @@ def test_the_last_word_of_a_folder_line_is_read_from_its_end():
     # A line that never closes its quotes, or is made of spaces, costs nothing.
     assert read('() "/" "' + "a" * 5000) == '"' + "a" * 5000
     assert read(" " * 20000 + '"x') is not None
+
+
+def test_the_listener_makes_each_message_that_arrives_an_incident(admin, box):
+    """From the mailbox to the list of incidents: the fetch of an instance, the mapper the connector
+    ships with, and the incident marked with what brought it in."""
+    from app import fetch, mapping
+    from app.core.db import SessionLocal
+    from app.core.models import Connection, Incident
+    from app.core.security import now_iso
+
+    with SessionLocal() as db:
+        ca.seed(db)
+        db.flush()
+        mapping.seed(db)
+        row = Connection(
+            id="m" * 32, name="SOC mailbox", connector_id="mail", config=dict(CONFIG), fetch_enabled=True,
+            created_at=now_iso(), updated_at=now_iso(),
+        )  # fmt: skip
+        ca.store_secrets(row, SECRETS)
+        db.add(row)
+        db.commit()
+        first = fetch.cycle(db, db.get(Connection, "m" * 32))
+        assert (first["fetched"], first["created"]) == (3, 3), first
+        assert db.get(Connection, "m" * 32).fetch_state == {"uid": 9}
+        # Nothing arrived: nothing is made twice.
+        again = fetch.cycle(db, db.get(Connection, "m" * 32))
+        assert again["created"] == 0, again
+        names = sorted(name for (name,) in db.execute(select(Incident.name)))
+    assert names == ["Invoice overdue", "Phishing report", "Re: your ticket"]
+    rows = admin.get("/api/incidents?view=summary").json()["incidents"]
+    assert {row["source"]["connector"] for row in rows} == {"Mail listener / sender"}
+    assert {row["source"]["connection"] for row in rows} == {"SOC mailbox"}
+    assert all(row["source"]["logo"] is None and row["number"] for row in rows)
+
+    # A message that arrives afterwards is the only one the next cycle reads.
+    box.folders["INBOX"][12] = [message(12, "New alert"), set()]
+    with SessionLocal() as db:
+        later = fetch.cycle(db, db.get(Connection, "m" * 32))
+        assert (later["fetched"], later["created"]) == (1, 1), later
+        # An instance turned off is not fetched by the worker.
+        db.get(Connection, "m" * 32).enabled = False
+        db.commit()
+        assert "m" * 32 not in fetch.due(db, 9e12)

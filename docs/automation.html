@@ -128,8 +128,7 @@
             </tr>
             <tr>
               <td>
-                Choose the hosts a playbook may reach, let it reach any host, open a class of data, set the SMTP server,
-                stop all automation
+                Choose the hosts a playbook may reach, let it reach any host, open a class of data, stop all automation
               </td>
               <td><em>Admin</em></td>
             </tr>
@@ -683,13 +682,17 @@ Content-Type: application/json
         but a GET changes something on the other side, and <a href="#approvals">asks first</a> by default.
       </p>
 
-      <h3 id="email-node">Send an e-mail</h3>
+      <h3 id="email-node">E-mail</h3>
       <p>
-        Sends a plain-text message through the SMTP server an admin sets in
-        <strong>Settings → Automation → Network and data</strong>: <code>to</code> (a list, or addresses separated by
-        commas; fifty at most), <code>subject</code>, <code>text</code>. The domain of every recipient must be among the
-        hosts the playbook may reach. Without a server the node fails and says so. It does not ask for approval by
-        default: turn <em>Approval before this node</em> on if a person should see the message first.
+        Mail is a connector since 5.1, not a node of its own: <a href="#mail-connector">Mail listener / sender</a>. Its
+        commands are in the library once one of its instances is on: <em>send</em>, <em>reply</em>, <em>forward</em>,
+        <em>search</em>, <em>get-message</em>, <em>move</em>, <em>mark-read</em>, <em>mark-unread</em>, <em>delete</em>,
+        <em>list-folders</em>.
+      </p>
+      <p>
+        The node <em>Send an e-mail</em> of 4.x is kept in the playbooks that have it and is not offered for new ones.
+        It sends through an instance of the Mail connector: the one it names, or the only one that is on. The SMTP
+        server that was set in <em>Network and data</em> became such an instance when the server was updated.
       </p>
 
       <h2 id="expressions">Expressions</h2>
@@ -1621,12 +1624,50 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         wrote is never sent back, and a comment Nik sent is recognised when it comes back.
       </p>
 
+      <h3 id="mail-connector">Mail listener / sender</h3>
+      <p>
+        A mailbox to read over IMAP and a server to send through over SMTP. One instance is one mailbox: the IMAP
+        server, its port and security, the folder to watch; the SMTP server, its port and security, the sender; a user
+        name and a password used for both. Either half may be left empty: an instance with no IMAP server only sends,
+        one with no SMTP server only reads. <em>Test</em> opens the mailbox and asks the SMTP server to take the
+        credentials.
+      </p>
+      <ul>
+        <li>
+          <strong>Sending</strong> (<code>send</code>, <code>reply</code>, <code>forward</code>): plain text, fifty
+          recipients at most. A recipient is a destination: its domain must be among the hosts the playbook may reach,
+          also for the sender of a message that is answered. What is said goes through the data guard; the recipients do
+          not. <code>reply</code> stays in the conversation of the message (<code>In-Reply-To</code>,
+          <code>References</code>); <code>forward</code> quotes its text and does not carry its attachments.
+        </li>
+        <li>
+          <strong>Reading</strong> (<code>search</code>, <code>get-message</code>, <code>list-folders</code>): a message
+          is named by its <code>uid</code> in its folder. An attachment is described (name, type, size, SHA-256) and
+          never opened. The first 2 MB of a message are read.
+        </li>
+        <li>
+          <strong>Changing the mailbox</strong> (<code>move</code>, <code>mark-read</code>, <code>mark-unread</code>,
+          <code>delete</code>): they ask for approval by default, like any command that changes something outside.
+          <code>delete</code> cannot be taken back.
+        </li>
+        <li>
+          <strong>The listener.</strong> Turn on fetching for the instance (<a href="#fetching">Fetching</a>) and each
+          message that arrives in the folder becomes an incident: its subject is the name, its sender and its text the
+          details. A message is read once, told apart by its Message-ID.
+        </li>
+      </ul>
+      <p>
+        This connector is <em>native</em>: a mailbox is not reached over HTTP, so its file names the commands and Nik's
+        own code runs them (<code>native: mail</code> in the file, see <a href="#connector-format">the format</a>). It
+        was tested against doubles of an IMAP mailbox and of an SMTP server, <strong>not against a real one</strong>.
+      </p>
       <h3 id="shipped-connectors">The connectors Nik ships</h3>
       <p>
-        Twelve files for nine products. Each was written from what the vendor publishes about its API and is tested
-        against answers recorded from that documentation, <strong>not against a real system</strong>: each says
-        <code>verified: false</code>, and the list of connectors marks it <em>not verified</em>. Test the connection and
-        try each command in a dry run, then on something harmless, before a playbook relies on it.
+        Twelve files for nine products, and the Mail connector above. Each was written from what the vendor publishes
+        about its API and is tested against answers recorded from that documentation,
+        <strong>not against a real system</strong>: each says <code>verified: false</code>, and the list of connectors
+        marks it <em>not verified</em>. Test the connection and try each command in a dry run, then on something
+        harmless, before a playbook relies on it.
       </p>
       <div class="table-wrap">
         <table>
@@ -1743,8 +1784,11 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       <h3 id="connector-format">The connector file, key by key</h3>
       <p>
         A file is YAML, at most 256 kB. <strong>A key the format does not know is an error</strong>, so a typo is told
-        and not ignored. Texts between <code>{{ }}</code> are <a href="#expressions">expressions</a>; what they can read
-        depends on where they are:
+        and not ignored. A file that says <code>native: mail</code> is of the one kind Nik speaks for itself: it has no
+        <code>base_url</code>, <code>headers</code>, <code>test</code> nor <code>mirror</code>, its commands have no
+        <code>request</code> and are among those Nik has for mail, and its <code>fetch</code> has no request either;
+        everything else (configuration, arguments, outputs, samples, schema) is as below. Texts between
+        <code>{{ }}</code> are <a href="#expressions">expressions</a>; what they can read depends on where they are:
       </p>
       <div class="table-wrap">
         <table>
@@ -2454,8 +2498,8 @@ commands:
                 a verdict changed: what became suspicious or malicious, what is no longer flagged.
               </td>
               <td>
-                Set the SMTP server (Settings → Automation), write your address in <em>Send the report</em>, list its
-                domain among the hosts of the playbook.
+                Add an instance of the Mail connector with an SMTP server (Settings → Automation → Connectors), write
+                your address in <em>Send the report</em>, list its domain among the hosts of the playbook.
               </td>
             </tr>
             <tr>
@@ -2491,7 +2535,7 @@ commands:
               <td>Disk almost full notice</td>
               <td><code>storage.low</code></td>
               <td>Sends a message that says how much of the evidence disk is free.</td>
-              <td>As for the weekly re-check: SMTP, your address, its domain.</td>
+              <td>As for the weekly re-check: an instance of Mail, your address, its domain.</td>
             </tr>
           </tbody>
         </table>

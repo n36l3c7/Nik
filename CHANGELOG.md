@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-11-19
+
 ### Changed
 
+- **Mail is a connector, not a node.** *Mail listener / sender* reads a
+  mailbox over IMAP and sends over SMTP: `send`, `reply`, `forward`,
+  `search`, `get-message`, `move`, `mark-read`, `mark-unread`, `delete`,
+  `list-folders`, and a listener that makes each message that arrives an
+  incident. The node *Send an e-mail* of 4.x is kept in the playbooks that
+  have it, is no longer offered, and sends through an instance of the
+  connector; the SMTP server of *Network and data* becomes an instance
+  (*Mail (from Settings)*) when the server starts, and its form is gone.
 - **Connectors and connections are one page.** *Settings → Automation →
   Connectors* lists each connector with its instances under it: what was a
   connection is an instance of its connector, added, edited and tested
@@ -18,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native connectors.** A connector file may say `native: mail`: it names
+  its commands and has no requests, and Nik's own code runs them. The
+  catalogue of the editor says of each command of a connector whether one
+  of its instances is on (`available`).
 - **A connector is a package.** Beside its file it may have a logo and a
   README (`connectors.logo`, `readme`), and in a content pack it may be a
   folder: `connectors/<id>/connector.yml` with `logo.svg` or `logo.png` and
@@ -2593,7 +2607,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.0.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/n36l3c7/Nik/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/n36l3c7/Nik/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/n36l3c7/Nik/compare/v4.7.0...v5.0.0
 [4.7.0]: https://github.com/n36l3c7/Nik/compare/v4.6.0...v4.7.0

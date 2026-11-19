@@ -253,6 +253,8 @@
 │   ├── triggers.py, payloads.py    # Events (an outbox), schedules, limits; what an event carries
 │   ├── actions.py, nik_actions.py  # The registry of actions; what a playbook does inside Nik
 │   ├── outbound.py, egress.py      # HTTP and e-mail nodes; the one module that opens connections
+│   ├── mail_runtime.py             # Mail as a connector: its commands over IMAP and SMTP, the listener
+│   ├── connector_logo.py           # The logo of a connector: a PNG, or an SVG that is a drawing only
 │   ├── guard.py                    # The data guard: classes, what may leave, the scan of what does
 │   ├── scripts.py, seed/scripts/   # Scripts, their versions, the sandbox client; the shipped scripts
 │   ├── connectors.py               # The connector file: its format, read and checked (problems with their line)
@@ -1383,6 +1385,39 @@
         <code>ioc_verdict_changes</code>, and the columns <code>ioc_checks.list_id</code>,
         <code>ioc_checks.baseline</code>, <code>artifacts.expires_at</code>, <code>artifacts.expiry_note</code> and
         <code>artifacts.expiry_noticed</code>.
+      </p>
+      <h3 id="instances-mail">Instances, packages and mail (5.1)</h3>
+      <ul>
+        <li>
+          <strong>Instances.</strong> A connection is an instance of its connector; the table keeps its name.
+          <code>connections.enabled</code> is read wherever an instance is chosen: by a node
+          (<code>find_connection</code>), the War Room, the fetch (<code>fetch.due</code>) and mirroring. The catalogue
+          of the editor says of each command which connector it belongs to and whether one of its instances is on.
+        </li>
+        <li>
+          <strong>A connector as a package.</strong> <code>connectors.logo</code>, <code>logo_type</code> and
+          <code>readme</code> hold what comes beside the file. A content pack reads and writes a connector as a folder
+          when it has either (<code>packs.read</code>, <code>write</code>); a shipped connector may be a folder too
+          (<code>connector_actions.package_of</code>). <code>connector_logo.clean</code> is the one place a logo is
+          checked. An incident says what brought it in (<code>source</code>, from
+          <code>incidents.source_connection_id</code>).
+        </li>
+        <li>
+          <strong>Native connectors.</strong> A file with <code>native: mail</code> has no requests:
+          <code>runtime_for</code> gives a <code>MailRuntime</code>, which has the methods of the HTTP runtime
+          (<code>run</code>, <code>would_send</code>, <code>test</code>, <code>fetch</code>, <code>close</code>), so the
+          engine, the test of an instance and the fetch cycle do not know the difference. The connections are opened by
+          <code>egress.imap_client</code> and <code>egress.smtp_client</code>.
+        </li>
+        <li>
+          <strong>The e-mail node of 4.x</strong> (<code>email.send</code>) is an alias: it sends through an instance of
+          the Mail connector, and through the SMTP server of the settings while there is none.
+          <code>adopt_smtp</code> makes that server an instance, once, when the server starts.
+        </li>
+      </ul>
+      <p>
+        Migration <code>0036_instances</code>: the columns <code>connections.enabled</code>,
+        <code>connectors.logo</code>, <code>connectors.logo_type</code> and <code>connectors.readme</code>.
       </p>
       <h3 id="identity-shell">Numbers, the query language and the shell (5.0)</h3>
       <ul>

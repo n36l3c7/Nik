@@ -196,6 +196,14 @@
           store.
         </li>
         <li>
+          <strong>Mail.</strong> The Mail connector reads a mailbox and sends through an SMTP server, both written in an
+          instance by who manages connectors and reached wherever they are. A message is parsed and never opened
+          further: an attachment is described by name, type, size and SHA-256. A value put in an IMAP command is quoted,
+          and refused when it holds a quote, a backslash or a line break. A recipient must be in a domain the playbook
+          may reach, and what is said goes through the data guard. Like every connection, these are opened by the one
+          module that opens connections.
+        </li>
+        <li>
           <strong>Logos</strong> of connectors come from outside, in a pack or an upload, and are shown to everyone. A
           logo is a PNG, by its signature, or an SVG that holds a drawing and nothing else: no script, no
           <code>foreignObject</code>, no event handler, no DOCTYPE, no reference outside the file. It is drawn with
