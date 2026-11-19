@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **"Is not" is written before the field in a query**: `!status:closed`.
+  The writing of 4.x, `status:!closed`, is still read through 5.x, means the
+  same, and is shown rewritten when the query box is left; it goes in 6.0.
+  `!` also negates a group, a comparison or a word: `!(kind:file or
+  kind:mail)`, `!severity:>=high`, `!invoice`.
+
+### Added
+
+- **Lists in the query language**: `field IN (a, b, "c d")` and
+  `field NOT IN (...)`, the same as writing a condition for each value.
+  Values are separated by commas or spaces, take wildcards, and are
+  completed as the values of the field.
+
 ## [4.7.0] - 2026-11-19
 
 ### Added

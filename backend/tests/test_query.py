@@ -47,6 +47,38 @@ def test_the_vectors_cover_every_error_the_parser_raises():
     assert len(VECTORS) > 60 and any(len(v["query"]) > MAX_LENGTH for v in VECTORS)
 
 
+def test_is_not_written_as_before_is_rewritten_and_means_the_same():
+    """``field:!value`` was "is not" until 5.0. It is still read; ``modern`` gives today's writing."""
+    for old, new in {
+        "status:!closed": "!status:closed",
+        "status:open name:!x": "status:open !name:x",
+        '(owner:!"" or tags:!phish) severity:>=high': '(!owner:"" or !tags:phish) severity:>=high',
+        "-name:!x": "-!name:x",
+        "not status:!closed": "not !status:closed",
+    }.items():
+        assert query.modern(old) == new
+        assert to_json(parse(new)) == _without_positions_moved(old, new)
+        assert query.modern(new) == new
+    # Nothing to rewrite, and what cannot be read, come back as they are.
+    for text in ("", "status:open", "!status:closed", "status IN (a, b)", "(status:!closed", 'name:"a:!b"'):
+        assert query.modern(text) == text
+    assert query.modern(None) == ""
+
+
+def _without_positions_moved(old: str, new: str):
+    """The tree of the old writing with the positions of the new one: the two differ in nothing else."""
+
+    def strip(node):
+        if isinstance(node, dict):
+            return {key: strip(value) for key, value in node.items() if key != "position"}
+        if isinstance(node, list):
+            return [strip(item) for item in node]
+        return node
+
+    assert strip(to_json(parse(old))) == strip(to_json(parse(new)))
+    return to_json(parse(new))
+
+
 def test_dates_are_spans_of_time():
     def span(text):
         return dates.span(text, NOW)
@@ -179,6 +211,16 @@ CASES = {
     "kind:file": {"file-a", "file-b"},
     "type:FILE": {"file-a", "file-b"},
     "kind:!file": {"mail-c", "pcap-d", "url-e"},
+    # "Is not" before the field (5.0), and lists.
+    "!kind:file": {"mail-c", "pcap-d", "url-e"},
+    "!name:invoice": {"file-b", "pcap-d", "url-e"},
+    "!tag:phish": {"file-a", "file-b", "pcap-d"},
+    "kind IN (file, mail)": {"file-a", "file-b", "mail-c"},
+    "kind in (pcap)": {"pcap-d"},
+    "kind NOT IN (file, mail)": {"pcap-d", "url-e"},
+    "kind IN (file, mail) !name:invoice": {"file-b"},
+    "!(kind:file or kind:mail)": {"pcap-d", "url-e"},
+    "kind IN (p*, url)": {"pcap-d", "url-e"},
     "kind:p*": {"pcap-d"},
     "verdict:phishing": {"mail-c"},
     'verdict:""': {"file-b", "pcap-d"},

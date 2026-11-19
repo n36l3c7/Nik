@@ -1,18 +1,19 @@
 """The query language: text to a tree.
 
-    type:Phishing and status:open and severity:>=high and owner:"" and
-    created:>="7 days ago" and -labels:test
+    type:Phishing and !status:closed and severity:>=high and owner:"" and
+    created:>="7 days ago" and category IN (malware, "data loss")
 
 Grammar (hand-written, no regular expression runs on the whole input)::
 
     query   := or
     or      := and ( "or" and )*
     and     := unary ( ["and"] unary )*
-    unary   := ( "not" | "-" ) unary | group | term
+    unary   := ( "not" | "-" | "!" ) unary | group | term
     group   := "(" query ")"
-    term    := field ":" [op] value | field ":" range | value
+    term    := field ":" [op] value | field ":" range | field list | value
     op      := ">=" | "<=" | ">" | "<" | "!"
     range   := "[" value " TO " value "]"
+    list    := [ "not" ] "in" "(" value ( [","] value )* ")"
     value   := bare | quoted
     field   := name ( "." name )*
 
@@ -21,6 +22,12 @@ A bare value may hold the wildcards ``*`` (any run of characters) and ``?``
 space takes it literally, and is itself anywhere else (a Windows path). A quoted
 value is literal, with ``\\"`` and ``\\\\`` as escapes. ``field:""`` asks for an
 empty field, ``field:*`` for one that holds something.
+
+"Is not" is written before the field: ``!status:closed``. It is the same
+condition ``status:!closed`` was until 5.0, which is still read (``modern``
+gives a query in today's writing) and goes in 6.0. A list is a shorter way
+to write the same conditions: ``field IN (a, b)`` is ``field:a or field:b``,
+``field NOT IN (a, b)`` is ``!field:a !field:b``, and the tree holds those.
 
 The same grammar is implemented in ``frontend/src/domain/query/parse.js``;
 both are checked against ``backend/tests/data/query_vectors.json``.
@@ -46,6 +53,7 @@ MESSAGES = {
     "empty_group": "The parentheses hold nothing",
     "missing_value": "A value is expected after the colon",
     "bad_range": "A range is written [from TO to]",
+    "bad_list": "A list is written IN (a, b, c)",
     "dangling_operator": "A condition is expected here",
 }
 
@@ -163,6 +171,8 @@ def literal(text: str) -> Value:
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
 _SPACE = " \t\r\n"
 _OPS = (">=", "<=", ">", "<", "!")
+# ``field IN (`` and ``field NOT IN (``, after the name of a field.
+_LIST = re.compile(r"[ \t\r\n]+(?:(not)[ \t\r\n]+)?in[ \t\r\n]*\(", re.IGNORECASE)
 # What a backslash takes literally in a bare value; before anything else it is itself.
 _ESCAPED = '*?()" '
 
@@ -172,6 +182,9 @@ class _Reader:
         self.text = text
         self.i = 0
         self.terms = 0
+        # Where "is not" is written as it was before 5.0 (``field:!value``): the start of the
+        # condition and the place of its "!".
+        self.old: list[tuple[int, int]] = []
 
     # -- helpers --------------------------------------------------------------
     def skip(self) -> None:
@@ -244,6 +257,14 @@ class _Reader:
         if self.peek() == "-" and self.i + 1 < len(self.text) and self.text[self.i + 1] not in _SPACE + ")":
             self.i += 1
             return Not(self.unary(depth + 1))
+        if self.peek() == "!" and self.i + 1 < len(self.text) and self.text[self.i + 1] not in _SPACE + ")":
+            at = self.i
+            self.i += 1
+            node = self.unary(depth + 1)
+            if isinstance(node, Term) and node.op == "=":
+                # "Is not", empty fields included: one condition, not the negation of one.
+                return Term(node.field, "!", node.value, at, self.text[at : self.i])
+            return Not(node)
         if self.peek() == "(":
             at = self.i
             self.i += 1
@@ -272,6 +293,8 @@ class _Reader:
             for candidate in _OPS:
                 if self.text.startswith(candidate, self.i):
                     op = candidate
+                    if op == "!":
+                        self.old.append((start, self.i))
                     self.i += len(candidate)
                     break
             if self.peek() == "[":
@@ -284,7 +307,33 @@ class _Reader:
             if not value.quoted and not value.parts:
                 raise QueryError("missing_value", at)
             return Term(name.group(), op, value, start, self.text[start : self.i])
+        if name:
+            listed = _LIST.match(self.text, name.end())
+            if listed:
+                return self.listed(name.group(), start, listed.end(), bool(listed.group(1)))
         return Text(self.bare(), start)
+
+    def listed(self, name: str, start: int, opened: int, negated: bool):
+        """``field IN (a, b)``: the conditions it stands for, one for each value."""
+        self.i = opened
+        terms = []
+        while True:
+            while self.peek() and (self.peek() in _SPACE or self.peek() == ","):
+                self.i += 1
+            if not self.peek():
+                raise QueryError("bad_list", start)
+            if self.peek() == ")":
+                self.i += 1
+                break
+            if terms:
+                self.counted()
+            value = self.quoted() if self.peek() == '"' else self.bare(stop=",")
+            terms.append(Term(name, "!" if negated else "=", value, start, self.text[start:opened]))
+        if not terms:
+            raise QueryError("bad_list", start)
+        if len(terms) == 1:
+            return terms[0]
+        return And(tuple(terms)) if negated else Or(tuple(terms))
 
     def quoted(self) -> Value:
         start = self.i
@@ -367,21 +416,37 @@ class _Reader:
         return ends[0], ends[1]
 
 
-def parse(text: str | None):
-    """The tree of a query; None for an empty one (it matches everything).
-    Raises ``QueryError`` with the position of what cannot be read."""
-    source = text or ""
+def _read(source: str):
     if len(source) > MAX_LENGTH:
         raise QueryError("too_long", MAX_LENGTH)
     reader = _Reader(source)
     reader.skip()
     if not reader.peek():
-        return None
+        return None, reader
     node = reader.query(0)
     reader.skip()
     if reader.peek() == ")":
         raise QueryError("unexpected_close", reader.i)
-    return node
+    return node, reader
+
+
+def parse(text: str | None):
+    """The tree of a query; None for an empty one (it matches everything).
+    Raises ``QueryError`` with the position of what cannot be read."""
+    return _read(text or "")[0]
+
+
+def modern(text: str | None) -> str:
+    """A query in today's writing: ``status:!closed`` becomes ``!status:closed``. The tree is the
+    same. A query that cannot be read is given back as it is."""
+    source = text or ""
+    try:
+        reader = _read(source)[1]
+    except QueryError:
+        return source
+    for start, bang in sorted(reader.old, reverse=True):
+        source = source[:start] + "!" + source[start:bang] + source[bang + 1 :]
+    return source
 
 
 # --------------------------------------------------------------------------- #

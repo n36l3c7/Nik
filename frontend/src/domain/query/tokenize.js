@@ -3,14 +3,16 @@
  * typed, half-written or wrong, is cut into tokens that cover the whole text,
  * so the input can be coloured while it is edited.
  *
- * Token types: space, paren, keyword (and / or / not), not (the leading -),
- * field, op (the colon and the comparison after it), value, range, text (a
- * value on its own), and quote for a quoted value or text.
+ * Token types: space, paren, keyword (and / or / not / in), not (the leading
+ * - or !), field, op (the colon and the comparison after it), value, range,
+ * text (a value on its own), and quote for a quoted value or text. The values
+ * of a list (`field IN (a, b)`) are value tokens of that field.
  */
 
 const SPACE = ' \t\r\n'
 const OPS = ['>=', '<=', '>', '<', '!']
 const NAME = /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/y
+const LIST = /([ \t\r\n]+)(?:(not)([ \t\r\n]+))?(in)([ \t\r\n]*)\(/iy
 
 function keywordAt(text, i) {
   for (const word of ['and', 'or', 'not']) {
@@ -87,7 +89,12 @@ export function tokenize(text) {
       i += word.length
       continue
     }
-    if (char === '-' && i + 1 < source.length && !SPACE.includes(source[i + 1]) && source[i + 1] !== ')') {
+    if (
+      (char === '-' || char === '!') &&
+      i + 1 < source.length &&
+      !SPACE.includes(source[i + 1]) &&
+      source[i + 1] !== ')'
+    ) {
       push('not', i, i + 1)
       i += 1
       continue
@@ -126,6 +133,49 @@ export function tokenize(text) {
         i = end
       }
       continue
+    }
+    if (name) {
+      LIST.lastIndex = NAME.lastIndex
+      const listed = LIST.exec(source)
+      if (listed) {
+        const field = name[0]
+        push('field', i, NAME.lastIndex)
+        let j = NAME.lastIndex
+        for (const [piece, type] of [
+          [listed[1], 'space'],
+          [listed[2], 'keyword'],
+          [listed[3], 'space'],
+          [listed[4], 'keyword'],
+          [listed[5], 'space'],
+        ]) {
+          if (piece) push(type, j, j + piece.length)
+          j += piece ? piece.length : 0
+        }
+        push('paren', j, j + 1)
+        j += 1
+        // The values, up to the parenthesis that closes the list (or the end, while it is typed).
+        while (j < source.length && source[j] !== ')') {
+          if (SPACE.includes(source[j]) || source[j] === ',') {
+            let k = j
+            while (k < source.length && (SPACE.includes(source[k]) || source[k] === ',')) k += 1
+            push('space', j, k)
+            j = k
+          } else if (source[j] === '"') {
+            const end = quoteEnd(source, j)
+            push('value', j, end, { field })
+            j = end
+          } else {
+            let k = j
+            while (k < source.length && !SPACE.includes(source[k]) && source[k] !== ',' && source[k] !== ')') {
+              k += source[k] === '\\' && k + 1 < source.length ? 2 : 1
+            }
+            push('value', j, Math.min(k, source.length), { field })
+            j = Math.min(k, source.length)
+          }
+        }
+        i = j
+        continue
+      }
     }
     const end = Math.max(bareEnd(source, i), i + 1)
     push('text', i, end)

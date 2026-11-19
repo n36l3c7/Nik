@@ -816,8 +816,17 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               </td>
             </tr>
             <tr>
-              <td><code>-</code> or <code>not</code> · <code>field:!value</code></td>
-              <td>Not that: <code>-status:closed</code>, <code>tag:!test</code>.</td>
+              <td><code>!field:value</code> · <code>-</code> or <code>not</code></td>
+              <td>
+                Not that: <code>!status:closed</code>, <code>-test</code>, <code>not (kind:file or kind:mail)</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>field IN (a, b)</code> · <code>NOT IN</code></td>
+              <td>
+                One of these, none of these: <code>status IN (open, "in progress")</code>,
+                <code>owner NOT IN (anna, bruno)</code>.
+              </td>
             </tr>
             <tr>
               <td>

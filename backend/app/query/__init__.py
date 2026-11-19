@@ -25,12 +25,13 @@ from sqlalchemy.orm import Session as OrmSession
 from . import fields as _fields
 from .entities import ENTITIES
 from .fields import Context, Entity, suggest
-from .parser import And, Not, Or, QueryError, Range, Term, Text, Value, literal, parse, to_json
+from .parser import And, Not, Or, QueryError, Range, Term, Text, Value, literal, modern, parse, to_json
 
 __all__ = [
     "ENTITIES",
     "And",
     "Not",
+    "modern",
     "Or",
     "QueryError",
     "QueryForbidden",

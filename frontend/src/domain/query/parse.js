@@ -1,7 +1,7 @@
 /*
  * The query language: text to a tree.
  *
- *   status:open severity:>=high owner:"" -host:srv-*
+ *   !status:closed severity:>=high owner:"" category IN (malware, "data loss")
  *
  * The twin of backend/app/query/parser.py: the same grammar, the same tree
  * (as plain data), the same error codes and positions. Both are checked
@@ -12,11 +12,16 @@
  *   query   := or
  *   or      := and ( "or" and )*
  *   and     := unary ( ["and"] unary )*
- *   unary   := ( "not" | "-" ) unary | group | term
+ *   unary   := ( "not" | "-" | "!" ) unary | group | term
  *   group   := "(" query ")"
- *   term    := field ":" [op] value | field ":" range | value
+ *   term    := field ":" [op] value | field ":" range | field list | value
  *   op      := ">=" | "<=" | ">" | "<" | "!"
  *   range   := "[" value " TO " value "]"
+ *   list    := [ "not" ] "in" "(" value ( [","] value )* ")"
+ *
+ * "Is not" is written before the field (`!status:closed`); `status:!closed`,
+ * the writing before 5.0, is still read and `modern()` rewrites it. A list
+ * stands for the conditions it shortens: the tree holds those.
  */
 
 export const MAX_LENGTH = 2000
@@ -33,6 +38,7 @@ export const MESSAGES = {
   empty_group: 'The parentheses hold nothing',
   missing_value: 'A value is expected after the colon',
   bad_range: 'A range is written [from TO to]',
+  bad_list: 'A list is written IN (a, b, c)',
   dangling_operator: 'A condition is expected here',
 }
 
@@ -49,6 +55,8 @@ const OPS = ['>=', '<=', '>', '<', '!']
 // What a backslash takes literally in a bare value; before anything else it is itself.
 const ESCAPED = '*?()" '
 const NAME = /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/y
+// `field IN (` and `field NOT IN (`, after the name of a field.
+const LIST = /[ \t\r\n]+(?:(not)[ \t\r\n]+)?in[ \t\r\n]*\(/iy
 
 const isSpace = (char) => char !== '' && SPACE.includes(char)
 
@@ -67,6 +75,8 @@ class Reader {
     this.text = text
     this.i = 0
     this.terms = 0
+    // Where "is not" is written as before 5.0 (`field:!value`): [start of the condition, its "!"].
+    this.old = []
   }
 
   skip() {
@@ -150,6 +160,14 @@ class Reader {
       this.i += 1
       return { not: this.unary(depth + 1) }
     }
+    if (this.peek() === '!' && next !== '' && !isSpace(next) && next !== ')') {
+      const at = this.i
+      this.i += 1
+      const node = this.unary(depth + 1)
+      // "Is not", empty fields included: one condition, not the negation of one.
+      if (node.field && node.op === '=') return { ...node, op: '!', position: at }
+      return { not: node }
+    }
     if (this.peek() === '(') {
       const at = this.i
       this.i += 1
@@ -177,6 +195,7 @@ class Reader {
       for (const candidate of OPS) {
         if (this.text.startsWith(candidate, this.i)) {
           op = candidate
+          if (op === '!') this.old.push([start, this.i])
           this.i += candidate.length
           break
         }
@@ -190,7 +209,32 @@ class Reader {
       if (!value.quoted && value.text === '' && !value.pattern) throw new QueryError('missing_value', at)
       return { field: name[0], op, value, position: start }
     }
+    if (name) {
+      LIST.lastIndex = NAME.lastIndex
+      const listed = LIST.exec(this.text)
+      if (listed) return this.listed(name[0], start, LIST.lastIndex, Boolean(listed[1]))
+    }
     return { text: this.bare(), position: start }
+  }
+
+  /** `field IN (a, b)`: the conditions it stands for, one for each value. */
+  listed(field, start, opened, negated) {
+    this.i = opened
+    const terms = []
+    for (;;) {
+      while (this.peek() && (SPACE.includes(this.peek()) || this.peek() === ',')) this.i += 1
+      if (!this.peek()) throw new QueryError('bad_list', start)
+      if (this.peek() === ')') {
+        this.i += 1
+        break
+      }
+      if (terms.length > 0) this.counted()
+      const value = this.peek() === '"' ? this.quoted() : this.bare(',')
+      terms.push({ field, op: negated ? '!' : '=', value, position: start })
+    }
+    if (terms.length === 0) throw new QueryError('bad_list', start)
+    if (terms.length === 1) return terms[0]
+    return negated ? { and: terms } : { or: terms }
   }
 
   quoted() {
@@ -280,15 +324,37 @@ class Reader {
  * Throws QueryError with the position of what cannot be read.
  */
 export function parse(text) {
-  const source = text ?? ''
+  return read(text ?? '').tree
+}
+
+function read(source) {
   if (source.length > MAX_LENGTH) throw new QueryError('too_long', MAX_LENGTH)
   const reader = new Reader(source)
   reader.skip()
-  if (!reader.peek()) return null
-  const node = reader.query(0)
+  if (!reader.peek()) return { tree: null, reader }
+  const tree = reader.query(0)
   reader.skip()
   if (reader.peek() === ')') throw new QueryError('unexpected_close', reader.i)
-  return node
+  return { tree, reader }
+}
+
+/**
+ * A query in today's writing: `status:!closed` becomes `!status:closed`. The
+ * tree is the same. A query that cannot be read is given back as it is.
+ */
+export function modern(text) {
+  let source = text ?? ''
+  let old
+  try {
+    old = read(source).reader.old
+  } catch (error) {
+    if (!(error instanceof QueryError)) throw error
+    return source
+  }
+  for (const [start, bang] of [...old].sort((a, b) => b[0] - a[0])) {
+    source = `${source.slice(0, start)}!${source.slice(start, bang)}${source.slice(bang + 1)}`
+  }
+  return source
 }
 
 /** `{ tree }` or `{ error: { code, position, message } }`, without throwing. */

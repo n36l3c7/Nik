@@ -1057,6 +1057,482 @@
     "code": "too_long",
     "position": 2000
    }
+  },
+  {
+   "query": "!status:closed",
+   "tree": {
+    "field": "status",
+    "op": "!",
+    "value": {
+     "text": "closed",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "status:!closed",
+   "tree": {
+    "field": "status",
+    "op": "!",
+    "value": {
+     "text": "closed",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "-status:!closed",
+   "tree": {
+    "not": {
+     "field": "status",
+     "op": "!",
+     "value": {
+      "text": "closed",
+      "quoted": false
+     },
+     "position": 1
+    }
+   }
+  },
+  {
+   "query": "!status:closed severity:>=high",
+   "tree": {
+    "and": [
+     {
+      "field": "status",
+      "op": "!",
+      "value": {
+       "text": "closed",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "severity",
+      "op": ">=",
+      "value": {
+       "text": "high",
+       "quoted": false
+      },
+      "position": 15
+     }
+    ]
+   }
+  },
+  {
+   "query": "!owner:\"\"",
+   "tree": {
+    "field": "owner",
+    "op": "!",
+    "value": {
+     "text": "",
+     "quoted": true
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "!severity:>=high",
+   "tree": {
+    "not": {
+     "field": "severity",
+     "op": ">=",
+     "value": {
+      "text": "high",
+      "quoted": false
+     },
+     "position": 1
+    }
+   }
+  },
+  {
+   "query": "!created:[2026-01-01 TO *]",
+   "tree": {
+    "not": {
+     "field": "created",
+     "range": [
+      {
+       "text": "2026-01-01",
+       "quoted": false
+      },
+      null
+     ],
+     "position": 1
+    }
+   }
+  },
+  {
+   "query": "!(status:open or status:closed)",
+   "tree": {
+    "not": {
+     "or": [
+      {
+       "field": "status",
+       "op": "=",
+       "value": {
+        "text": "open",
+        "quoted": false
+       },
+       "position": 2
+      },
+      {
+       "field": "status",
+       "op": "=",
+       "value": {
+        "text": "closed",
+        "quoted": false
+       },
+       "position": 17
+      }
+     ]
+    }
+   }
+  },
+  {
+   "query": "!foo",
+   "tree": {
+    "not": {
+     "text": {
+      "text": "foo",
+      "quoted": false
+     },
+     "position": 1
+    }
+   }
+  },
+  {
+   "query": "!\"two words\"",
+   "tree": {
+    "not": {
+     "text": {
+      "text": "two words",
+      "quoted": true
+     },
+     "position": 1
+    }
+   }
+  },
+  {
+   "query": "! status:open",
+   "tree": {
+    "and": [
+     {
+      "text": {
+       "text": "!",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 2
+     }
+    ]
+   }
+  },
+  {
+   "query": "status IN (open, \"in progress\", closed)",
+   "tree": {
+    "or": [
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "in progress",
+       "quoted": true
+      },
+      "position": 0
+     },
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "closed",
+       "quoted": false
+      },
+      "position": 0
+     }
+    ]
+   }
+  },
+  {
+   "query": "status in (open closed)",
+   "tree": {
+    "or": [
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "open",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "status",
+      "op": "=",
+      "value": {
+       "text": "closed",
+       "quoted": false
+      },
+      "position": 0
+     }
+    ]
+   }
+  },
+  {
+   "query": "status In(open)",
+   "tree": {
+    "field": "status",
+    "op": "=",
+    "value": {
+     "text": "open",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "owner NOT IN (anna, bruno)",
+   "tree": {
+    "and": [
+     {
+      "field": "owner",
+      "op": "!",
+      "value": {
+       "text": "anna",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "owner",
+      "op": "!",
+      "value": {
+       "text": "bruno",
+       "quoted": false
+      },
+      "position": 0
+     }
+    ]
+   }
+  },
+  {
+   "query": "owner not in (anna)",
+   "tree": {
+    "field": "owner",
+    "op": "!",
+    "value": {
+     "text": "anna",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "type:Phishing and status IN (open, closed) or severity:>=high",
+   "tree": {
+    "or": [
+     {
+      "and": [
+       {
+        "field": "type",
+        "op": "=",
+        "value": {
+         "text": "Phishing",
+         "quoted": false
+        },
+        "position": 0
+       },
+       {
+        "or": [
+         {
+          "field": "status",
+          "op": "=",
+          "value": {
+           "text": "open",
+           "quoted": false
+          },
+          "position": 18
+         },
+         {
+          "field": "status",
+          "op": "=",
+          "value": {
+           "text": "closed",
+           "quoted": false
+          },
+          "position": 18
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "field": "severity",
+      "op": ">=",
+      "value": {
+       "text": "high",
+       "quoted": false
+      },
+      "position": 46
+     }
+    ]
+   }
+  },
+  {
+   "query": "!status IN (open, closed)",
+   "tree": {
+    "not": {
+     "or": [
+      {
+       "field": "status",
+       "op": "=",
+       "value": {
+        "text": "open",
+        "quoted": false
+       },
+       "position": 1
+      },
+      {
+       "field": "status",
+       "op": "=",
+       "value": {
+        "text": "closed",
+        "quoted": false
+       },
+       "position": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "query": "host IN (srv-*, ws?)",
+   "tree": {
+    "or": [
+     {
+      "field": "host",
+      "op": "=",
+      "value": {
+       "text": "srv-*",
+       "quoted": false,
+       "pattern": [
+        "srv-",
+        {
+         "wild": "*"
+        }
+       ]
+      },
+      "position": 0
+     },
+     {
+      "field": "host",
+      "op": "=",
+      "value": {
+       "text": "ws?",
+       "quoted": false,
+       "pattern": [
+        "ws",
+        {
+         "wild": "?"
+        }
+       ]
+      },
+      "position": 0
+     }
+    ]
+   }
+  },
+  {
+   "query": "status IN ()",
+   "error": {
+    "code": "bad_list",
+    "position": 0
+   }
+  },
+  {
+   "query": "status IN (open",
+   "error": {
+    "code": "bad_list",
+    "position": 0
+   }
+  },
+  {
+   "query": "status IN (open, ",
+   "error": {
+    "code": "bad_list",
+    "position": 0
+   }
+  },
+  {
+   "query": "in (a, b)",
+   "tree": {
+    "and": [
+     {
+      "text": {
+       "text": "in",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "and": [
+       {
+        "text": {
+         "text": "a,",
+         "quoted": false
+        },
+        "position": 4
+       },
+       {
+        "text": {
+         "text": "b",
+         "quoted": false
+        },
+        "position": 7
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "query": "status in",
+   "tree": {
+    "and": [
+     {
+      "text": {
+       "text": "status",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "text": {
+       "text": "in",
+       "quoted": false
+      },
+      "position": 7
+     }
+    ]
+   }
   }
  ]
 }

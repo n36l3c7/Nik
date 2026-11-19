@@ -1574,8 +1574,19 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
               </td>
             </tr>
             <tr>
-              <td><code>field:!value</code></td>
-              <td>Not that value.</td>
+              <td><code>!field:value</code></td>
+              <td>
+                Not that value (a field that is empty counts). Until 5.0 this was written
+                <code>field:!value</code>, which is read through 5.x and goes in 6.0.
+              </td>
+            </tr>
+            <tr>
+              <td><code>field IN (a, b)</code> · <code>field NOT IN (a, b)</code></td>
+              <td>
+                One of the values, none of them: the same as <code>field:a or field:b</code> and
+                <code>!field:a !field:b</code>. Values are separated by commas or spaces and quoted when they hold
+                either.
+              </td>
             </tr>
             <tr>
               <td><code>:&gt;</code> <code>:&gt;=</code> <code>:&lt;</code> <code>:&lt;=</code></td>

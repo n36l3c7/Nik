@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { MESSAGES, parse, tryParse } from './parse.js'
+import { MESSAGES, modern, parse, tryParse } from './parse.js'
 import { tokenAt, tokenize } from './tokenize.js'
 import { applyCompletion, completions, fieldOf, writeValue } from './complete.js'
 import { conditionOn, isComplete, opLabel, opsFor, toModel, toText, withCondition } from './builder.js'
@@ -47,6 +47,63 @@ test('the parser reads the vectors it shares with the backend', () => {
     error: { code: 'missing_value', position: 7, message: 'A value is expected after the colon' },
   })
   assert.deepEqual(tryParse('  '), { tree: null, error: null })
+})
+
+test('"is not" written as before 5.0 is rewritten, and means the same', () => {
+  const bare = (node) => JSON.parse(JSON.stringify(node, (key, value) => (key === 'position' ? undefined : value)))
+  for (const [old, now] of [
+    ['status:!closed', '!status:closed'],
+    ['status:open name:!x', 'status:open !name:x'],
+    ['(owner:!"" or tags:!phish) severity:>=high', '(!owner:"" or !tags:phish) severity:>=high'],
+    ['-name:!x', '-!name:x'],
+    ['not status:!closed', 'not !status:closed'],
+  ]) {
+    assert.equal(modern(old), now)
+    assert.deepEqual(bare(parse(old)), bare(parse(now)))
+    assert.equal(modern(now), now)
+  }
+  for (const text of ['', 'status:open', '!status:closed', 'status IN (a, b)', '(status:!closed', 'name:"a:!b"']) {
+    assert.equal(modern(text), text)
+  }
+  assert.equal(modern(null), '')
+})
+
+test('a list and a leading ! are coloured as what they are', () => {
+  const types = (text) => tokenize(text).map((token) => `${token.type}:${token.text}`)
+  assert.deepEqual(types('!status:closed'), ['not:!', 'field:status', 'op::', 'value:closed'])
+  assert.deepEqual(types('status IN (open, "in progress")'), [
+    'field:status',
+    'space: ',
+    'keyword:IN',
+    'space: ',
+    'paren:(',
+    'value:open',
+    'space:, ',
+    'value:"in progress"',
+    'paren:)',
+  ])
+  assert.deepEqual(types('owner not in(a b'), [
+    'field:owner',
+    'space: ',
+    'keyword:not',
+    'space: ',
+    'keyword:in',
+    'paren:(',
+    'value:a',
+    'space: ',
+    'value:b',
+  ])
+  // The values of a list belong to its field: they are completed as its values are.
+  const tokens = tokenize('status IN (op')
+  assert.equal(tokens.at(-1).field, 'status')
+  for (const text of ['status IN (', 'x IN (a,,b) c', '!', '!!a', 'a IN', 'IN (a)']) {
+    assert.equal(
+      tokenize(text)
+        .map((token) => token.text)
+        .join(''),
+      text,
+    )
+  }
 })
 
 test('whatever is typed is cut into tokens that cover it, half-written or wrong', () => {
@@ -174,16 +231,16 @@ test('the builder shows a query it can represent, and writes back the same query
     'status:open (severity:high or severity:critical) owner:""',
     '(status:open name:wks-*) or score:[10 TO 50]',
     'evil -kit',
-    'owner:* name:!x',
+    'owner:* !name:x',
     'created:>=now-7d created:[2026-11-01 TO *]',
     'name:"two words" "free text"',
-    'tags:!phish',
+    '!tags:phish',
   ]) {
     assert.equal(round(text), text, text)
   }
   assert.equal(round('status:open and severity:high'), 'status:open severity:high')
-  assert.equal(round('not status:open'), 'status:!open')
-  assert.equal(round('owner:* -name:x'), 'owner:* name:!x')
+  assert.equal(round('not status:open'), '!status:open')
+  assert.equal(round('owner:* -name:x'), 'owner:* !name:x')
   assert.equal(round('-owner:*'), 'owner:""')
   assert.equal(round('owner:!""'), 'owner:*')
   assert.equal(round('-name:!x'), 'name:x')
