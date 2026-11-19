@@ -38,6 +38,7 @@ import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
 import { automationFromPath, automationPath } from './domain/automationNav.js'
 import { tasksFromPath, tasksPath } from './domain/tasks.js'
 import { dashboardsFromPath, dashboardsPath, landingDashboard } from './domain/dashboards.js'
+import { PLAYGROUND_ROOT, isPlaygroundPath } from './domain/playground.js'
 import { useTasks } from './context/TasksContext.jsx'
 import NotificationsDialog from './components/tasks/NotificationsDialog.jsx'
 import { mailboxFormatOf } from './domain/mailbox.js'
@@ -66,6 +67,7 @@ import ResizeHandle, { useResizablePane } from './components/ui/ResizeHandle.jsx
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
 const TasksPage = lazy(() => import('./components/tasks/TasksPage.jsx'))
 const DashboardsPage = lazy(() => import('./components/dashboards/DashboardsPage.jsx'))
+const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage.jsx'))
 
 /*
  * ============================================================================
@@ -478,6 +480,24 @@ export default function App() {
     if (!dashboardsRoute) dashboardsReturn.current = null
   }, [dashboardsRoute])
   const dashboardsShown = Boolean(dashboardsRoute) && can('read') && !settings && !automationShown && !tasksShown
+  // The Playground, in the same way: /playground.
+  const [playgroundAsked, setPlaygroundAsked] = useState(() => isPlaygroundPath(window.location.pathname))
+  useEffect(() => onLocationChange(() => setPlaygroundAsked(isPlaygroundPath(window.location.pathname))), [])
+  const playgroundReturn = useRef(null)
+  const openPlayground = useCallback(() => {
+    if (!isPlaygroundPath(window.location.pathname)) playgroundReturn.current = currentPath()
+    setPath(PLAYGROUND_ROOT)
+  }, [])
+  const closePlayground = useCallback(() => {
+    const back = playgroundReturn.current
+    playgroundReturn.current = null
+    setPath(back ?? (activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'))
+  }, [activeIncidentId])
+  useEffect(() => {
+    if (!playgroundAsked) playgroundReturn.current = null
+  }, [playgroundAsked])
+  const playgroundShown =
+    playgroundAsked && canAutomate && !settings && !automationShown && !tasksShown && !dashboardsShown
   // Whoever chose a dashboard to open at sign-in lands on it, when the address asks for nothing else.
   const landed = useRef(false)
   useEffect(() => {
@@ -708,6 +728,7 @@ export default function App() {
           else if (automationShown) closeAutomation()
           else if (tasksShown) closeTasks()
           else if (dashboardsShown) closeDashboards()
+          else if (playgroundShown) closePlayground()
           setPanel(next)
         }}
         counts={{
@@ -731,6 +752,8 @@ export default function App() {
         tasksOpen={tasksShown}
         onDashboards={() => (dashboardsShown ? closeDashboards() : openDashboards())}
         dashboardsOpen={dashboardsShown}
+        onPlayground={() => (playgroundShown ? closePlayground() : openPlayground())}
+        playgroundOpen={playgroundShown}
         onNotifications={() => setNotificationsOpen(true)}
       />
       {notificationsOpen && <NotificationsDialog onClose={() => setNotificationsOpen(false)} />}
@@ -789,7 +812,18 @@ export default function App() {
           />
         </Suspense>
       )}
-      {!settings && !automationShown && !tasksShown && !dashboardsShown && panel && canRead && (
+      {playgroundShown && (
+        <Suspense
+          fallback={
+            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
+              Loading the playground…
+            </p>
+          }
+        >
+          <PlaygroundPage onClose={closePlayground} />
+        </Suspense>
+      )}
+      {!settings && !automationShown && !tasksShown && !dashboardsShown && !playgroundShown && panel && canRead && (
         <>
           <Sidebar
             panel={panel}
@@ -806,7 +840,9 @@ export default function App() {
 
       <div
         className={
-          settings || automationShown || tasksShown || dashboardsShown ? 'hidden' : 'flex min-w-0 flex-1 flex-col'
+          settings || automationShown || tasksShown || dashboardsShown || playgroundShown
+            ? 'hidden'
+            : 'flex min-w-0 flex-1 flex-col'
         }
       >
         <Header

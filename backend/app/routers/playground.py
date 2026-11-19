@@ -29,26 +29,37 @@ class LineIn(BaseModel):
 @router.get("")
 def list_entries(
     limit: int = Query(200, ge=1, le=playground.MAX_SHOWN),
+    show: str = Query("all"),
     caller: Principal = Depends(runner_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    """What the caller typed in the Playground and what it gave, oldest first. Nobody else's."""
-    return {"entries": playground.entries(db, caller.actor, limit)}
+    """What the caller typed in the Playground and what it gave, oldest first. Nobody else's.
+    ``show`` keeps the ``notes`` or the ``commands``."""
+    if show not in playground.SHOWS:
+        raise HTTPException(status_code=400, detail="show is one of: " + ", ".join(playground.SHOWS))
+    return {"entries": playground.entries(db, caller.actor, limit, show)}
 
 
 @router.post("/command", status_code=status.HTTP_201_CREATED, response_model=None)
 def run_line(body: LineIn, caller: Principal = Depends(runner_principal), db: OrmSession = Depends(get_db)):
-    """Run ``!name arg=value`` with no incident, as a run of one node. ``409`` with
-    ``needsConfirm`` for a command that changes something outside until ``confirm`` is sent;
-    ``400`` with what is wrong in the line, or when it is not a command."""
+    """Run ``!name arg=value`` with no incident, as a run of one node; plain text, or
+    ``/note``, is a note to oneself. ``409`` with ``needsConfirm`` for a command that changes
+    something outside until ``confirm`` is sent; ``400`` with what is wrong in the line, and for
+    ``/assign`` and ``/close``, which are about an incident."""
     try:
         parsed = commands.parse(body.line)
     except commands.CommandError as error:
         raise HTTPException(status_code=400, detail=error.message) from None
+    if parsed.kind == "note" or (parsed.kind == "slash" and parsed.name == "note"):
+        if not parsed.text:
+            raise HTTPException(status_code=400, detail="A note needs its text")
+        entry = playground.add(db, caller.actor, "note", {"text": parsed.text})
+        db.commit()
+        return JSONResponse(status_code=201, content=playground.out(entry))
     if parsed.kind != "command":
         raise HTTPException(
             status_code=400,
-            detail="The Playground runs commands: start the line with !. Notes and /commands belong to an incident",
+            detail=f"/{parsed.name} is about an incident: the Playground has none. Use it in a War Room",
         )
     if not automation_state.enabled(db):
         raise HTTPException(status_code=409, detail="Automation is stopped: an admin can start it again in Settings")

@@ -2,6 +2,7 @@ import {
   Bell,
   Boxes,
   Fingerprint,
+  FlaskConical,
   FolderClosed,
   LayoutDashboard,
   ListChecks,
@@ -25,7 +26,8 @@ import { describeRoles, rolesOf } from '../../domain/permissions.js'
  * Always visible; an entry is shown to the accounts whose roles let them use
  * it. The entries are in the order of a working day: what there is to work on
  * (incidents, one's tasks, the dashboards), what the work is done with
- * (indicators, artifacts, the search), then what is built (automations). An
+ * (indicators, artifacts, the search, the playground for a command outside
+ * any incident), then what is built (automations). An
  * entry that lists things opens the side panel; clicking it again closes the
  * panel, so the rail is also how the side panel collapses.
  *
@@ -88,12 +90,14 @@ export default function Rail({
   tasksOpen = false,
   onDashboards,
   dashboardsOpen = false,
+  onPlayground,
+  playgroundOpen = false,
   onNotifications,
 }) {
   const { currentUser, logout } = useAuth()
   const { openMenu } = useContextMenu()
   // With Settings or Automations open no panel is shown, and an entry leaves the page for its panel.
-  const open = settingsOpen || automationOpen || tasksOpen || dashboardsOpen ? null : panel
+  const open = settingsOpen || automationOpen || tasksOpen || dashboardsOpen || playgroundOpen ? null : panel
   const toggle = (name) => onPanel(open === name ? null : name)
   const canRead = can('read')
   const roles = currentUser ? describeRoles(rolesOf(currentUser)) : ''
@@ -170,6 +174,14 @@ export default function Rail({
           />
           <RailButton icon={Search} label="Search (Ctrl+K)" onClick={onSearch} />
         </>
+      )}
+      {can('automation.run') && (
+        <RailButton
+          icon={FlaskConical}
+          label={playgroundOpen ? 'Close the playground' : 'Playground'}
+          active={playgroundOpen}
+          onClick={onPlayground}
+        />
       )}
       {can('automation.run') && (
         <RailButton

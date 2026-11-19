@@ -32,10 +32,8 @@ def test_a_command_runs_with_no_incident_and_its_result_is_under_it(admin: TestC
     assert run["incidentId"] is None and run["status"] == "done"
     assert admin.get("/api/incidents").json()["incidents"] == []
 
-    # What is not a command belongs to an incident; what is wrong with a line is said.
+    # What is wrong with a line is said.
     for line, why in (
-        ("Just a note", "The Playground runs commands"),
-        ("/assign @admin", "The Playground runs commands"),
         ("!no-such-command", "There is no command called"),
         ("!test-echo colour=red", "is not an argument of this command"),
     ):
@@ -43,6 +41,28 @@ def test_a_command_runs_with_no_incident_and_its_result_is_under_it(admin: TestC
         assert refused.status_code == 400 and why in refused.json()["detail"], line
     audit = admin.get("/api/audit", params={"q": "action:playground.command"}).json()["entries"]
     assert len(audit) == 1 and "test-echo" in audit[0]["details"]
+
+
+def test_a_note_is_kept_and_what_is_about_an_incident_is_refused(admin: TestClient, test_actions):  # noqa: F811
+    note = admin.post(f"{URL}/command", json={"line": "try the mail instance tomorrow"})
+    assert note.status_code == 201, note.text
+    assert (note.json()["kind"], note.json()["body"], note.json()["author"], note.json()["tags"]) == (
+        "note",
+        {"text": "try the mail instance tomorrow"},
+        "admin",
+        [],
+    )
+    assert admin.post(f"{URL}/command", json={"line": "/note   and again "}).json()["body"] == {"text": "and again"}
+    for line in ("/assign @admin", "/close"):
+        refused = admin.post(f"{URL}/command", json={"line": line})
+        assert refused.status_code == 400 and "about an incident" in refused.json()["detail"], line
+    admin.post(f"{URL}/command", json={"line": "!test-echo text=hello"})
+    worker.drain()
+    kinds = lambda show: [item["kind"] for item in admin.get(URL, params={"show": show}).json()["entries"]]  # noqa: E731
+    assert kinds("all") == ["note", "note", "command", "result"]
+    assert kinds("notes") == ["note", "note"]
+    assert kinds("commands") == ["command", "result"]
+    assert admin.get(URL, params={"show": "evidence"}).status_code == 400
 
 
 def test_a_command_that_needs_an_incident_says_so_and_a_failure_is_shown(admin: TestClient, test_actions):  # noqa: F811

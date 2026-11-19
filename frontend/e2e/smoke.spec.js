@@ -2548,6 +2548,71 @@ test('the command line of the War Room runs commands, asks before a change outsi
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
 })
 
+test('the Playground is the War Room without an incident: a command, a note, the history cleared', async () => {
+  test.setTimeout(90_000)
+  const before = (await (await page.request.get('/api/incidents')).json()).incidents.length
+  await page.getByRole('button', { name: 'Playground', exact: true }).click()
+  await expect(page).toHaveURL(/\/playground$/)
+  const room = page.getByRole('region', { name: 'Playground' })
+  const stream = room.getByRole('list', { name: 'Playground' })
+  const line = room.locator('#playground-line')
+  await expect(stream).toContainText('Nothing here yet')
+  // The chips are those that mean something with no incident.
+  await expect(room.getByRole('group', { name: 'Show' }).getByRole('button')).toHaveText(['All', 'Notes', 'Commands'])
+
+  // The same line as the War Room: completion, hints, the result under the command, its inspector.
+  await line.fill('!nik-get-ind')
+  await expect(room.getByRole('listbox', { name: 'Commands' }).getByRole('option')).toHaveText([/!nik-get-indicator/])
+  await line.press('Tab')
+  await expect(room.getByLabel('Arguments of the command')).toContainText('value=')
+  await line.pressSequentially('185.220.101.47')
+  await line.press('Enter')
+  const result = stream
+    .getByRole('listitem')
+    .filter({ hasText: /nik-get-indicator/ })
+    .nth(1)
+  await expect(result).toBeVisible({ timeout: 20_000 })
+  await result.getByRole('button').first().click()
+  const inspector = room.getByRole('complementary', { name: 'The chosen entry' })
+  await expect(inspector.getByRole('heading', { name: 'Result' })).toBeVisible()
+  // Nothing here is evidence of anything.
+  await expect(inspector.getByRole('button', { name: /evidence/i })).toHaveCount(0)
+  await inspector.getByRole('button', { name: 'Close the entry' }).click()
+
+  // A note to oneself; what is about an incident is refused, and is not offered.
+  await line.fill('try the mail instance tomorrow')
+  await line.press('Enter')
+  await expect(stream).toContainText('try the mail instance tomorrow')
+  await line.fill('/')
+  await expect(room.getByRole('listbox', { name: 'Commands' }).getByRole('option')).toHaveText([/\/note/])
+  await line.fill('/close')
+  await line.press('Enter')
+  await expect(room.getByRole('alert').filter({ hasText: 'about an incident' })).toBeVisible()
+  await room.getByRole('group', { name: 'Show' }).getByRole('button', { name: 'Notes' }).click()
+  await expect(stream.getByRole('listitem').filter({ hasText: 'nik-get-indicator' })).toHaveCount(0)
+  await expect(stream).toContainText('try the mail instance tomorrow')
+  await room.getByRole('group', { name: 'Show' }).getByRole('button', { name: 'All' }).click()
+
+  // A command that changes something outside asks first, here too.
+  await line.fill('!acme-create-ticket title="From the Playground"')
+  await line.press('Enter')
+  const confirm = page.getByRole('dialog', { name: 'Run this command?' })
+  await expect(confirm).toContainText('acme-create-ticket changes something outside Nik')
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+
+  // The history is cleared by who owns it; no incident was made or touched.
+  await room.getByRole('button', { name: 'Clear the history' }).click()
+  await page
+    .getByRole('dialog', { name: 'Clear the history?' })
+    .getByRole('button', { name: 'Clear', exact: true })
+    .click()
+  await expect(stream).toContainText('Nothing here yet')
+  expect((await (await page.request.get('/api/playground')).json()).entries).toEqual([])
+  expect((await (await page.request.get('/api/incidents')).json()).incidents.length).toBe(before)
+  await room.getByRole('button', { name: 'Close the playground' }).click()
+  await expect(page).not.toHaveURL(/\/playground/)
+})
+
 test('a playbook gives tasks and asks questions: My tasks, the work plan of the incident, a task added by hand', async () => {
   test.setTimeout(240_000) // the worker takes a step every second or so
   const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
@@ -3508,7 +3573,16 @@ test('the rail: the order of a working day, and the account at its foot', async 
   const labels = await rail
     .getByRole('button')
     .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label').replace(/ \(.*$/, '')))
-  const order = ['incidents', 'My tasks', 'Dashboards', 'IoC library', 'Artifacts', 'Search', 'Automations']
+  const order = [
+    'incidents',
+    'My tasks',
+    'Dashboards',
+    'IoC library',
+    'Artifacts',
+    'Search',
+    'Playground',
+    'Automations',
+  ]
   const found = order.map((name) => labels.findIndex((label) => label.toLowerCase().includes(name.toLowerCase())))
   expect(found.every((index) => index >= 0)).toBe(true)
   expect([...found].sort((a, b) => a - b)).toEqual(found)

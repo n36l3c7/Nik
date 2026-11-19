@@ -1,9 +1,10 @@
 """The Playground: commands that belong to no incident (5.3).
 
-The command line of the War Room, without an incident: to try a connector, to
-look something up. A line that starts with ``!`` runs as a run of one node,
-exactly as in the War Room (``commands.start``), and what it gives is written
-under it. The history is each person's own, and is kept until they clear it.
+The War Room, without an incident: to try a connector, to look something up.
+A line that starts with ``!`` runs as a run of one node, exactly as in the War
+Room (``commands.start``), and what it gives is written under it; plain text is
+a note to oneself. The history is each person's own, and is kept until they
+clear it.
 
 Nothing here touches an incident: a command that needs one (a note, a field,
 the context) fails and says so, and a reputation command adds no indicator.
@@ -20,7 +21,8 @@ from sqlalchemy.orm import Session as OrmSession
 from .core.models import PlaygroundEntry, Run, RunStep
 from .core.security import now_iso
 
-KINDS = ("command", "result", "error")
+KINDS = ("command", "result", "error", "note")
+SHOWS = ("all", "notes", "commands")
 MAX_SHOWN = 500
 
 
@@ -53,6 +55,9 @@ def out(row: PlaygroundEntry) -> dict[str, Any]:
     return {
         "id": row.id,
         "at": row.at,
+        # The shape of an entry of the War Room, so that one screen draws both.
+        "author": row.owner,
+        "tags": [],
         "kind": row.kind,
         "body": row.body or {},
         "runId": row.run_id,
@@ -61,15 +66,16 @@ def out(row: PlaygroundEntry) -> dict[str, Any]:
     }
 
 
-def entries(db: OrmSession, owner: str, limit: int = 200) -> list[dict[str, Any]]:
-    """The last entries of a person's Playground, oldest first."""
+def entries(db: OrmSession, owner: str, limit: int = 200, show: str = "all") -> list[dict[str, Any]]:
+    """The last entries of a person's Playground, oldest first: all of them, the notes, or the
+    commands with what they gave."""
     limit = max(1, min(limit, MAX_SHOWN))
-    rows = db.scalars(
-        select(PlaygroundEntry)
-        .where(PlaygroundEntry.owner == owner)
-        .order_by(PlaygroundEntry.at.desc(), PlaygroundEntry.id.desc())
-        .limit(limit)
-    ).all()
+    query = select(PlaygroundEntry).where(PlaygroundEntry.owner == owner)
+    if show == "notes":
+        query = query.where(PlaygroundEntry.kind == "note")
+    elif show == "commands":
+        query = query.where(PlaygroundEntry.kind != "note")
+    rows = db.scalars(query.order_by(PlaygroundEntry.at.desc(), PlaygroundEntry.id.desc()).limit(limit)).all()
     return [out(row) for row in reversed(rows)]
 
 
