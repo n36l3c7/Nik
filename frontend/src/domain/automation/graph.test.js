@@ -431,3 +431,64 @@ test('a question leaves by its choices, a task by done and overdue', () => {
   assert.equal(summaryOf(node('t', 'task', { title: 'Pull the disk' })), 'Pull the disk · for the owner')
   assert.equal(summaryOf(ask), 'Encrypted? · to anyone')
 })
+
+test('the values a node can read go into what the blocks before give', async () => {
+  const { subFields, withSubFields } = await import('./catalog.js')
+  const sample = {
+    uid: 0,
+    from: '',
+    to: [''],
+    attachments: [{ name: '', size: 0, 'content-type': '' }],
+    headers: { subject: '', nested: { deep: { deeper: { deepest: 1 } } } },
+    empty: [],
+  }
+  assert.deepEqual(
+    subFields('attachments', sample.attachments).map((field) => [field.name, field.type]),
+    [
+      ['attachments[0].name', 'text'],
+      ['attachments[0].size', 'number'],
+    ], // a key that is not a plain name is left out
+  )
+  assert.deepEqual(subFields('to', sample.to), [{ name: 'to[0]', type: 'text', description: 'The first of to' }])
+  assert.deepEqual(subFields('empty', []), [])
+  assert.deepEqual(subFields('uid', 0), [])
+  // Three levels and no further.
+  assert.deepEqual(
+    subFields('headers', sample.headers).map((field) => field.name),
+    ['headers.subject', 'headers.nested', 'headers.nested.deep', 'headers.nested.deep.deeper'],
+  )
+
+  const outputs = [
+    { name: 'from', type: 'any' },
+    { name: 'attachments', type: 'any' },
+    { name: 'gone', type: 'any' },
+  ]
+  assert.deepEqual(
+    withSubFields(outputs, sample).map((field) => field.name),
+    ['from', 'attachments', 'attachments[0].name', 'attachments[0].size', 'gone'],
+  )
+  assert.equal(withSubFields(outputs, null), outputs)
+  assert.equal(withSubFields(outputs, []), outputs)
+
+  // In the tree of a node: the paths are under the block that gives them.
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', config: { manual: true } },
+      { id: 'read', kind: 'action', name: 'Read', config: { action: 'mail.get-message', args: {} } },
+      { id: 'say', kind: 'action', name: 'Say', config: { action: 'nik.add-note', args: {} } },
+    ],
+    edges: [
+      { from: 'start', to: 'read' },
+      { from: 'read', to: 'say' },
+    ],
+  }
+  const entries = [
+    { id: 'mail.get-message', kind: 'action', group: 'Mail', name: 'get-message', outputs, sample },
+    { id: 'nik.add-note', kind: 'action', group: 'Nik', name: 'Add a note', outputs: [] },
+  ]
+  const read = valueTree(graph, 'say', entries).find((root) => root.name === 'read')
+  assert.deepEqual(
+    read.fields.map((field) => field.path),
+    ['read.from', 'read.attachments', 'read.attachments[0].name', 'read.attachments[0].size', 'read.gone'],
+  )
+})

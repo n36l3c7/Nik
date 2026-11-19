@@ -118,7 +118,11 @@ commands:
       messages: "The messages: uid, subject, from, to, date, the start of the text, attachments"
       count: How many match
       truncated: There are more than were given
-    sample: { messages: [], count: 0, truncated: false }
+    sample:
+      messages:
+        - { uid: 0, subject: "", from: "", to: [""], date: "", text: "", attachments: [] }
+      count: 0
+      truncated: false
   - name: get-message
     description: One message, with its text and what is attached to it (name, type, size, SHA-256).
     arguments:
@@ -133,7 +137,16 @@ commands:
       text: Its text
       attachments: "What is attached: name, type, size, sha256"
       message_id: Its Message-ID
-    sample: { uid: 0, subject: "", from: "", to: [], date: "", text: "", attachments: [], message_id: "" }
+    sample:
+      uid: 0
+      subject: ""
+      from: ""
+      to: [""]
+      date: ""
+      text: ""
+      attachments:
+        - { name: "", type: "", size: 0, sha256: "" }
+      message_id: ""
   - name: move
     description: Move a message to another folder.
     changes_outside: true
