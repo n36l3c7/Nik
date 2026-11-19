@@ -2976,6 +2976,134 @@ test('a dashboard is built from widgets, shows real numbers, and opens what is b
   await expect(page.getByRole('region', { name: 'Dashboards' })).toHaveCount(0)
 })
 
+test('a content pack is inspected, shown with what it would change, and imported whole', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByText('Content packs', { exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/automation\/content-packs$/)
+  // What Nik ships is listed as packs.
+  const installed = settings.getByRole('list', { name: 'Installed packs' })
+  await expect(installed.getByRole('listitem').filter({ hasText: 'Nik: automation' })).toContainText('part of Nik')
+
+  // A pack made by hand: a list, and a field that clashes with one Nik has.
+  const zip = await page.evaluate(async () => {
+    const files = {
+      'pack.yml': 'id: e2e-pack\nname: E2E pack\nversion: 1.0.0\ndescription: Made by the test.\n',
+      'lists/e2e_vips.json': JSON.stringify({
+        name: 'e2e_vips',
+        label: 'E2E VIPs',
+        kind: 'values',
+        entries: [{ key: 'ceo' }],
+      }),
+      'fields/severity.json': JSON.stringify({ name: 'severity', label: 'Mine', type: 'text' }),
+    }
+    // A zip with stored (uncompressed) entries, built here: the browser has no zip writer.
+    const encoder = new TextEncoder()
+    const table = new Uint32Array(256).map((_, n) => {
+      let c = n
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+      return c >>> 0
+    })
+    const crc = (bytes) => {
+      let c = 0xffffffff
+      for (const byte of bytes) c = table[(c ^ byte) & 0xff] ^ (c >>> 8)
+      return (c ^ 0xffffffff) >>> 0
+    }
+    const parts = []
+    const central = []
+    let offset = 0
+    for (const [name, text] of Object.entries(files)) {
+      const nameBytes = encoder.encode(name)
+      const data = encoder.encode(text)
+      const head = new DataView(new ArrayBuffer(30))
+      head.setUint32(0, 0x04034b50, true)
+      head.setUint16(4, 20, true)
+      head.setUint32(14, crc(data), true)
+      head.setUint32(18, data.length, true)
+      head.setUint32(22, data.length, true)
+      head.setUint16(26, nameBytes.length, true)
+      parts.push(new Uint8Array(head.buffer), nameBytes, data)
+      const entry = new DataView(new ArrayBuffer(46))
+      entry.setUint32(0, 0x02014b50, true)
+      entry.setUint16(4, 20, true)
+      entry.setUint16(6, 20, true)
+      entry.setUint32(16, crc(data), true)
+      entry.setUint32(20, data.length, true)
+      entry.setUint32(24, data.length, true)
+      entry.setUint16(28, nameBytes.length, true)
+      entry.setUint32(42, offset, true)
+      central.push(new Uint8Array(entry.buffer), nameBytes)
+      offset += 30 + nameBytes.length + data.length
+    }
+    const size = central.reduce((sum, part) => sum + part.length, 0)
+    const end = new DataView(new ArrayBuffer(22))
+    end.setUint32(0, 0x06054b50, true)
+    end.setUint16(8, Object.keys(files).length, true)
+    end.setUint16(10, Object.keys(files).length, true)
+    end.setUint32(12, size, true)
+    end.setUint32(16, offset, true)
+    const all = [...parts, ...central, new Uint8Array(end.buffer)]
+    const out = new Uint8Array(all.reduce((sum, part) => sum + part.length, 0))
+    let at = 0
+    for (const part of all) {
+      out.set(part, at)
+      at += part.length
+    }
+    return Array.from(out)
+  })
+  const packFile = { name: 'e2e.nikpack', mimeType: 'application/zip', buffer: Buffer.from(zip) }
+  await settings.getByLabel('A pack file').setInputFiles(packFile)
+  const plan = settings.getByRole('region', { name: 'What importing E2E pack would do' })
+  await expect(plan).toContainText('Not installed yet. 1 to add, 1 in conflict.')
+  const items = plan.getByRole('list', { name: 'The items of the pack' }).getByRole('listitem')
+  await expect(items.filter({ hasText: 'e2e_vips' })).toContainText('add')
+  // The field cannot be applied, says why, and starts left out: the rest can go in.
+  const clash = items.filter({ hasText: 'severity' })
+  await expect(clash).toContainText('conflict')
+  await expect(clash).toContainText('Nik has a field of its own with this name')
+  await expect(clash.getByRole('checkbox')).not.toBeChecked()
+  // Put back, it stops the import.
+  await clash.getByRole('checkbox').check()
+  await expect(plan.getByRole('button', { name: /^Import/ })).toBeDisabled()
+  await expect(plan).toContainText('conflicts: leave it out to go on')
+  await clash.getByRole('checkbox').uncheck()
+  await plan.getByRole('button', { name: 'Import (1 change)' }).click()
+  await expect(settings.getByRole('status')).toContainText(
+    'E2E pack 1.0.0 is installed: 1 added, 0 updated, 1 left out.',
+  )
+
+  // It is listed with what came from it, and the list is in Lists.
+  const row = installed.getByRole('listitem').filter({ hasText: 'E2E pack' })
+  await expect(row).toContainText('1 item')
+  await row.getByRole('button', { name: 'Show what came from E2E pack' }).click()
+  await expect(row).toContainText('e2e_vips')
+  const made = await page.request.get('/api/lists/e2e_vips')
+  expect((await made.json()).entries[0].key).toBe('ceo')
+
+  // The same file again has nothing to do.
+  await settings.getByLabel('A pack file').setInputFiles(packFile)
+  await expect(plan).toContainText('Version 1.0.0 is installed. 1 the same, 1 in conflict.')
+  await plan.getByRole('button', { name: 'Cancel' }).click()
+
+  // Making a pack: the list is chosen, the file is offered.
+  await settings.getByRole('button', { name: 'Export a pack' }).click()
+  const form = settings.getByRole('region', { name: 'Export a pack' })
+  await form.getByLabel('Name', { exact: true }).fill('Our lists')
+  await expect(form.getByLabel('Id', { exact: true })).toHaveValue('our-lists')
+  await expect(form.getByRole('button', { name: 'Export' })).toBeDisabled()
+  await form.getByRole('group', { name: 'Lists' }).getByLabel('E2E VIPs').check()
+  const download = page.waitForEvent('download')
+  await form.getByRole('button', { name: 'Export' }).click()
+  expect((await download).suggestedFilename()).toBe('our-lists-1.0.0.nikpack')
+
+  await row.getByRole('button', { name: 'Take E2E pack off the list' }).click()
+  await expect(settings.getByRole('status')).toContainText('What it brought stays.')
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

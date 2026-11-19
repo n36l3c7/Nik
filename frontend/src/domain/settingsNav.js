@@ -174,6 +174,13 @@ export const SETTINGS_GROUPS = [
         keywords: 'alerts incoming polling failing paused items incomplete mirror queue turn on',
       },
       {
+        id: 'contentPacks',
+        slug: 'content-packs',
+        label: 'Content packs',
+        permission: 'content.manage',
+        keywords: 'nikpack import export share bundle install playbooks connectors types dashboards file',
+      },
+      {
         id: 'automationNetwork',
         slug: 'network-and-data',
         label: 'Network and data',

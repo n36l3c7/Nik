@@ -85,6 +85,7 @@ test('the search box narrows the sections by label, group and keywords', () => {
     'connections',
     'mappers',
     'fetchStatus',
+    'contentPacks',
     'automationNetwork',
     'automationSwitch',
   ])
