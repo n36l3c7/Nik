@@ -492,3 +492,38 @@ test('the values a node can read go into what the blocks before give', async () 
     ['read.from', 'read.attachments', 'read.attachments[0].name', 'read.attachments[0].size', 'read.gone'],
   )
 })
+
+test('the library is in tabs, and its search looks in all of them', async () => {
+  const { libraryOf, tabOf } = await import('./catalog.js')
+  const entries = [
+    { id: 'condition', kind: 'condition', group: 'Flow', name: 'Condition' },
+    { id: 'nik.add-note', kind: 'action', group: 'Nik', name: 'Add a note' },
+    { id: 'mail.send', kind: 'action', group: 'Mail', name: 'send', connector: 'mail', available: true },
+    { id: 'jira.create', kind: 'action', group: 'Jira', name: 'create-issue', connector: 'jira', available: false },
+    { id: 'jira.get', kind: 'action', group: 'Jira', name: 'get-issue', connector: 'jira', available: false },
+    { id: 'email.send', kind: 'action', group: 'E-mail', name: 'Send an e-mail', retired: true },
+    { id: 'script.Count', kind: 'script', group: 'Scripts', name: 'CountWords' },
+  ]
+  assert.deepEqual(entries.map(tabOf), ['flow', 'commands', 'commands', 'commands', 'commands', 'commands', 'scripts'])
+  const names = (found) => found.groups.map((group) => [group.name, group.entries.map((entry) => entry.name)])
+
+  const commands = libraryOf(entries, 'commands')
+  // Only the connectors with an instance that is on; nothing that is kept for older playbooks.
+  assert.deepEqual(names(commands), [
+    ['Nik', ['Add a note']],
+    ['Mail', ['send']],
+  ])
+  assert.deepEqual(commands.counts, { commands: 2, scripts: 1, flow: 1 })
+  assert.equal(commands.hidden, 1) // Jira, whatever the number of its commands
+  assert.equal(commands.searching, false)
+  assert.deepEqual(names(libraryOf(entries, 'scripts')), [['Scripts', ['CountWords']]])
+  assert.deepEqual(names(libraryOf(entries, 'flow')), [['Flow', ['Condition']]])
+
+  // Typed, the search does not mind which tab is open.
+  const found = libraryOf(entries, 'scripts', 'cond')
+  assert.deepEqual(names(found), [['Flow', ['Condition']]])
+  assert.equal(found.searching, true)
+  assert.deepEqual(found.counts, { commands: 2, scripts: 1, flow: 1 })
+  assert.deepEqual(names(libraryOf(entries, 'commands', 'issue')), []) // not offered, so not found
+  assert.deepEqual(libraryOf(null).groups, [])
+})

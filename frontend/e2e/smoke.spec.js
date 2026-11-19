@@ -1685,6 +1685,10 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await expect(inspector.getByText('The expression is not closed: add }}')).toBeVisible()
   await inspector.getByRole('textbox', { name: 'Comparison 1: with what' }).fill('high')
 
+  // Without a search the commands are in groups that start closed: the group is opened first.
+  await expect(library.getByRole('tab', { name: /^Commands/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(library.getByRole('button', { name: 'Add a note', exact: true })).toBeHidden()
+  await library.locator('summary', { hasText: /^Nik/ }).click()
   await library.getByRole('button', { name: 'Add a note', exact: true }).click()
   await expect(nodes).toHaveCount(3)
   await expect(canvas.locator('.react-flow__edge')).toHaveCount(2)
@@ -1705,7 +1709,10 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
     .fill('Severity is {{ trigger.incident.severity }}: look at {{ trigger.incident.name }}')
 
   // An "End" on the other branch, drawn from the inspector without a pointer; then undo and redo.
+  // The nodes of the flow have a tab of their own.
+  await library.getByRole('tab', { name: /^Flow/ }).click()
   await library.getByRole('button', { name: 'End', exact: true }).click()
+  await library.getByRole('tab', { name: /^Commands/ }).click()
   await expect(nodes).toHaveCount(4)
   await area.getByRole('button', { name: 'Node list' }).click()
   const table = area.getByRole('table', { name: 'The nodes of the playbook' })

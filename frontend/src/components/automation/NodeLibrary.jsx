@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react'
-import { groupsOf } from '../../domain/automation/catalog.js'
+import { LIBRARY_TABS, libraryOf } from '../../domain/automation/catalog.js'
 import { DRAG_TYPE } from './Canvas.jsx'
 import { INPUT } from './fields.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 
 /*
- * The library: every node there is, in groups (Flow, Nik, HTTP, E-mail,
- * Scripts; one group per connector from 4.2). An entry is dragged onto the
- * canvas, or added with a click or Enter: it lands under the selected node.
+ * The library: the blocks a playbook is made of, in three tabs. Commands are
+ * what Nik and the connectors do, one group for each, closed until opened;
+ * only the connectors with an instance that is on are there. Scripts and the
+ * nodes of the flow have a tab of their own. The search looks in all three.
+ *
+ * An entry is dragged onto the canvas, or added with a click or Enter: it
+ * lands under the selected node.
  */
 
 const EDGES = {
@@ -21,8 +25,20 @@ const EDGES = {
  */
 export default function NodeLibrary({ entries, onAdd, disabled = false }) {
   const [query, setQuery] = useState('')
+  const [tab, setTab] = useState('commands')
+  // The groups somebody opened: closed at first, each remembered while the editor is open.
+  const [opened, setOpened] = useState(() => new Set())
   const pane = useResizablePane('automation.library', { initial: 220, min: 180, max: 420 })
-  const groups = useMemo(() => groupsOf(entries, query), [entries, query])
+  const { groups, counts, searching, hidden } = useMemo(() => libraryOf(entries, tab, query), [entries, tab, query])
+  // One group alone (the flow, the scripts) has nothing to hide behind.
+  const isOpen = (name) => searching || groups.length === 1 || opened.has(name)
+  const toggle = (name, open) =>
+    setOpened((current) => {
+      const next = new Set(current)
+      if (open) next.add(name)
+      else next.delete(name)
+      return next
+    })
   return (
     <>
       <aside
@@ -30,6 +46,28 @@ export default function NodeLibrary({ entries, onAdd, disabled = false }) {
         style={pane.style}
         className="flex min-h-0 w-full shrink-0 flex-col border-r border-line bg-panel md:w-[var(--pane-w)]"
       >
+        <div role="tablist" aria-label="Kinds of blocks" className="flex border-b border-line-soft">
+          {LIBRARY_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={!searching && tab === item.id}
+              onClick={() => {
+                setTab(item.id)
+                setQuery('')
+              }}
+              className={[
+                '-mb-px flex-1 border-b-2 px-1 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
+                !searching && tab === item.id
+                  ? 'border-accent text-fg'
+                  : 'border-transparent text-fg-muted hover:text-fg',
+              ].join(' ')}
+            >
+              {item.label} <span className="font-mono text-[10px] text-fg-subtle">{counts[item.id]}</span>
+            </button>
+          ))}
+        </div>
         <div className="border-b border-line-soft p-2">
           <input
             type="search"
@@ -48,7 +86,15 @@ export default function NodeLibrary({ entries, onAdd, disabled = false }) {
             </p>
           )}
           {groups.map((group) => (
-            <details key={group.name} open className="border border-line-soft">
+            <details
+              key={group.name}
+              open={isOpen(group.name)}
+              onToggle={(event) => {
+                // While it is searched, or alone, a group is open whatever was chosen.
+                if (!searching && groups.length > 1) toggle(group.name, event.currentTarget.open)
+              }}
+              className="border border-line-soft"
+            >
               <summary className="flex cursor-pointer items-center justify-between gap-2 px-2 py-1 font-mono text-xs font-semibold text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
                 {group.name}
                 <span className="font-normal text-fg-subtle">{group.entries.length}</span>
@@ -88,6 +134,12 @@ export default function NodeLibrary({ entries, onAdd, disabled = false }) {
               </ul>
             </details>
           ))}
+          {!searching && tab === 'commands' && hidden > 0 && (
+            <p className="px-1 pt-1 text-[11px] leading-snug text-fg-muted">
+              {hidden} {hidden === 1 ? 'connector has' : 'connectors have'} no instance that is on: their commands are
+              offered once one is, in Settings, Connectors.
+            </p>
+          )}
         </div>
       </aside>
       <ResizeHandle {...pane.handle} label="Resize the node library" className="hidden md:block" />
