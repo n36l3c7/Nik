@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { FolderClosed, FolderOpen, X } from 'lucide-react'
 import { useTasks } from '../../context/TasksContext.jsx'
 import { api } from '../../services/api.js'
-import { byUrgency, dueText, statusBadge } from '../../domain/tasks.js'
+import { byUrgency, dueText, statusBadge, tasksPath } from '../../domain/tasks.js'
 import { AsciiSkull, Badge, EmptyState } from '../ui/index.js'
 import TaskCard from './TaskCard.jsx'
+import { numberedName } from '../../domain/incidentName.js'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 
 /*
  * ============================================================================
@@ -33,6 +35,7 @@ const VIEWS = [
  */
 export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident }) {
   const { version, count } = useTasks()
+  const menu = useObjectMenu()
   const ref = useRef(null)
   const [view, setView] = useState('mine')
   const [tasks, setTasks] = useState(null)
@@ -132,7 +135,25 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident })
                 const badge = statusBadge(task)
                 const due = dueText(task)
                 return (
-                  <li key={task.id}>
+                  <li
+                    key={task.id}
+                    onContextMenu={(event) =>
+                      menu(event, {
+                        title: task.title,
+                        actions: [
+                          { label: 'Open', icon: FolderOpen, onSelect: () => onSelect(task.id) },
+                          task.incidentId &&
+                            onOpenIncident && {
+                              label: 'Open the incident',
+                              icon: FolderClosed,
+                              onSelect: () => onOpenIncident(task.incidentId),
+                            },
+                        ],
+                        link: tasksPath(task.id),
+                        copy: [{ label: 'Copy the title', text: task.title }],
+                      })
+                    }
+                  >
                     <button
                       type="button"
                       aria-current={task.id === taskId ? 'true' : undefined}
@@ -154,7 +175,10 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident })
                       </span>
                       <span className="text-sm font-medium text-fg">{task.title}</span>
                       <span className="truncate text-xs text-fg-muted">
-                        {task.incidentName || 'no incident'} · for {task.for}
+                        {task.incidentName
+                          ? numberedName({ number: task.incidentNumber, name: task.incidentName })
+                          : 'no incident'}{' '}
+                        · for {task.for}
                       </span>
                     </button>
                   </li>

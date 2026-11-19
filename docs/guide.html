@@ -97,6 +97,13 @@
         Everything stays editable from the Summary tab.
       </p>
       <p>
+        Every incident also has a <strong>number</strong>, written before its name: <code>#00042</code>. Nik gives it
+        when the incident is created, in order, and never gives it to another one. It is how an incident is referred to:
+        type <code>#42</code> in Search (<kbd>Ctrl</kbd>+<kbd>K</kbd>) to open it, write <code>number:42</code> in a
+        query, or put it in the address (<code>/incident/42</code>). The ticket of your tracker stays a field of its
+        own.
+      </p>
+      <p>
         Every incident has a <strong>status</strong> (open, in progress or closed) and can be
         <strong>assigned</strong> to an analyst. Set them from the Summary tab, or right-click an incident in the panel:
         <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>. The panel
@@ -128,12 +135,22 @@
 
       <h2 id="layout">The screen</h2>
       <p>
-        The narrow column of icons on the left edge is the <strong>rail</strong>. Its top icons choose what the side
-        panel lists: <strong>incidents</strong>, <strong>artifacts</strong> (the files, e-mails and captures analysed so
-        far) or the <strong>IoC library</strong>. Click the active icon again to close the panel and give the whole
-        width to the analysis; drag the panel's edge to resize it. The rail also opens the search, and at the bottom the
-        settings, with shortcuts to three of their sections: the audit log, the accounts and the backup. An entry is
-        there for the accounts whose roles let them use it.
+        The narrow column of icons on the left edge is the <strong>rail</strong>, in the order of a working day: the
+        <strong>incidents</strong>, <strong>your tasks</strong>, the <strong>dashboards</strong>, the
+        <strong>IoC library</strong>, the <strong>artifacts</strong> (the files, e-mails and captures analysed so far),
+        the search, then the <strong>automations</strong>. Incidents, the IoC library and the artifacts open a list in
+        the side panel: click the active icon again to close the panel and give the whole width to the analysis. At the
+        foot of the rail are the notifications, the settings and <strong>your account</strong>, which says who is signed
+        in, opens <em>My account</em> and signs out. The audit log, the accounts and the backup are sections of
+        Settings. An entry is there for the accounts whose roles let them use it.
+      </p>
+      <p>
+        <strong>Every side panel can be resized</strong>: the lists of the rail, the sections of Settings, the facts of
+        an incident, the entry open in the War Room, the node library and the inspector of a playbook, the steps of a
+        run, the list of dashboards. Drag the edge the panel shares with the page, or focus it with <kbd>Tab</kbd> and
+        use the <kbd>arrow keys</kbd> (<kbd>Shift</kbd> for a larger step, <kbd>Home</kbd> and <kbd>End</kbd> for the
+        narrowest and the widest). A double-click, or <kbd>Enter</kbd>, puts the width back. Each panel remembers its
+        width in your browser.
       </p>
 
       <p id="incident-facts">
@@ -670,6 +687,13 @@
         Right-click works on every row and item of the app, and the menu is always built the same way, with the parts
         that apply:
       </p>
+      <p>
+        What is not evidence has a menu too: a playbook, a script, a run, a task, a dashboard, an entry of the War Room.
+        It offers what the object does (<em>Open</em>, <em>Run…</em>, <em>Its runs</em>, <em>Open the incident</em>),
+        then <em>Copy link</em> (its address in this Nik, to paste in a ticket or a chat) and what else is worth
+        copying, a name, an id, the entry as JSON. The menu key of the keyboard and <kbd>Shift</kbd>+<kbd>F10</kbd> open
+        the same menu on what has the focus.
+      </p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -816,8 +840,17 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               </td>
             </tr>
             <tr>
-              <td><code>-</code> or <code>not</code> · <code>field:!value</code></td>
-              <td>Not that: <code>-status:closed</code>, <code>tag:!test</code>.</td>
+              <td><code>!field:value</code> · <code>-</code> or <code>not</code></td>
+              <td>
+                Not that: <code>!status:closed</code>, <code>-test</code>, <code>not (kind:file or kind:mail)</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>field IN (a, b)</code> · <code>NOT IN</code></td>
+              <td>
+                One of these, none of these: <code>status IN (open, "in progress")</code>,
+                <code>owner NOT IN (anna, bruno)</code>.
+              </td>
             </tr>
             <tr>
               <td>

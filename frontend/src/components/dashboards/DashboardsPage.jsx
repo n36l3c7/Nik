@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Copy, Download, FileText, House, Pencil, Plus, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react'
+import {
+  Copy,
+  Download,
+  FileText,
+  FolderOpen,
+  House,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Share2,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { api, postForBlob } from '../../services/api.js'
 import {
@@ -10,6 +23,8 @@ import {
   TYPES,
   arrange,
   compactGrid,
+  widgetQuery,
+  dashboardsPath,
   landingDashboard,
   newWidget,
   rangeLabel,
@@ -23,6 +38,8 @@ import QueryInput from '../ui/QueryInput.jsx'
 import Grid from './Grid.jsx'
 import Widget from './Widget.jsx'
 import WidgetEditor from './WidgetEditor.jsx'
+import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 
 /*
  * ============================================================================
@@ -228,6 +245,8 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
   const [removing, setRemoving] = useState(false)
   const [landing, setLanding] = useState(landingDashboard)
   const [adding, setAdding] = useState(false)
+  const menu = useObjectMenu()
+  const listPane = useResizablePane('dashboards.list', { initial: 224, min: 180, max: 420 })
 
   useEffect(() => {
     ref.current?.focus()
@@ -410,10 +429,30 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Your dashboards" className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
+        <nav
+          aria-label="Your dashboards"
+          style={listPane.style}
+          className="flex w-[var(--pane-w)] shrink-0 flex-col border-r border-line bg-panel"
+        >
           <ul className="min-h-0 flex-1 overflow-y-auto py-2">
             {(boards ?? []).map((item) => (
-              <li key={item.id}>
+              <li
+                key={item.id}
+                onContextMenu={(event) =>
+                  menu(event, {
+                    title: item.name,
+                    actions: [
+                      !(editing && item.id !== dashboardId) && {
+                        label: 'Open',
+                        icon: FolderOpen,
+                        onSelect: () => onSelect(item.id),
+                      },
+                    ],
+                    link: dashboardsPath(item.id),
+                    copy: [{ label: 'Copy the name', text: item.name }],
+                  })
+                }
+              >
                 <button
                   type="button"
                   aria-current={item.id === dashboardId ? 'page' : undefined}
@@ -459,6 +498,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
             />
           </div>
         </nav>
+        <ResizeHandle {...listPane.handle} label="Resize the list of dashboards" className="" />
 
         <div className="@container flex min-w-0 flex-1 flex-col overflow-y-auto">
           {error && (
@@ -670,6 +710,26 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                     editing={editing}
                     onChange={setWidgets}
                     onEdit={setEditingWidget}
+                    onMenu={(event, widget) =>
+                      menu(event, {
+                        title: widget.title || 'A widget',
+                        actions: editing
+                          ? [{ label: 'Edit…', icon: Pencil, onSelect: () => setEditingWidget(widget) }]
+                          : [],
+                        copy: [{ label: 'Copy the query', text: widget.entity ? widgetQuery(widget, shown) : '' }],
+                        record: widget,
+                        danger: editing
+                          ? [
+                              {
+                                label: 'Remove',
+                                icon: Trash2,
+                                onSelect: () =>
+                                  setWidgets(compactGrid(draft.widgets.filter((item) => item.id !== widget.id))),
+                              },
+                            ]
+                          : [],
+                      })
+                    }
                     onDuplicate={(widget) =>
                       setWidgets(
                         compactGrid([...draft.widgets, { ...widget, id: generateId(), y: widget.y + widget.h }]),

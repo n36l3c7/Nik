@@ -44,7 +44,7 @@ const CHARTS = new Set(['trend', 'bar', 'stacked_bar', 'pie', 'top', 'duration']
  *   onRemove: (widget: object) => void,
  * }} props
  */
-export default function Grid({ widgets, editing, onChange, render, onEdit, onDuplicate, onRemove }) {
+export default function Grid({ widgets, editing, onChange, render, onEdit, onDuplicate, onRemove, onMenu = null }) {
   const [ref, size] = useSize()
   const [preview, setPreview] = useState(null) // the grid while a widget is dragged
   const [tables, setTables] = useState(() => new Set())
@@ -107,6 +107,7 @@ export default function Grid({ widgets, editing, onChange, render, onEdit, onDup
     const asTable = tables.has(widget.id)
     return (
       <article
+        onContextMenu={onMenu ? (event) => onMenu(event, widget) : undefined}
         key={widget.id}
         aria-label={title}
         data-widget={widget.id}

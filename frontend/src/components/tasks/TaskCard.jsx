@@ -9,6 +9,7 @@ import { authorLabel, entryLine } from '../../domain/warRoom.js'
 import FieldInput from '../fields/FieldInput.jsx'
 import { Badge, Button } from '../ui/index.js'
 import Markdown from './Markdown.jsx'
+import { numberedName } from '../../domain/incidentName.js'
 
 /*
  * ============================================================================
@@ -265,7 +266,9 @@ export default function TaskCard({ taskId, onChanged, onOpenIncident }) {
                   onClick={() => onOpenIncident(task.incidentId)}
                   className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  {task.incidentName || 'the incident'}
+                  {task.incidentName
+                    ? numberedName({ number: task.incidentNumber, name: task.incidentName })
+                    : 'the incident'}
                 </button>
               ) : (
                 task.incidentName

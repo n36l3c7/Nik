@@ -69,3 +69,26 @@ export function filterIncidents(incidents, { status = 'all', assignee = '' } = {
       (!who || clean(incident.assignee).toLowerCase() === who),
   )
 }
+
+/**
+ * The number of an incident as it is written: `#00042`, five digits and more
+ * when they are needed. '' for an incident that has none yet (one being created).
+ */
+export function formatNumber(number) {
+  if (!Number.isInteger(number) || number <= 0) return ''
+  return `#${String(number).padStart(5, '0')}`
+}
+
+/** The number a text names (`#42`, `42`, `#00042`), or null when it is not one. */
+export function numberFromText(text) {
+  const match = /^#?(\d{1,9})$/.exec(String(text ?? '').trim())
+  const number = match ? Number(match[1]) : 0
+  return number > 0 ? number : null
+}
+
+/** An incident as it is named in a sentence or a menu: `#00042 Invoice phishing, finance`. */
+export function numberedName(incident) {
+  const name = incident?.name || 'Untitled incident'
+  const number = formatNumber(incident?.number)
+  return number ? `${number} ${name}` : name
+}

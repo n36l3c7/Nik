@@ -205,6 +205,8 @@ class Target:
     node: dict[str, Any]
     changes: bool = False
     connector: str = ""
+    # A reputation command: the kind and the value it looks up, when the value was typed as it is.
+    lookup: tuple[str, str] | None = None
 
 
 def _action_of(db: OrmSession, name: str) -> actions.Spec | None:
@@ -230,7 +232,9 @@ def resolve(db: OrmSession, parsed: Parsed) -> Target:
             raise CommandError(f"!{name.lower()} takes one value: !{name.lower()} <what to look up>")
         args = {"kind": name.lower(), "value": _templated(parsed.positional[0])}
         node = {"kind": "action", "config": {"action": "nik.reputation", "args": args, "approval": {"ask": False}}}
-        return Target(title=f"{name.lower()} {parsed.positional[0]}", node=node)
+        typed = str(parsed.positional[0])
+        lookup = (name.lower(), typed) if "{{" not in typed and "${" not in typed else None
+        return Target(title=f"{name.lower()} {parsed.positional[0]}", node=node, lookup=lookup)
     script = db.scalars(select(Script).where(func.lower(Script.name) == name.lower())).first()
     if script is not None and script.current_version:
         from .automation import scripts as script_store

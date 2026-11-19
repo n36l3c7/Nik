@@ -198,6 +198,16 @@ docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
         Tailwind v4 is wired in through the Vite plugin (<code>@tailwindcss/vite</code>), so there is no
         <code>tailwind.config.js</code> and no extra setup step.
       </p>
+      <h3 id="brand">The logo</h3>
+      <p>
+        The mark of Nik is a prompt on a green square. Its files are in <code>frontend/public/brand/</code>, drawn as
+        paths so that no font is needed: <code>nik-mark.svg</code> (the mark, also the favicon),
+        <code>nik-mark-mono.svg</code> (one colour, taken from the text around it: for print and light pages),
+        <code>nik-wordmark-dark.svg</code> and <code>nik-wordmark-light.svg</code> (the mark with the name, for a dark
+        and for a light background), and <code>nik-icon-192.png</code> / <code>nik-icon-512.png</code>. In the interface
+        it is the component <code>ui/NikMark.jsx</code>, which takes its colours from the theme. A connector or an
+        incident that belongs to no product shows no logo: Nik's mark is never used as a placeholder.
+      </p>
       <h3 id="documentation">Documentation and screenshots</h3>
       <p>
         The documentation is this site, plain HTML in <code>docs/</code> with one stylesheet: update it in the same pull

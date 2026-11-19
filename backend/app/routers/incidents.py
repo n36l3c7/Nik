@@ -95,9 +95,21 @@ def _shown(row: Incident) -> dict[str, Any]:
     are kept beside the document and written only through the field registry."""
     return {
         **(row.doc or {}),
+        # ``id`` is the uuid; ``uuid`` says so by name. ``number`` is what people call it by.
+        "uuid": row.id,
+        "number": row.number,
         "type": row.type_id or field_registry.UNCLASSIFIED,
         "fields": field_registry.stored_fields(row),
     }
+
+
+def _own_number(doc: dict[str, Any], *, new: bool) -> None:
+    """The number is given by this Nik, never by the document. One that comes with a number (an
+    export of another Nik) keeps it as ``importedNumber``, to be found by it."""
+    given = doc.pop("number", None)
+    doc.pop("uuid", None)
+    if new and isinstance(given, int) and not isinstance(given, bool) and given > 0:
+        doc.setdefault("importedNumber", given)
 
 
 def _field_changes(partial: dict[str, Any]) -> dict[str, Any]:
@@ -212,6 +224,7 @@ def list_incidents(
         stmt = (
             select(
                 Incident.id,
+                Incident.number,
                 Incident.name,
                 Incident.host,
                 Incident.username,
@@ -232,6 +245,7 @@ def list_incidents(
         incidents = [
             {
                 "id": r.id,
+                "number": r.number,
                 "name": r.name,
                 "host": r.host,
                 "username": r.username,
@@ -253,6 +267,20 @@ def list_incidents(
         incidents = [_shown(row) for row in db.scalars(stmt).all()]
 
     return {"incidents": incidents, "total": total}
+
+
+@router.get("/by-number/{number}")
+def incident_by_number(
+    number: int,
+    _caller: Principal = Depends(reader_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """The incident people call ``#number``: its uuid (``id``), its number and its name. The
+    address of an incident and every other route take the uuid."""
+    row = db.execute(select(Incident.id, Incident.number, Incident.name).where(Incident.number == number)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return {"id": row.id, "uuid": row.id, "number": row.number, "name": row.name}
 
 
 @router.get("/{incident_id}", response_model=None)
@@ -317,6 +345,7 @@ def create_incident(
     field_changes = _field_changes(doc)
 
     existing = lock_incident(db, str(incident_id))
+    _own_number(doc, new=existing is None)
     if existing is None:
         incident = Incident(id=str(incident_id), doc=doc)
         _sync_columns(incident)

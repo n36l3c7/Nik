@@ -732,3 +732,62 @@ def test_migration_0034_adds_the_tables_and_columns_of_4_7(tmp_path, monkeypatch
         inspector = sa.inspect(conn)
         assert not set(MISC_TABLES) & set(inspector.get_table_names())
         assert {c["name"] for c in inspector.get_columns("artifacts")} == {"id", "kind"}
+
+
+def test_migration_0035_numbers_the_incidents_and_rewrites_stored_queries(tmp_path, monkeypatch):
+    from app.core.models import NUMBER_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        # What 4.7 knew of the two tables this release touches.
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, name VARCHAR, created_at VARCHAR)"))
+        for incident_id, created in (("c", "2026-03-01"), ("a", "2026-01-01"), ("b", "2026-02-01")):
+            conn.execute(
+                sa.text("INSERT INTO incidents (id, name, created_at) VALUES (:id, :id, :at)"),
+                {"id": incident_id, "at": created},
+            )
+        conn.execute(sa.text("CREATE TABLE dashboards (id VARCHAR PRIMARY KEY, layout JSON, filter_query VARCHAR)"))
+        conn.execute(
+            sa.text("INSERT INTO dashboards (id, layout, filter_query) VALUES ('d1', :layout, 'status:!closed')"),
+            {
+                "layout": json.dumps(
+                    [{"id": "w1", "query": "severity:>=high owner:!anna"}, {"id": "w2", "type": "note"}]
+                )
+            },
+        )
+        conn.execute(sa.text("INSERT INTO dashboards (id, layout, filter_query) VALUES ('d2', '[]', '')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0034_misc")
+    command.upgrade(cfg, "0035_incident_numbers")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(NUMBER_TABLES) <= set(inspector.get_table_names())
+        # Numbered in the order they were created, and the counter stands at the last.
+        numbers = dict(conn.execute(sa.text("SELECT id, number FROM incidents")).all())
+        assert numbers == {"a": 1, "b": 2, "c": 3}
+        assert conn.execute(sa.text("SELECT value FROM sequences WHERE name = 'incidents'")).scalar() == 3
+        assert "uq_incidents_number" in {index["name"] for index in inspector.get_indexes("incidents")}
+        layout, filter_query = conn.execute(
+            sa.text("SELECT layout, filter_query FROM dashboards WHERE id = 'd1'")
+        ).one()
+        assert json.loads(layout)[0]["query"] == "severity:>=high !owner:anna"
+        assert filter_query == "!status:closed"
+    with engine.begin() as conn:
+        # An incident made by 4.7 code against the new schema would have no number: the migration,
+        # run again, gives it the next one and leaves the others alone.
+        conn.execute(sa.text("INSERT INTO incidents (id, name, created_at) VALUES ('d', 'd', '2025-01-01')"))
+    command.stamp(cfg, "0034_misc")
+    command.upgrade(cfg, "0035_incident_numbers")
+    with engine.connect() as conn:
+        assert dict(conn.execute(sa.text("SELECT id, number FROM incidents")).all()) == {"a": 1, "b": 2, "c": 3, "d": 4}
+        assert conn.execute(sa.text("SELECT value FROM sequences WHERE name = 'incidents'")).scalar() == 4
+    command.downgrade(cfg, "0034_misc")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "sequences" not in inspector.get_table_names()
+        assert {c["name"] for c in inspector.get_columns("incidents")} == {"id", "name", "created_at"}
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM incidents")).scalar() == 4

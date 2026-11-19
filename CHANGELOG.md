@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-11-19
+
+### Changed
+
+- **The rail is in the order of a working day**: incidents, your tasks,
+  dashboards, the IoC library, artifacts, the search, then automations. At
+  its foot are the notifications, Settings and the account, which leaves
+  the header: it says who is signed in, opens *My account* and signs out.
+  The buttons that only opened a section of Settings (Audit log, Users,
+  Full backup) are gone; the sections are where they were, in Settings.
+
+- **"Is not" is written before the field in a query**: `!status:closed`.
+  The writing of 4.x, `status:!closed`, is still read through 5.x, means the
+  same, and is shown rewritten when the query box is left; it goes in 6.0.
+  `!` also negates a group, a comparison or a word: `!(kind:file or
+  kind:mail)`, `!severity:>=high`, `!invoice`.
+
+### Added
+
+- **A logo set**: the mark Nik already had, as files to use elsewhere
+  (`frontend/public/brand/`: the mark, a one-colour version, the mark with
+  the name for dark and light backgrounds, PNG icons of 192 and 512 px).
+  The rail draws the same mark.
+- **Right-click on what is not evidence**: a playbook, a script, a run, a
+  task, a dashboard and its widgets, a list of Settings and an entry of the
+  War Room have a menu, built the
+  same way everywhere: what the object does, then *Copy link* and what else
+  is worth copying (a name, an id, the entry as JSON).
+- **Every side panel can be resized**, not only the list of incidents: the
+  sections of Settings, the facts of an incident, the entry open in the War
+  Room, the node library and the inspector of a playbook, the steps of a
+  run, the list of dashboards. The handle is dragged, or moved with the
+  arrow keys (Shift, Home, End); a double-click or Enter puts the width
+  back, and each panel remembers its own.
+- **A reputation command adds its indicator to the incident.** `!ip`,
+  `!domain`, `!url`, `!file` and `!email` in the War Room keep what they
+  looked up among the indicators of the incident (source *War Room · looked
+  up*; `data.iocs.manual` in the document), once, and only for a value
+  typed as it is and valid for its kind.
+- **Indicators in the War Room can be clicked**: an address, a host name, a
+  URL or a hash in a note, a command, a result or the open entry opens the
+  indicator's window and has its right-click menu.
+- **Incidents have a number.** Every incident gets the next number when it
+  is created (`number` in the API, `number:42` in a query,
+  `GET /api/incidents/by-number/{number}`), and a number is never used
+  twice, also after its incident is deleted. What was the id stays the key
+  of the incident, its uuid: the address, the API and every reference keep
+  it, and the document names it `uuid` too. Existing incidents are numbered
+  in the order they were created (migration `0035_incident_numbers`). A
+  full backup carries the numbers and a restore gives them back; an
+  incident that arrives from another Nik gets a number of this one and
+  keeps the other as `importedNumber`. The number is written before the
+  name (`#00042`) in the list, the header, the search, the tasks and the
+  runs; `#42` in Search opens the incident, and so does `/incident/42`.
+- **Lists in the query language**: `field IN (a, b, "c d")` and
+  `field NOT IN (...)`, the same as writing a condition for each value.
+  Values are separated by commas or spaces, take wildcards, and are
+  completed as the values of the field.
+
 ## [4.7.0] - 2026-11-19
 
 ### Added
@@ -2495,7 +2554,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.7.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/n36l3c7/Nik/compare/v4.7.0...v5.0.0
 [4.7.0]: https://github.com/n36l3c7/Nik/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/n36l3c7/Nik/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0

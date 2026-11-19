@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Plus, SlidersHorizontal, X } from 'lucide-react'
-import { tryParse } from '../../domain/query/parse.js'
+import { modern, tryParse } from '../../domain/query/parse.js'
 import { tokenize } from '../../domain/query/tokenize.js'
 import { applyCompletion, completions, fieldOf } from '../../domain/query/complete.js'
 import { emptyRow, opLabel, opsFor, toModel, toText } from '../../domain/query/builder.js'
@@ -394,7 +394,12 @@ export default function QueryInput({ entity, value, onChange, label, placeholder
             }}
             onKeyDown={onKeyDown}
             onScroll={syncScroll}
-            onBlur={() => setOffer(null)}
+            onBlur={() => {
+              setOffer(null)
+              // "Is not" as it was written before 5.0 (status:!closed) is shown as it is written now.
+              const now = modern(value)
+              if (now !== value) onChange(now)
+            }}
             // Transparent text over the coloured copy: the caret and the selection are the input's own.
             className="h-8 w-full border border-line bg-transparent px-2.5 font-mono text-xs leading-8 text-transparent caret-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />

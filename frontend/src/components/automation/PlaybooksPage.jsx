@@ -1,11 +1,15 @@
 import { useRef, useState } from 'react'
-import { Plus, Upload } from 'lucide-react'
+import { FolderOpen, ListTree, Play, Plus, Upload } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { formatRelative } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import { Field, Switch, TextInput } from './fields.jsx'
+import { useAutomation } from '../../context/AutomationContext.jsx'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { automationPath } from '../../domain/automationNav.js'
+import { setPath } from '../../lib/location.js'
 
 /*
  * The playbooks: what starts each, whether it is on, the version that runs,
@@ -28,6 +32,9 @@ const WARNING_COLORS = { 'any host': 'red', 'data opened': 'amber', 'updates ava
 export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
   const { can } = useAuth()
   const canEdit = can('automation.edit')
+  const canRun = can('automation.run')
+  const { askRun } = useAutomation()
+  const menu = useObjectMenu()
   const { showToast } = useToast()
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
@@ -158,7 +165,26 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
             </thead>
             <tbody>
               {playbooks.map((playbook) => (
-                <tr key={playbook.id} className="hover:bg-raised/40">
+                <tr
+                  key={playbook.id}
+                  className="hover:bg-raised/40"
+                  onContextMenu={(event) =>
+                    menu(event, {
+                      title: playbook.name,
+                      actions: [
+                        { label: 'Open', icon: FolderOpen, onSelect: () => onOpen(playbook.id) },
+                        {
+                          label: 'Its runs',
+                          icon: ListTree,
+                          onSelect: () => setPath(automationPath('playbooks', playbook.id, 'runs')),
+                        },
+                        canRun && { label: 'Run…', icon: Play, onSelect: () => askRun({ playbookId: playbook.id }) },
+                      ],
+                      link: automationPath('playbooks', playbook.id),
+                      copy: [{ label: 'Copy the name', text: playbook.name }],
+                    })
+                  }
+                >
                   <th scope="row" className="border-b border-line-soft px-3 py-2 align-top font-normal">
                     <button
                       type="button"

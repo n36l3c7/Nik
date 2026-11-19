@@ -40,6 +40,37 @@
       </p>
 
       <section class="release">
+        <h3>5.0.0 <span class="date">2026-11-19</span></h3>
+        <ul>
+          <li>
+            <span class="tag breaking">breaking</span> <strong>"Is not" is written before the field</strong> in a query:
+            <code>!status:closed</code>. The writing of 4.x, <code>status:!closed</code>, is still read through 5.x and
+            shown rewritten. A word that starts with <code>!</code> is no longer looked for as text.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Incidents have a number</strong>, <code>#00042</code>, written
+            before the name and used to refer to an incident; what was the id stays its uuid, in the address and the
+            API. <strong>Lists in a query</strong>: <code>field IN (a, b)</code> and <code>NOT IN</code>.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The War Room</strong>: indicators in it can be clicked, and a
+            reputation command adds what it looked up to the incident.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Every side panel can be resized</strong>, and
+            <strong>right-click</strong> works on playbooks, scripts, runs, tasks, dashboards, widgets, lists and the
+            entries of the War Room. A logo set for Nik.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> <strong>The rail</strong> is in the order of a working day, with
+            the account at its foot and no shortcuts to sections of Settings (<a href="deployment.html#upgrading-to-50"
+              >Upgrading to 5.0</a
+            >).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>4.7.0 <span class="date">2026-11-19</span></h3>
         <ul>
           <li>

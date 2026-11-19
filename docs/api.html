@@ -186,7 +186,18 @@
               <td><code>GET /api/incidents/{id}</code></td>
               <td>
                 One incident, with an <code>ETag</code>: its revision, which changes at every write, whoever makes it.
-                Send <code>If-None-Match</code> to get <code>304</code> while your copy is current.
+                Send <code>If-None-Match</code> to get <code>304</code> while your copy is current. <code>{id}</code> is
+                the incident's uuid, here and in every route; the document says it twice, as <code>id</code> and as
+                <code>uuid</code>, and carries <code>number</code>, the number people call the incident by
+                (<code>#00042</code>). The number is given by the server when the incident is created and is never used
+                twice; a number sent in a document is kept as <code>importedNumber</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/by-number/{number}</code></td>
+              <td>
+                The incident with that number: <code>{id, uuid, number, name}</code>. In a query it is
+                <code>number:42</code>.
               </td>
             </tr>
             <tr>
@@ -1574,8 +1585,19 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
               </td>
             </tr>
             <tr>
-              <td><code>field:!value</code></td>
-              <td>Not that value.</td>
+              <td><code>!field:value</code></td>
+              <td>
+                Not that value (a field that is empty counts). Until 5.0 this was written
+                <code>field:!value</code>, which is read through 5.x and goes in 6.0.
+              </td>
+            </tr>
+            <tr>
+              <td><code>field IN (a, b)</code> · <code>field NOT IN (a, b)</code></td>
+              <td>
+                One of the values, none of them: the same as <code>field:a or field:b</code> and
+                <code>!field:a !field:b</code>. Values are separated by commas or spaces and quoted when they hold
+                either.
+              </td>
             </tr>
             <tr>
               <td><code>:&gt;</code> <code>:&gt;=</code> <code>:&lt;</code> <code>:&lt;=</code></td>

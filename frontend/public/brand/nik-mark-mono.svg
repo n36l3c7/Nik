@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Nik</title>
+  <!-- One colour, taken from the text around it: for print, a light page, a stamp. -->
+  <rect x="2" y="2" width="60" height="60" fill="none" stroke="currentColor" stroke-width="4" />
+  <path d="M15 21l13 11-13 11" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="square" />
+  <path d="M35 45h14" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="square" />
+</svg>

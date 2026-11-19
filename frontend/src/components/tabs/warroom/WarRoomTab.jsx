@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Copy,
   ExternalLink,
+  FolderOpen,
   HelpCircle,
   Info,
   RefreshCw,
@@ -32,6 +33,9 @@ import {
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
+import IocText from '../../ioc/IocText.jsx'
+import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 
 /*
  * ============================================================================
@@ -96,7 +100,7 @@ function Result({ value }) {
             <tr key={index}>
               {table.columns.map((column) => (
                 <td key={column} className="border-b border-line-soft px-2 py-1 align-top text-fg">
-                  {cell(row[column])}
+                  <IocText text={cell(row[column])} />
                 </td>
               ))}
             </tr>
@@ -114,6 +118,7 @@ function Heading({ children }) {
 function Inspector({ incident, entry, raw, canWrite, onClose, onChanged, onRerun }) {
   const { showToast } = useToast()
   const [detail, setDetail] = useState(null)
+  const pane = useResizablePane('warroom.entry', { initial: 380, min: 300, max: 720, edge: 'left' })
 
   useEffect(() => {
     let alive = true
@@ -153,103 +158,111 @@ function Inspector({ incident, entry, raw, canWrite, onClose, onChanged, onRerun
   }
 
   return (
-    <aside
-      aria-label="The chosen entry"
-      className="absolute inset-y-0 right-0 z-10 flex w-full max-w-md flex-col gap-3 overflow-y-auto border-l border-line bg-panel p-3 shadow-xl min-[1100px]:static min-[1100px]:w-[380px] min-[1100px]:max-w-none min-[1100px]:shrink-0 min-[1100px]:shadow-none"
-    >
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-semibold text-fg">{line.title || 'A note'}</p>
-          <p className="text-xs text-fg-muted">
-            {authorLabel(entry.author)} · {formatDateTime(Date.parse(entry.at))}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Close the entry"
-          onClick={onClose}
-          className="text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {canWrite && (
-          <Button
-            variant={evidence ? 'secondary' : 'ghost'}
-            size="xs"
-            icon={Star}
-            aria-pressed={evidence}
-            onClick={mark}
-          >
-            {evidence ? 'Evidence' : 'Mark as evidence'}
-          </Button>
-        )}
-        <Button variant="ghost" size="xs" icon={Copy} onClick={copy}>
-          Copy JSON
-        </Button>
-        {entry.runId && (
-          <Button
-            variant="ghost"
-            size="xs"
-            icon={ExternalLink}
-            onClick={() => setPath(automationPath('runs', entry.runId))}
-          >
-            Open the run
-          </Button>
-        )}
-        {onRerun && entry.kind === 'command' && (
-          <Button variant="ghost" size="xs" icon={RefreshCw} onClick={() => onRerun(entry.body.line)}>
-            Run again
-          </Button>
-        )}
-      </div>
-      {line.text && <p className="whitespace-pre-wrap break-words text-sm text-fg">{line.text}</p>}
-      {!detail && (
-        <p role="status" className="font-mono text-xs text-fg-muted">
-          Loading…
-        </p>
-      )}
-      {step && (
-        <>
-          {step.error && (
-            <p role="alert" className="border border-high-line bg-high-soft p-2 text-xs text-high-fg">
-              {step.error}
+    <>
+      <ResizeHandle {...pane.handle} label="Resize the chosen entry" className="hidden min-[1100px]:block" />
+      <aside
+        aria-label="The chosen entry"
+        style={pane.style}
+        className="absolute inset-y-0 right-0 z-10 flex w-full max-w-md flex-col gap-3 overflow-y-auto border-l border-line bg-panel p-3 shadow-xl min-[1100px]:static min-[1100px]:w-[var(--pane-w)] min-[1100px]:max-w-none min-[1100px]:shrink-0 min-[1100px]:shadow-none"
+      >
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-sm font-semibold text-fg">{line.title || 'A note'}</p>
+            <p className="text-xs text-fg-muted">
+              {authorLabel(entry.author)} · {formatDateTime(Date.parse(entry.at))}
             </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close the entry"
+            onClick={onClose}
+            className="text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canWrite && (
+            <Button
+              variant={evidence ? 'secondary' : 'ghost'}
+              size="xs"
+              icon={Star}
+              aria-pressed={evidence}
+              onClick={mark}
+            >
+              {evidence ? 'Evidence' : 'Mark as evidence'}
+            </Button>
           )}
-          {step.output !== null && step.output !== undefined && (
-            <section className="flex flex-col gap-1">
-              <Heading>Result</Heading>
-              {raw ? <Json value={step.output} /> : <Result value={step.output} />}
-            </section>
+          <Button variant="ghost" size="xs" icon={Copy} onClick={copy}>
+            Copy JSON
+          </Button>
+          {entry.runId && (
+            <Button
+              variant="ghost"
+              size="xs"
+              icon={ExternalLink}
+              onClick={() => setPath(automationPath('runs', entry.runId))}
+            >
+              Open the run
+            </Button>
           )}
-          {step.request && (
-            <section className="flex flex-col gap-1">
-              <Heading>What was sent</Heading>
-              <Json value={step.request} />
-            </section>
+          {onRerun && entry.kind === 'command' && (
+            <Button variant="ghost" size="xs" icon={RefreshCw} onClick={() => onRerun(entry.body.line)}>
+              Run again
+            </Button>
           )}
-          {step.input && (
-            <section className="flex flex-col gap-1">
-              <Heading>What it was given</Heading>
-              <Json value={step.input} />
-            </section>
-          )}
-          {wrote.length > 0 && (
-            <section className="flex flex-col gap-1">
-              <Heading>Written to the context</Heading>
-              <ul className="flex flex-wrap gap-1">
-                {wrote.map((item) => (
-                  <li key={item} className="border border-line bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-fg">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </>
-      )}
-    </aside>
+        </div>
+        {line.text && (
+          <p className="whitespace-pre-wrap break-words text-sm text-fg">
+            <IocText text={line.text} />
+          </p>
+        )}
+        {!detail && (
+          <p role="status" className="font-mono text-xs text-fg-muted">
+            Loading…
+          </p>
+        )}
+        {step && (
+          <>
+            {step.error && (
+              <p role="alert" className="border border-high-line bg-high-soft p-2 text-xs text-high-fg">
+                {step.error}
+              </p>
+            )}
+            {step.output !== null && step.output !== undefined && (
+              <section className="flex flex-col gap-1">
+                <Heading>Result</Heading>
+                {raw ? <Json value={step.output} /> : <Result value={step.output} />}
+              </section>
+            )}
+            {step.request && (
+              <section className="flex flex-col gap-1">
+                <Heading>What was sent</Heading>
+                <Json value={step.request} />
+              </section>
+            )}
+            {step.input && (
+              <section className="flex flex-col gap-1">
+                <Heading>What it was given</Heading>
+                <Json value={step.input} />
+              </section>
+            )}
+            {wrote.length > 0 && (
+              <section className="flex flex-col gap-1">
+                <Heading>Written to the context</Heading>
+                <ul className="flex flex-wrap gap-1">
+                  {wrote.map((item) => (
+                    <li key={item} className="border border-line bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-fg">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        )}
+      </aside>
+    </>
   )
 }
 
@@ -272,6 +285,7 @@ export default function WarRoomTab({ incident }) {
   const [entries, setEntries] = useState(null)
   const [error, setError] = useState(null)
   const [chosen, setChosen] = useState(null)
+  const menu = useObjectMenu()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const end = useRef(null)
@@ -456,36 +470,63 @@ export default function WarRoomTab({ incident }) {
             const Icon = tone.icon
             return (
               <li key={entry.id} className={entry.depth ? 'pl-6' : ''}>
-                <button
-                  type="button"
-                  aria-current={entry.id === chosen ? 'true' : undefined}
+                {/* The row opens the entry wherever it is clicked; the button is how the keyboard does it.
+                    An indicator in the text is a button of its own, so the row cannot be one. */}
+                <div
+                  onContextMenu={(event) =>
+                    menu(event, {
+                      title: line.title || 'A note',
+                      actions: [
+                        { label: 'Open the entry', icon: FolderOpen, onSelect: () => setChosen(entry.id) },
+                        entry.runId && {
+                          label: 'Open the run',
+                          icon: ExternalLink,
+                          onSelect: () => setPath(automationPath('runs', entry.runId)),
+                        },
+                      ],
+                      copy: [
+                        { label: 'Copy the text', text: [line.title, line.text].filter(Boolean).join('\n') },
+                        entry.kind === 'command' && { label: 'Copy the command', text: entry.body?.line ?? '' },
+                      ],
+                      record: entry,
+                    })
+                  }
                   onClick={() => setChosen(entry.id === chosen ? null : entry.id)}
-                  className={`flex w-full items-start gap-2 border-b border-line-soft px-3 py-2 text-left hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${entry.id === chosen ? 'bg-raised' : ''}`}
+                  className={`flex w-full cursor-pointer items-start gap-2 border-b border-line-soft px-3 py-2 text-left hover:bg-raised ${entry.id === chosen ? 'bg-raised' : ''}`}
                 >
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${tone.className}`} aria-hidden="true" />
                   <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-baseline gap-x-2 text-xs text-fg-muted">
+                    <button
+                      type="button"
+                      title="Open the entry"
+                      aria-current={entry.id === chosen ? 'true' : undefined}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setChosen(entry.id === chosen ? null : entry.id)
+                      }}
+                      className="flex flex-wrap items-baseline gap-x-2 text-left text-xs text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
                       <span className="font-medium text-fg">{authorLabel(entry.author)}</span>
                       <span>{formatDateTime(Date.parse(entry.at))}</span>
                       {entry.body?.automation && <Badge color="cyan">automation</Badge>}
                       {entry.tags.includes(EVIDENCE) && <Badge color="amber">evidence</Badge>}
-                    </span>
+                    </button>
                     {line.title && (
                       <span
                         className={`block break-words text-sm ${entry.kind === 'command' ? 'font-mono' : 'font-medium'} text-fg`}
                       >
-                        {line.title}
+                        <IocText text={line.title} />
                       </span>
                     )}
                     {line.text && (
                       <span
                         className={`block whitespace-pre-wrap break-words text-sm ${line.tone === 'error' ? 'text-high-fg' : line.title ? 'text-fg-muted' : 'text-fg'}`}
                       >
-                        {line.text}
+                        <IocText text={line.text} />
                       </span>
                     )}
                   </span>
-                </button>
+                </div>
               </li>
             )
           })}

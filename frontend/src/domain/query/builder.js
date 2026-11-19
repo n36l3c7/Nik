@@ -142,6 +142,8 @@ function rowText(row) {
     const end = (value) => (value === '' ? '*' : written(value))
     return `${row.field}:[${end(row.value)} TO ${end(row.value2)}]`
   }
+  // "Is not" is written before the field.
+  if (row.op === '!') return `!${row.field}:${written(row.value)}`
   const op = OPS.find((candidate) => candidate.id === row.op)?.text ?? ''
   return `${row.field}:${op}${written(row.value)}`
 }

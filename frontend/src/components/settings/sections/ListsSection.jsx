@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Plus, Save, Trash2, Upload, X } from 'lucide-react'
+import { Download, FolderOpen, Plus, Save, Trash2, Upload, X } from 'lucide-react'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { api, apiUrl } from '../../../services/api.js'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { onLocationChange } from '../../../lib/location.js'
@@ -13,6 +14,7 @@ import {
   fileFormat,
   fromRows,
   kindLabel,
+  listPath,
   matching,
   nameFromLabel,
   nameProblem,
@@ -562,6 +564,7 @@ export default function ListsSection() {
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState(() => openFromSearch(window.location.search))
   const [adding, setAdding] = useState(false)
+  const menu = useObjectMenu()
 
   const load = useCallback(async () => {
     try {
@@ -619,7 +622,18 @@ export default function ListsSection() {
               </thead>
               <tbody>
                 {(shown ?? []).map((list) => (
-                  <tr key={list.name} className={list.name === open ? 'bg-accent-soft' : ''}>
+                  <tr
+                    key={list.name}
+                    className={list.name === open ? 'bg-accent-soft' : ''}
+                    onContextMenu={(event) =>
+                      menu(event, {
+                        title: list.label,
+                        actions: [{ label: 'Open', icon: FolderOpen, onSelect: () => setChosen(list.name) }],
+                        link: listPath(list.name),
+                        copy: [{ label: 'Copy the name', text: list.name }],
+                      })
+                    }
+                  >
                     <th scope="row" className="border-b border-line-soft px-3 py-1.5 font-normal">
                       <button
                         type="button"

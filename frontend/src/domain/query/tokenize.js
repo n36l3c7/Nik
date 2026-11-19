@@ -3,10 +3,13 @@
  * typed, half-written or wrong, is cut into tokens that cover the whole text,
  * so the input can be coloured while it is edited.
  *
- * Token types: space, paren, keyword (and / or / not), not (the leading -),
- * field, op (the colon and the comparison after it), value, range, text (a
- * value on its own), and quote for a quoted value or text.
+ * Token types: space, paren, keyword (and / or / not / in), not (the leading
+ * - or !), field, op (the colon and the comparison after it), value, range,
+ * text (a value on its own), and quote for a quoted value or text. The values
+ * of a list (`field IN (a, b)`) are value tokens of that field.
  */
+
+import { listOpening } from './parse.js'
 
 const SPACE = ' \t\r\n'
 const OPS = ['>=', '<=', '>', '<', '!']
@@ -87,7 +90,12 @@ export function tokenize(text) {
       i += word.length
       continue
     }
-    if (char === '-' && i + 1 < source.length && !SPACE.includes(source[i + 1]) && source[i + 1] !== ')') {
+    if (
+      (char === '-' || char === '!') &&
+      i + 1 < source.length &&
+      !SPACE.includes(source[i + 1]) &&
+      source[i + 1] !== ')'
+    ) {
       push('not', i, i + 1)
       i += 1
       continue
@@ -126,6 +134,50 @@ export function tokenize(text) {
         i = end
       }
       continue
+    }
+    if (name) {
+      const listed = listOpening(source, NAME.lastIndex)
+      if (listed) {
+        const field = name[0]
+        push('field', i, NAME.lastIndex)
+        // The words between the name and the parenthesis, and the spaces around them.
+        let j = NAME.lastIndex
+        for (const [at, length] of [
+          [listed.not, 3],
+          [listed.in, 2],
+        ]) {
+          if (at === -1) continue
+          push('space', j, at)
+          push('keyword', at, at + length)
+          j = at + length
+        }
+        push('space', j, listed.paren)
+        j = listed.paren
+        push('paren', j, j + 1)
+        j += 1
+        // The values, up to the parenthesis that closes the list (or the end, while it is typed).
+        while (j < source.length && source[j] !== ')') {
+          if (SPACE.includes(source[j]) || source[j] === ',') {
+            let k = j
+            while (k < source.length && (SPACE.includes(source[k]) || source[k] === ',')) k += 1
+            push('space', j, k)
+            j = k
+          } else if (source[j] === '"') {
+            const end = quoteEnd(source, j)
+            push('value', j, end, { field })
+            j = end
+          } else {
+            let k = j
+            while (k < source.length && !SPACE.includes(source[k]) && source[k] !== ',' && source[k] !== ')') {
+              k += source[k] === '\\' && k + 1 < source.length ? 2 : 1
+            }
+            push('value', j, Math.min(k, source.length), { field })
+            j = Math.min(k, source.length)
+          }
+        }
+        i = j
+        continue
+      }
     }
     const end = Math.max(bareEnd(source, i), i + 1)
     push('text', i, end)

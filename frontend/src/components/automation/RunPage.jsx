@@ -21,6 +21,8 @@ import ApprovalBanner from './ApprovalBanner.jsx'
 import Canvas from './Canvas.jsx'
 import DebugPanel, { DebugStepTools } from './DebugPanel.jsx'
 import { SectionTitle } from './fields.jsx'
+import { numberedName } from '../../domain/incidentName.js'
+import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 
 /*
  * ============================================================================
@@ -137,6 +139,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
   const { incidents } = useIncidents()
   const { showToast } = useToast()
   const [run, setRun] = useState(null)
+  const stepsPane = useResizablePane('automation.run-steps', { initial: 380, min: 300, max: 720, edge: 'left' })
   const [error, setError] = useState(null)
   const [stepId, setStepId] = useState(null)
   const [selection, setSelection] = useState(null)
@@ -263,7 +266,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
                       onClick={() => onOpenIncident(run.incidentId)}
                       className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      {incident.name}
+                      {numberedName(incident)}
                     </button>
                   ) : (
                     'an incident that is gone'
@@ -320,9 +323,11 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
             onSelect={onSelectNodes}
           />
         </div>
+        <ResizeHandle {...stepsPane.handle} label="Resize the steps of the run" className="hidden lg:block" />
         <aside
           aria-label="Steps of the run"
-          className="flex min-h-0 w-full shrink-0 flex-col border-l border-line bg-panel lg:w-[380px]"
+          style={stepsPane.style}
+          className="flex min-h-0 w-full shrink-0 flex-col border-l border-line bg-panel lg:w-[var(--pane-w)]"
         >
           <div className="max-h-[45%] min-h-[120px] shrink-0 overflow-y-auto border-b border-line p-3">
             <SectionTitle>Steps</SectionTitle>

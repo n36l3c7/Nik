@@ -354,6 +354,7 @@ def out(db: OrmSession, task: Task, caller: Principal | None = None) -> dict[str
         "status": task.status,
         "incidentId": task.incident_id,
         "incidentName": incident.name if incident is not None else "",
+        "incidentNumber": incident.number if incident is not None else None,
         "runId": task.run_id,
         "assignee": {"user": task.assignee_user, "role": task.assignee_role, "owner": bool(task.assignee_owner)},
         "for": for_whom(task),

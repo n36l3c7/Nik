@@ -309,6 +309,33 @@ def test_a_reputation_command_asks_nik_s_sources_and_the_connectors_that_look_it
     context = admin.get("/api/incidents/i1/context").json()["context"]
     assert context["IP"] == [{"Address": IP, "Verdict": "malicious", "Score": out["score"]}]
 
+    # What was looked up is an indicator of the incident from then on, once.
+    def held():
+        return {(i["type"], i["value"]): i for i in admin.get("/api/incidents/i1/iocs").json()["iocs"]}
+
+    assert held()[("ip", IP)]["sources"] == ["warroom"]
+    again = typed(admin, f"!ip {IP}")
+    assert again.status_code == 201 and "indicator" not in again.json()
+    worker.drain()
+    assert held()[("ip", IP)]["count"] == 1
+    added = typed(admin, "!url https://Evil.example.net/a?b=1")
+    assert added.json()["indicator"] == {"type": "url", "value": "https://Evil.example.net/a?b=1"}
+    worker.drain()
+    assert ("url", "https://Evil.example.net/a?b=1") in held() and ("domain", "evil.example.net") in held()
+    hashed = typed(admin, "!file " + "AB" * 16)
+    assert hashed.json()["indicator"] == {"type": "md5", "value": "ab" * 16}
+    worker.drain()
+    # What is not an indicator, or is written with an expression, adds nothing.
+    for line in ("!domain not_a_domain", "!file invoice.exe", "!ip {{ incident.host }}"):
+        assert "indicator" not in typed(admin, line).json(), line
+    worker.drain()
+    doc = admin.get("/api/incidents/i1").json()
+    assert [(e["type"], e["source"], e["by"]) for e in doc["data"]["iocs"]["manual"]] == [
+        ("ip", "warroom", "admin"),
+        ("url", "warroom", "admin"),
+        ("md5", "warroom", "admin"),
+    ]
+
     # An address of the inside is never sent, to Nik's sources or to a connector.
     sent = len(desk.requests)
     inside = ran(admin, "!ip 10.1.2.3")["step"]["output"]

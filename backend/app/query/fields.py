@@ -284,7 +284,7 @@ def sql_condition(spec: FieldSpec, op: str, value: Value, position: int, ctx: Co
         return empty if wants_empty else not_(empty)
 
     if kind in ("text", "keyword", "ordered", "tags") and op in (">", ">=", "<", "<=") and kind != "ordered":
-        raise _bad("bad_operator", position, f'"{spec.name}" is compared with : or :! only')
+        raise _bad("bad_operator", position, f'"{spec.name}" is compared with field:value or !field:value only')
 
     if kind == "text":
         match = func.lower(_text_column(spec)).like(like_pattern(value, contains=True).lower(), escape="\\")
@@ -410,7 +410,7 @@ def row_condition(spec: FieldSpec, op: str, value: Value, position: int, ctx: Co
         return lambda row: _is_empty(get(row)) == wants_empty
 
     if kind in ("text", "keyword", "tags") and op in (">", ">=", "<", "<="):
-        raise _bad("bad_operator", position, f'"{spec.name}" is compared with : or :! only')
+        raise _bad("bad_operator", position, f'"{spec.name}" is compared with field:value or !field:value only')
 
     if kind == "text":
         return lambda row: text_matches(value, get(row), contains=True) == (op == "=")

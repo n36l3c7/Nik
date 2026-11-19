@@ -12,7 +12,7 @@ indexes of migration 0012; on SQLite they scan, which is fine at that size.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..core.db import get_db
@@ -39,17 +39,32 @@ def search(
     text = q.strip()
     pattern = _like(text)
 
+    # "#42" or "42" is also the incident with that number.
+    digits = text[1:] if text.startswith("#") else text
+    numbered = digits.isdigit() and len(digits) <= 9
+    by_number = Incident.number == int(digits) if numbered else false()
+    # The incident with the number first, then the latest changed.
+    order = (by_number.desc(), Incident.updated_at.desc()) if numbered else (Incident.updated_at.desc(),)
     incidents = db.execute(
-        select(Incident.id, Incident.name, Incident.host, Incident.username, Incident.os, Incident.updated_at)
+        select(
+            Incident.id,
+            Incident.name,
+            Incident.host,
+            Incident.username,
+            Incident.os,
+            Incident.updated_at,
+            Incident.number,
+        )
         .where(
             or_(
+                by_number,
                 Incident.ticket_id.ilike(pattern, escape="\\"),
                 Incident.name.ilike(pattern, escape="\\"),
                 Incident.host.ilike(pattern, escape="\\"),
                 Incident.username.ilike(pattern, escape="\\"),
             )
         )
-        .order_by(Incident.updated_at.desc())
+        .order_by(*order)
         .limit(limit)
     ).all()
 
@@ -81,8 +96,16 @@ def search(
     return {
         "query": text,
         "incidents": [
-            {"id": i, "name": name, "host": host, "username": user, "os": os, "updatedAt": updated}
-            for i, name, host, user, os, updated in incidents
+            {
+                "id": i,
+                "number": number,
+                "name": name,
+                "host": host,
+                "username": user,
+                "os": os,
+                "updatedAt": updated,
+            }
+            for i, name, host, user, os, updated, number in incidents
         ],
         "iocs": [{"type": kind, "value": value, "incidents": n} for kind, value, n in iocs],
         "samples": [

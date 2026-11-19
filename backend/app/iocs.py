@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import time
 import uuid
 from collections.abc import Iterable
 from typing import Any
@@ -38,6 +39,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import aliased
+from sqlalchemy.orm.attributes import flag_modified
 
 from . import artifacts
 from .core.models import Incident, IocEntry, Mail, NetworkCapture, Sample, UrlScan
@@ -228,6 +230,15 @@ def extract(
     data = doc.get("data") if isinstance(doc.get("data"), dict) else {}
     out = _Collector()
 
+    # The ones somebody added: a reputation command of the War Room, for one (``add_manual``).
+    added = data.get("iocs") if isinstance(data.get("iocs"), dict) else {}
+    for entry in (item for item in added.get("manual") or [] if isinstance(item, dict)):
+        kind, source = str(entry.get("type") or ""), str(entry.get("source") or "manual")
+        if kind == "url":
+            out.add_url(entry.get("value"), source, entry.get("time"))
+        elif kind in MANUAL_KINDS:
+            out.add(kind, entry.get("value"), source, entry.get("time"))
+
     for browser_id, slot in ((k, v) for k, v in (data.get("browser", {}).get("browsers") or {}).items()):
         source = f"browser:{browser_id}"
         for profile in _dicts((slot or {}).get("profiles")):
@@ -353,6 +364,53 @@ def _iso_ms(value: Any) -> int | None:
         return int(datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp() * 1000)
     except (TypeError, ValueError):
         return None
+
+
+MANUAL_KINDS = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
+MAX_MANUAL = 500
+_HASH_KIND = {32: "md5", 40: "sha1", 64: "sha256"}
+
+
+def indicator_of(kind: str, value: Any) -> tuple[str, str] | None:
+    """What a looked-up value is as an indicator: ``kind`` is the kind of a reputation command
+    (ip, domain, url, file, email), where a file is one of its hashes. None for what is not one."""
+    text = str(value or "").strip()
+    if kind == "file":
+        kind = _HASH_KIND.get(len(text), "")
+        if not kind or any(char not in "0123456789abcdefABCDEF" for char in text):
+            return None
+    if kind not in MANUAL_KINDS:
+        return None
+    if kind == "url" and not re.match(r"^(?:https?|ftp)://", text, re.IGNORECASE):
+        return None
+    cleaned = normalize(kind, text)
+    return (kind, cleaned) if cleaned else None
+
+
+def add_manual(db: OrmSession, row: Incident, kind: str, value: Any, source: str, by: str = "") -> dict | None:
+    """Add an indicator to the incident by hand (``kind`` as ``indicator_of`` takes it). It is kept
+    in the document (``data.iocs.manual``) and indexed with the others. Returns what was added,
+    None when the value is not an indicator or the incident holds it from this source already."""
+    found = indicator_of(kind, value)
+    if found is None:
+        return None
+    doc = dict(row.doc or {})
+    data = dict(doc.get("data") or {}) if isinstance(doc.get("data"), dict) else {}
+    held = dict(data.get("iocs") or {}) if isinstance(data.get("iocs"), dict) else {}
+    manual = [entry for entry in held.get("manual") or [] if isinstance(entry, dict)]
+    if any((entry.get("type"), entry.get("value"), entry.get("source")) == (*found, source) for entry in manual):
+        return None
+    if len(manual) >= MAX_MANUAL:
+        return None
+    entry = {"type": found[0], "value": found[1], "source": source, "time": int(time.time() * 1000), "by": by}
+    held["manual"] = [*manual, entry]
+    data["iocs"] = held
+    doc["data"] = data
+    row.doc = doc
+    flag_modified(row, "doc")
+    db.flush()
+    reindex_incident(db, row)
+    return entry
 
 
 def reindex_incident(db: OrmSession, row: Incident, alerts: bool = True) -> int:
