@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import textwrap
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
@@ -62,10 +63,14 @@ RADAR = textwrap.dedent(
     """
 )
 
+# The alerts are of yesterday, whenever the tests run: Radar's fetch looks three days back, and
+# alerts with a date written here once fell out of that window as the days went by.
+DAY = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
 ALERTS = [
-    {"id": "A-1", "title": "Emotet on WKS-01", "score": 91, "created": "2026-11-16T08:00:00Z", "host": "WKS-01"},
-    {"id": "A-2", "title": "Phishing page opened", "score": 40, "created": "2026-11-16T09:00:00Z", "host": "WKS-02"},
-    {"id": "A-3", "title": "Port scan", "score": 10, "created": "2026-11-16T10:00:00Z", "host": "SRV-01"},
+    {"id": "A-1", "title": "Emotet on WKS-01", "score": 91, "created": f"{DAY}T08:00:00Z", "host": "WKS-01"},
+    {"id": "A-2", "title": "Phishing page opened", "score": 40, "created": f"{DAY}T09:00:00Z", "host": "WKS-02"},
+    {"id": "A-3", "title": "Port scan", "score": 10, "created": f"{DAY}T10:00:00Z", "host": "SRV-01"},
 ]
 
 MAPPER = [
@@ -172,7 +177,7 @@ def test_a_connection_fetches_and_each_new_alert_becomes_an_incident_once(admin:
         "open",
     )
     assert emotet["createdBy"] == "connector:radar" and found["Port scan"]["type"] == "unclassified"
-    assert emotet["fields"]["occurred"] == "2026-11-16T08:00:00Z"
+    assert emotet["fields"]["occurred"] == f"{DAY}T08:00:00Z"
     registry = admin.get(f"/api/incidents/{emotet['id']}/fields").json()["fields"]
     assert registry["source_id"] == "A-1" and emotet["fields"]["source_connector"] == "radar"
     assert registry["source_instance"] == connection["id"]
@@ -188,21 +193,21 @@ def test_a_connection_fetches_and_each_new_alert_becomes_an_incident_once(admin:
         events = db.scalars(select(AutomationEvent).where(AutomationEvent.kind == "incident.created")).all()
         assert len(events) == 3
         # The state moved to the last alert read.
-        assert db.get(Connection, connection["id"]).fetch_state == {"last_time": "2026-11-16T10:00:00Z"}
+        assert db.get(Connection, connection["id"]).fetch_state == {"last_time": f"{DAY}T10:00:00Z"}
 
     # Again: the request asks for what is newer, and an alert seen before makes no second incident.
     again = run(admin, connection)
     assert (again["result"]["fetched"], again["result"]["new"]) == (0, 0)
-    assert sinces(outside)[-1] == "2026-11-16T10:00:00Z" and len(incidents(admin)) == 3
+    assert sinces(outside)[-1] == f"{DAY}T10:00:00Z" and len(incidents(admin)) == 3
     with SessionLocal() as db:
-        db.get(Connection, connection["id"]).fetch_state = {"last_time": "2026-11-16T08:30:00Z"}
+        db.get(Connection, connection["id"]).fetch_state = {"last_time": f"{DAY}T08:30:00Z"}
         db.commit()
     overlap = run(admin, connection)
     assert (overlap["result"]["fetched"], overlap["result"]["new"]) == (2, 0) and len(incidents(admin)) == 3
 
     status = admin.get("/api/fetch").json()["connections"][0]
     assert (status["state"], status["madeLastHour"], status["hasSample"]) == ("ok", 3, True)
-    assert status["last"]["fetched"] == 2 and status["fetchState"] == {"last_time": "2026-11-16T10:00:00Z"}
+    assert status["last"]["fetched"] == 2 and status["fetchState"] == {"last_time": f"{DAY}T10:00:00Z"}
     items = admin.get(f"/api/fetch/{connection['id']}/items").json()["items"]
     assert sorted((item["itemId"], item["outcome"]) for item in items) == [
         ("A-1", "created"),
@@ -236,7 +241,7 @@ def test_an_item_the_mapper_cannot_make_whole_is_still_an_incident_and_says_so(a
     with SessionLocal() as db:
         db.get(Connection, connection["id"]).fetch_state = None
         db.commit()
-    newer = {"id": "A-9", "title": "Beacon", "score": 70, "created": "2026-11-16T11:00:00Z", "host": "WKS-09"}
+    newer = {"id": "A-9", "title": "Beacon", "score": 70, "created": f"{DAY}T11:00:00Z", "host": "WKS-09"}
     ALERTS_NOW = [*ALERTS[:2], newer]
     outside.answers.clear()
     outside.answers.append(
@@ -300,7 +305,7 @@ def test_a_connection_that_makes_too_many_incidents_is_paused_until_someone_look
     assert len(incidents(admin)) == 2
     with SessionLocal() as db:
         # The state stopped at what became an incident: the third alert is not lost.
-        assert db.get(Connection, connection["id"]).fetch_state == {"last_time": "2026-11-16T09:00:00Z"}
+        assert db.get(Connection, connection["id"]).fetch_state == {"last_time": f"{DAY}T09:00:00Z"}
         assert [note.kind for note in db.scalars(select(Notification))] == ["fetch.paused"]
         assert fetch.due(db, T0 * 2) == []  # paused: the worker leaves it alone
 
@@ -490,8 +495,8 @@ def test_a_duplicate_is_made_and_closed_at_once_and_a_script_can_decide(admin: T
     monkeypatch.setattr(scripts, "execute", execute)
     rule(admin, name="Ask the script", action="run_script", params={"script": "LowScore"})
     served = [
-        {"id": "B-1", "title": "Low thing", "score": 12, "created": "2026-11-16T12:00:00Z", "host": "X"},
-        {"id": "B-2", "title": "High thing", "score": 88, "created": "2026-11-16T13:00:00Z", "host": "Y"},
+        {"id": "B-1", "title": "Low thing", "score": 12, "created": f"{DAY}T12:00:00Z", "host": "X"},
+        {"id": "B-2", "title": "High thing", "score": 88, "created": f"{DAY}T13:00:00Z", "host": "Y"},
     ]
     outside.answers.clear()
     outside.answers.append(
