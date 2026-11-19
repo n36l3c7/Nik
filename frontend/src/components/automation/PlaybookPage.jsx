@@ -905,11 +905,11 @@ export default function PlaybookPage({
               Cancel
             </Button>
             {pushing?.moved ? (
-              <Button variant="danger" disabled={busy} onClick={() => pushBranch(true)}>
+              <Button key="over" variant="danger" disabled={busy} onClick={() => pushBranch(true)}>
                 Push over it
               </Button>
             ) : (
-              <Button disabled={busy} onClick={() => pushBranch(false)}>
+              <Button key="push" disabled={busy} onClick={() => pushBranch(false)}>
                 {busy ? 'Checking…' : 'Push'}
               </Button>
             )}

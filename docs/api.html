@@ -1028,6 +1028,42 @@
               </td>
             </tr>
             <tr>
+              <td><code>DELETE /api/automation/playbooks/{id}/draft</code></td>
+              <td>
+                Throw the draft away: the playbook is its version in use again. <code>409</code> when it has no version
+                (the draft is all there is: delete the playbook). <code>automation.edit</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>POST /api/automation/playbooks/{id}/branches</code></td>
+              <td>
+                The branches (<code>{branches: [{id, name, baseVersion, behind, createdBy, updatedAt, updatedBy}]}</code
+                >; <code>behind</code> when the playbook has a newer version than the one the branch started from) ·
+                make one from <code>{name, from}</code>, where <code>from</code> is <code>"main"</code> (the default),
+                <code>"draft"</code> or the id of a branch, or from <code>{name, graph}</code>. Twenty at most
+                (<code>409</code>). The playbook and each entry of the list of playbooks carry the same
+                <code>branches</code>. <code>automation.edit</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET</code> · <code>PUT</code> · <code>DELETE …/branches/{branch}</code></td>
+              <td>
+                One branch with its <code>graph</code> · save it (<code>{graph}</code>, which need not be valid) or
+                rename it (<code>{name}</code>) · delete it. Changing and deleting are for who made the branch or an
+                admin: <code>403</code> for anybody else.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST …/branches/{branch}/push</code></td>
+              <td>
+                Make the branch the next version of the playbook (<code>{note, overwrite}</code>): the playbook, as
+                <code>GET</code> gives it. <code>422</code> with every problem when the graph is not valid;
+                <code>409</code> with <code>{moved: true, baseVersion, currentVersion}</code> when the playbook has a
+                newer version than the one the branch started from, unless <code>overwrite</code> is true. Graphs are
+                not merged.
+              </td>
+            </tr>
+            <tr>
               <td><code>POST /api/automation/playbooks/{id}/validate</code></td>
               <td>
                 What keeps a graph (<code>{graph}</code>, or the draft) from being a version:
