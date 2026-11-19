@@ -19,12 +19,12 @@ const INPUT =
 const LABEL = 'text-xs font-medium text-fg-muted'
 
 function StartDialog({ incident, connections, canSend, onClose, onStarted }) {
-  const [connectionId, setConnectionId] = useState(connections[0]?.id ?? '')
+  const [instanceId, setConnectionId] = useState(connections[0]?.id ?? '')
   const [mirrorId, setMirrorId] = useState('')
   const [direction, setDirection] = useState('in')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-  const connection = connections.find((item) => item.id === connectionId)
+  const connection = connections.find((item) => item.id === instanceId)
   const problem = mirrorProblem({ connection, mirrorId, direction, canSend })
 
   const start = async (event) => {
@@ -34,7 +34,7 @@ function StartDialog({ incident, connections, canSend, onClose, onStarted }) {
     try {
       onStarted(
         await api.post(`/incidents/${encodeURIComponent(incident.id)}/mirror`, {
-          connectionId,
+          instanceId,
           mirrorId: mirrorId.trim(),
           direction,
         }),
@@ -68,7 +68,7 @@ function StartDialog({ incident, connections, canSend, onClose, onStarted }) {
           </label>
           <select
             id="mirror-connection"
-            value={connectionId}
+            value={instanceId}
             onChange={(event) => setConnectionId(event.target.value)}
             className={`${INPUT} cursor-pointer`}
           >
@@ -153,7 +153,7 @@ export default function Mirror({ incident }) {
     load()
   }, [load])
 
-  if (!state || (!state.mirrored && state.connections.length === 0)) return null
+  if (!state || (!state.mirrored && state.instances.length === 0)) return null
   const canWrite = can('write')
   const act = async (request, done) => {
     setError(null)
@@ -232,7 +232,7 @@ export default function Mirror({ incident }) {
       {starting && (
         <StartDialog
           incident={incident}
-          connections={state.connections}
+          connections={state.instances}
           canSend={can('automation.run')}
           onClose={() => setStarting(false)}
           onStarted={(next) => {

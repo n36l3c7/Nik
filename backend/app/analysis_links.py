@@ -9,7 +9,7 @@ capture, an address visited by the isolated browser. This module joins them:
 - ``verdicts``: what those analyses conclude, in the words of a reputation, so
   that Nik's own analysis counts among an indicator's sources;
 - ``standalone``: the indicators of the artifacts no incident references, so
-  that the IoC library holds them too;
+  that the Indicators page holds them too;
 - ``indicator_of``: the indicator an artifact is the analysis of.
 """
 

@@ -1097,7 +1097,7 @@ def get_catalog(
         "commands": command_line.catalog(db),
         "nodes": catalog.entries(db),
         # The connections there are, by connector: what a node of a connector chooses from.
-        "connections": catalog.connections(db),
+        "instances": catalog.connections(db),
         "events": list(graph.EVENTS),
         "operators": list(graph.OPERATORS),
         "ports": {kind: list(ports) for kind, ports in graph.PORTS.items()},

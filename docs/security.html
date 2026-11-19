@@ -437,6 +437,20 @@
           and not shared with you answers "not found". Sharing needs <code>dashboards.share</code> and is written to the
           audit log. What a chart shows of a value (a name of an incident, a tag) is drawn as text.
         </li>
+        <li id="catalogue-security">
+          <strong>The catalogue of packs.</strong> The packs of vendors' products are read from outside (by default the
+          release <code>packs</code> of Nik's repository), so nothing of the catalogue is trusted for where it comes
+          from. Its index is read only when its <strong>Ed25519 signature</strong> is of the key Nik holds: the public
+          half is in the code, the private half is a secret of the repository used only by the workflow that publishes
+          the packs from <code>main</code>. A pack is taken only when its size and its <strong>SHA-256</strong> are the
+          ones the signed index gives, and the name of its file cannot leave the folder of the index. It is then read
+          like an uploaded pack (below) and applied only after a person saw what it would do. Reading the catalogue goes
+          out through the same guarded path as a playbook's request, to the host of the address and no other (for
+          GitHub, the two hosts it answers a release from); only an administrator sets another address or another key,
+          and that is written to the audit log. A pack from the folder <code>NIK_PACKS_DIR</code> is
+          <strong>not</strong> checked against a signature: whoever can write that folder on the server installs
+          content.
+        </li>
         <li id="packs-security">
           <strong>Content packs.</strong> A pack is a file from someone else and is read as one: at most 20 MB and 2 000
           files, 100 MB unpacked, no path that leaves the pack, no links, only the folders Nik knows, YAML read without

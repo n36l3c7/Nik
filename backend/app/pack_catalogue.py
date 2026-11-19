@@ -53,6 +53,7 @@ GITHUB_HOSTS = ("objects.githubusercontent.com", "release-assets.githubuserconte
 FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.nikpack$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 COUNTED = (*packs.KINDS, "commands")
+NO_CATALOGUE = "No catalogue is set: upload the pack as a file, or set the address of a catalogue"
 
 
 class CatalogueError(Exception):
@@ -103,7 +104,8 @@ def clean_address(text: Any) -> str:
 
 
 def where(db: OrmSession) -> dict[str, Any]:
-    """Where the catalogue is read from: ``{address, key, custom}``."""
+    """Where the catalogue is read from: ``{address, key, custom}``. The address is empty in a Nik that was
+    given none (``NIK_PACKS_CATALOGUE=`` and nothing set here): packs come as files there."""
     held = _doc(db)
     address = held.get("address") or app_settings.PACKS_CATALOGUE
     return {
@@ -229,6 +231,8 @@ def refresh(db: OrmSession) -> dict[str, Any]:
     """Read the catalogue again and keep it (commits). A catalogue that cannot be read, or whose signature
     is not right, leaves what was read before and says why."""
     place = where(db)
+    if not place["address"]:
+        raise CatalogueError(NO_CATALOGUE, 409)
     try:
         data = _get(db, place["address"], INDEX_MAX)
         signature = _get(db, place["address"] + ".sig", 4096)
@@ -284,6 +288,8 @@ def entry_of(db: OrmSession, pack_id: str) -> dict[str, Any]:
 def download(db: OrmSession, pack_id: str) -> bytes:
     """The file of a pack of the catalogue, checked against what the signed index says of it."""
     entry, place = entry_of(db, pack_id), where(db)
+    if not place["address"]:
+        raise CatalogueError(NO_CATALOGUE, 409)
     data = _get(db, urljoin(place["address"], entry["file"]), packs.MAX_BYTES + 1)
     if len(data) != entry["size"] or hashlib.sha256(data).hexdigest() != entry["sha256"]:
         raise CatalogueError("The file of this pack is not the one the catalogue lists: it was not read")

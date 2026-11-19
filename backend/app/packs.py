@@ -809,7 +809,7 @@ def _conflict(db: OrmSession, pack: PackFile, item: Item, here: Any) -> str | No
             return f"Version {row.version} is installed, the pack holds version {wanted.version}: versions only go up"
     if kind == "lists":
         if named_lists.watch_list(db, item.name) is not None:
-            return "A list of the IoC library has this name"
+            return "A list of the Indicators page has this name"
         if here is not None and here["kind"] != (data.get("kind") or "values"):
             return f"There is a list with this name of another kind ({here['kind']})"
         row = named_lists.find(db, item.name)
@@ -1087,6 +1087,8 @@ def apply(
             continue
         if entry["action"] == "same":
             done["same"] += 1
+            if item.kind == "connectors" and item.extras:
+                _give_extras(db, item)
             applied.append(item)
             continue
         try:
@@ -1118,6 +1120,18 @@ def digest(db: OrmSession, kind: str, name: str) -> str:
     except Exception:  # noqa: BLE001 - an item that cannot be read has no fingerprint, and is never removed for it
         return ""
     return hashlib.sha256(shown.encode("utf-8")).hexdigest()
+
+
+def _give_extras(db: OrmSession, item: Item) -> None:
+    """A connector that is here exactly as the pack has it may still lack what the pack brings beside its
+    file: the logo and the README are given where the connector has none (one set here is left)."""
+    row = db.get(Connector, item.name)
+    if row is None:
+        return
+    if item.extras.get("logo") and not row.logo:
+        row.logo, row.logo_type = connector_logo.clean(item.extras["logo"])
+    if item.extras.get("readme") and not row.readme:
+        row.readme = str(item.extras["readme"])[: connector_actions.README_MAX]
 
 
 def remember(
@@ -1440,6 +1454,7 @@ def take_upload(db: OrmSession, token: str, actor: str, now: float | None = None
 # --------------------------------------------------------------------------- #
 # The four packs Nik was written down as before 6.0: one pack now.
 OLD_BUILTIN = ("nik-incidents", "nik-automation", "nik-connectors", "nik-dashboards")
+LEGACY_VERSION = "0.9.0"  # what came inside Nik 5.x, as a version of the pack it became
 LEGACY_FILE = Path(__file__).parent / "automation" / "seed" / "legacy_packs.json"
 
 
@@ -1520,7 +1535,8 @@ def legacy() -> list[dict[str, Any]]:
 def adopt_legacy(db: OrmSession) -> int:
     """A Nik that was here before 6.0 holds the connectors of vendors' products as its own. Each of those
     still here, with its mappers and its playbook, is written down as the pack it is from now on, at
-    version 1.0.0, so that the catalogue updates it and "Uninstall" removes it (the caller commits).
+    version 0.9.0 (older than anything the catalogue publishes, so that the pack is offered as an update,
+    which brings what 5.x never had: the logo), and "Uninstall" removes it (the caller commits).
     Nothing is added or changed: a connector that was removed stays removed. Returns how many packs."""
     adopted = 0
     for spec in legacy():
@@ -1545,7 +1561,7 @@ def adopt_legacy(db: OrmSession) -> int:
                 "name": spec["name"],
                 "vendor": spec["vendor"],
                 "category": spec["category"],
-                "version": "1.0.0",
+                "version": LEGACY_VERSION,
                 "description": spec["description"],
                 "author": "Nik",
             }

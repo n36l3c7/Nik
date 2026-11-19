@@ -58,7 +58,8 @@ def test_every_pack_of_the_repository_is_a_pack_a_new_nik_installs_whole(admin: 
         assert manifest["id"] == folder.name
         assert manifest["vendor"] and manifest["category"] and manifest["nik"] == ">=6.0", folder.name
         assert 40 < len(manifest["description"]) <= 2000, folder.name
-        assert [item for item in pack.items if item.kind == "connectors"], folder.name
+        connectors = [item for item in pack.items if item.kind == "connectors"]
+        assert connectors and all(item.extras.get("logo") for item in connectors), folder.name
         found = inspect(admin, data)
         assert found["problems"] == [] and set(actions(found).values()) == {"add"}, (folder.name, found)
     # What a Nik older than 6.0 held as its own is written down as these same packs.
@@ -264,7 +265,7 @@ def test_what_was_changed_or_is_in_use_stays_and_is_no_packs_any_more(admin: Tes
         assert db.get(Connector, "acme") is not None
         assert db.scalars(select(Script).where(Script.name == "CountWords")).first() is not None
         assert db.scalars(select(Playbook).where(Playbook.name == "Acme triage")).first() is None
-    assert len(admin.get("/api/automation/connections").json()["connections"]) == 1
+    assert len(admin.get("/api/automation/instances").json()["instances"]) == 1
 
 
 def test_a_pack_that_another_requires_and_the_pack_of_nik_are_not_uninstalled(admin: TestClient):
@@ -304,9 +305,19 @@ def test_what_a_nik_older_than_6_held_becomes_the_packs_it_is(admin: TestClient)
         assert not db.get(Connector, "servicenow").builtin
     listed = {row["id"]: row for row in admin.get("/api/packs").json()["packs"]}
     assert set(listed) == {"servicenow", "jira-cloud", "zscaler-zia"}
-    assert (listed["servicenow"]["source"], listed["servicenow"]["version"]) == ("nik-5", "1.0.0")
+    assert (listed["servicenow"]["source"], listed["servicenow"]["version"]) == ("nik-5", "0.9.0")
     assert {item["kind"] for item in listed["servicenow"]["items"]} == {"connectors", "mappers"}
     assert listed["jira-cloud"]["vendor"] == "Atlassian" and not listed["jira-cloud"]["builtin"]
+    # The pack of the catalogue is newer, and brings the logo the connector of 5.x never had.
+    pack = packs.read(packs.folder_bytes(vendor.REPO_PACKS / "jira-cloud"))
+    with SessionLocal() as db:
+        assert db.get(Connector, "jira-cloud").logo is None
+        found = packs.plan(db, pack)
+        assert found["installed"] == "0.9.0"
+        assert {item["action"] for item in found["items"] if item["kind"] == "connectors"} == {"same"}
+        packs.apply(db, pack, {}, "admin", source="catalogue")
+        db.commit()
+        assert db.get(Connector, "jira-cloud").logo and db.get(Pack, "jira-cloud").version == "1.0.0"
     # It is uninstalled like one that came from the catalogue.
     assert admin.delete("/api/packs/zscaler-zia?remove=true").status_code == 200
     with SessionLocal() as db:

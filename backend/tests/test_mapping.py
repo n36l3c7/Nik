@@ -225,7 +225,7 @@ def test_a_classifier_chooses_the_type_of_incident_an_item_becomes(admin: TestCl
     connection = connect(admin)
     url = f"/api/classifiers/{connection['id']}"
     assert admin.get(url).json() == {
-        "connectionId": connection["id"],
+        "instanceId": connection["id"],
         "rules": [],
         "defaultType": None,
         "updatedAt": None,

@@ -2,7 +2,7 @@
   "nik": "dashboard",
   "version": 1,
   "name": "Indicators",
-  "description": "The IoC library: what it holds, what the sources say, where it comes from.",
+  "description": "The Indicators page: what it holds, what the sources say, where it comes from.",
   "timeRange": "30d",
   "refreshSeconds": 300,
   "filter": "",

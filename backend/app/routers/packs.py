@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 from typing import Any
 
@@ -165,6 +166,24 @@ def set_catalogue(
     )  # fmt: skip
     db.commit()
     return catalogue.shown(db)
+
+
+@router.get("/catalogue/{pack_id}/logo")
+def catalogue_logo(
+    pack_id: str, _caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    """The logo the catalogue gives for a pack (it came inside the signed index)."""
+    try:
+        logo = catalogue.entry_of(db, pack_id).get("logo")
+    except catalogue.CatalogueError as error:
+        raise _refuse(error) from None
+    if not logo:
+        raise HTTPException(status_code=404, detail="This pack has no logo")
+    return Response(
+        content=base64.b64decode(logo["data"]),
+        media_type=logo["type"],
+        headers={"Cache-Control": "private, max-age=300", "Content-Security-Policy": "default-src 'none'; sandbox"},
+    )
 
 
 @router.post("/catalogue/{pack_id}/inspect")

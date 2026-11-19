@@ -250,7 +250,7 @@ def save_mapper(db: OrmSession, body: dict[str, Any], actor: str, *, builtin: bo
 def classifier_out(db: OrmSession, connection: Connection) -> dict[str, Any]:
     row = db.get(Classifier, connection.id)
     return {
-        "connectionId": connection.id,
+        "instanceId": connection.id,
         "rules": (row.rules if row is not None else None) or [],
         "defaultType": row.default_type if row is not None else None,
         "updatedAt": row.updated_at if row is not None else None,

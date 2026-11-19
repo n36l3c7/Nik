@@ -130,7 +130,7 @@ class Desk:
 def desk(admin: TestClient, outside) -> tuple[dict, Desk]:
     assert admin.post(f"{BASE}/connectors", json={"source": DESK}).status_code == 201
     made = admin.post(
-        f"{BASE}/connections",
+        f"{BASE}/instances",
         json={
             "name": "Desk prod",
             "connector": "desk",
@@ -151,7 +151,7 @@ def desk(admin: TestClient, outside) -> tuple[dict, Desk]:
 def start(admin: TestClient, connection: dict, direction: str = "both", **more):
     return admin.post(
         "/api/incidents/i1/mirror",
-        json={"connectionId": connection["id"], "mirrorId": "T-9", "direction": direction, **more},
+        json={"instanceId": connection["id"], "mirrorId": "T-9", "direction": direction, **more},
     )
 
 
@@ -177,7 +177,7 @@ def test_what_the_other_side_says_comes_in_and_what_a_person_set_stays(admin: Te
     incident(admin)
     assert admin.get("/api/incidents/i1/mirror").json() == {
         "mirrored": False,
-        "connections": [
+        "instances": [
             {"id": connection["id"], "name": "Desk prod", "connector": "Desk", "out": True, "comments": True}
         ],
     }
@@ -290,7 +290,7 @@ def test_who_may_start_a_mirror_and_what_it_may_send(admin: TestClient, outside)
     anna = person(admin, "anna", ["analyst"])
     reader = make_key(admin, label="v", roles=["viewer"])
     writer = make_key(admin, label="w", roles=["viewer", "rules"])  # reads, and nothing of playbooks
-    body = {"connectionId": connection["id"], "mirrorId": "T-9", "direction": "both"}
+    body = {"instanceId": connection["id"], "mirrorId": "T-9", "direction": "both"}
     assert admin.post("/api/incidents/i1/mirror", headers=reader, json=body).status_code == 403
     assert admin.get("/api/incidents/i1/mirror", headers=reader).status_code == 200
     # An analyst writes incidents and runs playbooks: she may start a mirror that sends, with no class opened.
@@ -307,7 +307,7 @@ def test_who_may_start_a_mirror_and_what_it_may_send(admin: TestClient, outside)
         assert answer.status_code in (400, 404), answer.text
         return answer.json()["detail"]
 
-    assert refused(connectionId="nope") == "Instance not found"
+    assert refused(instanceId="nope") == "Instance not found"
     assert refused(mirrorId="  ").startswith("Say which object of the other side")
     # A connector that only reads cannot be mirrored out.
     reading = DESK.replace("id: desk", "id: readonly").replace("name: Desk", "name: Read only")
@@ -317,10 +317,10 @@ def test_who_may_start_a_mirror_and_what_it_may_send(admin: TestClient, outside)
     )
     assert admin.post(f"{BASE}/connectors", json={"source": reading}).status_code == 201, reading
     only = admin.post(
-        f"{BASE}/connections",
+        f"{BASE}/instances",
         json={"name": "Read only", "connector": "readonly", "config": {"url": "https://desk.example.com/api"}},
     ).json()
-    assert refused(connectionId=only["id"]) == "This connector reads the other side but does not write to it: mirror in"
+    assert refused(instanceId=only["id"]) == "This connector reads the other side but does not write to it: mirror in"
 
     # What leaves passes the data guard: an e-mail address in the name is held until its class is opened.
     assert admin.patch("/api/incidents/i1", json={"name": "Phish from eve@evil.example"}).status_code == 200

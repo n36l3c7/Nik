@@ -87,15 +87,17 @@ test('the search box narrows the sections by label, group and keywords', () => {
   assert.deepEqual(ids(filterSettings(all, 'restore')), ['backup'])
   assert.deepEqual(ids(filterSettings(all, 'smtp')), ['automationNetwork'])
   assert.deepEqual(ids(filterSettings(all, 'automation')), [
+    'contentPacks',
     'connectors',
     'mappers',
     'fetchStatus',
-    'contentPacks',
     'automationNetwork',
     'automationSwitch',
   ])
   assert.deepEqual(ids(filterSettings(all, 'credentials')), ['connectors'])
   // An address of 4.x that named the connections opens the connectors, where their instances are.
   assert.deepEqual(settingsFromPath('/settings/automation/connections'), { id: 'connectors' })
+  // The group alone opens its first section: the packs, which bring the rest.
+  assert.deepEqual(settingsFromPath('/settings/automation'), { id: 'contentPacks' })
   assert.deepEqual(filterSettings(all, 'zzz'), [])
 })

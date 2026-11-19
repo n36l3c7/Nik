@@ -73,6 +73,13 @@ inside their images, and the end-to-end suite against the real workers.
 
 `backend/` is the FastAPI application, `frontend/` the React app, `workers/`
 the analysis containers, `deploy/` the scripts for a server, `docs/` the
-site. The
+site, `packs/` the content packs of vendors' products (one folder a pack:
+`pack.yml` and a folder for each kind of item; the
+[automation guide](https://n36l3c7.github.io/Nik/automation.html#pack-format)
+has the format). A change to a pack raises the `version` of its `pack.yml`:
+the workflow *Packs* publishes the folder as the catalogue when `main`
+moves, and a Nik offers the update only for a higher version. A connector
+of a pack comes with recorded exchanges for each of its commands
+(`backend/tests/data/connectors/<id>/`). The
 [architecture page](https://n36l3c7.github.io/Nik/architecture.html) has the
 map.

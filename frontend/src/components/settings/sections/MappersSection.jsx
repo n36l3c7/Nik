@@ -303,11 +303,11 @@ export default function MappersSection() {
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([api.get('/automation/connectors'), api.get('/automation/connections')]).then(
+    Promise.all([api.get('/automation/connectors'), api.get('/automation/instances')]).then(
       ([first, second]) => {
         if (cancelled) return
         setConnectors(first.connectors)
-        setConnections(second.connections)
+        setConnections(second.instances)
         setConnectorId((current) => current || first.connectors[0]?.id || '')
       },
       (failure) => !cancelled && setError(failure.message),

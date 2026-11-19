@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-11-19
+
+What Nik knows about a product of a vendor is a content pack of its own,
+installed from a catalogue. The release is a major one because three things
+that 5.x still accepted are gone: the connectors of vendors inside Nik, the
+`connections` of the API, and `status:!closed`.
+
+### Added
+
+- **A catalogue of content packs.** *Settings → Automation → Content packs*
+  (now the first page of its group) lists the packs there are, by vendor,
+  beside the ones that are installed: what each holds, whether it is
+  installed, whether a newer version is there, whether it is for a later
+  Nik. The packs are published from the folder `packs/` of the repository
+  as the files of the release `packs`, beside an index. *Install…* and
+  *See what changes…* take a pack and show, item by item, what applying it
+  would do, before anything changes.
+- **A signed index.** The index of the catalogue is read only when its
+  Ed25519 signature is of the key Nik holds; a pack is taken only when its
+  size and its SHA-256 are the ones the signed index gives. The workflow
+  *Packs* builds, signs and publishes the catalogue from `main`.
+- **Uninstalling a pack.** *Uninstall…* shows what would go and what would
+  stay, then removes what the pack gave. What was changed here since, and
+  what something else uses (a connector with an instance, a script a
+  playbook of yours runs, a type with incidents), stays and is no pack's
+  any more, each with its reason. Instances and their credentials are
+  deleted only when asked. *Only take it off the list* removes nothing.
+- **A pack says who makes the product.** `pack.yml` takes `vendor` and
+  `category`, a pack may carry a `logo.png` or `logo.svg`, and the mapper
+  file of a connector carries the classifier a new instance starts with.
+- **The connector of a pack has the mark of its product**, taken from the
+  vendor's own site (`packs/README.md` says where each came from). A
+  connector that was installed without one gets it when its pack is
+  updated; a logo set by hand is left.
+- **Another catalogue, or none.** An administrator sets another address
+  (a copy inside the network, or a catalogue of your own with the public
+  key it is signed with); `python -m app.pack_build` makes one from a
+  folder of packs. `NIK_PACKS_DIR` installs the packs of a folder at
+  start, for a Nik that reaches no catalogue; `NIK_PACKS_CATALOGUE=`
+  starts one with no catalogue at all.
+
+### Changed
+
+- **The connectors of vendors are packs, and are not inside Nik.** The
+  twelve connectors of nine products (Jira, Confluence and Bitbucket in
+  their Cloud and Data Center editions, ServiceNow, SentinelOne EDR and
+  SIEM, Check Point Firewall and Harmony SASE, Zscaler Internet Access)
+  left the backend for `packs/<id>/`, each with its mappers, its
+  classifier and its playbook (*Incident to ticketing* is of the
+  ServiceNow pack, *Malicious indicator to a block list* of the Bitbucket
+  Cloud one). **A Nik that is upgraded keeps every one it has**: at its
+  first start each is written down as the pack it is, at version 0.9.0,
+  instances untouched. A new Nik starts with *Nik built-in* alone.
+- **What is part of Nik is one pack**, *Nik built-in*: its types and
+  lists, scripts, playbooks, dashboards and the Mail connector. It was
+  listed as four packs.
+- **The API says instances** (breaking).
+  `/api/automation/connections` is `/api/automation/instances`; the lists
+  that were `connections` are `instances` (the instances, the catalog of
+  the editor, `GET /api/fetch`, the mirror of an incident), and the count
+  `connections` of a connector is gone (`instances` already said it);
+  `connectionId` is `instanceId`. The node of a playbook still names its
+  instance in `connection`, and the tables and the actions of the audit
+  log keep their names: nothing that is stored changed.
+- ***IoC library* is called *Indicators***, on the rail and wherever it is
+  named. Its address and its API are the same.
+- *Import a pack* is *Upload a .nikpack…*, *Export a pack* is *Make a
+  pack…*, and the button that applies a plan says *Install*.
+
+### Removed
+
+- **`status:!closed` is no longer read** (breaking). "Is not" has been
+  written before the field since 5.0 (`!status:closed`); the old writing,
+  read through 5.x as announced, is refused with the query as it is
+  written today. The query box still rewrites it when it is left.
+
+### Security
+
+- The catalogue is content from outside: see the signature and the
+  SHA-256 above, and *The catalogue of packs* in the security guide. A
+  pack of the folder `NIK_PACKS_DIR` is not checked against a signature:
+  the folder is the administrator's.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migration `0039_pack_catalogue` adds four columns.
+- The server needs to reach `github.com`,
+  `objects.githubusercontent.com` and
+  `release-assets.githubusercontent.com` to read the catalogue. Without
+  them everything else works, and a pack is uploaded as a file.
+- A script of yours that calls `/api/automation/connections`, reads
+  `connections` or sends `connectionId` needs the new names.
+
 ## [5.4.0] - 2026-11-19
 
 The platform read against itself after the 5.x wave: what one release
@@ -2735,7 +2829,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.4.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.0.0...HEAD
+[6.0.0]: https://github.com/n36l3c7/Nik/compare/v5.4.0...v6.0.0
 [5.4.0]: https://github.com/n36l3c7/Nik/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/n36l3c7/Nik/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/n36l3c7/Nik/compare/v5.1.0...v5.2.0

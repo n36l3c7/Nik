@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { authOf, fieldsOf, formProblem, payloadOf, problemLines, startingValues } from './connections.js'
+import { authOf, fieldsOf, formProblem, payloadOf, problemLines, startingValues } from './instances.js'
 
 const CONNECTOR = {
   id: 'acme',
@@ -97,7 +97,7 @@ test('the problems of a file, line by line', () => {
 })
 
 test('connectors are listed with their instances, and narrowed by words and by a filter', async () => {
-  const { capabilities, connectorRows, instancesText } = await import('./connections.js')
+  const { capabilities, connectorRows, instancesText } = await import('./instances.js')
   const connectors = [
     { id: 'snow', name: 'ServiceNow', description: 'The service desk', commands: [1, 2, 3], fetch: {}, mirror: {} },
     { id: 'jira', name: 'Jira Cloud', description: 'Issues', commands: [1] },

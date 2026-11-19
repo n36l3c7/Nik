@@ -322,7 +322,7 @@ TAGS_ARG = {"name": "tags", "type": "list", "description": "Tags to put on them"
     "nik.add-indicators",
     group="Nik",
     name="Add indicators",
-    description="Keep indicators in the IoC library, with tags and a note.",
+    description="Keep indicators in the Indicators page, with tags and a note.",
     arguments=[INDICATORS_ARG, TAGS_ARG, {"name": "note", "type": "text", "description": "A note on each"}],
     outputs=[
         {"name": "added", "type": "number", "description": "How many were new"},
@@ -918,7 +918,7 @@ def _list_for_writing(call: Call, name: str):
     row = lists.find(call.db, name)
     if row is None:
         if lists.watch_list(call.db, name) is not None:
-            raise ActionError("A list of the IoC library is changed with the indicator nodes", retry=False)
+            raise ActionError("A list of the Indicators page is changed with the indicator nodes", retry=False)
         raise ActionError(f'There is no list called "{name}"', retry=False)
     if not row.writable_by_automation:
         raise ActionError(

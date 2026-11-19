@@ -38,6 +38,7 @@ export const MESSAGES = {
   empty_group: 'The parentheses hold nothing',
   missing_value: 'A value is expected after the colon',
   bad_range: 'A range is written [from TO to]',
+  old_not: '"Is not" is written before the field: !status:closed',
   bad_list: 'A list is written IN (a, b, c)',
   dangling_operator: 'A condition is expected here',
 }
@@ -350,7 +351,10 @@ class Reader {
  * Throws QueryError with the position of what cannot be read.
  */
 export function parse(text) {
-  return read(text ?? '').tree
+  const { tree, reader } = read(text ?? '')
+  // The writing before 5.0 (`status:!closed`): refused since 6.0, at its "!".
+  if (reader.old.length) throw new QueryError('old_not', Math.min(...reader.old.map(([, bang]) => bang)))
+  return tree
 }
 
 function read(source) {

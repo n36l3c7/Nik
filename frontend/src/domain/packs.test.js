@@ -93,3 +93,82 @@ test('items by kind, and a pack in a line', () => {
     '1 item · installed by admin on 2026-11-19',
   )
 })
+
+test('the catalogue and what is installed make one list of cards', async () => {
+  const { byVendor, cardCounts, contentsLine, contentsOf, filterCards, packCards, uninstallCounts } =
+    await import('./packs.js')
+  const catalogue = {
+    packs: [
+      {
+        id: 'jira-cloud',
+        name: 'Jira Cloud',
+        vendor: 'Atlassian',
+        category: 'Ticketing',
+        version: '1.3.0',
+        installed: '1.2.0',
+        update: true,
+        needsNik: '',
+        contents: { connectors: 1, commands: 41, mappers: 1 },
+        logo: { type: 'image/png' },
+      },
+      { id: 'zscaler-zia', name: 'Zscaler Internet Access', vendor: 'Zscaler', version: '1.0.0', needsNik: '' },
+      { id: 'urlscan', name: 'urlscan.io', vendor: '', version: '1.0.0', needsNik: '6.1', premium: 2 },
+      { id: 'confluence-cloud', name: 'Confluence Cloud', vendor: 'Atlassian', version: '1.0.0', installed: '1.0.0' },
+    ],
+  }
+  const installed = [
+    { id: 'nik', name: 'Nik built-in', version: '6.0.0', builtin: true, items: [{ kind: 'scripts', name: 'A' }] },
+    { id: 'jira-cloud', name: 'Jira Cloud', version: '1.2.0', vendor: 'Atlassian', hasLogo: true, items: [] },
+    { id: 'confluence-cloud', name: 'Confluence Cloud', version: '1.0.0', vendor: 'Atlassian', items: [] },
+    { id: 'ours', name: 'Ours', version: '0.1.0', vendor: '', source: 'file', items: [{ kind: 'lists', name: 'x' }] },
+  ]
+  const cards = packCards(catalogue, installed)
+  const state = Object.fromEntries(cards.map((card) => [card.id, card.state]))
+  assert.deepEqual(state, {
+    'jira-cloud': 'update',
+    'zscaler-zia': 'available',
+    urlscan: 'later',
+    'confluence-cloud': 'installed',
+    nik: 'installed',
+    ours: 'installed',
+  })
+  assert.deepEqual(cardCounts(cards), { all: 6, installed: 4, updates: 1 })
+  const jira = cards.find((card) => card.id === 'jira-cloud')
+  assert.equal(jira.logo, 'catalogue')
+  assert.equal(jira.installed, '1.2.0')
+  assert.equal(cards.find((card) => card.id === 'ours').inCatalogue, false)
+  // Nik first, the vendors by name, what names no vendor last.
+  assert.deepEqual(
+    byVendor(cards).map((group) => [group.vendor, group.cards.map((card) => card.id)]),
+    [
+      ['Nik', ['nik']],
+      ['Atlassian', ['confluence-cloud', 'jira-cloud']],
+      ['Zscaler', ['zscaler-zia']],
+      ['Other', ['ours', 'urlscan']],
+    ],
+  )
+  assert.deepEqual(
+    filterCards(cards, 'installed', 'atlas').map((card) => card.id),
+    ['jira-cloud', 'confluence-cloud'],
+  )
+  assert.deepEqual(
+    filterCards(cards, 'updates').map((card) => card.id),
+    ['jira-cloud'],
+  )
+  assert.equal(filterCards(cards, 'all', 'ticketing').length, 1)
+  assert.equal(
+    contentsLine({ connectors: 1, commands: 41, mappers: 1, playbooks: 2 }, 3),
+    'connector (41 commands, 3 premium) · 2 playbooks · 1 mapper',
+  )
+  assert.equal(contentsLine({ connectors: 2, incident_types: 1 }), '2 connectors · 1 type')
+  assert.equal(contentsLine({}), 'Nothing yet')
+  assert.deepEqual(contentsOf([{ kind: 'lists' }, { kind: 'lists' }, { kind: 'scripts' }]), { lists: 2, scripts: 1 })
+  assert.deepEqual(
+    uninstallCounts([{ action: 'remove' }, { action: 'keep' }, { action: 'keep' }, { action: 'gone' }]),
+    {
+      remove: 1,
+      keep: 2,
+      gone: 1,
+    },
+  )
+})

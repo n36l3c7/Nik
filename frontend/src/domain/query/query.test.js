@@ -49,8 +49,7 @@ test('the parser reads the vectors it shares with the backend', () => {
   assert.deepEqual(tryParse('  '), { tree: null, error: null })
 })
 
-test('"is not" written as before 5.0 is rewritten, and means the same', () => {
-  const bare = (node) => JSON.parse(JSON.stringify(node, (key, value) => (key === 'position' ? undefined : value)))
+test('"is not" written as before 5.0 is refused, and rewritten as it is written now', () => {
   for (const [old, now] of [
     ['status:!closed', '!status:closed'],
     ['status:open name:!x', 'status:open !name:x'],
@@ -59,7 +58,11 @@ test('"is not" written as before 5.0 is rewritten, and means the same', () => {
     ['not status:!closed', 'not !status:closed'],
   ]) {
     assert.equal(modern(old), now)
-    assert.deepEqual(bare(parse(old)), bare(parse(now)))
+    assert.throws(
+      () => parse(old),
+      (error) => error.code === 'old_not' && old[error.position] === '!' && old[error.position - 1] === ':',
+    )
+    assert.ok(parse(now))
     assert.equal(modern(now), now)
   }
   for (const text of ['', 'status:open', '!status:closed', 'status IN (a, b)', '(status:!closed', 'name:"a:!b"']) {
@@ -262,8 +265,10 @@ test('the builder shows a query it can represent, and writes back the same query
   assert.equal(round('not status:open'), '!status:open')
   assert.equal(round('owner:* -name:x'), 'owner:* !name:x')
   assert.equal(round('-owner:*'), 'owner:""')
-  assert.equal(round('owner:!""'), 'owner:*')
-  assert.equal(round('-name:!x'), 'name:x')
+  assert.equal(round('!owner:""'), 'owner:*')
+  assert.equal(round('-!name:x'), 'name:x')
+  // The writing before 5.0 is not a query any more: the builder has nothing to show for it.
+  assert.equal(round('owner:!""'), null)
   assert.equal(round(''), '')
 
   assert.deepEqual(toModel('status:open -evil score:[1 TO *]'), {

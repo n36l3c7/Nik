@@ -112,3 +112,147 @@ export function packLine(pack) {
   else if (pack?.updatedBy) parts.push(`installed by ${pack.updatedBy} on ${String(pack.updatedAt ?? '').slice(0, 10)}`)
   return parts.join(' · ')
 }
+
+// --------------------------------------------------------------------------- //
+// The catalogue (GET /api/packs/catalogue) beside what is installed            //
+// --------------------------------------------------------------------------- //
+
+/** The id of the pack that is Nik itself. */
+export const NIK_PACK = 'nik'
+
+const KIND_WORDS = {
+  playbooks: 'playbook',
+  scripts: 'script',
+  incident_types: 'type',
+  fields: 'field',
+  mappers: 'mapper',
+  lists: 'list',
+  dashboards: 'dashboard',
+  preprocess_rules: 'pre-processing rule',
+}
+
+/** How many of each kind a pack holds, counted from the items of an installed one. */
+export function contentsOf(items) {
+  const found = {}
+  for (const item of items ?? []) found[item.kind] = (found[item.kind] ?? 0) + 1
+  return found
+}
+
+/** "connector (41 commands, 3 premium) · 1 type · 2 playbooks": what a pack holds, in a line. */
+export function contentsLine(contents = {}, premium = 0) {
+  const parts = []
+  const connectors = contents.connectors ?? 0
+  if (connectors) {
+    const commands = contents.commands
+      ? ` (${contents.commands} ${contents.commands === 1 ? 'command' : 'commands'}${premium ? `, ${premium} premium` : ''})`
+      : ''
+    parts.push(`${connectors === 1 ? 'connector' : `${connectors} connectors`}${commands}`)
+  }
+  for (const [kind, word] of Object.entries(KIND_WORDS)) {
+    const count = contents[kind] ?? 0
+    if (count) parts.push(`${count} ${count === 1 ? word : `${word}s`}`)
+  }
+  return parts.join(' · ') || 'Nothing yet'
+}
+
+/**
+ * One card for each pack there is: those of the catalogue, each with what is true of it here, and those
+ * that are installed and are not in the catalogue (Nik's own, one that came as a file). `state` is
+ * `installed`, `update` (a newer version is in the catalogue), `available`, or `later` (for a later Nik).
+ */
+export function packCards(catalogue, installed) {
+  const here = new Map((installed ?? []).map((pack) => [pack.id, pack]))
+  const cards = []
+  for (const entry of catalogue?.packs ?? []) {
+    const pack = here.get(entry.id) ?? null
+    here.delete(entry.id)
+    cards.push({
+      id: entry.id,
+      name: entry.name,
+      vendor: entry.vendor || 'Other',
+      category: entry.category ?? '',
+      description: entry.description ?? '',
+      version: entry.version,
+      installed: pack?.version ?? null,
+      state: entry.update ? 'update' : pack ? 'installed' : entry.needsNik ? 'later' : 'available',
+      needsNik: entry.needsNik ?? '',
+      contents: entry.contents ?? {},
+      premium: entry.premium ?? 0,
+      logo: entry.logo ? 'catalogue' : pack?.hasLogo ? 'pack' : null,
+      requires: entry.requires ?? [],
+      builtin: false,
+      inCatalogue: true,
+      pack,
+    })
+  }
+  for (const pack of here.values()) {
+    cards.push({
+      id: pack.id,
+      name: pack.name,
+      vendor: pack.builtin ? 'Nik' : pack.vendor || 'Other',
+      category: pack.category ?? '',
+      description: pack.description ?? '',
+      version: pack.version,
+      installed: pack.version,
+      state: 'installed',
+      needsNik: '',
+      contents: contentsOf(pack.items),
+      premium: 0,
+      logo: pack.hasLogo ? 'pack' : null,
+      requires: pack.requires ?? [],
+      builtin: Boolean(pack.builtin),
+      inCatalogue: false,
+      pack,
+    })
+  }
+  return cards
+}
+
+/** The numbers on the three filters: `{ all, installed, updates }`. */
+export const cardCounts = (cards) => ({
+  all: cards.length,
+  installed: cards.filter((card) => card.installed).length,
+  updates: cards.filter((card) => card.state === 'update').length,
+})
+
+/** The cards a filter (`all`, `installed`, `updates`) and what was typed keep. */
+export function filterCards(cards, show = 'all', query = '') {
+  const wanted = String(query ?? '')
+    .trim()
+    .toLowerCase()
+  return cards.filter((card) => {
+    if (show === 'installed' && !card.installed) return false
+    if (show === 'updates' && card.state !== 'update') return false
+    if (!wanted) return true
+    return `${card.name} ${card.vendor} ${card.category} ${card.description} ${card.id}`.toLowerCase().includes(wanted)
+  })
+}
+
+/** Cards by vendor: Nik first, then the vendors by name, "Other" last. `[{ vendor, cards }]`. */
+export function byVendor(cards) {
+  const groups = new Map()
+  for (const card of cards) {
+    if (!groups.has(card.vendor)) groups.set(card.vendor, [])
+    groups.get(card.vendor).push(card)
+  }
+  const rank = (vendor) => (vendor === 'Nik' ? 0 : vendor === 'Other' ? 2 : 1)
+  return [...groups.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([vendor, held]) => ({ vendor, cards: held.sort((a, b) => a.name.localeCompare(b.name)) }))
+}
+
+/** Where a pack that is installed came from, in words. */
+export const SOURCES = {
+  nik: 'part of Nik',
+  catalogue: 'from the catalogue',
+  file: 'from a file',
+  folder: 'from the folder of packs',
+  'nik-5': 'came with Nik before 6.0',
+}
+
+/** What uninstalling would do, counted: `{ remove, keep, gone }`. */
+export function uninstallCounts(items) {
+  const found = { remove: 0, keep: 0, gone: 0 }
+  for (const item of items ?? []) if (item.action in found) found[item.action] += 1
+  return found
+}

@@ -6,7 +6,7 @@ A list is of one kind:
 - ``key_value``: items with a key and a value of any JSON shape (``columns``
   says which keys the value has, when it has a fixed shape);
 - ``json``: one document;
-- ``indicators``: a watch list of the IoC library, read here like the others
+- ``indicators``: a watch list of the Indicators page, read here like the others
   and changed where indicators are.
 
 Everything Nik kept as a fixed list in its settings is a list Nik ships
@@ -153,7 +153,7 @@ def find(db: OrmSession, name: str) -> NamedList | None:
 
 
 def watch_list(db: OrmSession, name: str) -> IocList | None:
-    """A list of the IoC library by the name it has here (its own name, as a slug)."""
+    """A list of the Indicators page by the name it has here (its own name, as a slug)."""
     for row in db.scalars(select(IocList).order_by(IocList.created_at)):
         if slug(row.name) == name:
             return row
@@ -299,7 +299,7 @@ def _watch_out(db: OrmSession, row: IocList, *, with_items: bool = False) -> dic
     shown = {
         "name": name,
         "label": row.name,
-        "description": row.description or "A list of the IoC library: it is changed where indicators are.",
+        "description": row.description or "A list of the Indicators page: it is changed where indicators are.",
         "kind": "indicators",
         "itemType": "indicator",
         "columns": [],
@@ -318,7 +318,7 @@ def _watch_out(db: OrmSession, row: IocList, *, with_items: bool = False) -> dic
 
 
 def every(db: OrmSession) -> list[dict[str, Any]]:
-    """Every list by name: Nik's and yours, then the watch lists of the IoC library."""
+    """Every list by name: Nik's and yours, then the watch lists of the Indicators page."""
     rows = db.scalars(select(NamedList).order_by(NamedList.builtin.desc(), NamedList.name)).all()
     taken = {row.name for row in rows}
     shown = [out(db, row) for row in rows]

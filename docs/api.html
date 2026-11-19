@@ -417,7 +417,7 @@
             <tr>
               <td><code>GET /api/iocs</code></td>
               <td>
-                The IoC library: every indicator an incident holds, an analyst added or a list keeps, with its
+                The Indicators page: every indicator an incident holds, an analyst added or a list keeps, with its
                 reputation, lists, tags, TLP and expiry. Query: <code>q</code> (<a href="#query">the query language</a>:
                 <code>verdict:&gt;=suspicious -tag:test</code>), and the older <code>type</code>,
                 <code>verdict</code> (<code>malicious</code>, <code>suspicious</code>, <code>harmless</code>,
@@ -1209,13 +1209,13 @@
               <td>
                 The instances of a connector · add one: <code>{name, config, secrets, enabled}</code>. An instance is
                 what the API calls a connection: it is changed, tested and deleted through
-                <code>/api/automation/connections/{id}</code>. A connector in
+                <code>/api/automation/instances/{id}</code>. A connector in
                 <code>GET /api/automation/connectors</code> says how many it has (<code>instances</code>,
                 <code>instancesOn</code>) and whether it is <code>enabled</code>: one of them is on.
               </td>
             </tr>
             <tr>
-              <td><code>GET /api/automation/connections</code></td>
+              <td><code>GET /api/automation/instances</code></td>
               <td>
                 The instances of every connector. With <code>connectors.manage</code>: their values,
                 <strong>which</strong> secrets are set (never the secrets), the last test. With
@@ -1225,8 +1225,8 @@
             </tr>
             <tr>
               <td>
-                <code>POST /api/automation/connections</code> · <code>PUT /api/automation/connections/{id}</code> ·
-                <code>DELETE …/connections/{id}</code>
+                <code>POST /api/automation/instances</code> · <code>PUT /api/automation/instances/{id}</code> ·
+                <code>DELETE …/instances/{id}</code>
               </td>
               <td>
                 <code>{name, connector, config, secrets, enabled}</code>. <code>config</code> is checked against what
@@ -1236,7 +1236,7 @@
               </td>
             </tr>
             <tr>
-              <td><code>POST /api/automation/connections/{id}/test</code></td>
+              <td><code>POST /api/automation/instances/{id}/test</code></td>
               <td>
                 Sends the connector's test request with the stored credentials, to the connection's host only:
                 <code>{ok, status, message, at}</code>. Always <code>200</code>: a refusal is an answer.
@@ -1374,7 +1374,7 @@
             </tr>
             <tr>
               <td>
-                <code>GET</code> · <code>PUT /api/classifiers/{connectionId}</code> ·
+                <code>GET</code> · <code>PUT /api/classifiers/{instanceId}</code> ·
                 <code>POST /api/classifiers/try</code>
               </td>
               <td>
@@ -1385,15 +1385,15 @@
             </tr>
             <tr>
               <td>
-                <code>GET /api/fetch</code> · <code>PUT /api/fetch/{connectionId}</code> · <code>POST …/run</code> ·
+                <code>GET /api/fetch</code> · <code>PUT /api/fetch/{instanceId}</code> · <code>POST …/run</code> ·
                 <code>POST …/resume</code> · <code>GET …/items</code> ·
                 <code>GET …/sample</code>
               </td>
               <td>
                 (<strong>connectors.manage</strong>) The connections whose connector can fetch:
                 <code
-                  >{connections: [{connectionId, connection, connector, enabled, state, error, pausedWhy, lastAt,
-                  nextAt, last, madeLastHour, limitPerHour, fetchState}]}</code
+                  >{connections: [{instanceId, connection, connector, enabled, state, error, pausedWhy, lastAt, nextAt,
+                  last, madeLastHour, limitPerHour, fetchState}]}</code
                 >, <code>state</code> one of <code>off</code>, <code>ok</code>, <code>failing</code>,
                 <code>paused</code> · tell one to fetch or not, <code>{enabled}</code> · fetch once now (<code
                   >409</code
@@ -1416,7 +1416,7 @@
                 <code>drop</code>, <code>link_to_existing</code>, <code>close_duplicate</code>, <code>run_script</code>,
                 and <code>params</code> <code>{same: ["host"], within_hours}</code> or <code>{script}</code> · change ·
                 delete · put them in the order of <code>{ids}</code> · which rule would decide for
-                <code>{connectionId, item}</code>, doing nothing.
+                <code>{instanceId, item}</code>, doing nothing.
               </td>
             </tr>
             <tr>
@@ -1430,7 +1430,7 @@
                   >{mirrored, connection, id, direction, dataAllow, startedBy, lastSync, error, waiting,
                   connections}</code
                 >, with the connections it can be mirrored with · start (<strong>write</strong>):
-                <code>{connectionId, mirrorId, direction: "in" | "out" | "both", dataAllow}</code>. <code>out</code> and
+                <code>{instanceId, mirrorId, direction: "in" | "out" | "both", dataAllow}</code>. <code>out</code> and
                 <code>both</code> also need <strong>automation.run</strong>, and a class of data in
                 <code>dataAllow</code> needs <strong>automation.open</strong> · stop · read the other side now:
                 <code>{changed, kept, comments, problems}</code>, where <code>kept</code> are the fields a person set
@@ -1583,6 +1583,43 @@
                 for a conflict that was not skipped, <code>410</code> for a token older than an hour or of someone else)
                 · an installed pack as a file again · take a pack off the list (what it brought stays;
                 <code>409</code> for one Nik ships or one another pack requires).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/packs/catalogue</code> · <code>POST /api/packs/catalogue/refresh</code> ·
+                <code>POST /api/packs/catalogue/{id}/inspect</code> · <code>GET /api/packs/catalogue/{id}/logo</code> ·
+                <code>PUT /api/packs/catalogue/address</code>
+              </td>
+              <td>
+                (<strong>content.manage</strong>) The <a href="automation.html#pack-catalogue">catalogue</a> as it was
+                last read, without going out:
+                <code
+                  >{address, custom, fetchedAt, error, read, packs: [{id, name, vendor, category, version, description,
+                  requires, contents, installed, update, needsNik}]}</code
+                >
+                · read it again from its address (<code>502</code> with why when it cannot be read or its signature is
+                not of the key Nik holds; <code>409</code> when no catalogue is set) · take one pack from it, checked
+                against the signed index, and answer like <code>POST /api/packs/inspect</code>: the
+                <code>token</code> is then given to <code>POST /api/packs/import</code> · its logo ·
+                (<strong>admin</strong>) set where the catalogue is: <code>{address, key}</code>, both empty for Nik's
+                own.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/packs/{id}/uninstall</code> · <code>DELETE /api/packs/{id}?remove=true</code> ·
+                <code>GET /api/packs/{id}/logo</code>
+              </td>
+              <td>
+                (<strong>content.manage</strong>) What uninstalling would do:
+                <code>{items: [{kind, name, label, action, why}], instances}</code>, where <code>action</code> is
+                <code>remove</code>, <code>keep</code> (changed here, or in use: <code>why</code> says which) or
+                <code>gone</code>; <code>?instances=true</code> asks what it would be if the instances of its connectors
+                went too · <a href="automation.html#pack-uninstall">uninstall</a> it:
+                <code>{removed, kept, instances}</code> (<code>&amp;instances=true</code> deletes the instances and
+                their credentials). Without <code>remove</code> the pack is only taken off the list (<code>204</code>).
+                <code>409</code> for a pack another requires, and for Nik's own.
               </td>
             </tr>
             <tr>
@@ -1876,7 +1913,7 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           retries safe.
         </li>
         <li>
-          <strong>Scopes of the IoC library</strong>: the actions on many indicators take one of
+          <strong>Scopes of the Indicators page</strong>: the actions on many indicators take one of
           <code>{ items: [{ type, value }] }</code>, <code>{ list: id }</code>, <code>{ incident: id }</code> or
           <code>{ filters: { q, type, verdict, origin, list, expired } }</code>.
         </li>

@@ -168,7 +168,7 @@ export default function App() {
   const { openIoc } = useIocLookup()
   // The main area shows an artifact on its own instead of the active incident.
   const artifactOpen = Boolean(artifacts.currentId)
-  // …or the IoC library, which takes the main area in the same way.
+  // …or the Indicators page, which takes the main area in the same way.
   const library = useIocLibrary()
   const libraryOpen = Boolean(library.view)
 
@@ -223,7 +223,7 @@ export default function App() {
   // Navigation requests from menus and dialogs (see NavigationContext).
   const navigation = useNavigation()
   const { importInto, clearSearch } = navigation
-  /** Show the active incident's tabs: an artifact or the IoC library in the main area is left. */
+  /** Show the active incident's tabs: an artifact or the Indicators page in the main area is left. */
   const showIncident = useCallback(() => {
     artifacts.closeArtifact()
     closeLibrary()
@@ -270,7 +270,7 @@ export default function App() {
       }
       const route = detectFileRoute({ name: file.name, head })
       // A file of indicators (text, CSV, STIX, MISP, Nik's export) goes to the
-      // IoC library: the server reads it and says what it holds.
+      // Indicators: the server reads it and says what it holds.
       if (!preferAnalysis && !asEvidence && mayHoldIndicators({ name: file.name, size: file.size, route })) {
         try {
           const text = await file.text()

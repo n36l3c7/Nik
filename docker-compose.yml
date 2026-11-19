@@ -106,6 +106,11 @@ services:
       SANDBOX_TOKEN: ${SANDBOX_TOKEN:?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
       SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-10}
       SANDBOX_MAX_TIMEOUT: ${SANDBOX_MAX_TIMEOUT:-60}
+      # Content packs. Where the catalogue is read from (set it empty for a Nik with no catalogue:
+      # packs then come as files), and a folder of packs installed at start, which you mount
+      # here yourself (a Compose override with a read-only volume).
+      NIK_PACKS_CATALOGUE: ${NIK_PACKS_CATALOGUE-https://github.com/n36l3c7/Nik/releases/download/packs/index.json}
+      NIK_PACKS_DIR: ${NIK_PACKS_DIR:-}
     volumes:
       - sample-store:/app/samples
     networks: [default, analysis, browser-control, automation-internal]

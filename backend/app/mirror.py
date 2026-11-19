@@ -128,7 +128,7 @@ def out(db: OrmSession, incident: Incident) -> dict[str, Any]:
     ).all()
     return {
         "mirrored": True,
-        "connectionId": state["connection"],
+        "instanceId": state["connection"],
         "connection": connection.name if connection is not None else "(a connection that is gone)",
         "id": state["id"],
         "direction": state["direction"],

@@ -87,7 +87,7 @@ def radar(admin: TestClient, outside, alerts: list | None = None) -> dict:
     """Radar installed, a connection to it, and a fake Radar that serves ``alerts`` two a page."""
     assert admin.post(f"{BASE}/connectors", json={"source": RADAR}).status_code == 201
     made = admin.post(
-        f"{BASE}/connections",
+        f"{BASE}/instances",
         json={
             "name": "Radar SOC",
             "connector": "radar",
@@ -147,7 +147,7 @@ def test_a_connection_fetches_and_each_new_alert_becomes_an_incident_once(admin:
 
     # Nothing is fetched until the connection is told to.
     assert admin.post(f"/api/fetch/{connection['id']}/run").status_code == 409
-    listed = admin.get("/api/fetch").json()["connections"]
+    listed = admin.get("/api/fetch").json()["instances"]
     assert [(row["connection"], row["state"], row["enabled"]) for row in listed] == [("Radar SOC", "off", False)]
     turned = admin.put(f"/api/fetch/{connection['id']}", json={"enabled": True})
     assert turned.status_code == 200 and turned.json()["state"] == "ok" and turned.json()["intervalSeconds"] == 120
@@ -205,7 +205,7 @@ def test_a_connection_fetches_and_each_new_alert_becomes_an_incident_once(admin:
     overlap = run(admin, connection)
     assert (overlap["result"]["fetched"], overlap["result"]["new"]) == (2, 0) and len(incidents(admin)) == 3
 
-    status = admin.get("/api/fetch").json()["connections"][0]
+    status = admin.get("/api/fetch").json()["instances"][0]
     assert (status["state"], status["madeLastHour"], status["hasSample"]) == ("ok", 3, True)
     assert status["last"]["fetched"] == 2 and status["fetchState"] == {"last_time": f"{DAY}T10:00:00Z"}
     items = admin.get(f"/api/fetch/{connection['id']}/items").json()["items"]
@@ -323,7 +323,7 @@ def test_the_worker_fetches_the_connections_whose_time_has_come(admin: TestClien
     plain = RADAR.split("fetch:")[0].replace("id: radar", "id: quiet").replace("name: Radar", "name: Quiet")
     assert admin.post(f"{BASE}/connectors", json={"source": plain}).status_code == 201
     quiet = admin.post(
-        f"{BASE}/connections",
+        f"{BASE}/instances",
         json={"name": "Quiet", "connector": "quiet", "config": {"url": "https://radar.example.com/api"}},
     ).json()
     refused = admin.put(f"/api/fetch/{quiet['id']}", json={"enabled": True})
@@ -331,7 +331,7 @@ def test_the_worker_fetches_the_connections_whose_time_has_come(admin: TestClien
         400,
         "The connector of this instance does not say how to fetch",
     )
-    assert [row["connection"] for row in admin.get("/api/fetch").json()["connections"]] == ["Radar SOC"]
+    assert [row["connection"] for row in admin.get("/api/fetch").json()["instances"]] == ["Radar SOC"]
 
     worker.tick(T0)
     assert incidents(admin) == {}  # not told to fetch
@@ -392,14 +392,14 @@ def test_rules_decide_what_becomes_of_an_item_before_it_is_an_incident(admin: Te
         "Same host, same case",
     ]
     # What would become of a sample, without doing it.
-    tried = admin.post("/api/preprocess-rules/try", json={"connectionId": connection["id"], "item": ALERTS[1]}).json()
+    tried = admin.post("/api/preprocess-rules/try", json={"instanceId": connection["id"], "item": ALERTS[1]}).json()
     assert tried["incident"]["host"] == "WKS-02" and tried["incident"]["type"] == "unclassified"
     assert tried["decision"] == {
         "rule": "Same host, same case",
         "action": "link_to_existing",
         "incident": {"id": "old", "name": "Old case"},
     }
-    assert admin.post("/api/preprocess-rules/try", json={"connectionId": connection["id"], "item": ALERTS[0]}).json()[
+    assert admin.post("/api/preprocess-rules/try", json={"instanceId": connection["id"], "item": ALERTS[0]}).json()[
         "decision"
     ] == {"rule": None, "action": "create", "incident": None}
 

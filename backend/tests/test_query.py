@@ -47,8 +47,9 @@ def test_the_vectors_cover_every_error_the_parser_raises():
     assert len(VECTORS) > 60 and any(len(v["query"]) > MAX_LENGTH for v in VECTORS)
 
 
-def test_is_not_written_as_before_is_rewritten_and_means_the_same():
-    """``field:!value`` was "is not" until 5.0. It is still read; ``modern`` gives today's writing."""
+def test_is_not_written_as_before_is_refused_with_how_it_is_written_now():
+    """``field:!value`` was "is not" until 5.0 and was read through 5.x. Since 6.0 it is refused, at its
+    "!", with the query in today's writing; ``modern`` gives that writing."""
     for old, new in {
         "status:!closed": "!status:closed",
         "status:open name:!x": "status:open !name:x",
@@ -57,26 +58,18 @@ def test_is_not_written_as_before_is_rewritten_and_means_the_same():
         "not status:!closed": "not !status:closed",
     }.items():
         assert query.modern(old) == new
-        assert to_json(parse(new)) == _without_positions_moved(old, new)
+        with pytest.raises(query.QueryError) as refused:
+            parse(old)
+        assert (refused.value.code, refused.value.suggestion) == ("old_not", new)
+        assert old[refused.value.position] == "!" and old[refused.value.position - 1] == ":"
+        assert parse(new) is not None
         assert query.modern(new) == new
     # Nothing to rewrite, and what cannot be read, come back as they are.
     for text in ("", "status:open", "!status:closed", "status IN (a, b)", "(status:!closed", 'name:"a:!b"'):
         assert query.modern(text) == text
     assert query.modern(None) == ""
-
-
-def _without_positions_moved(old: str, new: str):
-    """The tree of the old writing with the positions of the new one: the two differ in nothing else."""
-
-    def strip(node):
-        if isinstance(node, dict):
-            return {key: strip(value) for key, value in node.items() if key != "position"}
-        if isinstance(node, list):
-            return [strip(item) for item in node]
-        return node
-
-    assert strip(to_json(parse(old))) == strip(to_json(parse(new)))
-    return to_json(parse(new))
+    # A "!" inside a quoted value is a character of the value.
+    assert parse('name:"a:!b"') is not None
 
 
 def test_a_long_run_of_spaces_after_a_name_costs_nothing():
@@ -211,7 +204,7 @@ CASES = {
     "name:invoice": {"file-a", "mail-c"},
     "name:INVOICE*": {"file-a"},
     "name:*.exe": {"file-a"},
-    "name:!invoice": {"file-b", "pcap-d", "url-e"},
+    "!name:invoice": {"file-b", "pcap-d", "url-e"},
     'name:"your invoice"': {"mail-c"},
     "name:100%": {"file-b"},
     "name:100%_d": {"file-b"},
@@ -224,10 +217,8 @@ CASES = {
     # keyword: equals; wildcards allowed
     "kind:file": {"file-a", "file-b"},
     "type:FILE": {"file-a", "file-b"},
-    "kind:!file": {"mail-c", "pcap-d", "url-e"},
-    # "Is not" before the field (5.0), and lists.
     "!kind:file": {"mail-c", "pcap-d", "url-e"},
-    "!name:invoice": {"file-b", "pcap-d", "url-e"},
+    # "Is not" before the field (5.0), and lists.
     "!tag:phish": {"file-a", "file-b", "pcap-d"},
     "kind IN (file, mail)": {"file-a", "file-b", "mail-c"},
     "kind in (pcap)": {"pcap-d"},
@@ -246,7 +237,7 @@ CASES = {
     "score:90": {"file-a"},
     "score:>=70": {"file-a", "mail-c"},
     "score:<40": {"pcap-d"},
-    "score:!0": {"file-a", "file-b", "mail-c", "url-e"},
+    "!score:0": {"file-a", "file-b", "mail-c", "url-e"},
     "score:[40 TO 70]": {"mail-c", "url-e"},
     "score:[* TO 40]": {"pcap-d", "url-e"},
     'score:""': {"file-b"},
@@ -266,13 +257,12 @@ CASES = {
     'created:"7 days ago"': {"mail-c"},  # an instant asked with ":" is its day
     "created:[2026-10-01 TO 2026-11-10]": {"mail-c", "pcap-d"},
     "created:[2026-11-16 TO *]": {"file-a", "file-b"},
-    "created:!today": {"file-b", "mail-c", "pcap-d", "url-e"},
+    "!created:today": {"file-b", "mail-c", "pcap-d", "url-e"},
     # tags
     "tags:phish": {"mail-c", "url-e"},
     "tag:PHISH": {"mail-c", "url-e"},
     "tag:ph*": {"mail-c", "url-e"},
     "tag:phi": set(),  # a tag is matched whole
-    "tag:!phish": {"file-a", "file-b", "pcap-d"},
     'tags:""': {"file-b", "pcap-d"},
     "tags:*": {"file-a", "mail-c", "url-e"},
     # free text: any of name, hash, detail, tags
@@ -340,10 +330,10 @@ def test_fields_that_are_not_a_column(stored):
             return set(db.scalars(select(Artifact.id).where(*query.sql("artifacts", text))))
 
     assert ids("linked:true") == ids("linked:yes") == {"mail-c"}
-    assert ids("linked:false") == ids("linked:!true") == {"file-a", "file-b", "pcap-d", "url-e"}
+    assert ids("linked:false") == ids("!linked:true") == {"file-a", "file-b", "pcap-d", "url-e"}
     assert ids("incident:inc-1") == {"mail-c"} and ids("incident:nope") == set()
     assert ids("incident:*") == {"mail-c"} and ids('incident:""') == ids("-incident:*")
-    assert ids("incident:!inc-1") == {"file-a", "file-b", "pcap-d", "url-e"}
+    assert ids("!incident:inc-1") == {"file-a", "file-b", "pcap-d", "url-e"}
 
 
 def test_ordered_fields_compare_by_rank(admin: TestClient):
@@ -361,7 +351,7 @@ def test_ordered_fields_compare_by_rank(admin: TestClient):
     assert names("severity:<medium") == ["a"]
     assert names("severity:<=medium") == ["a", "b"]
     assert names("severity:[medium TO high]") == ["b", "c"]
-    assert names("severity:high") == ["c"] and names("severity:!high") == ["a", "b", "d", "e"]
+    assert names("severity:high") == ["c"] and names("!severity:high") == ["a", "b", "d", "e"]
     assert names('severity:""') == ["e"] and names("severity:*") == ["a", "b", "c", "d"]
     assert names("severity:<low") == []
 

@@ -459,7 +459,7 @@ def out(db: OrmSession, connection: Connection) -> dict[str, Any]:
     status = status_of(connection)
     spec = connector.fetch if connector is not None else None
     return {
-        "connectionId": connection.id,
+        "instanceId": connection.id,
         "connection": connection.name,
         "connectorId": connection.connector_id,
         "connector": connector.name if connector is not None else connection.connector_id,

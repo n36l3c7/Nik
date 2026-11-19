@@ -94,7 +94,7 @@ test('keys and values: a value is a text, or JSON when it reads as JSON', () => 
 
 test('the lists a feature can read, the address of a list, what a file is', () => {
   const pointer = { list: 'strict', default: 'ioc_allowlist', kind: 'values' }
-  // Of the kind it takes, Nik's own first; never a list of the IoC library.
+  // Of the kind it takes, Nik's own first; never a list of the Indicators page.
   assert.deepEqual(
     choosable(LISTS, pointer).map((list) => list.name),
     ['ioc_allowlist', 'strict'],

@@ -46,6 +46,8 @@ export default defineConfig({
         SAMPLE_STORE: E2E_SAMPLES,
         // No automatic threat-intelligence lookups from the test server.
         ENRICHMENT_WORKER: 'false',
+        // No catalogue of packs: the tests reach no other machine (a pack comes as a file).
+        NIK_PACKS_CATALOGUE: '',
         // Playbooks run inside the test server (in production a container of its own does).
         AUTOMATION_WORKER: 'inline',
         // Set by CI when the analyzer container runs (see .github/workflows/ci.yml).

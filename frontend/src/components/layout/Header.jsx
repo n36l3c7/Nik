@@ -18,7 +18,7 @@ import ConnectorLogo from '../ui/ConnectorLogo.jsx'
  *   onOpenShortcuts: () => void,
  *   onOpenReport: (() => void) | null,
  *   artifactView?: boolean,   // the main area shows an artifact, not the active incident
- *   libraryView?: boolean,    // the main area shows the IoC library
+ *   libraryView?: boolean,    // the main area shows the Indicators page
  * }} props
  */
 export default function Header({

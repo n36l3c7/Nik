@@ -1,4 +1,4 @@
-"""The IoC library: reading pastes and files, lists, export, feed, bulk check, alerts."""
+"""The Indicators page: reading pastes and files, lists, export, feed, bulk check, alerts."""
 
 from __future__ import annotations
 

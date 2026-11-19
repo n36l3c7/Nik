@@ -707,7 +707,7 @@ Content-Type: application/json
         <strong>Lists.</strong> A list is what a playbook reads by a name: the VIP users, the hosts that are yours, the
         addresses a campaign used. Lists are made and filled in <em>Settings → Lists</em>; what Nik used to keep in its
         settings (the IoC allowlist, your domains, the suspicious keywords, the business hours, the hosts every playbook
-        may reach) is there too, and so are the watch lists of the IoC library, read like the others.
+        may reach) is there too, and so are the watch lists of the Indicators page, read like the others.
         <em>Read a list</em> gives its <code>items</code> (values, an object of key → value, or a document) and their
         <code>count</code>; <em>Is it in a list?</em> gives <code>found</code>; <em>Add to a list</em>,
         <em>Remove from a list</em> and <em>Set a list</em> change one, and only a list that says
@@ -1530,8 +1530,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           <code>logo.png</code> and <code>README.md</code> beside it. A connector opened on the page shows its README
           and takes a logo: a PNG or an SVG of 256 KB at most, and an SVG that holds anything but a drawing (a script,
           an event handler, a reference outside the file) is refused. The logo marks the connector in the list and the
-          incidents its instances bring in. Nik ships no vendor's logo: the place is empty until you give the connector
-          one, and a connector of no product has none.
+          incidents its instances bring in. The connector of a <a href="#packs">pack</a> comes with the mark of its
+          product, taken from the vendor's own site; a connector you write has none until you give it one.
         </li>
         <li>
           <strong>On and off.</strong> The switch beside an instance turns it off without losing what it was set up
@@ -1752,13 +1752,14 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         own code runs them (<code>native: mail</code> in the file, see <a href="#connector-format">the format</a>). It
         was tested against doubles of an IMAP mailbox and of an SMTP server, <strong>not against a real one</strong>.
       </p>
-      <h3 id="shipped-connectors">The connectors Nik ships</h3>
+      <h3 id="shipped-connectors">The connectors of the packs</h3>
       <p>
-        Twelve files for nine products, and the Mail connector above. Each was written from what the vendor publishes
-        about its API and is tested against answers recorded from that documentation,
-        <strong>not against a real system</strong>: each says <code>verified: false</code>, and the list of connectors
-        marks it <em>not verified</em>. Test the instance and try each command in a dry run, then on something harmless,
-        before a playbook relies on it.
+        Twelve connectors for nine products, each in the <a href="#packs">content pack</a> of its product (since 6.0
+        they are installed from the catalogue, not shipped inside Nik), and the Mail connector above, which is part of
+        Nik. Each was written from what the vendor publishes about its API and is tested against answers recorded from
+        that documentation, <strong>not against a real system</strong>: each says <code>verified: false</code>, and the
+        list of connectors marks it <em>not verified</em>. Test the instance and try each command in a dry run, then on
+        something harmless, before a playbook relies on it.
       </p>
       <div class="table-wrap">
         <table>
@@ -2868,52 +2869,51 @@ commands:
 
       <h2 id="packs">Content packs</h2>
       <p>
-        What Nik is taught (a connector, a playbook and the scripts it runs, a type of incident with its fields, a
-        mapper, a dashboard) can be carried from one Nik to another as <strong>one file</strong>: a content pack,
-        <code>.nikpack</code>. It is for who holds <code>content.manage</code> (an administrator), in
-        <em>Settings → Automation → Content packs</em>.
+        What Nik is taught about <strong>one product</strong> is one content pack: its connector, the types of incident
+        that are about it, its dashboards, its classifier and mappers, its playbooks and the scripts they run.
+        Installing a pack adds each of them to its own page of Settings; nothing of a vendor is inside Nik until its
+        pack is installed. A vendor has a pack for each product (Atlassian: one for Jira Cloud, one for Confluence
+        Cloud…). Packs are for who holds <code>content.manage</code> (an administrator), in
+        <em>Settings → Automation → Content packs</em>, the first page of that group.
       </p>
-      <h3 id="pack-format">The file</h3>
-      <p>A pack is a zip with <code>pack.yml</code> and a folder for each kind of item, one file an item:</p>
-      <pre><code>pack.yml
-connectors/acme-desk.yml          the connector file, as it is
-scripts/ExtractDomains.yml        name, description, code, arguments, outputs, test
-playbooks/phishing-triage.json    the graph of its current version, and its limits
-fields/customer.json              a custom field
-incident_types/customer-case.json a type: its fields, its layout, its SLA, its close reasons, its playbook
-mappers/acme-desk.json            incoming and outgoing rules, for every type and by type
-lists/vip_users.json              a list, with its items only when the pack was made to carry them
-dashboards/customer-cases.json    a dashboard
-preprocess_rules/drop-tests.json  a pre-processing rule</code></pre>
-      <pre><code># pack.yml
-id: acme-soc               # a lower-case letter, then lower-case letters, digits or -
-name: Acme SOC
-version: 1.2.0             # three numbers
-description: What our SOC adds to Nik.
-author: Acme
-requires:                  # packs that must be installed first
-  - { pack: acme-base, version: 1.0.0 }
-nik: "&gt;=4.6"                # the oldest Nik it is for</code></pre>
+      <h3 id="pack-catalogue">The catalogue</h3>
+      <p>
+        The page is a catalogue: the packs there are, by vendor, beside the ones that are installed. A card says what
+        the pack holds (<em>connector (17 commands) · 1 mapper · 1 playbook</em>) and what is true of it here:
+        <em>installed</em>, <em>update 1.3.0</em> when the catalogue has a newer version, or
+        <em>for Nik 6.1 or later</em>. <em>All</em>, <em>Installed</em> and <em>Updates</em> narrow the cards, and so
+        does the search box.
+      </p>
       <ul>
         <li>
-          <strong>Never</strong> an instance, a credential, or what a playbook may reach and send: those belong to the
-          Nik they were set in. A playbook from a pack arrives <strong>off</strong>, reaching only listed hosts and
-          sending no class of data, as one imported alone does.
+          The packs are <strong>not inside Nik</strong>. They are published from the folder <code>packs/</code> of Nik's
+          repository as the files of its release <code>packs</code>: one <code>.nikpack</code> for each pack, an index
+          (<code>index.json</code>) and the signature of the index. Nik reads the index, the first time the page is
+          opened and when <em>Read again</em> is pressed; opening the page again does not go out.
         </li>
         <li>
-          An item is the same item in every Nik by its <strong>name</strong> (a connector by its id), never by a
-          database id; what it refers to is named too (a type names its fields and its playbook, a playbook its scripts)
-          and found again where the pack is imported.
+          Nothing of it is trusted for where it comes from. The index is read only when its signature is of the key Nik
+          holds (Ed25519); a pack is taken only when its size and its SHA-256 are the ones the signed index gives. It is
+          then a pack like one uploaded by hand: shown item by item, and applied only after someone looked.
         </li>
         <li>
-          Each file is what exporting that item alone gives, so a pack can be written by hand or kept in a repository. A
-          layout travels inside its type; a classifier belongs to an instance and does not travel.
+          The server needs to reach <code>github.com</code> and the hosts GitHub answers a release from
+          (<code>objects.githubusercontent.com</code>, <code>release-assets.githubusercontent.com</code>). It is the
+          backend container that reads it, the way it reads the threat-intelligence sources; it goes through
+          <code>HTTPS_PROXY</code> when that container is given one. A Nik that cannot: see
+          <a href="#pack-offline">Without the catalogue</a>.
+        </li>
+        <li>
+          <em>Catalogue address…</em> (administrators) sets another address: a copy of the catalogue kept inside your
+          network (leave the key empty: a copy keeps Nik's signature), or a catalogue of your own, with the public half
+          of the key you sign it with. Setting an address is the permission to reach its host.
         </li>
       </ul>
-      <h3 id="pack-import">Importing</h3>
+      <h3 id="pack-install">Installing and updating</h3>
       <p>
-        Importing is two steps. Choosing the file <strong>inspects</strong> it: nothing is changed, and each item is
-        shown with what applying it would do.
+        <em>Install…</em> takes the pack and <strong>inspects</strong> it: nothing is changed, and each item is shown
+        with what applying it would do. <em>See what changes…</em> on a pack with an update does the same with the newer
+        version, so the difference is read before anything moves.
       </p>
       <div class="table-wrap">
         <table>
@@ -2953,30 +2953,129 @@ nik: "&gt;=4.6"                # the oldest Nik it is for</code></pre>
         </table>
       </div>
       <p>
-        Any item can be left out. <em>Import</em> then applies the rest <strong>in one transaction</strong>: all of it,
-        or, if anything fails, nothing. A conflict must be left out or settled first. The pack is then listed with its
-        version and the items that came from it; an item remembers the pack that gave it last. Taking a pack off the
-        list leaves its items: they are Nik's now.
+        Any item can be left out. <em>Install</em> then applies the rest <strong>in one transaction</strong>: all of it,
+        or, if anything fails, nothing. A conflict must be left out or settled first. A pack that
+        <strong>requires</strong> another (a playbook of one pack that uses the connector of another) says so, and is
+        installed after it; one written for a later Nik is not offered. <em>Open</em> shows what an installed pack gave,
+        and marks what is <em>changed here</em> since or <em>no longer here</em>.
       </p>
       <p>
-        A pack is a file from someone else, and it is read as one: at most 20 MB and 2 000 files, no path that leaves
-        the pack, no links, only the folders above, YAML read without building objects. A script in a pack is code that
-        will run in the <a href="#sandbox">sandbox</a>: read its difference before importing it, as you would read a
-        script someone sends you.
+        A playbook from a pack arrives <strong>off</strong>, reaching only listed hosts and sending no class of data, as
+        one imported alone does. A new instance of a connector starts with the classifier its pack gives. Never an
+        instance, a credential, or what a playbook may reach and send: those belong to the Nik they were set in.
       </p>
-      <h3 id="pack-export">Exporting</h3>
+      <h3 id="pack-uninstall">Uninstalling</h3>
       <p>
-        <em>Export a pack</em> asks for its id, name and version, then for the items. What an item cannot do without
+        <em>Uninstall…</em> shows what would happen first, item by item, and then removes
+        <strong>what the pack gave</strong>. Two things stay, each with its reason, and are no pack's any more:
+      </p>
+      <ul>
+        <li>
+          what was <strong>changed here</strong> since the pack gave it (a script edited, a mapper rewritten): it is
+          yours now;
+        </li>
+        <li>
+          what is <strong>in use</strong> by something that stays: a connector with an instance, a connector or a script
+          a playbook of yours uses, a playbook that is the playbook of a type or that another playbook runs, a type with
+          incidents, a field a type lists or an incident holds a value of. What only the pack itself uses does not hold:
+          it goes with it.
+        </li>
+      </ul>
+      <p>
+        Instances and their credentials are never deleted unless you tick
+        <em>Also delete its instances, with the credentials they hold</em>. <em>Only take it off the list</em> removes
+        nothing: the pack leaves the list and everything it gave stays. A pack another installed pack requires is not
+        uninstalled before that one, and <em>Nik built-in</em> never.
+      </p>
+      <h3 id="pack-format">The file</h3>
+      <p>
+        A pack is a zip, <code>.nikpack</code>, with <code>pack.yml</code> and a folder for each kind of item, one file
+        an item. In the repository a pack is the same thing unzipped: the folder <code>packs/&lt;id&gt;/</code>.
+      </p>
+      <pre><code>pack.yml
+logo.png                          the logo of the pack on its card (or logo.svg)
+connectors/acme-desk/             a connector: connector.yml, and beside it logo.png and README.md
+scripts/ExtractDomains.yml        name, description, code, arguments, outputs, test
+playbooks/phishing-triage.json    the graph of its current version, and its limits
+fields/customer.json              a custom field
+incident_types/customer-case.json a type: its fields, its layout, its SLA, its close reasons, its playbook
+mappers/acme-desk.json            incoming and outgoing rules, for every type and by type, and the classifier
+lists/vip_users.json              a list, with its items only when the pack was made to carry them
+dashboards/customer-cases.json    a dashboard
+preprocess_rules/drop-tests.json  a pre-processing rule</code></pre>
+      <pre><code># pack.yml
+id: acme-desk              # a lower-case letter, then lower-case letters, digits or -
+name: Acme Desk
+vendor: Acme               # the cards are grouped by it
+category: Ticketing
+version: 1.2.0             # three numbers
+description: Tickets of Acme Desk as incidents, kept in step both ways.
+author: Acme
+requires:                  # packs that must be installed first
+  - { pack: acme-base, version: 1.0.0 }
+nik: "&gt;=6.0"                # the oldest Nik it is for</code></pre>
+      <ul>
+        <li>
+          An item is the same item in every Nik by its <strong>name</strong> (a connector by its id), never by a
+          database id; what it refers to is named too (a type names its fields and its playbook, a playbook its scripts)
+          and found again where the pack is installed.
+        </li>
+        <li>
+          Each file is what exporting that item alone gives, so a pack can be written by hand or kept in a repository. A
+          layout travels inside its type. The classifier in a mapper file is the one a <strong>new</strong> instance
+          starts with: the classifier of an instance that exists is that instance's and is not touched.
+        </li>
+        <li>
+          A pack is a file from someone else, and it is read as one: at most 20 MB and 2 000 files, no path that leaves
+          the pack, no links, only the folders above, YAML read without building objects. A script in a pack is code
+          that will run in the <a href="#sandbox">sandbox</a>: read its difference before installing it, as you would
+          read a script someone sends you.
+        </li>
+      </ul>
+      <h3 id="pack-export">Making a pack</h3>
+      <p>
+        <em>Make a pack…</em> asks for its id, name and version, then for the items. What an item cannot do without
         comes with it: the scripts and the connectors of a playbook, the playbooks it starts, the fields and the
-        playbook of a type, the connector and the fields of a mapper. A list goes <strong>without its items</strong>
-        unless you ask: they are often the data of one company.
+        playbook of a type, the connector and the fields of a mapper. A list goes
+        <strong>without its items</strong> unless you ask: they are often the data of one company.
+        <em>Upload a .nikpack…</em> installs a file the same way a pack of the catalogue is installed.
       </p>
-      <h3 id="pack-builtin">What Nik ships</h3>
+      <h3 id="pack-offline">Without the catalogue</h3>
+      <p>A Nik that cannot reach the catalogue has three ways to get a pack:</p>
+      <ul>
+        <li>
+          <strong>a file</strong>: download the <code>.nikpack</code> from the release <code>packs</code> on another
+          machine and <em>Upload a .nikpack…</em>;
+        </li>
+        <li>
+          <strong>a folder</strong>: with <code>NIK_PACKS_DIR</code> set to a folder the server reads, the packs in it
+          (each a folder with a <code>pack.yml</code>, or a <code>.nikpack</code> file) are installed at start when they
+          are not here or are older. Nothing there is checked against a signature: the folder is the administrator's;
+        </li>
+        <li>
+          <strong>a catalogue of your own</strong>:
+          <code>python -m app.pack_build &lt;folder of packs&gt; &lt;folder to write&gt;</code> (in the backend
+          container) writes the <code>.nikpack</code> files and the index, and signs the index with the Ed25519 private
+          key in <code>PACKS_SIGNING_KEY</code>. Serve the folder over HTTPS and set its address and your public key in
+          <em>Catalogue address…</em>.
+        </li>
+      </ul>
       <p>
-        Everything Nik ships is listed as four packs, <em>Nik: incidents</em> (the types and the lists its settings
-        read), <em>Nik: automation</em> (scripts and playbooks), <em>Nik: connectors</em> (connectors and the mappers of
-        those that fetch) and <em>Nik: dashboards</em>. They are installed by Nik itself and follow its releases; each
-        can be downloaded as a file, which reads back as what is installed.
+        <code>NIK_PACKS_CATALOGUE=</code> (empty) starts a Nik with no catalogue at all: the page then lists what is
+        installed, and packs come as files.
+      </p>
+      <h3 id="pack-builtin">What is part of Nik, and what was before 6.0</h3>
+      <p>
+        <em>Nik built-in</em> is the one pack that is part of Nik: its types of incident and lists, its scripts,
+        playbooks and dashboards, and the Mail connector. It is installed by Nik itself, follows its releases, and can
+        be downloaded as a file, which reads back as what is installed.
+      </p>
+      <p>
+        Until 5.4 the connectors of vendors came inside Nik. A Nik that was upgraded keeps every one it has: at its
+        first start on 6.0 each is written down as <strong>the pack it is</strong>, at version 0.9.0, with its mappers
+        and its playbook, so that the catalogue updates it and <em>Uninstall</em> removes it. Nothing is added or
+        changed by that, and a connector that had been removed stays removed. A <strong>new</strong> Nik starts with
+        <em>Nik built-in</em> alone.
       </p>
 
       <h2 id="later">What this release does not do yet</h2>

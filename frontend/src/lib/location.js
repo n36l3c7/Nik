@@ -2,7 +2,7 @@
  * The address bar as the one source of truth for what the main area shows.
  *
  * Several contexts own a part of the address: the active incident
- * (/incident/<id>), an artifact on its own (/artifact/<id>), the IoC library
+ * (/incident/<id>), an artifact on its own (/artifact/<id>), the Indicators page
  * (/iocs…), an indicator's page (/ioc/<type>), the Settings page
  * (/settings/<group>/<section>) and the Automations area (/automation/…).
  * Each derives its state from

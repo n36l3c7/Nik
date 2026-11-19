@@ -234,7 +234,7 @@ export default function PreprocessSection() {
   const [connections, setConnections] = useState([])
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(undefined) // undefined: closed; null: a new rule; a rule
-  const [connectionId, setConnectionId] = useState('')
+  const [instanceId, setConnectionId] = useState('')
   const [pasted, setPasted] = useState('')
   const [tried, setTried] = useState(null)
 
@@ -251,8 +251,8 @@ export default function PreprocessSection() {
     api
       .get('/fetch')
       .then((status) => {
-        setConnections(status.connections)
-        setConnectionId((current) => current || status.connections[0]?.connectionId || '')
+        setConnections(status.instances)
+        setConnectionId((current) => current || status.instances[0]?.instanceId || '')
       })
       .catch(() => setConnections([]))
   }, [load])
@@ -282,7 +282,7 @@ export default function PreprocessSection() {
   const tryIt = async () => {
     setError(null)
     try {
-      setTried(await api.post('/preprocess-rules/try', { connectionId, item: sample.item }))
+      setTried(await api.post('/preprocess-rules/try', { instanceId, item: sample.item }))
     } catch (failure) {
       setTried(null)
       setError(failure.message)
@@ -375,12 +375,12 @@ export default function PreprocessSection() {
               <span className={LABEL}>As an item fetched by</span>
               <select
                 aria-label="The instance the sample comes from"
-                value={connectionId}
+                value={instanceId}
                 onChange={(event) => setConnectionId(event.target.value)}
                 className={`${INPUT} cursor-pointer`}
               >
                 {connections.map((connection) => (
-                  <option key={connection.connectionId} value={connection.connectionId}>
+                  <option key={connection.instanceId} value={connection.instanceId}>
                     {connection.connection}
                   </option>
                 ))}
@@ -397,7 +397,7 @@ export default function PreprocessSection() {
             />
             {sample.problem && <p className="text-xs text-high-fg">{sample.problem}</p>}
             <div className="flex flex-wrap items-center gap-3">
-              <Button variant="secondary" size="sm" disabled={!sample.item || !connectionId} onClick={tryIt}>
+              <Button variant="secondary" size="sm" disabled={!sample.item || !instanceId} onClick={tryIt}>
                 Try
               </Button>
               {tried && (

@@ -20,7 +20,7 @@ import { PASTED_LABELS } from '../../domain/pasted.js'
  *   onSearch: (value: string) => void,      // open the search palette on it
  *   onLookup: (kind: string, value: string) => void,  // where seen + reputation
  *   onOpenKnown: (artifact: object) => void, // a hash that is an artifact already
- *   onAdd: (text: string) => void,          // add it to the IoC library
+ *   onAdd: (text: string) => void,          // add it to the Indicators page
  *   onDismiss: () => void,
  * }} props
  */

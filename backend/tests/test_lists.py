@@ -255,7 +255,7 @@ def test_what_is_in_a_list(admin: TestClient):
         db.commit()
         assert not lists.contains(db, "nets", "198.51.100.7")
 
-    # A watch list of the IoC library is read here too, and changed where indicators are.
+    # A watch list of the Indicators page is read here too, and changed where indicators are.
     made = admin.post("/api/iocs/lists", json={"name": "Campaign Q4"})
     assert made.status_code == 201, made.text
     added = admin.post(
