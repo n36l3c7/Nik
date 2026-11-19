@@ -153,16 +153,34 @@ def close_session(owner: str, session_id: str) -> None:
 # --------------------------------------------------------------------------- #
 # Outlook PST -> mbox (the document worker runs readpst)                      #
 # --------------------------------------------------------------------------- #
-PST_TIMEOUT = 900
+PST_TIMEOUT = 3900
 
 
-def convert_pst(source, target) -> None:
+class _Counted:
+    """A file that says how much of it was read: what was sent to the worker so far."""
+
+    def __init__(self, handle, told) -> None:
+        self._handle, self._told, self.sent = handle, told, 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._handle.read(size)
+        self.sent += len(chunk)
+        self._told(self.sent)
+        return chunk
+
+
+def convert_pst(source, target, progress=None) -> None:
     """Send the PST to the document worker and write the mbox it answers with
-    to ``target``. Both are streamed: neither is held in memory here."""
+    to ``target``. Both are streamed: neither is held in memory here.
+    ``progress(done, total)`` is told how far it is, in bytes: the PST as it is sent, then the mbox
+    as it comes back."""
     if not docview_configured():
         raise WorkerError("The document worker is not configured (DOCVIEW_URL): a PST cannot be read.", 503)
     size = os.path.getsize(source)
-    with open(source, "rb") as handle:
+    told = progress or (lambda done, total: None)
+    with open(source, "rb") as raw:
+        # Until the worker says how large the mbox is, it is taken to be as large as the PST.
+        handle = _Counted(raw, lambda sent: told(sent, size * 2))
         request = urllib.request.Request(  # noqa: S310 - operator-configured URL
             f"{settings.DOCVIEW_URL}/pst",
             data=handle,
@@ -175,8 +193,12 @@ def convert_pst(source, target) -> None:
         )
         try:
             with urllib.request.urlopen(request, timeout=PST_TIMEOUT) as response, open(target, "wb") as out:  # noqa: S310
+                expected = int(response.headers.get("Content-Length") or 0) or size
+                received = 0
                 while chunk := response.read(1024 * 1024):
                     out.write(chunk)
+                    received += len(chunk)
+                    told(size + received, size + expected)
         except urllib.error.HTTPError as exc:
             try:
                 detail = json.loads(exc.read() or b"{}").get("detail")

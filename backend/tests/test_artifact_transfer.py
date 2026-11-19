@@ -10,6 +10,7 @@ import zipfile
 import pyzipper
 from fastapi.testclient import TestClient
 
+from app import artifact_transfer
 from app.malware.samples import sample_path
 from tests.conftest import make_key
 from tests.test_mail import no_dns, phishing_message  # noqa: F401 - no_dns is a fixture
@@ -144,3 +145,110 @@ def test_only_an_admin_imports_and_a_strange_archive_is_refused(admin: TestClien
         )
     result = admin.post("/api/artifacts/import", files={"file": ("a.zip", bad.getvalue())}).json()
     assert result["added"] == 0 and result["skipped"][0]["reason"] == "not a valid artifact id"
+
+
+# --------------------------------------------------------------------------- #
+# Mailboxes                                                                   #
+# --------------------------------------------------------------------------- #
+def _mailbox(admin: TestClient) -> dict:
+    from tests.test_mailboxes import mbox
+
+    made = admin.post("/api/artifacts/mailboxes", files={"file": ("finance.mbox", mbox())})
+    assert made.status_code == 201, made.text
+    return admin.get(f"/api/mailboxes/{made.json()['id']}").json()
+
+
+def test_a_mailbox_travels_with_its_file_and_its_index(admin: TestClient, no_dns):  # noqa: F811
+    from app import mailboxes
+    from tests.test_mailboxes import mbox
+
+    box = _mailbox(admin)
+    artifact_id = box["artifactId"]
+    assert admin.put(f"/api/artifacts/{artifact_id}/tags", json={"tags": ["finance"]}).status_code == 200
+    before = admin.get(f"/api/mailboxes/{box['id']}/messages", params={"scope": "all"}).json()["messages"]
+    # One message imported there: what was imported does not travel as "imported".
+    imported = admin.post(f"/api/mailboxes/{box['id']}/import", json={"seqs": [before[0]["seq"]]})
+    assert imported.status_code in (200, 202), imported.text
+
+    full = admin.post("/api/artifacts/export", json={"ids": [artifact_id], "files": True})
+    assert full.status_code == 200, full.text
+    archive = zipfile.ZipFile(io.BytesIO(full.content))
+    assert sorted(archive.namelist()) == [
+        "files.zip", "manifest.json", f"records/{artifact_id}.json", f"records/{artifact_id}.messages.jsonl",
+    ]  # fmt: skip
+    entry = json.loads(archive.read("manifest.json"))["artifacts"][0]
+    assert entry["kind"] == "mailbox" and entry["files"] == [f"{artifact_id}/mailbox.mbox"]
+    assert entry["messages"] == f"records/{artifact_id}.messages.jsonl"
+    lines = archive.read(entry["messages"]).splitlines()
+    # Every message has its line, the copies of one another too.
+    assert len(lines) == box["total"] + box["duplicates"] and json.loads(lines[0])["seq"] == 0
+    # The file is in the encrypted zip, not in the clear.
+    assert b"From " + b"" not in archive.read("manifest.json") and mbox()[:200] not in full.content
+
+    # Without its file a mailbox is not imported: its index says where messages are in that file.
+    plain = admin.post("/api/artifacts/export", json={"ids": [artifact_id]})
+    _forget(admin, artifact_id)
+    assert admin.get(f"/api/mailboxes/{box['id']}").status_code == 404
+    refused = admin.post("/api/artifacts/import", files={"file": ("a.zip", plain.content)}).json()
+    assert refused["added"] == 0 and refused["skipped"] == [
+        {"name": "finance.mbox", "reason": "a mailbox needs its file: export it with the files"}
+    ]
+    # With it, it is back as it was: same messages, same conversations, its tags, nothing imported.
+    result = admin.post("/api/artifacts/import", files={"file": ("a.zip", full.content)})
+    assert result.status_code == 200 and result.json()["added"] == 1, result.text
+    back = admin.get(f"/api/mailboxes/{box['id']}").json()
+    assert (back["status"], back["total"], back["threads"], back["duplicates"]) == (
+        "ready", box["total"], box["threads"], box["duplicates"],
+    )  # fmt: skip
+    assert back["imported"] == 0 and back["size"] == len(mbox())
+    after = admin.get(f"/api/mailboxes/{box['id']}/messages", params={"scope": "all"}).json()["messages"]
+    assert [(m["seq"], m["subject"], m["sender"]) for m in after] == [
+        (m["seq"], m["subject"], m["sender"]) for m in before
+    ]
+    assert mailboxes.mbox_path(box["id"]).read_bytes() == mbox()
+    shown = admin.get(f"/api/artifacts/{artifact_id}").json()
+    assert shown["tags"] == ["finance"] and shown["detail"] == f"0 of {box['total']} messages imported"
+    # A message can be read from it again.
+    again = admin.post(f"/api/mailboxes/{box['id']}/import", json={"seqs": [after[1]["seq"]]})
+    assert again.status_code in (200, 202), again.text
+    # Nothing is left behind where archives are taken apart.
+    assert list(artifact_transfer.workdir().iterdir()) == []
+
+
+def test_a_mailbox_whose_index_does_not_fit_its_file_is_refused(admin: TestClient):
+    from app import mailboxes
+
+    box = _mailbox(admin)
+    artifact_id = box["artifactId"]
+    full = admin.post("/api/artifacts/export", json={"ids": [artifact_id], "files": True}).content
+    _forget(admin, artifact_id)
+
+    def tampered(change) -> bytes:
+        source = zipfile.ZipFile(io.BytesIO(full))
+        held = io.BytesIO()
+        with zipfile.ZipFile(held, "w") as out:
+            for name in source.namelist():
+                data = source.read(name)
+                if name.endswith(".messages.jsonl"):
+                    data = change(data)
+                out.writestr(name, data)
+        return held.getvalue()
+
+    def reason(data: bytes) -> str:
+        answer = admin.post("/api/artifacts/import", files={"file": ("a.zip", data)}).json()
+        assert answer["added"] == 0, answer
+        return answer["skipped"][0]["reason"]
+
+    def past_the_end(data: bytes) -> bytes:
+        lines = data.splitlines()
+        first = json.loads(lines[0])
+        first["offset"] = 10**9
+        return b"\n".join([json.dumps(first).encode(), *lines[1:]]) + b"\n"
+
+    assert reason(tampered(past_the_end)) == "its index does not fit its file"
+    assert reason(tampered(lambda data: data + data)) == "its index does not fit its file"  # a message twice
+    assert reason(tampered(lambda data: b"{not json\n")) == "its index cannot be read"
+    # Refused, nothing of it stays: no row, no file.
+    assert admin.get(f"/api/mailboxes/{box['id']}").status_code == 404
+    assert not (mailboxes.directory(box["id"]) / "mailbox.mbox").exists()
+    assert admin.post("/api/artifacts/import", files={"file": ("a.zip", full)}).json()["added"] == 1

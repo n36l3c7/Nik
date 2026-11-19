@@ -208,10 +208,12 @@
             </tr>
             <tr>
               <td><code>PST_MAX_MB</code></td>
-              <td><code>500</code></td>
+              <td><code>4096</code></td>
               <td>
-                Largest Outlook PST accepted, in MB. It is converted in the document worker's memory: raise
-                <code>DOCVIEW_MEMORY</code> with it.
+                Largest Outlook PST accepted, in MB. It is converted by the document worker on its
+                <code>pst-work</code> volume, a disk, not memory: the volume needs about two and a half times the PST
+                free while it is converted (the worker checks, and says how much is missing). Without the volume the
+                worker converts in memory and takes a PST of 500 MB at most.
               </td>
             </tr>
             <tr>
@@ -440,10 +442,12 @@
             </tr>
             <tr>
               <td><code>PST_MAX_MB</code></td>
-              <td><code>500</code></td>
+              <td><code>4096</code></td>
               <td>
-                Largest Outlook PST accepted, in MB. It is converted in the document worker's memory: raise
-                <code>DOCVIEW_MEMORY</code> with it.
+                Largest Outlook PST accepted, in MB. It is converted by the document worker on its
+                <code>pst-work</code> volume, a disk, not memory: the volume needs about two and a half times the PST
+                free while it is converted (the worker checks, and says how much is missing). Without the volume the
+                worker converts in memory and takes a PST of 500 MB at most.
               </td>
             </tr>
             <tr>

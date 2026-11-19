@@ -12,7 +12,8 @@ RUN apt-get update \
        fonts-dejavu-core fonts-liberation2 pst-utils \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r /tmp/requirements.txt \
-    && useradd --create-home --uid 1000 viewer
+    && useradd --create-home --uid 1000 viewer \
+    && mkdir /work && chown viewer:viewer /work
 
 WORKDIR /opt/nik-docview
 COPY nik_docview.py server.py ./
@@ -23,7 +24,9 @@ ENV PYTHONUNBUFFERED=1 \
     HOME=/tmp
 
 # Unprivileged; LibreOffice's profile goes to a fresh directory under /tmp
-# (a tmpfs in Compose) for every conversion.
+# (a tmpfs in Compose) for every conversion. A PST is converted in /work, a
+# volume in Compose: it belongs to the user the worker runs as, so that a new
+# volume mounted there can be written to.
 USER viewer
 EXPOSE 8720
 ENTRYPOINT ["python3", "/opt/nik-docview/server.py"]

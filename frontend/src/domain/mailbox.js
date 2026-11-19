@@ -178,3 +178,24 @@ export function planLine(plan) {
   if (plan.waiting) parts.push(`${plan.waiting} over the limit of ${plan.max}, left for the next time`)
   return `${parts.join(' · ')}.`
 }
+
+/**
+ * How far the reading of a mailbox is, in words: "Converting… 41 %", "Indexing… 41 % · 7,400 messages".
+ * `preparing` is `{ phase, bytes, totalBytes, messages }`; null before the first note.
+ */
+export function preparingText(preparing) {
+  if (!preparing) return 'Reading the mailbox: finding its messages and conversations…'
+  const verb = preparing.phase === 'converting' ? 'Converting' : 'Indexing'
+  const total = Number(preparing.totalBytes) || 0
+  const percent = total ? Math.min(100, Math.floor((Number(preparing.bytes) / total) * 100)) : null
+  const messages = Number(preparing.messages) || 0
+  const parts = [`${verb}…${percent === null ? '' : ` ${percent} %`}`]
+  if (messages) parts.push(`${messages.toLocaleString('en-US')} ${messages === 1 ? 'message' : 'messages'}`)
+  return parts.join(' · ')
+}
+
+/** The same as a number from 0 to 100, for a bar; null when the total is not known. */
+export function preparingPercent(preparing) {
+  const total = Number(preparing?.totalBytes) || 0
+  return total ? Math.min(100, Math.floor((Number(preparing.bytes) / total) * 100)) : null
+}

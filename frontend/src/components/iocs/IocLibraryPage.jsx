@@ -11,6 +11,7 @@ import {
   Rss,
   ShieldQuestion,
   Square,
+  Tag,
   Trash2,
 } from 'lucide-react'
 import { api } from '../../services/api.js'
@@ -27,6 +28,8 @@ import {
   EMPTY_FILTERS,
   ORIGIN_LABELS,
   QUICK_FILTERS,
+  changeLine,
+  changesByKey,
   libraryPath,
   libraryQuery,
   scopeFilters,
@@ -35,6 +38,8 @@ import {
 import SortHeader from '../tabs/network/SortHeader.jsx'
 import { Badge, Button, EmptyState, MicroSkull, Modal, Select, StatCard } from '../ui/index.js'
 import EditIocDialog from './EditIocDialog.jsx'
+import ListHistory from './ListHistory.jsx'
+import TagDialog from './TagDialog.jsx'
 import QueryInput from '../ui/QueryInput.jsx'
 import { useQuerySchema } from '../../services/querySchema.js'
 import { conditionOn, withCondition } from '../../domain/query/builder.js'
@@ -206,6 +211,8 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const [editing, setEditing] = useState(null)
   const [confirm, setConfirm] = useState(null) // { title, message, action, run }
   const [listMenu, setListMenu] = useState(false)
+  const [history, setHistory] = useState(null) // what the checks of the list found
+  const [tagging, setTagging] = useState(null) // { scope, count }
   const requestRef = useRef(0)
 
   // The quick filter of the panel sets the filters of the "all" view.
@@ -253,6 +260,23 @@ export default function IocLibraryPage({ onOpenIncident }) {
       .then(setDetail)
       .catch((err) => setError(err.message))
   }, [listId, version])
+
+  // The history of the list that is open: read again whenever the library changes (a check ended).
+  useEffect(() => {
+    if (!listId) {
+      setHistory(null)
+      return undefined
+    }
+    let cancelled = false
+    api
+      .get(`/iocs/lists/${listId}/history`)
+      .then((found) => !cancelled && setHistory(found))
+      .catch(() => !cancelled && setHistory(null))
+    return () => {
+      cancelled = true
+    }
+  }, [listId, version])
+  const changed = useMemo(() => changesByKey(history), [history])
 
   const rows = useMemo(() => data?.iocs ?? [], [data])
   const total = data?.total ?? 0
@@ -443,6 +467,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
           <StatCard label="In incidents" value={detail.counts.inIncidents} />
         </div>
       )}
+      {listId && <ListHistory history={history} />}
 
       <QueryInput
         entity="indicators"
@@ -559,6 +584,9 @@ export default function IocLibraryPage({ onOpenIncident }) {
             >
               Export
             </Button>
+            <Button size="sm" variant="secondary" icon={Tag} onClick={() => setTagging({ scope: scope(), count })}>
+              Tag…
+            </Button>
             {listId && !wholeFilter && (
               <Button size="sm" variant="secondary" onClick={removeFromList}>
                 Take out of the list
@@ -665,6 +693,12 @@ export default function IocLibraryPage({ onOpenIncident }) {
                       ) : (
                         <Badge>not checked</Badge>
                       )}
+                      {changed.has(key(row)) && (
+                        // The last check of the list changed it.
+                        <span className="mt-0.5 block font-sans text-[11px] text-fg-muted">
+                          {changeLine(changed.get(key(row)))}
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 tabular-nums">
                       {row.score ?? <span className="text-fg-subtle">—</span>}
@@ -745,6 +779,22 @@ export default function IocLibraryPage({ onOpenIncident }) {
         </div>
       )}
 
+      {tagging && (
+        <TagDialog
+          scope={tagging.scope}
+          count={tagging.count}
+          onClose={() => setTagging(null)}
+          onDone={(result) => {
+            setTagging(null)
+            showToast({
+              message: `Tags changed on ${result.changed} indicator${result.changed === 1 ? '' : 's'}${
+                result.unchanged ? `; ${result.unchanged} had them already` : ''
+              }.`,
+            })
+            refresh()
+          }}
+        />
+      )}
       <EditIocDialog
         row={editing}
         onClose={() => setEditing(null)}

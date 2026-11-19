@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
 
+from . import artifact_expiry
 from .core.config import settings
 from .core.models import Artifact
 
@@ -139,5 +140,7 @@ def usage(db: OrmSession) -> dict[str, Any]:
         "elsewhere": max(0, used - nik),
         "groups": groups,
         "largest": largest,
+        # The artifacts someone gave a date to (the soonest first), and how much has none.
+        **artifact_expiry.storage_lists(db),
         "limits": {"mailboxMb": settings.MAILBOX_MAX_MB, "pstMb": settings.PST_MAX_MB, "pcapMb": settings.PCAP_MAX_MB},
     }

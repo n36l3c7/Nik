@@ -360,6 +360,29 @@ def sla_breached(incident: Incident, field: str, label: str, due_s: int, elapsed
     return data, classes
 
 
+def artifact_expiry(artifact: Artifact, days_left: int) -> tuple[dict, dict]:
+    """``artifact.expiring`` and ``artifact.expired``: an artifact with a date is about to be deleted, or was."""
+    data = {
+        "artifact": {
+            "id": artifact.id,
+            "kind": artifact.kind,
+            "name": artifact.name or artifact.ref[:16],
+            "ref": artifact.ref,
+            "size": int(artifact.size or 0),
+            "expires_at": artifact.expires_at or "",
+            "days_left": days_left,
+            "url": f"/artifact/{artifact.id}",
+        }
+    }
+    classes = {
+        "artifact.id": ["nik_id"],
+        "artifact.url": ["nik_id"],
+        "artifact.name": ["attachment_name"],
+        "artifact.ref": ["hash"],
+    }
+    return data, classes
+
+
 def storage_low(total: int, free: int) -> tuple[dict, dict]:
     """``storage.low``: the disk that holds the evidence is nearly full."""
     percent = round(100 * free / total, 1) if total else 0

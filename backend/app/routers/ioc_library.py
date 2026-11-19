@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import ioc_history
 from .. import ioc_library as lib
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
@@ -413,6 +414,54 @@ def edit_indicator(
     return lib.library(db, read_settings(db), only={(body.type, value)})[0]
 
 
+class TagsIn(Scope):
+    # Tags to put on every indicator the scope names, and tags to take off them.
+    add: list[str] = Field(default_factory=list, max_length=lib.TAGS_MAX)
+    remove: list[str] = Field(default_factory=list, max_length=lib.TAGS_MAX)
+
+
+TAG_ROWS_MAX = 5000
+
+
+@router.post("/tags")
+def tag_indicators(
+    body: TagsIn, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Add tags to, and take tags off, many indicators at once: the ones named, a list, an incident,
+    or what a filter keeps (5 000 at most). One seen only in incidents gets a record to hold them.
+    ``{changed, unchanged}``; one line of the audit log for all of them."""
+    add, remove = lib.clean_tags(body.add), {tag.lower() for tag in lib.clean_tags(body.remove)}
+    if not add and not remove:
+        raise HTTPException(status_code=422, detail="Say which tags to add or to remove.")
+    rows, label = _resolve(db, body, read_settings(db))
+    if len(rows) > TAG_ROWS_MAX:
+        raise HTTPException(status_code=422, detail=f"At most {TAG_ROWS_MAX} indicators at once.")
+    now = now_iso()
+    changed = 0
+    for row in rows:
+        held = list(row.get("tags") or [])
+        kept = [tag for tag in held if tag.lower() not in remove]
+        wanted = lib.clean_tags([*kept, *add])
+        if wanted == held:
+            continue
+        record = db.get(IocRecord, (row["type"], row["value"]))
+        if record is None:
+            record = IocRecord(type=row["type"], value=row["value"], origin="manual", tags=[], created_at=now)
+            record.created_by = caller.actor
+            db.add(record)
+        record.tags = wanted
+        record.updated_at = now
+        changed += 1
+    said = []
+    if add:
+        said.append("added " + ", ".join(add))
+    if remove:
+        said.append("removed " + ", ".join(sorted(remove)))
+    _audit(db, caller, "ioc.tag", f"Tags on {changed} indicator(s): {'; '.join(said)}", target=label)
+    db.commit()
+    return {"changed": changed, "unchanged": len(rows) - changed}
+
+
 @router.post("/remove")
 def remove_indicators(
     scope: Scope, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)
@@ -473,6 +522,16 @@ def get_list(list_id: str, _caller: Principal = Depends(reader_principal), db: O
     target = _list_or_404(db, list_id)
     rows, _ = _resolve(db, Scope(list_id=list_id), read_settings(db))
     return {**_list_out(target, len(rows)), "counts": lib.counts(rows)}
+
+
+@router.get("/lists/{list_id}/history")
+def list_history(
+    list_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """What the checks of a list found: ``{last: {checkedAt, total, changed, becameMalicious,
+    becameSuspicious, cleared, text} | null, history: [{checkId, checkedAt, total, changed, byVerdict}],
+    changes: [{type, value, old, new, at}]}``. ``changes`` are those of the last check."""
+    return ioc_history.out(db, _list_or_404(db, list_id))
 
 
 @router.patch("/lists/{list_id}")
@@ -651,7 +710,9 @@ def bulk_check(body: CheckIn, caller: Principal = Depends(writer_principal), db:
     plan = service.plan_check(db, [(r["type"], r["value"]) for r in rows], shared, force=body.force)
     if body.dryRun:
         return {"plan": _plan_out(plan), "label": label, "check": None}
-    check = service.start_check(db, plan, label, caller.actor)
+    # A check of a whole list writes the history of the list when it ends.
+    whole = _list_or_404(db, body.scope.list_id) if body.scope.items is None and body.scope.list_id else None
+    check = service.start_check(db, plan, label, caller.actor, of_list=whole)
     _audit(db, caller, "ioc.check", f"Bulk check of {plan['toAsk']} indicator(s)", target=label)
     db.commit()
     return {"plan": _plan_out(plan), "label": label, "check": service.check_progress(db, check)}

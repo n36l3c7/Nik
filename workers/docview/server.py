@@ -7,6 +7,13 @@
 ``data`` is the file, base64-encoded. Only the Nik backend talks to this
 server, on the internal network, with the shared ``X-Docview-Token``. At most
 ``MAX_JOBS`` conversions run at once; extra requests get 503.
+
+A PST is converted on disk when the worker has a work directory (``/work``,
+a volume of its own in Compose): the file and the mbox made from it do not
+have to fit in memory. Before it starts, the worker checks that the disk has
+room for both (about two and a half times the PST) and answers 507 when it
+does not. Without a work directory it converts in ``/tmp``, which is memory,
+and takes only a PST small enough for that.
 """
 
 from __future__ import annotations
@@ -29,8 +36,55 @@ PORT = int(os.environ.get("DOCVIEW_PORT", "8720"))
 MAX_JOBS = int(os.environ.get("DOCVIEW_MAX_JOBS", "2"))
 MAX_BYTES = int(os.environ.get("DOCVIEW_MAX_MB", "50")) * 1024 * 1024
 _slots = threading.BoundedSemaphore(MAX_JOBS)
-PST_MAX_BYTES = int(os.environ.get("DOCVIEW_PST_MAX_MB", "500")) * 1024 * 1024
-PST_TIMEOUT = int(os.environ.get("DOCVIEW_PST_TIMEOUT", "600"))
+PST_MAX_BYTES = int(os.environ.get("DOCVIEW_PST_MAX_MB", "4096")) * 1024 * 1024
+PST_TIMEOUT = int(os.environ.get("DOCVIEW_PST_TIMEOUT", "3600"))
+# Where a PST is converted when it is there and can be written: a disk, not memory.
+WORK_DIR = os.environ.get("DOCVIEW_WORK_DIR", "/work")
+# Without it the conversion happens in /tmp (memory): only a PST this small is taken.
+PST_TMP_MAX_BYTES = int(os.environ.get("DOCVIEW_PST_TMP_MAX_MB", "500")) * 1024 * 1024
+# The PST itself, the mbox made from it (about as large), and some room to spare.
+PST_ROOM = 2.5
+
+
+def work_dir() -> str | None:
+    """The work directory, when there is one that can be written to."""
+    if WORK_DIR and os.path.isdir(WORK_DIR) and os.access(WORK_DIR, os.W_OK | os.X_OK):
+        return WORK_DIR
+    return None
+
+
+def clear_work_dir() -> None:
+    """What a conversion that was cut short left behind (the worker was stopped while it ran)."""
+    folder = work_dir()
+    if folder is None:
+        return
+    for name in os.listdir(folder):
+        if name.startswith("nik-pst-"):
+            shutil.rmtree(os.path.join(folder, name), ignore_errors=True)
+
+
+def pst_refusal(length: int) -> tuple[int, str] | None:
+    """Why a PST of this size is not taken, as (status, sentence); None when it can be converted."""
+    if length <= 0:
+        return 400, "Empty file"
+    if length > PST_MAX_BYTES:
+        return 413, f"The PST exceeds {PST_MAX_BYTES // (1024 * 1024)} MB"
+    folder = work_dir()
+    if folder is None:
+        if length > PST_TMP_MAX_BYTES:
+            return 413, (
+                f"The document worker has no work volume: without it a PST is converted in memory and is "
+                f"{PST_TMP_MAX_BYTES // (1024 * 1024)} MB at most"
+            )
+        return None
+    free = shutil.disk_usage(folder).free
+    needed = int(length * PST_ROOM)
+    if free < needed:
+        return 507, (
+            f"Not enough room to convert this PST: it needs about {needed // (1024 * 1024)} MB "
+            f"and {free // (1024 * 1024)} MB are free on the work volume"
+        )
+    return None
 
 
 def pst_to_mbox(source: str, folder: str) -> list[str]:
@@ -79,13 +133,12 @@ class Handler(BaseHTTPRequestHandler):
         """The PST comes as the request body and the mbox goes back as the
         response body, both streamed: neither is held in memory."""
         length = int(self.headers.get("Content-Length", "0") or 0)
-        if length <= 0:
-            return self._send(400, {"detail": "Empty file"})
-        if length > PST_MAX_BYTES:
-            return self._send(413, {"detail": f"The PST exceeds {PST_MAX_BYTES // (1024 * 1024)} MB"})
+        refused = pst_refusal(length)
+        if refused is not None:
+            return self._send(refused[0], {"detail": refused[1]})
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "The document worker is busy; try again later"})
-        work = tempfile.mkdtemp(prefix="nik-pst-")
+        work = tempfile.mkdtemp(prefix="nik-pst-", dir=work_dir())
         try:
             source = os.path.join(work, "mailbox.pst")
             with open(source, "wb") as out:
@@ -146,6 +199,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    clear_work_dir()
     if not TOKEN or TOKEN.startswith("please-change-this"):
         # An empty token, or the public one of the example file, protects nothing.
         raise SystemExit("DOCVIEW_TOKEN is not set (or is the example value): refusing to start.")

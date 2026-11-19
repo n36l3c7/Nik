@@ -817,7 +817,11 @@ def plan_check(
     }
 
 
-def start_check(db: OrmSession, plan: dict[str, Any], label: str, actor: str) -> IocCheck:
+def start_check(
+    db: OrmSession, plan: dict[str, Any], label: str, actor: str, *, of_list: IocList | None = None
+) -> IocCheck:
+    """Queue a bulk check (the caller commits). ``of_list`` says it is of a whole watch list: its
+    history is written when the check ends (ioc_history.py)."""
     now = now_iso()
     row = IocCheck(
         id=uuid.uuid4().hex,
@@ -833,6 +837,13 @@ def start_check(db: OrmSession, plan: dict[str, Any], label: str, actor: str) ->
         updated_at=now,
     )
     db.add(row)
+    if of_list is not None:
+        from .. import ioc_history
+
+        ioc_history.begin(db, row, of_list)
+        if row.status == "done":  # every source had answered already: the check is over as it starts
+            db.flush()
+            ioc_history.finish(db, row)
     return row
 
 
@@ -900,6 +911,9 @@ def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 6
         flag_modified(check, "pending")
         if not pending:
             check.status, check.message = "done", ""
+            from .. import ioc_history
+
+            ioc_history.finish(db, check)
         else:
             waiting = {pid for item in pending for pid in item[2]}
             spent = sorted(BY_ID[pid].label for pid in waiting if wait(BY_ID[pid], all_keys) == float("inf"))

@@ -5,6 +5,7 @@ import {
   Clock,
   DatabaseBackup,
   DownloadCloud,
+  FileCode2,
   PackageOpen,
   FileSearch,
   FileText,
@@ -50,6 +51,7 @@ import ListsSection from './sections/ListsSection.jsx'
 import MappersSection from './sections/MappersSection.jsx'
 import FetchStatusSection from './sections/FetchStatusSection.jsx'
 import ContentPacksSection from './sections/ContentPacksSection.jsx'
+import ScriptSignaturesSection from './sections/ScriptSignaturesSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
@@ -96,6 +98,7 @@ const SECTION_VIEWS = {
   mappers: { icon: ArrowLeftRight, Component: MappersSection },
   fetchStatus: { icon: DownloadCloud, Component: FetchStatusSection },
   contentPacks: { icon: PackageOpen, Component: ContentPacksSection },
+  scriptSignatures: { icon: FileCode2, Component: ScriptSignaturesSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },
   automationSwitch: { icon: OctagonX, Component: AutomationSwitchSection },
   account: { icon: UserCog, Component: MyAccountSection },

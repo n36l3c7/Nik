@@ -3,6 +3,7 @@ import { Download, Upload } from 'lucide-react'
 import { postForBlob, upload } from '../../services/api.js'
 import { saveBlob } from '../../lib/download.js'
 import { Button, Modal } from '../ui/index.js'
+import { formatBytes } from '../../domain/events.js'
 
 /*
  * Artifacts out of this Nik and into another.
@@ -15,7 +16,8 @@ import { Button, Modal } from '../ui/index.js'
 
 /**
  * @param {{
- *   request: { mode: 'export', ids: string[], label: string } | { mode: 'import' } | null,
+ *   request: { mode: 'export', ids: string[], label: string, bytes?: number, mailboxes?: number }
+ *     | { mode: 'import' } | null,
  *   onClose: () => void,
  *   onImported: (result: object) => void,
  * }} props
@@ -176,11 +178,19 @@ export default function ArtifactTransferDialog({ request, onClose, onImported })
             Analyses and the original files
             <span className="block text-xs text-fg-muted">
               The files go in an encrypted zip inside the archive, password{' '}
-              <span className="font-mono text-fg">infected</span>.
+              <span className="font-mono text-fg">infected</span>
+              {request.bytes ? `: about ${formatBytes(request.bytes)} before compression` : ''}.
             </span>
           </span>
         </label>
       </fieldset>
+      {request.mailboxes > 0 && (
+        <p className="mt-3 text-xs text-fg-muted">
+          {request.mailboxes === 1 ? 'A mailbox is' : `${request.mailboxes} mailboxes are`} among them. A mailbox is
+          imported only with its file: its index says where each message is in that file. Without the files, the other
+          Nik leaves {request.mailboxes === 1 ? 'it' : 'them'} out.
+        </p>
+      )}
       {files && (
         <p className="mt-3 border-l-2 border-high-line bg-high-soft/50 px-3 py-2 text-sm">
           These files are live malware. Keep the archive private, and never open what is in it outside an analysis

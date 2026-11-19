@@ -11,6 +11,7 @@ import { useQuerySchema } from '../../services/querySchema.js'
 import { writeValue } from '../../domain/query/complete.js'
 import { conditionOn, withCondition } from '../../domain/query/builder.js'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
+import { exportRequest } from '../../domain/artifactExpiry.js'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
@@ -65,7 +66,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
         {
           label: 'Export…',
           icon: Download,
-          onSelect: () => setTransfer({ mode: 'export', ids: [artifact.id], label: artifact.name }),
+          onSelect: () => setTransfer(exportRequest([artifact])),
         },
         ...artifact.tags.slice(0, 5).map((tag) => ({
           label: `Filter by #${tag}`,
@@ -200,9 +201,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
           className="min-w-0 flex-1"
           disabled={artifacts.length === 0}
           title="Export the artifacts listed above"
-          onClick={() =>
-            setTransfer({ mode: 'export', ids: artifacts.slice(0, 500).map((a) => a.id), label: artifacts[0].name })
-          }
+          onClick={() => setTransfer(exportRequest(artifacts.slice(0, 500)))}
         >
           Export {artifacts.length > 0 ? Math.min(artifacts.length, 500) : ''}
         </Button>

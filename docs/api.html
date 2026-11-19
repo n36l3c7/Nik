@@ -389,6 +389,9 @@
                 indicator is saved on its own; <code>list</code> also groups them; <code>check</code> starts a bulk
                 check. <code>PATCH /api/iocs/item</code> edits tags, note, TLP and expiry;
                 <code>POST /api/iocs/remove</code> takes a scope out of the library.
+                <code>POST /api/iocs/tags</code> takes a scope with <code>add</code> and <code>remove</code> (lists of
+                tags) and changes the tags of every indicator in it, 5 000 at most: <code>{changed, unchanged}</code>,
+                one line of the audit log.
               </td>
             </tr>
             <tr>
@@ -397,6 +400,18 @@
                 Lists of indicators (<code>name</code>, <code>description</code>, <code>tlp</code>, <code>watch</code>;
                 <code>scope</code> to fill a new one). <code>POST …/{id}/items</code> and
                 <code>POST …/{id}/items/remove</code> add and take out. Removing a list takes its author or an admin.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/iocs/lists/{id}/history</code></td>
+              <td>
+                What the checks of the whole list found:
+                <code
+                  >{last: {checkedAt, total, changed, becameMalicious, becameSuspicious, cleared, text} | null, history:
+                  [{checkId, checkedAt, total, changed, byVerdict}], changes: [{type, value, old, new, at}]}</code
+                >. <code>changes</code> are those of the last check; a list keeps its last 200 checks. A line is written
+                when a check started with <code>scope: {list}</code> (or by the action <code>nik.recheck-list</code>)
+                ends.
               </td>
             </tr>
             <tr>
@@ -671,6 +686,18 @@
               </td>
             </tr>
             <tr>
+              <td><code>PUT /api/artifacts/{id}/expiry</code></td>
+              <td>
+                (<strong>write</strong>) Give an artifact a day to be deleted on,
+                <code>{"expiresAt": "2027-01-31"}</code>, or take it away (<code>null</code>). The day must be to come
+                (<code>400</code> otherwise). An artifact says <code>expiresAt</code>, <code>expiresInDays</code> and
+                <code>expiryNote</code>. Nothing has a date unless it is set here. The worker deletes the artifact once
+                the day has come, unless an incident that is not closed references it: then the date is put off by seven
+                days and <code>expiryNote</code> says why. <code>GET /api/storage</code> lists the artifacts with a date
+                in <code>dated</code> and counts the others in <code>undated</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>POST /api/artifacts/mailboxes</code> · <code>GET /api/mailboxes/{id}</code></td>
               <td>
                 Upload a mailbox (multipart <code>file</code>: an mbox, a zip or tar archive of a Maildir, up to
@@ -722,7 +749,11 @@
                 original files in an AES-encrypted <code>files.zip</code> (password <code>infected</code>). Import
                 (<strong>admin</strong>, multipart <code>file</code>) adds the artifacts the server does not have and
                 returns <code>{ added, ids, existing, skipped: [{ name, reason }] }</code>; a file whose SHA-256 is not
-                its artifact's is refused. Both are audited.
+                its artifact's is refused. A mailbox adds <code>records/&lt;id&gt;.messages.jsonl</code> (its index, a
+                message a line) and, with <code>files</code>, its file; it is imported only with its file, and only when
+                every message of the index lies inside it. With files, an export holds twice
+                <code>ARTIFACT_MAX_MB</code> at most, plus <code>MAILBOX_MAX_MB</code> when a mailbox is in it; an
+                import takes an archive of that size. Both are audited.
               </td>
             </tr>
             <tr>
@@ -769,6 +800,25 @@
                 capa rules (YAML, one each) matched with capa's bundled set (<code>rules.manage</code> to change). The
                 capa worker checks a rule before it is saved; a rule another enabled rule matches cannot be renamed,
                 disabled or deleted.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET/POST /api/script-signatures</code> · <code>PUT/DELETE …/{id}</code> ·
+                <code>POST …/{id}/restore</code> · <code>POST …/validate</code>
+              </td>
+              <td>
+                The signatures the scripts of a scanned page are checked against:
+                <code>{key, title, severity: "high" | "medium" | "low", points, pattern, also, enabled}</code>, where
+                <code>also</code> is a second pattern that must match somewhere in the script too. One Nik ships
+                (<code>builtin</code>; <code>changed</code> when it differs from what ships) keeps its key, is not
+                deleted (<code>409</code>) and is put back with <code>restore</code>. A pattern that does not compile,
+                matches an empty text or takes too long on a long text is refused with
+                <code>400 {detail: {message, field}}</code>. <code>validate</code> takes the same body and
+                <code>code</code>: <code>{ok, problem?, field?, matches?, finding?, timedOut?}</code>. They apply to the
+                scans made from then on; a script a signature took more than half a second on lists it in
+                <code>timedOut</code> (<code>rules.manage</code> to change; listed with <code>read</code> or
+                <code>rules.manage</code>).
               </td>
             </tr>
             <tr>
@@ -1719,11 +1769,13 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           <code>note.added</code>, <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an
           indicator of a watched list), <code>mail.analysed</code>, <code>file.analysed</code>,
           <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>,
-          <code>sla.breached</code> (a timer of an incident passed its time); the last six carry what a playbook's
-          trigger reads for the same event (<a href="automation.html#trigger">Automation → Trigger</a>). Each delivery
-          is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds to the address an
-          admin gave, without the checks a playbook's nodes go through: subscribe an address you trust with senders,
-          subjects and file names.
+          <code>sla.breached</code> (a timer of an incident passed its time), <code>artifact.expiring</code> and
+          <code>artifact.expired</code> (an artifact with a date is a week from being deleted, or was); the last eight
+          carry what a playbook's trigger reads for the same event (<a href="automation.html#trigger"
+            >Automation → Trigger</a
+          >). Each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds
+          to the address an admin gave, without the checks a playbook's nodes go through: subscribe an address you trust
+          with senders, subjects and file names.
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

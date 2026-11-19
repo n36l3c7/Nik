@@ -37,6 +37,8 @@ KNOWN_EVENTS = (
     "ioc.verdict_changed",
     "storage.low",
     "sla.breached",
+    "artifact.expiring",
+    "artifact.expired",
 )
 
 

@@ -4,6 +4,7 @@ import { api } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
 import { formatRelative } from '../../../lib/time.js'
 import { Button, MicroSkull, StatCard } from '../../ui/index.js'
+import { expiryText, undatedText } from '../../../domain/artifactExpiry.js'
 
 /*
  * Storage settings section (admin only): the disk that holds Nik's files,
@@ -225,6 +226,45 @@ export default function StorageSection({ onOpenArtifact }) {
           An upload can be as large as {limits.mailboxMb} MB for a mailbox, {limits.pstMb} MB for a PST and{' '}
           {limits.pcapMb} MB for a packet capture.
         </p>
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">With a date</h3>
+        <p className="text-sm text-fg-muted">
+          An artifact is deleted by itself only when someone gave it a date, on its page.{' '}
+          {undatedText(usage.undated, formatBytes)}
+        </p>
+        {(usage.dated ?? []).length > 0 && (
+          <ul aria-label="Artifacts with a date" className="divide-y divide-line-soft border border-line">
+            {usage.dated.map((item) => (
+              <li key={item.artifactId} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-1.5 text-sm">
+                <span className="w-28 shrink-0 text-xs text-fg-muted">{expiryText(item).replace(/ \(.*\)$/, '')}</span>
+                {onOpenArtifact ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenArtifact(item.artifactId)}
+                    title="Open it: its date is changed on its page"
+                    className="min-w-0 flex-1 truncate text-left font-mono text-xs text-accent-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    {item.name}
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{item.name}</span>
+                )}
+                <span className="shrink-0 font-mono text-xs text-fg-muted">{item.expiresAt}</span>
+                <span className="w-20 shrink-0 text-right font-mono text-xs tabular-nums">
+                  {formatBytes(item.bytes)}
+                </span>
+                {item.expiryNote && <span className="w-full text-xs text-med">{item.expiryNote}.</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+        {usage.datedCount > (usage.dated ?? []).length && (
+          <p className="text-xs text-fg-muted">
+            The first {usage.dated.length} of {usage.datedCount}, the soonest first.
+          </p>
+        )}
       </section>
     </div>
   )

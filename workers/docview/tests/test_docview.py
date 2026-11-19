@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import base64
+import collections
 import io
 import json
 import os
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -141,3 +143,63 @@ def test_a_preview_process_that_dies_is_an_error_not_a_hang(monkeypatch):
     monkeypatch.setattr(nik_docview, "_RENDERER", ["sh", "-c", "exit 137"])
     with pytest.raises(nik_docview.PreviewError, match="stopped before finishing"):
         nik_docview.render("a.pdf", b"%PDF-1.4")
+
+
+def _post_pst(url, data, token="test-token"):
+    request = urllib.request.Request(
+        url, data=data, headers={"X-Docview-Token": token, "Content-Type": "application/octet-stream"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read())["detail"].encode()
+
+
+def test_a_pst_is_converted_on_the_work_volume_when_there_is_room(worker, monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "TOKEN", "test-token")
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setattr(server, "WORK_DIR", str(work))
+    seen = {}
+
+    def fake_readpst(source, folder):
+        seen["source"], seen["size"] = source, os.path.getsize(source)
+        part = os.path.join(folder, "Inbox")
+        with open(part, "wb") as out:
+            out.write(b"From a\n\nhello\n")
+        return [part]
+
+    monkeypatch.setattr(server, "pst_to_mbox", fake_readpst)
+    status, body = _post_pst(f"{worker}/pst", b"!BDN" + b"\x00" * 2000)
+    assert status == 200 and body == b"From a\n\nhello\n\n"
+    # Converted under the work directory, not in /tmp, and nothing is left there.
+    assert seen["source"].startswith(str(work)) and seen["size"] == 2004
+    # The answer is complete a moment before the worker has removed its folder.
+    deadline = time.monotonic() + 5
+    while list(work.iterdir()) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert list(work.iterdir()) == []
+    # A disk without room for the file and its mbox: refused before a byte is written.
+    usage = collections.namedtuple("usage", "total used free")
+    monkeypatch.setattr(server.shutil, "disk_usage", lambda path: usage(10_000, 9_000, 1_000))
+    status, why = _post_pst(f"{worker}/pst", b"!BDN" + b"\x00" * 2000)
+    assert status == 507 and b"Not enough room to convert this PST" in why
+    assert server.pst_refusal(300) is None  # 750 bytes needed, 1 000 free
+    # What a conversion that was cut short left behind is cleared at the next start.
+    (work / "nik-pst-stale").mkdir()
+    (work / "kept").mkdir()
+    server.clear_work_dir()
+    assert sorted(path.name for path in work.iterdir()) == ["kept"]
+
+
+def test_without_a_work_volume_only_a_small_pst_is_taken(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "WORK_DIR", str(tmp_path / "missing"))
+    monkeypatch.setattr(server, "PST_TMP_MAX_BYTES", 1000)
+    assert server.work_dir() is None
+    assert server.pst_refusal(900) is None
+    status, why = server.pst_refusal(2000)
+    assert status == 413 and "no work volume" in why
+    assert server.pst_refusal(0) == (400, "Empty file")
+    monkeypatch.setattr(server, "PST_MAX_BYTES", 500)
+    assert server.pst_refusal(900)[0] == 413

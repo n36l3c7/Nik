@@ -92,6 +92,13 @@ export const SETTINGS_GROUPS = [
         permission: 'rules.manage',
         keywords: 'library functions disassembly sig pat',
       },
+      {
+        id: 'scriptSignatures',
+        slug: 'script-signatures',
+        label: 'Script signatures',
+        permission: 'rules.manage',
+        keywords: 'javascript url analysis scripts regex pattern keylogger grabber obfuscation',
+      },
     ],
   },
   {

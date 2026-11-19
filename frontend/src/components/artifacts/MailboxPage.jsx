@@ -6,6 +6,8 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { formatBytes } from '../../domain/events.js'
 import {
   MAILBOX_FORMATS,
+  preparingPercent,
+  preparingText,
   dateRange,
   dayToMs,
   edgePath,
@@ -444,8 +446,20 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
         <div aria-busy="true" className="flex flex-col items-center gap-3 py-12">
           <AsciiSkull preset="medium" />
           <p role="status" className="font-mono text-sm text-fg-muted">
-            Reading the mailbox: finding its messages and conversations…
+            {preparingText(box.preparing)}
           </p>
+          {preparingPercent(box.preparing) !== null && (
+            <div
+              role="progressbar"
+              aria-label="Reading the mailbox"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={preparingPercent(box.preparing)}
+              className="h-1.5 w-64 max-w-full overflow-hidden rounded-full bg-line-soft"
+            >
+              <div className="h-full bg-accent" style={{ width: `${preparingPercent(box.preparing)}%` }} />
+            </div>
+          )}
         </div>
       )}
       {box.status === 'error' && (

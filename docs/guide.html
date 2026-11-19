@@ -213,6 +213,13 @@
           attachment was sent from, or the files extracted from a capture.
         </li>
         <li><strong>Delete</strong>: the file, its analyses and its reference in every incident.</li>
+        <li id="artifact-expiry">
+          <strong>Kept</strong>: an artifact is kept until someone deletes it, unless it is given a date.
+          <em>Set an expiry…</em> offers 30 days, 90 days, a year or a date; <em>Never</em> takes the date away. On that
+          day Nik deletes the artifact as <em>Delete</em> would, and says so in the audit log. One thing stops it: an
+          incident that is <strong>not closed</strong> and still references the artifact. Then the date is put off by a
+          week, and the artifact says why. For a mailbox, the file and its index go; the e-mails imported from it stay.
+        </li>
       </ul>
       <p>
         A file that was already analysed is recognised before the upload: Nik shows who added it and in which incidents
@@ -230,6 +237,8 @@
         its <code>cur</code> and <code>new</code> folders: any other archive stays a file to analyse; when in doubt,
         name it with "maildir" or "mailbox", so that it is not taken for a file to analyse). Nik stores it and reads its
         index: how many messages and conversations, the dates they span, the main senders. Nothing is analysed yet.
+        While a large one is being read, the page says how far it is: <em>Converting… 41 %</em> for a PST or a Maildir
+        archive, then <em>Indexing… 41 % · 7,400 messages</em>.
       </p>
       <p>
         <strong>Import messages</strong> asks what to take: dates, a sender or a domain, words of the subject, only with
@@ -347,6 +356,14 @@
         <code>ioc.watch_hit</code> webhook. <strong>Feed</strong> gives the address a firewall, a SIEM or a SOAR polls
         for the list as it is now, signed with an API key.
       </p>
+      <p id="list-history">
+        A list keeps the <strong>history of its checks</strong>. Each time the whole list is checked (with
+        <em>Check</em> on its page, or by the playbook that checks the watched lists again every week), the page says
+        what that check changed: <em>since the last check: 4 became malicious, 1 cleared</em>. Opened, the line shows
+        the indicators whose verdict changed, with what each was and is, and the last checks of the list with how many
+        indicators it had and how many of each verdict. In the table, a row the last check changed says so under its
+        verdict. A check of a selection, or of a filter, is not a check of the list and writes nothing here.
+      </p>
       <h3>Analysed or not</h3>
       <p>
         The <strong>Analysis</strong> column shows what Nik saw when it analysed the value itself, and opens it.
@@ -369,6 +386,11 @@
         Only the main ones are ticked at first; the choice is remembered and the first rows are previewed. Values can be
         defanged; allowlisted and expired indicators are left out unless you include them. The JSON export imports back
         into Nik with its tags and lists.
+      </p>
+      <p>
+        <strong>Tag…</strong>, on a selection (or on everything a filter keeps, 5 000 indicators at most), adds tags to
+        all of them and takes tags off all of them in one go. An indicator keeps the tags that are not named; one seen
+        only in incidents gets a record to hold them, as when it is edited alone.
       </p>
 
       <h2 id="tabs">The analysis tabs</h2>
@@ -1011,7 +1033,10 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           original files are live malware, so each export asks: <em>Analyses only</em> (the default, safe to send) or
           <em>Analyses and the original files</em>, which puts them in an encrypted zip inside the archive, password
           <code>infected</code>. <strong>Import</strong> (admins) adds the artifacts the server does not have; a file is
-          stored only when its SHA-256 matches its artifact, and nothing is run. A capture comes only with its file.
+          stored only when its SHA-256 matches its artifact, and nothing is run. A capture comes only with its file, and
+          so does a <strong>mailbox</strong>: its index says where each message is in that file, so it is exported with
+          it (the dialog says how large the files are) or left out by the Nik that imports. A mailbox arrives with its
+          messages and conversations as they were; which messages had been imported from it does not travel.
         </li>
         <li>
           <strong>Export and import indicators</strong> from the <a href="#ioc-library">IoC library</a>: CSV, JSON, STIX
@@ -1020,8 +1045,10 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         <li>
           <strong>Full backup</strong> (admins, Settings → System → Backup): incidents, users, settings and the audit
           log in one file, restored from the same section. It does <strong>not</strong> contain the files: samples,
-          e-mails, captures and their analyses stay on the server, and so do the IoC library's own indicators and lists,
-          and restoring replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
+          e-mails, captures, mailboxes and their analyses stay on the server, and so do the IoC library's own indicators
+          and lists, and what automation is made of (playbooks, scripts and connectors travel as files, or as a
+          <a href="automation.html#packs">content pack</a>; connections hold secrets and are never exported). Restoring
+          replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
           <a href="deployment.html#docker-podman-in-production">Deployment</a>).
         </li>
         <li>
@@ -1201,6 +1228,17 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>Your own rules and signatures for Malware Analysis (the Rules role, or an admin).</td>
             </tr>
             <tr>
+              <td>Script signatures</td>
+              <td>
+                What the scripts of a scanned page are checked against in <em>URL Analysis → Scripts</em>: a regular
+                expression, a severity, and the points it adds to the score of the scan. A signature Nik ships can be
+                turned off, changed and put back as it shipped; your own are added beside them. A pattern is tried on
+                long texts before it is saved, so that it cannot stall a scan, and can be tried on a piece of code
+                first. Changes apply to the scans made from then on: <em>Analyse again</em> on an address reads it with
+                the signatures as they are now (the Rules role, or an admin).
+              </td>
+            </tr>
+            <tr>
               <th colspan="2" scope="colgroup">Incidents</th>
             </tr>
             <tr>
@@ -1336,7 +1374,8 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 How large the disk that holds Nik's files is, how much is free, and what fills the used part: mailboxes,
                 packet captures, files, e-mails, previews, screenshots, the database, and everything else on the disk.
                 The ten largest objects are listed and open their page, where they can be deleted. A warning shows when
-                less than a tenth of the disk is free.
+                less than a tenth of the disk is free. <em>With a date</em> lists the artifacts that will be deleted by
+                themselves, the soonest first, and says how many have no date and how much they take.
               </td>
             </tr>
             <tr>
@@ -1426,7 +1465,7 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             </tr>
             <tr>
               <td>Rules</td>
-              <td>Add, change and remove the YARA rules, capa rules and FLIRT signatures.</td>
+              <td>Add, change and remove the YARA rules, capa rules, FLIRT signatures and script signatures.</td>
             </tr>
             <tr>
               <td>Audit</td>

@@ -566,7 +566,7 @@ def recheck_list(call: Call) -> Result:
             result = done(before, 0, True, "")
             result.request = would
             return result
-        check = service.start_check(call.db, plan, target.name, ACTOR)
+        check = service.start_check(call.db, plan, target.name, ACTOR, of_list=target)
         audit.record(
             call.db,
             ACTOR,

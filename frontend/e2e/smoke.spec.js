@@ -1137,6 +1137,7 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
     'YARA rules',
     'capa rules',
     'FLIRT signatures',
+    'Script signatures',
   ])
   await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveAttribute('aria-current', 'page')
   // The rail shows the page is open; what was open under it is not shown.
@@ -3176,6 +3177,54 @@ test('a draft is debugged: the run stops before a node, takes what is typed, and
   const notes = await (await page.request.get('/api/automation/runs?debug=true')).json()
   expect(notes.runs[0].debug).toBe(true)
   await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
+test('script signatures: one Nik ships is turned off and put back, one of your own is added and deleted', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByRole('button', { name: 'Script signatures' })
+    .click()
+  await expect(page).toHaveURL(/\/settings\/rules\/script-signatures$/)
+  const table = settings.getByRole('table', { name: 'Script signatures' })
+  // What Nik ships is there, on.
+  const off = table.getByRole('button', { name: /^Turn .+ off$/ }).first()
+  const key = (await off.getAttribute('aria-label')).replace(/^Turn (.+) off$/, '$1')
+  await off.click()
+  await expect(table.getByRole('button', { name: `Turn ${key} on` })).toBeVisible()
+  // Off is not a change of the signature: nothing to put back, and it is never deleted.
+  await expect(table.getByRole('button', { name: `Delete ${key}` })).toHaveCount(0)
+  await expect(table.getByRole('button', { name: `Restore ${key}` })).toHaveCount(0)
+  await table.getByRole('button', { name: `Turn ${key} on` }).click()
+  await expect(table.getByRole('button', { name: `Turn ${key} off` })).toBeVisible()
+  // Changed, it says by whom and can be put back as it shipped.
+  await table.getByRole('button', { name: `Edit ${key}` }).click()
+  const form = settings.getByRole('form', { name: `Signature ${key}` })
+  await form.getByRole('spinbutton').fill('7')
+  await form.getByRole('button', { name: 'Save' }).click()
+  await expect(table.getByRole('row', { name: new RegExp(key.replace('.', '\\.')) })).toContainText('changed by')
+  await table.getByRole('button', { name: `Restore ${key}` }).click()
+  await expect(table.getByRole('button', { name: `Restore ${key}` })).toHaveCount(0)
+
+  // One of your own, through the API the page uses; a pattern that cannot be compiled is refused.
+  const refused = await page.request.post('/api/script-signatures', {
+    data: { key: 'e2e.broken', title: 'Broken', severity: 'low', points: 1, pattern: '(' },
+  })
+  expect(refused.status()).toBe(400)
+  const made = await page.request.post('/api/script-signatures', {
+    data: { key: 'e2e.gate', title: 'A gate of ours', severity: 'low', points: 1, pattern: 'e2eGate\\(' },
+  })
+  expect(made.status()).toBe(201)
+  // Leaving the section and coming back reads the rows again.
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByRole('button', { name: 'YARA rules' }).click()
+  await sections.getByRole('button', { name: 'Script signatures' }).click()
+  await expect(table.getByRole('row', { name: /e2e\.gate/ })).toContainText('A gate of ours')
+  await table.getByRole('button', { name: 'Delete e2e.gate' }).click()
+  await expect(table.getByRole('row', { name: /e2e\.gate/ })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await expect(settings).toHaveCount(0)
 })
 
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {

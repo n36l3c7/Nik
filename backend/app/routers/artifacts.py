@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import analysis_links, artifact_transfer, artifacts, query, urlscan
+from .. import analysis_links, artifact_expiry, artifact_transfer, artifacts, query, urlscan
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import (
@@ -106,6 +106,8 @@ def _summary(row: Artifact, incidents: list[dict[str, str]]) -> dict[str, Any]:
         "createdAt": row.created_at,
         "createdBy": row.created_by,
         "incidents": incidents,
+        # The day it is deleted on, when someone gave it one (artifact_expiry.py).
+        **artifact_expiry.out(row),
     }
 
 
@@ -412,6 +414,32 @@ def tag_artifact(
     return _one(db, row)
 
 
+class ExpiryIn(BaseModel):
+    # The day the artifact is deleted on (YYYY-MM-DD), or null for no date.
+    expiresAt: str | None = Field(default=None, max_length=40)
+
+
+@router.put("/artifacts/{artifact_id}/expiry")
+def set_artifact_expiry(
+    artifact_id: str,
+    body: ExpiryIn,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Give an artifact a day to be deleted on, or take the date away (``expiresAt: null``). Nothing
+    has a date unless someone sets it. The worker deletes it once the day has come, unless an incident
+    that is not closed still references it: then the date is put off by a week."""
+    row = _artifact_or_404(db, artifact_id)
+    try:
+        day = artifact_expiry.set_expiry(db, row, body.expiresAt)
+    except artifact_expiry.ExpiryError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+    what = f"expires on {day}" if day else "has no expiry any more"
+    _audit(db, caller, "artifact.expiry", f"{row.kind} {row.name or row.ref[:12]} {what}")
+    db.commit()
+    return _one(db, row)
+
+
 def delete_artifact_data(db: OrmSession, row: Artifact) -> None:
     """Delete the artifact everywhere: its incidents' references, files and analyses."""
     if row.kind == "file":
@@ -486,10 +514,11 @@ def export_artifacts(
     rows = [row for row in (db.get(Artifact, artifact_id) for artifact_id in dict.fromkeys(body.ids)) if row]
     if not rows:
         raise HTTPException(status_code=404, detail="No such artifact")
-    if body.files and sum(row.size or 0 for row in rows) > settings.ARTIFACT_MAX_MB * 2 * 1024 * 1024:
+    allowed = artifact_transfer.files_limit(rows)
+    if body.files and sum(row.size or 0 for row in rows) > allowed:
         raise HTTPException(
             status_code=413,
-            detail=f"These files exceed {settings.ARTIFACT_MAX_MB * 2} MB together: export fewer at a time.",
+            detail=f"These files exceed {allowed // (1024 * 1024)} MB together: export fewer at a time.",
         )
     now = now_iso()
     path = artifact_transfer.export_archive(db, rows, body.files, now, request_version())
@@ -527,8 +556,11 @@ async def import_artifacts(
     import tempfile
     from pathlib import Path
 
-    limit = settings.ARTIFACT_MAX_MB * 2 * 1024 * 1024
-    handle = tempfile.NamedTemporaryFile(prefix="nik-import-", suffix=".zip", delete=False)
+    # Twice an upload, and room for a mailbox: an export with one in it is as large as the mailbox.
+    limit = (settings.ARTIFACT_MAX_MB * 2 + settings.MAILBOX_MAX_MB) * 1024 * 1024
+    handle = tempfile.NamedTemporaryFile(
+        prefix="nik-import-", suffix=".zip", delete=False, dir=artifact_transfer.workdir()
+    )
     path = Path(handle.name)
     try:
         size = 0
@@ -545,6 +577,7 @@ async def import_artifacts(
             raise HTTPException(status_code=422, detail=str(exc)) from None
     finally:
         path.unlink(missing_ok=True)
+        Path(str(path) + ".files").unlink(missing_ok=True)  # the files of the archive, taken out to be read
     _audit(
         db,
         caller,

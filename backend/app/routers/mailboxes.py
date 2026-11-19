@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 from typing import Any, Optional
 
@@ -80,6 +81,8 @@ def _detail(db: OrmSession, row: Mailbox) -> dict[str, Any]:
         "imported": meta.get("imported", 0),
         "verdicts": meta.get("verdicts") or {},
         "progress": meta.get("progress"),
+        # While it is being read: {"phase": "converting" | "indexing", "bytes", "totalBytes", "messages"}.
+        "preparing": meta.get("preparing") if row.status == "indexing" else None,
         "pending": meta.get("pending"),
         "createdAt": row.created_at,
         "createdBy": row.created_by,
@@ -91,6 +94,27 @@ def _detail(db: OrmSession, row: Mailbox) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Upload and index                                                            #
 # --------------------------------------------------------------------------- #
+PROGRESS_EVERY = 2.0  # seconds between two notes of how far the reading of a mailbox is
+
+
+def _said(db: OrmSession, row: Mailbox, phase: str):
+    """A function that notes how far a phase is (``meta.preparing``), every two seconds at most, so
+    that the page of a large mailbox shows more than "reading…"."""
+    last = [0.0]
+
+    def tell(done: int, total: int = 0, messages: int = 0) -> None:
+        now = time.monotonic()
+        if now - last[0] < PROGRESS_EVERY:
+            return
+        last[0] = now
+        note = {"phase": phase, "bytes": int(done), "totalBytes": int(total), "messages": int(messages)}
+        row.meta = {**(row.meta or {}), "preparing": note}
+        flag_modified(row, "meta")
+        db.commit()
+
+    return tell
+
+
 def prepare(mailbox_id: str) -> None:
     """Background task: turn what was uploaded into the stored mbox, then index it."""
     with SessionLocal() as db:
@@ -101,19 +125,31 @@ def prepare(mailbox_id: str) -> None:
         upload, target = folder / "upload.bin", mailboxes.mbox_path(row.id)
         try:
             if upload.exists():
+                converting = _said(db, row, "converting")
                 if row.format == "pst":
-                    previews.convert_pst(upload, target)
+                    previews.convert_pst(upload, target, progress=converting)
                 elif row.format == "maildir":
-                    mailboxes.maildir_to_mbox(upload, target, settings.MAILBOX_MAX_MB * 1024 * 1024)
+                    mailboxes.maildir_to_mbox(
+                        upload,
+                        target,
+                        settings.MAILBOX_MAX_MB * 1024 * 1024,
+                        progress=lambda written, count: converting(written, 0, count),
+                    )
                 else:
                     os.replace(upload, target)
                 upload.unlink(missing_ok=True)
-            mailboxes.index(db, row)
+            size = target.stat().st_size if target.exists() else 0
+            indexing = _said(db, row, "indexing")
+            mailboxes.index(db, row, progress=lambda read, count: indexing(read, size, count))
+            row.meta = {key: value for key, value in (row.meta or {}).items() if key != "preparing"}
+            flag_modified(row, "meta")
             row.status, row.error = "ready", None
         except (mailboxes.MailboxError, previews.WorkerError, OSError) as exc:
             db.rollback()
             row = db.get(Mailbox, mailbox_id)
             row.status, row.error = "error", str(exc)[:500]
+            row.meta = {key: value for key, value in (row.meta or {}).items() if key != "preparing"}
+            flag_modified(row, "meta")
             upload.unlink(missing_ok=True)
             logger.info("Mailbox %s could not be read: %s", mailbox_id, exc)
         _refresh(db, row)

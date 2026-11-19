@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-11-19
+
+### Added
+
+- **Script signatures can be edited.** The signatures the Scripts tab of URL
+  Analysis checks are rows now (*Settings → Rule sets → Script signatures*,
+  `/api/script-signatures`, `rules.manage`): one Nik ships is turned off,
+  changed and put back as it shipped, never deleted; your own are added
+  beside them. A pattern is tried on long hostile texts before it is saved,
+  and can be tried on a piece of code. Changes apply to the scans made from
+  then on.
+- **A list of indicators keeps the history of its checks.** When a check of
+  a whole list ends, the list gets a line (how many indicators, how many
+  changed verdict, how many of each verdict) and a row for each indicator
+  whose verdict changed. Its page says what the last check changed ("4
+  became malicious, 1 cleared"), lists the changes and the last checks, and
+  marks the changed rows (`GET /api/iocs/lists/{id}/history`).
+- **Tags on a selection.** *Tag…* in the library adds tags to, and takes
+  tags off, every indicator selected or kept by a filter, 5 000 at most
+  (`POST /api/iocs/tags`), with one line of the audit log.
+- **An artifact can be given an expiry.** Nothing has a date unless someone
+  sets one on the artifact's page (30 days, 90 days, a year, a date, or
+  never; `PUT /api/artifacts/{id}/expiry`). On that day the worker deletes
+  it as a deletion by hand would, with a line of the audit log and the event
+  `artifact.expired`; a week before, `artifact.expiring` says so once. An
+  artifact an incident that is not closed still references is not deleted:
+  its date is put off by a week and it says why. *Settings → Storage* lists
+  what has a date, the soonest first, and counts what has none.
+- **Mailboxes travel in an export of artifacts.** A mailbox goes out with
+  its index (a message a line) and, when the files are asked for, its file;
+  another Nik imports it with its messages and conversations as they were.
+  It is imported only with its file, copied in pieces and never held in
+  memory, and only when every message of the index lies inside that file.
+  The export dialog says how large the files are.
+- **The page of a mailbox says how far its reading is**: *Converting… 41 %*
+  for a PST or a Maildir archive, then *Indexing… 41 % · 7,400 messages*
+  (`preparing` in `GET /api/mailboxes/{id}`).
+
+### Changed
+
+- **An Outlook PST is converted on disk, not in memory.** The document
+  worker has a volume of its own (`pst-work`, mounted at `/work`), checks
+  that it has room for the file and its mbox (about 2.5 times the PST)
+  before it starts, and empties it afterwards. The largest PST accepted goes
+  from 500 MB to 4 GB (`PST_MAX_MB=4096`). Without the volume the worker
+  converts in memory as before, and takes 500 MB at most.
+- A signature is matched with a time limit: one that takes more than half a
+  second on a script is left out of that script and named in what the scan
+  returns (`timedOut`), instead of holding the scan.
+
 ## [4.6.0] - 2026-11-19
 
 Additive: nothing that worked with 4.5 changes.
@@ -2445,7 +2495,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.6.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.7.0...HEAD
+[4.7.0]: https://github.com/n36l3c7/Nik/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/n36l3c7/Nik/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/n36l3c7/Nik/compare/v4.3.0...v4.4.0

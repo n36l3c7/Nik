@@ -161,16 +161,13 @@ incident, SLA timers, notifications and lists; 4.5 alerts fetched from other
 products as incidents, classifiers and mappers, pre-processing rules and an
 incident kept in step with its ticket; 4.6 dashboards, content packs that
 carry what Nik is taught from one Nik to another, and a debugger for
-playbooks.
+playbooks; 4.7 closed the series with script signatures that can be edited,
+the history of a list of indicators, an optional expiry for artifacts,
+mailboxes in the export of artifacts and Outlook PST files of several
+gigabytes.
 
-Also planned, not built yet:
-
-- **Editable script signatures.** The signatures the Scripts tab of URL
-  Analysis checks are built in (`backend/app/jsanalysis.py`); adding, changing
-  and disabling them from Settings, as YARA and capa rules are managed.
-- **History of a list**: how many of its indicators changed verdict since the
-  last check.
-- **Tags on a selection** of indicators at once.
+Not done yet, and next: scripts for playbooks written in JavaScript, engines
+that run scripts on another host, and custom fields on indicators.
 
 ## Contributing
 

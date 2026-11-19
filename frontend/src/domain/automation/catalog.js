@@ -109,6 +109,16 @@ export const EVENTS = {
     about: 'incident',
     sample: ['timer.field', 'time_to_contain'],
   },
+  'artifact.expiring': {
+    label: 'An artifact with a date is a week from being deleted',
+    about: '',
+    sample: ['artifact.kind', 'mailbox'],
+  },
+  'artifact.expired': {
+    label: 'An artifact was deleted because its date came',
+    about: '',
+    sample: ['artifact.kind', 'mailbox'],
+  },
 }
 
 /** An event as the inspector lists it: "An e-mail is analysed · mail.analysed". */
@@ -174,6 +184,18 @@ function eventFields(event) {
         ]),
         ...INCIDENT_FIELDS,
       ]
+    case 'artifact.expiring':
+    case 'artifact.expired':
+      return fieldsOf('artifact', [
+        ['id', 'text', 'Its id in Nik'],
+        ['kind', 'text', 'file, mail, pcap, url or mailbox'],
+        ['name', 'text', 'Its name'],
+        ['ref', 'text', 'Its SHA-256, or the id of a capture or a scan'],
+        ['size', 'number', 'Its size in bytes'],
+        ['expires_at', 'text', 'The day it is deleted on'],
+        ['days_left', 'number', 'The days left (0 once it was deleted)'],
+        ['url', 'text', 'Its page in Nik'],
+      ])
     case 'storage.low':
       return fieldsOf('disk', [
         ['total', 'number', 'The size of the disk in bytes'],

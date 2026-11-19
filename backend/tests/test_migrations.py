@@ -701,3 +701,34 @@ def test_migration_0033_adds_the_tables_of_dashboards_and_packs(tmp_path, monkey
     with engine.connect() as conn:
         assert not set(DASHBOARD_PACK_TABLES) & set(sa.inspect(conn).get_table_names())
         assert {c["name"] for c in sa.inspect(conn).get_columns("runs")} == {"id", "status"}
+
+
+def test_migration_0034_adds_the_tables_and_columns_of_4_7(tmp_path, monkeypatch):
+    from app.core.models import MISC_COLUMNS, MISC_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        # What releases before this one knew of the tables that gain columns.
+        conn.execute(sa.text("CREATE TABLE artifacts (id VARCHAR(80) PRIMARY KEY, kind VARCHAR(10))"))
+        conn.execute(sa.text("INSERT INTO artifacts (id, kind) VALUES ('file-1', 'file')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0033_dashboards_packs")
+    command.upgrade(cfg, "0034_misc")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(MISC_TABLES) <= set(inspector.get_table_names())
+        for table, columns in MISC_COLUMNS.items():
+            if table in inspector.get_table_names():
+                assert set(columns) <= {c["name"] for c in inspector.get_columns(table)}
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM artifacts")).scalar() == 1
+    command.stamp(cfg, "0033_dashboards_packs")
+    command.upgrade(cfg, "0034_misc")  # again: nothing to do
+    command.downgrade(cfg, "0033_dashboards_packs")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(MISC_TABLES) & set(inspector.get_table_names())
+        assert {c["name"] for c in inspector.get_columns("artifacts")} == {"id", "kind"}

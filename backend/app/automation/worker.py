@@ -193,6 +193,10 @@ def housekeeping(db, now: float) -> None:
 
     if lists.prune(db, now):
         db.commit()
+    # Artifacts someone gave a date to: the ones about to go are announced, the ones whose day came go.
+    from .. import artifact_expiry
+
+    artifact_expiry.tick(db, now)
     # Debug runs are kept a week.
     from . import debugger
 

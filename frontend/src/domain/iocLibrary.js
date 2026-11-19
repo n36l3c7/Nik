@@ -170,3 +170,49 @@ export function sourceLine(source) {
   if (source.later > 0) return `${source.today} today, ${source.later} wait for the quota`
   return `${source.needed} of ${source.leftToday} left today`
 }
+
+// ---------------------------------------------------------------------------
+// The history of a list, and tags on a selection
+// ---------------------------------------------------------------------------
+const VERDICT_WORDS = { '': 'not checked', none: 'not checked', unknown: 'unknown' }
+const verdictWord = (verdict) => VERDICT_WORDS[verdict] ?? verdict
+
+/** What the last check of a list changed, in a line. */
+export function historyLine(last) {
+  if (!last) return 'This list was never checked as a whole: its history starts with its first check.'
+  const day = String(last.checkedAt ?? '').slice(0, 10)
+  return `Since the last check (${day}, ${last.total} ${last.total === 1 ? 'indicator' : 'indicators'}): ${last.text}.`
+}
+
+/** "was harmless, now malicious". */
+export const changeLine = (change) => `was ${verdictWord(change.old)}, now ${verdictWord(change.new)}`
+
+/** The verdicts of a check as text, the worst first: "2 malicious, 1 harmless, 4 not checked". */
+export function verdictCounts(byVerdict = {}) {
+  const order = ['malicious', 'suspicious', 'harmless', 'unknown', 'none']
+  const known = order.filter((name) => byVerdict[name]).map((name) => `${byVerdict[name]} ${verdictWord(name)}`)
+  const other = Object.keys(byVerdict)
+    .filter((name) => !order.includes(name) && byVerdict[name])
+    .map((name) => `${byVerdict[name]} ${name}`)
+  return [...known, ...other].join(', ') || '—'
+}
+
+/** The indicators the last check changed, by "type\nvalue": what a row of the table is marked with. */
+export function changesByKey(history) {
+  return new Map((history?.changes ?? []).map((change) => [`${change.type}\n${change.value}`, change]))
+}
+
+const TAG = /^[a-z0-9][a-z0-9._:-]{0,39}$/
+
+/** Tags as a person types them, by commas or spaces: `{ tags, wrong }` (lower case, once each, no #). */
+export function parseTags(text) {
+  const tags = []
+  const wrong = []
+  for (const raw of String(text ?? '').split(/[\s,]+/)) {
+    const tag = raw.trim().toLowerCase().replace(/^#+/, '')
+    if (!tag) continue
+    if (!TAG.test(tag)) wrong.push(raw)
+    else if (!tags.includes(tag)) tags.push(tag)
+  }
+  return { tags, wrong }
+}

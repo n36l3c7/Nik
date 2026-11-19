@@ -84,3 +84,22 @@ test('a bulk check is described in plain words', () => {
   assert.equal(sourceLine({ needed: 120, leftToday: 74, today: 74, later: 46 }), '74 today, 46 wait for the quota')
   assert.equal(sourceLine({ needed: 88, leftToday: 941, today: 88, later: 0 }), '88 of 941 left today')
 })
+
+test('the history of a list in words, and tags as they are typed', async () => {
+  const { changeLine, changesByKey, historyLine, parseTags, verdictCounts } = await import('./iocLibrary.js')
+  assert.match(historyLine(null), /never checked as a whole/)
+  assert.equal(
+    historyLine({ checkedAt: '2026-11-19T06:30:00+00:00', total: 40, text: '4 became malicious, 1 cleared' }),
+    'Since the last check (2026-11-19, 40 indicators): 4 became malicious, 1 cleared.',
+  )
+  assert.equal(changeLine({ old: 'harmless', new: 'malicious' }), 'was harmless, now malicious')
+  assert.equal(changeLine({ old: '', new: 'suspicious' }), 'was not checked, now suspicious')
+  assert.equal(verdictCounts({ harmless: 1, malicious: 2, none: 4 }), '2 malicious, 1 harmless, 4 not checked')
+  assert.equal(verdictCounts({}), '—')
+  const marked = changesByKey({ changes: [{ type: 'ip', value: '1.2.3.4', old: '', new: 'malicious' }] })
+  assert.equal(marked.get('ip\n1.2.3.4').new, 'malicious')
+  assert.equal(changesByKey(null).size, 0)
+  assert.deepEqual(parseTags(' #C2, campaign-q4  c2 '), { tags: ['c2', 'campaign-q4'], wrong: [] })
+  assert.deepEqual(parseTags('ok, not/ok'), { tags: ['ok'], wrong: ['not/ok'] })
+  assert.deepEqual(parseTags(''), { tags: [], wrong: [] })
+})
