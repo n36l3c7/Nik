@@ -1,0 +1,142 @@
+{
+  "args": {
+    "threat_type": "MALWARE",
+    "platform_type": "WINDOWS",
+    "state": "Gg4IBBADIgYQgBAiAQEoAQ==",
+    "max_update_entries": 2048,
+    "max_database_entries": 4096,
+    "region": "US"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v4/threatListUpdates:fetch",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456"
+        },
+        "json": {
+          "client": {
+            "clientId": "nik",
+            "clientVersion": "1"
+          },
+          "listUpdateRequests": [
+            {
+              "threatType": "MALWARE",
+              "platformType": "WINDOWS",
+              "threatEntryType": "URL",
+              "state": "Gg4IBBADIgYQgBAiAQEoAQ==",
+              "constraints": {
+                "maxUpdateEntries": 2048,
+                "maxDatabaseEntries": 4096,
+                "region": "US",
+                "supportedCompressions": [
+                  "RAW"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "listUpdateResponses": [
+            {
+              "threatType": "MALWARE",
+              "threatEntryType": "URL",
+              "platformType": "WINDOWS",
+              "responseType": "PARTIAL_UPDATE",
+              "additions": [
+                {
+                  "compressionType": "RAW",
+                  "rawHashes": {
+                    "prefixSize": 4,
+                    "rawHashes": "rnGLoQ=="
+                  }
+                }
+              ],
+              "removals": [
+                {
+                  "compressionType": "RAW",
+                  "rawIndices": {
+                    "indices": [
+                      0,
+                      2,
+                      4
+                    ]
+                  }
+                }
+              ],
+              "newClientState": "ChAIBRADGAEiAzAwMSiAEDABEAFGpqhd",
+              "checksum": {
+                "sha256": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+              }
+            }
+          ],
+          "minimumWaitDuration": "593.440s"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response_type": "PARTIAL_UPDATE",
+    "additions": [
+      {
+        "compressionType": "RAW",
+        "rawHashes": {
+          "prefixSize": 4,
+          "rawHashes": "rnGLoQ=="
+        }
+      }
+    ],
+    "removals": [
+      {
+        "compressionType": "RAW",
+        "rawIndices": {
+          "indices": [
+            0,
+            2,
+            4
+          ]
+        }
+      }
+    ],
+    "new_client_state": "ChAIBRADGAEiAzAwMSiAEDABEAFGpqhd",
+    "checksum": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM=",
+    "minimum_wait": "593.440s",
+    "updates": [
+      {
+        "threatType": "MALWARE",
+        "threatEntryType": "URL",
+        "platformType": "WINDOWS",
+        "responseType": "PARTIAL_UPDATE",
+        "additions": [
+          {
+            "compressionType": "RAW",
+            "rawHashes": {
+              "prefixSize": 4,
+              "rawHashes": "rnGLoQ=="
+            }
+          }
+        ],
+        "removals": [
+          {
+            "compressionType": "RAW",
+            "rawIndices": {
+              "indices": [
+                0,
+                2,
+                4
+              ]
+            }
+          }
+        ],
+        "newClientState": "ChAIBRADGAEiAzAwMSiAEDABEAFGpqhd",
+        "checksum": {
+          "sha256": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+        }
+      }
+    ]
+  }
+}

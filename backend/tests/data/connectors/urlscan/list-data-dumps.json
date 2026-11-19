@@ -1,0 +1,50 @@
+{
+  "args": {
+    "time_window": "days",
+    "file_type": "search",
+    "date": "20251001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/datadump/list/days/search/20251001",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "files": [
+            {
+              "path": "days/search/20251001.gz",
+              "size": 2548253
+            },
+            {
+              "path": "days/search/20251002.gz",
+              "size": 4114821
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "files": [
+      {
+        "path": "days/search/20251001.gz",
+        "size": 2548253
+      },
+      {
+        "path": "days/search/20251002.gz",
+        "size": 4114821
+      }
+    ],
+    "paths": [
+      "days/search/20251001.gz",
+      "days/search/20251002.gz"
+    ],
+    "count": 2
+  }
+}

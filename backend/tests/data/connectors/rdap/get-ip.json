@@ -1,0 +1,247 @@
+{
+  "args": {
+    "ip": "192.0.2.17"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/ip/192.0.2.17",
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0",
+            "cidr0"
+          ],
+          "objectClassName": "ip network",
+          "handle": "NET-192-0-2-0-1",
+          "startAddress": "192.0.2.0",
+          "endAddress": "192.0.2.255",
+          "ipVersion": "v4",
+          "name": "NET-RTR-1",
+          "type": "DIRECT ALLOCATION",
+          "country": "AU",
+          "parentHandle": "NET-192-0-0-0-0",
+          "status": [
+            "active"
+          ],
+          "cidr0_cidrs": [
+            {
+              "v4prefix": "192.0.2.0",
+              "length": 24
+            }
+          ],
+          "entities": [
+            {
+              "objectClassName": "entity",
+              "handle": "XXXX",
+              "roles": [
+                "registrant"
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Example Networks Pty"
+                  ],
+                  [
+                    "kind",
+                    {},
+                    "text",
+                    "org"
+                  ]
+                ]
+              ],
+              "entities": [
+                {
+                  "objectClassName": "entity",
+                  "handle": "ABUSE-XXXX",
+                  "roles": [
+                    "abuse"
+                  ],
+                  "vcardArray": [
+                    "vcard",
+                    [
+                      [
+                        "version",
+                        {},
+                        "text",
+                        "4.0"
+                      ],
+                      [
+                        "fn",
+                        {},
+                        "text",
+                        "Abuse desk"
+                      ],
+                      [
+                        "email",
+                        {},
+                        "text",
+                        "abuse@networks.example"
+                      ]
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventDate": "1990-12-31T23:59:59Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "1991-12-31T23:59:59Z"
+            }
+          ],
+          "port43": "whois.example.net"
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "unknown",
+    "summary": "network NET-RTR-1 (NET-192-0-2-0-1), held by Example Networks Pty",
+    "name": "NET-RTR-1",
+    "handle": "NET-192-0-2-0-1",
+    "start_address": "192.0.2.0",
+    "end_address": "192.0.2.255",
+    "cidrs": [
+      {
+        "v4prefix": "192.0.2.0",
+        "length": 24
+      }
+    ],
+    "ip_version": "v4",
+    "type": "DIRECT ALLOCATION",
+    "country": "AU",
+    "parent_handle": "NET-192-0-0-0-0",
+    "holder": "Example Networks Pty",
+    "abuse_email": null,
+    "holder_abuse_email": "abuse@networks.example",
+    "registered": "1990-12-31T23:59:59Z",
+    "changed": "1991-12-31T23:59:59Z",
+    "status": [
+      "active"
+    ],
+    "port43": "whois.example.net",
+    "record": {
+      "rdapConformance": [
+        "rdap_level_0",
+        "cidr0"
+      ],
+      "objectClassName": "ip network",
+      "handle": "NET-192-0-2-0-1",
+      "startAddress": "192.0.2.0",
+      "endAddress": "192.0.2.255",
+      "ipVersion": "v4",
+      "name": "NET-RTR-1",
+      "type": "DIRECT ALLOCATION",
+      "country": "AU",
+      "parentHandle": "NET-192-0-0-0-0",
+      "status": [
+        "active"
+      ],
+      "cidr0_cidrs": [
+        {
+          "v4prefix": "192.0.2.0",
+          "length": 24
+        }
+      ],
+      "entities": [
+        {
+          "objectClassName": "entity",
+          "handle": "XXXX",
+          "roles": [
+            "registrant"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Example Networks Pty"
+              ],
+              [
+                "kind",
+                {},
+                "text",
+                "org"
+              ]
+            ]
+          ],
+          "entities": [
+            {
+              "objectClassName": "entity",
+              "handle": "ABUSE-XXXX",
+              "roles": [
+                "abuse"
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Abuse desk"
+                  ],
+                  [
+                    "email",
+                    {},
+                    "text",
+                    "abuse@networks.example"
+                  ]
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "events": [
+        {
+          "eventAction": "registration",
+          "eventDate": "1990-12-31T23:59:59Z"
+        },
+        {
+          "eventAction": "last changed",
+          "eventDate": "1991-12-31T23:59:59Z"
+        }
+      ],
+      "port43": "whois.example.net"
+    }
+  }
+}

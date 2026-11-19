@@ -1,0 +1,39 @@
+{
+  "args": {
+    "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "path": "/tmp/.x/run.sh"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/host-artifact/content",
+        "json": {
+          "path": "/tmp/.x/run.sh"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "type": "inline",
+          "contents": "IyEvYmluL3NoCmVjaG8gaGkK",
+          "path": "/tmp/.x/run.sh",
+          "sha256_hash": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+          "file_size": 18
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "type": "inline",
+    "contents": "IyEvYmluL3NoCmVjaG8gaGkK",
+    "url": null,
+    "expires_at": null,
+    "path": "/tmp/.x/run.sh",
+    "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+    "file_size": 18
+  }
+}

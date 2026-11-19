@@ -1,0 +1,77 @@
+{
+  "args": {
+    "filter": "origin:hunting entity_type:file",
+    "descriptors_only": "true"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/ioc_stream",
+        "query": {
+          "filter": "origin:hunting entity_type:file",
+          "descriptors_only": "true",
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "file",
+              "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+              "context_attributes": {
+                "notification_id": "15721881732",
+                "notification_date": 1675764000,
+                "origin": "hunting",
+                "sources": [
+                  {
+                    "type": "hunting_ruleset",
+                    "id": "6425310189355008"
+                  }
+                ],
+                "tags": [
+                  "foobar"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "file",
+        "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+        "context_attributes": {
+          "notification_id": "15721881732",
+          "notification_date": 1675764000,
+          "origin": "hunting",
+          "sources": [
+            {
+              "type": "hunting_ruleset",
+              "id": "6425310189355008"
+            }
+          ],
+          "tags": [
+            "foobar"
+          ]
+        }
+      }
+    ],
+    "ids": [
+      "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+    ],
+    "notification_ids": [
+      "15721881732"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

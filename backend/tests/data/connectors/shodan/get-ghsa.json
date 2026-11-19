@@ -1,0 +1,100 @@
+{
+  "args": {
+    "ghsa_id": "GHSA-wcwp-r3fj-mm3p"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "cvedb.shodan.io",
+        "path": "/ghsa/GHSA-wcwp-r3fj-mm3p"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "GHSA-wcwp-r3fj-mm3p",
+          "summary": "Path traversal in example-package",
+          "details": "example-package before 1.2.3 does not check the path it is given.",
+          "published_time": "2024-02-01T12:00:00",
+          "modified_time": "2024-02-03T08:30:00",
+          "withdrawn_time": null,
+          "severity": [
+            {
+              "type": "CVSS_V3",
+              "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            }
+          ],
+          "affected": [
+            {
+              "package": {
+                "ecosystem": "PyPI",
+                "name": "example-package"
+              }
+            }
+          ],
+          "references": [
+            {
+              "type": "ADVISORY",
+              "url": "https://github.com/advisories/GHSA-wcwp-r3fj-mm3p"
+            }
+          ],
+          "cwe_ids": [
+            "CWE-22"
+          ],
+          "github_severity": "HIGH",
+          "github_reviewed": true,
+          "github_reviewed_at": "2024-02-01T13:00:00",
+          "cve": {
+            "id": "CVE-2024-0001",
+            "summary": "A flaw in Example Server.",
+            "cvss": 7.5,
+            "kev": false,
+            "cpes": []
+          },
+          "euvd": null
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "GHSA-wcwp-r3fj-mm3p",
+    "summary": "Path traversal in example-package",
+    "details": "example-package before 1.2.3 does not check the path it is given.",
+    "github_severity": "HIGH",
+    "github_reviewed": true,
+    "severity": [
+      {
+        "type": "CVSS_V3",
+        "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+      }
+    ],
+    "affected": [
+      {
+        "package": {
+          "ecosystem": "PyPI",
+          "name": "example-package"
+        }
+      }
+    ],
+    "cwe_ids": [
+      "CWE-22"
+    ],
+    "references": [
+      {
+        "type": "ADVISORY",
+        "url": "https://github.com/advisories/GHSA-wcwp-r3fj-mm3p"
+      }
+    ],
+    "published_time": "2024-02-01T12:00:00",
+    "modified_time": "2024-02-03T08:30:00",
+    "withdrawn_time": null,
+    "cve": {
+      "id": "CVE-2024-0001",
+      "summary": "A flaw in Example Server.",
+      "cvss": 7.5,
+      "kev": false,
+      "cpes": []
+    },
+    "euvd": null
+  }
+}

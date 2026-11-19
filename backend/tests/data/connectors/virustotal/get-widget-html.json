@@ -1,0 +1,23 @@
+{
+  "args": {
+    "token": "OTEzZjdhMDBlYWE1YThiMzg2MDQxYWE2NDQwMTgzYmNhNTc0ODA1ZTRiMWE2OTkzODFlZjAxYmE5MGVmMzVkM3x8ZmlsZQ"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/ui/widget/html/OTEzZjdhMDBlYWE1YThiMzg2MDQxYWE2NDQwMTgzYmNhNTc0ODA1ZTRiMWE2OTkzODFlZjAxYmE5MGVmMzVkM3x8ZmlsZQ",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "<!DOCTYPE html>\n<html>\n<head><title>VirusTotal</title></head>\n<body>...</body>\n</html>\n"
+      }
+    }
+  ],
+  "outputs": {
+    "html": "<!DOCTYPE html>\n<html>\n<head><title>VirusTotal</title></head>\n<body>...</body>\n</html>\n"
+  }
+}

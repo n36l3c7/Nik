@@ -1,0 +1,51 @@
+{
+  "args": {
+    "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "verdict": "malicious"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/votes",
+        "json": {
+          "data": {
+            "type": "vote",
+            "attributes": {
+              "verdict": "malicious"
+            }
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "vote",
+            "id": "f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-e1b3a1a3",
+            "attributes": {
+              "date": 1611677240,
+              "value": -1,
+              "verdict": "malicious"
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/votes/f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-e1b3a1a3"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-e1b3a1a3",
+    "type": "vote",
+    "attributes": {
+      "date": 1611677240,
+      "value": -1,
+      "verdict": "malicious"
+    }
+  }
+}

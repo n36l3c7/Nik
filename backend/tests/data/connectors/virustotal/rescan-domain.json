@@ -1,0 +1,29 @@
+{
+  "args": {
+    "domain": "www.hooli.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/domains/www.hooli.com/analyse",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "analysis",
+            "id": "d-f4e5279ebbcf9d485e33f3c67007b73e9f12d54bbca875545819a2307a194752-1715608490"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "analysis_id": "d-f4e5279ebbcf9d485e33f3c67007b73e9f12d54bbca875545819a2307a194752-1715608490",
+    "type": "analysis"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "args": {
+    "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "blocklist_id": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/v3/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/blocklists/550e8400-e29b-41d4-a716-446655440000",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "deleted": true
+  }
+}

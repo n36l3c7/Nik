@@ -288,7 +288,7 @@ export default function Room({ source }) {
   const [error, setError] = useState(null)
   const [chosen, setChosen] = useState(null)
   const menu = useObjectMenu()
-  const [text, setText] = useState('')
+  const [text, setText] = useState(source.firstLine ?? '')
   const [busy, setBusy] = useState(false)
   const end = useRef(null)
   const count = useRef(0)

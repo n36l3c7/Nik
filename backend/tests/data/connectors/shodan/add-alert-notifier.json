@@ -1,0 +1,26 @@
+{
+  "args": {
+    "id": "G20GRU32X1R6AYTB",
+    "notifier_id": "default"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/shodan/alert/G20GRU32X1R6AYTB/notifier/default",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

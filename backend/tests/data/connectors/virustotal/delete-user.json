@@ -1,0 +1,25 @@
+{
+  "args": {
+    "id": "gilfoyle",
+    "password": "N0t-a-real-passw0rd"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v3/users/gilfoyle",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "x-user-password": "N0t-a-real-passw0rd"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

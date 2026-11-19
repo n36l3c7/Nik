@@ -1,0 +1,44 @@
+{
+  "args": {
+    "id": "1.2.3.4:443",
+    "relationship": "analysis"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/port_infos/1.2.3.4:443/relationships/analysis",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "port_analysis",
+              "id": "1.2.3.4:443:1718534400"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "port_analysis",
+        "id": "1.2.3.4:443:1718534400"
+      }
+    ],
+    "ids": [
+      "1.2.3.4:443:1718534400"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

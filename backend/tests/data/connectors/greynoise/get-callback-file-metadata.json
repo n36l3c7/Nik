@@ -1,0 +1,40 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/files/callback/metadata",
+        "query": {
+          "format": "csv",
+          "profile": "ngsiem"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "format": "csv",
+          "profile": "ngsiem",
+          "days": 7,
+          "last_modified": "2026-10-26T12:00:00Z",
+          "generated_at": "2026-10-26T12:00:00Z",
+          "cutoff": "2026-10-19T00:00:00Z",
+          "size_bytes": 20480,
+          "row_count": 142
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ready": true,
+    "generated_at": "2026-10-26T12:00:00Z",
+    "last_modified": "2026-10-26T12:00:00Z",
+    "cutoff": "2026-10-19T00:00:00Z",
+    "days": 7,
+    "size_bytes": 20480,
+    "row_count": 142
+  }
+}

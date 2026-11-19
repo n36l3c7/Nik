@@ -1,0 +1,94 @@
+{
+  "args": {
+    "id": "ef0cc90d-d80c-436f-92c5-3d8f8665c9ac",
+    "days": 3,
+    "granularity": "1h",
+    "include_ips": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/tags/ef0cc90d-d80c-436f-92c5-3d8f8665c9ac/activity",
+        "query": {
+          "days": 3,
+          "granularity": "1h",
+          "include_ips": "true"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "slug": "apache-log4j-rce-attempt",
+          "activity": {
+            "malicious": [
+              {
+                "start": "2026-01-24T10:00:00Z",
+                "end": "2026-01-24T11:00:00Z",
+                "include_start": true,
+                "include_end": false,
+                "timestamp": "2026-01-24T10:00:00Z",
+                "active_ips": 14
+              },
+              {
+                "start": "2026-01-24T11:00:00Z",
+                "end": "2026-01-24T12:00:00Z",
+                "include_start": true,
+                "include_end": false,
+                "timestamp": "2026-01-24T11:00:00Z",
+                "active_ips": 10
+              }
+            ]
+          },
+          "aggregations": {
+            "total_ips": 115,
+            "classification": {
+              "malicious": 115
+            }
+          },
+          "metadata": {
+            "start_date": "2026-01-21T10:00:00Z",
+            "end_date": "2026-01-24T10:00:00Z",
+            "granularity": "24h",
+            "ips_included": true,
+            "ips_per_bucket": 1000,
+            "ips_truncated": true
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "slug": "apache-log4j-rce-attempt",
+    "activity": {
+      "malicious": [
+        {
+          "start": "2026-01-24T10:00:00Z",
+          "end": "2026-01-24T11:00:00Z",
+          "include_start": true,
+          "include_end": false,
+          "timestamp": "2026-01-24T10:00:00Z",
+          "active_ips": 14
+        },
+        {
+          "start": "2026-01-24T11:00:00Z",
+          "end": "2026-01-24T12:00:00Z",
+          "include_start": true,
+          "include_end": false,
+          "timestamp": "2026-01-24T11:00:00Z",
+          "active_ips": 10
+        }
+      ]
+    },
+    "total_ips": 115,
+    "by_intention": {
+      "malicious": 115
+    },
+    "start": "2026-01-21T10:00:00Z",
+    "end": "2026-01-24T10:00:00Z",
+    "ips_truncated": true
+  }
+}

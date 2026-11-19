@@ -1,0 +1,54 @@
+{
+  "args": {
+    "id": "ZmI5Y2VmNGJmZDIwZTkzNmQ5MzY0NTcwMGI2Nzc2M2Q6Tm9uZToxNjYwODI1NDE1",
+    "relationship": "item"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/analyses/ZmI5Y2VmNGJmZDIwZTkzNmQ5MzY0NTcwMGI2Nzc2M2Q6Tm9uZToxNjYwODI1NDE1/item",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "private_file",
+            "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772",
+            "attributes": {
+              "size": 5,
+              "sha1": "7bae8076a5771865123be7112468b79e9d78a640",
+              "sha256": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772",
+              "md5": "e7df7cd2ca07f4f1ab415d457a6e1c13",
+              "type_tag": "text",
+              "expiration": 1661430215
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "private_file",
+        "id": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772",
+        "attributes": {
+          "size": 5,
+          "sha1": "7bae8076a5771865123be7112468b79e9d78a640",
+          "sha256": "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772",
+          "md5": "e7df7cd2ca07f4f1ab415d457a6e1c13",
+          "type_tag": "text",
+          "expiration": 1661430215
+        }
+      }
+    ],
+    "ids": [
+      "11a77c3d96c06974b53d7f40a577e6813739eb5c811b2a86f59038ea90add772"
+    ],
+    "count": 1
+  }
+}

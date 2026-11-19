@@ -149,13 +149,55 @@ class Key:
 Keys = dict[str, list[Key]]
 
 
+# The connectors whose instances hold a key of a source (6.1): a source is a connector of its own, and
+# the key an instance of it was given is a key the automatic look-ups may use too. abuse.ch gives one
+# key for its three services.
+SOURCE_CONNECTORS: dict[str, tuple[str, ...]] = {
+    "virustotal": ("virustotal",),
+    "abuseipdb": ("abuseipdb",),
+    "abusech": ("malwarebazaar", "urlhaus", "threatfox"),
+    "otx": ("otx",),
+    "urlscan": ("urlscan",),
+    "greynoise": ("greynoise",),
+    "safebrowsing": ("safebrowsing",),
+}
+
+
+def instance_keys_of(db: OrmSession) -> Keys:
+    """The keys the instances of the sources' connectors hold, by provider: every key of every instance
+    that is on. The id of one says where it is from (``instance:<instance>:<key>``): nothing of it is
+    written to the keys of Settings."""
+    from ..automation import instance_keys
+    from ..core.models import Connection
+
+    out: Keys = {}
+    wanted = {connector: provider for provider, connectors in SOURCE_CONNECTORS.items() for connector in connectors}
+    rows = db.scalars(
+        select(Connection)
+        .where(Connection.connector_id.in_(wanted), Connection.enabled.is_(True))
+        .order_by(Connection.created_at, Connection.id)
+    ).all()
+    for row in rows:
+        for key in instance_keys.keys_of(row):
+            # The key is the one credential such a connector asks for, whatever it calls it.
+            secret = next((value for value in key.secrets.values() if value), "")
+            held = out.setdefault(wanted[row.connector_id], [])
+            if secret and all(other.secret != secret for other in held):
+                held.append(Key(f"instance:{row.id}:{key.id}", secret))
+    return out
+
+
 def keys(db: OrmSession) -> Keys:
-    """The usable keys of each provider, oldest first."""
+    """The usable keys of each provider: the ones set in Settings, oldest first, then the ones the
+    instances of its connector hold (one that is in both counts once)."""
     out: Keys = {}
     for row in db.scalars(select(IntegrationKey).order_by(IntegrationKey.updated_at, IntegrationKey.id)):
         secret = vault.decrypt(row.secret) if row.status == "ok" else None
         if secret:
             out.setdefault(row.provider, []).append(Key(row.id, secret))
+    for provider, found in instance_keys_of(db).items():
+        held = out.setdefault(provider, [])
+        held.extend(key for key in found if all(other.secret != key.secret for other in held))
     return out
 
 

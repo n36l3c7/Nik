@@ -1,0 +1,416 @@
+{
+  "args": {
+    "ip": "8.8.8.8",
+    "workspace_labels": "greynoise,community"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/ip/8.8.8.8",
+        "query": {
+          "workspace_labels": "greynoise,community"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "ip": "8.8.8.8",
+          "business_service_intelligence": {
+            "found": true,
+            "category": "hosting",
+            "name": "example.com",
+            "description": "example.com",
+            "last_updated": "2025-01-15T12:30:45Z",
+            "reference": "https://example.com",
+            "trust_level": "1"
+          },
+          "internet_scanner_intelligence": {
+            "classification": "benign",
+            "first_seen": "2018-01-28",
+            "last_seen": "2018-02-28",
+            "last_seen_timestamp": "2025-01-15T12:30:45Z",
+            "last_seen_malicious": "2026-08-14T18:45:30Z",
+            "last_seen_suspicious": "2026-08-14T19:23:31Z",
+            "last_seen_benign": "2026-08-14T19:24:57Z",
+            "found": true,
+            "actor": "Shodan.io",
+            "spoofable": true,
+            "cves": [
+              "CVE-2020-1234",
+              "CVE-2021-2345"
+            ],
+            "callback_ips": [],
+            "source_workspaces": [
+              "greynoise",
+              "community"
+            ],
+            "tor": false,
+            "vpn": true,
+            "vpn_service": "IPVANISH_VPN",
+            "metadata": {
+              "mobile": false,
+              "source_country": "United States",
+              "source_country_code": "US",
+              "source_city": "Seattle",
+              "region": "Seattle",
+              "organization": "DigitalOcean, LLC",
+              "rdns": "crawl-66-249-79-17.googlebot.com",
+              "asn": "AS521",
+              "asn_subnet": "203.0.113.0/24",
+              "category": "education",
+              "os": "Windows 7/8",
+              "destination_countries": [
+                "Germany"
+              ],
+              "destination_country_codes": [
+                "Germany"
+              ],
+              "destination_cities": [
+                "Berlin"
+              ],
+              "destination_asns": [
+                "AS1234"
+              ],
+              "single_destination": true,
+              "carrier": "AIS",
+              "datacenter": "us-west-1",
+              "domain": "example.com",
+              "rdns_parent": "example.com",
+              "rdns_validated": true,
+              "latitude": 37.7749,
+              "longitude": -122.4194,
+              "sensor_count": 10,
+              "sensor_hits": 10
+            },
+            "tags": [
+              {
+                "id": "ef0cc90d-d80c-436f-92c5-3d8f8665c9ac",
+                "slug": "mirai",
+                "name": "Mirai",
+                "category": "worm",
+                "intention": "malicious",
+                "description": "This IP address exhibits behavior that indicates it is infected with Mirai or a Mirai-like variant of malware.",
+                "references": [
+                  "https://en.wikipedia.org/wiki/Mirai_(malware)"
+                ],
+                "recommend_block": false,
+                "cves": [
+                  "CVE-2020-1234"
+                ],
+                "created": "2020-04-07",
+                "updated_at": "2026-02-10T15:59:49Z"
+              }
+            ],
+            "tag_volumes": [
+              {
+                "tag_id": "0b6f4a8e-3c1d-4e5f-9a7b-2d8c6e4f1a3b",
+                "session_count": 1
+              }
+            ],
+            "raw_data": {
+              "scan": [
+                {
+                  "port": 80,
+                  "protocol": "TCP"
+                }
+              ],
+              "ja3": [
+                {
+                  "fingerprint": "c3a6cf0bf2e690ac8e1ecf6081f17a50",
+                  "port": 443
+                }
+              ],
+              "hassh": [
+                {
+                  "fingerprint": "51cba57125523ce4b9db67714a90bf6e",
+                  "port": 2222
+                }
+              ],
+              "http": {
+                "md5": "9764955b67107eeb9edfae76f429e783",
+                "cookie_keys": [
+                  "expremotekey"
+                ],
+                "request_authorization": [
+                  "Bearer exampletoken",
+                  "Basic username:password"
+                ],
+                "request_cookies": [
+                  "session_id=1234567890"
+                ],
+                "request_header": [
+                  "Content-Type: application/json",
+                  "Accept: application/json"
+                ],
+                "method": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "DELETE"
+                ],
+                "request_origin": [
+                  "111.111.1.1"
+                ],
+                "host": [
+                  "example.com",
+                  "example.com:8080"
+                ],
+                "uri": [],
+                "path": [
+                  "/robots.txt"
+                ],
+                "useragent": [
+                  "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)\n"
+                ],
+                "ja4h": [
+                  "ge11cn060000_4e59edc1297a_4da5efaf0cbd"
+                ]
+              },
+              "tls": {
+                "cipher": "TLS_AES_128_GCM_SHA256",
+                "ja4": [
+                  "t13d1516h2_8daaf6152771_02713d6af862"
+                ]
+              },
+              "ssh": {
+                "key": [
+                  "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC1234567890"
+                ],
+                "ja4ssh": [
+                  "c76s76_c71s59_c0s0"
+                ]
+              },
+              "tcp": {
+                "ja4t": [
+                  "64240_2-1-3-1-1-4_1460_8"
+                ],
+                "ja4l": "1460_64"
+              },
+              "source": {
+                "bytes": 1024
+              }
+            }
+          },
+          "request_metadata": {
+            "restricted_fields": [
+              "ip",
+              "cve",
+              "destination_cities"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ip": "8.8.8.8",
+    "seen_scanning": true,
+    "classification": "benign",
+    "actor": "Shodan.io",
+    "tags": [
+      "Mirai"
+    ],
+    "cves": [
+      "CVE-2020-1234",
+      "CVE-2021-2345"
+    ],
+    "first_seen": "2018-01-28",
+    "last_seen": "2018-02-28",
+    "tor": false,
+    "vpn": true,
+    "spoofable": true,
+    "organization": "DigitalOcean, LLC",
+    "country": "United States",
+    "asn": "AS521",
+    "rdns": "crawl-66-249-79-17.googlebot.com",
+    "business_service": true,
+    "service_name": "example.com",
+    "service_category": "hosting",
+    "trust_level": "1",
+    "scanner": {
+      "classification": "benign",
+      "first_seen": "2018-01-28",
+      "last_seen": "2018-02-28",
+      "last_seen_timestamp": "2025-01-15T12:30:45Z",
+      "last_seen_malicious": "2026-08-14T18:45:30Z",
+      "last_seen_suspicious": "2026-08-14T19:23:31Z",
+      "last_seen_benign": "2026-08-14T19:24:57Z",
+      "found": true,
+      "actor": "Shodan.io",
+      "spoofable": true,
+      "cves": [
+        "CVE-2020-1234",
+        "CVE-2021-2345"
+      ],
+      "callback_ips": [],
+      "source_workspaces": [
+        "greynoise",
+        "community"
+      ],
+      "tor": false,
+      "vpn": true,
+      "vpn_service": "IPVANISH_VPN",
+      "metadata": {
+        "mobile": false,
+        "source_country": "United States",
+        "source_country_code": "US",
+        "source_city": "Seattle",
+        "region": "Seattle",
+        "organization": "DigitalOcean, LLC",
+        "rdns": "crawl-66-249-79-17.googlebot.com",
+        "asn": "AS521",
+        "asn_subnet": "203.0.113.0/24",
+        "category": "education",
+        "os": "Windows 7/8",
+        "destination_countries": [
+          "Germany"
+        ],
+        "destination_country_codes": [
+          "Germany"
+        ],
+        "destination_cities": [
+          "Berlin"
+        ],
+        "destination_asns": [
+          "AS1234"
+        ],
+        "single_destination": true,
+        "carrier": "AIS",
+        "datacenter": "us-west-1",
+        "domain": "example.com",
+        "rdns_parent": "example.com",
+        "rdns_validated": true,
+        "latitude": 37.7749,
+        "longitude": -122.4194,
+        "sensor_count": 10,
+        "sensor_hits": 10
+      },
+      "tags": [
+        {
+          "id": "ef0cc90d-d80c-436f-92c5-3d8f8665c9ac",
+          "slug": "mirai",
+          "name": "Mirai",
+          "category": "worm",
+          "intention": "malicious",
+          "description": "This IP address exhibits behavior that indicates it is infected with Mirai or a Mirai-like variant of malware.",
+          "references": [
+            "https://en.wikipedia.org/wiki/Mirai_(malware)"
+          ],
+          "recommend_block": false,
+          "cves": [
+            "CVE-2020-1234"
+          ],
+          "created": "2020-04-07",
+          "updated_at": "2026-02-10T15:59:49Z"
+        }
+      ],
+      "tag_volumes": [
+        {
+          "tag_id": "0b6f4a8e-3c1d-4e5f-9a7b-2d8c6e4f1a3b",
+          "session_count": 1
+        }
+      ],
+      "raw_data": {
+        "scan": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "ja3": [
+          {
+            "fingerprint": "c3a6cf0bf2e690ac8e1ecf6081f17a50",
+            "port": 443
+          }
+        ],
+        "hassh": [
+          {
+            "fingerprint": "51cba57125523ce4b9db67714a90bf6e",
+            "port": 2222
+          }
+        ],
+        "http": {
+          "md5": "9764955b67107eeb9edfae76f429e783",
+          "cookie_keys": [
+            "expremotekey"
+          ],
+          "request_authorization": [
+            "Bearer exampletoken",
+            "Basic username:password"
+          ],
+          "request_cookies": [
+            "session_id=1234567890"
+          ],
+          "request_header": [
+            "Content-Type: application/json",
+            "Accept: application/json"
+          ],
+          "method": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE"
+          ],
+          "request_origin": [
+            "111.111.1.1"
+          ],
+          "host": [
+            "example.com",
+            "example.com:8080"
+          ],
+          "uri": [],
+          "path": [
+            "/robots.txt"
+          ],
+          "useragent": [
+            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)\n"
+          ],
+          "ja4h": [
+            "ge11cn060000_4e59edc1297a_4da5efaf0cbd"
+          ]
+        },
+        "tls": {
+          "cipher": "TLS_AES_128_GCM_SHA256",
+          "ja4": [
+            "t13d1516h2_8daaf6152771_02713d6af862"
+          ]
+        },
+        "ssh": {
+          "key": [
+            "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC1234567890"
+          ],
+          "ja4ssh": [
+            "c76s76_c71s59_c0s0"
+          ]
+        },
+        "tcp": {
+          "ja4t": [
+            "64240_2-1-3-1-1-4_1460_8"
+          ],
+          "ja4l": "1460_64"
+        },
+        "source": {
+          "bytes": 1024
+        }
+      }
+    },
+    "service": {
+      "found": true,
+      "category": "hosting",
+      "name": "example.com",
+      "description": "example.com",
+      "last_updated": "2025-01-15T12:30:45Z",
+      "reference": "https://example.com",
+      "trust_level": "1"
+    },
+    "restricted_fields": [
+      "ip",
+      "cve",
+      "destination_cities"
+    ]
+  }
+}

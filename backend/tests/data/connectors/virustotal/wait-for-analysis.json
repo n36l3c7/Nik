@@ -1,0 +1,110 @@
+{
+  "args": {
+    "id": "u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/analyses/u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "analysis",
+            "id": "u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101",
+            "attributes": {
+              "date": 1604933101,
+              "status": "queued",
+              "stats": {
+                "harmless": 0,
+                "malicious": 0,
+                "suspicious": 0,
+                "timeout": 0,
+                "undetected": 0
+              },
+              "results": {}
+            }
+          },
+          "meta": {
+            "url_info": {
+              "id": "a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293"
+            }
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/analyses/u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "analysis",
+            "id": "u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101",
+            "attributes": {
+              "date": 1604933101,
+              "status": "completed",
+              "stats": {
+                "harmless": 66,
+                "malicious": 1,
+                "suspicious": 0,
+                "timeout": 0,
+                "undetected": 7
+              },
+              "results": {
+                "Kaspersky": {
+                  "category": "malicious",
+                  "engine_name": "Kaspersky",
+                  "method": "blacklist",
+                  "result": "phishing"
+                }
+              }
+            }
+          },
+          "meta": {
+            "url_info": {
+              "id": "a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "u-a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293-1604933101",
+    "status": "completed",
+    "stats": {
+      "harmless": 66,
+      "malicious": 1,
+      "suspicious": 0,
+      "timeout": 0,
+      "undetected": 7
+    },
+    "malicious": 1,
+    "suspicious": 0,
+    "results": {
+      "Kaspersky": {
+        "category": "malicious",
+        "engine_name": "Kaspersky",
+        "method": "blacklist",
+        "result": "phishing"
+      }
+    },
+    "meta": {
+      "url_info": {
+        "id": "a354494a73382ea0b4bc47f4c9e8d6c578027cd4598196dc88f05a22b5817293"
+      }
+    }
+  }
+}

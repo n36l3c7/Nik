@@ -1,0 +1,25 @@
+{
+  "args": {
+    "id": "AIW105ULY10RKIHX"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/shodan/alert/AIW105ULY10RKIHX",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

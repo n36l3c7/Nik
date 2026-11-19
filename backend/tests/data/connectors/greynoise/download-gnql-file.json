@@ -1,0 +1,66 @@
+{
+  "args": {
+    "query": "classification:malicious last_seen:1d",
+    "limit": 1000
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/files/gnql",
+        "query": {
+          "query": "classification:malicious last_seen:1d",
+          "format": "csv",
+          "limit": 1000
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 202,
+        "json": {
+          "status": "provisioning"
+        },
+        "headers": {
+          "retry-after": "30"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/files/gnql",
+        "query": {
+          "query": "classification:malicious last_seen:1d",
+          "format": "csv",
+          "limit": 1000
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "source.ip,source.ip.greynoise.is.actor,source.ip.greynoise.is.classification\n198.51.100.42,unknown,malicious\n",
+        "headers": {
+          "x-greynoise-generated-at": "2026-10-26T12:00:00Z",
+          "x-greynoise-row-count": "1",
+          "x-greynoise-total-count": "1",
+          "x-greynoise-truncated": "false",
+          "x-greynoise-feed-status": "active",
+          "x-greynoise-profile": "ngsiem@1"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "text": "source.ip,source.ip.greynoise.is.actor,source.ip.greynoise.is.classification\n198.51.100.42,unknown,malicious\n",
+    "generated_at": "2026-10-26T12:00:00Z",
+    "row_count": "1",
+    "total_count": "1",
+    "truncated": "false",
+    "feed_status": "active",
+    "profile": "ngsiem@1"
+  }
+}

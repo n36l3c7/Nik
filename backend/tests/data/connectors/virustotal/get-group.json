@@ -1,0 +1,44 @@
+{
+  "args": {
+    "id": "piedpiper"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/groups/piedpiper",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "group",
+            "id": "piedpiper",
+            "attributes": {
+              "domain_name": "piedpiper.com",
+              "organization": "Pied Piper",
+              "country": "US",
+              "auto_add_users": []
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/groups/piedpiper"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "piedpiper",
+    "type": "group",
+    "attributes": {
+      "domain_name": "piedpiper.com",
+      "organization": "Pied Piper",
+      "country": "US",
+      "auto_add_users": []
+    }
+  }
+}

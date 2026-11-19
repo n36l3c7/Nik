@@ -1,0 +1,67 @@
+{
+  "args": {
+    "from": "7d",
+    "event_types": [
+      "ip-classification-change"
+    ],
+    "ip": "198.51.100.42"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/feeds/events/search",
+        "json": {
+          "event_types": [
+            "ip-classification-change"
+          ],
+          "ip": "198.51.100.42",
+          "from": "7d"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "events": [
+            {
+              "feed_id": "3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b",
+              "event_type": "ip-classification-change",
+              "payload": {
+                "ip": "198.51.100.42",
+                "old_classification": "unknown",
+                "new_classification": "malicious"
+              },
+              "created_at": "2026-08-07T14:21:18Z"
+            }
+          ],
+          "cursor": "eyJ2IjoxLCJ3IjoiLi4uIn0.signature",
+          "has_more": false,
+          "retention": {
+            "oldest_available_at": "2026-05-09T00:00:00Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "events": [
+      {
+        "feed_id": "3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b",
+        "event_type": "ip-classification-change",
+        "payload": {
+          "ip": "198.51.100.42",
+          "old_classification": "unknown",
+          "new_classification": "malicious"
+        },
+        "created_at": "2026-08-07T14:21:18Z"
+      }
+    ],
+    "count": 1,
+    "cursor": "eyJ2IjoxLCJ3IjoiLi4uIn0.signature",
+    "has_more": false,
+    "oldest_available_at": "2026-05-09T00:00:00Z"
+  }
+}

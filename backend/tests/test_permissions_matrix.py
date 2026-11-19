@@ -261,6 +261,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("PUT", "/api/automation/instances/{connection_id}"): ("connectors.manage",),
     ("DELETE", "/api/automation/instances/{connection_id}"): ("connectors.manage",),
     ("POST", "/api/automation/instances/{connection_id}/test"): ("connectors.manage",),
+    ("POST", "/api/automation/instances/{connection_id}/keys/test"): ("connectors.manage",),
+    ("DELETE", "/api/automation/instances/{connection_id}/answers"): ("connectors.manage",),
     ("GET", "/api/automation/state"): ("automation.run",),
     ("PUT", "/api/automation/state"): ("admin",),
     ("GET", "/api/automation/data-classes"): ("automation.run",),

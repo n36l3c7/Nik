@@ -1,0 +1,62 @@
+{
+  "args": {
+    "threat_type": "SOCIAL_ENGINEERING",
+    "platform_type": "WINDOWS",
+    "url": "http://www.urltocheck1.org/",
+    "resources": [
+      {
+        "url": "http://www.urltocheck1.org/",
+        "type": "MATCHING_URL",
+        "remoteIp": "192.0.2.10"
+      },
+      {
+        "url": "http://portal.example.net/news",
+        "type": "TAB_URL"
+      }
+    ],
+    "region_code": "380"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v4/threatHits",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456"
+        },
+        "json": {
+          "threatType": "SOCIAL_ENGINEERING",
+          "platformType": "WINDOWS",
+          "entry": {
+            "url": "http://www.urltocheck1.org/"
+          },
+          "resources": [
+            {
+              "url": "http://www.urltocheck1.org/",
+              "type": "MATCHING_URL",
+              "remoteIp": "192.0.2.10"
+            },
+            {
+              "url": "http://portal.example.net/news",
+              "type": "TAB_URL"
+            }
+          ],
+          "clientInfo": {
+            "clientId": "nik",
+            "clientVersion": "1"
+          },
+          "userInfo": {
+            "regionCode": "380"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

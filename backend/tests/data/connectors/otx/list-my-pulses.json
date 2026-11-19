@@ -1,0 +1,94 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/pulses/my",
+        "query": {
+          "limit": 50,
+          "page": 1
+        },
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "count": 1,
+          "next": null,
+          "results": [
+            {
+              "indicator_type_counts": {
+                "SSLCertFingerprint": 1
+              },
+              "pulse_source": "web",
+              "TLP": "white",
+              "description": "fdsfds",
+              "subscriber_count": 16,
+              "tags": [],
+              "malware_families": [],
+              "references": [],
+              "targeted_countries": [],
+              "adversary": "",
+              "id": "5ef3f97d7210ef3380011424",
+              "name": "fdfds",
+              "created": "2020-06-25T01:10:21.979000",
+              "modified": "2020-06-25T01:10:21.979000",
+              "indicator_count": 1,
+              "author": {
+                "username": "LevelBlue",
+                "is_subscribed": true,
+                "avatar_url": "https://otx.alienvault.com/assets/images/default-avatar.png",
+                "is_following": false,
+                "id": "2"
+              },
+              "public": 1
+            }
+          ],
+          "previous": null
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "pulses": [
+      {
+        "indicator_type_counts": {
+          "SSLCertFingerprint": 1
+        },
+        "pulse_source": "web",
+        "TLP": "white",
+        "description": "fdsfds",
+        "subscriber_count": 16,
+        "tags": [],
+        "malware_families": [],
+        "references": [],
+        "targeted_countries": [],
+        "adversary": "",
+        "id": "5ef3f97d7210ef3380011424",
+        "name": "fdfds",
+        "created": "2020-06-25T01:10:21.979000",
+        "modified": "2020-06-25T01:10:21.979000",
+        "indicator_count": 1,
+        "author": {
+          "username": "LevelBlue",
+          "is_subscribed": true,
+          "avatar_url": "https://otx.alienvault.com/assets/images/default-avatar.png",
+          "is_following": false,
+          "id": "2"
+        },
+        "public": 1
+      }
+    ],
+    "ids": [
+      "5ef3f97d7210ef3380011424"
+    ],
+    "names": [
+      "fdfds"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "entitydb.shodan.io",
+        "path": "/api/entities"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "entities": [
+            {
+              "id": 3,
+              "cik": 1652044,
+              "tickers": [
+                "GOOGL",
+                "GOOG"
+              ],
+              "entity_name": "Alphabet Inc."
+            },
+            {
+              "id": 4,
+              "cik": 789019,
+              "tickers": [
+                "MSFT"
+              ],
+              "entity_name": "MICROSOFT CORP"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "entities": [
+      {
+        "id": 3,
+        "cik": 1652044,
+        "tickers": [
+          "GOOGL",
+          "GOOG"
+        ],
+        "entity_name": "Alphabet Inc."
+      },
+      {
+        "id": 4,
+        "cik": 789019,
+        "tickers": [
+          "MSFT"
+        ],
+        "entity_name": "MICROSOFT CORP"
+      }
+    ],
+    "count": 2
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "args": {
+    "cve_id": "CVE-2021-44228"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "cvedb.shodan.io",
+        "path": "/cve/CVE-2021-44228"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "cve_id": "CVE-2021-44228",
+          "summary": "Apache Log4j2 JNDI features do not protect against attacker controlled LDAP and other endpoints.",
+          "cvss": 10.0,
+          "cvss_version": 3.1,
+          "cvss_v2": 9.3,
+          "cvss_v3": 10.0,
+          "cvss_v4": null,
+          "epss": 0.94358,
+          "ranking_epss": 0.99957,
+          "kev": true,
+          "propose_action": "Apply updates per vendor instructions.",
+          "ransomware_campaign": "Known",
+          "references": [
+            "https://logging.apache.org/log4j/2.x/security.html"
+          ],
+          "published_time": "2021-12-10T10:15:00",
+          "cpes": [
+            "cpe:2.3:a:apache:log4j:2.14.1"
+          ],
+          "euvd": null,
+          "ghsa": null
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "cve_id": "CVE-2021-44228",
+    "summary": "Apache Log4j2 JNDI features do not protect against attacker controlled LDAP and other endpoints.",
+    "cvss": 10.0,
+    "cvss_version": 3.1,
+    "epss": 0.94358,
+    "ranking_epss": 0.99957,
+    "kev": true,
+    "propose_action": "Apply updates per vendor instructions.",
+    "ransomware_campaign": "Known",
+    "references": [
+      "https://logging.apache.org/log4j/2.x/security.html"
+    ],
+    "cpes": [
+      "cpe:2.3:a:apache:log4j:2.14.1"
+    ],
+    "published_time": "2021-12-10T10:15:00",
+    "euvd": null,
+    "ghsa": null
+  }
+}

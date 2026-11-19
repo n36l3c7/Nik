@@ -1,0 +1,62 @@
+{
+  "args": {
+    "search_id": "6f1c2a9be4b0a1d2c3e4f567",
+    "name": "Testsearch 2"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/api/v1/user/searches/6f1c2a9be4b0a1d2c3e4f567/",
+        "json": {
+          "search": {
+            "name": "Testsearch 2"
+          }
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "search": {
+            "_id": "6f1c2a9be4b0a1d2c3e4f567",
+            "datasource": "scans",
+            "query": "page.domain:urlscan.io",
+            "name": "Testsearch 2",
+            "description": "urlscan documentation example saved search.",
+            "longDescription": "Example saved search created from urlscan documentation",
+            "tlp": "red",
+            "usertags": [
+              "private.privatetag"
+            ],
+            "permissions": [
+              "team:read",
+              "team:write"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6f1c2a9be4b0a1d2c3e4f567",
+    "search": {
+      "_id": "6f1c2a9be4b0a1d2c3e4f567",
+      "datasource": "scans",
+      "query": "page.domain:urlscan.io",
+      "name": "Testsearch 2",
+      "description": "urlscan documentation example saved search.",
+      "longDescription": "Example saved search created from urlscan documentation",
+      "tlp": "red",
+      "usertags": [
+        "private.privatetag"
+      ],
+      "permissions": [
+        "team:read",
+        "team:write"
+      ]
+    }
+  }
+}

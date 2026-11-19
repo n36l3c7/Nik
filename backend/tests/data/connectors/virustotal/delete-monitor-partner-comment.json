@@ -1,0 +1,23 @@
+{
+  "args": {
+    "id": "6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de-acme-av"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v3/monitor_partner/comments/6620bdb508ab363eee95fd511ae88e2e38daf948b117bd49bcf8609f87cc86de-acme-av",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

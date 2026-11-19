@@ -1,0 +1,141 @@
+{
+  "config": {
+    "url": "https://example.com/rdap"
+  },
+  "args": {
+    "fn": "Bobby Joe*"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rdap/entities",
+        "query": {
+          "fn": "Bobby Joe*"
+        },
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "entitySearchResults": [
+            {
+              "objectClassName": "entity",
+              "handle": "XXXX",
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Bobby Joe Smith"
+                  ]
+                ]
+              ],
+              "roles": [
+                "registrant"
+              ]
+            },
+            {
+              "objectClassName": "entity",
+              "handle": "YYYY",
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Bobby Joe Jones"
+                  ]
+                ]
+              ],
+              "roles": [
+                "technical"
+              ]
+            }
+          ]
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "entities": [
+      {
+        "objectClassName": "entity",
+        "handle": "XXXX",
+        "vcardArray": [
+          "vcard",
+          [
+            [
+              "version",
+              {},
+              "text",
+              "4.0"
+            ],
+            [
+              "fn",
+              {},
+              "text",
+              "Bobby Joe Smith"
+            ]
+          ]
+        ],
+        "roles": [
+          "registrant"
+        ]
+      },
+      {
+        "objectClassName": "entity",
+        "handle": "YYYY",
+        "vcardArray": [
+          "vcard",
+          [
+            [
+              "version",
+              {},
+              "text",
+              "4.0"
+            ],
+            [
+              "fn",
+              {},
+              "text",
+              "Bobby Joe Jones"
+            ]
+          ]
+        ],
+        "roles": [
+          "technical"
+        ]
+      }
+    ],
+    "handles": [
+      "XXXX",
+      "YYYY"
+    ],
+    "count": 2,
+    "notices": null
+  }
+}

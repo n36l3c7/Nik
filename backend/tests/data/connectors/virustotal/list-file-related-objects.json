@@ -1,0 +1,134 @@
+{
+  "args": {
+    "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "relationship": "contacted_domains"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/contacted_domains",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "domain",
+              "id": "www.hooli.com",
+              "attributes": {
+                "last_analysis_stats": {
+                  "harmless": 60,
+                  "malicious": 0,
+                  "suspicious": 1,
+                  "timeout": 0,
+                  "undetected": 8
+                },
+                "reputation": 0,
+                "registrar": "MarkMonitor Inc.",
+                "categories": {
+                  "Forcepoint ThreatSeeker": "information technology"
+                },
+                "last_analysis_date": 1612962021,
+                "tags": []
+              },
+              "links": {
+                "self": "https://www.virustotal.com/api/v3/domains/www.hooli.com"
+              }
+            }
+          ],
+          "meta": {
+            "cursor": "CuABChEKBGRhdGUSCQjA1"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/contacted_domains",
+        "query": {
+          "limit": 10,
+          "cursor": "CuABChEKBGRhdGUSCQjA1"
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "domain",
+              "id": "evil.example",
+              "attributes": {
+                "reputation": -5,
+                "last_analysis_stats": {
+                  "harmless": 50,
+                  "malicious": 7,
+                  "suspicious": 1,
+                  "timeout": 0,
+                  "undetected": 12
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "domain",
+        "id": "www.hooli.com",
+        "attributes": {
+          "last_analysis_stats": {
+            "harmless": 60,
+            "malicious": 0,
+            "suspicious": 1,
+            "timeout": 0,
+            "undetected": 8
+          },
+          "reputation": 0,
+          "registrar": "MarkMonitor Inc.",
+          "categories": {
+            "Forcepoint ThreatSeeker": "information technology"
+          },
+          "last_analysis_date": 1612962021,
+          "tags": []
+        },
+        "links": {
+          "self": "https://www.virustotal.com/api/v3/domains/www.hooli.com"
+        }
+      },
+      {
+        "type": "domain",
+        "id": "evil.example",
+        "attributes": {
+          "reputation": -5,
+          "last_analysis_stats": {
+            "harmless": 50,
+            "malicious": 7,
+            "suspicious": 1,
+            "timeout": 0,
+            "undetected": 12
+          }
+        }
+      }
+    ],
+    "ids": [
+      "www.hooli.com",
+      "evil.example"
+    ],
+    "count": 2,
+    "truncated": false
+  }
+}

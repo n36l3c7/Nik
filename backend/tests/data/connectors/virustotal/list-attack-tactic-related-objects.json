@@ -1,0 +1,54 @@
+{
+  "args": {
+    "id": "TA0005",
+    "relationship": "attack_techniques"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/attack_tactics/TA0005/attack_techniques",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "attack_technique",
+              "id": "T1055",
+              "attributes": {
+                "name": "Process Injection",
+                "link": "https://attack.mitre.org/techniques/T1055/",
+                "revoked": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "attack_technique",
+        "id": "T1055",
+        "attributes": {
+          "name": "Process Injection",
+          "link": "https://attack.mitre.org/techniques/T1055/",
+          "revoked": false
+        }
+      }
+    ],
+    "ids": [
+      "T1055"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

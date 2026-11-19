@@ -1,0 +1,26 @@
+{
+  "args": {
+    "id": "6425310189355008",
+    "user_or_group_id": "gilfoyle"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/intelligence/hunting_rulesets/6425310189355008/relationships/editors/gilfoyle",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "editor": true
+  }
+}

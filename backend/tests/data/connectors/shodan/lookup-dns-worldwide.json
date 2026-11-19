@@ -1,0 +1,88 @@
+{
+  "args": {
+    "hostname": "example.org"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "geonet.shodan.io",
+        "path": "/api/geodns/example.org"
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "answers": [
+              {
+                "type": "A",
+                "value": "93.184.215.14"
+              }
+            ],
+            "from_loc": {
+              "city": "Frankfurt",
+              "country": "DE",
+              "latlon": "50.1109,8.6821"
+            }
+          },
+          {
+            "answers": [
+              {
+                "type": "A",
+                "value": "93.184.215.14"
+              },
+              {
+                "type": "A",
+                "value": "93.184.215.15"
+              }
+            ],
+            "from_loc": {
+              "city": "Singapore",
+              "country": "SG",
+              "latlon": "1.3521,103.8198"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "results": [
+      {
+        "answers": [
+          {
+            "type": "A",
+            "value": "93.184.215.14"
+          }
+        ],
+        "from_loc": {
+          "city": "Frankfurt",
+          "country": "DE",
+          "latlon": "50.1109,8.6821"
+        }
+      },
+      {
+        "answers": [
+          {
+            "type": "A",
+            "value": "93.184.215.14"
+          },
+          {
+            "type": "A",
+            "value": "93.184.215.15"
+          }
+        ],
+        "from_loc": {
+          "city": "Singapore",
+          "country": "SG",
+          "latlon": "1.3521,103.8198"
+        }
+      }
+    ],
+    "values": [
+      "93.184.215.14",
+      "93.184.215.15"
+    ],
+    "count": 2
+  }
+}

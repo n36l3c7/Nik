@@ -1,0 +1,27 @@
+{
+  "args": {
+    "query": "classification:malicious last_seen:1d"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/v3/files/gnql",
+        "query": {
+          "query": "classification:malicious last_seen:1d",
+          "format": "csv"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "deleted": true
+  }
+}

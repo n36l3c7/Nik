@@ -1,0 +1,335 @@
+# ThreatFox (abuse.ch), through its Community API v1.
+#
+# Written from the documentation at https://threatfox.abuse.ch/api/. Not run
+# against the real service: see "verified" below.
+#
+# Every query is a POST of a JSON object to the one address /api/v1/; its
+# "query" says which. The Auth-Key (free, from https://auth.abuse.ch/, the
+# same for ThreatFox, URLhaus and MalwareBazaar) goes in the "Auth-Key"
+# header. The API answers 200 and says what happened in "query_status":
+# every command gives it as an output. The documentation shows no answer
+# for a search that finds nothing; the commands read the indicators as the
+# entries of "data" that have an "ioc", so anything else there (a sentence
+# saying nothing was found) counts as no indicator.
+#
+# ThreatFox drops indicators older than 6 months from its API.
+#
+# The four report commands give a verdict the way Nik's own enrichment
+# does: an indicator ThreatFox holds is malicious (it takes confirmed
+# indicators only), anything else is unknown. They search for the exact
+# value; an IP address also finds its "ip:port" entries. Their summary is
+# built without conditions, which the expression language does not have: a
+# field of the first indicator is read as a JSON list ([] when nothing was
+# found, [null] when the field is empty, ["value"] otherwise), the first
+# two are mapped to a sentence and the brackets of the third are replaced.
+name: ThreatFox
+id: threatfox
+version: 1
+description: Indicators of compromise shared on ThreatFox (abuse.ch), looked up by value, file hash, tag or malware family, and submitted.
+api_version: "ThreatFox Community API v1 (threatfox-api.abuse.ch/api/v1)"
+verified: false
+configuration:
+  - name: credentials
+    label: Auth-Key
+    type: header
+    header: Auth-Key
+    required: true
+    help: "The Auth-Key of your abuse.ch account, from https://auth.abuse.ch/. One key works for ThreatFox, URLhaus and MalwareBazaar."
+base_url: "https://threatfox-api.abuse.ch"
+test:
+  request:
+    method: POST
+    path: /api/v1/
+    json: { query: get_label, malware: warzone, platform: win }
+  expect: { status: 200 }
+commands:
+  - name: get-ip-report
+    description: The indicators ThreatFox holds for an IP address (alone or with a port), with a verdict.
+    reputation: ip
+    arguments:
+      - { name: ip, type: text, required: true, description: "The IP address: 139.180.203.104" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: search_ioc, search_term: "{{ args.ip }}", exact_match: true }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      summary: >-
+        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
+      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+      query_status: "{{ response.query_status }}"
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      malware: "{{ response.data[0].malware_printable }}"
+      malware_id: "{{ response.data[0].malware }}"
+      threat_type: "{{ response.data[0].threat_type }}"
+      confidence_level: "{{ response.data[0].confidence_level }}"
+      first_seen: "{{ response.data[0].first_seen }}"
+      last_seen: "{{ response.data[0].last_seen }}"
+      tags: "{{ response.data[0].tags }}"
+
+  - name: get-domain-report
+    description: The indicators ThreatFox holds for a domain name, with a verdict.
+    reputation: domain
+    arguments:
+      - { name: domain, type: text, required: true, description: "The domain name: example.org" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: search_ioc, search_term: "{{ args.domain }}", exact_match: true }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      summary: >-
+        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
+      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+      query_status: "{{ response.query_status }}"
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      malware: "{{ response.data[0].malware_printable }}"
+      malware_id: "{{ response.data[0].malware }}"
+      threat_type: "{{ response.data[0].threat_type }}"
+      confidence_level: "{{ response.data[0].confidence_level }}"
+      first_seen: "{{ response.data[0].first_seen }}"
+      last_seen: "{{ response.data[0].last_seen }}"
+      tags: "{{ response.data[0].tags }}"
+
+  - name: get-url-report
+    description: The indicators ThreatFox holds for a URL, with a verdict.
+    reputation: url
+    arguments:
+      - { name: url, type: text, required: true, description: "The URL: http://example.org/gate.php" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: search_ioc, search_term: "{{ args.url }}", exact_match: true }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      summary: >-
+        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
+      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+      query_status: "{{ response.query_status }}"
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      malware: "{{ response.data[0].malware_printable }}"
+      malware_id: "{{ response.data[0].malware }}"
+      threat_type: "{{ response.data[0].threat_type }}"
+      confidence_level: "{{ response.data[0].confidence_level }}"
+      first_seen: "{{ response.data[0].first_seen }}"
+      last_seen: "{{ response.data[0].last_seen }}"
+      tags: "{{ response.data[0].tags }}"
+
+  - name: get-file-report
+    description: The indicators ThreatFox ties to a file (the servers a sample talks to), by its MD5 or SHA256 hash, with a verdict.
+    reputation: file
+    arguments:
+      - { name: hash, type: text, required: true, description: "The MD5 or SHA256 hash of the file" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: search_hash, hash: "{{ args.hash }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      summary: >-
+        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
+      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+      query_status: "{{ response.query_status }}"
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      malware: "{{ response.data[0].malware_printable }}"
+      malware_id: "{{ response.data[0].malware }}"
+      threat_type: "{{ response.data[0].threat_type }}"
+      confidence_level: "{{ response.data[0].confidence_level }}"
+      first_seen: "{{ response.data[0].first_seen }}"
+      last_seen: "{{ response.data[0].last_seen }}"
+      tags: "{{ response.data[0].tags }}"
+
+  - name: search-ioc
+    description: Search the indicators of ThreatFox for a text (any indicator that holds it), or for an exact value.
+    arguments:
+      - { name: search_term, type: text, required: true, description: "What to look for: an IP address, a domain name, a URL or a part of one" }
+      - { name: exact_match, type: bool, default: false, description: "Only the indicators equal to the text, instead of all that hold it" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: search_ioc, search_term: "{{ args.search_term }}", exact_match: "{{ args.exact_match }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: get-ioc
+    description: One indicator of ThreatFox by its id, with its comment, its credits and the malware samples tied to it.
+    arguments:
+      - { name: id, type: number, required: true, description: "The id of the indicator on ThreatFox: 41" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: ioc, id: "{{ args.id }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      id: "{{ response.id }}"
+      ioc: "{{ response.ioc }}"
+      ioc_type: "{{ response.ioc_type }}"
+      threat_type: "{{ response.threat_type }}"
+      threat_type_desc: "{{ response.threat_type_desc }}"
+      malware: "{{ response.malware_printable }}"
+      malware_id: "{{ response.malware }}"
+      malware_alias: "{{ response.malware_alias }}"
+      confidence_level: "{{ response.confidence_level }}"
+      first_seen: "{{ response.first_seen }}"
+      last_seen: "{{ response.last_seen }}"
+      reference: "{{ response.reference }}"
+      reporter: "{{ response.reporter }}"
+      comment: "{{ response.comment }}"
+      tags: "{{ response.tags }}"
+      malware_samples: "{{ response.malware_samples }}"
+      sha256: "{{ response.malware_samples | pluck('sha256_hash') }}"
+      link: "https://threatfox.abuse.ch/ioc/{{ response.id }}/"
+
+  - name: list-recent-iocs
+    description: The indicators first seen in the last days (3 unless said, 7 at most).
+    arguments:
+      - { name: days, type: number, description: "How many days to look back, from 1 to 7: 3 when left empty" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: get_iocs, days: "{{ args.days }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: search-tag
+    description: The indicators that carry a tag (100 unless said, 1000 at most).
+    arguments:
+      - { name: tag, type: text, required: true, description: "The tag: Magecart" }
+      - { name: limit, type: number, description: "How many indicators at most: 100 when left empty, 1000 at most" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: taginfo, tag: "{{ args.tag }}", limit: "{{ args.limit }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: search-malware
+    description: The indicators of a malware family (100 unless said, 1000 at most).
+    arguments:
+      - { name: malware, type: text, required: true, description: "The malware family, as get-malware-label or list-malware names it: Cobalt Strike" }
+      - { name: limit, type: number, description: "How many indicators at most: 100 when left empty, 1000 at most" }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: malwareinfo, malware: "{{ args.malware }}", limit: "{{ args.limit }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      iocs: "{{ response.data | default('') | where('ioc') }}"
+      values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
+      count: "{{ response.data | default('') | where('ioc') | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: submit-ioc
+    description: Share confirmed indicators of compromise on ThreatFox, under your abuse.ch account.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: iocs, type: list, required: true, description: "The indicators, all of one kind: domain names, URLs, ip:port pairs or hashes" }
+      - { name: threat_type, type: text, required: true, description: "The threat type, as list-types gives it: botnet_cc, payload_delivery…" }
+      - { name: ioc_type, type: text, required: true, description: "The kind of indicator, as list-types gives it: domain, url, ip:port…" }
+      - { name: malware, type: text, required: true, description: "The Malpedia name of the family, as get-malware-label gives it: win.zloader" }
+      - { name: confidence_level, type: number, description: "How sure you are, from 0 to 100: 50 when left empty" }
+      - { name: is_compromised, type: bool, description: "The indicator is a compromised asset (a hacked site), not one the attacker set up" }
+      - { name: reference, type: text, description: A URL that backs the indicators }
+      - { name: tags, type: list, description: "Tags: letters, digits, dots, dashes and spaces" }
+      - { name: comment, type: text, description: Your comment on these indicators }
+      - { name: anonymous, type: bool, description: "Do not show your account as the reporter" }
+    request:
+      method: POST
+      path: /api/v1/
+      json:
+        query: submit_ioc
+        threat_type: "{{ args.threat_type }}"
+        ioc_type: "{{ args.ioc_type }}"
+        malware: "{{ args.malware }}"
+        confidence_level: "{{ args.confidence_level }}"
+        is_compromised: "{{ args.is_compromised }}"
+        reference: "{{ args.reference }}"
+        comment: "{{ args.comment }}"
+        anonymous: "{{ args.anonymous | map('true', 1, 'false', 0) }}"
+        tags: "{{ args.tags }}"
+        iocs: "{{ args.iocs }}"
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      query_status: "{{ response.query_status }}"
+      data: "{{ response.data }}"
+    sample: { query_status: ok, data: null }
+
+  - name: get-malware-label
+    description: The Malpedia name ThreatFox uses for a malware family, looked up by a name or an alias.
+    arguments:
+      - { name: malware, type: text, required: true, description: "A name or an alias of the family: warzone" }
+      - { name: platform, type: choice, choices: [win, osx, apk, jar, elf], description: The platform of the malware }
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: get_label, malware: "{{ args.malware }}", platform: "{{ args.platform }}" }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      labels: "{{ response.data | default('') | where('malware') }}"
+      malware: "{{ response.data[0].malware }}"
+      malware_printable: "{{ response.data[0].malware_printable }}"
+      malware_alias: "{{ response.data[0].malware_alias }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: list-malware
+    description: The malware families ThreatFox knows, by their Malpedia names.
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: malware_list }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      malware: "{{ response.data }}"
+      names: "{{ response.data | keys }}"
+      count: "{{ response.data | keys | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: list-types
+    description: The kinds of indicator and the threat types ThreatFox takes, each pair with its description.
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: types }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      types: "{{ response.data | values }}"
+      count: "{{ response.data | keys | length }}"
+      query_status: "{{ response.query_status }}"
+
+  - name: list-tags
+    description: The tags known to ThreatFox, each with when it was first and last seen.
+    request:
+      method: POST
+      path: /api/v1/
+      json: { query: tag_list }
+    error: { message: "{{ response.query_status }}" }
+    outputs:
+      tags: "{{ response.data | keys }}"
+      details: "{{ response.data }}"
+      count: "{{ response.data | keys | length }}"
+      query_status: "{{ response.query_status }}"

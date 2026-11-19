@@ -1,0 +1,38 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/articles/categories",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "id": "c1",
+            "label": "Community",
+            "value": "community",
+            "color": "#00a37a"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "categories": [
+      {
+        "id": "c1",
+        "label": "Community",
+        "value": "community",
+        "color": "#00a37a"
+      }
+    ],
+    "values": [
+      "community"
+    ]
+  }
+}

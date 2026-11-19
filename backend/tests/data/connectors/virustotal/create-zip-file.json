@@ -1,0 +1,51 @@
+{
+  "args": {
+    "hashes": [
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+    ],
+    "password": "mysecretpassword"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/intelligence/zip_files",
+        "json": {
+          "data": {
+            "password": "mysecretpassword",
+            "hashes": [
+              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+            ]
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "zip_file",
+            "id": "4939392292",
+            "attributes": {
+              "status": "starting",
+              "progress": 0,
+              "files_ok": 0,
+              "files_error": 0
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "4939392292",
+    "status": "starting",
+    "progress": 0,
+    "files_ok": 0,
+    "files_error": 0
+  }
+}

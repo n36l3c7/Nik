@@ -1,0 +1,108 @@
+{
+  "args": {
+    "names": [
+      "se",
+      "mw-4b"
+    ],
+    "versions": [
+      "AAAAAAAAB9A="
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v5/hashLists:batchGet",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456",
+          "names": [
+            "se",
+            "mw-4b"
+          ],
+          "version": [
+            "AAAAAAAAB9A="
+          ],
+          "alt": "json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "hashLists": [
+            {
+              "name": "se",
+              "version": "AAAAAAAAB9E=",
+              "partialUpdate": true,
+              "additionsFourBytes": {
+                "firstValue": 1543343,
+                "riceParameter": 30,
+                "entriesCount": 2,
+                "encodedData": "t2gMAEAAEA=="
+              },
+              "compressedRemovals": {
+                "firstValue": 3,
+                "riceParameter": 3,
+                "entriesCount": 1,
+                "encodedData": "CA=="
+              },
+              "minimumWaitDuration": "1800s",
+              "sha256Checksum": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+            },
+            {
+              "name": "mw-4b",
+              "version": "AAAAAAAAC7g=",
+              "additionsFourBytes": {
+                "firstValue": 271828,
+                "riceParameter": 30,
+                "entriesCount": 1,
+                "encodedData": "gAAAAA=="
+              },
+              "minimumWaitDuration": "1800s",
+              "sha256Checksum": "tR3nQbvQ8u7JkT1Hk0Tq4fJ0o0mKxqkq3m3n0yJc1uE="
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "hash_lists": [
+      {
+        "name": "se",
+        "version": "AAAAAAAAB9E=",
+        "partialUpdate": true,
+        "additionsFourBytes": {
+          "firstValue": 1543343,
+          "riceParameter": 30,
+          "entriesCount": 2,
+          "encodedData": "t2gMAEAAEA=="
+        },
+        "compressedRemovals": {
+          "firstValue": 3,
+          "riceParameter": 3,
+          "entriesCount": 1,
+          "encodedData": "CA=="
+        },
+        "minimumWaitDuration": "1800s",
+        "sha256Checksum": "YSgoRtsRlgHDqDA3LAhM1gegEpEzs1TjzU33vqsR8iM="
+      },
+      {
+        "name": "mw-4b",
+        "version": "AAAAAAAAC7g=",
+        "additionsFourBytes": {
+          "firstValue": 271828,
+          "riceParameter": 30,
+          "entriesCount": 1,
+          "encodedData": "gAAAAA=="
+        },
+        "minimumWaitDuration": "1800s",
+        "sha256Checksum": "tR3nQbvQ8u7JkT1Hk0Tq4fJ0o0mKxqkq3m3n0yJc1uE="
+      }
+    ],
+    "names": [
+      "se",
+      "mw-4b"
+    ],
+    "count": 2
+  }
+}

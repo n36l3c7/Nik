@@ -1,0 +1,79 @@
+{
+  "args": {
+    "tag": "Retefe"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/tag/",
+        "form": {
+          "tag": "Retefe"
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query_status": "ok",
+          "firstseen": "2018-03-06 15:27:00",
+          "lastseen": "2018-12-21 06:00:11",
+          "url_count": "265",
+          "urls": [
+            {
+              "url_id": "98627",
+              "url": "https://tagmanager.vn//wp-content/themes/pridmag/sup.exe",
+              "url_status": "offline",
+              "dateadded": "2018-12-21 06:00:11",
+              "reporter": "abuse_ch",
+              "threat": "malware_download",
+              "urlhaus_reference": "https://urlhaus.abuse.ch/url/98627/"
+            },
+            {
+              "url_id": "98349",
+              "url": "http://tagmanager.vn/wp-content/themes/pridmag/sup.exe",
+              "url_status": "offline",
+              "dateadded": "2018-12-20 15:47:14",
+              "reporter": "switchcert",
+              "threat": "malware_download",
+              "urlhaus_reference": "https://urlhaus.abuse.ch/url/98349/"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "urls": [
+      {
+        "url_id": "98627",
+        "url": "https://tagmanager.vn//wp-content/themes/pridmag/sup.exe",
+        "url_status": "offline",
+        "dateadded": "2018-12-21 06:00:11",
+        "reporter": "abuse_ch",
+        "threat": "malware_download",
+        "urlhaus_reference": "https://urlhaus.abuse.ch/url/98627/"
+      },
+      {
+        "url_id": "98349",
+        "url": "http://tagmanager.vn/wp-content/themes/pridmag/sup.exe",
+        "url_status": "offline",
+        "dateadded": "2018-12-20 15:47:14",
+        "reporter": "switchcert",
+        "threat": "malware_download",
+        "urlhaus_reference": "https://urlhaus.abuse.ch/url/98349/"
+      }
+    ],
+    "addresses": [
+      "https://tagmanager.vn//wp-content/themes/pridmag/sup.exe",
+      "http://tagmanager.vn/wp-content/themes/pridmag/sup.exe"
+    ],
+    "online": [],
+    "url_count": 265,
+    "firstseen": "2018-03-06 15:27:00",
+    "lastseen": "2018-12-21 06:00:11",
+    "query_status": "ok"
+  }
+}

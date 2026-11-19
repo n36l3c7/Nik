@@ -1,0 +1,32 @@
+{
+  "args": {
+    "path": "/mynewfolder/"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/monitor/items",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "body_has": [
+          "name=\"path\"\r\n\r\n/mynewfolder/\r\n"
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "monitor_item",
+            "id": "L215bmV3Zm9sZGVyLw"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "L215bmV3Zm9sZGVyLw",
+    "type": "monitor_item"
+  }
+}

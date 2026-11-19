@@ -1,0 +1,45 @@
+{
+  "args": {
+    "id": "f-e7a2b2c164285d1203062b752d87d2f72ca9e2810b52a61f281828f28722d609-1632333331"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/submission/f-e7a2b2c164285d1203062b752d87d2f72ca9e2810b52a61f281828f28722d609-1632333331",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "submission",
+            "id": "f-e7a2b2c164285d1203062b752d87d2f72ca9e2810b52a61f281828f28722d609-1632333331",
+            "attributes": {
+              "city": "ashburn",
+              "country": "US",
+              "date": 1632333331,
+              "interface": "api",
+              "name": "installer.msi",
+              "source_key": "7f6646ad"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "f-e7a2b2c164285d1203062b752d87d2f72ca9e2810b52a61f281828f28722d609-1632333331",
+    "type": "submission",
+    "attributes": {
+      "city": "ashburn",
+      "country": "US",
+      "date": 1632333331,
+      "interface": "api",
+      "name": "installer.msi",
+      "source_key": "7f6646ad"
+    }
+  }
+}

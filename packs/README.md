@@ -32,3 +32,14 @@ the licence of this repository.
 | sentinelone, sentinelone-sdl | `www.sentinelone.com/press` (logo package, the mark) |
 | servicenow | `store.servicenow.com` (the icon of the site) |
 | zscaler-zia | `www.zscaler.com` (the icon of the site) |
+| virustotal | `www.virustotal.com` (the icon of the site) |
+| abuseipdb | `www.abuseipdb.com` (its logo file) |
+| urlscan | `urlscan.io` (its logo file) |
+| otx | `otx.alienvault.com` (the icon of the site: the LevelBlue mark) |
+| greynoise | `www.greynoise.io` (the icon of the site) |
+| shodan | `www.shodan.io` (the icon of the site) |
+| safebrowsing | `safebrowsing.google.com` (its logo file) |
+
+MalwareBazaar, URLhaus, ThreatFox and RDAP have no logo: abuse.ch publishes
+only wordmarks, which cannot be read at the size of a card, and RDAP is a
+standard, not a product.

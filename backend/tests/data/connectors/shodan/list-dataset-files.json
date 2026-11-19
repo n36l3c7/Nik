@@ -1,0 +1,57 @@
+{
+  "args": {
+    "dataset": "raw-daily"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/data/raw-daily",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "url": "https://...",
+            "timestamp": 1611711401000,
+            "sha1": "5a91f49c90da5ab8856c83c84846941115c55441",
+            "name": "2021-01-26.json.gz",
+            "size": 104650655998
+          },
+          {
+            "url": "https://...",
+            "timestamp": 1611655444000,
+            "sha1": "ea29acc25fc154ac64dde0ab294824ae7f1f64c9",
+            "name": "2021-01-25.json.gz",
+            "size": 152517565458
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "files": [
+      {
+        "url": "https://...",
+        "timestamp": 1611711401000,
+        "sha1": "5a91f49c90da5ab8856c83c84846941115c55441",
+        "name": "2021-01-26.json.gz",
+        "size": 104650655998
+      },
+      {
+        "url": "https://...",
+        "timestamp": 1611655444000,
+        "sha1": "ea29acc25fc154ac64dde0ab294824ae7f1f64c9",
+        "name": "2021-01-25.json.gz",
+        "size": 152517565458
+      }
+    ],
+    "names": [
+      "2021-01-26.json.gz",
+      "2021-01-25.json.gz"
+    ]
+  }
+}

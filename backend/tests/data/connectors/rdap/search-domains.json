@@ -1,0 +1,82 @@
+{
+  "config": {
+    "url": "https://example.com/rdap"
+  },
+  "args": {
+    "name": "exam*.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rdap/domains",
+        "query": {
+          "name": "exam*.com"
+        },
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "domainSearchResults": [
+            {
+              "objectClassName": "domain",
+              "handle": "1-XXXX",
+              "ldhName": "1.example.com"
+            },
+            {
+              "objectClassName": "domain",
+              "handle": "2-XXXX",
+              "ldhName": "2.example.com"
+            }
+          ],
+          "notices": [
+            {
+              "title": "Search Policy",
+              "type": "result set truncated due to authorization",
+              "description": [
+                "Search results are limited to 25 per day per querying IP."
+              ]
+            }
+          ]
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "domains": [
+      {
+        "objectClassName": "domain",
+        "handle": "1-XXXX",
+        "ldhName": "1.example.com"
+      },
+      {
+        "objectClassName": "domain",
+        "handle": "2-XXXX",
+        "ldhName": "2.example.com"
+      }
+    ],
+    "names": [
+      "1.example.com",
+      "2.example.com"
+    ],
+    "count": 2,
+    "notices": [
+      {
+        "title": "Search Policy",
+        "type": "result set truncated due to authorization",
+        "description": [
+          "Search results are limited to 25 per day per querying IP."
+        ]
+      }
+    ]
+  }
+}

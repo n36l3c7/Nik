@@ -1,0 +1,75 @@
+{
+  "args": {
+    "adversary": "Equation Group"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/pulses/related",
+        "query": {
+          "adversary": "Equation Group",
+          "limit": 10,
+          "page": 1
+        },
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "count": 1,
+          "next": null,
+          "results": [
+            {
+              "industries": [],
+              "TLP": "red",
+              "name": "Example pulse 2",
+              "tags": [],
+              "created": "2017-04-14T22:45:41.530000",
+              "modified": "2017-05-01T15:33:24.178000",
+              "author_name": "aperson",
+              "public": false,
+              "references": [],
+              "targeted_countries": [
+                "Zimbabwe"
+              ],
+              "indicators": [],
+              "revision": 4,
+              "adversary": "",
+              "id": "58f15111d3bb0b0b8ac54662",
+              "description": "Another example pulse"
+            }
+          ],
+          "previous": null
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "pulses": [
+      {
+        "industries": [],
+        "TLP": "red",
+        "name": "Example pulse 2",
+        "tags": [],
+        "created": "2017-04-14T22:45:41.530000",
+        "modified": "2017-05-01T15:33:24.178000",
+        "author_name": "aperson",
+        "public": false,
+        "references": [],
+        "targeted_countries": [
+          "Zimbabwe"
+        ],
+        "indicators": [],
+        "revision": 4,
+        "adversary": "",
+        "id": "58f15111d3bb0b0b8ac54662",
+        "description": "Another example pulse"
+      }
+    ],
+    "count": 1,
+    "next": null
+  }
+}

@@ -3,7 +3,7 @@ import { Trash2, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
-import { PLAYGROUND_FILTERS, PLAYGROUND_SLASH } from '../../domain/playground.js'
+import { PLAYGROUND_FILTERS, PLAYGROUND_SLASH, takeLine } from '../../domain/playground.js'
 import { useLayer } from '../../lib/layers.js'
 import { Button, Modal } from '../ui/index.js'
 import Room from '../room/Room.jsx'
@@ -31,6 +31,8 @@ export default function PlaygroundPage({ onClose }) {
   const { can } = useAuth()
   const { showToast } = useToast()
   const [clearing, setClearing] = useState(null) // the reload to call once the history is cleared
+  // A command sent here to be tried ("Try it" on a connector): its line is there to complete.
+  const [firstLine] = useState(takeLine)
 
   // The shortcuts of what is under the page stand down; Escape is left to what is open inside it.
   const ref = useRef(null)
@@ -46,6 +48,7 @@ export default function PlaygroundPage({ onClose }) {
       canWrite: true,
       canRun: can('automation.run'),
       canMark: false,
+      firstLine,
       placeholder: 'Write ! for a command, or a note to yourself',
       empty:
         'Nothing here yet. Run a command below: !ip 203.0.113.7, or ! and the name of a command of a connector. ' +
@@ -57,7 +60,7 @@ export default function PlaygroundPage({ onClose }) {
         </Button>
       ),
     }),
-    [can],
+    [can, firstLine],
   )
 
   const clear = async () => {

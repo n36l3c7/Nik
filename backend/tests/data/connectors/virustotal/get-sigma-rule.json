@@ -1,0 +1,41 @@
+{
+  "args": {
+    "id": "1a2b3c4d5e6f"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/sigma_rules/1a2b3c4d5e6f",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "sigma_rule",
+            "id": "1a2b3c4d5e6f",
+            "attributes": {
+              "title": "Suspicious PowerShell Download",
+              "level": "medium",
+              "author": "Florian Roth",
+              "source": "Sigma Integrated Rule Set (GitHub)"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "1a2b3c4d5e6f",
+    "type": "sigma_rule",
+    "attributes": {
+      "title": "Suspicious PowerShell Download",
+      "level": "medium",
+      "author": "Florian Roth",
+      "source": "Sigma Integrated Rule Set (GitHub)"
+    }
+  }
+}

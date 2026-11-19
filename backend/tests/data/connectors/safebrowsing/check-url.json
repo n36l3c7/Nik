@@ -1,0 +1,111 @@
+{
+  "args": {
+    "url": "http://www.urltocheck1.org/"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v4/threatMatches:find",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456"
+        },
+        "json": {
+          "client": {
+            "clientId": "nik",
+            "clientVersion": "1"
+          },
+          "threatInfo": {
+            "threatTypes": [
+              "MALWARE",
+              "SOCIAL_ENGINEERING",
+              "UNWANTED_SOFTWARE",
+              "POTENTIALLY_HARMFUL_APPLICATION"
+            ],
+            "platformTypes": [
+              "ANY_PLATFORM"
+            ],
+            "threatEntryTypes": [
+              "URL"
+            ],
+            "threatEntries": [
+              {
+                "url": "http://www.urltocheck1.org/"
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "threatType": "MALWARE",
+              "platformType": "WINDOWS",
+              "threatEntryType": "URL",
+              "threat": {
+                "url": "http://www.urltocheck1.org/"
+              },
+              "threatEntryMetadata": {
+                "entries": [
+                  {
+                    "key": "malware_threat_type",
+                    "value": "landing"
+                  }
+                ]
+              },
+              "cacheDuration": "300.000s"
+            },
+            {
+              "threatType": "SOCIAL_ENGINEERING",
+              "platformType": "ANY_PLATFORM",
+              "threatEntryType": "URL",
+              "threat": {
+                "url": "http://www.urltocheck1.org/"
+              },
+              "cacheDuration": "300.000s"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "malicious",
+    "summary": "malware, social engineering",
+    "threats": [
+      "MALWARE",
+      "SOCIAL_ENGINEERING"
+    ],
+    "matches": [
+      {
+        "threatType": "MALWARE",
+        "platformType": "WINDOWS",
+        "threatEntryType": "URL",
+        "threat": {
+          "url": "http://www.urltocheck1.org/"
+        },
+        "threatEntryMetadata": {
+          "entries": [
+            {
+              "key": "malware_threat_type",
+              "value": "landing"
+            }
+          ]
+        },
+        "cacheDuration": "300.000s"
+      },
+      {
+        "threatType": "SOCIAL_ENGINEERING",
+        "platformType": "ANY_PLATFORM",
+        "threatEntryType": "URL",
+        "threat": {
+          "url": "http://www.urltocheck1.org/"
+        },
+        "cacheDuration": "300.000s"
+      }
+    ],
+    "count": 2
+  }
+}

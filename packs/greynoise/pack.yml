@@ -1,0 +1,11 @@
+id: greynoise
+name: GreyNoise
+vendor: GreyNoise
+category: Threat intelligence
+version: 1.0.0
+description: >-
+  What GreyNoise knows of an IP address (internet scanner, common business
+  service, classification), and the rest of its API: GNQL searches, CVEs,
+  tags, callback addresses, blocklists, event feeds and your own sensors.
+author: Nik
+nik: ">=6.1"

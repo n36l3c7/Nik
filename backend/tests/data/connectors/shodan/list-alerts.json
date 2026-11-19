@@ -1,0 +1,98 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/alert/info",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "name": "DNS Alert",
+            "created": "2021-01-27T03:44:22.989000",
+            "triggers": {},
+            "has_triggers": false,
+            "expires": 0,
+            "notify": {},
+            "expiration": null,
+            "filters": {
+              "ip": [
+                "8.8.8.8",
+                "1.1.1.1"
+              ]
+            },
+            "notifiers": [],
+            "id": "OYPRB8IR9Z35AZPR",
+            "size": 2
+          },
+          {
+            "name": "Google DNS Alert",
+            "created": "2021-01-27T03:42:50.908000",
+            "triggers": {},
+            "has_triggers": false,
+            "expires": 0,
+            "notify": {},
+            "expiration": null,
+            "filters": {
+              "ip": [
+                "8.8.8.8"
+              ]
+            },
+            "notifiers": [],
+            "id": "RIO8WNQZMI4ZQXW6",
+            "size": 1
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "alerts": [
+      {
+        "name": "DNS Alert",
+        "created": "2021-01-27T03:44:22.989000",
+        "triggers": {},
+        "has_triggers": false,
+        "expires": 0,
+        "notify": {},
+        "expiration": null,
+        "filters": {
+          "ip": [
+            "8.8.8.8",
+            "1.1.1.1"
+          ]
+        },
+        "notifiers": [],
+        "id": "OYPRB8IR9Z35AZPR",
+        "size": 2
+      },
+      {
+        "name": "Google DNS Alert",
+        "created": "2021-01-27T03:42:50.908000",
+        "triggers": {},
+        "has_triggers": false,
+        "expires": 0,
+        "notify": {},
+        "expiration": null,
+        "filters": {
+          "ip": [
+            "8.8.8.8"
+          ]
+        },
+        "notifiers": [],
+        "id": "RIO8WNQZMI4ZQXW6",
+        "size": 1
+      }
+    ],
+    "ids": [
+      "OYPRB8IR9Z35AZPR",
+      "RIO8WNQZMI4ZQXW6"
+    ],
+    "count": 2
+  }
+}

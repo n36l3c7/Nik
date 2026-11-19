@@ -1,0 +1,75 @@
+{
+  "args": {
+    "start_time": "2025-01-15T00:00:00Z",
+    "end_time": "2025-01-15T23:59:59Z",
+    "dest_field": "destination.port"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/connections",
+        "query": {
+          "start_time": "2025-01-15T00:00:00Z",
+          "end_time": "2025-01-15T23:59:59Z",
+          "dest_field": "destination.port"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "nodes": [
+            {
+              "id": "203.0.113.45",
+              "type": 1
+            },
+            {
+              "id": "443",
+              "type": 2
+            }
+          ],
+          "links": [
+            {
+              "source": "203.0.113.45",
+              "target": "443",
+              "value": 42
+            }
+          ],
+          "total": 42,
+          "request_metadata": {
+            "start_time": "2025-01-15T00:00:00Z",
+            "end_time": "2025-01-15T23:59:59Z",
+            "query": "",
+            "src_field": "source.ip",
+            "dest_field": "destination.port",
+            "max_nodes": 100,
+            "min_connections": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "nodes": [
+      {
+        "id": "203.0.113.45",
+        "type": 1
+      },
+      {
+        "id": "443",
+        "type": 2
+      }
+    ],
+    "links": [
+      {
+        "source": "203.0.113.45",
+        "target": "443",
+        "value": 42
+      }
+    ],
+    "total": 42
+  }
+}

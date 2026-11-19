@@ -1,0 +1,20 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "entitydb.shodan.io",
+        "path": "/health_check"
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200,
+    "answer": {}
+  }
+}

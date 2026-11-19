@@ -1,0 +1,64 @@
+{
+  "args": {
+    "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "detection_id": "9d4e2f7a-1b3c-4d5e-8f6a-7b8c9d0e1f2a",
+    "mutations_only": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/tactics/9d4e2f7a-1b3c-4d5e-8f6a-7b8c9d0e1f2a/files",
+        "query": {
+          "mutations_only": "true"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "sensor_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "timestamp": "2026-07-29T10:00:05Z",
+            "path": "/tmp/.x/miner",
+            "operations": [
+              "create",
+              "write"
+            ],
+            "file_type": "application/x-executable",
+            "file_size": 24576,
+            "md5_hash": "d41d8cd98f00b204e9800998ecf8427e",
+            "sha256_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "files": [
+      {
+        "workspace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "sensor_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "timestamp": "2026-07-29T10:00:05Z",
+        "path": "/tmp/.x/miner",
+        "operations": [
+          "create",
+          "write"
+        ],
+        "file_type": "application/x-executable",
+        "file_size": 24576,
+        "md5_hash": "d41d8cd98f00b204e9800998ecf8427e",
+        "sha256_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "paths": [
+      "/tmp/.x/miner"
+    ],
+    "sha256": [
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ]
+  }
+}

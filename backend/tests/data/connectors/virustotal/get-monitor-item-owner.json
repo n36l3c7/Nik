@@ -1,0 +1,48 @@
+{
+  "args": {
+    "id": "L3Rlc3QvdGFjLmV4ZQ"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor/items/L3Rlc3QvdGFjLmV4ZQ/owner",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "user",
+            "id": "gilfoyle",
+            "attributes": {
+              "first_name": "Bertram",
+              "last_name": "Gilfoyle",
+              "profile_phrase": "",
+              "reputation": 1,
+              "status": "active",
+              "user_since": 1530008602
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/users/gilfoyle"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "gilfoyle",
+    "type": "user",
+    "attributes": {
+      "first_name": "Bertram",
+      "last_name": "Gilfoyle",
+      "profile_phrase": "",
+      "reputation": 1,
+      "status": "active",
+      "user_since": 1530008602
+    }
+  }
+}

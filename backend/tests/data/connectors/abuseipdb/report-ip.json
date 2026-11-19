@@ -1,0 +1,39 @@
+{
+  "args": {
+    "ip": "127.0.0.1",
+    "categories": "18,22",
+    "comment": "SSH login attempts with user root.",
+    "timestamp": "2023-10-18T11:25:11-04:00"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v2/report",
+        "form": {
+          "ip": "127.0.0.1",
+          "categories": "18,22",
+          "comment": "SSH login attempts with user root.",
+          "timestamp": "2023-10-18T11:25:11-04:00"
+        },
+        "headers": {
+          "Key": "abuseipdb-key-0123456789abcdef0123456789abcdef",
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "ipAddress": "127.0.0.1",
+            "abuseConfidenceScore": 52
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ip": "127.0.0.1",
+    "score": 52
+  }
+}

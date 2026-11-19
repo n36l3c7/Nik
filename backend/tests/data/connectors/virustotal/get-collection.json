@@ -1,0 +1,54 @@
+{
+  "args": {
+    "id": "0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/collections/0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "collection",
+            "id": "0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e",
+            "attributes": {
+              "name": "Test collection",
+              "description": "This is how to create a new collection via API.",
+              "tags": [],
+              "ip_addresses_count": 1,
+              "domains_count": 2,
+              "urls_count": 2,
+              "files_count": 1,
+              "creation_date": 1634141562,
+              "last_modification_date": 1634141562
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/collections/0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e",
+    "type": "collection",
+    "attributes": {
+      "name": "Test collection",
+      "description": "This is how to create a new collection via API.",
+      "tags": [],
+      "ip_addresses_count": 1,
+      "domains_count": 2,
+      "urls_count": 2,
+      "files_count": 1,
+      "creation_date": 1634141562,
+      "last_modification_date": 1634141562
+    }
+  }
+}

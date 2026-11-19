@@ -1,0 +1,50 @@
+{
+  "args": {
+    "ip": "8.8.8.8"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/bsi/lookup",
+        "query": {
+          "ip": "8.8.8.8"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "ip": "8.8.8.8",
+          "matches": [
+            {
+              "cidr": "8.8.8.0/24",
+              "name": "Google",
+              "category": "search_engine",
+              "trust_level": "1",
+              "precedence": 10
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ip": "8.8.8.8",
+    "matches": [
+      {
+        "cidr": "8.8.8.0/24",
+        "name": "Google",
+        "category": "search_engine",
+        "trust_level": "1",
+        "precedence": 10
+      }
+    ],
+    "known": true,
+    "name": "Google",
+    "category": "search_engine",
+    "trust_level": "1"
+  }
+}

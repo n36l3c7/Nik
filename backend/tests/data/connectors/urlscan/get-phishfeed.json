@@ -1,0 +1,109 @@
+{
+  "args": {
+    "query": "date:>now-24h",
+    "limit": 10
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/pro/phishfeed",
+        "query": {
+          "q": "date:>now-24h",
+          "limit": 10,
+          "format": "json"
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "verdicts": {
+                "score": 100,
+                "malicious": true,
+                "urlscan": {
+                  "malicious": true
+                },
+                "hasVerdicts": true
+              },
+              "task": {
+                "visibility": "public",
+                "method": "api",
+                "domain": "login.example-bank.test",
+                "time": "2023-08-17T07:02:11.120Z",
+                "uuid": "2c900eb9-08c0-4615-af6d-38510f5ce254",
+                "url": "https://login.example-bank.test/signin"
+              },
+              "page": {
+                "country": "US",
+                "server": "nginx",
+                "ip": "192.0.2.44",
+                "url": "https://login.example-bank.test/signin",
+                "domain": "login.example-bank.test",
+                "status": "200"
+              },
+              "_id": "2c900eb9-08c0-4615-af6d-38510f5ce254",
+              "_score": null,
+              "sort": [
+                1692255731120,
+                "2c900eb9-08c0-4615-af6d-38510f5ce254"
+              ],
+              "result": "https://urlscan.io/api/v1/result/2c900eb9-08c0-4615-af6d-38510f5ce254/",
+              "screenshot": "https://urlscan.io/screenshots/2c900eb9-08c0-4615-af6d-38510f5ce254.png"
+            }
+          ],
+          "total": 1,
+          "took": 9,
+          "has_more": false
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "results": [
+      {
+        "verdicts": {
+          "score": 100,
+          "malicious": true,
+          "urlscan": {
+            "malicious": true
+          },
+          "hasVerdicts": true
+        },
+        "task": {
+          "visibility": "public",
+          "method": "api",
+          "domain": "login.example-bank.test",
+          "time": "2023-08-17T07:02:11.120Z",
+          "uuid": "2c900eb9-08c0-4615-af6d-38510f5ce254",
+          "url": "https://login.example-bank.test/signin"
+        },
+        "page": {
+          "country": "US",
+          "server": "nginx",
+          "ip": "192.0.2.44",
+          "url": "https://login.example-bank.test/signin",
+          "domain": "login.example-bank.test",
+          "status": "200"
+        },
+        "_id": "2c900eb9-08c0-4615-af6d-38510f5ce254",
+        "_score": null,
+        "sort": [
+          1692255731120,
+          "2c900eb9-08c0-4615-af6d-38510f5ce254"
+        ],
+        "result": "https://urlscan.io/api/v1/result/2c900eb9-08c0-4615-af6d-38510f5ce254/",
+        "screenshot": "https://urlscan.io/screenshots/2c900eb9-08c0-4615-af6d-38510f5ce254.png"
+      }
+    ],
+    "total": 1,
+    "count": 1,
+    "urls": [
+      "https://login.example-bank.test/signin"
+    ]
+  }
+}

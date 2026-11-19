@@ -1,0 +1,66 @@
+{
+  "args": {
+    "id": "0a49acd622a44982b1986984ba31c15b",
+    "relationship": "viewers"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/saved_searches/0a49acd622a44982b1986984ba31c15b/viewers",
+        "query": {
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "user",
+              "id": "gilfoyle",
+              "attributes": {
+                "first_name": "Bertram",
+                "last_name": "Gilfoyle",
+                "profile_phrase": "",
+                "reputation": 1,
+                "status": "active",
+                "user_since": 1530008602
+              },
+              "links": {
+                "self": "https://www.virustotal.com/api/v3/users/gilfoyle"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "user",
+        "id": "gilfoyle",
+        "attributes": {
+          "first_name": "Bertram",
+          "last_name": "Gilfoyle",
+          "profile_phrase": "",
+          "reputation": 1,
+          "status": "active",
+          "user_since": 1530008602
+        },
+        "links": {
+          "self": "https://www.virustotal.com/api/v3/users/gilfoyle"
+        }
+      }
+    ],
+    "ids": [
+      "gilfoyle"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

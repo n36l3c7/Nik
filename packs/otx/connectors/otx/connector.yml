@@ -1,0 +1,665 @@
+# AlienVault OTX (LevelBlue Open Threat Exchange), through its DirectConnect
+# API, version 1.
+#
+# Written against the reference LevelBlue publishes ("LevelBlue External API
+# documentation version 1", the page behind https://otx.alienvault.com/api:
+# https://otx.alienvault.com/assets/static/external_api.html) and, for what
+# that page does not show, LevelBlue's own SDK
+# (https://github.com/AlienVault-OTX/OTX-Python-SDK), which uses the same
+# calls. Not run against the real service: see "verified" below.
+#
+# The key goes in the X-OTX-API-KEY header. The whole API is free: no command
+# needs a paid plan. Several commands that change something are GET requests
+# in this API (deleting a pulse, subscribing, following): they are marked as
+# changing something all the same.
+#
+# The reference shows no example for the indicator sections, the details of a
+# pulse and a few others: those commands name only the parts of the answer
+# that Nik's own enrichment or the SDK read, and give the rest as it comes.
+# Three endpoints are not here: submitting a file (it needs the bytes of the
+# file, which a command cannot send) and the two that change the TLP of what
+# was submitted (the reference gives them each other's fields).
+name: AlienVault OTX
+id: otx
+version: 1
+description: Indicators, pulses and users of LevelBlue's Open Threat Exchange - what is known of an address, a domain, a URL, a file or a CVE, and the pulses that name them.
+api_version: "OTX DirectConnect API v1 (otx.alienvault.com/api/v1)"
+verified: false
+configuration:
+  - name: api_key
+    label: OTX key
+    type: header
+    header: X-OTX-API-KEY
+    help: "The OTX Key of your account: otx.alienvault.com, Settings, or the API Integration page."
+base_url: "https://otx.alienvault.com/api/v1"
+test:
+  request: { method: GET, path: /users/me }
+commands:
+  # ------------------------------------------------------------- reputation --
+  # The verdict, as Nik's enrichment gives it: in a pulse → suspicious; in none but on a list OTX
+  # trusts (its "validation") → harmless; otherwise, and when OTX does not know the value → unknown.
+  - name: get-ip-reputation
+    description: What OTX knows of an IP address (IPv4 or IPv6) - the pulses that name it, whether OTX lists it as known good, its network and country.
+    reputation: ip
+    arguments:
+      - { name: ip, type: text, required: true, description: "The address: 8.8.8.8 or 2001:4860:4860::8888" }
+    request:
+      method: GET
+      path: "/indicators/{{ args.ip | regex_extract(':') | map(':', 'IPv6', else='IPv4') }}/{{ args.ip }}/general"
+    success: { status: [200, 404] }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
+      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
+      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      validation: "{{ response.validation }}"
+      asn: "{{ response.asn }}"
+      country: "{{ response.country_name }}"
+      link: "https://otx.alienvault.com/indicator/ip/{{ args.ip }}"
+
+  - name: get-domain-reputation
+    description: What OTX knows of a domain - the pulses that name it and whether OTX lists it as known good.
+    reputation: domain
+    arguments:
+      - { name: domain, type: text, required: true, description: "The domain: example.com" }
+    request: { method: GET, path: "/indicators/domain/{{ args.domain }}/general" }
+    success: { status: [200, 404] }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
+      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
+      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      validation: "{{ response.validation }}"
+      link: "https://otx.alienvault.com/indicator/domain/{{ args.domain }}"
+
+  - name: get-url-reputation
+    description: What OTX knows of a URL - the pulses that name it and whether OTX lists it as known good.
+    reputation: url
+    arguments:
+      - { name: url, type: text, required: true, description: "The address, with its scheme: http://example.com/a/page.html" }
+    request:
+      method: GET
+      # The address is a part of the path, written as it is (as the reference and the SDK do); only what would end the path is encoded.
+      path: "/indicators/url/{{ args.url | replace('%', '%25') | replace('?', '%3F') | replace('#', '%23') | replace(' ', '%20') }}/general"
+    success: { status: [200, 404] }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
+      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
+      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      validation: "{{ response.validation }}"
+
+  - name: get-file-reputation
+    description: What OTX knows of a file by its hash (MD5, SHA-1 or SHA-256) - the pulses that name it and whether OTX lists it as known good.
+    reputation: file
+    arguments:
+      - { name: file_hash, type: text, required: true, description: "The MD5, SHA-1 or SHA-256 of the file" }
+    request: { method: GET, path: "/indicators/file/{{ args.file_hash }}/general" }
+    success: { status: [200, 404] }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
+      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
+      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      validation: "{{ response.validation }}"
+      link: "https://otx.alienvault.com/indicator/file/{{ args.file_hash }}"
+
+  # -------------------------------------------------------------- indicators --
+  - name: get-ipv4-indicator
+    description: One section of what OTX holds on an IPv4 address - general, reputation, geo, malware, url_list, passive_dns or http_scans.
+    arguments:
+      - { name: ip, type: text, required: true, description: "The address: 8.8.8.8" }
+      - { name: section, type: choice, required: true, default: general, choices: [general, reputation, geo, malware, url_list, passive_dns, http_scans], description: "general: geography and pulses; reputation: malicious activity seen by LevelBlue Labs; malware: samples that connect to it; url_list: URLs on it; passive_dns: names that pointed to it" }
+    request: { method: GET, path: "/indicators/IPv4/{{ args.ip }}/{{ args.section }}" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-ipv6-indicator
+    description: One section of what OTX holds on an IPv6 address - general, reputation, geo, malware, url_list or passive_dns.
+    arguments:
+      - { name: ip, type: text, required: true, description: "The address: 2001:4860:4860::8888" }
+      - { name: section, type: choice, required: true, default: general, choices: [general, reputation, geo, malware, url_list, passive_dns], description: "general: geography and pulses; reputation: malicious activity seen by LevelBlue Labs; malware: samples that connect to it; url_list: URLs on it; passive_dns: names that pointed to it" }
+    request: { method: GET, path: "/indicators/IPv6/{{ args.ip }}/{{ args.section }}" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-domain-indicator
+    description: One section of what OTX holds on a domain - general, geo, malware, url_list, passive_dns, whois or http_scans.
+    arguments:
+      - { name: domain, type: text, required: true, description: "The domain: example.com" }
+      - { name: section, type: choice, required: true, default: general, choices: [general, geo, malware, url_list, passive_dns, whois, http_scans], description: "general: pulses and the sections there are; malware: samples that connect to it; url_list: URLs on it; passive_dns: records seen for it; whois: its registration" }
+    request: { method: GET, path: "/indicators/domain/{{ args.domain }}/{{ args.section }}" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-hostname-indicator
+    description: One section of what OTX holds on a hostname - general, geo, malware, url_list, passive_dns or http_scans.
+    arguments:
+      - { name: hostname, type: text, required: true, description: "The hostname: mail.example.com" }
+      - { name: section, type: choice, required: true, default: general, choices: [general, geo, malware, url_list, passive_dns, http_scans], description: "general: pulses and the sections there are; malware: samples that connect to it; url_list: URLs on it; passive_dns: records seen for it" }
+    request: { method: GET, path: "/indicators/hostname/{{ args.hostname }}/{{ args.section }}" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-file-indicator
+    description: One section of what OTX holds on a file by its hash - general (its metadata and pulses) or analysis (static and dynamic analysis).
+    arguments:
+      - { name: file_hash, type: text, required: true, description: "The MD5, SHA-1 or SHA-256 of the file" }
+      - { name: section, type: choice, required: true, default: general, choices: [general, analysis], description: "general: metadata and pulses; analysis: the sandbox run, exiftool and the antivirus results" }
+    request: { method: GET, path: "/indicators/file/{{ args.file_hash }}/{{ args.section }}" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-url-indicator
+    description: One section of what OTX holds on a URL - general (geography over time, pulses) or url_list (the results of LevelBlue Labs' analysis of it).
+    arguments:
+      - { name: url, type: text, required: true, description: "The address, with its scheme: http://example.com/a/page.html" }
+      - { name: section, type: choice, required: true, default: general, choices: [general, url_list], description: "general: geography and pulses; url_list: every analysis of the address" }
+    request:
+      method: GET
+      path: "/indicators/url/{{ args.url | replace('%', '%25') | replace('?', '%3F') | replace('#', '%23') | replace(' ', '%20') }}/{{ args.section }}"
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-cve-indicator
+    description: What OTX holds on a CVE - MITRE's data (CPEs, CWEs) and the pulses that name it.
+    arguments:
+      - { name: cve, type: text, required: true, description: "The CVE: CVE-2014-0160" }
+    request: { method: GET, path: "/indicators/cve/{{ args.cve }}/general" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-nids-indicator
+    description: What OTX holds on a network IDS rule, by its id.
+    arguments:
+      - { name: nids, type: text, required: true, description: "The id of the rule: 2820184" }
+    request: { method: GET, path: "/indicators/nids/{{ args.nids }}/general" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-correlation-rule-indicator
+    description: What OTX holds on a correlation rule, by its id.
+    arguments:
+      - { name: correlation_rule, type: text, required: true, description: "The id of the rule: 572f8c3c540c6f0161677877" }
+    request: { method: GET, path: "/indicators/correlation-rule/{{ args.correlation_rule }}/general" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: get-yara-indicator
+    description: What OTX holds on a YARA rule, by its id.
+    arguments:
+      - { name: yara, type: text, required: true, description: The id of the YARA rule in OTX }
+    request: { method: GET, path: "/indicators/YARA/{{ args.yara }}/general" }
+    error: { message: "{{ response.detail }}" }
+
+  # ------------------------------------------------------------- submissions --
+  - name: submit-url
+    description: Give OTX a URL to analyse - it visits the address and analyses what it finds, a file it serves included.
+    changes_outside: true
+    arguments:
+      - { name: url, type: text, required: true, description: The address to analyse }
+      - { name: tlp, type: choice, choices: [white, green, amber, red], description: The TLP of the submission }
+    request:
+      method: POST
+      path: /indicators/submit_url
+      json: { url: "{{ args.url }}", tlp: "{{ args.tlp }}" }
+    error: { message: "{{ response.detail }}" }
+    sample: { response: {} }
+
+  - name: submit-urls
+    description: Give OTX several URLs to analyse at once.
+    changes_outside: true
+    arguments:
+      - { name: urls, type: list, required: true, description: The addresses to analyse }
+      - { name: tlp, type: choice, choices: [white, green, amber, red], description: The TLP of the submission }
+    request:
+      method: POST
+      path: /indicators/submit_urls
+      json: { urls: "{{ args.urls }}", tlp: "{{ args.tlp }}" }
+    error: { message: "{{ response.detail }}" }
+    sample: { response: {} }
+
+  - name: list-submitted-urls
+    description: The URLs you gave OTX to analyse, with how far each analysis is.
+    arguments:
+      - { name: sort, type: choice, choices: [add_date, url, complete_date], description: The field to order by }
+    request: { method: GET, path: /indicators/submitted_urls, query: { sort: "{{ args.sort }}" } }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 100, max_pages: 10 }
+    outputs:
+      submissions: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-submitted-files
+    description: The files you gave OTX to analyse, with how far each analysis is.
+    arguments:
+      - { name: sort, type: choice, choices: [add_date, sha256, complete_date], description: The field to order by }
+    request: { method: GET, path: /indicators/submitted_files, query: { sort: "{{ args.sort }}" } }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 100, max_pages: 10 }
+    outputs:
+      submissions: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  # ------------------------------------------------------------------ pulses --
+  - name: get-pulse
+    description: One pulse - its description, tags, references and indicators.
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: "The id of the pulse: 57204e9b3c4c3e015d93cb12" }
+    request: { method: GET, path: "/pulses/{{ args.pulse_id }}" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      description: "{{ response.description }}"
+      author: "{{ response.author_name }}"
+      tlp: "{{ response.TLP }}"
+      tags: "{{ response.tags }}"
+      references: "{{ response.references }}"
+      adversary: "{{ response.adversary }}"
+      modified: "{{ response.modified }}"
+      indicators: "{{ response.indicators }}"
+      indicator_values: "{{ response.indicators | pluck('indicator') }}"
+      pulse: "{{ response }}"
+
+  - name: edit-pulse
+    description: Change a pulse of yours. Texts and yes/no values take the new value; lists take what to add and what to remove.
+    changes_outside: true
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+      - { name: name, type: text, description: The new name }
+      - { name: description, type: text, description: The new description }
+      - { name: tlp, type: choice, choices: [white, green, amber, red], description: The new TLP }
+      - { name: public, type: bool, description: Whether everyone may see the pulse }
+      - { name: adversary, type: text, description: The adversary the pulse is about }
+      - { name: tags, type: object, description: 'Tags to add and to remove: {"add": ["a"], "remove": ["b"]}' }
+      - { name: references, type: object, description: 'References to add and to remove: {"add": [...], "remove": [...]}' }
+      - { name: targeted_countries, type: object, description: 'Countries to add and to remove: {"add": [...], "remove": [...]}' }
+      - { name: industries, type: object, description: 'Industries to add and to remove: {"add": [...], "remove": [...]}' }
+      - { name: malware_families, type: object, description: 'Malware families to add and to remove: {"add": [...], "remove": [...]}' }
+      - { name: attack_ids, type: object, description: 'ATT&CK ids to add and to remove: {"add": ["T1001"], "remove": [...]}' }
+      - { name: indicators, type: object, description: 'Indicators: {"add": [{"indicator": "8.8.8.9", "type": "IPv4"}], "edit": [{"id": 3, "role": "scanning_host"}], "remove": [{"id": 4}]}. The ids are those list-pulse-indicators gives.' }
+    request:
+      method: PATCH
+      path: "/pulses/{{ args.pulse_id }}"
+      json:
+        name: "{{ args.name }}"
+        description: "{{ args.description }}"
+        TLP: "{{ args.tlp }}"
+        public: "{{ args.public }}"
+        adversary: "{{ args.adversary }}"
+        tags: "{{ args.tags }}"
+        references: "{{ args.references }}"
+        targeted_countries: "{{ args.targeted_countries }}"
+        industries: "{{ args.industries }}"
+        malware_families: "{{ args.malware_families }}"
+        attack_ids: "{{ args.attack_ids }}"
+        indicators: "{{ args.indicators }}"
+    error: { message: "{{ response.detail }}" }
+    sample: { response: {} }
+
+  - name: list-pulse-indicators
+    description: The indicators of a pulse, read page after page (five thousand at most).
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+    request: { method: GET, path: "/pulses/{{ args.pulse_id }}/indicators" }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 1000, max_pages: 5 }
+    outputs:
+      indicators: "{{ response.items }}"
+      values: "{{ response.items | pluck('indicator') }}"
+      types: "{{ response.items | pluck('type') | unique }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: get-related-pulses
+    description: The pulses that share an indicator with a pulse.
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+    request: { method: GET, path: "/pulses/{{ args.pulse_id }}/related" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: find-related-pulses
+    description: The pulses related to a pulse (they share indicators), to a malware family or to an adversary - one of the three.
+    arguments:
+      - { name: pulse_id, type: text, description: "The id of a pulse (or a malware family, or an adversary: one only)" }
+      - { name: malware_family, type: text, description: "A malware family: Virus:Win32/Nabucur" }
+      - { name: adversary, type: text, description: "An adversary: Equation Group" }
+      - { name: limit, type: number, default: 10, description: How many results a page holds }
+      - { name: page, type: number, default: 1, description: Which page of the results }
+    request:
+      method: GET
+      path: /pulses/related
+      query:
+        pulse_id: "{{ args.pulse_id }}"
+        malware_family: "{{ args.malware_family }}"
+        adversary: "{{ args.adversary }}"
+        limit: "{{ args.limit }}"
+        page: "{{ args.page }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      pulses: "{{ response.results }}"
+      count: "{{ response.count }}"
+      next: "{{ response.next }}"
+
+  - name: list-subscribed-pulses
+    description: The pulses of your subscriptions - those of the users and groups you follow, those you subscribed to and your own - with their indicators (a thousand pulses at most).
+    arguments:
+      - { name: modified_since, type: text, description: "Only the pulses changed after this moment, ISO 8601 in UTC: 2017-01-01T12:35:00+00:00" }
+    request: { method: GET, path: /pulses/subscribed, query: { modified_since: "{{ args.modified_since }}" } }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 50, max_pages: 20 }
+    outputs:
+      pulses: "{{ response.items }}"
+      ids: "{{ response.items | pluck('id') }}"
+      names: "{{ response.items | pluck('name') }}"
+      indicators: "{{ response.items[*].indicators[*].indicator | unique }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-subscribed-pulse-ids
+    description: The ids of every pulse you are subscribed to.
+    arguments: []
+    request: { method: GET, path: /pulses/subscribed_pulse_ids }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 1000, max_pages: 5 }
+    outputs:
+      ids: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-activity
+    description: Your activity feed - the pulses of your subscriptions, your own, and those of the users you follow (five hundred at most).
+    arguments:
+      - { name: modified_since, type: text, description: "Only the pulses changed after this moment, ISO 8601 in UTC: 2017-01-01T12:35:00+00:00" }
+    request: { method: GET, path: /pulses/activity, query: { modified_since: "{{ args.modified_since }}" } }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 50, max_pages: 10 }
+    outputs:
+      pulses: "{{ response.items }}"
+      ids: "{{ response.items | pluck('id') }}"
+      names: "{{ response.items | pluck('name') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: create-pulse
+    description: Publish a pulse - a named set of indicators, with what it is about.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: name, type: text, required: true, description: The name of the pulse }
+      - { name: public, type: bool, required: true, description: "Whether everyone may see the pulse (false: only you and the groups you name)" }
+      - { name: description, type: text, description: What the pulse is about }
+      - { name: tlp, type: choice, choices: [white, green, amber, red], description: The TLP of the pulse }
+      - { name: indicators, type: list, description: 'The indicators, each {"indicator": "8.8.8.8", "type": "IPv4", "description": ""} and optionally title, role, expiration, content. The types are those of list-indicator-types.' }
+      - { name: tags, type: list, description: Tags }
+      - { name: references, type: list, description: "Addresses of what the pulse is drawn from" }
+      - { name: adversary, type: text, description: The adversary the pulse is about }
+      - { name: targeted_countries, type: list, description: The countries targeted }
+      - { name: industries, type: list, description: The industries targeted }
+      - { name: malware_families, type: list, description: "The malware families: Backdoor:Linux/Netbus" }
+      - { name: attack_ids, type: list, description: "MITRE ATT&CK ids: T1001" }
+      - { name: group_ids, type: list, description: "The ids (numbers) of the groups the pulse goes to; you must belong to them" }
+    request:
+      method: POST
+      path: /pulses/create
+      json:
+        name: "{{ args.name }}"
+        public: "{{ args.public }}"
+        description: "{{ args.description }}"
+        TLP: "{{ args.tlp }}"
+        indicators: "{{ args.indicators }}"
+        tags: "{{ args.tags }}"
+        references: "{{ args.references }}"
+        adversary: "{{ args.adversary }}"
+        targeted_countries: "{{ args.targeted_countries }}"
+        industries: "{{ args.industries }}"
+        malware_families: "{{ args.malware_families }}"
+        attack_ids: "{{ args.attack_ids }}"
+        group_ids: "{{ args.group_ids }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      revision: "{{ response.revision }}"
+      public: "{{ response.public }}"
+      indicators_count: "{{ response.indicators_count }}"
+      created: "{{ response.created }}"
+      pulse: "{{ response }}"
+    sample: { id: 5dcdbc6f9d8108c36bbcbb56, name: Test Pulse Name, revision: 1, public: true, indicators_count: 2, created: "2019-11-14T20:43:27.994238", pulse: { id: 5dcdbc6f9d8108c36bbcbb56, name: Test Pulse Name } }
+
+  - name: delete-pulse
+    description: Delete a pulse you created.
+    changes_outside: true
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+    request: { method: GET, path: "/pulses/{{ args.pulse_id }}/delete" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ response.status }}"
+    sample: { status: "Pulse removed (id: 5e46ee71665eed2ce67ed4be)" }
+
+  - name: clone-pulse
+    description: Copy a pulse into a new pulse of yours, under a name you give.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse to copy }
+      - { name: name, type: text, required: true, description: The name of the new pulse }
+    request:
+      method: POST
+      path: "/pulses/{{ args.pulse_id }}/clone"
+      json: { name: "{{ args.name }}" }
+    error: { message: "{{ response.detail }}" }
+    sample: { response: {} }
+
+  - name: subscribe-to-pulse
+    description: Subscribe to a pulse - it then comes with your subscribed pulses.
+    changes_outside: true
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+    request: { method: GET, path: "/pulses/{{ args.pulse_id }}/subscribe" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ response.status }}"
+      subscriber_count: "{{ response.subscriber_count }}"
+    sample: { status: subscribe, subscriber_count: 2 }
+
+  - name: unsubscribe-from-pulse
+    description: Stop being subscribed to a pulse. A subscription to its author stays, but this pulse no longer comes with your subscribed pulses.
+    changes_outside: true
+    arguments:
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+    request: { method: GET, path: "/pulses/{{ args.pulse_id }}/unsubscribe" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ response.status }}"
+      subscriber_count: "{{ response.subscriber_count }}"
+    sample: { status: unsubscribe, subscriber_count: 2 }
+
+  - name: add-pulse-to-group
+    description: Put a pulse in a group you belong to.
+    changes_outside: true
+    arguments:
+      - { name: group_id, type: text, required: true, description: The id (a number) of the group }
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+    request: { method: GET, path: "/groups/{{ args.group_id }}/add_pulse", query: { pulse_id: "{{ args.pulse_id }}" } }
+    error: { message: "{{ response.detail }}" }
+    sample: { response: {} }
+
+  - name: remove-pulse-from-group
+    description: Take a pulse out of a group.
+    changes_outside: true
+    arguments:
+      - { name: group_id, type: text, required: true, description: The id (a number) of the group }
+      - { name: pulse_id, type: text, required: true, description: The id of the pulse }
+    request: { method: GET, path: "/groups/{{ args.group_id }}/remove_pulse", query: { pulse_id: "{{ args.pulse_id }}" } }
+    error: { message: "{{ response.detail }}" }
+    sample: { response: {} }
+
+  - name: list-indicator-types
+    description: The types of indicator OTX knows (IPv4, domain, FileHash-SHA256…), as a pulse names them.
+    arguments: []
+    request: { method: GET, path: /pulses/indicators/types }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      types: "{{ response.detail }}"
+      names: "{{ response.detail | pluck('name') }}"
+
+  - name: validate-indicator
+    description: Ask OTX whether a value is a valid indicator of a type, before putting it in a pulse (a pulse with an invalid indicator is not created).
+    arguments:
+      - { name: indicator, type: text, required: true, description: "The value: 8.8.8.8" }
+      - { name: type, type: text, required: true, description: "Its type, as list-indicator-types names it: IPv4, domain, URL, FileHash-SHA256…" }
+      - { name: description, type: text, description: A description of the indicator }
+    request:
+      method: POST
+      path: /pulses/indicators/validate
+      json: { indicator: "{{ args.indicator }}", type: "{{ args.type }}", description: "{{ args.description | default('') }}" }
+    error: { message: "{{ response.detail }}" }
+
+  - name: list-events
+    description: What happened to your subscriptions - a pulse or a user subscribed to or dropped, a pulse made private or deleted by its author, a group joined or left.
+    arguments:
+      - { name: modified_since, type: text, description: "Only what happened after this moment, ISO 8601 in UTC: 2017-01-01T12:35:00+00:00" }
+    request: { method: GET, path: /pulses/events, query: { modified_since: "{{ args.modified_since }}" } }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 100, max_pages: 10 }
+    outputs:
+      events: "{{ response.items }}"
+      deleted_pulses: "{{ response.items | where('object_type', 'eq', 'pulse') | where('action', 'eq', 'delete') | pluck('object_id') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-user-pulses
+    description: The pulses a user created, the latest changed first (five hundred at most).
+    arguments:
+      - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
+      - { name: since, type: text, description: "Only the pulses changed after this moment, ISO 8601 in UTC: 2017-01-01T12:35:00+00:00" }
+    request: { method: GET, path: "/pulses/user/{{ args.username }}", query: { since: "{{ args.since }}" } }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 50, max_pages: 10 }
+    outputs:
+      pulses: "{{ response.items }}"
+      ids: "{{ response.items | pluck('id') }}"
+      names: "{{ response.items | pluck('name') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-my-pulses
+    description: The pulses you created, the latest changed first (five hundred at most).
+    arguments:
+      - { name: since, type: text, description: "Only the pulses changed after this moment, ISO 8601 in UTC: 2017-01-01T12:35:00+00:00" }
+    request: { method: GET, path: /pulses/my, query: { since: "{{ args.since }}" } }
+    error: { message: "{{ response.detail }}" }
+    pagination: { type: page, items: "{{ response.results }}", param: page, limit_param: limit, limit: 50, max_pages: 10 }
+    outputs:
+      pulses: "{{ response.items }}"
+      ids: "{{ response.items | pluck('id') }}"
+      names: "{{ response.items | pluck('name') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  # ------------------------------------------------------------------ search --
+  - name: search-pulses
+    description: Search the pulses of OTX for a text (one page of results).
+    arguments:
+      - { name: query, type: text, required: true, description: The text to search for }
+      - { name: sort, type: choice, choices: [modified, created, subscriber_count], description: The field to order by }
+      - { name: limit, type: number, default: 25, description: How many results a page holds }
+      - { name: page, type: number, default: 1, description: Which page of the results }
+    request:
+      method: GET
+      path: /search/pulses
+      query: { q: "{{ args.query }}", sort: "{{ args.sort }}", limit: "{{ args.limit }}", page: "{{ args.page }}" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      pulses: "{{ response.results }}"
+      ids: "{{ response.results | pluck('id') }}"
+      names: "{{ response.results | pluck('name') }}"
+      count: "{{ response.count }}"
+      next: "{{ response.next }}"
+
+  - name: search-users
+    description: Search the users of OTX for a text (one page of results).
+    arguments:
+      - { name: query, type: text, required: true, description: The text to search for }
+      - { name: sort, type: choice, choices: [username, pulse_count], description: The field to order by }
+      - { name: limit, type: number, default: 20, description: How many results a page holds }
+      - { name: page, type: number, default: 1, description: Which page of the results }
+    request:
+      method: GET
+      path: /search/users
+      query: { q: "{{ args.query }}", sort: "{{ args.sort }}", limit: "{{ args.limit }}", page: "{{ args.page }}" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      users: "{{ response.results }}"
+      count: "{{ response.count }}"
+      next: "{{ response.next }}"
+
+  # ------------------------------------------------------------------- users --
+  - name: get-me
+    description: The account the key belongs to - a way to check the key.
+    arguments: []
+    request: { method: GET, path: /users/me }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      username: "{{ response.username }}"
+      user_id: "{{ response.user_id }}"
+      pulse_count: "{{ response.pulse_count }}"
+      indicator_count: "{{ response.indicator_count }}"
+      subscriber_count: "{{ response.subscriber_count }}"
+      follower_count: "{{ response.follower_count }}"
+      member_since: "{{ response.member_since }}"
+
+  - name: get-user
+    description: What OTX shows of a user, by name.
+    arguments:
+      - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
+    request: { method: GET, path: "/users/{{ args.username }}", query: { detailed: 1 } }
+    error: { message: "{{ response.detail }}" }
+
+  - name: subscribe-to-user
+    description: Subscribe to a user - every pulse of theirs then comes with your subscribed pulses.
+    changes_outside: true
+    arguments:
+      - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
+    request: { method: GET, path: "/users/{{ args.username }}/subscribe" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ response.status }}"
+    sample: { status: subscribed }
+
+  - name: unsubscribe-from-user
+    description: Stop being subscribed to a user - their pulses no longer come with your subscribed pulses.
+    changes_outside: true
+    arguments:
+      - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
+    request: { method: GET, path: "/users/{{ args.username }}/unsubscribe" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ response.status }}"
+    sample: { status: unsubscribed }
+
+  - name: follow-user
+    description: Follow a user - their pulses come in your activity feed (not with your subscribed pulses).
+    changes_outside: true
+    arguments:
+      - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
+    request: { method: GET, path: "/users/{{ args.username }}/follow" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ response.status }}"
+    sample: { status: followed }
+
+  - name: unfollow-user
+    description: Stop following a user - their pulses leave your activity feed.
+    changes_outside: true
+    arguments:
+      - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
+    request: { method: GET, path: "/users/{{ args.username }}/unfollow" }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ response.status }}"
+    sample: { status: unfollowed }

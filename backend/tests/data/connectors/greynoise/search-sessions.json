@@ -1,0 +1,80 @@
+{
+  "args": {
+    "start_time": "2025-01-15T00:00:00Z",
+    "end_time": "2025-01-15T23:59:59Z",
+    "query": "destination.port:443"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions",
+        "query": {
+          "start_time": "2025-01-15T00:00:00Z",
+          "end_time": "2025-01-15T23:59:59Z",
+          "query": "destination.port:443",
+          "page": 1,
+          "page_size": 100
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "sessions": [
+            {
+              "_id": "2505-abcdef123456",
+              "firstPacket": "2025-01-15T10:30:00Z",
+              "lastPacket": "2025-01-15T10:30:05Z",
+              "source.ip": "203.0.113.45",
+              "source.port": 54321,
+              "destination.ip": "198.51.100.10",
+              "destination.port": 443,
+              "source.bytes": 1024,
+              "source.packets": 10,
+              "destination.bytes": 2048,
+              "destination.packets": 8,
+              "classification": "malicious"
+            }
+          ],
+          "total": 150,
+          "pagination": {
+            "page": 1,
+            "page_size": 25,
+            "sort_by": "lastPacket",
+            "sort_desc": true
+          },
+          "request_metadata": {
+            "start_time": "2025-01-01T00:00:00Z",
+            "end_time": "2025-01-07T23:59:59Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "sessions": [
+      {
+        "_id": "2505-abcdef123456",
+        "firstPacket": "2025-01-15T10:30:00Z",
+        "lastPacket": "2025-01-15T10:30:05Z",
+        "source.ip": "203.0.113.45",
+        "source.port": 54321,
+        "destination.ip": "198.51.100.10",
+        "destination.port": 443,
+        "source.bytes": 1024,
+        "source.packets": 10,
+        "destination.bytes": 2048,
+        "destination.packets": 8,
+        "classification": "malicious"
+      }
+    ],
+    "ids": [
+      "2505-abcdef123456"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

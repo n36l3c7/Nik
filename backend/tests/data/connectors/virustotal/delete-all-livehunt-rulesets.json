@@ -1,0 +1,33 @@
+{
+  "args": {
+    "username": "gilfoyle"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v3/intelligence/hunting_rulesets",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "x-confirm-delete": "gilfoyle"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "operation",
+            "id": "334b32b7fa5b47c78369600fad91d1b4",
+            "attributes": {
+              "status": "running"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "operation_id": "334b32b7fa5b47c78369600fad91d1b4",
+    "status": "running"
+  }
+}

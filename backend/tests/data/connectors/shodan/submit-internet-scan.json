@@ -1,0 +1,30 @@
+{
+  "args": {
+    "port": 80,
+    "protocol": "http"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/shodan/scan/internet",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        },
+        "form": {
+          "port": 80,
+          "protocol": "http"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "TcjcsMfPcw4o7O84"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "TcjcsMfPcw4o7O84"
+  }
+}

@@ -1,0 +1,208 @@
+{
+  "args": {
+    "references": [
+      "https://google.com",
+      "https://amazon.com"
+    ],
+    "indicators": [
+      {
+        "expiration": "2019-01-01T00:00:00",
+        "type": "domain",
+        "indicator": "rustybrooks.com",
+        "content": "",
+        "role": "scanning_host",
+        "title": "It's my website",
+        "description": "A longer description can be used if desired"
+      }
+    ],
+    "name": "Test Pulse Name",
+    "description": "Test Pulse Description",
+    "public": true,
+    "tags": [
+      "tag1",
+      "tag2",
+      "tag3"
+    ],
+    "group_ids": [
+      1,
+      2,
+      3
+    ],
+    "industries": [
+      "Industry1",
+      "Industry2"
+    ],
+    "targeted_countries": [
+      "Afghanistan",
+      "Anguilla"
+    ],
+    "malware_families": [
+      "Backdoor:Linux/Netbus",
+      "Backdoor:Linux/Cyrax"
+    ],
+    "attack_ids": [
+      "T1001",
+      "T1486"
+    ],
+    "adversary": "APT 1",
+    "tlp": "white"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/pulses/create",
+        "json": {
+          "references": [
+            "https://google.com",
+            "https://amazon.com"
+          ],
+          "indicators": [
+            {
+              "expiration": "2019-01-01T00:00:00",
+              "type": "domain",
+              "indicator": "rustybrooks.com",
+              "content": "",
+              "role": "scanning_host",
+              "title": "It's my website",
+              "description": "A longer description can be used if desired"
+            }
+          ],
+          "name": "Test Pulse Name",
+          "description": "Test Pulse Description",
+          "public": true,
+          "TLP": "white",
+          "tags": [
+            "tag1",
+            "tag2",
+            "tag3"
+          ],
+          "group_ids": [
+            1,
+            2,
+            3
+          ],
+          "industries": [
+            "Industry1",
+            "Industry2"
+          ],
+          "targeted_countries": [
+            "Afghanistan",
+            "Anguilla"
+          ],
+          "malware_families": [
+            "Backdoor:Linux/Netbus",
+            "Backdoor:Linux/Cyrax"
+          ],
+          "attack_ids": [
+            "T1001",
+            "T1486"
+          ],
+          "adversary": "APT 1"
+        },
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        }
+      },
+      "response": {
+        "status": 201,
+        "json": {
+          "TLP": "white",
+          "active": true,
+          "adversary": "APT 1",
+          "attack_ids": [],
+          "author_id": 16976,
+          "author_name": "rbrooks_av",
+          "cloned_from": null,
+          "comments_count": 0,
+          "created": "2019-11-14T20:43:27.994238",
+          "description": "Test Pulse Description",
+          "group_ids": [
+            1,
+            2,
+            3
+          ],
+          "id": "5dcdbc6f9d8108c36bbcbb56",
+          "indicators": [
+            {
+              "access_groups": [],
+              "access_reason": "",
+              "access_type": "public",
+              "content": "",
+              "description": "A longer description can be used if desired",
+              "expiration": "2019-01-01T00:00:00+00:00",
+              "indicator": "rustybrooks.com",
+              "is_active": true,
+              "role": "scanning_host",
+              "title": "It's my website",
+              "type": "domain"
+            }
+          ],
+          "indicators_count": 1,
+          "modified": "2019-11-14T20:43:27.994238",
+          "name": "Test Pulse Name",
+          "public": true,
+          "pulse_source": "api",
+          "revision": 1,
+          "tags": [
+            "tag1",
+            "tag2",
+            "tag3"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "5dcdbc6f9d8108c36bbcbb56",
+    "name": "Test Pulse Name",
+    "revision": 1,
+    "public": true,
+    "indicators_count": 1,
+    "created": "2019-11-14T20:43:27.994238",
+    "pulse": {
+      "TLP": "white",
+      "active": true,
+      "adversary": "APT 1",
+      "attack_ids": [],
+      "author_id": 16976,
+      "author_name": "rbrooks_av",
+      "cloned_from": null,
+      "comments_count": 0,
+      "created": "2019-11-14T20:43:27.994238",
+      "description": "Test Pulse Description",
+      "group_ids": [
+        1,
+        2,
+        3
+      ],
+      "id": "5dcdbc6f9d8108c36bbcbb56",
+      "indicators": [
+        {
+          "access_groups": [],
+          "access_reason": "",
+          "access_type": "public",
+          "content": "",
+          "description": "A longer description can be used if desired",
+          "expiration": "2019-01-01T00:00:00+00:00",
+          "indicator": "rustybrooks.com",
+          "is_active": true,
+          "role": "scanning_host",
+          "title": "It's my website",
+          "type": "domain"
+        }
+      ],
+      "indicators_count": 1,
+      "modified": "2019-11-14T20:43:27.994238",
+      "name": "Test Pulse Name",
+      "public": true,
+      "pulse_source": "api",
+      "revision": 1,
+      "tags": [
+        "tag1",
+        "tag2",
+        "tag3"
+      ]
+    }
+  }
+}

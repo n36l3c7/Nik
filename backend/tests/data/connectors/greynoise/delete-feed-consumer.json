@@ -1,0 +1,24 @@
+{
+  "args": {
+    "feed_id": "3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b",
+    "consumer": "scheduled-lambda"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/v3/feeds/3f2b8c1e-9a4d-4b6f-8e2a-5c7d9e1f0a3b/consumers/scheduled-lambda",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "deleted": true
+  }
+}

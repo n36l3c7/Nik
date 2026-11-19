@@ -1,0 +1,114 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v5/hashLists",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456",
+          "alt": "json",
+          "pageSize": 100
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "hashLists": [
+            {
+              "name": "se",
+              "metadata": {
+                "threatTypes": [
+                  "SOCIAL_ENGINEERING"
+                ],
+                "hashLength": "FOUR_BYTES",
+                "description": "Social engineering threats."
+              }
+            },
+            {
+              "name": "mw-4b",
+              "metadata": {
+                "threatTypes": [
+                  "MALWARE"
+                ],
+                "hashLength": "FOUR_BYTES",
+                "description": "Malware threats."
+              }
+            }
+          ],
+          "nextPageToken": "CAI"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v5/hashLists",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456",
+          "alt": "json",
+          "pageSize": 100,
+          "pageToken": "CAI"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "hashLists": [
+            {
+              "name": "gc",
+              "metadata": {
+                "likelySafeTypes": [
+                  "GENERAL_BROWSING"
+                ],
+                "hashLength": "SIXTEEN_BYTES",
+                "description": "The Global Cache: sites likely safe for general browsing."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "hash_lists": [
+      {
+        "name": "se",
+        "metadata": {
+          "threatTypes": [
+            "SOCIAL_ENGINEERING"
+          ],
+          "hashLength": "FOUR_BYTES",
+          "description": "Social engineering threats."
+        }
+      },
+      {
+        "name": "mw-4b",
+        "metadata": {
+          "threatTypes": [
+            "MALWARE"
+          ],
+          "hashLength": "FOUR_BYTES",
+          "description": "Malware threats."
+        }
+      },
+      {
+        "name": "gc",
+        "metadata": {
+          "likelySafeTypes": [
+            "GENERAL_BROWSING"
+          ],
+          "hashLength": "SIXTEEN_BYTES",
+          "description": "The Global Cache: sites likely safe for general browsing."
+        }
+      }
+    ],
+    "names": [
+      "se",
+      "mw-4b",
+      "gc"
+    ],
+    "count": 3,
+    "truncated": false
+  }
+}

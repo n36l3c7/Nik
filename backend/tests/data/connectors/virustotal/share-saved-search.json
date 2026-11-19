@@ -1,0 +1,38 @@
+{
+  "args": {
+    "id": "0a49acd622a44982b1986984ba31c15b",
+    "access": "viewers",
+    "who": [
+      {
+        "type": "group",
+        "id": "piedpiper"
+      }
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/saved_searches/0a49acd622a44982b1986984ba31c15b/relationship/viewers",
+        "json": {
+          "data": [
+            {
+              "type": "group",
+              "id": "piedpiper"
+            }
+          ]
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

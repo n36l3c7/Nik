@@ -1,0 +1,46 @@
+{
+  "args": {
+    "date": "2026-05-12"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/bsi/category",
+        "query": {
+          "date": "2026-05-12"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "date": "2026-05-12",
+          "source": "db",
+          "stats": {
+            "categories": [
+              {
+                "category": "cdn",
+                "ip_count": 73221,
+                "cidr_count": 327
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "stats": [
+      {
+        "category": "cdn",
+        "ip_count": 73221,
+        "cidr_count": 327
+      }
+    ],
+    "date": "2026-05-12",
+    "source": "db"
+  }
+}

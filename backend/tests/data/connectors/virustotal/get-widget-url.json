@@ -1,0 +1,38 @@
+{
+  "args": {
+    "query": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "bg1": "313d5a"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/widget/url",
+        "query": {
+          "query": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+          "bg1": "313d5a"
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "url": "https://virustotal.com/ui/widget/html/OTEzZjdhMDBlYWE1YThiMzg2MDQxYWE2NDQwMTgzYmNhNTc0ODA1ZTRiMWE2OTkzODFlZjAxYmE5MGVmMzVkM3x8ZmlsZQ",
+            "detection_ratio": {
+              "detections": 5,
+              "total": 71
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "url": "https://virustotal.com/ui/widget/html/OTEzZjdhMDBlYWE1YThiMzg2MDQxYWE2NDQwMTgzYmNhNTc0ODA1ZTRiMWE2OTkzODFlZjAxYmE5MGVmMzVkM3x8ZmlsZQ",
+    "detections": 5,
+    "total": 71
+  }
+}

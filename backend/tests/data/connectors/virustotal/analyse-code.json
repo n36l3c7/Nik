@@ -1,0 +1,32 @@
+{
+  "args": {
+    "code": "cHVzaCBlYnAKbW92IGVicCwgZXNw",
+    "code_type": "disassembled"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/codeinsights/analyse-binary",
+        "json": {
+          "data": {
+            "code": "cHVzaCBlYnAKbW92IGVicCwgZXNw",
+            "code_type": "disassembled"
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": "VGhpcyBmdW5jdGlvbiBzZXRzIHVwIGEgc3RhY2sgZnJhbWUu"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "data": "VGhpcyBmdW5jdGlvbiBzZXRzIHVwIGEgc3RhY2sgZnJhbWUu"
+  }
+}

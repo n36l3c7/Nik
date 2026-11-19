@@ -1,0 +1,65 @@
+{
+  "config": {
+    "url": "https://example.com/rdap"
+  },
+  "args": {
+    "ip": "192.0.2.1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/rdap/nameservers",
+        "query": {
+          "ip": "192.0.2.1"
+        },
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "nameserverSearchResults": [
+            {
+              "objectClassName": "nameserver",
+              "handle": "XXXX",
+              "ldhName": "ns1.xn--fo-5ja.example"
+            },
+            {
+              "objectClassName": "nameserver",
+              "handle": "YYYY",
+              "ldhName": "ns2.xn--fo-5ja.example"
+            }
+          ]
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "nameservers": [
+      {
+        "objectClassName": "nameserver",
+        "handle": "XXXX",
+        "ldhName": "ns1.xn--fo-5ja.example"
+      },
+      {
+        "objectClassName": "nameserver",
+        "handle": "YYYY",
+        "ldhName": "ns2.xn--fo-5ja.example"
+      }
+    ],
+    "names": [
+      "ns1.xn--fo-5ja.example",
+      "ns2.xn--fo-5ja.example"
+    ],
+    "count": 2,
+    "notices": null
+  }
+}

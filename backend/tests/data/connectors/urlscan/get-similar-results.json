@@ -1,0 +1,122 @@
+{
+  "args": {
+    "scan_id": "68e26c59-2eae-437b-aeb1-cf750fafe7d7",
+    "query": "page.domain:urlscan.io",
+    "size": 10
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/pro/result/68e26c59-2eae-437b-aeb1-cf750fafe7d7/similar/",
+        "query": {
+          "q": "page.domain:urlscan.io",
+          "size": 10
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "results": [
+            {
+              "verdicts": {
+                "score": -50,
+                "malicious": false,
+                "urlscan": {
+                  "malicious": false
+                },
+                "hasVerdicts": true
+              },
+              "submitter": {
+                "country": "cz"
+              },
+              "task": {
+                "visibility": "public",
+                "method": "manual",
+                "domain": "urlscan.io",
+                "apexDomain": "urlscan.io",
+                "time": "2023-08-18T09:26:20.465Z",
+                "uuid": "78e48885-1b4c-4388-92bb-0d02cad46178",
+                "url": "https://urlscan.io/result/db0943fb-586d-4a00-9786-d9f818a30131/"
+              },
+              "page": {
+                "country": "DE",
+                "server": "nginx",
+                "ip": "49.12.22.106",
+                "title": "www.wbc247-korea.com - urlscan.io",
+                "url": "https://urlscan.io/result/db0943fb-586d-4a00-9786-d9f818a30131/",
+                "domain": "urlscan.io",
+                "asn": "AS24940",
+                "status": "200"
+              },
+              "_id": "78e48885-1b4c-4388-92bb-0d02cad46178",
+              "_score": null,
+              "sort": [
+                1692350780465,
+                "78e48885-1b4c-4388-92bb-0d02cad46178"
+              ],
+              "result": "https://urlscan.io/api/v1/result/78e48885-1b4c-4388-92bb-0d02cad46178/",
+              "screenshot": "https://urlscan.io/screenshots/78e48885-1b4c-4388-92bb-0d02cad46178.png"
+            }
+          ],
+          "total": 1,
+          "took": 12,
+          "has_more": false
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "results": [
+      {
+        "verdicts": {
+          "score": -50,
+          "malicious": false,
+          "urlscan": {
+            "malicious": false
+          },
+          "hasVerdicts": true
+        },
+        "submitter": {
+          "country": "cz"
+        },
+        "task": {
+          "visibility": "public",
+          "method": "manual",
+          "domain": "urlscan.io",
+          "apexDomain": "urlscan.io",
+          "time": "2023-08-18T09:26:20.465Z",
+          "uuid": "78e48885-1b4c-4388-92bb-0d02cad46178",
+          "url": "https://urlscan.io/result/db0943fb-586d-4a00-9786-d9f818a30131/"
+        },
+        "page": {
+          "country": "DE",
+          "server": "nginx",
+          "ip": "49.12.22.106",
+          "title": "www.wbc247-korea.com - urlscan.io",
+          "url": "https://urlscan.io/result/db0943fb-586d-4a00-9786-d9f818a30131/",
+          "domain": "urlscan.io",
+          "asn": "AS24940",
+          "status": "200"
+        },
+        "_id": "78e48885-1b4c-4388-92bb-0d02cad46178",
+        "_score": null,
+        "sort": [
+          1692350780465,
+          "78e48885-1b4c-4388-92bb-0d02cad46178"
+        ],
+        "result": "https://urlscan.io/api/v1/result/78e48885-1b4c-4388-92bb-0d02cad46178/",
+        "screenshot": "https://urlscan.io/screenshots/78e48885-1b4c-4388-92bb-0d02cad46178.png"
+      }
+    ],
+    "total": 1,
+    "count": 1,
+    "ids": [
+      "78e48885-1b4c-4388-92bb-0d02cad46178"
+    ],
+    "search_after": "1692350780465,78e48885-1b4c-4388-92bb-0d02cad46178"
+  }
+}

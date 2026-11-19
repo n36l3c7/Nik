@@ -1,0 +1,58 @@
+{
+  "args": {
+    "subscription_id": "6f1c2a9be4b0a1d2c3e4f890",
+    "is_active": false
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/api/v1/user/subscriptions/6f1c2a9be4b0a1d2c3e4f890/",
+        "json": {
+          "subscription": {
+            "isActive": false
+          }
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "subscription": {
+            "_id": "6f1c2a9be4b0a1d2c3e4f890",
+            "searchIds": [
+              "6f1c2a9be4b0a1d2c3e4f567"
+            ],
+            "frequency": "daily",
+            "emailAddresses": [
+              "test@urlscan.io"
+            ],
+            "name": "Test Subscription",
+            "description": "Subscription for testing purposes",
+            "isActive": false,
+            "ignoreTime": false
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6f1c2a9be4b0a1d2c3e4f890",
+    "subscription": {
+      "_id": "6f1c2a9be4b0a1d2c3e4f890",
+      "searchIds": [
+        "6f1c2a9be4b0a1d2c3e4f567"
+      ],
+      "frequency": "daily",
+      "emailAddresses": [
+        "test@urlscan.io"
+      ],
+      "name": "Test Subscription",
+      "description": "Subscription for testing purposes",
+      "isActive": false,
+      "ignoreTime": false
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "args": {
+    "sha256": "cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/hashes/cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1/items",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "monitor_item",
+              "id": "L3Rlc3QvdGFjLmV4ZQ",
+              "attributes": {
+                "size": 49676,
+                "sha256": "cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1",
+                "item_type": "file",
+                "creator_id": "fsantos",
+                "details": "This is the metadata.",
+                "path": "/test/tac.exe",
+                "tags": [
+                  "detected",
+                  "visible"
+                ],
+                "last_detections_count": 1
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "monitor_item",
+        "id": "L3Rlc3QvdGFjLmV4ZQ",
+        "attributes": {
+          "size": 49676,
+          "sha256": "cb9f9c1b271daa19fc78138dfd9d37686b1edb35e381f205c0b59911d8a004e1",
+          "item_type": "file",
+          "creator_id": "fsantos",
+          "details": "This is the metadata.",
+          "path": "/test/tac.exe",
+          "tags": [
+            "detected",
+            "visible"
+          ],
+          "last_detections_count": 1
+        }
+      }
+    ],
+    "ids": [
+      "L3Rlc3QvdGFjLmV4ZQ"
+    ],
+    "count": 1,
+    "meta": null
+  }
+}

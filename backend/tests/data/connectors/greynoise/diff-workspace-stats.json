@@ -1,0 +1,95 @@
+{
+  "args": {
+    "query": "classification:malicious",
+    "target_workspace": "community"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/workspaces/stats-diff",
+        "json": {
+          "target_workspace": "community",
+          "query": "classification:malicious"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "source_workspace_name": "Personal",
+          "target_workspace_name": "Community",
+          "source_stats": {
+            "classifications": [
+              {
+                "classification": "malicious",
+                "count": 12
+              }
+            ]
+          },
+          "target_stats": {
+            "classifications": [
+              {
+                "classification": "malicious",
+                "count": 5000
+              }
+            ]
+          },
+          "diff": {
+            "classifications": {
+              "in_both": [
+                {
+                  "key": "malicious",
+                  "source_count": 12,
+                  "target_count": 5000,
+                  "delta": -4988
+                }
+              ],
+              "unique_to_source": [],
+              "unique_to_target": []
+            }
+          },
+          "source_count": 12,
+          "target_count": 5000
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "source_count": 12,
+    "target_count": 5000,
+    "source_stats": {
+      "classifications": [
+        {
+          "classification": "malicious",
+          "count": 12
+        }
+      ]
+    },
+    "target_stats": {
+      "classifications": [
+        {
+          "classification": "malicious",
+          "count": 5000
+        }
+      ]
+    },
+    "diff": {
+      "classifications": {
+        "in_both": [
+          {
+            "key": "malicious",
+            "source_count": 12,
+            "target_count": 5000,
+            "delta": -4988
+          }
+        ],
+        "unique_to_source": [],
+        "unique_to_target": []
+      }
+    },
+    "adjusted_query": null
+  }
+}

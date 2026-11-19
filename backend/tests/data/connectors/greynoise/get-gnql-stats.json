@@ -1,0 +1,208 @@
+{
+  "args": {
+    "query": "last_seen:1d classification:malicious",
+    "count": 10
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/gnql/stats",
+        "query": {
+          "query": "last_seen:1d classification:malicious",
+          "count": 10
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query": "last_seen:2019-07-28 classification:malicious",
+          "count": 50000,
+          "adjusted_query": "last_seen:2019-07-28 classification:malicious last_seen:7d",
+          "stats": {
+            "classifications": [
+              {
+                "classification": "malicious",
+                "count": 5000
+              }
+            ],
+            "spoofable": [
+              {
+                "spoofable": false,
+                "count": 5000
+              }
+            ],
+            "organizations": [
+              {
+                "organization": "DigitalOcean, LLC",
+                "count": 5000
+              }
+            ],
+            "actors": [
+              {
+                "actor": "Shodan.io",
+                "count": 5000
+              }
+            ],
+            "countries": [
+              {
+                "country": "United States",
+                "count": 5000
+              }
+            ],
+            "source_countries": [
+              {
+                "country": "United States",
+                "count": 5000
+              }
+            ],
+            "destination_countries": [
+              {
+                "country": "United States",
+                "count": 5000
+              }
+            ],
+            "tags": [
+              {
+                "tag": "SSH Bruteforcer",
+                "id": "4c076d9c-be48-4bd1-bec4-6005e06c0f89",
+                "count": 5000
+              }
+            ],
+            "operating_systems": [
+              {
+                "operating_system": "Windows 7/8",
+                "count": 5000
+              }
+            ],
+            "categories": [
+              {
+                "category": "education",
+                "count": 5000
+              }
+            ],
+            "asns": [
+              {
+                "asn": "AS4134",
+                "count": 5000
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "count": 50000,
+    "adjusted_query": "last_seen:2019-07-28 classification:malicious last_seen:7d",
+    "classifications": [
+      {
+        "classification": "malicious",
+        "count": 5000
+      }
+    ],
+    "tags": [
+      {
+        "tag": "SSH Bruteforcer",
+        "id": "4c076d9c-be48-4bd1-bec4-6005e06c0f89",
+        "count": 5000
+      }
+    ],
+    "actors": [
+      {
+        "actor": "Shodan.io",
+        "count": 5000
+      }
+    ],
+    "organizations": [
+      {
+        "organization": "DigitalOcean, LLC",
+        "count": 5000
+      }
+    ],
+    "asns": [
+      {
+        "asn": "AS4134",
+        "count": 5000
+      }
+    ],
+    "source_countries": [
+      {
+        "country": "United States",
+        "count": 5000
+      }
+    ],
+    "stats": {
+      "classifications": [
+        {
+          "classification": "malicious",
+          "count": 5000
+        }
+      ],
+      "spoofable": [
+        {
+          "spoofable": false,
+          "count": 5000
+        }
+      ],
+      "organizations": [
+        {
+          "organization": "DigitalOcean, LLC",
+          "count": 5000
+        }
+      ],
+      "actors": [
+        {
+          "actor": "Shodan.io",
+          "count": 5000
+        }
+      ],
+      "countries": [
+        {
+          "country": "United States",
+          "count": 5000
+        }
+      ],
+      "source_countries": [
+        {
+          "country": "United States",
+          "count": 5000
+        }
+      ],
+      "destination_countries": [
+        {
+          "country": "United States",
+          "count": 5000
+        }
+      ],
+      "tags": [
+        {
+          "tag": "SSH Bruteforcer",
+          "id": "4c076d9c-be48-4bd1-bec4-6005e06c0f89",
+          "count": 5000
+        }
+      ],
+      "operating_systems": [
+        {
+          "operating_system": "Windows 7/8",
+          "count": 5000
+        }
+      ],
+      "categories": [
+        {
+          "category": "education",
+          "count": 5000
+        }
+      ],
+      "asns": [
+        {
+          "asn": "AS4134",
+          "count": 5000
+        }
+      ]
+    }
+  }
+}

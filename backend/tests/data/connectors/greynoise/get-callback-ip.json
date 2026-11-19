@@ -1,0 +1,106 @@
+{
+  "args": {
+    "ip": "198.51.100.42"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v1/callback/ip/198.51.100.42",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "ip": "198.51.100.42",
+          "source_workspaces": [
+            "GreyNoise",
+            "Personal"
+          ],
+          "attack_stage": 1,
+          "is_stage_1": true,
+          "is_stage_2": true,
+          "is_riot": true,
+          "riot_trust_level": 1,
+          "first_seen": "2025-03-01T00:00:00Z",
+          "last_seen": "2025-03-15T12:30:00Z",
+          "scanner_ips": [
+            "203.0.113.7",
+            "192.0.2.99"
+          ],
+          "scanner_count": 5,
+          "file_count": 3,
+          "active_files": [
+            {
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "threat_name": "Trojan.GenericKD.46542",
+              "vt_detection_count": 42,
+              "vt_engine_count": 71,
+              "file_name": "payload.bin",
+              "size": 24576,
+              "type": "application/x-executable"
+            }
+          ],
+          "enrichment": {
+            "asn": "AS4837",
+            "org": "CHINA UNICOM China169 Backbone",
+            "city": "Qingdao",
+            "region": "Shandong",
+            "country": "China",
+            "country_code": "CN",
+            "latitude": 36.0649,
+            "longitude": 120.3804,
+            "is_tor": true,
+            "route": "119.176.0.0/12",
+            "type": "isp",
+            "domain": "chinaunicom.cn"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ip": "198.51.100.42",
+    "is_stage_1": true,
+    "is_stage_2": true,
+    "is_riot": true,
+    "first_seen": "2025-03-01T00:00:00Z",
+    "last_seen": "2025-03-15T12:30:00Z",
+    "scanner_ips": [
+      "203.0.113.7",
+      "192.0.2.99"
+    ],
+    "scanner_count": 5,
+    "file_count": 3,
+    "files": [
+      {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "threat_name": "Trojan.GenericKD.46542",
+        "vt_detection_count": 42,
+        "vt_engine_count": 71,
+        "file_name": "payload.bin",
+        "size": 24576,
+        "type": "application/x-executable"
+      }
+    ],
+    "sha256": [
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ],
+    "enrichment": {
+      "asn": "AS4837",
+      "org": "CHINA UNICOM China169 Backbone",
+      "city": "Qingdao",
+      "region": "Shandong",
+      "country": "China",
+      "country_code": "CN",
+      "latitude": 36.0649,
+      "longitude": 120.3804,
+      "is_tor": true,
+      "route": "119.176.0.0/12",
+      "type": "isp",
+      "domain": "chinaunicom.cn"
+    }
+  }
+}

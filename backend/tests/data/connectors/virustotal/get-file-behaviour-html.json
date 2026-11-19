@@ -1,0 +1,23 @@
+{
+  "args": {
+    "sandbox_id": "5353e23f3653402339c93a8565307c6308ff378e03fcf23a4378f31c434030b0_Zenbox"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/file_behaviours/5353e23f3653402339c93a8565307c6308ff378e03fcf23a4378f31c434030b0_Zenbox/html",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head><title>Zenbox report</title></head>\n<body>...</body>\n</html>\n"
+      }
+    }
+  ],
+  "outputs": {
+    "html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head><title>Zenbox report</title></head>\n<body>...</body>\n</html>\n"
+  }
+}

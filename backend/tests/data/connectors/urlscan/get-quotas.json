@@ -1,0 +1,265 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/quotas",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "scope": "team",
+          "limits": {
+            "private": {
+              "day": {
+                "limit": 20000,
+                "used": 0,
+                "remaining": 20000,
+                "percent": 0
+              },
+              "hour": {
+                "limit": 2000,
+                "used": 0,
+                "remaining": 2000,
+                "percent": 0
+              },
+              "minute": {
+                "limit": 120,
+                "used": 0,
+                "remaining": 120,
+                "percent": 0
+              }
+            },
+            "public": {
+              "day": {
+                "limit": 50000,
+                "used": 0,
+                "remaining": 50000,
+                "percent": 0
+              },
+              "hour": {
+                "limit": 5000,
+                "used": 0,
+                "remaining": 5000,
+                "percent": 0
+              },
+              "minute": {
+                "limit": 120,
+                "used": 0,
+                "remaining": 120,
+                "percent": 0
+              }
+            },
+            "retrieve": {
+              "day": {
+                "limit": 150000,
+                "used": 0,
+                "remaining": 150000,
+                "percent": 0
+              },
+              "hour": {
+                "limit": 10000,
+                "used": 0,
+                "remaining": 10000,
+                "percent": 0
+              },
+              "minute": {
+                "limit": 1000,
+                "used": 0,
+                "remaining": 1000,
+                "percent": 0
+              }
+            },
+            "search": {
+              "day": {
+                "limit": 500000,
+                "used": 1389,
+                "remaining": 498611,
+                "percent": 0
+              },
+              "hour": {
+                "limit": 100000,
+                "used": 21,
+                "remaining": 99979,
+                "percent": 0
+              },
+              "minute": {
+                "limit": 5000,
+                "used": 1,
+                "remaining": 4999,
+                "percent": 0
+              }
+            },
+            "unlisted": {
+              "day": {
+                "limit": 40000,
+                "used": 0,
+                "remaining": 40000,
+                "percent": 0
+              },
+              "hour": {
+                "limit": 4000,
+                "used": 0,
+                "remaining": 4000,
+                "percent": 0
+              },
+              "minute": {
+                "limit": 120,
+                "used": 0,
+                "remaining": 120,
+                "percent": 0
+              }
+            },
+            "maxRetentionPeriodDays": 90,
+            "maxSearchRangeMonths": 6,
+            "maxSearchResults": 10000,
+            "products": [
+              "livescan",
+              "pro"
+            ],
+            "features": [
+              "country-select",
+              "livescan/tier/base"
+            ],
+            "queryVisibility": [
+              "public",
+              "unlisted"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "scope": "team",
+    "limits": {
+      "private": {
+        "day": {
+          "limit": 20000,
+          "used": 0,
+          "remaining": 20000,
+          "percent": 0
+        },
+        "hour": {
+          "limit": 2000,
+          "used": 0,
+          "remaining": 2000,
+          "percent": 0
+        },
+        "minute": {
+          "limit": 120,
+          "used": 0,
+          "remaining": 120,
+          "percent": 0
+        }
+      },
+      "public": {
+        "day": {
+          "limit": 50000,
+          "used": 0,
+          "remaining": 50000,
+          "percent": 0
+        },
+        "hour": {
+          "limit": 5000,
+          "used": 0,
+          "remaining": 5000,
+          "percent": 0
+        },
+        "minute": {
+          "limit": 120,
+          "used": 0,
+          "remaining": 120,
+          "percent": 0
+        }
+      },
+      "retrieve": {
+        "day": {
+          "limit": 150000,
+          "used": 0,
+          "remaining": 150000,
+          "percent": 0
+        },
+        "hour": {
+          "limit": 10000,
+          "used": 0,
+          "remaining": 10000,
+          "percent": 0
+        },
+        "minute": {
+          "limit": 1000,
+          "used": 0,
+          "remaining": 1000,
+          "percent": 0
+        }
+      },
+      "search": {
+        "day": {
+          "limit": 500000,
+          "used": 1389,
+          "remaining": 498611,
+          "percent": 0
+        },
+        "hour": {
+          "limit": 100000,
+          "used": 21,
+          "remaining": 99979,
+          "percent": 0
+        },
+        "minute": {
+          "limit": 5000,
+          "used": 1,
+          "remaining": 4999,
+          "percent": 0
+        }
+      },
+      "unlisted": {
+        "day": {
+          "limit": 40000,
+          "used": 0,
+          "remaining": 40000,
+          "percent": 0
+        },
+        "hour": {
+          "limit": 4000,
+          "used": 0,
+          "remaining": 4000,
+          "percent": 0
+        },
+        "minute": {
+          "limit": 120,
+          "used": 0,
+          "remaining": 120,
+          "percent": 0
+        }
+      },
+      "maxRetentionPeriodDays": 90,
+      "maxSearchRangeMonths": 6,
+      "maxSearchResults": 10000,
+      "products": [
+        "livescan",
+        "pro"
+      ],
+      "features": [
+        "country-select",
+        "livescan/tier/base"
+      ],
+      "queryVisibility": [
+        "public",
+        "unlisted"
+      ]
+    },
+    "search_remaining_today": 498611,
+    "public_remaining_today": 50000,
+    "unlisted_remaining_today": 40000,
+    "private_remaining_today": 20000,
+    "products": [
+      "livescan",
+      "pro"
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "args": {
+    "cpe23": "cpe:2.3:a:apache:log4j:2.14.1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "cvedb.shodan.io",
+        "path": "/cves",
+        "query": {
+          "cpe23": "cpe:2.3:a:apache:log4j:2.14.1",
+          "count": "true"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "total": 8
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "total": 8
+  }
+}

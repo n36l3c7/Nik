@@ -1,0 +1,1077 @@
+# urlscan.io, through its public API (v1) and the urlscan Pro endpoints.
+#
+# Written against the OpenAPI description urlscan publishes ("urlscan.io
+# APIs", version 1.0.0: https://docs.urlscan.io/apis/urlscan-openapi) and the
+# pages beside it (quickstart, rate limits, error codes, best practices).
+# Not run against the real service: see "verified" below.
+#
+# The key goes in the API-Key header, as urlscan asks. A scan is asked for
+# with submit-url and read with wait-for-result: until the scan is finished
+# the result answers 404, and 410 once it was deleted. Every action has its
+# own quota by the minute, the hour and the day: a request over it is
+# answered 429, which is tried again.
+#
+# The commands marked premium are the ones the documentation gives to
+# urlscan Pro. Three endpoints answer a binary file, which a command cannot
+# carry: the screenshot of a scan (its address is in the outputs of the
+# result), the download of a file by hash, and the download link of a data
+# dump.
+name: urlscan.io
+id: urlscan
+version: 1
+description: Scans of web pages on urlscan.io - submit an address, read the result, search what was scanned before - and the urlscan Pro endpoints.
+api_version: "urlscan.io API v1 (OpenAPI description 1.0.0)"
+verified: false
+configuration:
+  - name: api_key
+    label: API key
+    type: header
+    header: API-Key
+    help: "An API key of your urlscan.io account: Settings & API, then New API key."
+base_url: "https://urlscan.io"
+test:
+  request: { method: GET, path: /user/username }
+commands:
+  # ------------------------------------------------------------- reputation --
+  - name: get-url-reputation
+    description: What the public scans of urlscan.io say of an address. Nothing is submitted, only the scans that exist are searched.
+    reputation: url
+    arguments:
+      - { name: url, type: text, required: true, description: "The address, as it was scanned: https://example.com/login" }
+    request:
+      method: GET
+      path: /api/v1/search
+      query:
+        q: 'page.url:"{{ args.url | replace("\\", "\\\\") | replace("\"", "\\\"") }}"'
+        size: 10
+    error: { message: "{{ response.message }}" }
+    outputs:
+      verdict: "{{ response.results | where('verdicts.malicious') | length | map('0', 'unknown', else='malicious') }}"
+      summary: "{{ response.total | default(0) }} public scans, {{ response.results | where('verdicts.malicious') | length }} of the last {{ response.results | length }} judged malicious"
+      total: "{{ response.total }}"
+      malicious: "{{ response.results | where('verdicts.malicious') | length }}"
+      scans: "{{ response.results }}"
+      reports: "{{ response.results | pluck('result') }}"
+
+  - name: get-domain-reputation
+    description: What the public scans of urlscan.io say of a domain. Nothing is submitted, only the scans that exist are searched.
+    reputation: domain
+    arguments:
+      - { name: domain, type: text, required: true, description: "The domain of the scanned page: example.com" }
+    request:
+      method: GET
+      path: /api/v1/search
+      query:
+        q: 'page.domain:"{{ args.domain | replace("\\", "\\\\") | replace("\"", "\\\"") }}"'
+        size: 10
+    error: { message: "{{ response.message }}" }
+    outputs:
+      verdict: "{{ response.results | where('verdicts.malicious') | length | map('0', 'unknown', else='malicious') }}"
+      summary: "{{ response.total | default(0) }} public scans, {{ response.results | where('verdicts.malicious') | length }} of the last {{ response.results | length }} judged malicious"
+      total: "{{ response.total }}"
+      malicious: "{{ response.results | where('verdicts.malicious') | length }}"
+      scans: "{{ response.results }}"
+      reports: "{{ response.results | pluck('result') }}"
+
+  # ---------------------------------------------------------------- scanning --
+  - name: submit-url
+    description: Ask urlscan.io to scan an address. The answer is the id of the scan; wait-for-result reads it once it is finished.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: url, type: text, required: true, description: The address to scan }
+      - { name: visibility, type: choice, choices: [public, unlisted, private], description: "Who may see the result: public by default. Use unlisted or private for an address that holds personal data." }
+      - { name: country, type: text, description: "The country to scan from, as two letters (de, us): list-available-countries. Chosen by urlscan when left out." }
+      - { name: tags, type: list, description: "Tags of your own for this scan: phishing, malicious" }
+      - { name: referer, type: text, description: The HTTP referer the scan sends }
+      - { name: customagent, type: text, description: The User-Agent the scan sends }
+      - { name: override_safety, type: text, description: "Any value turns off the reclassification of addresses that may hold personal data. Use with care." }
+    request:
+      method: POST
+      path: /api/v1/scan
+      json:
+        url: "{{ args.url }}"
+        visibility: "{{ args.visibility }}"
+        country: "{{ args.country }}"
+        tags: "{{ args.tags }}"
+        referer: "{{ args.referer }}"
+        customagent: "{{ args.customagent }}"
+        overrideSafety: "{{ args.override_safety }}"
+    error: { message: "{{ response.message }}: {{ response.description | default('') }}" }
+    outputs:
+      uuid: "{{ response.uuid }}"
+      url: "{{ response.url }}"
+      visibility: "{{ response.visibility }}"
+      country: "{{ response.country }}"
+    sample: { uuid: 68e26c59-2eae-437b-aeb1-cf750fafe7d7, url: "https://urlscan.io/", visibility: public, country: de }
+
+  - name: get-result
+    description: The result of a scan that is finished. A scan still running answers 404 - wait-for-result waits for it.
+    arguments:
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan }
+    request: { method: GET, path: "/api/v1/result/{{ args.scan_id }}/" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      malicious: "{{ response.verdicts.overall.malicious }}"
+      score: "{{ response.verdicts.overall.score }}"
+      categories: "{{ response.verdicts.overall.categories }}"
+      brands: "{{ response.verdicts.overall.brands }}"
+      url: "{{ response.page.url }}"
+      domain: "{{ response.page.domain }}"
+      ip: "{{ response.page.ip }}"
+      country: "{{ response.page.country }}"
+      server: "{{ response.page.server }}"
+      asn: "{{ response.page.asn }}"
+      report: "{{ response.task.reportURL }}"
+      screenshot: "{{ response.task.screenshotURL }}"
+      dom: "{{ response.task.domURL }}"
+      ips: "{{ response.lists.ips }}"
+      domains: "{{ response.lists.domains }}"
+      urls: "{{ response.lists.urls }}"
+      verdicts: "{{ response.verdicts }}"
+      task: "{{ response.task }}"
+      page: "{{ response.page }}"
+      lists: "{{ response.lists }}"
+      stats: "{{ response.stats }}"
+      meta: "{{ response.meta }}"
+
+  - name: wait-for-result
+    description: Wait until a scan is finished (five minutes at most) and give its result. Fails when the result was deleted.
+    arguments:
+      - { name: scan_id, type: text, required: true, description: "The id (UUID) of the scan, as submit-url gave it" }
+    request: { method: GET, path: "/api/v1/result/{{ args.scan_id }}/" }
+    # 404: not finished yet. 410: the result was deleted.
+    success: { status: [200, 404, 410] }
+    error: { message: "{{ response.message }}" }
+    poll:
+      until: { all: [{ left: "{{ status }}", op: eq, right: 200 }] }
+      fail_when: { all: [{ left: "{{ status }}", op: eq, right: 410 }] }
+      every: 5
+      timeout: 300
+    outputs:
+      malicious: "{{ response.verdicts.overall.malicious }}"
+      score: "{{ response.verdicts.overall.score }}"
+      categories: "{{ response.verdicts.overall.categories }}"
+      brands: "{{ response.verdicts.overall.brands }}"
+      url: "{{ response.page.url }}"
+      domain: "{{ response.page.domain }}"
+      ip: "{{ response.page.ip }}"
+      country: "{{ response.page.country }}"
+      server: "{{ response.page.server }}"
+      asn: "{{ response.page.asn }}"
+      report: "{{ response.task.reportURL }}"
+      screenshot: "{{ response.task.screenshotURL }}"
+      dom: "{{ response.task.domURL }}"
+      ips: "{{ response.lists.ips }}"
+      domains: "{{ response.lists.domains }}"
+      urls: "{{ response.lists.urls }}"
+      verdicts: "{{ response.verdicts }}"
+      task: "{{ response.task }}"
+      page: "{{ response.page }}"
+      lists: "{{ response.lists }}"
+      stats: "{{ response.stats }}"
+      meta: "{{ response.meta }}"
+
+  - name: get-dom
+    description: The DOM of the page as the scan left it, as text.
+    arguments:
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan }
+    request: { method: GET, path: "/dom/{{ args.scan_id }}/", answer: text }
+    outputs:
+      dom: "{{ response.text }}"
+
+  - name: get-response
+    description: What a scanned page was answered for one of its requests (a script, a document, a fetch), as text, by the SHA-256 of the content.
+    arguments:
+      - { name: file_hash, type: text, required: true, description: "The SHA-256 of the response, as the result of a scan lists it" }
+    request: { method: GET, path: "/responses/{{ args.file_hash }}/", answer: text }
+    outputs:
+      content: "{{ response.text }}"
+
+  - name: set-result-visibility
+    description: Change who may see a scan of yours or of your team, or delete it.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan }
+      - { name: visibility, type: choice, required: true, choices: [public, unlisted, private, deleted], description: The new visibility of the result }
+    request:
+      method: PUT
+      path: "/api/v1/result/{{ args.scan_id }}/visibility/"
+      json: { visibility: "{{ args.visibility }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      uuid: "{{ response.uuid }}"
+      message: "{{ response.message }}"
+      visibility: "{{ response.visibility }}"
+    sample: { uuid: 68e26c59-2eae-437b-aeb1-cf750fafe7d7, message: Visibility updated, visibility: private }
+
+  - name: reset-result-visibility
+    description: Give a scan of yours or of your team the visibility it was submitted with.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan }
+    request: { method: DELETE, path: "/api/v1/result/{{ args.scan_id }}/visibility/" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      uuid: "{{ response.uuid }}"
+      message: "{{ response.message }}"
+    sample: { uuid: 68e26c59-2eae-437b-aeb1-cf750fafe7d7, message: Visibility reset }
+
+  - name: list-available-countries
+    description: The countries a scan can be made from.
+    arguments: []
+    request: { method: GET, path: /api/v1/availableCountries }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      countries: "{{ response.countries }}"
+
+  # ------------------------------------------------------------------ search --
+  - name: search
+    description: Search the scans urlscan.io holds (one page of results). The public scans of anyone, and the unlisted and private ones of your account.
+    arguments:
+      - { name: query, type: text, required: true, description: "The search, in Elasticsearch query string syntax: page.domain:example.com AND date:>now-7d" }
+      - { name: size, type: number, default: 100, description: How many results to give }
+      - { name: search_after, type: text, description: "For the next page: the search_after output of the previous call" }
+      - { name: datasource, type: choice, choices: [scans, hostnames, incidents, notifications, certificates], description: "What to search: scans by default; the others need urlscan Pro" }
+      - { name: collapse, type: text, description: "A field to keep one result of each value of: page.domain.keyword" }
+    request:
+      method: GET
+      path: /api/v1/search
+      query:
+        q: "{{ args.query }}"
+        size: "{{ args.size }}"
+        search_after: "{{ args.search_after }}"
+        datasource: "{{ args.datasource }}"
+        collapse: "{{ args.collapse }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response.results }}"
+      total: "{{ response.total }}"
+      has_more: "{{ response.has_more }}"
+      count: "{{ response.results | length }}"
+      ids: "{{ response.results | pluck('_id') }}"
+      malicious: "{{ response.results | where('verdicts.malicious') | length }}"
+      search_after: "{{ response.results | last | get('sort') | join(',') }}"
+      search_date_limit_days: "{{ response.search_date_limit_days }}"
+
+  - name: search-all
+    description: Search the scans urlscan.io holds and read the results page after page, a hundred at a time, a thousand at most.
+    arguments:
+      - { name: query, type: text, required: true, description: "The search, in Elasticsearch query string syntax. Limit it by date when you can: date:>now-24h" }
+      - { name: datasource, type: choice, choices: [scans, hostnames, incidents, notifications, certificates], description: "What to search: scans by default; the others need urlscan Pro" }
+    request:
+      method: GET
+      path: /api/v1/search
+      query:
+        q: "{{ args.query }}"
+        datasource: "{{ args.datasource }}"
+    error: { message: "{{ response.message }}" }
+    pagination:
+      type: cursor
+      items: "{{ response.results }}"
+      param: search_after
+      next: "{{ response.results | last | get('sort') | join(',') }}"
+      limit_param: size
+      limit: 100
+      max_pages: 10
+    outputs:
+      results: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      ids: "{{ response.items | pluck('_id') }}"
+      malicious: "{{ response.items | where('verdicts.malicious') | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: get-similar-results
+    description: The scans whose page is built like the page of a given scan (Structure Search).
+    premium: true
+    arguments:
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan to compare to }
+      - { name: query, type: text, description: "A search that narrows the results: page.domain:example.com" }
+      - { name: size, type: number, description: How many results to give at most }
+      - { name: search_after, type: text, description: "For older results: the search_after output of the previous call" }
+    request:
+      method: GET
+      path: "/api/v1/pro/result/{{ args.scan_id }}/similar/"
+      query:
+        q: "{{ args.query }}"
+        size: "{{ args.size }}"
+        search_after: "{{ args.search_after }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response.results }}"
+      total: "{{ response.total }}"
+      count: "{{ response.results | length }}"
+      ids: "{{ response.results | pluck('_id') }}"
+      search_after: "{{ response.results | last | get('sort') | join(',') }}"
+
+  - name: get-phishfeed
+    description: The pages urlscan detected as phishing. A shortcut over the search, which urlscan advises to use instead.
+    premium: true
+    arguments:
+      - { name: query, type: text, description: "A search that narrows the feed: date:>now-24h" }
+      - { name: limit, type: number, description: How many results to give }
+    request:
+      method: GET
+      path: /api/v1/pro/phishfeed
+      query:
+        q: "{{ args.query }}"
+        limit: "{{ args.limit }}"
+        format: json
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response.results }}"
+      total: "{{ response.total }}"
+      count: "{{ response.results | length }}"
+      urls: "{{ response.results[*].page.url }}"
+
+  # ----------------------------------------------------------------- account --
+  - name: get-quotas
+    description: The quotas of the account for each action (public, unlisted and private scans, search, retrieve), and what is used of them.
+    arguments: []
+    request: { method: GET, path: /api/v1/quotas }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      scope: "{{ response.scope }}"
+      limits: "{{ response.limits }}"
+      search_remaining_today: "{{ response.limits.search.day.remaining }}"
+      public_remaining_today: "{{ response.limits.public.day.remaining }}"
+      unlisted_remaining_today: "{{ response.limits.unlisted.day.remaining }}"
+      private_remaining_today: "{{ response.limits.private.day.remaining }}"
+      products: "{{ response.limits.products }}"
+
+  - name: get-user
+    description: The user or the API key the requests are made as.
+    arguments: []
+    request: { method: GET, path: /user/username }
+    error: { message: "{{ response.message }}" }
+
+  # ------------------------------------------------------------------ brands --
+  - name: list-available-brands
+    description: The brands urlscan follows for its phishing detection.
+    premium: true
+    arguments: []
+    request: { method: GET, path: /api/v1/pro/availableBrands }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      brands: "{{ response.kits }}"
+      names: "{{ response.kits | pluck('name') }}"
+      keys: "{{ response.kits | pluck('key') }}"
+
+  - name: list-brands
+    description: The brands urlscan detects phishing pages of, with the number of pages detected and the latest one for each. Slower than list-available-brands.
+    premium: true
+    arguments: []
+    request: { method: GET, path: /api/v1/pro/brands }
+    error: { message: "{{ response.message }}" }
+
+  # --------------------------------------------------------------- hostnames --
+  - name: get-hostname-history
+    description: What was observed of a hostname over time (certificates, passive DNS, scans, zone files), a thousand observations a page.
+    premium: true
+    arguments:
+      - { name: hostname, type: text, required: true, description: "The hostname: www.example.com" }
+    request: { method: GET, path: "/api/v1/hostname/{{ args.hostname }}" }
+    error: { message: "{{ response.message }}" }
+    pagination:
+      type: cursor
+      items: "{{ response.results }}"
+      param: pageState
+      next: "{{ response.pageState }}"
+      limit_param: limit
+      limit: 1000
+      max_pages: 10
+    outputs:
+      observations: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      sources: "{{ response.items | pluck('source') | unique }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: lookup-malicious-observable
+    description: How often an address, a hostname, a domain or an IP address was seen in scans judged malicious, and when first and last.
+    premium: true
+    arguments:
+      - { name: type, type: choice, required: true, choices: [ip, hostname, domain, url], description: "What the value is. domain is the registered domain and covers its subdomains; hostname is one exact host." }
+      - { name: value, type: text, required: true, description: "The value: 192.0.2.1, www.example.com, example.com or https://example.com/path" }
+    request:
+      method: GET
+      # The value is a part of the path: what would end it or start a query is encoded, as urlscan asks for a URL.
+      path: "/api/v1/malicious/{{ args.type }}/{{ args.value | replace('%', '%25') | replace(':', '%3A') | replace('/', '%2F') | replace('?', '%3F') | replace('#', '%23') | replace('&', '%26') | replace('=', '%3D') | replace(' ', '%20') }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      observable: "{{ response.observable }}"
+      type: "{{ response.type }}"
+      count: "{{ response.count }}"
+      first_seen: "{{ response.firstSeen }}"
+      last_seen: "{{ response.lastSeen }}"
+
+  # ----------------------------------------------------------- live scanning --
+  - name: list-live-scanners
+    description: The Live Scanning nodes that can be used, with what is known of each.
+    premium: true
+    arguments: []
+    request: { method: GET, path: /api/v1/livescan/scanners/ }
+    error: { message: "{{ response.message }}" }
+
+  - name: start-live-scan
+    description: Ask a Live Scanning node to scan an address, without waiting. The answer is the id of the scan; get-live-scan-result reads it.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: scanner_id, type: text, required: true, description: "The id of the node: de01 (list-live-scanners)" }
+      - { name: url, type: text, required: true, description: The address to scan }
+      - { name: visibility, type: choice, choices: [public, unlisted, private], description: Who may see the scan }
+      - { name: tags, type: list, description: "Tags of your own for this scan: phishing, malicious" }
+      - { name: scanner, type: object, description: "How the node scans: pageTimeout and captureDelay (milliseconds), extraHeaders (an object), enableFeatures and disableFeatures (lists), evalScript, userAgent" }
+    request:
+      method: POST
+      path: "/api/v1/livescan/{{ args.scanner_id }}/task/"
+      json:
+        task:
+          url: "{{ args.url }}"
+          visibility: "{{ args.visibility }}"
+          tags: "{{ args.tags }}"
+        scanner: "{{ args.scanner }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      uuid: "{{ response.uuid }}"
+    sample: { uuid: 92d683cd-1575-4bde-89d1-99cd46ae07a7 }
+
+  - name: run-live-scan
+    description: Ask a Live Scanning node to scan an address and wait for the scan to finish. The answer is the id of the scan.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    timeout: 300
+    arguments:
+      - { name: scanner_id, type: text, required: true, description: "The id of the node: de01 (list-live-scanners)" }
+      - { name: url, type: text, required: true, description: The address to scan }
+      - { name: visibility, type: choice, choices: [public, unlisted, private], description: Who may see the scan }
+      - { name: tags, type: list, description: "Tags of your own for this scan: phishing, malicious" }
+      - { name: scanner, type: object, description: "How the node scans: pageTimeout and captureDelay (milliseconds), extraHeaders (an object), enableFeatures and disableFeatures (lists), evalScript, userAgent" }
+    request:
+      method: POST
+      path: "/api/v1/livescan/{{ args.scanner_id }}/scan/"
+      json:
+        task:
+          url: "{{ args.url }}"
+          visibility: "{{ args.visibility }}"
+          tags: "{{ args.tags }}"
+        scanner: "{{ args.scanner }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      uuid: "{{ response.uuid }}"
+    sample: { uuid: 10dae531-a98a-42fc-8c6f-cb8610ec0c10 }
+
+  - name: get-live-scan-result
+    description: The result of a live scan, read from the node that made it (it keeps a scan for an hour).
+    premium: true
+    arguments:
+      - { name: scanner_id, type: text, required: true, description: "The id of the node: de01" }
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the live scan }
+    request: { method: GET, path: "/api/v1/livescan/{{ args.scanner_id }}/result/{{ args.scan_id }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      malicious: "{{ response.verdicts.overall.malicious }}"
+      score: "{{ response.verdicts.overall.score }}"
+      url: "{{ response.page.url }}"
+      domain: "{{ response.page.domain }}"
+      ip: "{{ response.page.ip }}"
+      verdicts: "{{ response.verdicts }}"
+      task: "{{ response.task }}"
+      page: "{{ response.page }}"
+      lists: "{{ response.lists }}"
+
+  - name: get-live-scan-dom
+    description: The DOM of the page of a live scan, as text, read from the node that made it.
+    premium: true
+    arguments:
+      - { name: scanner_id, type: text, required: true, description: "The id of the node: de01" }
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the live scan }
+    request: { method: GET, path: "/api/v1/livescan/{{ args.scanner_id }}/dom/{{ args.scan_id }}", answer: text }
+    outputs:
+      dom: "{{ response.text }}"
+
+  - name: get-live-scan-response
+    description: What a page was answered for one of its requests during a live scan, as text, by the SHA-256 of the content.
+    premium: true
+    arguments:
+      - { name: scanner_id, type: text, required: true, description: "The id of the node: de01" }
+      - { name: file_hash, type: text, required: true, description: The SHA-256 of the response }
+    request: { method: GET, path: "/api/v1/livescan/{{ args.scanner_id }}/response/{{ args.file_hash }}", answer: text }
+    outputs:
+      content: "{{ response.text }}"
+
+  - name: store-live-scan
+    description: Keep a live scan as a permanent scan on urlscan.io (a node drops it after an hour otherwise).
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: scanner_id, type: text, required: true, description: "The id of the node: de01" }
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the live scan }
+      - { name: visibility, type: choice, choices: [public, unlisted, private], description: Who may see the stored scan }
+    request:
+      method: PUT
+      path: "/api/v1/livescan/{{ args.scanner_id }}/{{ args.scan_id }}/"
+      json:
+        task:
+          visibility: "{{ args.visibility }}"
+    error: { message: "{{ response.message }}" }
+    sample: { response: {} }
+
+  - name: purge-live-scan
+    description: Remove a live scan from its node at once.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: scanner_id, type: text, required: true, description: "The id of the node: de01" }
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the live scan }
+    request: { method: DELETE, path: "/api/v1/livescan/{{ args.scanner_id }}/{{ args.scan_id }}/" }
+    error: { message: "{{ response.message }}" }
+    sample: { response: {} }
+
+  # ---------------------------------------------------------- saved searches --
+  - name: list-saved-searches
+    description: The Saved Searches of the user - the rules run against each new scan and hostname.
+    premium: true
+    arguments: []
+    request: { method: GET, path: /api/v1/user/searches/ }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      searches: "{{ response.searches }}"
+      ids: "{{ response.searches | pluck('_id') }}"
+      names: "{{ response.searches | pluck('name') }}"
+
+  - name: create-saved-search
+    description: Create a Saved Search, a rule run against each new scan or hostname.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: name, type: text, required: true, description: The short name people see }
+      - { name: query, type: text, required: true, description: "The search, as the search command takes it: page.domain:example.com" }
+      - { name: datasource, type: choice, required: true, default: scans, choices: [scans, hostnames], description: What the search runs against }
+      - { name: description, type: text, description: A short description }
+      - { name: long_description, type: text, description: A long description }
+      - { name: tlp, type: choice, choices: [red, "amber+strict", amber, green, clear], description: The TLP mark shown to the other users of urlscan Pro }
+      - { name: usertags, type: list, description: "Tags put on what matches. A prefix says who sees one: pro., public., private. or team." }
+      - { name: permissions, type: list, description: "Who may see the search: public:read, team:read, team:write" }
+    request:
+      method: POST
+      path: /api/v1/user/searches/
+      json:
+        search:
+          name: "{{ args.name }}"
+          query: "{{ args.query }}"
+          datasource: "{{ args.datasource }}"
+          description: "{{ args.description }}"
+          longDescription: "{{ args.long_description }}"
+          tlp: "{{ args.tlp }}"
+          usertags: "{{ args.usertags }}"
+          permissions: "{{ args.permissions }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.search._id }}"
+      search: "{{ response.search }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4f567, search: { _id: 6f1c2a9be4b0a1d2c3e4f567, name: Testsearch, query: "page.domain:urlscan.io", datasource: scans } }
+
+  - name: update-saved-search
+    description: Change a Saved Search.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: search_id, type: text, required: true, description: The id of the Saved Search }
+      - { name: name, type: text, description: The short name people see }
+      - { name: query, type: text, description: "The search: page.domain:example.com" }
+      - { name: datasource, type: choice, choices: [scans, hostnames], description: What the search runs against }
+      - { name: description, type: text, description: A short description }
+      - { name: long_description, type: text, description: A long description }
+      - { name: tlp, type: choice, choices: [red, "amber+strict", amber, green, clear], description: The TLP mark shown to the other users of urlscan Pro }
+      - { name: usertags, type: list, description: "Tags put on what matches. A prefix says who sees one: pro., public., private. or team." }
+      - { name: permissions, type: list, description: "Who may see the search: public:read, team:read, team:write" }
+    request:
+      method: PUT
+      path: "/api/v1/user/searches/{{ args.search_id }}/"
+      json:
+        search:
+          name: "{{ args.name }}"
+          query: "{{ args.query }}"
+          datasource: "{{ args.datasource }}"
+          description: "{{ args.description }}"
+          longDescription: "{{ args.long_description }}"
+          tlp: "{{ args.tlp }}"
+          usertags: "{{ args.usertags }}"
+          permissions: "{{ args.permissions }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.search._id }}"
+      search: "{{ response.search }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4f567, search: { _id: 6f1c2a9be4b0a1d2c3e4f567, name: Testsearch, query: "page.domain:urlscan.io", datasource: scans } }
+
+  - name: delete-saved-search
+    description: Delete a Saved Search.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: search_id, type: text, required: true, description: The id of the Saved Search }
+    request: { method: DELETE, path: "/api/v1/user/searches/{{ args.search_id }}/" }
+    error: { message: "{{ response.message }}" }
+    sample: { response: {} }
+
+  - name: get-saved-search-results
+    description: What a Saved Search found. urlscan answers with a redirect to the search, which is followed.
+    premium: true
+    arguments:
+      - { name: search_id, type: text, required: true, description: The id of the Saved Search }
+    request: { method: GET, path: "/api/v1/user/searches/{{ args.search_id }}/results/" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response.results }}"
+      total: "{{ response.total }}"
+      count: "{{ response.results | length }}"
+      ids: "{{ response.results | pluck('_id') }}"
+
+  # ----------------------------------------------------------- subscriptions --
+  - name: list-subscriptions
+    description: The Subscriptions of the user - who is told of what the Saved Searches find, and how often.
+    premium: true
+    arguments: []
+    request: { method: GET, path: /api/v1/user/subscriptions/ }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      subscriptions: "{{ response.subscriptions }}"
+      ids: "{{ response.subscriptions | pluck('_id') }}"
+      names: "{{ response.subscriptions | pluck('name') }}"
+
+  - name: create-subscription
+    description: Create a Subscription, which tells of what Saved Searches find.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: name, type: text, required: true, description: The name of the subscription }
+      - { name: search_ids, type: list, required: true, description: The ids of the Saved Searches it tells of }
+      - { name: frequency, type: choice, required: true, default: daily, choices: [live, hourly, daily], description: How often it tells }
+      - { name: email_addresses, type: list, description: The e-mail addresses that are told }
+      - { name: description, type: text, description: A description }
+      - { name: is_active, type: bool, default: true, description: Whether the subscription is on }
+      - { name: ignore_time, type: bool, description: Whether the limits of time are ignored }
+      - { name: week_days, type: list, description: "The days alerts are made on: Monday, Tuesday…" }
+      - { name: permissions, type: list, description: "What the team may do: team:read, team:write" }
+      - { name: channel_ids, type: list, description: The ids of the channels that are told }
+      - { name: incident_channel_ids, type: list, description: The ids of the channels told of its incidents }
+      - { name: incident_profile_id, type: text, description: The id of the incident profile its incidents are made with }
+      - { name: incident_visibility, type: choice, choices: [unlisted, private], description: Who may see its incidents }
+      - { name: incident_creation_mode, type: choice, choices: [none, default, always, ignore-if-exists], description: When it makes an incident }
+      - { name: incident_watch_keys, type: choice, choices: [scans/page.url, scans/page.domain, scans/page.ip, scans/page.apexDomain, hostnames/hostname, hostnames/domain], description: What its incidents watch }
+    request:
+      method: POST
+      path: /api/v1/user/subscriptions/
+      json:
+        subscription:
+          name: "{{ args.name }}"
+          searchIds: "{{ args.search_ids }}"
+          frequency: "{{ args.frequency }}"
+          emailAddresses: "{{ args.email_addresses }}"
+          description: "{{ args.description }}"
+          isActive: "{{ args.is_active }}"
+          ignoreTime: "{{ args.ignore_time }}"
+          weekDays: "{{ args.week_days }}"
+          permissions: "{{ args.permissions }}"
+          channelIds: "{{ args.channel_ids }}"
+          incidentChannelIds: "{{ args.incident_channel_ids }}"
+          incidentProfileId: "{{ args.incident_profile_id }}"
+          incidentVisibility: "{{ args.incident_visibility }}"
+          incidentCreationMode: "{{ args.incident_creation_mode }}"
+          incidentWatchKeys: "{{ args.incident_watch_keys }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.subscription._id }}"
+      subscription: "{{ response.subscription }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4f890, subscription: { _id: 6f1c2a9be4b0a1d2c3e4f890, name: Test Subscription, frequency: daily, isActive: true } }
+
+  - name: update-subscription
+    description: Change a Subscription.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: subscription_id, type: text, required: true, description: The id of the subscription }
+      - { name: name, type: text, description: The name of the subscription }
+      - { name: search_ids, type: list, description: The ids of the Saved Searches it tells of }
+      - { name: frequency, type: choice, choices: [live, hourly, daily], description: How often it tells }
+      - { name: email_addresses, type: list, description: The e-mail addresses that are told }
+      - { name: description, type: text, description: A description }
+      - { name: is_active, type: bool, description: Whether the subscription is on }
+      - { name: ignore_time, type: bool, description: Whether the limits of time are ignored }
+      - { name: week_days, type: list, description: "The days alerts are made on: Monday, Tuesday…" }
+      - { name: permissions, type: list, description: "What the team may do: team:read, team:write" }
+      - { name: channel_ids, type: list, description: The ids of the channels that are told }
+      - { name: incident_channel_ids, type: list, description: The ids of the channels told of its incidents }
+      - { name: incident_profile_id, type: text, description: The id of the incident profile its incidents are made with }
+      - { name: incident_visibility, type: choice, choices: [unlisted, private], description: Who may see its incidents }
+      - { name: incident_creation_mode, type: choice, choices: [none, default, always, ignore-if-exists], description: When it makes an incident }
+      - { name: incident_watch_keys, type: choice, choices: [scans/page.url, scans/page.domain, scans/page.ip, scans/page.apexDomain, hostnames/hostname, hostnames/domain], description: What its incidents watch }
+    request:
+      method: PUT
+      path: "/api/v1/user/subscriptions/{{ args.subscription_id }}/"
+      json:
+        subscription:
+          name: "{{ args.name }}"
+          searchIds: "{{ args.search_ids }}"
+          frequency: "{{ args.frequency }}"
+          emailAddresses: "{{ args.email_addresses }}"
+          description: "{{ args.description }}"
+          isActive: "{{ args.is_active }}"
+          ignoreTime: "{{ args.ignore_time }}"
+          weekDays: "{{ args.week_days }}"
+          permissions: "{{ args.permissions }}"
+          channelIds: "{{ args.channel_ids }}"
+          incidentChannelIds: "{{ args.incident_channel_ids }}"
+          incidentProfileId: "{{ args.incident_profile_id }}"
+          incidentVisibility: "{{ args.incident_visibility }}"
+          incidentCreationMode: "{{ args.incident_creation_mode }}"
+          incidentWatchKeys: "{{ args.incident_watch_keys }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.subscription._id }}"
+      subscription: "{{ response.subscription }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4f890, subscription: { _id: 6f1c2a9be4b0a1d2c3e4f890, name: Test Subscription, frequency: daily, isActive: true } }
+
+  - name: delete-subscription
+    description: Delete a Subscription.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: subscription_id, type: text, required: true, description: The id of the subscription }
+    request: { method: DELETE, path: "/api/v1/user/subscriptions/{{ args.subscription_id }}/" }
+    error: { message: "{{ response.message }}" }
+    sample: { response: {} }
+
+  - name: get-subscription-results
+    description: What the searches of a Subscription found in one source. urlscan answers with a redirect to the search, which is followed.
+    premium: true
+    arguments:
+      - { name: subscription_id, type: text, required: true, description: The id of the subscription }
+      - { name: datasource, type: choice, required: true, default: scans, choices: [scans, hostnames], description: The source to read the results of }
+    request: { method: GET, path: "/api/v1/user/subscriptions/{{ args.subscription_id }}/results/{{ args.datasource }}/" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response.results }}"
+      total: "{{ response.total }}"
+      count: "{{ response.results | length }}"
+      ids: "{{ response.results | pluck('_id') }}"
+
+  # ---------------------------------------------------------------- channels --
+  - name: list-channels
+    description: The notification channels of the user (webhooks and e-mail).
+    premium: true
+    arguments: []
+    request: { method: GET, path: /api/v1/user/channels/ }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      channels: "{{ response.channels }}"
+      ids: "{{ response.channels | pluck('_id') }}"
+      names: "{{ response.channels | pluck('name') }}"
+
+  - name: create-channel
+    description: Create a notification channel, a webhook or e-mail addresses that Subscriptions and incidents tell.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: name, type: text, required: true, description: The name of the channel }
+      - { name: type, type: choice, required: true, default: webhook, choices: [webhook, email], description: What the channel is }
+      - { name: webhook_url, type: text, description: The address the notifications are sent to (a webhook) }
+      - { name: email_addresses, type: list, description: The e-mail addresses that are told (e-mail) }
+      - { name: frequency, type: choice, choices: [live, hourly, daily], description: How often it tells }
+      - { name: utc_time, type: text, description: "The time of day, UTC, the daily e-mails are sent at: 09:00" }
+      - { name: is_active, type: bool, description: Whether the channel is on }
+      - { name: is_default, type: bool, description: Whether it is the default channel }
+      - { name: ignore_time, type: bool, description: Whether the limits of time are ignored }
+      - { name: week_days, type: list, description: "The days alerts are made on: Monday, Tuesday…" }
+      - { name: permissions, type: list, description: "What the team may do: team:read, team:write" }
+    request:
+      method: POST
+      path: /api/v1/user/channels/
+      json:
+        channel:
+          name: "{{ args.name }}"
+          type: "{{ args.type }}"
+          webhookURL: "{{ args.webhook_url }}"
+          emailAddresses: "{{ args.email_addresses }}"
+          frequency: "{{ args.frequency }}"
+          utcTime: "{{ args.utc_time }}"
+          isActive: "{{ args.is_active }}"
+          isDefault: "{{ args.is_default }}"
+          ignoreTime: "{{ args.ignore_time }}"
+          weekDays: "{{ args.week_days }}"
+          permissions: "{{ args.permissions }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.channel._id }}"
+      channel: "{{ response.channel }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4fabc, channel: { _id: 6f1c2a9be4b0a1d2c3e4fabc, type: webhook, name: Test webhook, isActive: true } }
+
+  - name: get-channel
+    description: One notification channel.
+    premium: true
+    arguments:
+      - { name: channel_id, type: text, required: true, description: The id of the channel }
+    request: { method: GET, path: "/api/v1/user/channels/{{ args.channel_id }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.channel._id }}"
+      channel: "{{ response.channel }}"
+
+  - name: update-channel
+    description: Change a notification channel.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: channel_id, type: text, required: true, description: The id of the channel }
+      - { name: name, type: text, required: true, description: The name of the channel }
+      - { name: type, type: choice, required: true, default: webhook, choices: [webhook, email], description: What the channel is }
+      - { name: webhook_url, type: text, description: The address the notifications are sent to (a webhook) }
+      - { name: email_addresses, type: list, description: The e-mail addresses that are told (e-mail) }
+      - { name: frequency, type: choice, choices: [live, hourly, daily], description: How often it tells }
+      - { name: utc_time, type: text, description: "The time of day, UTC, the daily e-mails are sent at: 09:00" }
+      - { name: is_active, type: bool, description: Whether the channel is on }
+      - { name: is_default, type: bool, description: Whether it is the default channel }
+      - { name: ignore_time, type: bool, description: Whether the limits of time are ignored }
+      - { name: week_days, type: list, description: "The days alerts are made on: Monday, Tuesday…" }
+      - { name: permissions, type: list, description: "What the team may do: team:read, team:write" }
+    request:
+      method: PUT
+      path: "/api/v1/user/channels/{{ args.channel_id }}"
+      json:
+        channel:
+          name: "{{ args.name }}"
+          type: "{{ args.type }}"
+          webhookURL: "{{ args.webhook_url }}"
+          emailAddresses: "{{ args.email_addresses }}"
+          frequency: "{{ args.frequency }}"
+          utcTime: "{{ args.utc_time }}"
+          isActive: "{{ args.is_active }}"
+          isDefault: "{{ args.is_default }}"
+          ignoreTime: "{{ args.ignore_time }}"
+          weekDays: "{{ args.week_days }}"
+          permissions: "{{ args.permissions }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.channel._id }}"
+      channel: "{{ response.channel }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4fabc, channel: { _id: 6f1c2a9be4b0a1d2c3e4fabc, type: webhook, name: Test webhook, isActive: true } }
+
+  # --------------------------------------------------------------- incidents --
+  - name: create-incident
+    description: Open an incident, which watches a hostname, a domain, an IP address or an address, scans it again and again and tells of what changes.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: observable, type: text, required: true, description: "What to watch: a hostname, a domain, an IP address or an address" }
+      - { name: visibility, type: choice, required: true, default: private, choices: [unlisted, private], description: Who may see its scans }
+      - { name: channels, type: list, description: The ids of the channels told of this incident }
+      - { name: extra_path, type: text, description: A path added to the hostname of an incident on a hostname }
+      - { name: scan_interval, type: number, description: Seconds between two full scans of the site }
+      - { name: scan_interval_mode, type: choice, choices: [manual, automatic], description: "manual: the intervals after suspended and after malicious have no effect" }
+      - { name: watched_attributes, type: list, description: "What is watched: detections, tls, dns, labels, page, meta, ip" }
+      - { name: user_agents, type: list, description: The browser User-Agents the scans use }
+      - { name: user_agents_per_interval, type: number, description: How many User-Agents are used at each interval }
+      - { name: countries, type: list, description: "The countries to scan from, as two letters each" }
+      - { name: countries_per_interval, type: number, description: How many countries are used at each interval }
+      - { name: stop_delay_suspended, type: number, description: When the incident closes by itself after what it watches was suspended }
+      - { name: stop_delay_inactive, type: number, description: When the incident closes by itself after what it watches became inactive }
+      - { name: stop_delay_malicious, type: number, description: When the incident closes by itself after what it watches became malicious }
+      - { name: scan_interval_after_suspended, type: number, description: The scan interval once what it watches was suspended }
+      - { name: scan_interval_after_malicious, type: number, description: The scan interval once what it watches became malicious }
+      - { name: incident_profile, type: text, description: The id of the incident profile to open it with }
+      - { name: expire_after, type: number, description: Seconds until the incident closes by itself }
+    request:
+      method: POST
+      path: /api/v1/user/incidents
+      json:
+        incident:
+          observable: "{{ args.observable }}"
+          visibility: "{{ args.visibility }}"
+          channels: "{{ args.channels }}"
+          extraPath: "{{ args.extra_path }}"
+          scanInterval: "{{ args.scan_interval }}"
+          scanIntervalMode: "{{ args.scan_interval_mode }}"
+          watchedAttributes: "{{ args.watched_attributes }}"
+          userAgents: "{{ args.user_agents }}"
+          userAgentsPerInterval: "{{ args.user_agents_per_interval }}"
+          countries: "{{ args.countries }}"
+          countriesPerInterval: "{{ args.countries_per_interval }}"
+          stopDelaySuspended: "{{ args.stop_delay_suspended }}"
+          stopDelayInactive: "{{ args.stop_delay_inactive }}"
+          stopDelayMalicious: "{{ args.stop_delay_malicious }}"
+          scanIntervalAfterSuspended: "{{ args.scan_interval_after_suspended }}"
+          scanIntervalAfterMalicious: "{{ args.scan_interval_after_malicious }}"
+          incidentProfile: "{{ args.incident_profile }}"
+          expireAfter: "{{ args.expire_after }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.incident._id }}"
+      state: "{{ response.incident.state }}"
+      type: "{{ response.incident.type }}"
+      expire_at: "{{ response.incident.expireAt }}"
+      incident: "{{ response.incident }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4fdef, state: active, type: hostname, expire_at: "2025-01-24T11:44:52.563Z", incident: { _id: 6f1c2a9be4b0a1d2c3e4fdef, observable: foobar.com, state: active } }
+
+  - name: get-incident
+    description: One incident, with its options and its state.
+    premium: true
+    arguments:
+      - { name: incident_id, type: text, required: true, description: The id of the incident }
+    request: { method: GET, path: "/api/v1/user/incidents/{{ args.incident_id }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.incident._id }}"
+      state: "{{ response.incident.state }}"
+      type: "{{ response.incident.type }}"
+      observable: "{{ response.incident.observable }}"
+      labels: "{{ response.incident.labels }}"
+      scanned_at: "{{ response.incident.scannedAt }}"
+      expire_at: "{{ response.incident.expireAt }}"
+      incident: "{{ response.incident }}"
+
+  - name: update-incident
+    description: Change the options of an incident that runs.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: incident_id, type: text, required: true, description: The id of the incident }
+      - { name: observable, type: text, description: "What to watch: a hostname, a domain, an IP address or an address" }
+      - { name: visibility, type: choice, choices: [unlisted, private], description: Who may see its scans }
+      - { name: channels, type: list, description: The ids of the channels told of this incident }
+      - { name: extra_path, type: text, description: A path added to the hostname of an incident on a hostname }
+      - { name: scan_interval, type: number, description: Seconds between two full scans of the site }
+      - { name: scan_interval_mode, type: choice, choices: [manual, automatic], description: "manual: the intervals after suspended and after malicious have no effect" }
+      - { name: watched_attributes, type: list, description: "What is watched: detections, tls, dns, labels, page, meta, ip" }
+      - { name: user_agents, type: list, description: The browser User-Agents the scans use }
+      - { name: user_agents_per_interval, type: number, description: How many User-Agents are used at each interval }
+      - { name: countries, type: list, description: "The countries to scan from, as two letters each" }
+      - { name: countries_per_interval, type: number, description: How many countries are used at each interval }
+      - { name: stop_delay_suspended, type: number, description: When the incident closes by itself after what it watches was suspended }
+      - { name: stop_delay_inactive, type: number, description: When the incident closes by itself after what it watches became inactive }
+      - { name: stop_delay_malicious, type: number, description: When the incident closes by itself after what it watches became malicious }
+      - { name: scan_interval_after_suspended, type: number, description: The scan interval once what it watches was suspended }
+      - { name: scan_interval_after_malicious, type: number, description: The scan interval once what it watches became malicious }
+      - { name: incident_profile, type: text, description: The id of the incident profile }
+      - { name: expire_after, type: number, description: Seconds until the incident closes by itself }
+    request:
+      method: PUT
+      path: "/api/v1/user/incidents/{{ args.incident_id }}"
+      json:
+        incident:
+          observable: "{{ args.observable }}"
+          visibility: "{{ args.visibility }}"
+          channels: "{{ args.channels }}"
+          extraPath: "{{ args.extra_path }}"
+          scanInterval: "{{ args.scan_interval }}"
+          scanIntervalMode: "{{ args.scan_interval_mode }}"
+          watchedAttributes: "{{ args.watched_attributes }}"
+          userAgents: "{{ args.user_agents }}"
+          userAgentsPerInterval: "{{ args.user_agents_per_interval }}"
+          countries: "{{ args.countries }}"
+          countriesPerInterval: "{{ args.countries_per_interval }}"
+          stopDelaySuspended: "{{ args.stop_delay_suspended }}"
+          stopDelayInactive: "{{ args.stop_delay_inactive }}"
+          stopDelayMalicious: "{{ args.stop_delay_malicious }}"
+          scanIntervalAfterSuspended: "{{ args.scan_interval_after_suspended }}"
+          scanIntervalAfterMalicious: "{{ args.scan_interval_after_malicious }}"
+          incidentProfile: "{{ args.incident_profile }}"
+          expireAfter: "{{ args.expire_after }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.incident._id }}"
+      state: "{{ response.incident.state }}"
+      expire_at: "{{ response.incident.expireAt }}"
+      incident: "{{ response.incident }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4fdef, state: active, expire_at: "2025-01-24T11:44:52.563Z", incident: { _id: 6f1c2a9be4b0a1d2c3e4fdef, observable: foobar.com, state: active } }
+
+  - name: close-incident
+    description: Close an incident - it stops scanning.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: incident_id, type: text, required: true, description: The id of the incident }
+    request: { method: PUT, path: "/api/v1/user/incidents/{{ args.incident_id }}/close" }
+    error: { message: "{{ response.message }}" }
+    sample: { response: {} }
+
+  - name: restart-incident
+    description: Start a closed incident again. Its end is moved further and it starts with new states.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: incident_id, type: text, required: true, description: The id of the incident }
+    request: { method: PUT, path: "/api/v1/user/incidents/{{ args.incident_id }}/restart" }
+    error: { message: "{{ response.message }}" }
+    sample: { response: {} }
+
+  - name: copy-incident
+    description: Copy an incident without its history.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: incident_id, type: text, required: true, description: The id of the incident to copy }
+    request: { method: POST, path: "/api/v1/user/incidents/{{ args.incident_id }}/copy" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.incident._id }}"
+      state: "{{ response.incident.state }}"
+      incident: "{{ response.incident }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4f111, state: active, incident: { _id: 6f1c2a9be4b0a1d2c3e4f111, observable: foobar.com, sourceType: copy } }
+
+  - name: fork-incident
+    description: Copy an incident together with its history (its states).
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: incident_id, type: text, required: true, description: The id of the incident to copy }
+    request: { method: POST, path: "/api/v1/user/incidents/{{ args.incident_id }}/fork" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.incident._id }}"
+      state: "{{ response.incident.state }}"
+      incident: "{{ response.incident }}"
+    sample: { id: 6f1c2a9be4b0a1d2c3e4f222, state: active, incident: { _id: 6f1c2a9be4b0a1d2c3e4f222, observable: foobar.com, sourceType: fork } }
+
+  - name: list-watchable-attributes
+    description: The attributes an incident can watch (what its watched_attributes takes).
+    premium: true
+    arguments: []
+    request: { method: GET, path: /api/v1/user/watchableAttributes }
+    error: { message: "{{ response.message }}" }
+
+  - name: get-incident-states
+    description: The states an incident went through, each with the time it started and ended.
+    premium: true
+    arguments:
+      - { name: incident_id, type: text, required: true, description: The id of the incident }
+    request: { method: GET, path: "/api/v1/user/incidentstates/{{ args.incident_id }}/" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      states: "{{ response.incidentstates }}"
+      count: "{{ response.incidentstates | length }}"
+
+  # -------------------------------------------------------------- data dumps --
+  - name: list-data-dumps
+    description: The data dump files there are for a window of time, a kind of file and a day.
+    premium: true
+    arguments:
+      - { name: time_window, type: choice, required: true, choices: [days, hours, minutes], description: The window of time a file covers }
+      - { name: file_type, type: choice, required: true, choices: [api, search, screenshot, dom], description: The kind of file }
+      - { name: date, type: text, required: true, description: "The day, as YYYYMMDD: 20251001" }
+    request: { method: GET, path: "/api/v1/datadump/list/{{ args.time_window }}/{{ args.file_type }}/{{ args.date }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      files: "{{ response.files }}"
+      paths: "{{ response.files | pluck('path') }}"
+      count: "{{ response.files | length }}"

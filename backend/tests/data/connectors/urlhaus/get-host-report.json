@@ -1,0 +1,116 @@
+{
+  "args": {
+    "host": "vektorex.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/host/",
+        "form": {
+          "host": "vektorex.com"
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query_status": "ok",
+          "urlhaus_reference": "https://urlhaus.abuse.ch/host/vektorex.com/",
+          "host": "vektorex.com",
+          "firstseen": "2019-01-15 07:09:01 UTC",
+          "url_count": "120",
+          "blacklists": {
+            "spamhaus_dbl": "abused_legit_malware",
+            "surbl": "not listed"
+          },
+          "urls": [
+            {
+              "id": "121319",
+              "urlhaus_reference": "https://urlhaus.abuse.ch/url/121319/",
+              "url": "http://vektorex.com/source/Z/5016223.exe",
+              "url_status": "online",
+              "date_added": "2019-02-11 07:45:05 UTC",
+              "threat": "malware_download",
+              "reporter": "abuse_ch",
+              "larted": "false",
+              "takedown_time_seconds": null,
+              "tags": [
+                "AZORult",
+                "exe"
+              ]
+            },
+            {
+              "id": "121316",
+              "urlhaus_reference": "https://urlhaus.abuse.ch/url/121316/",
+              "url": "http://vektorex.com/source/Z/Order%20839.png",
+              "url_status": "offline",
+              "date_added": "2019-02-11 06:47:03 UTC",
+              "threat": "malware_download",
+              "reporter": "abuse_ch",
+              "larted": "false",
+              "takedown_time_seconds": null,
+              "tags": [
+                "exe",
+                "Loki"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "suspicious",
+    "summary": "URLhaus: 120 malware URL(s) on this host",
+    "link": "https://urlhaus.abuse.ch/host/vektorex.com/",
+    "query_status": "ok",
+    "url_count": 120,
+    "firstseen": "2019-01-15 07:09:01 UTC",
+    "blacklists": {
+      "spamhaus_dbl": "abused_legit_malware",
+      "surbl": "not listed"
+    },
+    "urls": [
+      {
+        "id": "121319",
+        "urlhaus_reference": "https://urlhaus.abuse.ch/url/121319/",
+        "url": "http://vektorex.com/source/Z/5016223.exe",
+        "url_status": "online",
+        "date_added": "2019-02-11 07:45:05 UTC",
+        "threat": "malware_download",
+        "reporter": "abuse_ch",
+        "larted": "false",
+        "takedown_time_seconds": null,
+        "tags": [
+          "AZORult",
+          "exe"
+        ]
+      },
+      {
+        "id": "121316",
+        "urlhaus_reference": "https://urlhaus.abuse.ch/url/121316/",
+        "url": "http://vektorex.com/source/Z/Order%20839.png",
+        "url_status": "offline",
+        "date_added": "2019-02-11 06:47:03 UTC",
+        "threat": "malware_download",
+        "reporter": "abuse_ch",
+        "larted": "false",
+        "takedown_time_seconds": null,
+        "tags": [
+          "exe",
+          "Loki"
+        ]
+      }
+    ],
+    "addresses": [
+      "http://vektorex.com/source/Z/5016223.exe",
+      "http://vektorex.com/source/Z/Order%20839.png"
+    ],
+    "online": [
+      "http://vektorex.com/source/Z/5016223.exe"
+    ]
+  }
+}

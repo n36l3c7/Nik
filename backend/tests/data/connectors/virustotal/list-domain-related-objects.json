@@ -1,0 +1,62 @@
+{
+  "args": {
+    "domain": "www.hooli.com",
+    "relationship": "immediate_parent"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/domains/www.hooli.com/immediate_parent",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "domain",
+            "id": "hooli.com",
+            "attributes": {
+              "reputation": 0,
+              "last_analysis_stats": {
+                "harmless": 61,
+                "malicious": 0,
+                "suspicious": 0,
+                "timeout": 0,
+                "undetected": 8
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "domain",
+        "id": "hooli.com",
+        "attributes": {
+          "reputation": 0,
+          "last_analysis_stats": {
+            "harmless": 61,
+            "malicious": 0,
+            "suspicious": 0,
+            "timeout": 0,
+            "undetected": 8
+          }
+        }
+      }
+    ],
+    "ids": [
+      "hooli.com"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

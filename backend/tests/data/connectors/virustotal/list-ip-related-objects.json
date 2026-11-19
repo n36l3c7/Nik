@@ -1,0 +1,56 @@
+{
+  "args": {
+    "ip": "8.8.8.8",
+    "relationship": "resolutions"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/ip_addresses/8.8.8.8/resolutions",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "resolution",
+              "id": "8.8.8.8www.hooli.com",
+              "attributes": {
+                "date": 1599060646,
+                "host_name": "www.hooli.com",
+                "ip_address": "8.8.8.8",
+                "resolver": "VirusTotal"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "resolution",
+        "id": "8.8.8.8www.hooli.com",
+        "attributes": {
+          "date": 1599060646,
+          "host_name": "www.hooli.com",
+          "ip_address": "8.8.8.8",
+          "resolver": "VirusTotal"
+        }
+      }
+    ],
+    "ids": [
+      "8.8.8.8www.hooli.com"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

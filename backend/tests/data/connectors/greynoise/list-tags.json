@@ -1,0 +1,111 @@
+{
+  "args": {
+    "name": "Mirai"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/tags",
+        "query": {
+          "name": "Mirai"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "tags": [
+            {
+              "id": "ef0cc90d-d80c-436f-92c5-3d8f8665c9ac",
+              "label": "MIRAI",
+              "slug": "mirai",
+              "name": "Mirai",
+              "category": "worm",
+              "intention": "malicious",
+              "description": "This IP address exhibits behavior that indicates it is infected with Mirai or a Mirai-like variant of malware.",
+              "references": [
+                "https://en.wikipedia.org/wiki/Mirai_(malware)"
+              ],
+              "recommend_block": false,
+              "cves": [
+                "CVE-2020-1234"
+              ],
+              "created_at": "2020-04-07",
+              "vendors": [
+                {
+                  "id": "0b6f4a8e-3c1d-4e5f-9a7b-2d8c6e4f1a3b",
+                  "active": true,
+                  "products": [
+                    {
+                      "id": "0b6f4a8e-3c1d-4e5f-9a7b-2d8c6e4f1a3b"
+                    }
+                  ]
+                }
+              ],
+              "related_tags": [
+                {
+                  "id": "da78f2eb-fe6b-4e84-913c-cdab4ff067c2",
+                  "name": "Oracle WebLogic RCE CVE-2020-14882",
+                  "intention": "malicious",
+                  "category": "activity",
+                  "slug": "oracle-weblogic-rce-cve-2020-14882"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tags": [
+      {
+        "id": "ef0cc90d-d80c-436f-92c5-3d8f8665c9ac",
+        "label": "MIRAI",
+        "slug": "mirai",
+        "name": "Mirai",
+        "category": "worm",
+        "intention": "malicious",
+        "description": "This IP address exhibits behavior that indicates it is infected with Mirai or a Mirai-like variant of malware.",
+        "references": [
+          "https://en.wikipedia.org/wiki/Mirai_(malware)"
+        ],
+        "recommend_block": false,
+        "cves": [
+          "CVE-2020-1234"
+        ],
+        "created_at": "2020-04-07",
+        "vendors": [
+          {
+            "id": "0b6f4a8e-3c1d-4e5f-9a7b-2d8c6e4f1a3b",
+            "active": true,
+            "products": [
+              {
+                "id": "0b6f4a8e-3c1d-4e5f-9a7b-2d8c6e4f1a3b"
+              }
+            ]
+          }
+        ],
+        "related_tags": [
+          {
+            "id": "da78f2eb-fe6b-4e84-913c-cdab4ff067c2",
+            "name": "Oracle WebLogic RCE CVE-2020-14882",
+            "intention": "malicious",
+            "category": "activity",
+            "slug": "oracle-weblogic-rce-cve-2020-14882"
+          }
+        ]
+      }
+    ],
+    "names": [
+      "Mirai"
+    ],
+    "ids": [
+      "ef0cc90d-d80c-436f-92c5-3d8f8665c9ac"
+    ],
+    "count": 1
+  }
+}

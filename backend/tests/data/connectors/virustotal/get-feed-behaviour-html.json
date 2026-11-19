@@ -1,0 +1,23 @@
+{
+  "args": {
+    "token": "MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/file_behaviours/MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4/html",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head><title>Sandbox report</title></head>\n<body>...</body>\n</html>\n"
+      }
+    }
+  ],
+  "outputs": {
+    "html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head><title>Sandbox report</title></head>\n<body>...</body>\n</html>\n"
+  }
+}

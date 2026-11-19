@@ -1,0 +1,66 @@
+{
+  "args": {
+    "query": "(classification:malicious AND"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v3/gnql/validate",
+        "json": {
+          "query": "(classification:malicious AND"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "valid": false,
+          "query": "(classification:malicious AND",
+          "message": "Expected a search term after 'AND' but found end of query; Expected ')' but found end of query",
+          "errors": [
+            {
+              "message": "Expected a search term after 'AND' but found end of query",
+              "position": 29,
+              "expected": "search term",
+              "found": "end of query",
+              "code": "SYNTAX_ERROR"
+            },
+            {
+              "message": "Expected ')' but found end of query",
+              "position": 29,
+              "expected": "')'",
+              "found": "end of query",
+              "code": "SYNTAX_ERROR"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "valid": false,
+    "message": "Expected a search term after 'AND' but found end of query; Expected ')' but found end of query",
+    "errors": [
+      {
+        "message": "Expected a search term after 'AND' but found end of query",
+        "position": 29,
+        "expected": "search term",
+        "found": "end of query",
+        "code": "SYNTAX_ERROR"
+      },
+      {
+        "message": "Expected ')' but found end of query",
+        "position": 29,
+        "expected": "')'",
+        "found": "end of query",
+        "code": "SYNTAX_ERROR"
+      }
+    ],
+    "adjusted_query": null,
+    "is_query_adjusted": null,
+    "unknown_tags": null
+  }
+}

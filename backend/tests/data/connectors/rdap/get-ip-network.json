@@ -1,0 +1,220 @@
+{
+  "args": {
+    "prefix": "2001:db8::",
+    "length": 32
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/ip/2001:db8::/32",
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "objectClassName": "ip network",
+          "handle": "XXXX-RIR",
+          "startAddress": "2001:db8::",
+          "endAddress": "2001:db8:0:ffff:ffff:ffff:ffff:ffff",
+          "ipVersion": "v6",
+          "name": "NET-RTR-1",
+          "type": "DIRECT ALLOCATION",
+          "country": "AU",
+          "parentHandle": "YYYY-RIR",
+          "status": [
+            "active"
+          ],
+          "entities": [
+            {
+              "objectClassName": "entity",
+              "handle": "XXXX",
+              "roles": [
+                "registrant"
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Joe User"
+                  ],
+                  [
+                    "kind",
+                    {},
+                    "text",
+                    "individual"
+                  ]
+                ]
+              ]
+            },
+            {
+              "objectClassName": "entity",
+              "handle": "ZZZZ",
+              "roles": [
+                "abuse"
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Abuse contact"
+                  ],
+                  [
+                    "email",
+                    {},
+                    "text",
+                    "abuse@example.com"
+                  ]
+                ]
+              ]
+            }
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventDate": "1990-12-31T23:59:59Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "1991-12-31T23:59:59Z"
+            }
+          ]
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "name": "NET-RTR-1",
+    "handle": "XXXX-RIR",
+    "start_address": "2001:db8::",
+    "end_address": "2001:db8:0:ffff:ffff:ffff:ffff:ffff",
+    "cidrs": null,
+    "ip_version": "v6",
+    "type": "DIRECT ALLOCATION",
+    "country": "AU",
+    "parent_handle": "YYYY-RIR",
+    "holder": "Joe User",
+    "abuse_email": "abuse@example.com",
+    "holder_abuse_email": null,
+    "registered": "1990-12-31T23:59:59Z",
+    "changed": "1991-12-31T23:59:59Z",
+    "status": [
+      "active"
+    ],
+    "record": {
+      "rdapConformance": [
+        "rdap_level_0"
+      ],
+      "objectClassName": "ip network",
+      "handle": "XXXX-RIR",
+      "startAddress": "2001:db8::",
+      "endAddress": "2001:db8:0:ffff:ffff:ffff:ffff:ffff",
+      "ipVersion": "v6",
+      "name": "NET-RTR-1",
+      "type": "DIRECT ALLOCATION",
+      "country": "AU",
+      "parentHandle": "YYYY-RIR",
+      "status": [
+        "active"
+      ],
+      "entities": [
+        {
+          "objectClassName": "entity",
+          "handle": "XXXX",
+          "roles": [
+            "registrant"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Joe User"
+              ],
+              [
+                "kind",
+                {},
+                "text",
+                "individual"
+              ]
+            ]
+          ]
+        },
+        {
+          "objectClassName": "entity",
+          "handle": "ZZZZ",
+          "roles": [
+            "abuse"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Abuse contact"
+              ],
+              [
+                "email",
+                {},
+                "text",
+                "abuse@example.com"
+              ]
+            ]
+          ]
+        }
+      ],
+      "events": [
+        {
+          "eventAction": "registration",
+          "eventDate": "1990-12-31T23:59:59Z"
+        },
+        {
+          "eventAction": "last changed",
+          "eventDate": "1991-12-31T23:59:59Z"
+        }
+      ]
+    }
+  }
+}

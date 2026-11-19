@@ -25,6 +25,13 @@ from tests.test_packs import MANIFEST, SCRIPT, actions, inspect, node
 # A key of the tests: the base64 of 32 bytes.
 PRIVATE = base64.b64encode(bytes(range(32))).decode("ascii")
 BASE = "/n36l3c7/Nik/releases/download/packs/"
+NO_LOGO = {"malwarebazaar", "urlhaus", "threatfox", "rdap"}
+# The packs of 6.0 came from connectors that had no README of their own.
+BEFORE_READMES = {
+    "bitbucket-cloud", "bitbucket-datacenter", "checkpoint-management", "checkpoint-sase", "confluence-cloud",
+    "confluence-datacenter", "jira-cloud", "jira-datacenter", "sentinelone", "sentinelone-sdl", "servicenow",
+    "zscaler-zia",
+}  # fmt: skip
 
 
 @pytest.fixture()
@@ -51,16 +58,21 @@ def published(outside, monkeypatch):
 def test_every_pack_of_the_repository_is_a_pack_a_new_nik_installs_whole(admin: TestClient):
     folders = vendor.folders()
     assert len(folders) >= 12
+    # Reading it as a new Nik would: with what Nik ships in place.
     for folder in folders:
         data = packs.folder_bytes(folder)
         assert data == packs.folder_bytes(folder), folder.name  # the same folder, the same bytes
         pack = packs.read(data)
         manifest = pack.manifest
         assert manifest["id"] == folder.name
-        assert manifest["vendor"] and manifest["category"] and manifest["nik"] == ">=6.0", folder.name
+        assert manifest["vendor"] and manifest["category"] and manifest["nik"] in (">=6.0", ">=6.1"), folder.name
         assert 40 < len(manifest["description"]) <= 2000, folder.name
         connectors = [item for item in pack.items if item.kind == "connectors"]
-        assert connectors and all(item.extras.get("logo") for item in connectors), folder.name
+        assert connectors, folder.name
+        # Every connector has the mark of its product, but the four whose vendor publishes none (packs/README.md).
+        if folder.name not in NO_LOGO:
+            assert all(item.extras.get("logo") for item in connectors), folder.name
+        assert all(item.extras.get("readme") for item in connectors) or folder.name in BEFORE_READMES, folder.name
         found = inspect(admin, data)
         assert found["problems"] == [] and set(actions(found).values()) == {"add"}, (folder.name, found)
     # What a Nik older than 6.0 held as its own is written down as these same packs.

@@ -1,0 +1,104 @@
+{
+  "args": {
+    "id": 41
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/",
+        "json": {
+          "query": "ioc",
+          "id": 41
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "41",
+          "ioc": "gaga.com",
+          "threat_type": "botnet_cc",
+          "threat_type_desc": "Indicator that identifies a botnet command&control server (C&C)",
+          "ioc_type": "domain",
+          "ioc_type_desc": "Domain that is used for botnet Command&control (C&C)",
+          "malware": "win.dridex",
+          "malware_printable": "Dridex",
+          "malware_alias": null,
+          "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/win.dridex",
+          "confidence_level": 50,
+          "first_seen": "2020-12-08 13:36:27 UTC",
+          "last_seen": null,
+          "reference": "https://twitter.com/JAMESWT_MHT/status/1336229725082177536",
+          "tags": [
+            "exe",
+            "test"
+          ],
+          "reporter": "abuse_ch",
+          "comment": "These domains are too bad!",
+          "credits": [
+            {
+              "credits_from": "ThreatFox",
+              "credits_amount": 5
+            }
+          ],
+          "malware_samples": [
+            {
+              "time_stamp": "2021-03-23 08:18:06 UTC",
+              "md5_hash": "5b7e82e051ade4b14d163eea2a17bf8b",
+              "sha256_hash": "b325c92fa540edeb89b95dbfd4400c1cb33599c66859a87aead820e568a2ebe7",
+              "malware_bazaar": "https://bazaar.abuse.ch/sample/b325c92fa540edeb89b95dbfd4400c1cb33599c66859a87aead820e568a2ebe7/"
+            },
+            {
+              "time_stamp": "2021-03-23 08:18:08 UTC",
+              "md5_hash": "694bf1540ff9d86851adbe15e9568d13",
+              "sha256_hash": "05a7bd44b039d1c1b0eb7ed12d2266ca341ba63d66084e151cfef5649c52ef08",
+              "malware_bazaar": "https://bazaar.abuse.ch/sample/05a7bd44b039d1c1b0eb7ed12d2266ca341ba63d66084e151cfef5649c52ef08/"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "41",
+    "ioc": "gaga.com",
+    "ioc_type": "domain",
+    "threat_type": "botnet_cc",
+    "threat_type_desc": "Indicator that identifies a botnet command&control server (C&C)",
+    "malware": "Dridex",
+    "malware_id": "win.dridex",
+    "malware_alias": null,
+    "confidence_level": 50,
+    "first_seen": "2020-12-08 13:36:27 UTC",
+    "last_seen": null,
+    "reference": "https://twitter.com/JAMESWT_MHT/status/1336229725082177536",
+    "reporter": "abuse_ch",
+    "comment": "These domains are too bad!",
+    "tags": [
+      "exe",
+      "test"
+    ],
+    "malware_samples": [
+      {
+        "time_stamp": "2021-03-23 08:18:06 UTC",
+        "md5_hash": "5b7e82e051ade4b14d163eea2a17bf8b",
+        "sha256_hash": "b325c92fa540edeb89b95dbfd4400c1cb33599c66859a87aead820e568a2ebe7",
+        "malware_bazaar": "https://bazaar.abuse.ch/sample/b325c92fa540edeb89b95dbfd4400c1cb33599c66859a87aead820e568a2ebe7/"
+      },
+      {
+        "time_stamp": "2021-03-23 08:18:08 UTC",
+        "md5_hash": "694bf1540ff9d86851adbe15e9568d13",
+        "sha256_hash": "05a7bd44b039d1c1b0eb7ed12d2266ca341ba63d66084e151cfef5649c52ef08",
+        "malware_bazaar": "https://bazaar.abuse.ch/sample/05a7bd44b039d1c1b0eb7ed12d2266ca341ba63d66084e151cfef5649c52ef08/"
+      }
+    ],
+    "sha256": [
+      "b325c92fa540edeb89b95dbfd4400c1cb33599c66859a87aead820e568a2ebe7",
+      "05a7bd44b039d1c1b0eb7ed12d2266ca341ba63d66084e151cfef5649c52ef08"
+    ],
+    "link": "https://threatfox.abuse.ch/ioc/41/"
+  }
+}

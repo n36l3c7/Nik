@@ -1,9 +1,17 @@
 import { useState } from 'react'
 import { Trash2, X, Zap } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import { authOf, fieldsOf, formProblem, payloadOf, startingValues } from '../../../domain/automation/instances.js'
+import {
+  authOf,
+  fieldsOf,
+  formProblem,
+  payloadOf,
+  startingValues,
+  takesKeys,
+} from '../../../domain/automation/instances.js'
 import { Button } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
+import InstanceKeys from './InstanceKeys.jsx'
 
 /*
  * An instance of a connector, beside the list of connectors: its name, its
@@ -22,11 +30,21 @@ const INPUT =
  *   testing?: boolean,
  *   onClose: () => void,
  *   onSaved: (saved: object) => void,
+ *   onKeys?: (saved: object) => void,  // its keys were saved: the pane stays open
  *   onTest?: (instance: object) => void,
  *   onDelete?: (instance: object) => void,
  * }} props
  */
-export default function InstancePane({ connector, instance, testing = false, onClose, onSaved, onTest, onDelete }) {
+export default function InstancePane({
+  connector,
+  instance,
+  testing = false,
+  onClose,
+  onSaved,
+  onKeys,
+  onTest,
+  onDelete,
+}) {
   const pane = useResizablePane('connectors.instance', { initial: 380, min: 320, max: 640, edge: 'left' })
   const [name, setName] = useState(instance?.name ?? '')
   const [values, setValues] = useState(() => startingValues(connector, instance))
@@ -193,6 +211,11 @@ export default function InstancePane({ connector, instance, testing = false, onC
               {error}
             </p>
           )}
+          {takesKeys(connector) && !instance && (
+            <p className="text-xs text-fg-muted">
+              More keys than one, and how they take turns, are set once the instance is created.
+            </p>
+          )}
         </form>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-line-soft p-4">
@@ -211,6 +234,11 @@ export default function InstancePane({ connector, instance, testing = false, onC
             </Button>
           )}
         </div>
+        {instance && takesKeys(connector) && (
+          <div className="min-h-0 overflow-y-auto">
+            <InstanceKeys key={instance.id} connector={connector} instance={instance} onSaved={onKeys ?? onSaved} />
+          </div>
+        )}
       </aside>
     </>
   )

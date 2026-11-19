@@ -1,0 +1,61 @@
+{
+  "args": {
+    "filter": "engine:acme-av"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/statistics",
+        "query": {
+          "filter": "engine:acme-av"
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "monitor_partner_statistics",
+              "id": "acme-av-day-2018-01-31",
+              "attributes": {
+                "date": 1517356800,
+                "engine": "acme-av",
+                "hashes_count": 1840,
+                "hashes_detected_count": 34,
+                "items_count": 1840,
+                "items_detected_count": 34,
+                "period": "day"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "monitor_partner_statistics",
+        "id": "acme-av-day-2018-01-31",
+        "attributes": {
+          "date": 1517356800,
+          "engine": "acme-av",
+          "hashes_count": 1840,
+          "hashes_detected_count": 34,
+          "items_count": 1840,
+          "items_detected_count": 34,
+          "period": "day"
+        }
+      }
+    ],
+    "ids": [
+      "acme-av-day-2018-01-31"
+    ],
+    "count": 1,
+    "meta": null
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/fields",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "fields": [
+            {
+              "value": "source.ip",
+              "label": "Source IP",
+              "description": "The address the session came from",
+              "type": "ip",
+              "group": "source",
+              "sortable": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "fields": [
+      {
+        "value": "source.ip",
+        "label": "Source IP",
+        "description": "The address the session came from",
+        "type": "ip",
+        "group": "source",
+        "sortable": true
+      }
+    ],
+    "names": [
+      "source.ip"
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/scans",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "status": "PROCESSING",
+              "created": "2021-01-26T08:17:43.794000",
+              "status_check": "2021-01-26T08:17:43.900000",
+              "credits_left": 100000,
+              "api_key": "toH56DpDulOnvyxLhOSIxaUgZQeg1gFX",
+              "id": "Mo8W7itcWumiy9Ay",
+              "size": 1
+            },
+            {
+              "status": "DONE",
+              "created": "2021-01-26T08:08:26.296000",
+              "status_check": "2021-01-26T08:09:39.636000",
+              "credits_left": 100000,
+              "api_key": "toH56DpDulOnvyxLhOSIxaUgZQeg1gFX",
+              "id": "04GjMnUkQx9HsFhA",
+              "size": 1
+            }
+          ],
+          "total": 19
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "scans": [
+      {
+        "status": "PROCESSING",
+        "created": "2021-01-26T08:17:43.794000",
+        "status_check": "2021-01-26T08:17:43.900000",
+        "credits_left": 100000,
+        "api_key": "toH56DpDulOnvyxLhOSIxaUgZQeg1gFX",
+        "id": "Mo8W7itcWumiy9Ay",
+        "size": 1
+      },
+      {
+        "status": "DONE",
+        "created": "2021-01-26T08:08:26.296000",
+        "status_check": "2021-01-26T08:09:39.636000",
+        "credits_left": 100000,
+        "api_key": "toH56DpDulOnvyxLhOSIxaUgZQeg1gFX",
+        "id": "04GjMnUkQx9HsFhA",
+        "size": 1
+      }
+    ],
+    "ids": [
+      "Mo8W7itcWumiy9Ay",
+      "04GjMnUkQx9HsFhA"
+    ],
+    "total": 19
+  }
+}

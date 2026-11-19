@@ -1,0 +1,64 @@
+{
+  "args": {
+    "id": "piedpiper",
+    "relationships": "user"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/groups/piedpiper/activity_log_entries",
+        "query": {
+          "relationships": "user",
+          "limit": 40
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "activity_log_entry",
+              "id": "5323681776812032",
+              "attributes": {
+                "info": {
+                  "user": "bighead"
+                },
+                "ip": "203.0.113.7",
+                "date": 1700000000,
+                "action": "Remove admin from group"
+              }
+            }
+          ],
+          "meta": {
+            "count": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "activity_log_entry",
+        "id": "5323681776812032",
+        "attributes": {
+          "info": {
+            "user": "bighead"
+          },
+          "ip": "203.0.113.7",
+          "date": 1700000000,
+          "action": "Remove admin from group"
+        }
+      }
+    ],
+    "ids": [
+      "5323681776812032"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

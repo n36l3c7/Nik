@@ -10,6 +10,9 @@ import {
   problemLines,
 } from '../../../domain/automation/instances.js'
 import { formatRelative } from '../../../lib/time.js'
+import { setPath } from '../../../lib/location.js'
+import { PLAYGROUND_ROOT, leaveLine, tryLine } from '../../../domain/playground.js'
+import { useAuth } from '../../../context/AuthContext.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import InstancePane from './InstancePane.jsx'
@@ -75,6 +78,7 @@ function LastTest({ test }) {
 }
 
 export default function ConnectorsSection() {
+  const { can } = useAuth()
   const [connectors, setConnectors] = useState(null)
   const [instances, setInstances] = useState(null)
   const [query, setQuery] = useState('')
@@ -479,6 +483,11 @@ export default function ConnectorsSection() {
           onClose={() => setEditing(null)}
           onTest={test}
           onDelete={setDeleting}
+          onKeys={(saved) => {
+            // Its keys were saved: the pane stays on the instance, with what the server says of it now.
+            setEditing((open) => (open ? { ...open, instance: saved } : open))
+            load()
+          }}
           onSaved={(saved) => {
             setEditing(null)
             said(`${saved.name} is saved. Test it to see that ${saved.connectorName} answers.`)
@@ -572,6 +581,13 @@ export default function ConnectorsSection() {
               {shown.instances === 1 ? 'instance' : 'instances'}
               {shown.usedBy?.length ? ` · used by ${shown.usedBy.join(', ')}` : ' · no playbook uses it'}
             </p>
+            {shown.moreHosts?.length > 0 && (
+              <p className="text-xs text-fg-muted">
+                Beside the address of an instance, its commands reach:{' '}
+                <span className="font-mono">{shown.moreHosts.join(', ')}</span>. The credentials of an instance are not
+                sent there.
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               <LogoSlot connector={shown} />
               <input
@@ -634,8 +650,29 @@ export default function ConnectorsSection() {
                       <tr key={command.name}>
                         <th scope="row" className="border-b border-line-soft px-3 py-1.5 align-top font-normal">
                           <span className="font-mono text-fg">{command.name}</span>{' '}
-                          {command.changesOutside && <Badge color="amber">changes</Badge>}
+                          {command.changesOutside && <Badge color="amber">changes</Badge>}{' '}
+                          {command.premium && (
+                            <Badge color="violet" title="The vendor gives this command to a paid plan">
+                              premium
+                            </Badge>
+                          )}
                           {command.description && <span className="block text-fg-muted">{command.description}</span>}
+                          {can('automation.run') && (
+                            <button
+                              type="button"
+                              aria-label={`Try ${command.name} in the Playground`}
+                              onClick={() => {
+                                const first = (instances ?? []).find(
+                                  (item) => item.connector === shown.id && item.enabled,
+                                )
+                                leaveLine(tryLine(shown.id, command, first?.name ?? ''))
+                                setPath(PLAYGROUND_ROOT)
+                              }}
+                              className="mt-0.5 text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                              Try it
+                            </button>
+                          )}
                         </th>
                         <td className="border-b border-line-soft px-3 py-1.5 align-top font-mono text-fg-muted">
                           {command.arguments

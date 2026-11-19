@@ -1,0 +1,27 @@
+{
+  "args": {
+    "id": "0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e",
+    "relationship": "files",
+    "format": "csv"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/collections/0a3b3b1e2e1b0b1a9a7f3b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e/files/download/csv",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n"
+      }
+    }
+  ],
+  "outputs": {
+    "export": {
+      "text": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n"
+    }
+  }
+}

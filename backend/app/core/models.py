@@ -1122,10 +1122,49 @@ class Connection(Base):
     fetch_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     fetch_state: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     fetch_status: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # More keys than one (6.1): the credentials beside the first, encrypted like ``secrets``, and how
+    # the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours, mainName}
+    # (automation/instance_keys.py).
+    extra_keys: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    key_policy: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class InstanceKeyUse(Base):
+    """What a key of an instance was used for: this minute, today, and until when the vendor refuses it."""
+
+    __tablename__ = "instance_key_uses"
+
+    connection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("connections.id", ondelete="CASCADE"), primary_key=True
+    )
+    key_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    minute: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # the minute counted (epoch // 60)
+    minute_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    day: Mapped[str] = mapped_column(String(10), nullable=False, default="")  # the day counted (UTC)
+    day_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    refusals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    exhausted_until: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    last_used: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+
+class CommandAnswer(Base):
+    """The answer of a command that changes nothing outside, kept for the hours its instance says."""
+
+    __tablename__ = "command_answers"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # of the instance, the command and its arguments
+    connection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("connections.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    command: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    outputs: Mapped[Any] = mapped_column(JSON, nullable=True)
+    context: Mapped[Any] = mapped_column(JSON, nullable=True)
+    created_epoch: Mapped[float] = mapped_column(Float, nullable=False, default=0)
 
 
 class Field(Base):
@@ -1530,6 +1569,10 @@ class IocVerdictChange(Base):
     new: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     at: Mapped[str] = mapped_column(String, nullable=False)
 
+
+# Created by migration 0040_instance_keys where missing.
+INSTANCE_KEY_TABLES = ("instance_key_uses", "command_answers")
+INSTANCE_KEY_COLUMNS = {"connections": ("extra_keys", "key_policy")}
 
 # Created by migration 0038_incident_page where missing.
 INCIDENT_PAGE_TABLES = ("playground_entries",)

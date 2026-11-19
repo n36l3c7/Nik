@@ -1,0 +1,54 @@
+{
+  "args": {
+    "id": "T1055",
+    "relationship": "attack_tactics"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/attack_techniques/T1055/attack_tactics",
+        "query": {
+          "limit": 10
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "attack_tactic",
+              "id": "TA0005",
+              "attributes": {
+                "name": "Defense Evasion",
+                "link": "https://attack.mitre.org/tactics/TA0005/",
+                "stix_id": "x-mitre-tactic--78b23412-0651-46d7-a540-170a1ce8bd5a"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "attack_tactic",
+        "id": "TA0005",
+        "attributes": {
+          "name": "Defense Evasion",
+          "link": "https://attack.mitre.org/tactics/TA0005/",
+          "stix_id": "x-mitre-tactic--78b23412-0651-46d7-a540-170a1ce8bd5a"
+        }
+      }
+    ],
+    "ids": [
+      "TA0005"
+    ],
+    "count": 1,
+    "truncated": false
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "args": {
+    "id": "gilfoyle",
+    "start_date": "20191109",
+    "end_date": "20191121"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/users/gilfoyle/api_usage",
+        "query": {
+          "start_date": "20191109",
+          "end_date": "20191121"
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "daily": {
+              "2019-11-09": {
+                "/api/v3/(files)": 123
+              },
+              "2019-11-12": {
+                "/api/v3/(file_comments)": 15,
+                "/api/v3/(files)": 44
+              }
+            },
+            "total": {
+              "/api/v3/(file_comments)": 15,
+              "/api/v3/(files)": 167
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "daily": {
+      "2019-11-09": {
+        "/api/v3/(files)": 123
+      },
+      "2019-11-12": {
+        "/api/v3/(file_comments)": 15,
+        "/api/v3/(files)": 44
+      }
+    },
+    "total": {
+      "/api/v3/(file_comments)": 15,
+      "/api/v3/(files)": 167
+    }
+  }
+}

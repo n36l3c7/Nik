@@ -1,0 +1,78 @@
+{
+  "args": {
+    "sort": "timestamp",
+    "order": "desc"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/query",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "sort": "timestamp",
+          "order": "desc",
+          "page": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "votes": 1,
+              "description": "Danieverton",
+              "tags": [
+                ""
+              ],
+              "timestamp": "2021-01-26T19:41:50.961000",
+              "title": "ip camera",
+              "query": "ip camera BR"
+            },
+            {
+              "votes": 3,
+              "description": "This is Moxa Nport Devices ICS system with Authentication disabled Author: A1C3VENOM",
+              "tags": [
+                "ics",
+                "iot",
+                "moxa"
+              ],
+              "timestamp": "2021-01-24T07:44:08.889000",
+              "title": "Moxa Nport Devices with Authentication disabled",
+              "query": "\"Moxa Nport Device\" Status: Authentication disabled port:\"4800\""
+            }
+          ],
+          "total": 6746
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "queries": [
+      {
+        "votes": 1,
+        "description": "Danieverton",
+        "tags": [
+          ""
+        ],
+        "timestamp": "2021-01-26T19:41:50.961000",
+        "title": "ip camera",
+        "query": "ip camera BR"
+      },
+      {
+        "votes": 3,
+        "description": "This is Moxa Nport Devices ICS system with Authentication disabled Author: A1C3VENOM",
+        "tags": [
+          "ics",
+          "iot",
+          "moxa"
+        ],
+        "timestamp": "2021-01-24T07:44:08.889000",
+        "title": "Moxa Nport Devices with Authentication disabled",
+        "query": "\"Moxa Nport Device\" Status: Authentication disabled port:\"4800\""
+      }
+    ],
+    "count": 2,
+    "truncated": false
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "args": {
+    "hash_prefixes": [
+      "WwuJdQ==",
+      "771MOg=="
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v5/hashes:search",
+        "query": {
+          "key": "AIzaSyD-invented-key-for-fixtures-0123456",
+          "hashPrefixes": [
+            "WwuJdQ==",
+            "771MOg=="
+          ],
+          "alt": "json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "fullHashes": [
+            {
+              "fullHash": "WwuJdQx48jP-4lxr4y2Sj82AWoxUVcIRDSk1PC9Rf-4=",
+              "fullHashDetails": [
+                {
+                  "threatType": "MALWARE"
+                },
+                {
+                  "threatType": "SOCIAL_ENGINEERING",
+                  "attributes": [
+                    "FRAME_ONLY"
+                  ]
+                }
+              ]
+            }
+          ],
+          "cacheDuration": "3.5s"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "full_hashes": [
+      {
+        "fullHash": "WwuJdQx48jP-4lxr4y2Sj82AWoxUVcIRDSk1PC9Rf-4=",
+        "fullHashDetails": [
+          {
+            "threatType": "MALWARE"
+          },
+          {
+            "threatType": "SOCIAL_ENGINEERING",
+            "attributes": [
+              "FRAME_ONLY"
+            ]
+          }
+        ]
+      }
+    ],
+    "hashes": [
+      "WwuJdQx48jP-4lxr4y2Sj82AWoxUVcIRDSk1PC9Rf-4="
+    ],
+    "count": 1,
+    "cache_duration": "3.5s"
+  }
+}

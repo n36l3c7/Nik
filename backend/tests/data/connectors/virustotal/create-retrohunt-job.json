@@ -1,0 +1,69 @@
+{
+  "args": {
+    "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+    "notification_email": "notifications@acme.com",
+    "corpus": "main",
+    "time_range": {
+      "start": 1545145761,
+      "end": 1547737720
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/intelligence/retrohunt_jobs",
+        "json": {
+          "data": {
+            "type": "retrohunt_job",
+            "attributes": {
+              "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+              "notification_email": "notifications@acme.com",
+              "corpus": "main",
+              "time_range": {
+                "start": 1545145761,
+                "end": 1547737720
+              }
+            }
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "retrohunt_job",
+            "id": "gilfoyle-1545145761",
+            "attributes": {
+              "corpus": "main",
+              "creation_date": 1545145761,
+              "num_matches": 3,
+              "progress": 0,
+              "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+              "scanned_bytes": 4096,
+              "status": "starting"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "gilfoyle-1545145761",
+    "status": "starting",
+    "progress": 0,
+    "num_matches": 3,
+    "attributes": {
+      "corpus": "main",
+      "creation_date": 1545145761,
+      "num_matches": 3,
+      "progress": 0,
+      "rules": "rule foobar { strings: $ = \"foobar\" condition: all of them }",
+      "scanned_bytes": 4096,
+      "status": "starting"
+    }
+  }
+}

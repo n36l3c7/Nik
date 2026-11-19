@@ -1,0 +1,50 @@
+{
+  "args": {
+    "hostname": "example.org",
+    "rtype": "MX"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "geonet.shodan.io",
+        "path": "/api/dns/example.org",
+        "query": {
+          "rtype": "MX"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "answers": [
+            {
+              "type": "MX",
+              "value": "10 mail.example.org."
+            }
+          ],
+          "from_loc": {
+            "city": "Frankfurt",
+            "country": "DE",
+            "latlon": "50.1109,8.6821"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "answers": [
+      {
+        "type": "MX",
+        "value": "10 mail.example.org."
+      }
+    ],
+    "values": [
+      "10 mail.example.org."
+    ],
+    "from_loc": {
+      "city": "Frankfurt",
+      "country": "DE",
+      "latlon": "50.1109,8.6821"
+    }
+  }
+}

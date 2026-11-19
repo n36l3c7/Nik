@@ -1,0 +1,358 @@
+{
+  "args": {
+    "domain": "example.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/domain/example.com",
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "objectClassName": "domain",
+          "handle": "XXXX",
+          "ldhName": "EXAMPLE.COM",
+          "status": [
+            "client transfer prohibited",
+            "client update prohibited"
+          ],
+          "nameservers": [
+            {
+              "objectClassName": "nameserver",
+              "ldhName": "NS2.EXAMPLE.COM"
+            },
+            {
+              "objectClassName": "nameserver",
+              "ldhName": "NS1.EXAMPLE.COM"
+            }
+          ],
+          "secureDNS": {
+            "delegationSigned": true,
+            "dsData": [
+              {
+                "keyTag": 12345,
+                "algorithm": 13,
+                "digestType": 2,
+                "digest": "49FD46E6C4B45C55D4AC49FD46E6C4B45C55D4AC49FD46E6C4B45C55D4AC1234"
+              }
+            ]
+          },
+          "entities": [
+            {
+              "objectClassName": "entity",
+              "handle": "292",
+              "roles": [
+                "registrar"
+              ],
+              "publicIds": [
+                {
+                  "type": "IANA Registrar ID",
+                  "identifier": "292"
+                }
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Example Registrar Inc."
+                  ]
+                ]
+              ],
+              "entities": [
+                {
+                  "objectClassName": "entity",
+                  "roles": [
+                    "abuse"
+                  ],
+                  "vcardArray": [
+                    "vcard",
+                    [
+                      [
+                        "version",
+                        {},
+                        "text",
+                        "4.0"
+                      ],
+                      [
+                        "fn",
+                        {},
+                        "text",
+                        ""
+                      ],
+                      [
+                        "tel",
+                        {},
+                        "uri",
+                        "tel:+1.5555551234"
+                      ],
+                      [
+                        "email",
+                        {},
+                        "text",
+                        "abuse@registrar.example"
+                      ]
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "objectClassName": "entity",
+              "handle": "YYYY",
+              "roles": [
+                "registrant"
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    "Joe User"
+                  ],
+                  [
+                    "kind",
+                    {},
+                    "text",
+                    "individual"
+                  ]
+                ]
+              ]
+            }
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventDate": "1990-12-31T23:59:59Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "1991-12-31T23:59:59Z",
+              "eventActor": "joe@example.com"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2016-12-31T23:59:59Z"
+            }
+          ],
+          "port43": "whois.example.net",
+          "links": [
+            {
+              "value": "https://example.net/domain/EXAMPLE.COM",
+              "rel": "self",
+              "href": "https://example.net/domain/EXAMPLE.COM",
+              "type": "application/rdap+json"
+            }
+          ]
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "unknown",
+    "summary": "registered 1990-12-31, registrar Example Registrar Inc.",
+    "name": "example.com",
+    "unicode_name": null,
+    "handle": "XXXX",
+    "registered": "1990-12-31T23:59:59Z",
+    "changed": "1991-12-31T23:59:59Z",
+    "expires": "2016-12-31T23:59:59Z",
+    "registrar": "Example Registrar Inc.",
+    "registrar_id": "292",
+    "registrant": "Joe User",
+    "abuse_email": "abuse@registrar.example",
+    "nameservers": [
+      "NS1.EXAMPLE.COM",
+      "NS2.EXAMPLE.COM"
+    ],
+    "status": [
+      "client transfer prohibited",
+      "client update prohibited"
+    ],
+    "dnssec": "signed",
+    "port43": "whois.example.net",
+    "record": {
+      "rdapConformance": [
+        "rdap_level_0"
+      ],
+      "objectClassName": "domain",
+      "handle": "XXXX",
+      "ldhName": "EXAMPLE.COM",
+      "status": [
+        "client transfer prohibited",
+        "client update prohibited"
+      ],
+      "nameservers": [
+        {
+          "objectClassName": "nameserver",
+          "ldhName": "NS2.EXAMPLE.COM"
+        },
+        {
+          "objectClassName": "nameserver",
+          "ldhName": "NS1.EXAMPLE.COM"
+        }
+      ],
+      "secureDNS": {
+        "delegationSigned": true,
+        "dsData": [
+          {
+            "keyTag": 12345,
+            "algorithm": 13,
+            "digestType": 2,
+            "digest": "49FD46E6C4B45C55D4AC49FD46E6C4B45C55D4AC49FD46E6C4B45C55D4AC1234"
+          }
+        ]
+      },
+      "entities": [
+        {
+          "objectClassName": "entity",
+          "handle": "292",
+          "roles": [
+            "registrar"
+          ],
+          "publicIds": [
+            {
+              "type": "IANA Registrar ID",
+              "identifier": "292"
+            }
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Example Registrar Inc."
+              ]
+            ]
+          ],
+          "entities": [
+            {
+              "objectClassName": "entity",
+              "roles": [
+                "abuse"
+              ],
+              "vcardArray": [
+                "vcard",
+                [
+                  [
+                    "version",
+                    {},
+                    "text",
+                    "4.0"
+                  ],
+                  [
+                    "fn",
+                    {},
+                    "text",
+                    ""
+                  ],
+                  [
+                    "tel",
+                    {},
+                    "uri",
+                    "tel:+1.5555551234"
+                  ],
+                  [
+                    "email",
+                    {},
+                    "text",
+                    "abuse@registrar.example"
+                  ]
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "objectClassName": "entity",
+          "handle": "YYYY",
+          "roles": [
+            "registrant"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Joe User"
+              ],
+              [
+                "kind",
+                {},
+                "text",
+                "individual"
+              ]
+            ]
+          ]
+        }
+      ],
+      "events": [
+        {
+          "eventAction": "registration",
+          "eventDate": "1990-12-31T23:59:59Z"
+        },
+        {
+          "eventAction": "last changed",
+          "eventDate": "1991-12-31T23:59:59Z",
+          "eventActor": "joe@example.com"
+        },
+        {
+          "eventAction": "expiration",
+          "eventDate": "2016-12-31T23:59:59Z"
+        }
+      ],
+      "port43": "whois.example.net",
+      "links": [
+        {
+          "value": "https://example.net/domain/EXAMPLE.COM",
+          "rel": "self",
+          "href": "https://example.net/domain/EXAMPLE.COM",
+          "type": "application/rdap+json"
+        }
+      ]
+    }
+  }
+}

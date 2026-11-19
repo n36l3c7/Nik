@@ -1,0 +1,25 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/files/upload_url",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": "https://www.virustotal.com/_ah/upload/private/AMmfu6b-_DXUeFe36Sb3b0F4B8mH9Nb-CHbRoUNVOPwG/"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "data": "https://www.virustotal.com/_ah/upload/private/AMmfu6b-_DXUeFe36Sb3b0F4B8mH9Nb-CHbRoUNVOPwG/"
+    }
+  }
+}

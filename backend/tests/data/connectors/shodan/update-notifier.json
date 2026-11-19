@@ -1,0 +1,31 @@
+{
+  "args": {
+    "id": "1VxiaJb93Gn8TUnM",
+    "to": "jmath@gmail.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/notifier/1VxiaJb93Gn8TUnM",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        },
+        "form": {
+          "to": "jmath@gmail.com"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "1VxiaJb93Gn8TUnM",
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "1VxiaJb93Gn8TUnM",
+    "success": true
+  }
+}

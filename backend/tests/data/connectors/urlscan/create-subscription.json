@@ -1,0 +1,77 @@
+{
+  "args": {
+    "name": "Test Subscription",
+    "search_ids": [
+      "6f1c2a9be4b0a1d2c3e4f567"
+    ],
+    "frequency": "daily",
+    "email_addresses": [
+      "test@urlscan.io"
+    ],
+    "description": "Subscription for testing purposes",
+    "is_active": true,
+    "ignore_time": false
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/user/subscriptions/",
+        "json": {
+          "subscription": {
+            "name": "Test Subscription",
+            "searchIds": [
+              "6f1c2a9be4b0a1d2c3e4f567"
+            ],
+            "frequency": "daily",
+            "emailAddresses": [
+              "test@urlscan.io"
+            ],
+            "description": "Subscription for testing purposes",
+            "isActive": true,
+            "ignoreTime": false
+          }
+        },
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "subscription": {
+            "_id": "6f1c2a9be4b0a1d2c3e4f890",
+            "searchIds": [
+              "6f1c2a9be4b0a1d2c3e4f567"
+            ],
+            "frequency": "daily",
+            "emailAddresses": [
+              "test@urlscan.io"
+            ],
+            "name": "Test Subscription",
+            "description": "Subscription for testing purposes",
+            "isActive": true,
+            "ignoreTime": false
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "6f1c2a9be4b0a1d2c3e4f890",
+    "subscription": {
+      "_id": "6f1c2a9be4b0a1d2c3e4f890",
+      "searchIds": [
+        "6f1c2a9be4b0a1d2c3e4f567"
+      ],
+      "frequency": "daily",
+      "emailAddresses": [
+        "test@urlscan.io"
+      ],
+      "name": "Test Subscription",
+      "description": "Subscription for testing purposes",
+      "isActive": true,
+      "ignoreTime": false
+    }
+  }
+}

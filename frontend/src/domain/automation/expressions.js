@@ -535,6 +535,21 @@ const FILTERS = {
   in_list: { args: [1, 1], run: () => false },
   severity: { args: [0, 1], run: severity },
   regex_extract: { args: [1, 2], run: regexExtract },
+  // As the server writes them: everything but letters, digits and -._~ percent-encoded.
+  urlencode: {
+    args: [0, 0],
+    run: (v) =>
+      encodeURIComponent(text(v)).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`),
+  },
+  base64url: {
+    args: [0, 0],
+    run: (v) => {
+      const bytes = new TextEncoder().encode(text(v))
+      let binary = ''
+      for (const byte of bytes) binary += String.fromCharCode(byte)
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    },
+  },
   length: { args: [0, 0], run: length },
   join: { args: [0, 1], run: (v, sep = ', ') => listed(v).map(text).join(text(sep)) },
   lower: { args: [0, 0], run: (v) => text(v).toLowerCase() },

@@ -1,0 +1,152 @@
+{
+  "args": {
+    "query": "product:nginx"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/shodan/host/search",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "query": "product:nginx",
+          "page": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "matches": [
+            {
+              "product": "nginx",
+              "hash": -1609083510,
+              "ip": 1616761883,
+              "org": "Comcast Business",
+              "isp": "Comcast Business",
+              "transport": "tcp",
+              "cpe": [
+                "cpe:/a:igor_sysoev:nginx"
+              ],
+              "data": "HTTP/1.1 400 Bad Request\r\nServer: nginx\r\nDate: Mon, 25 Jan 2021 21:33:48 GMT\r\n\r\n",
+              "asn": "AS7922",
+              "port": 443,
+              "hostnames": [
+                "three.webapplify.net"
+              ],
+              "location": {
+                "city": "Denver",
+                "region_code": "CO",
+                "country_code": "US",
+                "country_name": "United States"
+              },
+              "timestamp": "2021-01-25T21:33:49.154513",
+              "domains": [
+                "webapplify.net"
+              ],
+              "os": null,
+              "ip_str": "96.93.212.27"
+            },
+            {
+              "product": "nginx",
+              "hostnames": [
+                "kolobok.us"
+              ],
+              "hash": 1940048442,
+              "ip": 3104568883,
+              "org": "RuWeb",
+              "isp": "RuWeb",
+              "transport": "tcp",
+              "cpe": [
+                "cpe:/a:igor_sysoev:nginx:1.4.2"
+              ],
+              "data": "HTTP/1.1 410 Gone\r\nServer: nginx/1.4.2\r\nDate: Mon, 25 Jan 2021 21:33:50 GMT\r\n\r\n",
+              "asn": "AS49189",
+              "port": 8080,
+              "location": {
+                "city": null,
+                "region_code": null,
+                "country_code": "RU",
+                "country_name": "Russia"
+              },
+              "timestamp": "2021-01-25T21:33:51.172037",
+              "domains": [
+                "kolobok.us"
+              ],
+              "os": null,
+              "ip_str": "185.11.246.51"
+            }
+          ],
+          "total": 2
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "matches": [
+      {
+        "product": "nginx",
+        "hash": -1609083510,
+        "ip": 1616761883,
+        "org": "Comcast Business",
+        "isp": "Comcast Business",
+        "transport": "tcp",
+        "cpe": [
+          "cpe:/a:igor_sysoev:nginx"
+        ],
+        "data": "HTTP/1.1 400 Bad Request\r\nServer: nginx\r\nDate: Mon, 25 Jan 2021 21:33:48 GMT\r\n\r\n",
+        "asn": "AS7922",
+        "port": 443,
+        "hostnames": [
+          "three.webapplify.net"
+        ],
+        "location": {
+          "city": "Denver",
+          "region_code": "CO",
+          "country_code": "US",
+          "country_name": "United States"
+        },
+        "timestamp": "2021-01-25T21:33:49.154513",
+        "domains": [
+          "webapplify.net"
+        ],
+        "os": null,
+        "ip_str": "96.93.212.27"
+      },
+      {
+        "product": "nginx",
+        "hostnames": [
+          "kolobok.us"
+        ],
+        "hash": 1940048442,
+        "ip": 3104568883,
+        "org": "RuWeb",
+        "isp": "RuWeb",
+        "transport": "tcp",
+        "cpe": [
+          "cpe:/a:igor_sysoev:nginx:1.4.2"
+        ],
+        "data": "HTTP/1.1 410 Gone\r\nServer: nginx/1.4.2\r\nDate: Mon, 25 Jan 2021 21:33:50 GMT\r\n\r\n",
+        "asn": "AS49189",
+        "port": 8080,
+        "location": {
+          "city": null,
+          "region_code": null,
+          "country_code": "RU",
+          "country_name": "Russia"
+        },
+        "timestamp": "2021-01-25T21:33:51.172037",
+        "domains": [
+          "kolobok.us"
+        ],
+        "os": null,
+        "ip_str": "185.11.246.51"
+      }
+    ],
+    "ips": [
+      "96.93.212.27",
+      "185.11.246.51"
+    ],
+    "count": 2,
+    "truncated": false
+  }
+}

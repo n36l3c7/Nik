@@ -100,7 +100,7 @@ def test_a_connector_file_is_read_into_its_parts():
 def test_a_file_that_is_not_a_connector_says_why():
     assert problems("- just\n- a list\n") == [(1, "A connector is a mapping: name, id, version, base_url, commands")]
     assert problems("name: [unclosed\n")[0][1].startswith("Not valid YAML: ")
-    assert problems("x" * (cn.MAX_BYTES + 1)) == [(0, "The file is larger than 256 kB")]
+    assert problems("x" * (cn.MAX_BYTES + 1)) == [(0, "The file is larger than 1000 kB")]
     with pytest.raises(cn.ConnectorError) as caught:
         cn.load(b"\xff\xfe")
     assert caught.value.problems[0].message == "The file is not UTF-8 text"

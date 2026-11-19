@@ -1,0 +1,25 @@
+{
+  "args": {
+    "id": "1VxiaJb93Gn8TUnM"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/notifier/1VxiaJb93Gn8TUnM",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

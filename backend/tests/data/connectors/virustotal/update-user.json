@@ -1,0 +1,59 @@
+{
+  "args": {
+    "id": "gilfoyle",
+    "attributes": {
+      "profile_phrase": "Security architect"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/api/v3/users/gilfoyle",
+        "json": {
+          "data": {
+            "type": "user",
+            "attributes": {
+              "profile_phrase": "Security architect"
+            }
+          }
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "user",
+            "id": "gilfoyle",
+            "attributes": {
+              "first_name": "Bertram",
+              "last_name": "Gilfoyle",
+              "profile_phrase": "",
+              "reputation": 1,
+              "status": "active",
+              "user_since": 1530008602
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/users/gilfoyle"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "gilfoyle",
+    "type": "user",
+    "attributes": {
+      "first_name": "Bertram",
+      "last_name": "Gilfoyle",
+      "profile_phrase": "",
+      "reputation": 1,
+      "status": "active",
+      "user_since": 1530008602
+    }
+  }
+}

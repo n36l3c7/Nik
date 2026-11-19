@@ -40,6 +40,40 @@
       </p>
 
       <section class="release">
+        <h3>6.1.0 <span class="date">2026-11-19</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span>
+            <strong>The sources of threat intelligence are connectors.</strong> Eleven packs in the catalogue
+            (VirusTotal, AbuseIPDB, urlscan.io, MalwareBazaar, URLhaus, ThreatFox, AlienVault OTX, GreyNoise, Shodan,
+            Google Safe Browsing, RDAP), with every command their vendors document: 535 blocks for the playbook editor.
+            The commands of a paid plan are marked <em>premium</em>.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Several keys for one instance</strong>, and how they take
+            turns: one request each, the same until it is used up, the least used, or the first with the others in
+            reserve; limits for each key, and what a command does when all are used up (<a
+              href="automation.html#instance-keys"
+              >Several keys</a
+            >). An instance may also keep answers for some hours.
+          </li>
+          <li>
+            <span class="tag added">added</span> <em>Try it</em> on each command of a connector opens the Playground
+            with its line; a connector lists the other hosts its commands reach (<code>more_hosts</code>); the filters
+            <code>urlencode</code> and <code>base64url</code>.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The automatic look-ups use the keys of the instances of a source's
+            connector, beside the keys of Settings.
+          </li>
+          <li>
+            <span class="tag fixed">fixed</span> urlscan.io: a search result judged malicious is read in either shape of
+            the answer.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.0.0 <span class="date">2026-11-19</span></h3>
         <ul>
           <li>

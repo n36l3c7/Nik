@@ -1,0 +1,21 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/tools/myip",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": "113.161.57.41"
+      }
+    }
+  ],
+  "outputs": {
+    "ip": "113.161.57.41"
+  }
+}

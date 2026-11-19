@@ -1,0 +1,42 @@
+{
+  "args": {
+    "query": "classification:malicious last_seen:1d"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/gnql/count",
+        "query": {
+          "query": "classification:malicious last_seen:1d"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "count": 50000,
+          "query": "classification:malicious last_seen:1d",
+          "adjusted_query": "classification:malicious last_seen:1d last_seen:7d",
+          "message": "The requested data reach exceeds your plan.",
+          "restricted_fields": [
+            "metadata.organization",
+            "raw_data.ja3"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "count": 50000,
+    "query": "classification:malicious last_seen:1d",
+    "adjusted_query": "classification:malicious last_seen:1d last_seen:7d",
+    "message": "The requested data reach exceeds your plan.",
+    "restricted_fields": [
+      "metadata.organization",
+      "raw_data.ja3"
+    ]
+  }
+}

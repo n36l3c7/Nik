@@ -1,0 +1,10 @@
+id: shodan
+name: Shodan
+vendor: Shodan
+category: Threat intelligence
+version: 1.0.0
+description: >-
+  What Shodan knows of a host, as a verdict for an IP address and as commands: searches, on-demand scans,
+  network alerts, DNS and the account, with InternetDB, CVEDB, EntityDB, GeoNet and Trends.
+author: Nik
+nik: ">=6.1"

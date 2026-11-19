@@ -1,0 +1,29 @@
+{
+  "args": {
+    "ip": "8.8.8.8"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/ip_addresses/8.8.8.8/analyse",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "analysis",
+            "id": "i-f41d931c01fcee6c19e73200aa87ea5d8a8de5316c5288a8df869d31efa1d0fc-1715609875"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "analysis_id": "i-f41d931c01fcee6c19e73200aa87ea5d8a8de5316c5288a8df869d31efa1d0fc-1715609875",
+    "type": "analysis"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "args": {
+    "start_time": "2025-01-15T00:00:00Z",
+    "end_time": "2025-01-15T23:59:59Z",
+    "fields": "source.ip",
+    "size": 5
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/counts",
+        "query": {
+          "start_time": "2025-01-15T00:00:00Z",
+          "end_time": "2025-01-15T23:59:59Z",
+          "fields": "source.ip",
+          "size": 5
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "items": [
+            {
+              "label": "203.0.113.45",
+              "count": 42
+            },
+            {
+              "label": "198.51.100.42",
+              "count": 7
+            }
+          ],
+          "total": 49,
+          "request_metadata": {
+            "start_time": "2025-01-15T00:00:00Z",
+            "end_time": "2025-01-15T23:59:59Z",
+            "query": "",
+            "fields": [
+              "source.ip"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "counts": [
+      {
+        "label": "203.0.113.45",
+        "count": 42
+      },
+      {
+        "label": "198.51.100.42",
+        "count": 7
+      }
+    ],
+    "labels": [
+      "203.0.113.45",
+      "198.51.100.42"
+    ],
+    "total": 49
+  }
+}

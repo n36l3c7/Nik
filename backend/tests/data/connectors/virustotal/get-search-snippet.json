@@ -1,0 +1,31 @@
+{
+  "args": {
+    "snippet": "L3Z0c2FtcGxlcy8yNzVhMDIxYmJmYjY0ODllNTRkNDcxODk5ZjdkYjlkMTY2M2ZjNjk1"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/intelligence/search/snippets/L3Z0c2FtcGxlcy8yNzVhMDIxYmJmYjY0ODllNTRkNDcxODk5ZjdkYjlkMTY2M2ZjNjk1",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            "01CEE0A0: 09 20 2A 0A 09 20 2A 20 45 78 61 6D 70 6C 65 3A  . *.. * Example:",
+            "01CEE0B0: 0A 09 20 2A 0A 09 20 2A 20 20 20 20 20 35 68 65  .. *.. *     5 he"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "lines": [
+      "01CEE0A0: 09 20 2A 0A 09 20 2A 20 45 78 61 6D 70 6C 65 3A  . *.. * Example:",
+      "01CEE0B0: 0A 09 20 2A 0A 09 20 2A 20 20 20 20 20 35 68 65  .. *.. *     5 he"
+    ]
+  }
+}

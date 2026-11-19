@@ -1,0 +1,56 @@
+{
+  "args": {
+    "id": "67UQ4JM3NGJKROR9",
+    "ips": [
+      "8.8.8.8",
+      "1.1.1.1"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/shodan/alert/67UQ4JM3NGJKROR9",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        },
+        "json": {
+          "filters": {
+            "ip": [
+              "8.8.8.8",
+              "1.1.1.1"
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "name": "DNS Alert",
+          "created": "2021-01-27T03:44:22.989575",
+          "triggers": {},
+          "has_triggers": false,
+          "expires": 0,
+          "expiration": null,
+          "filters": {
+            "ip": [
+              "8.8.8.8",
+              "1.1.1.1"
+            ]
+          },
+          "id": "67UQ4JM3NGJKROR9",
+          "size": 2
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "67UQ4JM3NGJKROR9",
+    "name": "DNS Alert",
+    "ips": [
+      "8.8.8.8",
+      "1.1.1.1"
+    ],
+    "size": 2
+  }
+}

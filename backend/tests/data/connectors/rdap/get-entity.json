@@ -1,0 +1,179 @@
+{
+  "args": {
+    "handle": "XXXX-EXMP"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/entity/XXXX-EXMP",
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "objectClassName": "entity",
+          "handle": "XXXX-EXMP",
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Joe User"
+              ],
+              [
+                "kind",
+                {},
+                "text",
+                "individual"
+              ],
+              [
+                "org",
+                {},
+                "text",
+                "Example"
+              ],
+              [
+                "email",
+                {},
+                "text",
+                "joe.user@example.com"
+              ]
+            ]
+          ],
+          "roles": [
+            "registrar"
+          ],
+          "publicIds": [
+            {
+              "type": "IANA Registrar ID",
+              "identifier": "1"
+            }
+          ],
+          "status": [
+            "validated",
+            "locked"
+          ],
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventDate": "1990-12-31T23:59:59Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "1991-12-31T23:59:59Z",
+              "eventActor": "joe@example.com"
+            }
+          ],
+          "port43": "whois.example.net"
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "handle": "XXXX-EXMP",
+    "name": "Joe User",
+    "organisation": "Example",
+    "kind": "individual",
+    "email": "joe.user@example.com",
+    "roles": [
+      "registrar"
+    ],
+    "public_ids": [
+      {
+        "type": "IANA Registrar ID",
+        "identifier": "1"
+      }
+    ],
+    "status": [
+      "validated",
+      "locked"
+    ],
+    "registered": "1990-12-31T23:59:59Z",
+    "changed": "1991-12-31T23:59:59Z",
+    "port43": "whois.example.net",
+    "record": {
+      "rdapConformance": [
+        "rdap_level_0"
+      ],
+      "objectClassName": "entity",
+      "handle": "XXXX-EXMP",
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Joe User"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "individual"
+          ],
+          [
+            "org",
+            {},
+            "text",
+            "Example"
+          ],
+          [
+            "email",
+            {},
+            "text",
+            "joe.user@example.com"
+          ]
+        ]
+      ],
+      "roles": [
+        "registrar"
+      ],
+      "publicIds": [
+        {
+          "type": "IANA Registrar ID",
+          "identifier": "1"
+        }
+      ],
+      "status": [
+        "validated",
+        "locked"
+      ],
+      "events": [
+        {
+          "eventAction": "registration",
+          "eventDate": "1990-12-31T23:59:59Z"
+        },
+        {
+          "eventAction": "last changed",
+          "eventDate": "1991-12-31T23:59:59Z",
+          "eventActor": "joe@example.com"
+        }
+      ],
+      "port43": "whois.example.net"
+    }
+  }
+}

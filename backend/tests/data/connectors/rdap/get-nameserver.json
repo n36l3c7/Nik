@@ -1,0 +1,105 @@
+{
+  "args": {
+    "nameserver": "ns1.xn--fo-5ja.example"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/nameserver/ns1.xn--fo-5ja.example",
+        "headers": {
+          "Accept": "application/rdap+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "rdapConformance": [
+            "rdap_level_0"
+          ],
+          "objectClassName": "nameserver",
+          "handle": "XXXX",
+          "ldhName": "ns1.xn--fo-5ja.example",
+          "unicodeName": "ns1.fóo.example",
+          "status": [
+            "active"
+          ],
+          "ipAddresses": {
+            "v4": [
+              "192.0.2.1",
+              "192.0.2.2"
+            ],
+            "v6": [
+              "2001:db8::123"
+            ]
+          },
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventDate": "1990-12-31T23:59:59Z"
+            },
+            {
+              "eventAction": "last changed",
+              "eventDate": "1991-12-31T23:59:59Z",
+              "eventActor": "joe@example.com"
+            }
+          ],
+          "port43": "whois.example.net"
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "name": "ns1.xn--fo-5ja.example",
+    "unicode_name": "ns1.fóo.example",
+    "handle": "XXXX",
+    "ipv4": [
+      "192.0.2.1",
+      "192.0.2.2"
+    ],
+    "ipv6": [
+      "2001:db8::123"
+    ],
+    "status": [
+      "active"
+    ],
+    "registered": "1990-12-31T23:59:59Z",
+    "changed": "1991-12-31T23:59:59Z",
+    "record": {
+      "rdapConformance": [
+        "rdap_level_0"
+      ],
+      "objectClassName": "nameserver",
+      "handle": "XXXX",
+      "ldhName": "ns1.xn--fo-5ja.example",
+      "unicodeName": "ns1.fóo.example",
+      "status": [
+        "active"
+      ],
+      "ipAddresses": {
+        "v4": [
+          "192.0.2.1",
+          "192.0.2.2"
+        ],
+        "v6": [
+          "2001:db8::123"
+        ]
+      },
+      "events": [
+        {
+          "eventAction": "registration",
+          "eventDate": "1990-12-31T23:59:59Z"
+        },
+        {
+          "eventAction": "last changed",
+          "eventDate": "1991-12-31T23:59:59Z",
+          "eventActor": "joe@example.com"
+        }
+      ],
+      "port43": "whois.example.net"
+    }
+  }
+}

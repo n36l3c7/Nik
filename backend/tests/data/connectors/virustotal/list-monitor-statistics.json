@@ -1,0 +1,71 @@
+{
+  "args": {
+    "limit": 7
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor/statistics",
+        "query": {
+          "limit": 7
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "type": "monitor_statistics",
+              "id": "monitor_group-day-2018-01-30",
+              "attributes": {
+                "date": 1517270400,
+                "items_detected_count": 28,
+                "increasing_detections_count": 6,
+                "owner_id": "monitor_group",
+                "period": "day",
+                "storage_bytes_count": 166709820,
+                "storage_files_count": 34
+              }
+            }
+          ],
+          "meta": {
+            "realtime": {
+              "decreasing_detections_count": 0,
+              "increasing_detections_count": 6,
+              "items_detected_count": 28,
+              "new_detections_count": 0
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "type": "monitor_statistics",
+        "id": "monitor_group-day-2018-01-30",
+        "attributes": {
+          "date": 1517270400,
+          "items_detected_count": 28,
+          "increasing_detections_count": 6,
+          "owner_id": "monitor_group",
+          "period": "day",
+          "storage_bytes_count": 166709820,
+          "storage_files_count": 34
+        }
+      }
+    ],
+    "count": 1,
+    "realtime": {
+      "decreasing_detections_count": 0,
+      "increasing_detections_count": 6,
+      "items_detected_count": 28,
+      "new_detections_count": 0
+    }
+  }
+}

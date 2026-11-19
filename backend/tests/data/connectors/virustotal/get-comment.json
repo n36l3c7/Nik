@@ -1,0 +1,59 @@
+{
+  "args": {
+    "id": "f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-4944a424"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/comments/f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-4944a424",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "comment",
+            "id": "f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-4944a424",
+            "attributes": {
+              "date": 1597349426,
+              "html": "Lorem #ipsum dolor sit ...",
+              "tags": [
+                "ipsum"
+              ],
+              "text": "Lorem #ipsum dolor sit ...",
+              "votes": {
+                "abuse": 0,
+                "negative": 0,
+                "positive": 0
+              }
+            },
+            "links": {
+              "self": "https://www.virustotal.com/api/v3/comments/f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-4944a424"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "f-275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f-4944a424",
+    "text": "Lorem #ipsum dolor sit ...",
+    "attributes": {
+      "date": 1597349426,
+      "html": "Lorem #ipsum dolor sit ...",
+      "tags": [
+        "ipsum"
+      ],
+      "text": "Lorem #ipsum dolor sit ...",
+      "votes": {
+        "abuse": 0,
+        "negative": 0,
+        "positive": 0
+      }
+    },
+    "relationships": null
+  }
+}

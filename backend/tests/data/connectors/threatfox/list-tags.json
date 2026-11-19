@@ -1,0 +1,66 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/",
+        "json": {
+          "query": "tag_list"
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query_status": "ok",
+          "data": {
+            "exe": {
+              "first_seen": "2020-12-06 09:16:18",
+              "last_seen": "2020-12-08 13:36:27",
+              "color": "#D984D4"
+            },
+            "js": {
+              "first_seen": "2020-12-06 15:04:03",
+              "last_seen": "2020-12-06 15:04:03",
+              "color": "#1BA0CD"
+            },
+            "Magecart": {
+              "first_seen": "2020-12-06 15:04:03",
+              "last_seen": "2020-12-06 15:04:03",
+              "color": "#C41619"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tags": [
+      "exe",
+      "js",
+      "Magecart"
+    ],
+    "details": {
+      "exe": {
+        "first_seen": "2020-12-06 09:16:18",
+        "last_seen": "2020-12-08 13:36:27",
+        "color": "#D984D4"
+      },
+      "js": {
+        "first_seen": "2020-12-06 15:04:03",
+        "last_seen": "2020-12-06 15:04:03",
+        "color": "#1BA0CD"
+      },
+      "Magecart": {
+        "first_seen": "2020-12-06 15:04:03",
+        "last_seen": "2020-12-06 15:04:03",
+        "color": "#C41619"
+      }
+    },
+    "count": 3,
+    "query_status": "ok"
+  }
+}

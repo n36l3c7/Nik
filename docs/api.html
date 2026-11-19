@@ -1243,6 +1243,27 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>PUT /api/automation/instances/{id}</code> with <code>keys</code>, <code>mainName</code>,
+                <code>keyPolicy</code> · <code>POST /api/automation/instances/{id}/keys/test</code> ·
+                <code>DELETE /api/automation/instances/{id}/answers</code>
+              </td>
+              <td>
+                <a href="automation.html#instance-keys">Several keys for one instance</a> (6.1). An instance answers
+                with
+                <code>keys: [{id, name, secrets: {name: bool}, usedThisMinute, usedToday, total, state, freeAt}]</code>
+                (the first, <code>main</code>, is its credentials; never a secret) and
+                <code>keyPolicy: {mode, perMinute, perDay, whenExhausted, cacheHours}</code>, where <code>mode</code> is
+                <code>each</code>, <code>until_exhausted</code>, <code>least_used</code> or <code>reserve</code>,
+                <code>whenExhausted</code> is <code>wait</code> or <code>fail</code>, and 0 means no limit (no kept
+                answers). <code>keys</code> in a <code>PUT</code> is every key beside the first, in order:
+                <code>[{id?, name, secrets?}]</code>; one with an <code>id</code> keeps the secrets it is not given, one
+                left out is removed · the test request with each key:
+                <code>{keys: [{id, name, ok, status, message}]}</code> · forget the answers the instance keeps:
+                <code>{forgotten}</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>PUT /api/automation/playbooks/{id}/egress</code></td>
               <td>
                 <strong>admin</strong>. <code>{mode: "listed" | "any", hosts}</code>. Switching to <code>any</code> also

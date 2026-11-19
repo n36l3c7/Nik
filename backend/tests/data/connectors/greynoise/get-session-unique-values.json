@@ -1,0 +1,34 @@
+{
+  "args": {
+    "start_time": "2025-01-15T00:00:00Z",
+    "end_time": "2025-01-15T23:59:59Z",
+    "field": "source.ip"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/unique",
+        "query": {
+          "start_time": "2025-01-15T00:00:00Z",
+          "end_time": "2025-01-15T23:59:59Z",
+          "field": "source.ip"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "203.0.113.45\n198.51.100.42\n"
+      }
+    }
+  ],
+  "outputs": {
+    "text": "203.0.113.45\n198.51.100.42\n",
+    "lines": [
+      "203.0.113.45",
+      "198.51.100.42"
+    ]
+  }
+}

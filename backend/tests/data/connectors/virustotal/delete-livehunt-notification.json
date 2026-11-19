@@ -1,0 +1,23 @@
+{
+  "args": {
+    "id": "6425310189355008-5642212b23c8b3e10e0c1d9c0b6b8d5a"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v3/intelligence/hunting_notifications/6425310189355008-5642212b23c8b3e10e0c1d9c0b6b8d5a",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {}
+      }
+    }
+  ],
+  "outputs": {
+    "status": 200
+  }
+}

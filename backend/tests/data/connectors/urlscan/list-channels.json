@@ -1,0 +1,49 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/user/channels/",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "channels": [
+            {
+              "_id": "6f1c2a9be4b0a1d2c3e4fabc",
+              "type": "webhook",
+              "webhookURL": "https://example.com/cgi-bin/urlscan",
+              "name": "Test webhook",
+              "description": "Webhook testing channel.",
+              "isActive": true,
+              "ignoreTime": false
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "channels": [
+      {
+        "_id": "6f1c2a9be4b0a1d2c3e4fabc",
+        "type": "webhook",
+        "webhookURL": "https://example.com/cgi-bin/urlscan",
+        "name": "Test webhook",
+        "description": "Webhook testing channel.",
+        "isActive": true,
+        "ignoreTime": false
+      }
+    ],
+    "ids": [
+      "6f1c2a9be4b0a1d2c3e4fabc"
+    ],
+    "names": [
+      "Test webhook"
+    ]
+  }
+}

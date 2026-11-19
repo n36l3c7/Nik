@@ -1,0 +1,58 @@
+{
+  "args": {
+    "ip": "1.2.3.4",
+    "filter": "port:443"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/ip_addresses/1.2.3.4/scanning_technologies",
+        "query": {
+          "filter": "port:443"
+        },
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "technology": "nginx",
+              "version": "1.18.0",
+              "ports": [
+                443
+              ],
+              "vulnerabilities": [
+                {
+                  "id": "CVE-2021-23017",
+                  "severity": "HIGH"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "technologies": [
+      {
+        "technology": "nginx",
+        "version": "1.18.0",
+        "ports": [
+          443
+        ],
+        "vulnerabilities": [
+          {
+            "id": "CVE-2021-23017",
+            "severity": "HIGH"
+          }
+        ]
+      }
+    ],
+    "count": 1
+  }
+}

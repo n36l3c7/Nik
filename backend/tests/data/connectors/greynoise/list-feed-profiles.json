@@ -1,0 +1,50 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/files/profiles",
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "profiles": [
+            {
+              "profile": "ngsiem@1",
+              "id": "ngsiem",
+              "version": 1,
+              "max_bytes": 209715200,
+              "columns": [
+                "source.ip",
+                "source.ip.greynoise.is.actor",
+                "source.ip.greynoise.is.classification"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "profiles": [
+      {
+        "profile": "ngsiem@1",
+        "id": "ngsiem",
+        "version": 1,
+        "max_bytes": 209715200,
+        "columns": [
+          "source.ip",
+          "source.ip.greynoise.is.actor",
+          "source.ip.greynoise.is.classification"
+        ]
+      }
+    ],
+    "ids": [
+      "ngsiem@1"
+    ]
+  }
+}

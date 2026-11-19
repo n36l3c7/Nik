@@ -1,0 +1,135 @@
+{
+  "args": {
+    "signature": "Gozi"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/signature/",
+        "form": {
+          "signature": "Gozi"
+        },
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "query_status": "ok",
+          "firstseen": "2018-03-27 13:48:55",
+          "lastseen": "2019-01-24 13:08:08",
+          "url_count": "2125",
+          "payload_count": "12787",
+          "urls": [
+            {
+              "url_id": "100211",
+              "url": "http://185.189.149.164/adobe_update.exe",
+              "url_status": "offline",
+              "firstseen": "2019-01-02 12:42:23",
+              "lastseen": "2019-01-02 13:13:25",
+              "filename": "na",
+              "file_type": "exe",
+              "file_size": "125952",
+              "md5_hash": "a820381c8acf07cfcb4d9b13498db71d",
+              "sha256_hash": "254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b",
+              "virustotal": null,
+              "imphash": "3b91ed9563d0f99f26b86bd20539306b",
+              "ssdeep": "3072:HwVYswg6L/wnhOTKuX/2hz9SbwtbS6UOhRP0Ml/5hIowZtQnKZUJkegNS+Gjs:cWInU/8PbRXl/TIoc2h+Gj",
+              "tlsh": "7934BF47B4F1C871E4B30D311831D9A05A2F7D715F659E6B2778222A8E342D09E35FAB",
+              "magika": "pebin",
+              "urlhaus_reference": "https://urlhaus.abuse.ch/url/100211/",
+              "urlhaus_download": "https://urlhaus-api.abuse.ch/v1/download/254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b/"
+            },
+            {
+              "url_id": "101092",
+              "url": "http://66.55.64.137/e07f11vm2ghf.exe",
+              "url_status": "online",
+              "firstseen": "2019-01-02 12:11:02",
+              "lastseen": "2019-01-10 16:49:17",
+              "filename": "na",
+              "file_type": "exe",
+              "file_size": "137216",
+              "md5_hash": "24ba99e7fffa82660f61fcdfc941caa4",
+              "sha256_hash": "462f6a7560ef2a1a815febebf60b1fcb472a8227d6db05ac09e5266b774c3722",
+              "virustotal": {
+                "result": "47 / 72",
+                "percent": "65.28",
+                "link": "https://www.virustotal.com/file/462f6a7560ef2a1a815febebf60b1fcb472a8227d6db05ac09e5266b774c3722/analysis/1546191578/"
+              },
+              "imphash": "3b91ed9563d0f99f26b86bd20539306b",
+              "ssdeep": "3072:HwVYswg6L/wnhOTKuX/2hz9SbwtbS6UOhRP0Ml/5hIowZtQnKZUJkegNS+Gjs:cWInU/8PbRXl/TIoc2h+Gj",
+              "tlsh": "7934BF47B4F1C871E4B30D311831D9A05A2F7D715F659E6B2778222A8E342D09E35FAB",
+              "magika": "pebin",
+              "urlhaus_reference": "https://urlhaus.abuse.ch/url/101092/",
+              "urlhaus_download": "https://urlhaus-api.abuse.ch/v1/download/462f6a7560ef2a1a815febebf60b1fcb472a8227d6db05ac09e5266b774c3722/"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "urls": [
+      {
+        "url_id": "100211",
+        "url": "http://185.189.149.164/adobe_update.exe",
+        "url_status": "offline",
+        "firstseen": "2019-01-02 12:42:23",
+        "lastseen": "2019-01-02 13:13:25",
+        "filename": "na",
+        "file_type": "exe",
+        "file_size": "125952",
+        "md5_hash": "a820381c8acf07cfcb4d9b13498db71d",
+        "sha256_hash": "254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b",
+        "virustotal": null,
+        "imphash": "3b91ed9563d0f99f26b86bd20539306b",
+        "ssdeep": "3072:HwVYswg6L/wnhOTKuX/2hz9SbwtbS6UOhRP0Ml/5hIowZtQnKZUJkegNS+Gjs:cWInU/8PbRXl/TIoc2h+Gj",
+        "tlsh": "7934BF47B4F1C871E4B30D311831D9A05A2F7D715F659E6B2778222A8E342D09E35FAB",
+        "magika": "pebin",
+        "urlhaus_reference": "https://urlhaus.abuse.ch/url/100211/",
+        "urlhaus_download": "https://urlhaus-api.abuse.ch/v1/download/254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b/"
+      },
+      {
+        "url_id": "101092",
+        "url": "http://66.55.64.137/e07f11vm2ghf.exe",
+        "url_status": "online",
+        "firstseen": "2019-01-02 12:11:02",
+        "lastseen": "2019-01-10 16:49:17",
+        "filename": "na",
+        "file_type": "exe",
+        "file_size": "137216",
+        "md5_hash": "24ba99e7fffa82660f61fcdfc941caa4",
+        "sha256_hash": "462f6a7560ef2a1a815febebf60b1fcb472a8227d6db05ac09e5266b774c3722",
+        "virustotal": {
+          "result": "47 / 72",
+          "percent": "65.28",
+          "link": "https://www.virustotal.com/file/462f6a7560ef2a1a815febebf60b1fcb472a8227d6db05ac09e5266b774c3722/analysis/1546191578/"
+        },
+        "imphash": "3b91ed9563d0f99f26b86bd20539306b",
+        "ssdeep": "3072:HwVYswg6L/wnhOTKuX/2hz9SbwtbS6UOhRP0Ml/5hIowZtQnKZUJkegNS+Gjs:cWInU/8PbRXl/TIoc2h+Gj",
+        "tlsh": "7934BF47B4F1C871E4B30D311831D9A05A2F7D715F659E6B2778222A8E342D09E35FAB",
+        "magika": "pebin",
+        "urlhaus_reference": "https://urlhaus.abuse.ch/url/101092/",
+        "urlhaus_download": "https://urlhaus-api.abuse.ch/v1/download/462f6a7560ef2a1a815febebf60b1fcb472a8227d6db05ac09e5266b774c3722/"
+      }
+    ],
+    "addresses": [
+      "http://185.189.149.164/adobe_update.exe",
+      "http://66.55.64.137/e07f11vm2ghf.exe"
+    ],
+    "online": [
+      "http://66.55.64.137/e07f11vm2ghf.exe"
+    ],
+    "sha256": [
+      "254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b",
+      "462f6a7560ef2a1a815febebf60b1fcb472a8227d6db05ac09e5266b774c3722"
+    ],
+    "url_count": 2125,
+    "payload_count": 12787,
+    "firstseen": "2018-03-27 13:48:55",
+    "lastseen": "2019-01-24 13:08:08",
+    "query_status": "ok"
+  }
+}

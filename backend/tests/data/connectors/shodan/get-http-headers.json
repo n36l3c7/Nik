@@ -1,0 +1,41 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/tools/httpheaders",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "Content-Length": "",
+          "Accept-Encoding": "gzip",
+          "X-Forwarded-For": "113.161.57.41",
+          "Host": "api.shodan.io",
+          "User-Agent": "curl/7.64.1",
+          "Connection": "Keep-Alive",
+          "X-Forwarded-Proto": "https",
+          "Accept": "*/*",
+          "Content-Type": ""
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "headers": {
+      "Content-Length": "",
+      "Accept-Encoding": "gzip",
+      "X-Forwarded-For": "113.161.57.41",
+      "Host": "api.shodan.io",
+      "User-Agent": "curl/7.64.1",
+      "Connection": "Keep-Alive",
+      "X-Forwarded-Proto": "https",
+      "Accept": "*/*",
+      "Content-Type": ""
+    }
+  }
+}

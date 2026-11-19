@@ -1,0 +1,26 @@
+{
+  "args": {
+    "id": "piedpiper",
+    "user_id": "gilfoyle"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/groups/piedpiper/relationships/users/gilfoyle",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "member": true
+  }
+}

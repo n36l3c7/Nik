@@ -1,0 +1,41 @@
+{
+  "args": {
+    "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "private_url",
+            "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+            "attributes": {
+              "url": "https://www.hooli.com/",
+              "last_final_url": "https://www.hooli.com/",
+              "last_http_response_code": 200,
+              "title": "Hooli"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
+    "type": "private_url",
+    "attributes": {
+      "url": "https://www.hooli.com/",
+      "last_final_url": "https://www.hooli.com/",
+      "last_http_response_code": 200,
+      "title": "Hooli"
+    }
+  }
+}

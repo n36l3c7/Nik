@@ -1,0 +1,83 @@
+{
+  "args": {
+    "query": "product:nginx",
+    "facets": "country:10"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "trends.shodan.io",
+        "path": "/api/v1/search",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "query": "product:nginx",
+          "facets": "country:10"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "total": 1464808820,
+          "matches": [
+            {
+              "month": "2017-06",
+              "count": 9038297
+            },
+            {
+              "month": "2017-07",
+              "count": 9622979
+            }
+          ],
+          "facets": {
+            "country": [
+              {
+                "key": "2017-06",
+                "values": [
+                  {
+                    "count": 3050586,
+                    "value": "US"
+                  },
+                  {
+                    "count": 977320,
+                    "value": "CN"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "total": 1464808820,
+    "matches": [
+      {
+        "month": "2017-06",
+        "count": 9038297
+      },
+      {
+        "month": "2017-07",
+        "count": 9622979
+      }
+    ],
+    "facets": {
+      "country": [
+        {
+          "key": "2017-06",
+          "values": [
+            {
+              "count": 3050586,
+              "value": "US"
+            },
+            {
+              "count": 977320,
+              "value": "CN"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

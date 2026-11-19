@@ -332,6 +332,17 @@
         <code>verdict</code> is <code>malicious</code>, <code>suspicious</code>, <code>harmless</code> or
         <code>unknown</code> (not known, or nothing conclusive).
       </p>
+      <p>
+        Since 6.1 each source is also a <strong>connector</strong>, in a
+        <a href="automation.html#packs">content pack</a> of its own (VirusTotal, AbuseIPDB, urlscan.io, MalwareBazaar,
+        URLhaus, ThreatFox, AlienVault OTX, GreyNoise, Shodan, Google Safe Browsing, RDAP), with every command of its
+        public API as a block of the playbook editor. The automatic look-ups below are still Nik's own code, paced as
+        the table says; what changed is where a key may live: beside the keys set in
+        <em>Settings → Indicators → Threat intelligence</em>, the look-ups use
+        <strong>the keys of the instances</strong> of a source's connector that are on (every key of an instance that
+        holds <a href="automation.html#instance-keys">several</a>; a key that is in both places counts once). abuse.ch
+        gives one key for its three services: an instance of any of the three holds it.
+      </p>
       <div class="table-wrap">
         <table>
           <thead>

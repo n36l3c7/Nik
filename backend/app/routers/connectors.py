@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..automation import connector_actions as store
-from ..automation import connector_logo, engine, graph
+from ..automation import connector_logo, engine, graph, instance_keys
 from ..automation import connectors as files
 from ..core import audit
 from ..core.db import get_db
@@ -65,6 +65,12 @@ class ConnectionPatch(BaseModel):
     enabled: bool | None = None
     config: dict[str, Any] | None = None
     secrets: dict[str, str | None] | None = None
+    # More keys than one (6.1). ``keys`` is every key beside the first, in the order they are tried:
+    # [{id?, name, secrets?}]; one left out is removed, one with an id keeps the secrets it is not given.
+    keys: list[dict[str, Any]] | None = Field(default=None, max_length=20)
+    mainName: str | None = Field(default=None, max_length=60)  # what the first key is called
+    # How the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours}.
+    keyPolicy: dict[str, Any] | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -155,6 +161,9 @@ def _connection_out(db: OrmSession, row: Connection, *, full: bool) -> dict[str,
         updatedAt=row.updated_at,
         updatedBy=row.updated_by,
     )
+    # Its keys (the first is the credentials above) and how they take turns: never what they are.
+    held = instance_keys.shown(db, row, names)
+    out.update(keys=held["keys"], keyPolicy=held["policy"])
     return out
 
 
@@ -473,6 +482,32 @@ def update_connection(
         _merge_secrets(connector, row, body.secrets)
         changes.append("credentials")
         row.last_test = None
+    try:
+        if body.mainName is not None and body.mainName.strip():
+            row.key_policy = {**(row.key_policy or {}), "mainName": body.mainName.strip()[:60]}
+        if body.keys is not None:
+            auth = connector.auth
+            required = list(store.AUTH_FIELDS.get(auth.type, ())) if auth is not None else []
+            before = len(instance_keys.extra_keys(row))
+            instance_keys.set_extra_keys(row, body.keys, store.secret_names(connector), required)
+            after = instance_keys.extra_keys(row)
+            instance_keys.forget(db, row.id, keep={instance_keys.MAIN, *(entry["id"] for entry in after)})
+            for entry in after:
+                store.forget_tokens(f"{row.id}:{entry['id']}")
+            if len(after) != before or any(item.get("secrets") for item in body.keys):
+                changes.append(f"keys ({len(after) + 1})")
+        if body.keyPolicy is not None:
+            cleaned = instance_keys.clean_policy(body.keyPolicy)
+            now = instance_keys.policy_of(row)
+            if any(now[name] != cleaned[name] for name in cleaned):
+                main_name = (row.key_policy or {}).get("mainName")
+                row.key_policy = {**cleaned, **({"mainName": main_name} if main_name else {})}
+                changes.append("how its keys take turns")
+                if not cleaned["cacheHours"]:
+                    instance_keys.forget_answers(db, row.id)
+    except instance_keys.KeyError_ as error:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=error.message) from None
     if changes:
         row.updated_at = now_iso()
         row.updated_by = caller.actor
@@ -551,3 +586,35 @@ def test_connection(
     row.last_test = result
     db.commit()
     return result
+
+
+@router.post("/instances/{connection_id}/keys/test")
+def test_keys(
+    connection_id: str, _caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Send the connector's test request with each key of the instance: ``{keys: [{id, name, ok, status,
+    message}]}``. Nothing is counted against a key for it."""
+    row = _connection(db, connection_id)
+    _connector_row, connector = _connector(db, row.connector_id)
+    found = []
+    for key in instance_keys.keys_of(row):
+        try:
+            result = store.runtime_for(db, connector, row, key=key).test()
+        except store.CommandError as error:
+            result = {"ok": False, "status": 0, "message": error.message}
+        found.append({"id": key.id, "name": key.name, **result})
+    return {"keys": found}
+
+
+@router.delete("/instances/{connection_id}/answers")
+def forget_kept_answers(
+    connection_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Forget the answers the instance keeps: the next command asks again. ``{forgotten}``."""
+    row = _connection(db, connection_id)
+    forgotten = instance_keys.forget_answers(db, row.id)
+    audit.record(
+        db, caller.actor, "connection.update", f'Forgot the answers kept for the instance "{row.name}"', target=row.name
+    )
+    db.commit()
+    return {"forgotten": forgotten}

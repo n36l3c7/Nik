@@ -1,0 +1,36 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "trends.shodan.io",
+        "path": "/api/v1/search/facets",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          "asn",
+          "city",
+          "country",
+          "domain",
+          "has_screenshot",
+          "hash"
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "facets": [
+      "asn",
+      "city",
+      "country",
+      "domain",
+      "has_screenshot",
+      "hash"
+    ]
+  }
+}

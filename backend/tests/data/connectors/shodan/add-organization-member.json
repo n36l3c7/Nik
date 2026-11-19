@@ -1,0 +1,27 @@
+{
+  "args": {
+    "user": "new-member@shodan.io",
+    "notify": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/org/member/new-member@shodan.io",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef",
+          "notify": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

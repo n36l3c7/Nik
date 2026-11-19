@@ -134,6 +134,11 @@ export default function NodeLibrary({ entries, onAdd, disabled = false, header =
                           changes
                         </span>
                       )}
+                      {entry.premium && (
+                        <span className="shrink-0 text-violet" title="The vendor gives this command to a paid plan">
+                          premium
+                        </span>
+                      )}
                     </button>
                   </li>
                 ))}

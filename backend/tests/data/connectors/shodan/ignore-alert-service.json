@@ -1,0 +1,27 @@
+{
+  "args": {
+    "id": "0DC55K0N2HHZS3D1",
+    "trigger": "open_database",
+    "service": "1.1.1.1:53"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/shodan/alert/0DC55K0N2HHZS3D1/trigger/open_database/ignore/1.1.1.1:53",
+        "query": {
+          "key": "shodan-api-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "success": true
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

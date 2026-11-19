@@ -1,0 +1,27 @@
+{
+  "args": {
+    "product": "nginx"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "cvedb.shodan.io",
+        "path": "/cpes",
+        "query": {
+          "product": "nginx",
+          "count": "true"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "total": 1532
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "total": 1532
+  }
+}

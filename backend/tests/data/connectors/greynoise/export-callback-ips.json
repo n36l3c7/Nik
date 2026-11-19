@@ -1,0 +1,32 @@
+{
+  "args": {
+    "has_files": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/callback/export-ips",
+        "json": {
+          "has_files": true
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "198.51.100.42\n203.0.113.7\n192.0.2.99\n"
+      }
+    }
+  ],
+  "outputs": {
+    "ips": [
+      "198.51.100.42",
+      "203.0.113.7",
+      "192.0.2.99"
+    ],
+    "count": 3,
+    "text": "198.51.100.42\n203.0.113.7\n192.0.2.99\n"
+  }
+}

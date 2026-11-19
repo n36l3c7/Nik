@@ -1,0 +1,43 @@
+{
+  "args": {
+    "query": "classification:malicious last_seen:1d"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/files/gnql/metadata",
+        "query": {
+          "query": "classification:malicious last_seen:1d",
+          "format": "csv"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "status": "active",
+          "query": "classification:malicious last_seen:1d",
+          "generated_at": "2026-10-26T12:00:00Z",
+          "row_count": 427,
+          "total_count": 427,
+          "truncated": false,
+          "profile": "ngsiem@1",
+          "deprecated": false
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "ready": true,
+    "status": "active",
+    "generated_at": "2026-10-26T12:00:00Z",
+    "row_count": 427,
+    "total_count": 427,
+    "truncated": false,
+    "profile": "ngsiem@1",
+    "deprecated": false
+  }
+}

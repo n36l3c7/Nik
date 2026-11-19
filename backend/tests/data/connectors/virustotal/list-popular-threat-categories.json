@@ -1,0 +1,34 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/popular_threat_categories",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            "trojan",
+            "dropper",
+            "ransomware",
+            "downloader"
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "categories": [
+      "trojan",
+      "dropper",
+      "ransomware",
+      "downloader"
+    ],
+    "count": 4
+  }
+}

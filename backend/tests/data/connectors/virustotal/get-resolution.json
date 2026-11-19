@@ -1,0 +1,41 @@
+{
+  "args": {
+    "id": "8.8.8.8www.hooli.com"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/resolutions/8.8.8.8www.hooli.com",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "resolution",
+            "id": "8.8.8.8www.hooli.com",
+            "attributes": {
+              "date": 1599060646,
+              "host_name": "www.hooli.com",
+              "ip_address": "8.8.8.8",
+              "resolver": "VirusTotal"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "8.8.8.8www.hooli.com",
+    "type": "resolution",
+    "attributes": {
+      "date": 1599060646,
+      "host_name": "www.hooli.com",
+      "ip_address": "8.8.8.8",
+      "resolver": "VirusTotal"
+    }
+  }
+}
