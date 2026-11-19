@@ -492,18 +492,19 @@
         of it. The <strong>status</strong> (<code>open</code>, <code>in_progress</code>, <code>closed</code>; an
         incident with none is open) and the <strong>assignee</strong> (a username) live in the document and are mirrored
         into columns, like the ticket and the severity, so the panel lists and filters them without reading documents.
-        Everything is editable from the Summary tab; the search palette and <code>GET /api/incidents?q=</code> also find
-        incidents by ticket.
+        Everything is editable in <em>Edit the incident</em>; the search palette and
+        <code>GET /api/incidents?q=</code> also find incidents by ticket.
       </p>
       <p>
         <strong>Right-click.</strong> One menu for the whole app
-        (<code>frontend/src/context/ContextMenuContext.jsx</code>): on an indicator (anywhere it is shown: the IOCs tab,
-        a sample's indicators, event-log addresses) <em>Where else was this seen?</em>, <em>Search for it</em>,
-        <em>Copy</em>, <em>Copy defanged</em> (<code>hxxps[:]//evil[.]top</code>) and <em>Add to the allowlist…</em>; on
-        an event row (Browser, Commands, Endpoint, Event Logs, Timeline) <em>Flag</em> or <em>Remove the flag</em>,
-        <em>Add a comment…</em>, <em>Copy as text</em>, <em>Copy as JSON</em> and <em>Show in the Timeline</em>; on an
-        incident in the sidebar <em>Open</em>, <em>Incident report…</em>, <em>Export (JSON)</em>, <em>Copy link</em> and
-        <em>Delete…</em>. Text fields and selected text keep the browser's menu, and so does Shift + right-click.
+        (<code>frontend/src/context/ContextMenuContext.jsx</code>): on an indicator (anywhere it is shown: the
+        Indicators tab, a sample's indicators, event-log addresses) <em>Where else was this seen?</em>,
+        <em>Search for it</em>, <em>Copy</em>, <em>Copy defanged</em> (<code>hxxps[:]//evil[.]top</code>) and
+        <em>Add to the allowlist…</em>; on an event row (Browser, Commands, Endpoint, Event Logs, Timeline)
+        <em>Flag</em> or <em>Remove the flag</em>, <em>Add a comment…</em>, <em>Copy as text</em>,
+        <em>Copy as JSON</em> and <em>Show in the Timeline</em>; on an incident in the sidebar <em>Open</em>,
+        <em>Incident report…</em>, <em>Export (JSON)</em>, <em>Copy link</em> and <em>Delete…</em>. Text fields and
+        selected text keep the browser's menu, and so does Shift + right-click.
         <strong>Add to the allowlist</strong> (also the shield button on each IOC row) proposes the value or a wider
         entry — its domain or a parent domain, its /24 network — and writes it to the shared allowlist with a comment
         line saying who added it and when; <em>Undo</em> stays available for a few seconds. Any analyst can do it.
@@ -520,11 +521,11 @@
         opens the tab and imports the file as its own drop zone would.
       </p>
       <p>
-        Each incident is tied to a single host and carries an <strong>operating system</strong> (<code>windows</code> |
-        <code>macos</code> | <code>linux</code>, see <code>frontend/src/config/os.js</code>), chosen when the incident
-        is created and editable from the Summary tab. The OS drives the host-specific bits of the UI: the artifact paths
-        suggested in Browser Forensics, which shells appear in Command History, and the incident icon shown in the
-        sidebar and header.
+        Each incident is tied to a single host and may carry an <strong>operating system</strong> (<code>windows</code>
+        | <code>macos</code> | <code>linux</code>, or none; see <code>frontend/src/config/os.js</code>), chosen when the
+        incident is created or in <em>Edit the incident</em>. With none, what follows is that of Windows. The OS drives
+        the host-specific bits of the UI: the artifact paths suggested in Browser Forensics, which shells appear in
+        Command History, and the incident icon shown in the sidebar and header.
       </p>
       <p>
         The <strong>Command History</strong> tab mirrors Browser Forensics for terminal activity: one sub-tab per shell
@@ -1419,6 +1420,34 @@
         Migration <code>0036_instances</code>: the columns <code>connections.enabled</code>,
         <code>connectors.logo</code>, <code>connectors.logo_type</code> and <code>connectors.readme</code>.
       </p>
+      <h3 id="incident-page">The page of an incident (5.3)</h3>
+      <ul>
+        <li>
+          <strong>The tab registry</strong> (<code>frontend/src/config/tabs.js</code>) lists the seven tabs and, marked
+          <code>evidence: true</code>, the eight kinds of evidence. <code>domain/evidence.js</code> says what the page
+          shows for the tab that was asked (<code>resolveTab</code>: the id of a kind is the Evidence tab on that kind)
+          and builds the side list (<code>evidenceGroups</code>). A kind's component is the analysis tab of 4.x, given
+          <code>focus</code> (the file to show alone) and <code>evidence</code>.
+        </li>
+        <li>
+          <strong>The Summary</strong> is the grid of the dashboards (<code>components/dashboards/Grid.jsx</code>) fed
+          by <code>domain/layoutGrid.js</code>: <code>gridOf(type)</code> gives the grid the type keeps
+          (<code>incident_types.layout.grid</code>, checked by <code>incident_types.clean_grid</code>) or the one made
+          from its sections. <code>components/tabs/summary/LayoutWidgets.jsx</code> draws each kind. Nothing is
+          migrated: a layout of 4.3 has no grid and is drawn with the generated one.
+        </li>
+        <li>
+          <strong>The Room</strong> (<code>components/room/Room.jsx</code>) is the screen of the War Room over a
+          <em>source</em>: the incident, or the Playground. <code>playground.py</code> keeps
+          <code>playground_entries</code> (migration <code>0038_incident_page</code>): the owner, the kind, the body,
+          the run and the step. <code>commands.start(db, None, …)</code> runs a command with no incident, and
+          <code>war_room.step_done</code> hands the result of such a run to <code>playground.step_done</code>.
+        </li>
+        <li>
+          <strong>The operating system</strong> of an incident may be empty: <code>normalizeOs</code> keeps
+          <code>''</code>, and what needs a system falls back to Windows where it is used.
+        </li>
+      </ul>
       <h3 id="playbook-editor">The playbook editor (5.2)</h3>
       <ul>
         <li>

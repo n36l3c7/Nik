@@ -1464,6 +1464,32 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         stream; each command is in the audit log under your name.
       </p>
 
+      <h3 id="playground">The Playground</h3>
+      <p>
+        The <strong>Playground</strong> (its button on the rail, or <code>/playground</code>) is the War Room without an
+        incident: to try a command of a connector you just set up, or to look something up, without a case to put it in.
+        It is the same screen on the whole page: the stream, the line with the same completion, hints and history, the
+        question before a command that changes something outside, and the inspector of a result with what was sent.
+      </p>
+      <ul>
+        <li>
+          <strong>What it takes.</strong> <code>!name arg=value</code> runs a command, exactly as above; plain text, or
+          <code>/note</code>, is a note to yourself. <code>/assign</code> and <code>/close</code> are about an incident
+          and are refused there.
+        </li>
+        <li>
+          <strong>Nothing touches an incident.</strong> A command that needs one (a note on the incident, a field, the
+          context) fails and says so; <code>!ip</code>, <code>!domain</code> and the others answer what is known and add
+          no indicator to anything. Nothing can be marked as evidence.
+        </li>
+        <li>
+          <strong>Whose it is.</strong> The history is each person's own: nobody else reads it, an admin included. It is
+          kept until you press <em>Clear the history</em>. The runs behind the commands are runs like the others, in
+          <em>Automations → Runs</em> and in the audit log, and stay when the history is cleared.
+        </li>
+        <li><strong>Who may.</strong> Whoever may run automations (<em>Analyst</em> has it).</li>
+      </ul>
+
       <h2 id="connectors">Connectors</h2>
       <p>
         A <strong>connector</strong> is one YAML file that says how to talk to a product: what a connection to it needs
@@ -2830,10 +2856,10 @@ commands:
       </div>
       <p>
         A debug run is not a run of the playbook: it <strong>counts for no limit</strong> (runs per hour, one per
-        object) <strong>and no statistic</strong>, it is not in the Automation tab of its incident nor in the work plan,
-        and it is listed apart (<em>Automations → Runs → Debug runs</em>) to who started it and to an administrator. It
-        is deleted after a week. A task or a question it reaches is answered by itself, as in a dry run, so nobody is
-        asked to do something for a test.
+        object) <strong>and no statistic</strong>, it is not in the work plan of its incident, among its runs or its
+        steps, and it is listed apart (<em>Automations → Runs → Debug runs</em>) to who started it and to an
+        administrator. It is deleted after a week. A task or a question it reaches is answered by itself, as in a dry
+        run, so nobody is asked to do something for a test.
       </p>
 
       <h2 id="packs">Content packs</h2>

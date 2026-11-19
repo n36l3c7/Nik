@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-11-19
+
+### Changed
+
+- **An incident has seven tabs.** *Summary*, *War Room*, *Work plan*,
+  *Context*, *Indicators*, *Timeline* and *Evidence*. The eight analysis
+  tabs (Mail, Malware, Network, URL, Endpoint, Event logs, Browser,
+  Commands) are kinds of evidence inside **Evidence**: a list of every file
+  of the incident at the side, and in the middle the page that kind of
+  file opens in, as before. A file opens alone; the name of a kind opens
+  the whole of it, with its own list. The address of a kind, and what led
+  to its tab, still work. *IOCs* is called *Indicators*; the runs the
+  *Automation* tab listed are at the foot of the work plan.
+- **The Summary is a page the type arranges.** A grid of widgets on the
+  twelve columns of the dashboards: the details of the incident, a section
+  of fields, the numbers of the evidence, flags and notes, timers,
+  evidence, the War Room, the work plan, indicators, playbook buttons, a
+  text. *Settings → Incidents → Types → The page* adds, moves and resizes
+  them. A type that arranged none shows what the Summary showed until
+  now, in the same order: nothing is converted and nothing has to be. A
+  layout gains `grid`, checked by the server.
+- **The incident is edited in its own form.** *Edit the incident*, opened
+  from the details of the Summary, holds what was the first card of the
+  Summary: ticket, title, severity, status, owner, host, user, operating
+  system, suspicious window.
+- **The operating system of the host is optional.** A new incident names
+  none; the one chosen is let go by choosing it again. What needs a system
+  to show something (where an artifact is found, the shells) shows that of
+  Windows.
+
+### Added
+
+- **The Playground.** The War Room without an incident, on the whole page,
+  from its button on the rail (`/playground`): the same line, completion,
+  hints, history and question before a command that changes something
+  outside, the same inspector of a result, and notes to oneself. `/assign`
+  and `/close` are about an incident and are refused; nothing typed there
+  touches an incident. The history is each person's own and is kept until
+  they clear it. For who may run automations. API: `GET` / `DELETE
+  /api/playground`, `POST /api/playground/command`,
+  `GET /api/playground/{id}`. Migration `0038_incident_page`.
+
+### Fixed
+
+- Under a result of the War Room the name of what ran (`nik.get-indicator`)
+  was read as a domain and drawn as an indicator.
+
 ## [5.2.0] - 2026-11-19
 
 ### Added
@@ -2650,7 +2697,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.2.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.3.0...HEAD
+[5.3.0]: https://github.com/n36l3c7/Nik/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/n36l3c7/Nik/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/n36l3c7/Nik/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/n36l3c7/Nik/compare/v5.0.0...v5.0.1

@@ -173,8 +173,9 @@ evidence; 5.1 put connectors and their instances on one page, made a
 connector a package with a logo and a README, and made mail a connector
 that sends, reads and listens; 5.2 gave playbooks branches that are pushed
 over the version in use, connections routed by hand, and a library of
-blocks in tabs. Next in 5.x: the page of an incident with layouts made
-like dashboards, and a playground for commands.
+blocks in tabs; 5.3 put the analysis tabs inside one Evidence tab, made
+the Summary a page each type arranges like a dashboard, and added the
+Playground, a War Room without an incident.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

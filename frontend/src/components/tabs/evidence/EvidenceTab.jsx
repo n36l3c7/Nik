@@ -1,8 +1,9 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { FolderSearch } from 'lucide-react'
+import { FolderOpen, FolderSearch, List } from 'lucide-react'
 import { evidenceGroups, firstFile } from '../../../domain/evidence.js'
 import { AsciiSkull, EmptyState, ErrorBoundary } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 
 /*
  * ============================================================================
@@ -42,6 +43,7 @@ const ROW =
 export default function EvidenceTab({ incident, kinds, kind, onKind }) {
   const pane = useResizablePane('incident.evidence', { initial: 260, min: 200, max: 480 })
   const [query, setQuery] = useState('')
+  const menu = useObjectMenu()
   // The file opened alone, kind by kind; a kind with none here shows the whole of itself.
   const [chosen, setChosen] = useState({})
   useEffect(() => setChosen({}), [incident.id])
@@ -122,6 +124,23 @@ export default function EvidenceTab({ incident, kinds, kind, onKind }) {
                             aria-current={on ? 'page' : undefined}
                             title={[file.name, file.detail].filter(Boolean).join(' · ')}
                             onClick={() => open(item.id, file.key)}
+                            onContextMenu={(event) =>
+                              menu(event, {
+                                title: file.name,
+                                actions: [
+                                  { label: 'Open', icon: FolderOpen, onSelect: () => open(item.id, file.key) },
+                                  {
+                                    label: `Open in the list of ${item.label}`,
+                                    icon: List,
+                                    onSelect: () => open(item.id, null),
+                                  },
+                                ],
+                                copy: [
+                                  { label: 'Copy the name', text: file.name },
+                                  file.detail && { label: 'Copy the detail', text: file.detail },
+                                ],
+                              })
+                            }
                             className={`${ROW} pl-8 ${on ? 'bg-accent-soft text-fg' : 'text-fg-muted hover:bg-raised hover:text-fg'}`}
                           >
                             <span
