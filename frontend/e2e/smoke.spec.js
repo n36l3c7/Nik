@@ -3104,6 +3104,80 @@ test('a content pack is inspected, shown with what it would change, and imported
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
+test('a draft is debugged: the run stops before a node, takes what is typed, and skips the next', async () => {
+  // A playbook that is only a draft (made through the API: the canvas has its own test).
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Debug me' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const note = (id, name, y, text) => ({
+    id,
+    kind: 'action',
+    name,
+    position: { x: 40, y },
+    config: { action: 'nik.add-note', args: { text } },
+  })
+  const draft = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      note('first', 'First note', 160, 'written by the playbook'),
+      note('second', 'Second note', 280, 'never written'),
+    ],
+    edges: [
+      { from: 'start', to: 'first' },
+      { from: 'first', to: 'second' },
+    ],
+  }
+  const saved = await page.request.put(`/api/automation/playbooks/${playbookId}`, { data: { draft } })
+  expect(saved.status()).toBe(200)
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Playbooks' }).click()
+  await area.getByRole('row').filter({ hasText: 'Debug me' }).getByRole('button', { name: 'Debug me' }).click()
+  await expect(area.getByRole('heading', { name: 'Debug me' })).toBeVisible()
+  await area.getByRole('button', { name: 'Debug…' }).click()
+  const ask = page.getByRole('dialog', { name: 'Debug "Debug me"' })
+  // There is no saved version: the draft is what runs.
+  await expect(ask.getByLabel(/^The draft, as it is drawn now/)).toBeChecked()
+  await ask.getByRole('combobox').selectOption({ index: 1 })
+  await ask.getByRole('button', { name: 'Start debugging' }).click()
+
+  await expect(page).toHaveURL(/\/automation\/runs\/[0-9a-f]+$/)
+  const debug = area.getByRole('region', { name: 'Debugger' })
+  await expect(debug.getByRole('status')).toContainText('Stopped before First note.', { timeout: 20_000 })
+  await expect(debug.getByRole('status')).toContainText('It runs the draft')
+  await expect(area.getByRole('status', { name: 'Status of the run' })).toHaveText('stopped at a node')
+  // What the node will be given, changed for this once.
+  const given = debug.getByLabel(/^What First note will be given/)
+  await expect(given).toHaveValue(/written by the playbook/)
+  await given.fill('{ "text": "typed while debugging" }')
+  await debug.getByRole('button', { name: 'Step', exact: true }).click()
+  await expect(debug.getByRole('status')).toContainText('Stopped before Second note.', { timeout: 20_000 })
+
+  // The first node ran with what was typed, and sent nothing for real: it shows what it would have done.
+  const steps = area.getByRole('complementary', { name: 'Steps of the run' })
+  await steps.getByRole('button', { name: /First note/ }).click()
+  await expect(steps).toContainText('typed while debugging')
+  // A breakpoint on the node that is selected, and off again.
+  await steps.getByLabel('Stop before this node').check()
+  await expect(steps.getByLabel('Stop before this node')).toBeChecked()
+  await steps.getByLabel('Stop before this node').uncheck()
+  await expect(steps.getByLabel('Stop before this node')).not.toBeChecked()
+
+  await debug.getByRole('button', { name: 'Skip', exact: true }).click()
+  await expect(debug.getByRole('status')).toContainText('The debug run is over.', { timeout: 20_000 })
+  await expect(steps.getByRole('button', { name: /Second note/ })).toContainText('skipped')
+
+  // Debug runs are listed apart, and are not the runs of the playbook.
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Runs' }).click()
+  await expect(area.getByRole('row').filter({ hasText: 'Debug me' })).toHaveCount(0)
+  await area.getByLabel('Debug runs').check()
+  await expect(area.getByRole('row').filter({ hasText: 'Debug me' })).toHaveCount(1)
+  const notes = await (await page.request.get('/api/automation/runs?debug=true')).json()
+  expect(notes.runs[0].debug).toBe(true)
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

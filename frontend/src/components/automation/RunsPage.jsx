@@ -29,6 +29,7 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
   const [status, setStatus] = useState('')
   const [playbook, setPlaybook] = useState('')
   const [limit, setLimit] = useState(PAGE)
+  const [debug, setDebug] = useState(false) // the runs of the debugger instead: one's own
   const [found, setFound] = useState(null) // { runs, total }
   const [error, setError] = useState(null)
   const names = useMemo(() => new Map(incidents.map((incident) => [incident.id, incident.name])), [incidents])
@@ -37,13 +38,14 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
     const query = new URLSearchParams({ limit: String(limit) })
     if (status) query.set('status', status)
     if (playbookId || playbook) query.set('playbook', playbookId || playbook)
+    if (debug) query.set('debug', 'true')
     try {
       setFound(await api.get(`/automation/runs?${query}`))
       setError(null)
     } catch (failure) {
       setError(failure.message)
     }
-  }, [limit, status, playbook, playbookId])
+  }, [limit, status, playbook, playbookId, debug])
   useEffect(() => {
     load()
   }, [load])
@@ -88,6 +90,18 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
             />
           </label>
         )}
+        <label className="flex items-center gap-2 pb-1.5 text-xs text-fg-muted">
+          <input
+            type="checkbox"
+            checked={debug}
+            onChange={(event) => {
+              setDebug(event.target.checked)
+              setLimit(PAGE)
+            }}
+            className="h-4 w-4 accent-[var(--color-accent)]"
+          />
+          Debug runs
+        </label>
         <Button variant="secondary" size="sm" icon={RefreshCw} onClick={load}>
           Refresh
         </Button>
@@ -110,9 +124,11 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
       )}
       {found?.runs.length === 0 && (
         <p className="text-sm text-fg-muted">
-          {status || playbook
-            ? 'No run matches.'
-            : 'Nothing has run yet. A playbook runs when its trigger fires, or when someone runs it by hand.'}
+          {debug
+            ? 'No debug run of yours is kept: they are deleted after a week.'
+            : status || playbook
+              ? 'No run matches.'
+              : 'Nothing has run yet. A playbook runs when its trigger fires, or when someone runs it by hand.'}
         </p>
       )}
       {found?.runs.length > 0 && (

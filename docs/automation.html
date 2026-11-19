@@ -59,6 +59,7 @@
           <li><a href="#connectors">Connectors</a></li>
           <li><a href="#shipped">The playbooks Nik ships</a></li>
           <li><a href="#files">Playbooks and scripts as files</a></li>
+          <li><a href="#debugger">The debugger</a></li>
           <li><a href="#packs">Content packs</a></li>
           <li><a href="#later">What this release does not do yet</a></li>
         </ol>
@@ -2611,6 +2612,91 @@ commands:
         the API: see <a href="api.html#automation-engine">API → Automation</a>.
       </p>
 
+      <h2 id="debugger">The debugger</h2>
+      <p>
+        A dry run shows what a playbook would do from start to end. The <strong>debugger</strong> lets you go through it
+        one node at a time, look at what each node is about to be given, and change it. It is for who builds playbooks
+        (<code>automation.debug</code>, which the <em>Playbooks</em> role holds).
+      </p>
+      <p>
+        On the page of a playbook, <em>Debug…</em> asks three things: <strong>what to run</strong> (the draft as it is
+        drawn now, with no need to save a version, or the version in use), <strong>on what</strong> (an incident, or
+        nothing) and <strong>where to stop</strong> (before every node, or before the nodes that are selected on the
+        canvas: the breakpoints). The run opens on its page with the debugger above the canvas.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>In the debugger</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><em>Step</em></td>
+              <td>Runs the node the run is stopped before, and stops before the next.</td>
+            </tr>
+            <tr>
+              <td><em>Continue</em></td>
+              <td>Goes on to the next breakpoint, or to the end when there is none.</td>
+            </tr>
+            <tr>
+              <td><em>Skip</em></td>
+              <td>
+                Does not run the node: the run goes on as if it had, by its normal way out. What comes after and reads
+                what the node would have given finds nothing.
+              </td>
+            </tr>
+            <tr>
+              <td><em>What the node will be given</em></td>
+              <td>
+                The arguments the node's expressions give, worked out before anything is done. Change them and
+                <em>Step</em>: the node runs with what you wrote, this once. The playbook is not changed.
+              </td>
+            </tr>
+            <tr>
+              <td><em>Send for real, this once</em></td>
+              <td>
+                A debug run <strong>holds what goes outside</strong>, as a dry run does: an action that would change or
+                send something shows what it would have done. Ticked, this one node really sends. It needs the
+                permission to run playbooks as well, it asks the <a href="#approvals">approval</a> the node normally
+                needs, what it sends passes the <a href="#data-guard">data guard</a>, and it is written to the audit
+                log. The nodes after it are held again.
+              </td>
+            </tr>
+            <tr>
+              <td><em>Stop before this node</em></td>
+              <td>
+                A breakpoint on the node of the step that is selected. Breakpoints can be moved while the run is
+                stopped.
+              </td>
+            </tr>
+            <tr>
+              <td><em>Run this node again</em></td>
+              <td>
+                Runs a node that is over once more, while the run is not finished: after changing what it is given, or
+                what came before it. Its new result replaces the old one for the nodes that come after.
+              </td>
+            </tr>
+            <tr>
+              <td><em>What it gave</em></td>
+              <td>
+                The output of a node that is over, to be rewritten: the nodes after read what you wrote. It is how a
+                branch that is hard to reach is tried (a verdict that is malicious, a list that is empty).
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A debug run is not a run of the playbook: it <strong>counts for no limit</strong> (runs per hour, one per
+        object) <strong>and no statistic</strong>, it is not in the Automation tab of its incident nor in the work plan,
+        and it is listed apart (<em>Automations → Runs → Debug runs</em>) to who started it and to an administrator. It
+        is deleted after a week. A task or a question it reaches is answered by itself, as in a dry run, so nobody is
+        asked to do something for a test.
+      </p>
+
       <h2 id="packs">Content packs</h2>
       <p>
         What Nik is taught (a connector, a playbook and the scripts it runs, a type of incident with its fields, a
@@ -2739,6 +2825,11 @@ nik: "&gt;=4.6"                # the oldest Nik it is for</code></pre>
         <li>
           On the canvas, a wait "until a condition" compares what the run already holds; it cannot yet ask another
           system again.
+        </li>
+        <li>
+          The debugger goes forward: it does not undo what a node did, and a loop is debugged one item at a time as its
+          steps come. A pack is imported whole or not at all; there is no "uninstall" that takes back what a pack
+          brought.
         </li>
       </ul>
     </main>
