@@ -68,6 +68,7 @@ from .routers import (
     mirror,
     network,
     packs,
+    playground,
     preprocess,
     previews,
     query,
@@ -294,6 +295,7 @@ app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")
 app.include_router(context.router, prefix="/api")
 app.include_router(war_room.router, prefix="/api")
+app.include_router(playground.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(lists.router, prefix="/api")
 app.include_router(mappers.router, prefix="/api")

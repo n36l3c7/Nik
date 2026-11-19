@@ -843,3 +843,26 @@ def test_migration_0037_adds_the_branches_of_playbooks(tmp_path, monkeypatch):
     with engine.connect() as conn:
         assert "playbook_branches" not in sa.inspect(conn).get_table_names()
         assert conn.execute(sa.text("SELECT COUNT(*) FROM playbooks")).scalar() == 1
+
+
+def test_migration_0038_adds_the_playground(tmp_path, monkeypatch):
+    from app.core.models import INCIDENT_PAGE_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0037_branches")
+    command.upgrade(cfg, "0038_incident_page")
+    with engine.connect() as conn:
+        assert set(INCIDENT_PAGE_TABLES) <= set(sa.inspect(conn).get_table_names())
+    command.stamp(cfg, "0037_branches")
+    command.upgrade(cfg, "0038_incident_page")  # again: nothing to do
+    command.downgrade(cfg, "0037_branches")
+    with engine.connect() as conn:
+        assert set(sa.inspect(conn).get_table_names()) >= {"incidents"}
+        assert "playground_entries" not in sa.inspect(conn).get_table_names()

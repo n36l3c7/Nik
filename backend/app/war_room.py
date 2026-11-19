@@ -194,6 +194,12 @@ def step_done(db: OrmSession, run: Run, step: RunStep, node: dict, *, error: str
     Only the steps that do something (an action, a script); never for a dry
     run, which changes nothing and is read on its own page.
     """
+    if (run.trigger or {}).get("playground"):
+        from . import playground
+
+        # A command typed outside any incident: its result goes to who typed it.
+        playground.step_done(db, run, step, node, error=error)
+        return
     if not run.incident_id or run.dry_run or step.kind not in ("action", "script"):
         return
     config = node.get("config") or {}

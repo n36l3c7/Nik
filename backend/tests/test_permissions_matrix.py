@@ -149,6 +149,10 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("PUT", "/api/incidents/{incident_id}/war-room/{entry_id}/tags"): ("write",),
     # A line of the War Room is a note (write) or a command (automation.run): the route sorts it out.
     ("POST", "/api/incidents/{incident_id}/war-room/command"): ("read",),
+    ("GET", "/api/playground"): ("automation.run",),
+    ("POST", "/api/playground/command"): ("automation.run",),
+    ("GET", "/api/playground/{entry_id}"): ("automation.run",),
+    ("DELETE", "/api/playground"): ("automation.run",),
     # Tasks. Completing or skipping one is for whom it is for, whatever their roles (tasks.may_complete).
     ("GET", "/api/tasks"): ("read",),
     ("GET", "/api/tasks/count"): ("read",),

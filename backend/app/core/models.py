@@ -852,6 +852,26 @@ class Playbook(Base):
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
+class PlaygroundEntry(Base):
+    """A line of somebody's Playground: a command typed with no incident, or what it gave (5.3).
+
+    ``owner`` is who typed it: a Playground is each person's own. ``parent_id`` puts a result
+    under its command.
+    """
+
+    __tablename__ = "playground_entries"
+    __table_args__ = (Index("ix_playground_owner_at", "owner", "at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(200), nullable=False)
+    at: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, default="command")
+    body: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    parent_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
+
 class PlaybookBranch(Base):
     """A copy of a playbook someone works on beside the version in use (5.2).
 
@@ -1503,6 +1523,9 @@ class IocVerdictChange(Base):
     new: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     at: Mapped[str] = mapped_column(String, nullable=False)
 
+
+# Created by migration 0038_incident_page where missing.
+INCIDENT_PAGE_TABLES = ("playground_entries",)
 
 # Created by migration 0037_branches where missing.
 BRANCH_TABLES = ("playbook_branches",)
