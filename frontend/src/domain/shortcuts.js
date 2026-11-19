@@ -18,6 +18,10 @@ export const SHORTCUTS = [
   { keys: ['Shift + right-click'], does: "The browser's own menu" },
   { keys: ['↑', '↓', 'Enter'], does: 'Move in a menu and run the action' },
   { keys: ['Esc'], does: 'Close a menu or a dialog' },
+  {
+    keys: ['Click', '↑', '↓', 'Enter'],
+    does: 'In the list of incidents: open the quick view of a row, move it from row to row, open the incident',
+  },
   { keys: ['?'], does: 'This list' },
 ]
 

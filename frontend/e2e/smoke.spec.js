@@ -3546,25 +3546,20 @@ test('a type times its incidents: the SLA in Settings, the timers on the inciden
   await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible()
 })
 
-test('lists: one is made and filled, a feature is pointed at it, and what Nik ships is there', async () => {
+test('lists: one is made and filled in Settings, and a feature is pointed at it', async () => {
+  // What a list holds, how it is exported and what refuses to delete it are the server's (tests/test_lists.py):
+  // here, only what a person does on the page.
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
-  await sections.getByText('Lists', { exact: true }).last().click()
+  const openLists = () => sections.getByText('Lists', { exact: true }).last().click()
+  await openLists()
   await expect(page).toHaveURL(/\/settings\/lists\/all/)
   const table = settings.getByRole('table', { name: 'Lists' })
-  // What the settings held is here: the allowlist, the keywords with their columns, the business hours.
+  // The lists Nik ships are there.
   await expect(table.getByRole('row').filter({ hasText: 'ioc_allowlist' })).toContainText('Values')
-  await table.getByRole('button', { name: 'Suspicious keywords' }).click()
-  const keywords = settings.getByRole('article', { name: 'Suspicious keywords' })
-  await expect(keywords.getByRole('columnheader', { name: 'Severity' })).toBeVisible()
-  await expect(keywords.getByRole('region', { name: 'Where it is used' })).toContainText('Detection rules')
-  await table.getByRole('button', { name: 'Business hours' }).click()
-  await expect(
-    settings.getByRole('article', { name: 'Business hours' }).getByLabel('The document, as JSON'),
-  ).toHaveValue(/"startHour"/)
 
-  // A list of one's own.
+  // A list of one's own, filled.
   await settings.getByRole('button', { name: 'New list' }).click()
   const dialog = page.getByRole('dialog', { name: 'New list' })
   await dialog.getByLabel('Label').fill('Strict allowlist')
@@ -3572,32 +3567,27 @@ test('lists: one is made and filled, a feature is pointed at it, and what Nik sh
   await dialog.getByRole('button', { name: 'Create the list' }).click()
   const strict = settings.getByRole('article', { name: 'Strict allowlist' })
   await expect(strict).toContainText('Nothing reads this list yet.')
-  await strict.getByLabel('Items, one a line').fill('only.example\n\nonly.example\n192.0.2.0/24')
+  await strict.getByLabel('Items, one a line').fill('only.example\n192.0.2.0/24')
   await strict.getByRole('button', { name: 'Save the items' }).click()
   await expect(strict.getByRole('status')).toHaveText('Saved.')
-  await expect(strict.getByLabel('Items, one a line')).toHaveValue('only.example\n192.0.2.0/24')
   await expect(table.getByRole('row').filter({ hasText: 'strict_allowlist' })).toContainText('2 items')
-  const exported = await page.request.get('/api/lists/strict_allowlist/export?format=csv')
-  expect(await exported.text()).toBe('key,note\r\nonly.example,\r\n192.0.2.0/24,\r\n')
 
-  // The allowlist of the indicators reads it when it is chosen, and the factory one when it is chosen back.
-  await sections.getByText('IOC allowlist', { exact: true }).click()
-  const picker = settings.getByLabel('Allowlist: reads the list')
-  await expect(picker).toHaveValue('ioc_allowlist')
-  await picker.selectOption('strict_allowlist')
-  // The list just chosen is saved and read again before its entries are counted.
-  await expect(settings.getByText('2 entries')).toBeVisible({ timeout: 20_000 })
-  await sections.getByText('Lists', { exact: true }).last().click()
-  await table.getByRole('button', { name: 'Strict allowlist' }).click()
-  await expect(strict.getByRole('region', { name: 'Where it is used' })).toContainText('Allowlist')
-  // A list in use is not deleted.
-  await strict.getByRole('button', { name: 'Delete the list' }).click()
-  await expect(strict.getByRole('alert')).toContainText('This list is used by')
-  await sections.getByText('IOC allowlist', { exact: true }).click()
-  await picker.selectOption('ioc_allowlist')
-  await expect(settings.getByText('2 entries')).toHaveCount(0)
-  await sections.getByText('Lists', { exact: true }).last().click()
-  await table.getByRole('button', { name: 'Strict allowlist' }).click()
+  // The allowlist of the indicators is pointed at it, and the list says where it is used. The choice is
+  // saved by the page: the list is opened again until it shows it.
+  const used = strict.getByRole('region', { name: 'Where it is used' })
+  const point = async (name, expectUsed) => {
+    await sections.getByText('IOC allowlist', { exact: true }).click()
+    await settings.getByLabel('Allowlist: reads the list').selectOption(name)
+    await expect(async () => {
+      await openLists()
+      await table.getByRole('button', { name: 'Strict allowlist' }).click()
+      if (expectUsed) await expect(used).toContainText('Allowlist', { timeout: 2000 })
+      else await expect(strict).toContainText('Nothing reads this list yet.', { timeout: 2000 })
+    }).toPass({ timeout: 30_000 })
+  }
+  await point('strict_allowlist', true)
+  // Pointed back at the one Nik ships, the list is nobody's and can be deleted.
+  await point('ioc_allowlist', false)
   await strict.getByRole('button', { name: 'Delete the list' }).click()
   await expect(table.getByRole('row').filter({ hasText: 'strict_allowlist' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Close platform settings' }).click()

@@ -604,8 +604,16 @@ export default function App() {
   // The tab is remembered for each type of incident: a phishing case opens on Mail if that is where one works.
   const typeKey = activeType?.id ?? null
   // Applied when the type on screen changes; among incidents of one type the tab stays where it is.
+  // A tab chosen before the type was known (the types are still being read after a reload) is not lost to
+  // the remembered one when they arrive: it is the choice, and it is what is remembered.
+  const chosenEarly = useRef(null)
   useEffect(() => {
     if (!typeKey) return
+    if (chosenEarly.current) {
+      localStorage.setItem(`${TAB_KEY}.${typeKey}`, chosenEarly.current)
+      chosenEarly.current = null
+      return
+    }
     const remembered = localStorage.getItem(`${TAB_KEY}.${typeKey}`)
     if (remembered) setActiveTabId(remembered)
   }, [typeKey])
@@ -613,6 +621,7 @@ export default function App() {
     (tabId) => {
       setActiveTabId(tabId)
       if (typeKey) localStorage.setItem(`${TAB_KEY}.${typeKey}`, tabId)
+      else chosenEarly.current = tabId
     },
     [typeKey],
   )
