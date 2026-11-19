@@ -244,6 +244,8 @@ export function groupsOf(entries, query = '') {
   const words = String(query).toLowerCase().split(/\s+/).filter(Boolean)
   const groups = new Map()
   for (const entry of list(entries)) {
+    // Kept for the playbooks that have it (the e-mail node of 4.x): not offered for new nodes.
+    if (entry.retired) continue
     const haystack = `${entry.name} ${entry.group} ${entry.description ?? ''} ${entry.id}`.toLowerCase()
     if (!words.every((word) => haystack.includes(word))) continue
     if (!groups.has(entry.group)) groups.set(entry.group, [])

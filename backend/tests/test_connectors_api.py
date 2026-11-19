@@ -170,7 +170,7 @@ def test_what_a_playbook_uses_cannot_be_removed(admin: TestClient):
         assert res.status_code == 409 and res.json()["detail"] == "Used by: Uses Acme"
     # The library of the canvas lists the connections of each connector.
     assert admin.get(f"{BASE}/catalog").json()["connections"] == {
-        "acme": [{"id": made["id"], "name": "Acme production"}]
+        "acme": [{"id": made["id"], "name": "Acme production", "enabled": True}]
     }
     assert admin.delete(f"{BASE}/playbooks/{playbook_id}").status_code == 204
     # A connector goes with its connections.
@@ -188,7 +188,13 @@ def test_who_builds_playbooks_sees_the_names_of_connections_and_no_more(admin: T
     with TestClient(fastapi_app) as other:
         names = other.get(f"{BASE}/connections", headers=builder).json()["connections"]
         assert names == [
-            {"id": made["id"], "name": "Acme production", "connector": "acme", "connectorName": "Acme Desk"}
+            {
+                "id": made["id"],
+                "name": "Acme production",
+                "connector": "acme",
+                "connectorName": "Acme Desk",
+                "enabled": True,
+            }
         ]
         assert other.get(f"{BASE}/connections", headers=viewer).status_code == 403
         assert other.get(f"{BASE}/connectors", headers=builder).status_code == 403
@@ -207,8 +213,15 @@ def test_the_samples_are_the_shipped_files_in_a_zip(admin: TestClient):
     assert res.status_code == 200 and res.headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(res.content)) as archive:
         names = archive.namelist()
-        assert names == sorted(path.name for path in ca.SEED_DIR.glob("*.yml"))
-        for name in names:
+        files = sorted(path.name for path in ca.SEED_DIR.glob("*.yml"))
+        # A connector kept as a package goes as its folder.
+        folders = sorted(
+            f"{path.parent.name}/{item.name}"
+            for path in ca.SEED_DIR.glob("*/connector.yml")
+            for item in path.parent.iterdir()
+        )
+        assert names == files + folders and "mail/connector.yml" in names
+        for name in (name for name in names if name.endswith(".yml")):
             ca.load(archive.read(name))  # each is a connector that loads
 
 
@@ -232,3 +245,144 @@ def test_the_secrets_of_automation_follow_a_change_of_the_key(admin: TestClient,
         from app.automation import outbound
 
         assert outbound.smtp_settings(db)["password"] == "smtp-pass"
+
+
+# --------------------------------------------------------------------------- #
+# Instances (5.1)                                                             #
+# --------------------------------------------------------------------------- #
+def test_a_connector_has_instances_and_is_enabled_when_one_is_on(admin: TestClient):
+    install(admin)
+    listed = admin.get(f"{BASE}/connectors").json()["connectors"][0]
+    assert (listed["instances"], listed["instancesOn"], listed["enabled"]) == (0, 0, False)
+
+    # An instance is made under its connector; it is the connection of before, and on.
+    body = {"config": {"url": "https://desk.example.com/api"}, "secrets": {"username": "svc", "password": "p"}}
+    first = admin.post(f"{BASE}/connectors/acme/instances", json={"name": "Production", **body})
+    assert first.status_code == 201, first.text
+    assert first.json()["enabled"] is True and first.json()["connector"] == "acme"
+    second = admin.post(f"{BASE}/connectors/acme/instances", json={"name": "Test", "enabled": False, **body})
+    assert second.status_code == 201 and second.json()["enabled"] is False
+    assert admin.post(f"{BASE}/connectors/acme/instances", json={"name": "production", **body}).status_code == 400
+    assert admin.post(f"{BASE}/connectors/nope/instances", json={"name": "x", **body}).status_code == 404
+
+    names = [(i["name"], i["enabled"]) for i in admin.get(f"{BASE}/connectors/acme/instances").json()["instances"]]
+    assert names == [("Production", True), ("Test", False)]
+    assert admin.get(f"{BASE}/connectors/nope/instances").status_code == 404
+    listed = admin.get(f"{BASE}/connectors").json()["connectors"][0]
+    assert (listed["instances"], listed["instancesOn"], listed["enabled"], listed["connections"]) == (2, 1, True, 2)
+    # Who builds playbooks sees which instance is on, to choose one.
+    assert {c["name"]: c["enabled"] for c in admin.get(f"{BASE}/connections").json()["connections"]} == {
+        "Production": True,
+        "Test": False,
+    }
+
+    # Turned off: it keeps what it was set up with, and the connector is enabled no more.
+    off = admin.put(f"{BASE}/connections/{first.json()['id']}", json={"enabled": False}).json()
+    assert off["enabled"] is False and off["secrets"] == {"username": True, "password": True}
+    assert off["host"] == "desk.example.com"
+    assert admin.get(f"{BASE}/connectors").json()["connectors"][0]["enabled"] is False
+    audit = admin.get("/api/audit", params={"q": "action:connection.update"}).json()["entries"]
+    assert any("turned off" in entry["details"] for entry in audit)
+    with SessionLocal() as db:
+        assert ca.enabled_connectors(db) == set()
+        db.get(Connection, second.json()["id"]).enabled = True
+        db.commit()
+        assert ca.enabled_connectors(db) == {"acme"}
+        # A node that names no instance takes the only one that is on.
+        assert ca.find_connection(db, "acme", "").name == "Test"
+        assert ca.find_connection(db, "acme", "Production").enabled is False
+
+
+# --------------------------------------------------------------------------- #
+# A connector as a package: its logo and its README (5.1)                     #
+# --------------------------------------------------------------------------- #
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="#135"/></svg>'
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+
+
+def test_a_logo_is_an_image_and_nothing_else():
+    from app.automation import connector_logo as logo
+
+    assert logo.clean(SVG) == (SVG, "image/svg+xml")
+    assert logo.clean(b'<?xml version="1.0"?>\n<!-- made by hand -->\n' + SVG)[1] == "image/svg+xml"
+    assert logo.clean(PNG) == (PNG, "image/png")
+    inner = b'<svg xmlns="http://www.w3.org/2000/svg"><use href="#a"/><rect fill="url(#g)"/></svg>'
+    assert logo.clean(inner)[1] == "image/svg+xml"  # what points inside the file is a drawing still
+    for bad, why in (
+        (b"", "empty"),
+        (b"GIF89a....", "PNG or an SVG"),
+        (b"<html><svg></svg></html>", "PNG or an SVG"),
+        (b"\xff\xfe\x00not text", "PNG or an SVG"),
+        (SVG.replace(b"<rect", b"<script>alert(1)</script><rect"), "not a drawing"),
+        (SVG.replace(b"<rect", b"<foreignObject/><rect"), "not a drawing"),
+        (SVG.replace(b"<rect", b'<rect onload="x()"'), "event handler"),
+        (SVG.replace(b"<rect", b'<a href="javascript:alert(1)"/><rect'), "script address"),
+        (SVG.replace(b"<rect", b'<image href="https://evil.example/x.png"/><rect'), "outside the file"),
+        (SVG.replace(b'fill="#135"', b'style="fill:url(https://evil.example/a)"'), "outside the file"),
+        (b'<!DOCTYPE svg [<!ENTITY x "y">]>' + SVG, "DOCTYPE"),
+        (SVG.replace(b"<rect", b"<style>@import 'a.css';</style><rect"), "imported"),
+        (b"<svg>" + b" " * (logo.MAX_BYTES + 1) + b"</svg>", "KB at most"),
+    ):
+        try:
+            logo.clean(bad)
+        except logo.LogoError as error:
+            assert why in error.message, (bad[:40], error.message)
+        else:
+            raise AssertionError(f"accepted: {bad[:40]!r}")
+
+
+def test_a_connector_is_given_a_logo_and_everyone_who_reads_sees_it(admin: TestClient):
+    install(admin)
+    assert admin.get(f"{BASE}/connectors").json()["connectors"][0]["logo"] is None
+    assert admin.get(f"{BASE}/connectors/acme/logo").status_code == 404
+
+    bad = admin.put(f"{BASE}/connectors/acme/logo", content=SVG.replace(b"<rect", b"<script/><rect"))
+    assert bad.status_code == 400 and "not a drawing" in bad.json()["detail"]
+    assert admin.put(f"{BASE}/connectors/acme/logo", content=b"x" * (300 * 1024)).status_code == 413
+    assert admin.put(f"{BASE}/connectors/nope/logo", content=SVG).status_code == 404
+
+    made = admin.put(f"{BASE}/connectors/acme/logo", content=SVG)
+    assert made.status_code == 200, made.text
+    path = made.json()["logo"]
+    assert path.startswith("/automation/connectors/acme/logo?v=")
+    image = admin.get("/api" + path)
+    assert image.status_code == 200 and image.content == SVG
+    assert image.headers["content-type"].startswith("image/svg+xml")
+    assert "default-src 'none'" in image.headers["content-security-policy"]
+    assert image.headers["x-content-type-options"] == "nosniff"
+    # A viewer sees the logo (it marks incidents); only who manages connectors changes it.
+    viewer = make_key(admin, label="vi", roles=["viewer"])
+    with TestClient(fastapi_app) as other:
+        assert other.get("/api" + path, headers=viewer).status_code == 200
+        assert other.put(f"{BASE}/connectors/acme/logo", content=SVG, headers=viewer).status_code == 403
+        assert other.delete(f"{BASE}/connectors/acme/logo", headers=viewer).status_code == 403
+
+    # Another image: another address, so a browser does not show the old one.
+    again = admin.put(f"{BASE}/connectors/acme/logo", content=PNG).json()["logo"]
+    assert again != path and admin.get("/api" + again).headers["content-type"] == "image/png"
+    # A new file of the connector keeps its logo; removing the logo leaves the connector.
+    install(admin, ACME.replace("version: 1", "version: 2"))
+    assert admin.get(f"{BASE}/connectors/acme").json()["logo"] == again
+    assert admin.delete(f"{BASE}/connectors/acme/logo").status_code == 204
+    assert admin.get(f"{BASE}/connectors/acme").json()["logo"] is None
+    assert admin.delete(f"{BASE}/connectors/acme/logo").status_code == 204
+
+
+def test_a_shipped_connector_may_be_a_folder_with_its_logo_and_readme(admin: TestClient, tmp_path, monkeypatch):
+    folder = tmp_path / "acme"
+    folder.mkdir()
+    (folder / "connector.yml").write_text(ACME, encoding="utf-8")
+    (folder / "logo.svg").write_bytes(SVG)
+    (folder / "README.md").write_text("# Acme Desk\n\nHow to get a token.\n", encoding="utf-8")
+    (tmp_path / "other.yml").write_text(ACME.replace("id: acme", "id: other"), encoding="utf-8")
+    monkeypatch.setattr(ca, "SEED_DIR", tmp_path)
+
+    assert sorted(connector.id for _text, connector in ca.shipped()) == ["acme", "other"]
+    assert ca.shipped_extras() == {"acme": {"logo": SVG, "readme": "# Acme Desk\n\nHow to get a token.\n"}}
+    with SessionLocal() as db:
+        assert ca.seed(db) == 2
+        db.commit()
+        row = db.get(ca.Connector, "acme")
+        assert (bytes(row.logo), row.logo_type, row.readme.startswith("# Acme Desk")) == (SVG, "image/svg+xml", True)
+        assert db.get(ca.Connector, "other").logo is None and ca.logo_path(db.get(ca.Connector, "other")) is None
+        assert ca.seed(db) == 0

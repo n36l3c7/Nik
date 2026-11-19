@@ -162,7 +162,7 @@ def test_a_node_needs_a_connection_that_exists(admin: TestClient, acme):
         )
         db.commit()
     # With two it must choose: the version that ran is now refused at its step, and a new one at saving.
-    assert steps(go(admin, one))["open"]["error"].startswith("Choose a connection")
+    assert steps(go(admin, one))["open"]["error"].startswith("Choose an instance")
     shape["nodes"][1]["config"]["connection"] = ""
     again = admin.post(f"/api/automation/playbooks/{draft}/versions", json={"graph": shape})
     assert again.json()["problems"][0]["message"] == "Choose the connection to send through"
@@ -177,7 +177,7 @@ def test_a_node_needs_a_connection_that_exists(admin: TestClient, acme):
     assert run["status"] == "failed" and acme.requests == []
     assert (
         steps(run)["open"]["error"]
-        == 'The connection "Acme test" does not exist: Acme Desk needs one to know where to send'
+        == 'The instance "Acme test" does not exist: Acme Desk needs one to know where to send'
     )
 
 

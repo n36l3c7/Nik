@@ -263,6 +263,25 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-51">Upgrading to 5.1</h4>
+      <p>
+        Release 5.1 needs nothing more than the two commands above. The migration <code>0036_instances</code> runs at
+        start. After the update:
+      </p>
+      <ul>
+        <li>
+          <strong>connections are instances of their connector</strong>, listed under it in
+          <em>Settings → Automation → Connectors</em>; the <em>Connections</em> section is gone. Every connection stays
+          on and works as it did;
+        </li>
+        <li>
+          <strong>the SMTP server of the e-mail node becomes an instance of the Mail connector</strong>, named
+          <em>Mail (from Settings)</em>, the first time the server starts. Playbooks that send e-mail keep working
+          through it. Look at it once, and press <em>Test</em>: the form that was in <em>Network and data</em> is no
+          longer there;
+        </li>
+        <li>no connector has a logo: give each the one you want from its page. Nik ships none of the vendors'.</li>
+      </ul>
       <h4 id="upgrading-to-50">Upgrading to 5.0</h4>
       <p>
         Release 5.0 needs nothing more than the two commands above. The migration

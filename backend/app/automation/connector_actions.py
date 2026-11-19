@@ -28,12 +28,13 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core import vault
 from ..core.models import Connection, Connector
 from ..core.security import now_iso
-from . import actions, egress, outbound
+from . import actions, connector_logo, egress, outbound
 from . import expressions as ex
 from .connector_runtime import AUTH_FIELDS, CommandError, Runtime, forget_tokens
 from .connectors import Command, ConnectorError, ConnectorFile, Problem, load
 
 SEED_DIR = Path(__file__).parent / "seed" / "connectors"
+README_MAX = 100_000
 
 # Parsed files, by what they are made of: a connector is read once per version of its text.
 _PARSED: dict[str, ConnectorFile] = {}
@@ -55,13 +56,24 @@ def parsed(row: Connector) -> ConnectorFile | None:
 # --------------------------------------------------------------------------- #
 # Installing                                                                  #
 # --------------------------------------------------------------------------- #
-def install(db: OrmSession, text: str, actor: str, *, builtin: bool = False) -> tuple[Connector, ConnectorFile]:
+def install(
+    db: OrmSession, text: str, actor: str, *, builtin: bool = False, extras: dict[str, Any] | None = None
+) -> tuple[Connector, ConnectorFile]:
     """Add a connector, or replace the one with the same id (the caller commits).
 
     Raises ``ConnectorError`` with every problem of the file. A file whose
     version is lower than the one installed is refused: versions only go up.
+
+    ``extras`` is what a package brings beside the file: ``logo`` (bytes, checked here) and
+    ``readme``. One that is not given keeps what the connector has; a file alone changes neither.
     """
     connector = load(text)
+    logo = None
+    if extras and extras.get("logo"):
+        try:
+            logo = connector_logo.clean(extras["logo"])
+        except connector_logo.LogoError as error:
+            raise ConnectorError([Problem(0, f"The logo: {error.message}")]) from None
     row = db.get(Connector, connector.id)
     now = now_iso()
     if row is None:
@@ -79,18 +91,45 @@ def install(db: OrmSession, text: str, actor: str, *, builtin: bool = False) -> 
     row.version = connector.version
     row.source = text
     row.builtin = builtin
+    if logo is not None:
+        row.logo, row.logo_type = logo
+    if extras and extras.get("readme") is not None:
+        row.readme = str(extras["readme"])[:README_MAX]
     row.updated_at = now
     row.updated_by = actor
     db.flush()
     return row, connector
 
 
+def package_of(folder: Path) -> tuple[str, dict[str, Any]]:
+    """A connector kept as a folder (``connector.yml``, and beside it ``logo.svg`` or ``logo.png``
+    and ``README.md``): its file and what it comes with."""
+    extras: dict[str, Any] = {}
+    for path in sorted(folder.iterdir()):
+        if path.is_file() and connector_logo.by_name(path.name):
+            extras["logo"] = path.read_bytes()
+        elif path.is_file() and path.name.lower() == "readme.md":
+            extras["readme"] = path.read_text(encoding="utf-8")
+    return (folder / "connector.yml").read_text(encoding="utf-8"), extras
+
+
 def shipped() -> list[tuple[str, ConnectorFile]]:
-    """The connectors that come with Nik (``seed/connectors/*.yml``): their text, parsed."""
+    """The connectors that come with Nik: their text, parsed. Each is a file (``seed/connectors/<id>.yml``)
+    or a package (``seed/connectors/<id>/connector.yml`` with its logo and README, see ``shipped_extras``)."""
     found = []
-    for path in sorted(SEED_DIR.glob("*.yml")):
+    for path in sorted([*SEED_DIR.glob("*.yml"), *SEED_DIR.glob("*/connector.yml")], key=lambda p: p.as_posix()):
         text = path.read_text(encoding="utf-8")
         found.append((text, load(text)))
+    return found
+
+
+def shipped_extras() -> dict[str, dict[str, Any]]:
+    """connector id → the logo and the README a shipped connector comes with (packages only)."""
+    found = {}
+    for path in sorted(SEED_DIR.glob("*/connector.yml")):
+        text, extras = package_of(path.parent)
+        if extras:
+            found[load(text).id] = extras
     return found
 
 
@@ -98,11 +137,12 @@ def seed(db: OrmSession) -> int:
     """Add the shipped connectors that are missing and replace those a release changed
     (the caller commits). One an admin uploaded under the same id is theirs and is left."""
     changed = 0
+    extras = shipped_extras()
     for text, connector in shipped():
         row = db.get(Connector, connector.id)
         if row is not None and (not row.builtin or row.source == text):
             continue
-        install(db, text, "nik", builtin=True)
+        install(db, text, "nik", builtin=True, extras=extras.get(connector.id))
         changed += 1
     return changed
 
@@ -139,11 +179,91 @@ def connections_of(db: OrmSession, connector_id: str) -> list[Connection]:
     return list(db.scalars(select(Connection).where(Connection.connector_id == connector_id).order_by(Connection.name)))
 
 
+def logo_path(row: Connector | None) -> str | None:
+    """Where the logo of a connector is served from (under ``/api``), or None when it has none. The
+    address changes when the logo does, so a browser may keep it."""
+    if row is None or not row.logo:
+        return None
+    mark = hashlib.sha256(bytes(row.logo)).hexdigest()[:12]
+    return f"/automation/connectors/{row.id}/logo?v={mark}"
+
+
+def logos_by_connection(db: OrmSession) -> dict[str, dict[str, Any]]:
+    """connection id → the connector it is an instance of, by name, and its logo: what an incident
+    a connector brought in is marked with."""
+    connectors = {row.id: row for row in db.scalars(select(Connector))}
+    found = {}
+    for connection_id, name, connector_id in db.execute(
+        select(Connection.id, Connection.name, Connection.connector_id)
+    ):
+        row = connectors.get(connector_id)
+        found[connection_id] = {
+            "connection": name,
+            "connector": row.name if row is not None else connector_id,
+            "logo": logo_path(row),
+        }
+    return found
+
+
+ADOPTED_NAME = "Mail (from Settings)"
+
+
+def adopt_smtp(db: OrmSession) -> bool:
+    """Make the SMTP server of the settings of 4.x an instance of the Mail connector, once (the caller
+    commits). Until 5.1 the e-mail node read that server; mail is a connector now, and its instances
+    are where a server is set. Nothing is done when there is no server, when the Mail connector has
+    an instance already, or when this was done before (the instance may have been deleted since)."""
+    from . import state
+
+    settings = state.read(db)
+    smtp = dict(settings.get("smtp") or {})
+    if settings.get("smtp_adopted") or not smtp.get("host") or not smtp.get("sender"):
+        return False
+    if db.get(Connector, "mail") is None:
+        return False
+    state.write(db, smtp_adopted=True)
+    if db.scalars(select(Connection.id).where(Connection.connector_id == "mail")).first() is not None:
+        return True
+    name, count = ADOPTED_NAME, 2
+    while db.scalars(select(Connection.id).where(func.lower(Connection.name) == name.lower())).first() is not None:
+        name, count = f"{ADOPTED_NAME} {count}", count + 1
+    now = now_iso()
+    row = Connection(
+        id=hashlib.sha256(f"mail-adopted-{now}".encode()).hexdigest()[:32],
+        name=name,
+        connector_id="mail",
+        config={
+            "smtp_host": str(smtp.get("host") or ""),
+            "smtp_port": int(smtp.get("port") or 587),
+            "smtp_security": str(smtp.get("security") or "starttls"),
+            "sender": str(smtp.get("sender") or ""),
+            **({"ca_pem": str(smtp["ca_pem"])} if smtp.get("ca_pem") else {}),
+        },
+        created_at=now,
+        created_by="nik",
+        updated_at=now,
+        updated_by="nik",
+    )
+    password = vault.decrypt(smtp["password"]) if smtp.get("password") else ""
+    secrets = {"username": str(smtp.get("username") or ""), "password": password or ""}
+    store_secrets(row, {key: value for key, value in secrets.items() if value})
+    db.add(row)
+    return True
+
+
+def enabled_connectors(db: OrmSession) -> set[str]:
+    """The connectors that have an instance that is on: the ones whose commands can be used."""
+    return set(db.scalars(select(Connection.connector_id).where(Connection.enabled.is_(True)).distinct()))
+
+
 def host_of(connector: ConnectorFile, config: dict[str, Any]) -> str | None:
     """``host`` or ``host:port`` of a connection, as the egress policy lists it; None when it has no address."""
     # With the defaults of what was left out, as the runtime reads it (a region that has a default).
     values = {param.name: param.default for param in connector.configuration if not param.is_auth}
     values.update({key: value for key, value in (config or {}).items() if value not in (None, "")})
+    if connector.native == "mail":
+        # A mailbox: the server it is read from, or the one it sends through.
+        return egress.clean_host(str(values.get("imap_host") or values.get("smtp_host") or "")) or None
     try:
         base = ex.render_text(connector.base_url, ex.Scope(values={"config": values})).data
     except ex.ExpressionError:
@@ -157,13 +277,15 @@ def host_of(connector: ConnectorFile, config: dict[str, Any]) -> str | None:
 
 
 def find_connection(db: OrmSession, connector_id: str, wanted: str) -> Connection | None:
-    """The connection a node names (by id or by name); the only one of the connector when it names none."""
+    """The instance a node names (by id or by name), on or off; when it names none, the only one of
+    the connector that is on."""
     rows = db.scalars(
         select(Connection).where(Connection.connector_id == connector_id).order_by(func.lower(Connection.name))
     ).all()
     if wanted:
         return next((row for row in rows if wanted in (row.id, row.name)), None)
-    return rows[0] if len(rows) == 1 else None
+    on = [row for row in rows if row.enabled]
+    return on[0] if len(on) == 1 else None
 
 
 def runtime_for(
@@ -181,6 +303,13 @@ def runtime_for(
         policy = egress.Policy(mode="listed", hosts=frozenset({host} if host else set()))
     # The engine's clock when it runs a step (its waits are counted on it); the wall clock otherwise.
     clock = (lambda: now) if now else time.time
+    if connector.native == "mail":
+        from .mail_runtime import MailRuntime
+
+        # A recipient is judged by the playbook's own policy: the host of the mailbox is not one.
+        if playbook is not None:
+            policy = outbound.policy_for(db, playbook)
+        return MailRuntime(connector, connection.config or {}, secrets_of(connection), policy)
     return Runtime(
         connector, connection.config or {}, secrets_of(connection), policy, token_key=connection.id, clock=clock
     )
@@ -220,11 +349,22 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         raise actions.ActionError("This command is not in the connector any more", retry=False)
     connection = find_connection(db, connector_id, call.connection)
     if connection is None:
-        what = f'The connection "{call.connection}" does not exist' if call.connection else "Choose a connection"
+        what = f'The instance "{call.connection}" does not exist' if call.connection else "Choose an instance"
         raise actions.ActionError(f"{what}: {connector.name} needs one to know where to send", retry=False)
+    if not connection.enabled:
+        raise actions.ActionError(
+            f'The instance "{connection.name}" of {connector.name} is off: turn it on in Settings, Connectors',
+            retry=False,
+        )
 
     args = {key: value for key, value in call.args.items() if value is not None}
-    args, decided = outbound.guarded(call, args)
+    # The recipients of a message are where it goes, judged by the hosts the playbook may reach;
+    # what the guard judges is what is said.
+    where = {"to"} & set(args) if connector.native == "mail" else set()
+    said, decided = outbound.guarded(
+        call, {key: value for key, value in args.items() if key not in where}, dict.fromkeys(where, "_")
+    )
+    args = {**said, **{key: args[key] for key in where}}
     try:
         runtime = runtime_for(db, connector, connection, call.playbook, call.now)
         if call.dry_run:

@@ -16,20 +16,20 @@ import io
 import zipfile
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..automation import connector_actions as store
+from ..automation import connector_logo, engine, graph
 from ..automation import connectors as files
-from ..automation import engine, graph
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Connection, Connector, Playbook, PlaybookVersion
 from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_RUN, CONNECTORS_MANAGE
-from ..core.security import Principal, now_iso, require
+from ..core.security import Principal, now_iso, reader_principal, require
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
@@ -48,10 +48,21 @@ class ConnectionIn(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     # Write-only. A secret left out keeps what is stored; an empty one removes it.
     secrets: dict[str, str | None] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class InstanceIn(BaseModel):
+    """An instance made under its connector: the connector is in the address."""
+
+    name: str = Field(min_length=1, max_length=80)
+    config: dict[str, Any] = Field(default_factory=dict)
+    secrets: dict[str, str | None] = Field(default_factory=dict)
+    enabled: bool = True
 
 
 class ConnectionPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
+    enabled: bool | None = None
     config: dict[str, Any] | None = None
     secrets: dict[str, str | None] | None = None
 
@@ -93,14 +104,22 @@ def _users_of(db: OrmSession, connector_id: str, connection: Connection | None =
 
 def _connector_out(db: OrmSession, row: Connector, *, source: bool = False) -> dict[str, Any]:
     connector = store.parsed(row)
-    count = db.scalar(select(func.count()).select_from(Connection).where(Connection.connector_id == row.id)) or 0
+    instances = db.execute(select(Connection.enabled).where(Connection.connector_id == row.id)).all()
+    on = sum(1 for (enabled,) in instances if enabled)
     out: dict[str, Any] = {
         "id": row.id,
         "name": row.name,
         "version": row.version,
         "builtin": bool(row.builtin),
-        "connections": count,
+        # ``connections`` is the name 4.x gave to the count of instances.
+        "connections": len(instances),
+        "instances": len(instances),
+        "instancesOn": on,
+        # Its commands are offered in the editor and the War Room when one instance is on.
+        "enabled": on > 0,
         "readable": connector is not None,
+        # Where its logo is served from, or null: a connector of no product has none.
+        "logo": store.logo_path(row),
         "updatedAt": row.updated_at,
         "updatedBy": row.updated_by,
     }
@@ -109,6 +128,7 @@ def _connector_out(db: OrmSession, row: Connector, *, source: bool = False) -> d
         out["secrets"] = store.secret_names(connector)
     if source:
         out["source"] = row.source
+        out["readme"] = row.readme or ""
         out["usedBy"] = _users_of(db, row.id)
     return out
 
@@ -121,6 +141,7 @@ def _connection_out(db: OrmSession, row: Connection, *, full: bool) -> dict[str,
         "name": row.name,
         "connector": row.connector_id,
         "connectorName": connector_row.name if connector_row else row.connector_id,
+        "enabled": bool(row.enabled),
     }
     if not full:
         return out
@@ -241,6 +262,10 @@ def connector_samples(_caller: Principal = Depends(manager_principal)) -> Respon
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(store.SEED_DIR.glob("*.yml")):
             archive.writestr(path.name, path.read_text(encoding="utf-8"))
+        # A connector kept as a package goes as its folder.
+        for folder in sorted(path.parent for path in store.SEED_DIR.glob("*/connector.yml")):
+            for path in sorted(item for item in folder.iterdir() if item.is_file()):
+                archive.writestr(f"{folder.name}/{path.name}", path.read_bytes())
     return Response(
         content=buffer.getvalue(),
         media_type="application/zip",
@@ -280,6 +305,74 @@ def get_connector(
     if row is None:
         raise HTTPException(status_code=404, detail="Connector not found")
     return _connector_out(db, row, source=True)
+
+
+@router.get("/connectors/{connector_id}/logo")
+def connector_logo_image(
+    connector_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    """The logo of a connector, for whoever reads incidents: an image and nothing else."""
+    row = db.get(Connector, connector_id)
+    if row is None or not row.logo or row.logo_type not in connector_logo.TYPES:
+        raise HTTPException(status_code=404, detail="This connector has no logo")
+    return Response(
+        content=bytes(row.logo),
+        media_type=row.logo_type,
+        headers={
+            # Its address changes with it (``?v=``): it may be kept. An SVG opened on its own runs nothing.
+            "Cache-Control": "private, max-age=86400",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": f'inline; filename="{row.id}-logo.{connector_logo.EXTENSIONS[row.logo_type]}"',
+        },
+    )
+
+
+@router.put("/connectors/{connector_id}/logo")
+async def set_connector_logo(
+    connector_id: str,
+    request: Request,
+    caller: Principal = Depends(manager_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Give a connector its logo: the body is the image, a PNG or an SVG of 256 KB at most. The SVG is
+    refused when it holds anything but a drawing."""
+    row = db.get(Connector, connector_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > connector_logo.MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"A logo is {connector_logo.MAX_BYTES // 1024} KB at most")
+    data = b""
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > connector_logo.MAX_BYTES:
+            raise HTTPException(status_code=413, detail=f"A logo is {connector_logo.MAX_BYTES // 1024} KB at most")
+    try:
+        row.logo, row.logo_type = connector_logo.clean(data)
+    except connector_logo.LogoError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+    row.updated_at, row.updated_by = now_iso(), caller.actor
+    audit.record(db, caller.actor, "connector.logo", f'Set the logo of the connector "{row.name}"', target=row.id)
+    db.commit()
+    return _connector_out(db, row)
+
+
+@router.delete("/connectors/{connector_id}/logo", status_code=status.HTTP_204_NO_CONTENT)
+def remove_connector_logo(
+    connector_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    row = db.get(Connector, connector_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    if row.logo:
+        row.logo, row.logo_type = None, ""
+        row.updated_at, row.updated_by = now_iso(), caller.actor
+        audit.record(
+            db, caller.actor, "connector.logo", f'Removed the logo of the connector "{row.name}"', target=row.id
+        )
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -329,6 +422,7 @@ def create_connection(
         name=name,
         connector_id=connector.id,
         config=_clean_config(connector, body.config),
+        enabled=body.enabled,
         created_at=now,
         created_by=caller.actor,
         updated_at=now,
@@ -367,6 +461,9 @@ def update_connection(
         changes.append(f'renamed from "{row.name}"')
         # Nodes name a connection by its id or by its name: one named by its old name must be chosen again.
         row.name = name
+    if body.enabled is not None and body.enabled != bool(row.enabled):
+        row.enabled = body.enabled
+        changes.append("turned on" if body.enabled else "turned off")
     if body.config is not None:
         before = store.host_of(connector, row.config or {})
         row.config = _clean_config(connector, body.config)
@@ -404,6 +501,39 @@ def delete_connection(
     db.delete(row)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --------------------------------------------------------------------------- #
+# Instances: the connections of one connector, under it                       #
+# --------------------------------------------------------------------------- #
+@router.get("/connectors/{connector_id}/instances")
+def list_instances(
+    connector_id: str, _caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """The instances of a connector, by name: where each sends, whether it is on, its last test."""
+    _connector(db, connector_id)
+    rows = db.scalars(
+        select(Connection).where(Connection.connector_id == connector_id).order_by(func.lower(Connection.name))
+    ).all()
+    return {"instances": [_connection_out(db, row, full=True) for row in rows]}
+
+
+@router.post("/connectors/{connector_id}/instances", status_code=status.HTTP_201_CREATED)
+def create_instance(
+    connector_id: str,
+    body: InstanceIn,
+    caller: Principal = Depends(manager_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Add an instance to a connector. It is the connection ``POST /connections`` makes; an instance is
+    changed, tested and deleted through ``/connections/{id}``."""
+    return create_connection(
+        ConnectionIn(
+            name=body.name, connector=connector_id, config=body.config, secrets=body.secrets, enabled=body.enabled
+        ),
+        caller,
+        db,
+    )
 
 
 @router.post("/connections/{connection_id}/test")

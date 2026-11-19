@@ -27,6 +27,7 @@ header that carries a credential, never a secret.
 from __future__ import annotations
 
 import http.client
+import imaplib
 import ipaddress
 import json as jsonlib
 import os
@@ -394,6 +395,36 @@ def request(
 # --------------------------------------------------------------------------- #
 # E-mail                                                                      #
 # --------------------------------------------------------------------------- #
+# What a mail server answers that its callers tell apart, named here so that no other module
+# imports a network library.
+IMAP_ERROR = imaplib.IMAP4.error
+SMTP_AUTH_ERROR = smtplib.SMTPAuthenticationError
+SMTP_RECIPIENTS_REFUSED = smtplib.SMTPRecipientsRefused
+SMTP_ERROR = smtplib.SMTPException
+
+
+def imap_client(host: str, port: int, security: str, ca_pem: str | None = None, timeout: float = 30):
+    """A connection to an IMAP server, encrypted as asked (``tls``, ``starttls`` or ``none``) and not
+    logged in yet. The server is the one written in an instance of the Mail connector: it is
+    reached wherever it is. Raises what ``imaplib`` and ``ssl`` raise."""
+    context = _context(ca_pem or None)
+    if security == "tls":
+        return imaplib.IMAP4_SSL(host, port, ssl_context=context, timeout=timeout)
+    client = imaplib.IMAP4(host, port, timeout=timeout)
+    if security == "starttls":
+        client.starttls(ssl_context=context)
+    return client
+
+
+def smtp_client(host: str, port: int, security: str, ca_pem: str | None = None, timeout: float = 30):
+    """A connection to an SMTP server (``starttls``, ``tls`` or ``none``), to be used in a ``with``
+    block; with ``starttls`` the caller starts it. Raises what ``smtplib`` and ``ssl`` raise."""
+    context = _context(ca_pem or None)
+    if security == "tls":
+        return smtplib.SMTP_SSL(host, port, timeout=timeout, context=context), context
+    return smtplib.SMTP(host, port, timeout=timeout), context
+
+
 def send_mail(
     server: dict[str, Any],
     *,

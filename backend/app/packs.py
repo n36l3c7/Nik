@@ -52,7 +52,7 @@ from . import fields as registry
 from . import incident_types as types
 from . import lists as named_lists
 from . import mapping, preprocess
-from .automation import catalog, connector_actions, graph, scripts
+from .automation import catalog, connector_actions, connector_logo, graph, scripts
 from .automation import engine as automation_engine
 from .automation.connectors import ConnectorError
 from .automation.connectors import load as load_connector
@@ -105,7 +105,7 @@ LABELS = {
     "dashboards": "Dashboard",
 }
 YAML_KINDS = frozenset({"connectors", "scripts"})
-NIK_VERSION = (5, 0, 1)
+NIK_VERSION = (5, 1, 0)
 
 
 class PackError(ValueError):
@@ -120,6 +120,8 @@ class Item:
     kind: str
     name: str
     data: Any  # the text of a connector; the parsed file of anything else
+    # What a connector comes with beside its file: {"logo": bytes, "readme": str}.
+    extras: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -223,12 +225,30 @@ def read(data: bytes) -> PackFile:
         manifest = None
         items: list[Item] = []
         seen: set[tuple[str, str]] = set()
+        # A connector kept as a folder: connectors/<id>/connector.yml, with a logo and a README beside it.
+        beside: dict[str, dict[str, Any]] = {}
         for info in infos:
             path = _entry_path(info)
             if path is None:
                 continue
             if info.file_size > MAX_ITEM:
                 raise PackError(f"{path} is too large")
+            if len(path.parts) == 3 and path.parts[0] == "connectors":
+                folder, name = path.parts[1], path.parts[2]
+                if name in ("connector.yml", "connector.yaml"):
+                    text = _parse("connectors", path, archive.read(info))
+                    found = _name_of("connectors", text, folder)
+                    if ("connectors", found.lower()) in seen:
+                        raise PackError(f'The pack holds the connector "{found}" twice')
+                    seen.add(("connectors", found.lower()))
+                    items.append(Item("connectors", found, text, beside.setdefault(folder, {})))
+                elif connector_logo.by_name(name):
+                    beside.setdefault(folder, {})["logo"] = archive.read(info)
+                elif name.lower() == "readme.md":
+                    beside.setdefault(folder, {})["readme"] = _parse("connectors", path, archive.read(info))
+                else:
+                    raise PackError(f'The pack holds something Nik does not know: "{path}"')
+                continue
             if len(path.parts) == 1:
                 if path.name in ("pack.yml", "pack.yaml"):
                     try:
@@ -252,6 +272,12 @@ def read(data: bytes) -> PackFile:
             items.append(Item(kind, name, parsed))
     if manifest is None:
         raise PackError("This is not a content pack: it has no pack.yml")
+    for item in items:
+        if item.extras.get("logo"):
+            try:
+                connector_logo.clean(item.extras["logo"])
+            except connector_logo.LogoError as error:
+                raise PackError(f'The logo of the connector "{item.name}": {error.message}') from None
     items.sort(key=lambda item: (KINDS.index(item.kind), item.name.lower()))
     return PackFile(manifest, items)
 
@@ -302,11 +328,11 @@ def write(manifest: dict[str, Any], items: list[Item]) -> bytes:
     shown = {key: value for key, value in clean_manifest(manifest).items() if value not in ("", [], None)}
     with zipfile.ZipFile(held, "w", zipfile.ZIP_DEFLATED) as archive:
 
-        def put(path: str, text: str) -> None:
+        def put(path: str, text: str | bytes) -> None:
             info = zipfile.ZipInfo(path, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
-            archive.writestr(info, text.encode("utf-8"))
+            archive.writestr(info, text if isinstance(text, bytes) else text.encode("utf-8"))
 
         put("pack.yml", yaml.safe_dump(shown, sort_keys=False, allow_unicode=True))
         used: set[str] = set()
@@ -318,6 +344,16 @@ def write(manifest: dict[str, Any], items: list[Item]) -> bytes:
             while f"{item.kind}/{stem}".lower() in used:
                 stem, counter = f"{base}-{counter}", counter + 1
             used.add(f"{item.kind}/{stem}".lower())
+            logo, readme = item.extras.get("logo"), item.extras.get("readme")
+            if item.kind == "connectors" and (logo or readme):
+                # With what it comes with, a connector is a folder.
+                put(f"connectors/{stem}/connector.yml", _text(item.kind, item.data))
+                if logo:
+                    cleaned, kind = connector_logo.clean(logo)
+                    put(f"connectors/{stem}/logo.{connector_logo.EXTENSIONS[kind]}", cleaned)
+                if readme:
+                    put(f"connectors/{stem}/README.md", str(readme))
+                continue
             put(f"{item.kind}/{stem}.{'yml' if item.kind in YAML_KINDS else 'json'}", _text(item.kind, item.data))
     return held.getvalue()
 
@@ -584,7 +620,14 @@ def export(
         data = current(db, kind, name, with_items=list_items)
         if data is None:
             raise PackError(f'There is no {LABELS.get(kind, kind).lower()} "{name}" to put in a pack', 404)
-        items.append(Item(kind, _name_of(kind, data, name), data))
+        extras: dict[str, Any] = {}
+        if kind == "connectors":
+            row = db.get(Connector, name)
+            if row is not None and row.logo:
+                extras["logo"] = bytes(row.logo)
+            if row is not None and row.readme:
+                extras["readme"] = row.readme
+        items.append(Item(kind, _name_of(kind, data, name), data, extras))
     if not items:
         raise PackError("A pack holds one item at least")
     return write(manifest, items)
@@ -840,7 +883,7 @@ def plan(db: OrmSession, pack: PackFile) -> dict[str, Any]:
 def _apply_item(db: OrmSession, pack: PackFile, item: Item, actor: str) -> None:
     kind, name, data = item.kind, item.name, item.data
     if kind == "connectors":
-        connector_actions.install(db, data, actor)
+        connector_actions.install(db, data, actor, extras=item.extras or None)
     elif kind == "scripts":
         cleaned = scripts.clean(data)
         row = _script(db, name)

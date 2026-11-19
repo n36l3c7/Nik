@@ -65,7 +65,11 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
     signal,
   }
 
-  if (body !== undefined) {
+  if (body instanceof Blob) {
+    // A file sent as it is (the logo of a connector): its own type, its own bytes.
+    options.headers['Content-Type'] = contentType ?? (body.type || 'application/octet-stream')
+    options.body = body
+  } else if (body !== undefined) {
     options.headers['Content-Type'] = contentType ?? 'application/json'
     options.body = JSON.stringify(body)
   }

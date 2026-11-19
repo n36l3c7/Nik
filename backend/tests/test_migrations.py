@@ -791,3 +791,30 @@ def test_migration_0035_numbers_the_incidents_and_rewrites_stored_queries(tmp_pa
         assert "sequences" not in inspector.get_table_names()
         assert {c["name"] for c in inspector.get_columns("incidents")} == {"id", "name", "created_at"}
         assert conn.execute(sa.text("SELECT COUNT(*) FROM incidents")).scalar() == 4
+
+
+def test_migration_0036_leaves_every_connection_on(tmp_path, monkeypatch):
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE connections (id VARCHAR(32) PRIMARY KEY, name VARCHAR(80))"))
+        conn.execute(sa.text("CREATE TABLE connectors (id VARCHAR(41) PRIMARY KEY, name VARCHAR(80))"))
+        conn.execute(sa.text("INSERT INTO connectors (id, name) VALUES ('acme', 'Acme')"))
+        conn.execute(sa.text("INSERT INTO connections (id, name) VALUES ('c1', 'Desk'), ('c2', 'Desk test')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0035_incident_numbers")
+    command.upgrade(cfg, "0036_instances")
+    with engine.connect() as conn:
+        assert [bool(row[0]) for row in conn.execute(sa.text("SELECT enabled FROM connections"))] == [True, True]
+        # A connector there was has no logo and an empty README.
+        assert conn.execute(sa.text("SELECT logo, logo_type, readme FROM connectors")).one() == (None, "", "")
+    command.stamp(cfg, "0035_incident_numbers")
+    command.upgrade(cfg, "0036_instances")  # again: nothing to do
+    command.downgrade(cfg, "0035_incident_numbers")
+    with engine.connect() as conn:
+        assert {c["name"] for c in sa.inspect(conn).get_columns("connections")} == {"id", "name"}
+        assert {c["name"] for c in sa.inspect(conn).get_columns("connectors")} == {"id", "name"}
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM connections")).scalar() == 2

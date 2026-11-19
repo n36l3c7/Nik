@@ -1,34 +1,103 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Download, FileCode2, Plug, Trash2, Upload } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Download, FileCode2, ImageUp, Pencil, Plug, Plus, Trash2, Upload, Zap } from 'lucide-react'
 import { api, apiUrl } from '../../../services/api.js'
-import { authOf, problemLines } from '../../../domain/automation/connections.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import {
+  CONNECTOR_FILTERS,
+  authOf,
+  capabilities,
+  connectorRows,
+  instancesText,
+  problemLines,
+} from '../../../domain/automation/connections.js'
+import { formatRelative } from '../../../lib/time.js'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
+import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import InstancePane from './InstancePane.jsx'
 
 /*
  * Automation → Connectors (the role Connectors, or an admin).
  *
- * A connector is one YAML file that says how to talk to a product: what a
- * connection needs and the commands there are. Each command becomes a node
- * of the canvas. Adding a file checks it first: what is wrong is listed with
- * the line it is on, and nothing is installed until the file is right.
+ * One page for the connectors and their instances. A connector is a file that
+ * says how to talk to a product: what an instance needs and the commands there
+ * are. An instance is one system of that product: an address and credentials.
+ * A connector may have several, each turned on and off on its own; it is
+ * enabled, and its commands are offered to playbooks and the War Room, when
+ * one of them is on.
  *
- * The connectors Nik ships can be downloaded as the files they are, to read
- * or to start a new one from.
+ * Adding a file checks it first: what is wrong is listed with the line it is
+ * on, and nothing is installed until the file is right.
  */
+
+function Switch({ checked, onChange, label, disabled = false }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={checked ? 'On: click to turn it off' : 'Off: click to turn it on'}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={[
+        'relative h-4 w-8 shrink-0 border transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        'disabled:cursor-not-allowed disabled:opacity-60',
+        checked ? 'border-accent bg-accent-soft' : 'border-line bg-sunken',
+      ].join(' ')}
+    >
+      <span
+        aria-hidden="true"
+        className={[
+          'absolute top-px h-3 w-3 transition-all',
+          checked ? 'left-[17px] bg-accent' : 'left-px bg-fg-subtle',
+        ].join(' ')}
+      />
+    </button>
+  )
+}
+
+/** The place of a connector's logo: one size for all, empty until the connector brings one. */
+function LogoSlot({ connector }) {
+  if (connector.logo) {
+    return <img src={apiUrl(connector.logo)} alt="" className="h-10 w-10 shrink-0 object-contain" />
+  }
+  return <span aria-hidden="true" className="h-10 w-10 shrink-0 border border-dashed border-line" />
+}
+
+function LastTest({ test }) {
+  if (!test) return <span className="text-fg-muted">never tested</span>
+  return (
+    <span className="flex items-center gap-1.5">
+      <Badge color={test.ok ? 'emerald' : 'red'}>{test.ok ? 'ok' : test.status || 'failed'}</Badge>
+      <span className="text-fg-muted">{formatRelative(test.at)}</span>
+    </span>
+  )
+}
 
 export default function ConnectorsSection() {
   const [connectors, setConnectors] = useState(null)
+  const [instances, setInstances] = useState(null)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [upload, setUpload] = useState(null) // { fileName, source, problems, connector }
   const [shown, setShown] = useState(null) // a connector with its source
   const [removing, setRemoving] = useState(null)
+  const [editing, setEditing] = useState(null) // { connector, instance: object | null }
+  const [deleting, setDeleting] = useState(null)
+  const [testing, setTesting] = useState(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef(null)
+  const logoInput = useRef(null)
+  const [logoError, setLogoError] = useState(null)
+  const menu = useObjectMenu()
 
   const load = useCallback(async () => {
     try {
-      setConnectors((await api.get('/automation/connectors')).connectors)
+      const [first, second] = await Promise.all([api.get('/automation/connectors'), api.get('/automation/connections')])
+      setConnectors(first.connectors)
+      setInstances(second.connections)
       // An error on the page is left: it is about what was just asked, and reading the list again is part of it.
     } catch (failure) {
       setError(failure.message)
@@ -38,6 +107,17 @@ export default function ConnectorsSection() {
     load()
   }, [load])
 
+  const { rows, counts } = useMemo(
+    () => connectorRows(connectors, instances, { query, filter }),
+    [connectors, instances, query, filter],
+  )
+
+  const said = (message) => {
+    setError(null)
+    setNotice(message)
+  }
+
+  /* ---- connector files ---- */
   const check = async (file) => {
     setNotice(null)
     setError(null)
@@ -56,8 +136,8 @@ export default function ConnectorsSection() {
     try {
       const made = await api.post('/automation/connectors', { source: upload.source })
       setUpload(null)
-      setNotice(
-        `${made.name} is installed: version ${made.version}, ${made.commands.length} commands. Make a connection to use it.`,
+      said(
+        `${made.name} is installed: version ${made.version}, ${made.commands.length} commands. Add an instance to use it.`,
       )
       load()
     } catch (failure) {
@@ -69,7 +149,22 @@ export default function ConnectorsSection() {
     }
   }
 
+  /** Give the connector the image of a file as its logo, or take its logo away (`file` null). */
+  const setLogo = async (connector, file) => {
+    setLogoError(null)
+    const path = `/automation/connectors/${encodeURIComponent(connector.id)}/logo`
+    try {
+      if (file) await api.put(path, file)
+      else await api.del(path)
+      setShown(await api.get(`/automation/connectors/${encodeURIComponent(connector.id)}`))
+      load()
+    } catch (failure) {
+      setLogoError(failure.message)
+    }
+  }
+
   const open = async (id) => {
+    setLogoError(null)
     setError(null)
     try {
       setShown(await api.get(`/automation/connectors/${encodeURIComponent(id)}`))
@@ -83,9 +178,10 @@ export default function ConnectorsSection() {
     setError(null)
     try {
       await api.del(`/automation/connectors/${encodeURIComponent(removing.id)}`)
-      setNotice(`${removing.name} was removed, with its connections.`)
+      said(`${removing.name} was removed, with its instances.`)
       setRemoving(null)
       setShown(null)
+      setEditing(null)
       load()
     } catch (failure) {
       setRemoving(null)
@@ -95,132 +191,300 @@ export default function ConnectorsSection() {
     }
   }
 
+  /* ---- instances ---- */
+  const toggle = async (instance, enabled) => {
+    // Shown at once; the list read again says what the server kept.
+    setInstances((current) => current.map((item) => (item.id === instance.id ? { ...item, enabled } : item)))
+    try {
+      await api.put(`/automation/connections/${encodeURIComponent(instance.id)}`, { enabled })
+      said(`${instance.name} is ${enabled ? 'on' : 'off'}.`)
+    } catch (failure) {
+      setError(failure.message)
+    }
+    load()
+  }
+
+  const test = async (instance) => {
+    setTesting(instance.id)
+    setNotice(null)
+    setError(null)
+    try {
+      const result = await api.post(`/automation/connections/${encodeURIComponent(instance.id)}/test`)
+      if (result.ok) setNotice(`${instance.name}: ${result.message}.`)
+      else setError(`${instance.name}: ${result.message}`)
+      load()
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setTesting(null)
+    }
+  }
+
+  const removeInstance = async () => {
+    setError(null)
+    setNotice(null)
+    try {
+      await api.del(`/automation/connections/${encodeURIComponent(deleting.id)}`)
+      said(`${deleting.name} was deleted.`)
+      setEditing(null)
+      load()
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
   const lines = problemLines(upload?.problems)
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Plug className="h-5 w-5 text-accent" aria-hidden="true" />
-            <h2 className="text-base font-semibold text-fg">Connectors</h2>
+    <section className="flex flex-col gap-0 lg:flex-row lg:items-start">
+      <div className="min-w-0 flex-1 space-y-5 lg:pr-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Plug className="h-5 w-5 text-accent" aria-hidden="true" />
+              <h2 className="text-base font-semibold text-fg">Connectors</h2>
+            </div>
+            <p className="mt-1 max-w-prose text-sm text-fg-muted">
+              A connector says how to talk to a product; an instance is one system of it, with its address and
+              credentials. A connector is enabled, and its commands are offered to playbooks, when one of its instances
+              is on.
+            </p>
           </div>
-          <p className="mt-1 max-w-prose text-sm text-fg-muted">
-            A connector is a file that says how to talk to a product: what a connection needs, and commands. Each
-            command is a node of the canvas. The file is YAML and holds no code; its format is in the documentation,
-            under Automation.
-          </p>
+          <div className="flex flex-wrap gap-2">
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".yml,.yaml,text/yaml,application/x-yaml"
+              className="hidden"
+              aria-label="Connector file to add"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) check(file)
+              }}
+            />
+            <a
+              href={apiUrl('/automation/connectors/samples')}
+              className="inline-flex h-9 items-center gap-2 border border-line px-4 text-sm font-medium text-fg hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download the samples
+            </a>
+            <Button icon={Upload} onClick={() => fileInput.current?.click()}>
+              Add a connector file
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".yml,.yaml,text/yaml,application/x-yaml"
-            className="hidden"
-            aria-label="Connector file to add"
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (file) check(file)
-            }}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            label="Find a connector"
+            placeholder="Find a connector or an instance"
+            className="w-72 max-w-full"
           />
-          <a
-            href={apiUrl('/automation/connectors/samples')}
-            className="inline-flex h-9 items-center gap-2 border border-line px-4 text-sm font-medium text-fg hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            Download the samples
-          </a>
-          <Button icon={Upload} onClick={() => fileInput.current?.click()}>
-            Add a connector file
-          </Button>
+          <div role="group" aria-label="Which connectors" className="flex flex-wrap gap-1">
+            {CONNECTOR_FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={filter === item.id}
+                onClick={() => setFilter(item.id)}
+                className={[
+                  'border px-2.5 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                  filter === item.id ? 'border-accent bg-accent text-canvas' : 'border-line text-fg hover:bg-raised',
+                ].join(' ')}
+              >
+                {item.label} · {counts[item.id]}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <p role="alert" className="max-w-3xl border border-high-line bg-high-soft px-3 py-2 text-sm text-high">
-          {error}
-        </p>
-      )}
-      {notice && (
-        <p
-          role="status"
-          className="max-w-3xl border border-accent-strong bg-accent-soft px-3 py-2 text-sm text-accent-fg"
-        >
-          {notice}
-        </p>
-      )}
-      {!connectors && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading…
-        </p>
-      )}
+        {error && (
+          <p role="alert" className="max-w-3xl border border-high-line bg-high-soft px-3 py-2 text-sm text-high">
+            {error}
+          </p>
+        )}
+        {notice && (
+          <p
+            role="status"
+            className="max-w-3xl border border-accent-strong bg-accent-soft px-3 py-2 text-sm text-accent-fg"
+          >
+            {notice}
+          </p>
+        )}
+        {!connectors && !error && (
+          <p role="status" className="font-mono text-sm text-fg-muted">
+            Loading…
+          </p>
+        )}
+        {connectors && rows.length === 0 && (
+          <p className="text-sm text-fg-muted">
+            {connectors.length === 0 ? 'No connector is installed.' : 'No connector matches.'}
+          </p>
+        )}
 
-      {connectors && (
-        <div className="max-w-5xl overflow-x-auto border border-line">
-          <table className="w-full min-w-[640px] border-collapse text-left text-xs">
-            <caption className="sr-only">Installed connectors</caption>
-            <thead className="bg-panel font-mono text-fg-muted">
-              <tr>
-                {['Connector', 'Version', 'Commands', 'Connections', ''].map((heading, index) => (
-                  <th
-                    key={index}
-                    scope="col"
-                    className="whitespace-nowrap border-b border-line px-3 py-1.5 font-normal"
-                  >
-                    {heading || <span className="sr-only">State</span>}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {connectors.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-4 text-sm text-fg-muted">
-                    No connector is installed.
-                  </td>
-                </tr>
-              )}
-              {connectors.map((connector) => (
-                <tr key={connector.id} className="hover:bg-raised/40">
-                  <th scope="row" className="border-b border-line-soft px-3 py-2 align-top font-normal">
+        <ul aria-label="Connectors" className="flex max-w-5xl flex-col gap-2.5">
+          {rows.map((connector) => (
+            <li
+              key={connector.id}
+              className={`border ${editing?.connector.id === connector.id ? 'border-accent bg-raised/40' : 'border-line'}`}
+              onContextMenu={(event) =>
+                menu(event, {
+                  title: connector.name,
+                  actions: [
+                    { label: 'Its commands and its file', icon: FileCode2, onSelect: () => open(connector.id) },
+                    connector.readable && {
+                      label: 'Add instance',
+                      icon: Plus,
+                      onSelect: () => setEditing({ connector, instance: null }),
+                    },
+                  ],
+                  copy: [{ label: 'Copy the id', text: connector.id }],
+                })
+              }
+            >
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3">
+                <LogoSlot connector={connector} />
+                <div className="min-w-0 flex-1 basis-64">
+                  <p className="flex flex-wrap items-baseline gap-x-2.5">
                     <button
                       type="button"
                       onClick={() => open(connector.id)}
-                      className="text-left text-sm font-medium text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      title="Its commands and its file"
+                      className="text-left text-[15px] font-semibold text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                       {connector.name}
                     </button>
-                    <span className="ml-2 font-mono text-fg-subtle">{connector.id}</span>
-                    {connector.description && (
-                      <span className="block max-w-md text-fg-muted">{connector.description}</span>
-                    )}
-                  </th>
-                  <td className="border-b border-line-soft px-3 py-2 align-top font-mono">{connector.version}</td>
-                  <td className="border-b border-line-soft px-3 py-2 align-top font-mono">
-                    {connector.commands?.length ?? '—'}
-                  </td>
-                  <td className="border-b border-line-soft px-3 py-2 align-top font-mono">{connector.connections}</td>
-                  <td className="border-b border-line-soft px-3 py-2 align-top">
-                    <span className="flex flex-wrap gap-1">
-                      {connector.builtin && <Badge color="cyan">shipped with Nik</Badge>}
-                      {!connector.readable && <Badge color="red">cannot be read</Badge>}
-                      {connector.readable && !connector.verified && (
-                        <Badge
-                          color="amber"
-                          title="Written from the vendor’s documentation: nobody ran it against a real system yet"
-                        >
-                          not verified
-                        </Badge>
-                      )}
-                      {connector.connections === 0 && <Badge>no connection</Badge>}
+                    <span className="font-mono text-[11px] text-fg-muted">
+                      v{connector.version}
+                      {capabilities(connector) ? ` · ${capabilities(connector)}` : ''}
                     </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </p>
+                  {connector.description && <p className="text-xs text-fg-muted">{connector.description}</p>}
+                  <p className="mt-1 flex flex-wrap gap-1 empty:hidden">
+                    {connector.builtin && <Badge color="cyan">shipped with Nik</Badge>}
+                    {!connector.readable && <Badge color="red">cannot be read</Badge>}
+                    {connector.readable && !connector.verified && (
+                      <Badge
+                        color="amber"
+                        title="Written from the vendor’s documentation: nobody ran it against a real system yet"
+                      >
+                        not verified
+                      </Badge>
+                    )}
+                  </p>
+                </div>
+                <span className={`font-mono text-xs ${connector.enabled ? 'text-accent-fg' : 'text-fg-muted'}`}>
+                  {instancesText(connector.instances)}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={Plus}
+                  disabled={!connector.readable}
+                  aria-label={`Add an instance of ${connector.name}`}
+                  onClick={() => setEditing({ connector, instance: null })}
+                >
+                  Add instance
+                </Button>
+              </div>
+              {connector.instances.length > 0 && (
+                <ul aria-label={`Instances of ${connector.name}`}>
+                  {connector.instances.map((instance) => (
+                    <li
+                      key={instance.id}
+                      className={[
+                        'flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft py-2 pl-3.5 pr-3 text-xs sm:pl-[68px]',
+                        editing?.instance?.id === instance.id ? 'bg-accent-soft/40' : '',
+                      ].join(' ')}
+                      onContextMenu={(event) =>
+                        menu(event, {
+                          title: instance.name,
+                          actions: [
+                            {
+                              label: 'Edit',
+                              icon: Pencil,
+                              onSelect: () => setEditing({ connector, instance }),
+                            },
+                            { label: 'Test the connection', icon: Zap, onSelect: () => test(instance) },
+                            {
+                              label: instance.enabled ? 'Turn off' : 'Turn on',
+                              onSelect: () => toggle(instance, !instance.enabled),
+                            },
+                          ],
+                          copy: [
+                            { label: 'Copy the name', text: instance.name },
+                            { label: 'Copy the host', text: instance.host ?? '' },
+                          ],
+                          danger: [{ label: 'Delete…', icon: Trash2, onSelect: () => setDeleting(instance) }],
+                        })
+                      }
+                    >
+                      <Switch
+                        checked={instance.enabled}
+                        label={`${instance.name} is ${instance.enabled ? 'on' : 'off'}`}
+                        onChange={(next) => toggle(instance, next)}
+                      />
+                      <span
+                        className={`w-48 max-w-full truncate text-sm font-medium ${instance.enabled ? 'text-fg' : 'text-fg-muted'}`}
+                      >
+                        {instance.name}
+                      </span>
+                      <span className="min-w-0 flex-1 basis-40 truncate font-mono text-[11px] text-fg-muted">
+                        {instance.host ?? '—'}
+                      </span>
+                      <LastTest test={instance.lastTest} />
+                      <span className="flex gap-1">
+                        <Button
+                          variant="secondary"
+                          size="xs"
+                          icon={Zap}
+                          disabled={testing !== null}
+                          aria-label={`Test the connection ${instance.name}`}
+                          onClick={() => test(instance)}
+                        >
+                          {testing === instance.id ? 'Testing…' : 'Test'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          icon={Pencil}
+                          aria-label={`Edit ${instance.name}`}
+                          onClick={() => setEditing({ connector, instance })}
+                        />
+                      </span>
+                      {instance.lastTest && !instance.lastTest.ok && (
+                        <span className="basis-full text-high-fg sm:pl-11">{instance.lastTest.message}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {editing && (
+        <InstancePane
+          key={editing.instance?.id ?? `new-${editing.connector.id}`}
+          connector={editing.connector}
+          instance={editing.instance}
+          testing={testing !== null}
+          onClose={() => setEditing(null)}
+          onTest={test}
+          onDelete={setDeleting}
+          onSaved={(saved) => {
+            setEditing(null)
+            said(`${saved.name} is saved. Test it to see that ${saved.connectorName} answers.`)
+            load()
+          }}
+        />
       )}
 
       <Modal
@@ -266,7 +530,7 @@ export default function ConnectorsSection() {
             <p className="text-fg">
               <span className="font-semibold">{upload.connector.name}</span>{' '}
               <span className="font-mono text-fg-muted">({upload.connector.id})</span>, version{' '}
-              {upload.connector.version}: {upload.connector.commands.length} commands. A connection needs{' '}
+              {upload.connector.version}: {upload.connector.commands.length} commands. An instance needs{' '}
               {authOf(upload.connector) || 'no credentials'}.
             </p>
             <ul className="flex flex-wrap gap-1">
@@ -304,9 +568,54 @@ export default function ConnectorsSection() {
           <div className="flex flex-col gap-3 text-sm">
             <p className="text-fg-muted">
               Version {shown.version}
-              {shown.apiVersion ? ` · written against ${shown.apiVersion}` : ''} · {shown.connections} connections
+              {shown.apiVersion ? ` · written against ${shown.apiVersion}` : ''} · {shown.instances}{' '}
+              {shown.instances === 1 ? 'instance' : 'instances'}
               {shown.usedBy?.length ? ` · used by ${shown.usedBy.join(', ')}` : ' · no playbook uses it'}
             </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <LogoSlot connector={shown} />
+              <input
+                ref={logoInput}
+                type="file"
+                accept=".svg,.png,image/svg+xml,image/png"
+                className="hidden"
+                aria-label={`Logo of ${shown.name}`}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) setLogo(shown, file)
+                }}
+              />
+              <Button variant="secondary" size="sm" icon={ImageUp} onClick={() => logoInput.current?.click()}>
+                {shown.logo ? 'Change the logo' : 'Set a logo'}
+              </Button>
+              {shown.logo && (
+                <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setLogo(shown, null)}>
+                  Remove the logo
+                </Button>
+              )}
+              <span className="basis-full text-xs text-fg-muted sm:basis-auto">
+                A PNG or an SVG, 256 KB at most. It marks the connector here and the incidents it brings in.
+              </span>
+              {logoError && (
+                <span role="alert" className="basis-full text-xs text-high">
+                  {logoError}
+                </span>
+              )}
+            </div>
+            {shown.readme && (
+              <details open>
+                <summary className="cursor-pointer text-sm text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                  README
+                </summary>
+                <pre
+                  aria-label={`README of ${shown.name}`}
+                  className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap border border-line bg-sunken p-3 text-xs leading-relaxed text-fg"
+                >
+                  {shown.readme}
+                </pre>
+              </details>
+            )}
             {shown.commands && (
               <div className="overflow-x-auto border border-line">
                 <table className="w-full min-w-[520px] border-collapse text-left text-xs">
@@ -374,9 +683,30 @@ export default function ConnectorsSection() {
         }
       >
         <p className="text-sm text-fg">
-          <span className="font-semibold">{removing?.name}</span> goes with its connections and their credentials. A
+          <span className="font-semibold">{removing?.name}</span> goes with its instances and their credentials. A
           connector a playbook uses cannot be removed.
           {removing?.builtin ? ' It ships with Nik: it comes back when the server restarts.' : ''}
+        </p>
+      </Modal>
+
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Delete this instance?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={removeInstance}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">
+          <span className="font-semibold">{deleting?.name}</span> goes with its credentials. An instance a playbook uses
+          cannot be deleted; it can be turned off.
         </p>
       </Modal>
     </section>

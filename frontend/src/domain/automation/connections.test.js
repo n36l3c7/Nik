@@ -95,3 +95,47 @@ test('the problems of a file, line by line', () => {
   )
   assert.deepEqual(problemLines(null), [])
 })
+
+test('connectors are listed with their instances, and narrowed by words and by a filter', async () => {
+  const { capabilities, connectorRows, instancesText } = await import('./connections.js')
+  const connectors = [
+    { id: 'snow', name: 'ServiceNow', description: 'The service desk', commands: [1, 2, 3], fetch: {}, mirror: {} },
+    { id: 'jira', name: 'Jira Cloud', description: 'Issues', commands: [1] },
+    { id: 's1', name: 'SentinelOne', description: 'Endpoints', commands: [] },
+  ]
+  const instances = [
+    { id: 'b', connector: 'snow', name: 'test desk', host: 'acmetest.example', enabled: false },
+    { id: 'a', connector: 'snow', name: 'Production desk', host: 'acme.example', enabled: true },
+    { id: 'c', connector: 'jira', name: 'Board', host: 'acme.atlassian.example', enabled: false },
+  ]
+  assert.equal(capabilities(connectors[0]), '3 commands · fetch · mirror')
+  assert.equal(capabilities(connectors[1]), '1 command')
+  assert.equal(capabilities({ name: 'unreadable' }), '')
+
+  const { rows, counts } = connectorRows(connectors, instances)
+  assert.deepEqual(counts, { all: 3, enabled: 1, unused: 1 })
+  assert.deepEqual(
+    rows.map((row) => [row.id, row.enabled, row.instances.map((instance) => instance.name)]),
+    [
+      ['snow', true, ['Production desk', 'test desk']],
+      ['jira', false, ['Board']],
+      ['s1', false, []],
+    ],
+  )
+  assert.deepEqual(
+    rows.map((row) => instancesText(row.instances)),
+    ['2 instances · 1 on', '1 instance · off', 'not configured'],
+  )
+  assert.equal(instancesText([{ enabled: true }]), '1 instance · on')
+
+  const ids = (options) => connectorRows(connectors, instances, options).rows.map((row) => row.id)
+  assert.deepEqual(ids({ filter: 'enabled' }), ['snow'])
+  assert.deepEqual(ids({ filter: 'unused' }), ['s1'])
+  assert.deepEqual(ids({ query: 'desk' }), ['snow'])
+  assert.deepEqual(ids({ query: 'ATLASSIAN' }), ['jira']) // the host of an instance
+  assert.deepEqual(ids({ query: 'acme example' }), ['snow', 'jira'])
+  assert.deepEqual(ids({ query: 'desk', filter: 'unused' }), [])
+  // The counts of the filters do not follow what is typed.
+  assert.deepEqual(connectorRows(connectors, instances, { query: 'zzz' }).counts, { all: 3, enabled: 1, unused: 1 })
+  assert.deepEqual(connectorRows(null, null).rows, [])
+})

@@ -411,3 +411,54 @@ def test_what_nik_ships_is_listed_as_packs_and_reads_back_as_it_is(admin: TestCl
         db.commit()
         assert packs.register_builtin(db) == 0
         assert db.get(PackItem, ("scripts", "BusinessHours")).pack_id == "acme-soc"
+
+
+# --------------------------------------------------------------------------- #
+# A connector with what it comes with (5.1)                                   #
+# --------------------------------------------------------------------------- #
+def test_a_connector_travels_in_a_pack_as_a_folder_with_its_logo_and_readme(admin: TestClient):
+    from tests.test_connectors_api import SVG
+
+    def archive(files: dict[str, bytes]) -> bytes:
+        held = io.BytesIO()
+        with zipfile.ZipFile(held, "w") as out:
+            out.writestr("pack.yml", yaml.safe_dump(MANIFEST))
+            for path, data in files.items():
+                out.writestr(path, data)
+        return held.getvalue()
+
+    folder = {
+        "connectors/acme/connector.yml": ACME.encode(),
+        "connectors/acme/logo.svg": SVG,
+        "connectors/acme/README.md": b"# Acme\n",
+    }
+    pack = packs.read(archive(folder))
+    (item,) = pack.items
+    assert (item.kind, item.name, item.data) == ("connectors", "acme", ACME)
+    assert item.extras == {"logo": SVG, "readme": "# Acme\n"}
+    # Written again, it is a folder again; without what it comes with, a file as before.
+    again = packs.read(packs.write(pack.manifest, pack.items))
+    assert again.items[0].extras == item.extras
+    with zipfile.ZipFile(io.BytesIO(packs.write(pack.manifest, [packs.Item("connectors", "acme", ACME)]))) as plain:
+        assert plain.namelist() == ["pack.yml", "connectors/acme.yml"]
+
+    # A logo that is not a drawing, a stray file and the connector twice are refused as the file is read.
+    for files, why in (
+        ({**folder, "connectors/acme/logo.svg": SVG.replace(b"<rect", b"<script/><rect")}, "The logo of the connector"),
+        ({**folder, "connectors/acme/run.sh": b"#!/bin/sh"}, "does not know"),
+        ({**folder, "connectors/acme.yml": ACME.encode()}, "twice"),
+    ):
+        with pytest.raises(packs.PackError) as caught:
+            packs.read(archive(files))
+        assert why in caught.value.message, caught.value.message
+
+    with SessionLocal() as db:
+        packs.apply(db, pack, None, "admin")
+        db.commit()
+    shown = admin.get("/api/automation/connectors/acme").json()
+    assert shown["readme"] == "# Acme\n" and shown["logo"].startswith("/automation/connectors/acme/logo?v=")
+    assert admin.get("/api" + shown["logo"]).content == SVG
+    # Exported from here, the connector takes its logo and its README with it.
+    with SessionLocal() as db:
+        exported = packs.read(packs.export(db, MANIFEST, [("connectors", "acme")]))
+    assert exported.items[0].extras == {"logo": SVG, "readme": "# Acme\n"}

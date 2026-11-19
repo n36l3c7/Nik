@@ -2053,43 +2053,72 @@ test('a connector is added from its file, a connection is made, and its commands
   await add.getByRole('button', { name: 'Install' }).click()
   await expect(settings.getByRole('status')).toContainText('Acme Desk is installed: version 1, 2 commands.')
   const installed = settings
-    .getByRole('table', { name: 'Installed connectors' })
-    .getByRole('row')
+    .getByRole('list', { name: 'Connectors', exact: true })
+    .getByRole('listitem')
     .filter({ hasText: 'Acme Desk' })
-  await expect(installed).toContainText('no connection')
+    .first()
+  await expect(installed).toContainText('not configured')
   await expect(installed).toContainText('not verified')
+  // The filters count them, and the box finds one by its name.
+  const which = settings.getByRole('group', { name: 'Which connectors' })
+  await expect(which.getByRole('button', { name: /^Not configured/ })).toContainText(/· \d+$/)
+  await settings.getByLabel('Find a connector or an instance').fill('acme desk')
+  await expect(settings.getByRole('list', { name: 'Connectors', exact: true }).locator('> li')).toHaveCount(1)
   // Its commands and its file can be read.
-  await installed.getByRole('button', { name: 'Acme Desk' }).click()
+  await installed.getByRole('button', { name: 'Acme Desk', exact: true }).click()
   const shown = page.getByRole('dialog', { name: 'Acme Desk' })
   await expect(shown.getByRole('table', { name: 'Commands of Acme Desk' }).getByRole('row')).toHaveCount(3)
   await shown.getByText('The file', { exact: true }).click()
   await expect(shown.getByLabel('The file of Acme Desk')).toContainText('base_url: "{{ config.url }}"')
+  // It is given a logo: an image that is not a drawing is refused, a drawing marks the connector.
+  const svg = (inner) => ({
+    name: 'logo.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">${inner}</svg>`),
+  })
+  await shown.getByLabel('Logo of Acme Desk').setInputFiles(svg('<script>alert(1)</script>'))
+  await expect(shown.getByRole('alert')).toContainText('a drawing and nothing else')
+  await shown.getByLabel('Logo of Acme Desk').setInputFiles(svg('<rect width="8" height="8" fill="#246"/>'))
+  await expect(shown.getByRole('button', { name: 'Change the logo' })).toBeVisible()
   await shown.getByRole('button', { name: 'Close', exact: true }).last().click()
+  const logo = installed.locator('img').first()
+  await expect(logo).toHaveAttribute('src', /\/api\/automation\/connectors\/acme\/logo\?v=/)
+  expect(await logo.evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true)
 
-  // A connection: the form is the connector's; credentials are written and never shown again.
-  await sections.getByText('Connections').click()
-  await settings.getByRole('button', { name: 'New connection' }).click()
-  const form = page.getByRole('dialog', { name: 'New connection' })
-  await form.getByLabel('Connector').selectOption('acme')
-  await form.locator('#connection-name').fill('Acme test')
+  // An instance, under its connector: the form is the connector's; credentials are written and
+  // never shown again. There is no Connections section any more.
+  await expect(sections.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0)
+  await installed.getByRole('button', { name: 'Add an instance of Acme Desk' }).click()
+  const form = settings.getByRole('complementary', { name: 'New instance of Acme Desk' })
+  await form.locator('#instance-name').fill('Acme test')
   await form.getByLabel('Instance address').fill('desk.example.invalid')
   await expect(form.getByRole('button', { name: 'Create' })).toBeDisabled() // not an https:// address
   await form.getByLabel('Instance address').fill('https://desk.example.invalid/api')
   await form.getByLabel('User name').fill('svc')
   await form.getByLabel('Password').fill('s3cret-pass')
   await form.getByRole('button', { name: 'Create' }).click()
-  const row = settings.getByRole('table', { name: 'Connections' }).getByRole('row').filter({ hasText: 'Acme test' })
+  const row = installed
+    .getByRole('list', { name: 'Instances of Acme Desk' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme test' })
   await expect(row).toContainText('desk.example.invalid')
-  await expect(row).toContainText('not tested')
+  await expect(row).toContainText('never tested')
+  await expect(installed).toContainText('1 instance · on')
   await row.getByRole('button', { name: 'Edit Acme test' }).click()
-  const edit = page.getByRole('dialog', { name: 'Connection: Acme test' })
+  const edit = settings.getByRole('complementary', { name: 'Instance Acme test' })
   await expect(edit.getByLabel(/^Password/)).toHaveValue('')
   await expect(edit.getByLabel(/^Password/)).toHaveAttribute('placeholder', 'stored: type to replace it')
-  await edit.getByRole('button', { name: 'Cancel' }).click()
-  // The test reaches the host of the connection: this one does not exist, and the row says so.
+  await edit.getByRole('button', { name: 'Close the instance' }).click()
+  // Off and on again: the connector is enabled while one of its instances is on.
+  await row.getByRole('switch', { name: 'Acme test is on' }).click()
+  await expect(installed).toContainText('1 instance · off')
+  await row.getByRole('switch', { name: 'Acme test is off' }).click()
+  await expect(installed).toContainText('1 instance · on')
+  // The test reaches the host of the instance: this one does not exist, and the row says so.
   await row.getByRole('button', { name: 'Test the connection Acme test' }).click()
   await expect(settings.getByRole('alert')).toContainText('Acme test: ', { timeout: 30_000 })
   await expect(row).toContainText('failed')
+  await settings.getByLabel('Find a connector or an instance').fill('')
   await settings.getByRole('button', { name: 'Close settings' }).click()
 
   // On the canvas the connector is a group of the library; a node of it names its connection.

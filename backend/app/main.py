@@ -146,7 +146,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="5.0.1",
+    version="5.1.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -219,6 +219,8 @@ def on_startup() -> None:
 
                 changed += mapping.seed(db)
                 changed += shipped.seed(db)
+                # The SMTP server the e-mail node of 4.x used becomes an instance of the Mail connector.
+                changed += int(connector_actions.adopt_smtp(db))
                 if changed:
                     db.commit()
             except IntegrityError:

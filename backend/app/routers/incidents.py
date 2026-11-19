@@ -90,11 +90,24 @@ def _sync_columns(incident: Incident) -> None:
         incident.closed_at = None
 
 
-def _shown(row: Incident) -> dict[str, Any]:
+def _source(db: OrmSession, connection_id: str | None, known: dict | None = None) -> dict[str, Any] | None:
+    """What brought an incident in: the instance, its connector and the connector's logo; None for an
+    incident made here. ``known`` is ``logos_by_connection`` when many incidents are shown."""
+    if not connection_id:
+        return None
+    from ..automation import connector_actions
+
+    found = (known if known is not None else connector_actions.logos_by_connection(db)).get(connection_id)
+    # Its instance was deleted: it still came from outside, and nothing more is known.
+    return found or {"connection": "", "connector": "", "logo": None}
+
+
+def _shown(row: Incident, source: dict[str, Any] | None = None) -> dict[str, Any]:
     """The document as the API gives it: with the incident's type and its custom fields, which
     are kept beside the document and written only through the field registry."""
     return {
         **(row.doc or {}),
+        "source": source,
         # ``id`` is the uuid; ``uuid`` says so by name. ``number`` is what people call it by.
         "uuid": row.id,
         "number": row.number,
@@ -219,6 +232,9 @@ def list_incidents(
     total = db.scalar(select(func.count()).select_from(Incident).where(*conditions)) or 0
     response.headers["X-Total-Count"] = str(total)
     order = Incident.updated_at.desc()
+    from ..automation import connector_actions
+
+    sources = connector_actions.logos_by_connection(db)
 
     if view == "summary":
         stmt = (
@@ -237,6 +253,7 @@ def list_incidents(
                 Incident.created_at,
                 Incident.updated_at,
                 Incident.type_id,
+                Incident.source_connection_id,
             )
             .where(*conditions)
             .order_by(order)
@@ -256,6 +273,8 @@ def list_incidents(
                 "assignee": r.assignee,
                 "hasMail": bool(r.has_mail),
                 "type": r.type_id or field_registry.UNCLASSIFIED,
+                # What brought it in, with the logo of its connector; null for one made here.
+                "source": _source(db, r.source_connection_id, sources),
                 "createdAt": r.created_at,
                 "updatedAt": r.updated_at,
             }
@@ -264,7 +283,7 @@ def list_incidents(
     else:
         stmt = select(Incident).where(*conditions).order_by(order)
         stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
-        incidents = [_shown(row) for row in db.scalars(stmt).all()]
+        incidents = [_shown(row, _source(db, row.source_connection_id, sources)) for row in db.scalars(stmt).all()]
 
     return {"incidents": incidents, "total": total}
 
@@ -318,7 +337,7 @@ def get_incident(
         flag_modified(row, "doc")
         db.commit()
     response.headers["ETag"] = _etag(row.rev)
-    return _shown(row)
+    return _shown(row, _source(db, row.source_connection_id))
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -431,7 +450,7 @@ def patch_incident(
             db.commit()
             emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": row.name})
             response.headers["ETag"] = _etag(row.rev)
-            return _shown(row)
+            return _shown(row, _source(db, row.source_connection_id))
     previous = row.doc or {}
     media_type = (content_type or "").split(";")[0].strip().lower()
     if media_type == MERGE_PATCH_MEDIA_TYPE:
@@ -476,7 +495,7 @@ def patch_incident(
     db.commit()
     emit(db, background_tasks, "incident.updated", {"id": incident_id, "name": merged.get("name")})
     response.headers["ETag"] = _etag(row.rev)
-    return _shown(row)
+    return _shown(row, _source(db, row.source_connection_id))
 
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)

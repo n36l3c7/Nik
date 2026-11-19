@@ -1039,6 +1039,11 @@ class Connector(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # What a connector comes with besides its file (5.1): a logo, checked by connector_logo.clean
+    # before it is kept (``logo_type`` is image/png or image/svg+xml, "" for none), and a README.
+    logo: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    logo_type: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    readme: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -1064,6 +1069,9 @@ class Connection(Base):
     config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     secrets: Mapped[str] = mapped_column(Text, nullable=False, default="")
     last_test: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # An instance of its connector (5.1). Off, it runs no command, fetches nothing and mirrors
+    # nothing, and keeps everything it was set up with. A connector is enabled when one is on.
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     # Fetching (4.5): whether this connection brings alerts in, what its last cycle left for the
     # next (``fetch.next_state`` of the connector), and how it goes: {state, error, lastAt, nextAt…}.
     fetch_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
@@ -1470,6 +1478,12 @@ class IocVerdictChange(Base):
     new: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     at: Mapped[str] = mapped_column(String, nullable=False)
 
+
+# The columns migration 0036_instances adds where missing.
+INSTANCE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "connections": ("enabled",),
+    "connectors": ("logo", "logo_type", "readme"),
+}
 
 # Created by migration 0035_incident_numbers where missing; and the column it adds.
 NUMBER_TABLES = ("sequences",)

@@ -1,0 +1,201 @@
+# Mail: a mailbox to read (IMAP) and a server to send through (SMTP).
+#
+# This connector is "native": a mailbox is not reached over HTTP, so the
+# commands below are run by Nik's own code (automation/mail_runtime.py) and
+# have no request. The file says what an instance is asked for, what each
+# command takes and what it gives, as for any other connector.
+#
+# An instance is one mailbox. Either half may be left out: with no IMAP
+# server it only sends, with no SMTP server it only reads. The credentials
+# are used for both.
+#
+# Fetching makes each message that arrives in the folder an incident (the
+# listener): the messages with a uid above the last one read, oldest first.
+#
+# Belongs to no product, so it has no logo.
+name: Mail listener / sender
+id: mail
+version: 1
+description: A mailbox read over IMAP and messages sent over SMTP. Each new message can become an incident.
+api_version: "IMAP4rev1 (RFC 3501), SMTP (RFC 5321)"
+verified: false
+native: mail
+configuration:
+  - name: imap_host
+    label: IMAP server
+    type: text
+    help: "imap.example.com. Leave empty for an instance that only sends."
+  - name: imap_port
+    label: IMAP port
+    type: number
+    default: 993
+  - name: imap_security
+    label: IMAP security
+    type: choice
+    choices: [tls, starttls, none]
+    default: tls
+  - name: folder
+    label: Folder
+    type: text
+    default: INBOX
+    help: "The folder commands read by default, and the one the listener watches."
+  - name: smtp_host
+    label: SMTP server
+    type: text
+    help: "smtp.example.com. Leave empty for an instance that only reads."
+  - name: smtp_port
+    label: SMTP port
+    type: number
+    default: 587
+  - name: smtp_security
+    label: SMTP security
+    type: choice
+    choices: [starttls, tls, none]
+    default: starttls
+  - name: sender
+    label: Sender
+    type: text
+    help: "The address messages are sent from: soc@example.com"
+  - name: ca_pem
+    label: Certificate authority (PEM)
+    type: text
+    help: "Only when the servers present a certificate of your own authority."
+  - name: credentials
+    type: basic
+commands:
+  - name: send
+    description: Send a message to recipients the playbook may write to.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: to, type: list, required: true, description: "Recipients: a list, or addresses separated by commas" }
+      - { name: subject, type: text, required: true, description: The subject }
+      - { name: text, type: text, required: true, description: "The message, as plain text" }
+    outputs:
+      sent: The server took the message
+      recipients: How many recipients
+      message_id: The Message-ID it was sent with
+    sample: { sent: false, recipients: 1, message_id: "" }
+  - name: reply
+    description: Answer a message of the mailbox, in its conversation.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message to answer }
+      - { name: text, type: text, required: true, description: "The answer, as plain text" }
+      - { name: all, type: bool, default: false, description: "Answer everyone it was sent to, not only the sender" }
+      - { name: folder, type: text, description: "The folder the message is in (default: the instance's)" }
+    outputs:
+      sent: The server took the message
+      recipients: How many recipients
+      message_id: The Message-ID it was sent with
+    sample: { sent: false, recipients: 1, message_id: "" }
+  - name: forward
+    description: Send the text of a message of the mailbox to other recipients.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message to forward }
+      - { name: to, type: list, required: true, description: "Recipients: a list, or addresses separated by commas" }
+      - { name: text, type: text, description: What to say before the forwarded message }
+      - { name: folder, type: text, description: "The folder the message is in (default: the instance's)" }
+    outputs:
+      sent: The server took the message
+      recipients: How many recipients
+      message_id: The Message-ID it was sent with
+    sample: { sent: false, recipients: 1, message_id: "" }
+  - name: search
+    description: The messages of a folder that match, the newest first.
+    arguments:
+      - { name: from, type: text, description: "A sender, or a part of one" }
+      - { name: subject, type: text, description: Words of the subject }
+      - { name: text, type: text, description: Words anywhere in the message }
+      - { name: since, type: text, description: "A date: 2026-11-19" }
+      - { name: unseen, type: bool, default: false, description: Only those not read yet }
+      - { name: limit, type: number, default: 20, description: "How many to give (200 at most)" }
+      - { name: folder, type: text, description: "The folder to search (default: the instance's)" }
+    outputs:
+      messages: "The messages: uid, subject, from, to, date, the start of the text, attachments"
+      count: How many match
+      truncated: There are more than were given
+    sample: { messages: [], count: 0, truncated: false }
+  - name: get-message
+    description: One message, with its text and what is attached to it (name, type, size, SHA-256).
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message }
+      - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }
+    outputs:
+      uid: Its uid
+      subject: The subject
+      from: The sender
+      to: The recipients
+      date: When it was sent
+      text: Its text
+      attachments: "What is attached: name, type, size, sha256"
+      message_id: Its Message-ID
+    sample: { uid: 0, subject: "", from: "", to: [], date: "", text: "", attachments: [], message_id: "" }
+  - name: move
+    description: Move a message to another folder.
+    changes_outside: true
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message }
+      - { name: to, type: text, required: true, description: The folder to move it to }
+      - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }
+    outputs:
+      moved: It was moved
+      uid: The uid it had
+      to: The folder it is in now
+    sample: { moved: false, uid: 0, to: "" }
+  - name: mark-read
+    description: Mark a message as read.
+    changes_outside: true
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message }
+      - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }
+    outputs:
+      uid: Its uid
+      read: It is marked as read
+    sample: { uid: 0, read: true }
+  - name: mark-unread
+    description: Mark a message as not read.
+    changes_outside: true
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message }
+      - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }
+    outputs:
+      uid: Its uid
+      read: It is marked as read
+    sample: { uid: 0, read: false }
+  - name: delete
+    description: Delete a message from the mailbox. It cannot be taken back.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: uid, type: number, required: true, description: The uid of the message }
+      - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }
+    outputs:
+      deleted: It was deleted
+      uid: The uid it had
+    sample: { deleted: false, uid: 0 }
+  - name: list-folders
+    description: The folders of the mailbox.
+    outputs:
+      folders: The names of the folders
+    sample: { folders: [INBOX] }
+fetch:
+  interval_seconds: 120
+  first_fetch: 1 days
+  item_id: "{{ item.message_id }}{{ item.uid }}"
+  occurred: "{{ item.date }}"
+  first_state: { uid: 0 }
+  next_state: { uid: "{{ response.last_uid }}" }
+schema:
+  incoming:
+    - { name: subject, type: text, description: The subject }
+    - { name: from, type: text, description: The sender }
+    - { name: to, type: list, description: The recipients }
+    - { name: date, type: date, description: When it was sent }
+    - { name: text, type: text, description: The text of the message }
+    - { name: attachments, type: list, description: "What is attached: name, type, size, sha256" }
+    - { name: message_id, type: text, description: Its Message-ID }
+    - { name: uid, type: number, description: Its uid in the folder }
