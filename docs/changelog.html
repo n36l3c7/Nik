@@ -40,6 +40,39 @@
       </p>
 
       <section class="release">
+        <h3>6.2.0 <span class="date">2026-11-19</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>The list of incidents is a page</strong>, with a
+            <strong>quick view</strong> that opens over it at one click, <strong>saved filters</strong> (personal,
+            shared by an administrator, one default each), chips that write the query and a choice of columns (<a
+              href="guide.html#incident-list"
+              >The list of incidents</a
+            >).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The pages of a type</strong>: a type orders and hides the tabs
+            of its incidents and adds pages of its own; it chooses what the <em>Close</em> dialog asks and what the
+            quick view shows.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Script buttons</strong> on the pages of an incident: text,
+            colours, a script, and arguments asked when pressed or filled from the incident with
+            <code>{{ field }}</code>, once for each value of a field that holds several. Two more widgets: a chart of a
+            dashboard narrowed to the incident, and linked incidents.
+          </li>
+          <li>
+            <span class="tag added">added</span> A dialog asks which system an incident is about on the pages that
+            depend on it, instead of showing Windows paths.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The side panel of incidents is gone; playbook buttons are script
+            buttons.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.1.0 <span class="date">2026-11-19</span></h3>
         <ul>
           <li>

@@ -30,6 +30,8 @@ import IncidentFields, { EMPTY_INCIDENT_FIELDS, canCreateIncident } from './comp
 import AddFileDialog from './components/incident/AddFileDialog.jsx'
 import ArtifactPage from './components/artifacts/ArtifactPage.jsx'
 import IocLibraryPage from './components/iocs/IocLibraryPage.jsx'
+import IncidentsPage from './components/incidents/IncidentsPage.jsx'
+import { INCIDENTS_ROOT, isIncidentsPath } from './domain/incidentList.js'
 import { useIocLibrary } from './context/IocLibraryContext.jsx'
 import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
 import { api } from './services/api.js'
@@ -62,6 +64,7 @@ import IncidentPanel from './components/fields/IncidentPanel.jsx'
 import { useFields } from './context/FieldsContext.jsx'
 import { orderTabs, typeOf } from './domain/fields.js'
 import { EVIDENCE_TAB, resolveTab } from './domain/evidence.js'
+import { pageTabs } from './components/tabs/summary/pageTabs.jsx'
 import ResizeHandle, { useResizablePane } from './components/ui/ResizeHandle.jsx'
 
 // The Automations area comes with the canvas library: loaded when first opened.
@@ -85,12 +88,14 @@ const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage
  *   - users but not signed in → login screen
  *   - signed in            → the main app
  *
- * Layout: the rail (icons), the side panel it opens (incidents or
- * artifacts, collapsible) and the main column: header, then either the
+ * Layout: the rail (icons), the side panel it opens (artifacts or
+ * indicators, collapsible) and the main column: header, then either the
  * active incident (analysis tab bar + tab) or the artifact opened on its own.
  * The Settings page (/settings/…) and the Automations area (/automation/…)
  * take the whole area next to the rail; what was open under them is there
- * again when they are left.
+ * again when they are left. The list of incidents (/incidents) takes the
+ * whole area too: it is what is shown while no incident, artifact or page of
+ * the indicators is open.
  */
 
 // Sidebar width bounds. The maximum is a quarter of the viewport (computed at
@@ -98,7 +103,10 @@ const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_DEFAULT_WIDTH = 288
 const SIDEBAR_WIDTH_KEY = 'nik.sidebarWidth'
-// The side panel the rail last opened: 'incidents', 'artifacts' or '' (closed).
+// The side panel the rail last opened: 'artifacts' or 'iocs'; '' when the person closed it, and it
+// then stays closed until they open one; anything else when none is shown and one comes with what
+// is opened (an artifact, the Indicators page). Until 6.2 the list of incidents was a side panel
+// too ('incidents'): it is a page now, and that value reads as "none shown".
 const PANEL_KEY = 'nik.panel'
 // The tab last opened on an incident of each type: nik.tab.<type id>.
 const TAB_KEY = 'nik.tab'
@@ -178,18 +186,21 @@ export default function App() {
   const [createOpen, setCreateOpen] = useState(false)
   const [newFields, setNewFields] = useState(EMPTY_INCIDENT_FIELDS)
 
-  // Side panel chosen on the rail (null = collapsed), remembered across sessions.
+  // Side panel chosen on the rail (null = none shown), remembered across sessions.
   const [panel, setPanelState] = useState(() => {
     const stored = localStorage.getItem(PANEL_KEY)
-    return stored === '' ? null : ['artifacts', 'iocs'].includes(stored) ? stored : 'incidents'
+    return ['artifacts', 'iocs'].includes(stored) ? stored : null
   })
-  const setPanel = useCallback((next) => {
+  // The person closed the side panel from the rail: what is opened no longer brings its panel.
+  const panelClosed = useRef(localStorage.getItem(PANEL_KEY) === '')
+  const setPanel = useCallback((next, { closed = false } = {}) => {
     setPanelState(next)
-    localStorage.setItem(PANEL_KEY, next ?? '')
+    panelClosed.current = next === null && closed
+    localStorage.setItem(PANEL_KEY, next ?? (closed ? '' : 'none'))
   }, [])
   // An artifact opened from a permalink shows its panel.
   useEffect(() => {
-    if (artifactOpen) setPanelState((open) => (open === null ? open : 'artifacts'))
+    if (artifactOpen) setPanelState((open) => (panelClosed.current ? open : 'artifacts'))
   }, [artifactOpen])
 
   // The library and an artifact share the main area: opening one leaves the other.
@@ -200,7 +211,7 @@ export default function App() {
   useEffect(() => {
     if (!libraryView) return
     artifacts.closeArtifact()
-    setPanelState((open) => (open === null ? open : 'iocs'))
+    setPanelState((open) => (panelClosed.current ? open : 'iocs'))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the view changes
   }, [libraryView])
   useEffect(() => {
@@ -500,6 +511,25 @@ export default function App() {
   }, [playgroundAsked])
   const playgroundShown =
     playgroundAsked && canAutomate && !settings && !automationShown && !tasksShown && !dashboardsShown
+  // The list of incidents: /incidents, and whatever address leaves nothing else to show. Going to
+  // its address leaves the incident, the artifact or the page of the indicators that was open
+  // (each follows the address), so the list is simply what is shown when none of them is.
+  const pageOverMain = Boolean(settings) || automationShown || tasksShown || dashboardsShown || playgroundShown
+  const incidentsShown = canRead && !pageOverMain && !activeIncidentId && !artifactOpen && !libraryOpen
+  // What was open when the list was asked for from the rail: the entry of the rail goes back to it.
+  const [incidentsReturn, setIncidentsReturn] = useState(null)
+  const openIncidents = useCallback(() => {
+    const from = currentPath()
+    setIncidentsReturn(isIncidentsPath(from) || from === '/' ? null : from)
+    setPath(INCIDENTS_ROOT)
+  }, [])
+  const closeIncidents = useCallback(() => {
+    if (incidentsReturn) setPath(incidentsReturn)
+    setIncidentsReturn(null)
+  }, [incidentsReturn])
+  useEffect(() => {
+    if (!incidentsShown) setIncidentsReturn(null)
+  }, [incidentsShown])
   // Whoever chose a dashboard to open at sign-in lands on it, when the address asks for nothing else.
   const landed = useRef(false)
   useEffect(() => {
@@ -554,7 +584,11 @@ export default function App() {
   // The tabs of the incident on screen: those its type shows, in the order its type gives them.
   const { types: incidentTypes } = useFields()
   const activeType = typeOf(incidentTypes, activeIncident ?? activeSummary)
-  const allTabs = useMemo(() => orderTabs(visibleTabs(can), activeType?.layout), [can, activeType])
+  const allTabs = useMemo(
+    // The pages its type adds are tabs like the others, in the place the type gives them.
+    () => orderTabs([...visibleTabs(can), ...pageTabs(activeType?.layout)], activeType?.layout),
+    [can, activeType],
+  )
   // The bar holds the tabs; the kinds of evidence are inside the Evidence tab, in the same order.
   const shownTabs = useMemo(() => {
     const bar = allTabs.filter((tab) => !tab.evidence)
@@ -736,7 +770,19 @@ export default function App() {
           else if (tasksShown) closeTasks()
           else if (dashboardsShown) closeDashboards()
           else if (playgroundShown) closePlayground()
-          setPanel(next)
+          // The entry of the open panel, clicked again, closes it: it stays closed until one is asked for.
+          setPanel(next, { closed: next === null })
+        }}
+        // The list alone: its entry hides the side panel, and goes back to what was open when it can.
+        incidentsOpen={incidentsShown && !panel}
+        incidentsLeave={Boolean(incidentsReturn)}
+        onIncidents={() => {
+          if (incidentsShown && !panel) {
+            closeIncidents()
+            return
+          }
+          setPanel(null)
+          if (!incidentsShown) openIncidents()
         }}
         counts={{
           incidents: incidents.length,
@@ -830,35 +876,35 @@ export default function App() {
           <PlaygroundPage onClose={closePlayground} />
         </Suspense>
       )}
-      {!settings && !automationShown && !tasksShown && !dashboardsShown && !playgroundShown && panel && canRead && (
+      {!pageOverMain && panel && canRead && (
         <>
-          <Sidebar
-            panel={panel}
-            width={sidebarPane.width}
-            onCreateIncident={openCreateModal}
-            onNewAnalysis={() => setAnalysisOpen(true)}
-            onSelectIncident={openIncident}
-            incidentShown={!artifactOpen && !libraryOpen}
-            onOpenReport={() => setReportOpen(true)}
-          />
+          <Sidebar panel={panel} width={sidebarPane.width} onNewAnalysis={() => setAnalysisOpen(true)} />
           <ResizeHandle {...sidebarPane.handle} label="Resize the side panel" />
         </>
       )}
-
-      <div
-        className={
-          settings || automationShown || tasksShown || dashboardsShown || playgroundShown
-            ? 'hidden'
-            : 'flex min-w-0 flex-1 flex-col'
-        }
-      >
-        <Header
-          onOpenSearch={() => setPaletteOpen(true)}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
-          onOpenReport={activeIncident && !artifactOpen && !libraryOpen ? () => setReportOpen(true) : null}
-          artifactView={artifactOpen}
-          libraryView={libraryOpen}
+      {incidentsShown && (
+        <IncidentsPage
+          onCreateIncident={openCreateModal}
+          onNewAnalysis={() => setAnalysisOpen(true)}
+          onOpenIncident={openIncident}
+          onOpenReport={(incidentId) => {
+            openIncident(incidentId)
+            setReportOpen(true)
+          }}
         />
+      )}
+
+      <div className={pageOverMain || incidentsShown ? 'hidden' : 'flex min-w-0 flex-1 flex-col'}>
+        {/* The list of incidents has a header of its own: this one names what is open, and nothing is. */}
+        {!incidentsShown && (
+          <Header
+            onOpenSearch={() => setPaletteOpen(true)}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
+            onOpenReport={activeIncident && !artifactOpen && !libraryOpen ? () => setReportOpen(true) : null}
+            artifactView={artifactOpen}
+            libraryView={libraryOpen}
+          />
+        )}
         <div className="flex min-h-0 flex-1 flex-col min-[1100px]:flex-row">
           {canRead && !artifactOpen && !libraryOpen && activeIncident && <IncidentPanel incident={activeIncident} />}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -960,7 +1006,7 @@ export default function App() {
                       message={
                         canWrite
                           ? 'Create an incident to work a case, or analyse a file or an e-mail on its own. You can also drop a file anywhere.'
-                          : 'Choose an incident on the left to read it.'
+                          : 'Choose an incident in the list to read it.'
                       }
                       action={
                         canWrite && (

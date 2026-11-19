@@ -1,7 +1,6 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { Pencil, Play } from 'lucide-react'
+import { Suspense, useMemo, useState } from 'react'
+import { Pencil } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
-import { useAutomation } from '../../../context/AutomationContext.jsx'
 import { useFields } from '../../../context/FieldsContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { ANALYSIS_TABS, getTabById } from '../../../config/tabs.js'
@@ -13,14 +12,17 @@ import { evidenceGroups } from '../../../domain/evidence.js'
 import { IN_SUMMARY_FORM, valuesOf } from '../../../domain/fields.js'
 import { STATUSES } from '../../../domain/incidentName.js'
 import { gridSections, kindOf } from '../../../domain/layoutGrid.js'
-import { api } from '../../../services/api.js'
+import { chartSummary } from '../../../domain/linked.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { Button, ErrorBoundary, SeverityTag } from '../../ui/index.js'
 import EditFieldsDialog from '../../fields/EditFieldsDialog.jsx'
 import FieldList from '../../fields/FieldList.jsx'
 import Timers from '../../fields/Timers.jsx'
 import EditIncidentDialog from '../../incident/EditIncidentDialog.jsx'
+import DashboardChart from './DashboardChart.jsx'
 import IncidentTimeline from './IncidentTimeline.jsx'
+import LinkedIncidents from './LinkedIncidents.jsx'
+import ScriptButtons from './ScriptButtons.jsx'
 
 /*
  * ============================================================================
@@ -213,56 +215,6 @@ function Evidence({ incident }) {
   )
 }
 
-/** Buttons that run the playbooks the type chose, on this incident. */
-function Playbooks({ incident, widget }) {
-  const { can } = useAuth()
-  const { askRun } = useAutomation()
-  const [names, setNames] = useState(null)
-  const wanted = widget.playbooks ?? []
-  useEffect(() => {
-    if (!can('automation.run') || wanted.length === 0) return undefined
-    let alive = true
-    api
-      .get('/automation/playbooks')
-      .then((found) => alive && setNames(Object.fromEntries(found.playbooks.map((item) => [item.id, item]))))
-      .catch(() => alive && setNames({}))
-    return () => {
-      alive = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the list of ids, by value
-  }, [can, wanted.join('|')])
-  if (!can('automation.run')) return <p className={MUTED}>Your roles do not include running playbooks.</p>
-  if (wanted.length === 0) return <p className={MUTED}>No playbook was chosen for these buttons.</p>
-  return (
-    <div className="flex h-full flex-wrap content-start gap-2 overflow-y-auto">
-      {wanted.map((id) => {
-        const playbook = names?.[id]
-        return (
-          <Button
-            key={id}
-            variant="secondary"
-            size="sm"
-            icon={Play}
-            disabled={!playbook?.version}
-            title={
-              playbook
-                ? playbook.version
-                  ? `Run ${playbook.name} on this incident`
-                  : `${playbook.name} has no version to run yet`
-                : names
-                  ? 'This playbook is no longer there'
-                  : 'Loading…'
-            }
-            onClick={() => askRun({ playbookId: id, incidentId: incident.id, incidentName: incident.name })}
-          >
-            {playbook?.name ?? (names ? 'A playbook that is gone' : '…')}
-          </Button>
-        )
-      })}
-    </div>
-  )
-}
-
 /** A tab of the incident inside a box of the grid. */
 function Tab({ id, incident, ...rest }) {
   const Component = getTabById(id)?.component
@@ -294,7 +246,9 @@ const DRAW = {
   war_room: ({ incident }) => <Tab id="war_room" incident={incident} boxed />,
   work_plan: ({ incident }) => <Tab id="work_plan" incident={incident} />,
   indicators: ({ incident }) => <Tab id="iocs" incident={incident} />,
-  playbooks: (props) => <Playbooks {...props} />,
+  buttons: (props) => <ScriptButtons {...props} />,
+  chart: (props) => <DashboardChart {...props} />,
+  linked: ({ incident }) => <LinkedIncidents incidentId={incident.id} />,
   note: ({ widget }) => (
     <p className="h-full overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
       {widget.text || <span className="text-fg-muted">An empty text.</span>}
@@ -316,7 +270,7 @@ export default function LayoutWidget({ widget, incident, type }) {
 }
 
 /** The same widgets as the editor of a type shows them: what each is, with no incident behind it. */
-export function WidgetPreview({ widget, layout }) {
+export function WidgetPreview({ widget, layout, boards = null }) {
   if (widget.kind === 'note') {
     return <p className="h-full overflow-hidden whitespace-pre-wrap break-words text-sm text-fg">{widget.text}</p>
   }
@@ -328,12 +282,25 @@ export function WidgetPreview({ widget, layout }) {
       </p>
     )
   }
-  if (widget.kind === 'playbooks') {
+  if (widget.kind === 'buttons') {
+    const buttons = widget.buttons ?? []
+    if (buttons.length === 0) return <p className="text-xs text-fg-muted">No button yet: the pencil adds one.</p>
     return (
-      <p className="font-mono text-xs text-fg-muted">
-        {(widget.playbooks ?? []).length} {(widget.playbooks ?? []).length === 1 ? 'button' : 'buttons'}
-      </p>
+      <div className="flex h-full flex-wrap content-start gap-1.5 overflow-hidden">
+        {buttons.map((button, index) => (
+          <span
+            key={`${button.label}:${index}`}
+            style={{ backgroundColor: button.background, color: button.color }}
+            className="inline-flex h-6 max-w-full items-center px-2 text-xs font-medium"
+          >
+            <span className="truncate">{button.label}</span>
+          </span>
+        ))}
+      </div>
     )
+  }
+  if (widget.kind === 'chart') {
+    return <p className="font-mono text-xs text-fg-muted">{chartSummary(widget, boards)}</p>
   }
   // The rest is drawn from the incident: here, what it will show.
   return <p className="text-xs text-fg-muted">{kindOf(widget.kind)?.hint}</p>

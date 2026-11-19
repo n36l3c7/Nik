@@ -81,9 +81,9 @@ test('sign-in and a new incident', async () => {
   await shot('sign-in')
   await page.fill('#login-password', ADMIN.password)
   await page.click('button[type=submit]')
-  await expect(page.getByText('No active incident')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'No incidents yet' })).toBeVisible()
 
-  await page.click('aside >> text=New incident')
+  await page.getByRole('region', { name: 'Incidents' }).getByRole('button', { name: 'New incident' }).first().click()
   await page.fill('#new-ticket', 'INC-2041')
   await page.fill('#new-title', 'Invoice phishing, finance')
   await page.fill('#new-host', 'WKS-FINANCE-01')
@@ -160,7 +160,9 @@ test('artifacts on their own', async () => {
   await expect(page.getByText(/^phishing · \d+$/).first()).toBeVisible({ timeout: 30_000 })
   await shot('artifact')
   await artifact.getByRole('button', { name: '[INC-2041] Invoice phishing, finance', exact: true }).click()
+  // The list of incidents, and back: the side panel of the artifacts is left without being closed for good.
   await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide the incidents' }).click()
 })
 
 test('an address scanned by the isolated browser', async () => {

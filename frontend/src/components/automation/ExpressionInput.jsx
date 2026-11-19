@@ -12,6 +12,10 @@ import { INPUT } from './fields.jsx'
  * a "for each"), as a list to choose from; the choice is written at the
  * caret. What is typed is checked as it is typed: an expression that cannot
  * be read says why under the field. The server checks again, and decides.
+ *
+ * With `braces`, typing "{{" opens the same list, and the choice completes
+ * what was typed (the settings of a script button, where a field of the
+ * incident is the usual thing to write).
  */
 
 function ValuePicker({ tree, onPick, onClose }) {
@@ -84,6 +88,7 @@ function ValuePicker({ tree, onPick, onClose }) {
  *   placeholder?: string,
  *   disabled?: boolean,
  *   label?: string,        // the accessible name, when no <label> points at `id`
+ *   braces?: boolean,      // typing "{{" opens "Pick a value"
  * }} props
  */
 export default function ExpressionInput({
@@ -95,6 +100,7 @@ export default function ExpressionInput({
   placeholder = '',
   disabled = false,
   label,
+  braces = false,
 }) {
   const inputRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -103,8 +109,11 @@ export default function ExpressionInput({
 
   const pick = (path) => {
     const input = inputRef.current
-    const start = input?.selectionStart ?? text.length
     const end = input?.selectionEnd ?? text.length
+    let start = input?.selectionStart ?? text.length
+    // Braces that were just typed are the start of what is picked, not something to keep beside it.
+    const typed = braces ? /\{\{\s*$/.exec(text.slice(0, start)) : null
+    if (typed) start = typed.index
     const inserted = `{{ ${path} }}`
     onChange(text.slice(0, start) + inserted + text.slice(end))
     setOpen(false)
@@ -125,7 +134,13 @@ export default function ExpressionInput({
     'aria-invalid': problem ? true : undefined,
     autoComplete: 'off',
     spellCheck: false,
-    onChange: (event) => onChange(event.target.value),
+    onChange: (event) => {
+      const next = event.target.value
+      const caret = event.target.selectionStart ?? next.length
+      // Two braces typed where there were none: what can be read is offered.
+      if (braces && tree.length > 0 && next.length > text.length && next.slice(0, caret).endsWith('{{')) setOpen(true)
+      onChange(next)
+    },
     className: `${INPUT} ${problem ? 'border-high-line' : ''}`,
   }
 

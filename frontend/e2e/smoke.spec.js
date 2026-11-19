@@ -58,6 +58,40 @@ async function openEvidence(kind) {
   await page.getByRole('navigation', { name: 'Evidence' }).getByRole('button', { name: kind, exact: true }).click()
 }
 
+/** The list of incidents, from the rail: a page of its own that leaves what the main area showed. */
+async function openIncidentList() {
+  const entry = page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: 'Incidents', exact: true })
+  // Its entry says "Hide the incidents" while the list is shown and there is something to go back to.
+  if (await entry.count()) await entry.click()
+  await expect(page.getByRole('table', { name: 'Incidents' })).toBeVisible()
+}
+
+/** A row of the incident list, by what it says (the first one when nothing is said: the last one changed). */
+function incidentRow(text = null) {
+  const rows = page.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
+  return text ? rows.filter({ hasText: text }) : rows.first()
+}
+
+/** Leave what the main area shows for an incident of the list (the one at its top when none is named). */
+async function openIncidentFromList(text = null) {
+  await openIncidentList()
+  await incidentRow(text).dblclick()
+  await expect(page).toHaveURL(/\/incident\//)
+}
+
+/**
+ * Leave the side panel of the artifacts or of the indicators for the incident that is open, as the
+ * rail does it: the list of incidents, and back. (Closing the panel from its own entry would keep it
+ * closed for what is opened next.)
+ */
+async function leaveSidePanel() {
+  await openIncidentList()
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Hide the incidents' }).click()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+}
+
 test('first run creates the admin account', async () => {
   await page.goto('/')
   await expect(page.getByText('first run')).toBeVisible()
@@ -68,20 +102,26 @@ test('first run creates the admin account', async () => {
   await expect(page.locator('#login-username')).toBeVisible()
 })
 
-test('the admin signs in and sees the empty dashboard', async () => {
+test('the admin signs in and sees the empty list of incidents', async () => {
   await page.fill('#login-username', ADMIN.username)
   await page.fill('#login-password', ADMIN.password)
   await page.click('button[type=submit]')
-  await expect(page.getByText('No active incident')).toBeVisible()
+  // With nothing open, the list of incidents is the page: it takes the whole area next to the rail.
+  const list = page.getByRole('region', { name: 'Incidents' })
+  await expect(list.getByRole('heading', { name: 'No incidents yet' })).toBeVisible()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
 })
 
 test('a new incident opens on its summary', async () => {
-  await page.click('aside >> text=New incident')
+  await page.getByRole('region', { name: 'Incidents' }).getByRole('button', { name: 'New incident' }).first().click()
   await page.fill('#new-host', 'WKS-FINANCE-01')
   await page.fill('#new-username', 'm.rossi')
   await page.click('button[type=submit]:has-text("Create incident")')
   await expect(page.getByText('Incident details')).toBeVisible()
-  await expect(page.locator('aside nav[aria-label="Incidents"]')).toContainText('WKS-FINANCE-01')
+  // The incident took the place of the list; its name is in the header.
+  await expect(page).toHaveURL(/\/incident\//)
+  await expect(page.getByRole('banner')).toContainText('WKS-FINANCE-01')
+  await expect(page.getByRole('table', { name: 'Incidents' })).toHaveCount(0)
 })
 
 test('the tab bar fits the window and every tab keeps its name', async () => {
@@ -100,6 +140,49 @@ test('the tab bar fits the window and every tab keeps its name', async () => {
     .locator('header button, header div.border')
     .evaluateAll((elements) => [...new Set(elements.filter((e) => e.offsetHeight).map((e) => e.offsetHeight))])
   expect(heights).toEqual([36])
+})
+
+test('what was collected on the machine asks which system the incident is about', async () => {
+  const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  const current = page.locator('nav[aria-label="Evidence"] [aria-current="page"]')
+  // The incident was made with no system: a kind that shows the paths of one asks for it first.
+  await openEvidence('Endpoint Artifacts')
+  const dialog = page.getByRole('dialog', { name: 'Which system is this incident about?' })
+  await expect(dialog).toContainText('Endpoint Artifacts cannot be shown without it')
+  await expect(current).toContainText('Endpoint Artifacts')
+  // The page of the kind is not drawn under the question, with the paths of a system nobody said.
+  await expect(page.getByRole('tablist', { name: 'Artifact category' })).toHaveCount(0)
+  // It is not one to dismiss: Escape and a click outside leave it where it is.
+  await page.keyboard.press('Escape')
+  await page.mouse.click(4, 4)
+  await expect(dialog).toBeVisible()
+  // "Back to the files" leaves the kind for the list of evidence, and nothing was saved.
+  await dialog.getByRole('button', { name: 'Back to the files' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(current).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'No evidence yet' })).toBeVisible()
+  expect((await (await page.request.get(`/api/incidents/${incidentId}`)).json()).os ?? '').toBe('')
+
+  // Asked again for another kind; the choice is saved on the incident, and the page is shown.
+  await openEvidence('Command History')
+  await expect(dialog.getByRole('button', { name: /^Windows/ })).toHaveAttribute('aria-pressed', 'true')
+  await dialog.getByRole('button', { name: /^Linux/ }).click()
+  await expect(dialog.getByRole('button', { name: 'Use Linux' })).toBeVisible()
+  await dialog.getByRole('button', { name: /^Windows/ }).click()
+  await dialog.getByRole('button', { name: 'Use Windows' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(current).toContainText('Command History')
+  await expect(page.getByText(/Where to find the .* history \(Windows\)/)).toBeVisible()
+  await expect
+    .poll(async () => (await (await page.request.get(`/api/incidents/${incidentId}`)).json()).os)
+    .toBe('windows')
+  // No kind asks from then on.
+  await openEvidence('Endpoint Artifacts')
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('tablist', { name: 'Artifact category' })).toBeVisible()
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.getByRole('article', { name: 'Incident details' })).toContainText('Windows')
 })
 
 test('evidence files dropped on the app fill the analysis tabs', async () => {
@@ -420,7 +503,11 @@ test('a reported e-mail is triaged: verdict, sandboxed body, attachment sent to 
   })
   await expect(page.getByText('the sender domain paypai.example imitates paypal')).toBeVisible()
   await expect(page.getByText(/^phishing · \d+$/)).toBeVisible()
-  await expect(page.locator('aside nav[aria-label="Incidents"]').getByLabel('Holds e-mails')).toBeVisible()
+  // The list of incidents marks the one that holds e-mails; its entry of the rail goes back to the incident.
+  await openIncidentList()
+  await expect(incidentRow('WKS-FINANCE-01').getByLabel('Holds e-mails')).toBeVisible()
+  await page.getByRole('button', { name: 'Hide the incidents' }).click()
+  await expect(page.getByRole('list', { name: 'Messages' })).toBeVisible()
   // The body is drawn in a frame that runs nothing and follows no link.
   await page.getByRole('tab', { name: 'Body' }).click()
   const frame = page.locator('iframe[title="Message body (sandboxed)"]')
@@ -648,7 +735,7 @@ test('a file is analysed on its own, tagged, then linked to the incident', async
   await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
   await expect(page.getByRole('dialog', { name: 'Add a file' })).toContainText('This file was already analysed.')
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await leaveSidePanel()
 })
 
 test('an artifact is exported: the analyses, and the files only when asked', async () => {
@@ -671,7 +758,7 @@ test('an artifact is exported: the analyses, and the files only when asked', asy
   await panel.getByRole('button', { name: 'Import' }).click()
   await expect(page.getByRole('dialog', { name: 'Import artifacts' })).toContainText('Nothing is run')
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await leaveSidePanel()
 })
 
 test('an address is scanned on its own, then linked to the incident', async () => {
@@ -711,7 +798,7 @@ test('an address is scanned on its own, then linked to the incident', async () =
   await expect(page.getByRole('list', { name: 'Addresses' })).toContainText('nik-e2e-scan.invalid/login', {
     timeout: 20_000,
   })
-  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await leaveSidePanel()
 })
 
 test('right-click works on lists, indicators and artifacts', async () => {
@@ -750,7 +837,7 @@ test('right-click works on lists, indicators and artifacts', async () => {
   await expect(menu).toContainText('Copy link')
   await expect(menu).toContainText('Where else was this seen?')
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await leaveSidePanel()
 })
 
 test('pasted text is recognised: an address to scan, an indicator to look up', async () => {
@@ -874,12 +961,7 @@ test('the Indicators page: paste many, group them in a list, export with chosen 
   // The link alone opens the list; an incident leaves the library.
   await page.reload()
   await expect(page.getByRole('heading', { name: /E2E wave/ })).toBeVisible({ timeout: 20_000 })
-  await page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('button', { name: 'Incidents', exact: true })
-    .click()
-  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
-  await expect(page).toHaveURL(/\/incident\//)
+  await openIncidentFromList()
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
@@ -976,8 +1058,7 @@ test('the page always follows the address: incident, artifact, library, indicato
   await expect(library).toBeVisible()
 
   // Back to the incident for the tests that follow.
-  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
-  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
+  await openIncidentFromList()
   await expectIncident()
 })
 
@@ -1036,14 +1117,11 @@ test('an indicator and the artifact that is its analysis lead to each other', as
   await expect(plan.getByRole('button', { name: /^Visit \d+ address/ })).toBeVisible()
   await plan.getByRole('button', { name: 'Cancel' }).click()
 
-  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
-  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
-  await expect(page).toHaveURL(/\/incident\//)
+  await openIncidentFromList()
 })
 
 test('a mailbox is indexed, its messages imported, and its conversations drawn as a graph', async () => {
   test.setTimeout(180_000)
-  const rail = page.getByRole('navigation', { name: 'Sections' })
   const artifact = page.getByRole('region', { name: 'Artifact' })
   const mail = (id, subject, from, date, reply) =>
     [
@@ -1118,9 +1196,7 @@ test('a mailbox is indexed, its messages imported, and its conversations drawn a
   await link.getByRole('button', { name: 'Put the 1 selected' }).click()
   await expect(page.getByText(/1 message is in /)).toBeVisible()
 
-  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
-  await page.getByRole('navigation', { name: 'Incidents' }).getByRole('button').first().click()
-  await expect(page).toHaveURL(/\/incident\//)
+  await openIncidentFromList()
 })
 
 test('Storage shows how full the disk is and what fills it', async () => {
@@ -1200,13 +1276,13 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
-test('an incident has a status and an assignee, set from the panel and filtered there', async () => {
-  const panel = page.locator('aside[aria-label="Incidents panel"]')
-  const list = panel.locator('nav[aria-label="Incidents"]')
-  const row = list.locator('li', { hasText: 'WKS-FINANCE-01' })
+test('an incident has a status and an assignee, set from the list and filtered there', async () => {
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const row = incidentRow('WKS-FINANCE-01')
   const menu = page.getByRole('menu')
 
-  // From the right-click menu of the panel.
+  // From the right-click menu of a row of the list.
+  await openIncidentList()
   await row.click({ button: 'right' })
   await menu.getByRole('menuitem', { name: 'Assign to me' }).click()
   await expect(row).toContainText('@admin')
@@ -1215,7 +1291,7 @@ test('an incident has a status and an assignee, set from the panel and filtered 
   await expect(row).toContainText('in progress')
 
   // The Summary shows the same and saves a change; the header follows.
-  await row.getByRole('button').first().click()
+  await row.dblclick()
   await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
   const details = page.getByRole('article', { name: 'Incident details' })
   await expect(details).toContainText('in progress')
@@ -1242,39 +1318,64 @@ test('an incident has a status and an assignee, set from the panel and filtered 
   await closing.locator('#close-notes').fill('A test of the scanner.')
   await closing.getByRole('button', { name: 'Close the incident' }).click()
   await expect(closing).toHaveCount(0)
-  await expect(row).toContainText('closed')
   await expect(details).toContainText('closed')
   await expect(details).toContainText('not set')
 
-  // The filters of the panel.
-  await panel.getByLabel('Status filter').selectOption('open')
+  // The chips of the list: each writes its condition into the query, and shows the one it wrote.
+  await openIncidentList()
+  await expect(row).toContainText('closed')
+  await list.getByRole('button', { name: 'Status', exact: true }).click()
+  await menu.getByRole('menuitem', { name: 'open', exact: true }).click()
   await expect(row).toHaveCount(0)
-  await panel.getByLabel('Status filter').selectOption('closed')
+  await list.getByRole('button', { name: 'Status: status:open' }).click()
+  await menu.getByRole('menuitem', { name: 'closed', exact: true }).click()
   await expect(row).toHaveCount(1)
-  await panel.getByRole('button', { name: 'mine' }).click()
+  await list.getByRole('button', { name: 'Owner', exact: true }).click()
+  await menu.getByRole('menuitem', { name: 'me (admin)' }).click()
   await expect(row).toHaveCount(1)
   await row.click({ button: 'right' })
   await menu.getByRole('menuitem', { name: 'Remove the assignee (admin)' }).click()
-  await expect(list).toContainText('No incident matches the filters.')
-  await panel.getByRole('button', { name: 'mine' }).click()
-  await panel.getByLabel('Status filter').selectOption('all')
+  await expect(list).toContainText('No incident matches the filter.')
+  await list.getByRole('button', { name: 'Owner: owner:admin' }).click()
+  await menu.getByRole('menuitem', { name: 'Take it out of the query' }).click()
+  await list.getByRole('button', { name: 'Status: status:closed' }).click()
+  await menu.getByRole('menuitem', { name: 'Take it out of the query' }).click()
+  await expect(list.getByRole('combobox', { name: 'Filter incidents' })).toHaveValue('')
   await row.click({ button: 'right' })
   await menu.getByRole('menuitem', { name: 'Mark as open' }).click()
   await expect(row).not.toContainText('closed')
+  await row.dblclick()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('an incident whose system was taken away is asked for it again', async () => {
+  // "Edit the incident" left the system out above: the kinds that need one ask, and the answer puts it back.
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await openEvidence('Browser Forensics')
+  const dialog = page.getByRole('dialog', { name: 'Which system is this incident about?' })
+  await expect(dialog).toContainText('Browser Forensics cannot be shown without it')
+  await dialog.getByRole('button', { name: 'Use Windows' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'Browser analysis sections' })).toBeVisible()
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.getByRole('article', { name: 'Incident details' })).toContainText('Windows')
 })
 
 test('a query filters the lists: typed, completed, built from rows; the filters write it', async () => {
-  const panel = page.locator('aside[aria-label="Incidents panel"]')
-  const list = panel.locator('nav[aria-label="Incidents"]')
+  // The page of the incident list: its query, its chips, its table.
+  const panel = page.getByRole('region', { name: 'Incidents' })
+  const list = panel.getByRole('table', { name: 'Incidents' })
   const filter = panel.getByRole('combobox', { name: 'Filter incidents' })
-  const status = panel.getByLabel('Status filter')
+  const menu = page.getByRole('menu')
+  await openIncidentList()
 
   // Plain words, then a field with a wildcard: the server reads the query.
   await filter.fill('wks-finance')
-  await expect(list.locator('li')).toHaveCount(1)
+  await expect(list.locator('tbody tr')).toHaveCount(1)
   await expect(list).toContainText('WKS-FINANCE-01')
+  await expect(panel.getByRole('status', { name: 'Incidents listed' })).toHaveText(/^1 (of \d+|incident)$/)
   await filter.fill('host:nowhere-*')
-  await expect(list).toContainText('No incident matches the filters.')
+  await expect(panel).toContainText('No incident matches the filter.')
   await filter.fill('host:wks-* -host:nowhere')
   await expect(list).toContainText('WKS-FINANCE-01')
 
@@ -1292,13 +1393,22 @@ test('a query filters the lists: typed, completed, built from rows; the filters 
   await page.keyboard.press('Tab')
   await expect(filter).toHaveValue('status:closed ')
   await expect(filter).toBeFocused()
-  // The status picker shows what the query says, and writes into it; so does "mine".
-  await expect(status).toHaveValue('closed')
-  await status.selectOption('open')
+  // The chips show what the query says, and write into it: the status, the owner, any other field.
+  await panel.getByRole('button', { name: 'Status: status:closed' }).click()
+  await menu.getByRole('menuitem', { name: 'open', exact: true }).click()
   await expect(filter).toHaveValue('status:open')
-  await panel.getByRole('button', { name: 'mine' }).click()
+  await panel.getByRole('button', { name: 'Owner', exact: true }).click()
+  await menu.getByRole('menuitem', { name: `me (${ADMIN.username})` }).click()
   await expect(filter).toHaveValue(`status:open owner:${ADMIN.username}`)
-  await expect(panel.getByRole('button', { name: 'mine' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(panel.getByRole('button', { name: `Owner: owner:${ADMIN.username}` })).toBeVisible()
+  await panel.getByRole('button', { name: 'Field…' }).click()
+  const adding = page.getByRole('dialog', { name: 'Add a condition on a field' })
+  await adding.getByLabel('Field').selectOption('host')
+  await adding.getByLabel('Operator').selectOption('!')
+  await adding.getByLabel('Value').fill('nowhere')
+  await adding.getByRole('button', { name: 'Add to the query' }).click()
+  await expect(filter).toHaveValue(`status:open owner:${ADMIN.username} !host:nowhere`)
+  await filter.fill(`status:open owner:${ADMIN.username}`)
 
   // The builder: the same query as rows; a change of a row rewrites the text.
   await panel.getByRole('button', { name: 'Query builder' }).click()
@@ -1365,11 +1475,187 @@ test('a query filters the lists: typed, completed, built from rows; the filters 
   await indicatorFilter.fill('')
 
   // Back to the incident.
-  await page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('button', { name: 'Incidents', exact: true })
-    .click()
-  await list.locator('li', { hasText: 'WKS-FINANCE-01' }).getByRole('button').first().click()
+  await openIncidentFromList('WKS-FINANCE-01')
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('the incident list is a page: a click shows the quick view over it, the arrows move, Enter opens', async () => {
+  const before = page.url()
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const table = list.getByRole('table', { name: 'Incidents' })
+  const rows = table.locator('tbody tr')
+  const quick = page.getByRole('complementary', { name: /^Quick view of incident/ })
+  const shown = table.locator('tbody tr[aria-current="true"]')
+
+  // A second incident, so that the arrows have somewhere to go; the list has an address of its own.
+  const made = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-list', host: 'E2E-LIST', severity: 'high', data: {} },
+  })
+  expect(made.status()).toBe(201)
+  await page.goto('/incidents')
+  await expect(rows.nth(1)).toBeVisible()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
+  await expect(quick).toHaveCount(0)
+  const numberOf = async (row) => (await row.getAttribute('aria-label')).split(' ')[0]
+  const [first, second] = [await numberOf(rows.nth(0)), await numberOf(rows.nth(1))]
+  expect(first).toMatch(/^#\d{5}$/)
+
+  // A click: the panel lies over the right side of the page, and the table keeps its width.
+  const wide = (await table.boundingBox()).width
+  await rows.nth(0).click()
+  await expect(quick).toHaveAccessibleName(`Quick view of incident ${first}`)
+  await expect(shown).toHaveCount(1)
+  await expect(rows.nth(0)).toHaveAttribute('aria-current', 'true')
+  expect((await table.boundingBox()).width).toBe(wide)
+  // What it shows is what the type of the incident says: here, what a type that chose nothing gets.
+  for (const title of ['Details', 'Numbers of the evidence', 'Last in the War Room']) {
+    await expect(quick.getByRole('heading', { name: title })).toBeVisible()
+  }
+  await expect(quick.getByRole('region', { name: 'Details' })).toContainText('Owner')
+  await expect(quick.getByRole('region', { name: 'Numbers of the evidence' })).toContainText('Flagged')
+
+  // The arrows go to the next row and back, and the panel follows.
+  await page.keyboard.press('ArrowDown')
+  await expect(quick).toHaveAccessibleName(`Quick view of incident ${second}`)
+  await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true')
+  await expect(rows.nth(1)).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(quick).toHaveAccessibleName(`Quick view of incident ${first}`)
+  // From inside the panel too.
+  await quick.getByRole('button', { name: 'Open the incident' }).focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(quick).toHaveAccessibleName(`Quick view of incident ${second}`)
+
+  // Escape closes it, and so does its button.
+  await page.keyboard.press('Escape')
+  await expect(quick).toHaveCount(0)
+  await expect(shown).toHaveCount(0)
+  const mine = rows.filter({ hasText: 'E2E-LIST' })
+  await mine.click()
+  await quick.getByRole('button', { name: 'Close the quick view' }).click()
+  await expect(quick).toHaveCount(0)
+
+  // Its foot: take the incident, close it with the dialog that closes one anywhere.
+  await mine.click()
+  await quick.getByRole('button', { name: 'Assign to me' }).click()
+  await expect(mine).toContainText(`@${ADMIN.username}`)
+  await expect(quick.getByRole('button', { name: 'Assign to me' })).toHaveCount(0)
+  await quick.getByRole('button', { name: 'Close…' }).click()
+  const closing = page.getByRole('dialog', { name: 'Close the incident' })
+  await expect(closing).toContainText('E2E-LIST')
+  await closing.getByRole('button', { name: 'Cancel' }).click()
+  await expect(quick).toBeVisible()
+
+  // Enter on a row opens the incident, like a double click and "Open the incident".
+  await mine.focus()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/incident\/e2e-list$/)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  await openIncidentList()
+  await mine.click()
+  await quick.getByRole('button', { name: 'Open the incident' }).click()
+  await expect(page).toHaveURL(/\/incident\/e2e-list$/)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('the incident list: a filter is saved, opens the list as the default, and the columns are chosen', async () => {
+  const before = page.url()
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const table = list.getByRole('table', { name: 'Incidents' })
+  const rows = table.locator('tbody tr')
+  const filter = list.getByRole('combobox', { name: 'Filter incidents' })
+  const menu = page.getByRole('menu', { name: 'Saved filters' })
+  const headings = table.locator('thead th')
+  const usual = ['#', 'Title', 'Type', 'Severity', 'Status', 'Owner', 'Opened', 'Updated', 'Actions']
+  const tagged = await page.request.patch('/api/incidents/e2e-list/fields', {
+    data: { changes: { category: 'e2e-cat' } },
+  })
+  expect(tagged.status()).toBe(200)
+
+  // The query on screen is saved under a name, and the filter is the one that is chosen.
+  await openIncidentList()
+  await expect(list.getByRole('button', { name: 'Filter: none' })).toBeVisible()
+  await filter.fill('host:e2e-list')
+  await expect(rows).toHaveCount(1)
+  await list.getByRole('button', { name: 'Save the filter…' }).click()
+  const saving = page.getByRole('dialog', { name: 'Save the filter' })
+  await expect(saving).toContainText('host:e2e-list')
+  await saving.getByLabel('Name').fill('E2E only')
+  await saving.getByRole('button', { name: 'Save the filter' }).click()
+  await expect(saving).toHaveCount(0)
+  const chosen = list.getByRole('button', { name: 'Filter: E2E only' })
+  await expect(chosen).toBeVisible()
+
+  // Another query than the one it keeps is marked, and undone.
+  await filter.fill('host:e2e-list severity:high')
+  await expect(list.getByText('changed since saved')).toBeVisible()
+  await list.getByRole('button', { name: 'Back to the saved one' }).click()
+  await expect(filter).toHaveValue('host:e2e-list')
+  await expect(list.getByText('changed since saved')).toHaveCount(0)
+
+  // The default: what the list opens with, for this person.
+  await chosen.click()
+  await expect(menu.getByRole('menuitem', { name: 'E2E only', exact: true })).toBeVisible()
+  await menu.getByRole('menuitem', { name: 'Set E2E only as default' }).click()
+  await expect(menu.getByRole('menuitem', { name: 'Set no filter as default' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await page.reload()
+  await expect(chosen).toBeVisible()
+  await expect(filter).toHaveValue('host:e2e-list')
+  await expect(rows).toHaveCount(1)
+
+  // The columns: one taken away, a field of the registry added and moved; the filter says it changed.
+  await expect(headings).toHaveText(usual)
+  await list.getByRole('button', { name: 'Columns…' }).click()
+  const columns = page.getByRole('dialog', { name: 'Columns' })
+  await columns.getByRole('checkbox', { name: 'Owner', exact: true }).click()
+  await columns.getByRole('checkbox', { name: /^Category/ }).click()
+  await columns.getByRole('button', { name: 'Move Category up' }).click()
+  await expect(headings).toHaveText([
+    '#',
+    'Title',
+    'Type',
+    'Severity',
+    'Status',
+    'Opened',
+    'Category',
+    'Updated',
+    'Actions',
+  ])
+  await expect(rows.first()).toContainText('e2e-cat')
+  await columns.getByRole('button', { name: 'Done' }).click()
+  await expect(list.getByText('changed since saved')).toBeVisible()
+  // A click on a heading orders the list by it.
+  await table.getByRole('button', { name: 'Sort by Title' }).click()
+  await expect(headings.nth(1)).toHaveAttribute('aria-sort', 'ascending')
+  await list.getByRole('button', { name: 'Back to the saved one' }).click()
+  await expect(headings).toHaveText(usual)
+  await list.getByRole('button', { name: 'Columns…' }).click()
+  await columns.getByRole('button', { name: 'Back to the default columns' }).click()
+  await columns.getByRole('button', { name: 'Done' }).click()
+  await expect(headings).toHaveText(usual)
+
+  // Put back: no default, the filter shared (an administrator may) then deleted, the list with no filter.
+  await chosen.click()
+  await menu.getByRole('menuitem', { name: 'Set no filter as default' }).click()
+  await expect(menu.getByRole('menuitem', { name: 'Set E2E only as default' })).toBeVisible()
+  await menu.getByRole('menuitem', { name: /^Manage the filters/ }).click()
+  const managing = page.getByRole('dialog', { name: 'Manage the filters' })
+  const share = managing.getByRole('checkbox', { name: 'Share E2E only with everyone' })
+  await share.click()
+  await expect(share).toBeChecked()
+  await managing.getByRole('button', { name: 'Delete E2E only' }).click()
+  await managing.getByRole('button', { name: 'Delete it' }).click()
+  await expect(managing).toContainText('Nothing here yet.')
+  await managing.getByRole('button', { name: 'Done' }).click()
+  await list.getByRole('button', { name: 'Filter: none' }).click()
+  await menu.getByRole('menuitem', { name: 'All incidents (no filter)' }).click()
+  await expect(filter).toHaveValue('')
+  expect((await (await page.request.get('/api/filters')).json()).filters).toEqual([])
+  expect((await page.request.delete('/api/incidents/e2e-list')).status()).toBe(204)
+  await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
@@ -1864,11 +2150,9 @@ test('a playbook runs on an incident: the approval is asked where the incident i
   const saved = await page.request.post(`/api/automation/playbooks/${playbookId}/versions`, { data: { graph } })
   expect(saved.status()).toBe(201)
 
-  // Run by hand, from the incident's own menu.
-  await page
-    .locator('aside nav[aria-label="Incidents"] li')
-    .filter({ hasText: 'WKS-FINANCE-01' })
-    .click({ button: 'right' })
+  // Run by hand, from the menu of the incident in the list.
+  await openIncidentList()
+  await incidentRow('WKS-FINANCE-01').click({ button: 'right' })
   await page.getByRole('menu').getByRole('menuitem', { name: 'Run a playbook…' }).click()
   const dialog = page.getByRole('dialog', { name: 'Run a playbook' })
   await expect(dialog.locator('#run-incident')).toHaveAttribute('data-incident', incidentId)
@@ -1889,6 +2173,8 @@ test('a playbook runs on an incident: the approval is asked where the incident i
   // The rail counts what waits, and the incident shows the question above its tabs.
   await area.getByRole('button', { name: 'Close automations' }).click()
   await expect(page.getByRole('button', { name: 'Automations (1 approval waits)' })).toBeVisible()
+  // Closing the run goes back to the list it was started from; the incident is opened from there.
+  await incidentRow('WKS-FINANCE-01').dblclick()
   const banner = page.getByRole('region', { name: /^Approval asked: Add a note to WKS-FINANCE-01/ })
   await banner.getByLabel('A comment with the answer').fill('looks right')
   await banner.getByRole('button', { name: 'Approve' }).click()
@@ -2366,7 +2652,8 @@ test('a type of incident is built with a field of its own, and closing asks for 
   const added = settings.getByRole('region', { name: 'Section New section' })
   await added.getByLabel('Title of the section').fill('Impact')
   await settings.locator('#type-reasons').fill('Fixed\nNot ours')
-  // The page of the type: the grid Nik makes from the sections, and a widget added to it.
+  // The page of the type, under "Pages": the grid Nik makes from the sections, and a widget added to it.
+  await settings.getByRole('tab', { name: 'Pages' }).click()
   const arranged = settings.getByRole('region', { name: 'The page' })
   await expect(arranged).toContainText('the page Nik makes from the sections')
   await expect(arranged.getByRole('article')).toHaveCount(5)
@@ -2485,6 +2772,382 @@ test('a type of incident is built with a field of its own, and closing asks for 
     data: { changes: { status: was } },
   })
   expect(again.status()).toBe(200)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+/** Open a type of incident in its builder (Settings → Incidents → Types), on the part "Pages". */
+async function openTypePages(name) {
+  await page.goto('/settings/incidents/types')
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('table', { name: 'Incident types' }).getByRole('button', { name, exact: true }).click()
+  await expect(settings.locator('#type-name')).toHaveValue(name)
+  await settings.getByRole('tab', { name: 'Pages' }).click()
+  return settings
+}
+
+test('a type orders and hides the tabs of its incidents, and adds a page of its own', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  const made = await page.request.post('/api/incident-types', { data: { name: 'E2E pages' } })
+  expect(made.status(), await made.text()).toBe(201)
+  const created = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-pages', name: 'E2E pages', host: 'E2E-PAGES', data: {} },
+  })
+  expect(created.status()).toBe(201)
+  const typed = await page.request.patch('/api/incidents/e2e-pages/fields', {
+    data: { changes: { type: 'e2e-pages' } },
+  })
+  expect(typed.status(), await typed.text()).toBe(200)
+
+  // The tabs of the bar in their order, each saying what it is; the Summary is never hidden.
+  const settings = await openTypePages('E2E pages')
+  const tabsOf = settings.getByRole('region', { name: 'Tabs of the incident' })
+  const rows = tabsOf.getByRole('listitem')
+  await expect(rows).toHaveCount(7)
+  await expect(rows.first()).toContainText('Summary')
+  await expect(rows.first()).toContainText('page')
+  await expect(rows.last()).toContainText('Evidence')
+  await expect(rows.last()).toContainText('Nik')
+  await expect(tabsOf.getByRole('button', { name: 'Hide Summary' })).toBeDisabled()
+  // A tab of Nik is moved with the arrows (a grip drags it) and hidden with its eye.
+  await tabsOf.getByRole('button', { name: 'Move Evidence up' }).click()
+  await expect(rows.last()).toContainText('Timeline')
+  await tabsOf.getByRole('button', { name: 'Hide Timeline' }).click()
+  await expect(rows.last()).toContainText('Nik · hidden')
+  await expect(tabsOf.getByRole('button', { name: 'Show Timeline' })).toBeVisible()
+
+  // A page of its own: a name, and a grid arranged like the Summary's.
+  await tabsOf.getByRole('button', { name: 'Add a page…' }).click()
+  const naming = page.getByRole('dialog', { name: 'Add a page' })
+  await naming.locator('#new-page-name').fill('Containment')
+  await naming.getByRole('button', { name: 'Add the page' }).click()
+  await expect(rows).toHaveCount(8)
+  await expect(rows.last()).toContainText('Containment')
+  await expect(rows.last()).toContainText('page · yours')
+  const arranged = settings.getByRole('region', { name: 'The page' })
+  await expect(arranged).toContainText('Page: Containment')
+  await expect(arranged).toContainText('Nothing on this page yet')
+  // What is on a page once is once on each page: the details are on the Summary and can be here too.
+  await expect(arranged.locator('#page-add-kind').locator('option')).toContainText(['Incident details'])
+  await arranged.locator('#page-add-kind').selectOption('note')
+  await arranged.getByRole('button', { name: 'Add', exact: true }).click()
+  await arranged.getByRole('button', { name: 'Edit A text' }).click()
+  const widget = page.getByRole('dialog', { name: 'Widget: A text' })
+  await widget.locator('#widget-text').fill('Isolate the host first.')
+  await widget.getByRole('button', { name: 'Done' }).click()
+  await arranged.locator('#page-add-kind').selectOption('linked')
+  await arranged.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(arranged.getByRole('article', { name: 'Linked incidents' })).toBeVisible()
+  // Renamed, its tab is called by its new name; moved up, it comes right after the Summary.
+  await arranged.locator('#page-name').fill('Containment plan')
+  await expect(rows.last()).toContainText('Containment plan')
+  const up = tabsOf.getByRole('button', { name: 'Move Containment plan up' })
+  for (let step = 0; step < 6; step += 1) await up.click()
+  await expect(rows.nth(1)).toContainText('Containment plan')
+  await settings.getByRole('button', { name: 'Save the type' }).click()
+  await expect(settings.getByText('not saved')).toHaveCount(0)
+  const saved = (await (await page.request.get('/api/incident-types/e2e-pages')).json()).layout
+  expect(saved.tabs).toEqual([
+    'summary',
+    'page:containment',
+    'war_room',
+    'work_plan',
+    'context',
+    'iocs',
+    'evidence',
+    'timeline',
+  ])
+  expect(saved.hidden).toEqual(['timeline'])
+  expect(saved.pages).toHaveLength(1)
+  expect(saved.pages[0]).toMatchObject({ id: 'containment', name: 'Containment plan' })
+  expect(saved.pages[0].grid.map((item) => item.kind)).toEqual(['note', 'linked'])
+
+  // The incident follows: its tabs in that order, the hidden one gone, the page a tab with its widgets.
+  await page.goto('/incident/e2e-pages')
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  await expect(tabs.getByRole('button', { name: 'Containment plan', exact: true })).toBeVisible()
+  const names = await tabs
+    .getByRole('button')
+    .evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')))
+  expect(names).toEqual(['Summary', 'Containment plan', 'War Room', 'Work plan', 'Context', 'Indicators', 'Evidence'])
+  await tabs.getByRole('button', { name: 'Containment plan', exact: true }).click()
+  const shown = page.getByRole('region', { name: 'Containment plan of the incident' })
+  await expect(shown.getByRole('article', { name: 'A text' })).toContainText('Isolate the host first.')
+  await expect(shown.getByRole('article', { name: 'Linked incidents' })).toContainText(
+    'No other incident is related to this one',
+  )
+
+  // Deleted in the type, the page leaves the incident; the tabs of Nik stay as they were ordered.
+  const again = await openTypePages('E2E pages')
+  await again
+    .getByRole('region', { name: 'Tabs of the incident' })
+    .getByRole('button', { name: 'Containment plan', exact: true })
+    .click()
+  await again.getByRole('region', { name: 'The page' }).getByRole('button', { name: 'Delete the page…' }).click()
+  const deleting = page.getByRole('dialog', { name: 'Delete the page Containment plan?' })
+  await deleting.getByRole('button', { name: 'Delete the page' }).click()
+  await expect(again.getByRole('region', { name: 'Tabs of the incident' }).getByRole('listitem')).toHaveCount(7)
+  await expect(again.getByRole('region', { name: 'The page' })).toContainText('Page: Summary')
+  await again.getByRole('button', { name: 'Save the type' }).click()
+  await expect(again.getByText('not saved')).toHaveCount(0)
+  await page.goto('/incident/e2e-pages')
+  await expect(tabs.getByRole('button', { name: 'Evidence', exact: true })).toBeVisible()
+  await expect(tabs.getByRole('button', { name: 'Containment plan', exact: true })).toHaveCount(0)
+  await expect(tabs.getByRole('button', { name: 'Timeline', exact: true })).toHaveCount(0)
+
+  // Left as it was: the incident and the type are deleted.
+  expect((await page.request.delete('/api/incidents/e2e-pages')).status()).toBe(204)
+  expect((await page.request.delete('/api/incident-types/e2e-pages')).status()).toBe(204)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('the close form of a type shows its sections in the Close dialog; its quick view is a list of blocks', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  const field = await page.request.post('/api/fields', {
+    data: { name: 'e2e_reach', label: 'Mailboxes reached', type: 'number', allTypes: false },
+  })
+  expect(field.status(), await field.text()).toBe(201)
+  const made = await page.request.post('/api/incident-types', {
+    data: {
+      name: 'E2E close',
+      fields: [{ name: 'e2e_reach', requiredOnClose: true }],
+      layout: {
+        sections: [
+          { id: 'key', title: 'Key facts', key: true, fields: ['status', 'severity', 'owner'] },
+          { id: 'outcome', title: 'Outcome', columns: 2, fields: ['e2e_reach', 'category'] },
+          { id: 'lessons', title: 'Lessons', fields: ['details'] },
+        ],
+      },
+    },
+  })
+  expect(made.status(), await made.text()).toBe(201)
+  const created = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-close', name: 'E2E close', host: 'E2E-CLOSE', data: {} },
+  })
+  expect(created.status()).toBe(201)
+  const typed = await page.request.patch('/api/incidents/e2e-close/fields', {
+    data: { changes: { type: 'e2e-close' } },
+  })
+  expect(typed.status(), await typed.text()).toBe(200)
+  const task = await page.request.post('/api/incidents/e2e-close/tasks', { data: { title: 'Tell the user' } })
+  expect(task.status(), await task.text()).toBe(201)
+
+  // The close form: sections of the type, chosen and ordered; each says what it lets one edit.
+  const settings = await openTypePages('E2E close')
+  const views = settings.getByRole('region', { name: 'Other views of this type' })
+  await expect(views).toContainText('as it always was')
+  await expect(views).toContainText('generated')
+  await views.getByRole('button', { name: 'Close form' }).click()
+  const form = settings.getByRole('region', { name: 'Close form' })
+  const offered = form.getByRole('list', { name: 'Sections to add to the close form' })
+  await offered.getByRole('button', { name: 'Outcome' }).click()
+  await offered.getByRole('button', { name: 'Lessons' }).click()
+  const chosen = form.getByRole('list', { name: 'Sections of the close form' }).getByRole('listitem')
+  await expect(chosen).toHaveCount(2)
+  await expect(chosen.first()).toContainText('Outcome')
+  await expect(chosen.first()).toContainText('2 fields, 1 to close')
+  await form.getByRole('button', { name: 'Move Lessons up in the close form' }).click()
+  await expect(chosen.first()).toContainText('Lessons')
+  await expect(views).toContainText('2 sections')
+  // The quick view: blocks one under the other, a kind that is there once offered once.
+  await views.getByRole('button', { name: 'Quick view' }).click()
+  const quick = settings.getByRole('region', { name: 'Quick view' })
+  await expect(quick).toContainText('This type has none of its own')
+  await quick.locator('#quick-add-kind').selectOption('timers')
+  await quick.getByRole('button', { name: 'Add', exact: true }).click()
+  await quick.locator('#quick-add-kind').selectOption('note')
+  await quick.getByRole('button', { name: 'Add', exact: true }).click()
+  await quick.getByLabel('Text of block 2').fill('Call the owner of the mailbox.')
+  await quick.getByRole('button', { name: 'Move block 2 up' }).click()
+  await expect(quick.getByRole('list', { name: 'Blocks of the quick view' }).getByRole('listitem')).toHaveCount(2)
+  await expect(quick.locator('#quick-add-kind').locator('option')).not.toContainText(['Timers'])
+  await expect(views).toContainText('2 blocks')
+  await settings.getByRole('button', { name: 'Save the type' }).click()
+  await expect(settings.getByText('not saved')).toHaveCount(0)
+  const saved = (await (await page.request.get('/api/incident-types/e2e-close')).json()).layout
+  expect(saved.close).toEqual({ sections: ['lessons', 'outcome'] })
+  expect(saved.quick).toEqual([{ kind: 'note', text: 'Call the owner of the mailbox.' }, { kind: 'timers' }])
+
+  // Closing an incident of the type: the sections with their fields, and what is left of the work plan.
+  await page.goto('/incident/e2e-close')
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  const details = page.getByRole('article', { name: 'Incident details' })
+  const askToClose = async () => {
+    await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+    await details.getByRole('button', { name: 'Edit the incident' }).click()
+    const editing = page.getByRole('dialog', { name: 'Edit the incident' })
+    await editing.locator('#incident-status').selectOption('closed')
+    await editing.getByRole('button', { name: 'Save', exact: true }).click()
+  }
+  await askToClose()
+  const closing = page.getByRole('dialog', { name: 'Close the incident' })
+  await expect(closing).toContainText('E2E close · the form of its type')
+  await expect(closing.locator('fieldset legend')).toHaveText(['Section · Lessons', 'Section · Outcome'])
+  await expect(closing.getByRole('group', { name: 'Section Outcome' })).toContainText('Mailboxes reached · required')
+  await expect(closing.getByRole('status')).toHaveText('1 task of the work plan is still open.')
+  // "Show them" leaves the dialog for the work plan; nothing was closed.
+  await closing.getByRole('button', { name: 'Show them' }).click()
+  await expect(closing).toHaveCount(0)
+  await expect(tabs.getByRole('button', { name: 'Work plan', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByText('Tell the user').first()).toBeVisible()
+  await askToClose()
+  await closing.locator('#close-reason').selectOption('Resolved')
+  await closing.locator('#close-field-details').fill('Add the sender pattern to the rule.')
+  await closing.getByRole('button', { name: 'Close the incident' }).click()
+  await expect(closing.getByRole('alert')).toHaveText('Mailboxes reached is needed to close')
+  await closing.locator('#close-field-e2e_reach').fill('14')
+  await closing.locator('#close-field-category').fill('phishing')
+  await closing.getByRole('button', { name: 'Close the incident' }).click()
+  await expect(closing).toHaveCount(0)
+  await expect(details).toContainText('closed')
+  const held = (await (await page.request.get('/api/incidents/e2e-close/fields')).json()).fields
+  expect([held.status, held.close_reason, held.e2e_reach, held.category, held.details]).toEqual([
+    'closed',
+    'Resolved',
+    14,
+    'phishing',
+    'Add the sender pattern to the rule.',
+  ])
+
+  // Left as it was: the task done, the incident, the type and the field deleted.
+  const done = await page.request.post(`/api/tasks/${(await task.json()).id}/complete`, { data: {} })
+  expect([200, 409]).toContain(done.status())
+  expect((await page.request.delete('/api/incidents/e2e-close')).status()).toBe(204)
+  expect((await page.request.delete('/api/incident-types/e2e-close')).status()).toBe(204)
+  expect((await page.request.delete('/api/fields/e2e_reach')).status()).toBe(204)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a script button of a page runs a script on the incident: one argument asked, one filled from a field', async () => {
+  test.setTimeout(180_000)
+  const before = page.url()
+  // The sandbox runs in CI (and wherever E2E_SANDBOX_URL names one); without it a run says why it failed.
+  const sandbox = Boolean(process.env.E2E_SANDBOX_URL)
+  const made = await page.request.post('/api/incident-types', { data: { name: 'E2E buttons' } })
+  expect(made.status(), await made.text()).toBe(201)
+  const created = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-button', name: 'E2E button', host: 'E2E-BUTTON', data: {} },
+  })
+  expect(created.status()).toBe(201)
+  const typed = await page.request.patch('/api/incidents/e2e-button/fields', {
+    data: { changes: { type: 'e2e-buttons', affected_hosts: ['name;office', 'anna;rome'] } },
+  })
+  expect(typed.status(), await typed.text()).toBe(200)
+
+  // The settings of a button, in the page of the type: its text, its colours, its script, its arguments.
+  const settings = await openTypePages('E2E buttons')
+  const arranged = settings.getByRole('region', { name: 'The page' })
+  await expect(arranged.locator('#page-add-kind').locator('option')).not.toContainText(['Playbook buttons'])
+  await arranged.locator('#page-add-kind').selectOption('buttons')
+  await arranged.getByRole('button', { name: 'Add', exact: true }).click()
+  await arranged.getByRole('button', { name: 'Edit Script buttons' }).click()
+  const widget = page.getByRole('dialog', { name: 'Widget: Script buttons' })
+  await widget.getByRole('button', { name: 'Add a button' }).click()
+  await widget.locator('#button-label').fill('Split the rows')
+  // The colours are free; a text that is hard to read on its button is said, and saved all the same.
+  await widget.locator('#button-background').fill('#777777')
+  await widget.locator('#button-color').fill('#ffffff')
+  const contrast = widget.getByLabel('Contrast of the button')
+  await expect(contrast).toHaveAttribute('role', 'alert')
+  await expect(contrast).toContainText('Contrast 4.4 : 1.')
+  await expect(contrast).toContainText('hard to read')
+  await widget.locator('#button-background').fill('#8b1a1a')
+  await expect(contrast).toHaveText('Contrast 9.2 : 1.')
+  await expect(widget.getByRole('img', { name: 'The button as drawn: Split the rows' })).toHaveCSS(
+    'background-color',
+    'rgb(139, 26, 26)',
+  )
+  // A script with a saved version, then one input for each of its arguments.
+  await widget.locator('#button-script').selectOption('CsvToList')
+  await expect(widget.locator('#button-arg-delimiter')).toHaveAttribute(
+    'placeholder',
+    'left empty: asked when the button is pressed',
+  )
+  // Typing {{ offers the fields of the type; the one chosen completes what was typed.
+  await widget.locator('#button-arg-text').pressSequentially('{{')
+  const picker = page.getByRole('dialog', { name: 'Pick a value' })
+  await picker.getByLabel('Find a value').fill('affected hosts')
+  await picker.getByRole('button', { name: /^affected_hosts/ }).click()
+  await expect(widget.locator('#button-arg-text')).toHaveValue('{{ affected_hosts }}')
+  await widget.getByRole('button', { name: 'Done' }).click()
+  await expect(arranged.getByRole('article', { name: 'Script buttons' })).toContainText('Split the rows')
+  await settings.getByRole('button', { name: 'Save the type' }).click()
+  await expect(settings.getByText('not saved')).toHaveCount(0)
+  const saved = (await (await page.request.get('/api/incident-types/e2e-buttons')).json()).layout
+  expect(saved.grid.at(-1).buttons).toEqual([
+    {
+      label: 'Split the rows',
+      background: '#8b1a1a',
+      color: '#ffffff',
+      script: 'CsvToList',
+      args: { text: '{{ affected_hosts }}' },
+    },
+  ])
+
+  // On the incident: the button drawn with its colours. Pressed, what is filled is shown and what is not is asked.
+  await page.goto('/incident/e2e-button')
+  const buttons = page.getByRole('article', { name: 'Script buttons' })
+  const button = buttons.getByRole('button', { name: 'Split the rows' })
+  await expect(button).toHaveCSS('background-color', 'rgb(139, 26, 26)')
+  await expect(button).toHaveCSS('color', 'rgb(255, 255, 255)')
+  await button.click()
+  const press = page.getByRole('dialog', { name: 'Split the rows' })
+  // The field holds two values: one run for each.
+  await expect(press.getByRole('group', { name: 'text, from Affected hosts · 2 values' })).toHaveText(
+    '2 runs, one for each value',
+  )
+  await expect(press).toContainText('delimiter · to fill')
+  await press.locator('#run-arg-delimiter').fill(';')
+  await press.getByRole('button', { name: 'Run 2 times' }).click()
+  // The same dialog lists the runs as they finish.
+  const running = page.getByRole('dialog', { name: 'Split the rows · 2 runs' })
+  const runs = running.getByRole('list', { name: 'Runs' }).getByRole('listitem')
+  await expect(runs).toHaveCount(2)
+  await expect(runs.first()).toContainText('name;office')
+  if (sandbox) {
+    await expect(runs.first()).toContainText('done', { timeout: 60_000 })
+    await expect(runs.last()).toContainText('done', { timeout: 60_000 })
+    await expect(running.getByRole('status')).toHaveText('The 2 runs are done.')
+  } else {
+    await expect(runs.first()).toContainText('failed', { timeout: 60_000 })
+    await runs.first().getByRole('button', { name: 'show why' }).click()
+    await expect(runs.first().getByRole('note')).toContainText('sandbox')
+    await expect(running.getByRole('button', { name: 'Run the 2 failed ones again' })).toBeVisible({ timeout: 60_000 })
+  }
+  await running.getByRole('button', { name: 'Done' }).click()
+  await expect(running).toHaveCount(0)
+
+  // Each run is a command of the War Room, with its arguments, and a line of the audit log.
+  const commands = (await (await page.request.get('/api/incidents/e2e-button/war-room?show=commands')).json()).entries
+  expect(commands.map((entry) => [entry.body.button, entry.body.line])).toEqual([
+    ['Split the rows', '!CsvToList delimiter=; text=name;office'],
+    ['Split the rows', '!CsvToList delimiter=; text=anna;rome'],
+  ])
+  if (sandbox) {
+    const results = (await (await page.request.get('/api/incidents/e2e-button/war-room?show=automation')).json())
+      .entries
+    const first = results.find((entry) => entry.parentId === commands[0].id)
+    const detail = await (await page.request.get(`/api/incidents/e2e-button/war-room/${first.id}`)).json()
+    expect(detail.step.output).toMatchObject({ columns: ['name', 'office'], count: 0 })
+  }
+  const audited = (await (await page.request.get('/api/audit?incidentId=e2e-button')).json()).entries
+  expect(
+    audited
+      .filter((entry) => entry.action === 'button.run')
+      .map((entry) => entry.details)
+      .sort(),
+  ).toEqual([
+    'Pressed "Split the rows": ran CsvToList for anna;rome (2 of 2)',
+    'Pressed "Split the rows": ran CsvToList for name;office (1 of 2)',
+  ])
+
+  // Left as it was: the incident and the type are deleted.
+  expect((await page.request.delete('/api/incidents/e2e-button')).status()).toBe(204)
+  expect((await page.request.delete('/api/incident-types/e2e-buttons')).status()).toBe(204)
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })
@@ -3842,11 +4505,14 @@ test('a branch is compared with main before it is pushed, and runs only in the d
 test('the rail: the order of a working day, and the account at its foot', async () => {
   const rail = page.getByRole('navigation', { name: 'Sections' })
   // Every incident of the list has its number, opened in this visit or not.
-  const shows = rail.getByRole('button', { name: 'Incidents', exact: true })
-  if (await shows.count()) await shows.click()
-  const listed = page.getByRole('navigation', { name: 'Incidents' }).getByRole('listitem')
+  await openIncidentList()
+  const listed = page.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
   await expect(listed.first()).toBeVisible()
   for (const text of await listed.allTextContents()) expect(text).toMatch(/#\d{5}/)
+  // The entry of the list shows it is open, and goes back to the incident that was.
+  const hide = rail.getByRole('button', { name: 'Hide the incidents' })
+  await expect(hide).toHaveAttribute('aria-pressed', 'true')
+  await hide.click()
   await expect(page.getByRole('banner').getByText(/^#\d{5}$/)).toBeVisible()
   const labels = await rail
     .getByRole('button')
@@ -3914,8 +4580,15 @@ test('a side panel is made wider and narrower with its handle, and remembers its
   await page.keyboard.press('Enter')
   await expect(handle).toHaveAttribute('aria-valuenow', '240')
   await page.getByRole('button', { name: 'Close platform settings' }).click()
-  // The list of incidents has the same handle.
+  // The side panel of the artifacts has the same handle, and so has the quick view of the incident list.
+  const artifacts = page.getByRole('button', { name: 'Artifacts', exact: true })
+  if (await artifacts.count()) await artifacts.click()
   await expect(page.getByRole('separator', { name: 'Resize the side panel' })).toBeVisible()
+  await openIncidentList()
+  await incidentRow().click()
+  await expect(page.getByRole('separator', { name: 'Resize the quick view' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Hide the incidents' }).click()
 })
 
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {

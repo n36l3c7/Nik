@@ -918,3 +918,34 @@ def test_migration_0040_adds_the_keys_of_an_instance(tmp_path, monkeypatch):
     with engine.connect() as conn:
         assert not set(INSTANCE_KEY_TABLES) & set(sa.inspect(conn).get_table_names())
         assert {c["name"] for c in sa.inspect(conn).get_columns("connections")} == {"id", "name"}
+
+
+def test_migration_0041_adds_the_saved_filters(tmp_path, monkeypatch):
+    from app.core.models import SAVED_FILTER_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY)"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0040_instance_keys")
+    command.upgrade(cfg, "0041_saved_filters")
+    with engine.begin() as conn:
+        assert set(SAVED_FILTER_TABLES) <= set(sa.inspect(conn).get_table_names())
+        conn.execute(
+            sa.text(
+                "INSERT INTO saved_filters (id, owner, name, entity, query, columns, created_at, updated_at) "
+                "VALUES ('f1', 'admin', 'Mine', 'incidents', 'status:open', '[]', 'now', 'now')"
+            )
+        )
+        assert conn.execute(sa.text("SELECT shared, sort FROM saved_filters")).one() == (0, None)
+    command.stamp(cfg, "0040_instance_keys")
+    command.upgrade(cfg, "0041_saved_filters")  # again: nothing to do, and what was saved is still there
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT name FROM saved_filters")).scalar() == "Mine"
+    command.downgrade(cfg, "0040_instance_keys")
+    with engine.connect() as conn:
+        assert not set(SAVED_FILTER_TABLES) & set(sa.inspect(conn).get_table_names())

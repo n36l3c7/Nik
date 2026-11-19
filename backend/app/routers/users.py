@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import saved_filters
 from ..core import audit
 from ..core.db import get_db
 from ..core.locking import lock_incident
@@ -238,6 +239,7 @@ def update_user(
             raise HTTPException(status_code=400, detail="Username already exists")
         if username != target.username:
             moved = _rename_assignee(db, target.username, username)
+            saved_filters.renamed(db, target.username, username)
             changes.append(
                 f'renamed from "{target.username}"' + (f" ({moved} assigned incidents follow)" if moved else "")
             )
