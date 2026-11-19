@@ -216,13 +216,17 @@ def shapes(db: OrmSession) -> dict[str, Any]:
     from . import payloads
 
     found = []
-    for name, row in registry.registry(db).items():
+    known = registry.registry(db)
+    for name, row in known.items():
         if row.applies_to != "incident":
             continue
         said = row.label if not row.description else f"{row.label}. {row.description}"
         found.append(
             {"name": name, "type": row.type, "description": said if row.system else f"{said} (a field of yours)"}
         )
+        if name == "labels" and "tags" not in known:
+            # The tags of the incident are read by this name too (incident_tags.named).
+            found.append({"name": "tags", "type": row.type, "description": f"{said} The same list as labels."})
         # What is inside the two types that are not one plain value.
         if row.type == "indicator":
             found.append({"name": f"{name}.type", "type": "text", "description": f"The type of {row.label}"})

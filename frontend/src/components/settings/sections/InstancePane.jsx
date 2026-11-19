@@ -121,6 +121,10 @@ export default function InstancePane({
           saved = await api.put(`/automation/instances/${encodeURIComponent(saved.id)}`, more)
         }
       }
+      // What was typed of a secret is not kept in the form once it is saved, whether or not the form stays open.
+      setValues(startingValues(connector, saved))
+      setRemoved([])
+      if (keyed) setKeys(editableKeys(saved))
       // The classifier of the instance and the mappers of its connector, where they were changed.
       let part = 'the classifier'
       try {

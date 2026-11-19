@@ -113,7 +113,9 @@ SYSTEM_FIELDS: dict[str, System] = {
     "source_id": _s("Source id", "text", "column:source_id", False),
     "source_url": _s("Source address", "url", "json", False),
     "details": _s("Details", "long_text", "json"),
-    "labels": _s("Labels", "tags", "json"),
+    # The tags of the incident: called ``labels`` where they are stored and wherever they are named,
+    # Tags where a person reads them (incident_tags.py holds the rules of a tag).
+    "labels": _s("Tags", "tags", "json", description="Short words to group incidents by and to find them with."),
     "playbook": _s("Playbook", "text", "json", description="The playbook set for this incident."),
     "phase": _s("Phase", "text", "json"),
     "due": _s("Due", "date", "json"),
@@ -131,6 +133,10 @@ SYSTEM_FIELDS: dict[str, System] = {
     "time_to_close": _s("Time to close", "timer", "json", False, description="Until the incident is closed."),
     "sla_breached": _s("SLA breached", "bool", "json", False, description="A timer of the incident passed its time."),
 }
+
+# What a system field was called by an older release → it takes the name it has now when the
+# database is next started. One an administrator gave another name keeps that name.
+RENAMED = {"labels": "Labels"}
 
 
 # --------------------------------------------------------------------------- #
@@ -170,6 +176,10 @@ def seed(db: OrmSession) -> int:
             # A custom field took the name before a release made it a system one: the system one wins.
             row.system, row.all_types, row.type, row.options = True, True, spec.type, options
             added += 1
+        elif row.label == RENAMED.get(name) and row.label != spec.label:
+            row.label = spec.label
+            row.description = row.description or spec.description
+            added += 1
     return added
 
 
@@ -177,7 +187,9 @@ def registry(db: OrmSession) -> dict[str, Field]:
     """Every field by name. The system ones are added here when a database does not have
     them yet (the start of the server adds them; this is for whatever runs before it)."""
     rows = {row.name: row for row in db.scalars(select(Field))}
-    if any(name not in rows or not rows[name].system for name in SYSTEM_FIELDS):
+    if any(
+        name not in rows or not rows[name].system or rows[name].label == RENAMED.get(name) for name in SYSTEM_FIELDS
+    ):
         seed(db)
         db.flush()
         rows = {row.name: row for row in db.scalars(select(Field))}
@@ -501,6 +513,12 @@ def update(
                 changed.append(name)
             continue
         value = coerce(db, field.label or name, field.type, field.options or {}, raw)
+        if name == "labels" and value is not None:
+            # The tags: what is added is held to the rules of a tag, what was there is kept.
+            from . import incident_tags
+
+            held = before.get(name)
+            value = incident_tags.clean(value, held if isinstance(held, list) else ()) or None
         if value == before.get(name) or (value is None and name not in before):
             continue
         where, _, key = (spec.where if spec is not None else "json").partition(":")

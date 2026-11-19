@@ -808,15 +808,15 @@ Content-Type: application/json
           <strong>What is not scanned.</strong> Only http and https; never a private or reserved address or an internal
           name. The address leaves Nik when it is visited, so the data guard decides as for every node that sends
           something out: an address that holds an e-mail address, one that is on the IoC allowlist or under your own
-          domains is held unless an admin opened that class for the playbook, and one classified TLP:RED is always
-          held. Held, the step fails and says what was held; with <code>held: drop</code> on the node it goes on with
+          domains is held unless an admin opened that class for the playbook, and one classified TLP:RED is always held.
+          Held, the step fails and says what was held; with <code>held: drop</code> on the node it goes on with
           <code>scanned</code> false. The list of hosts the playbook may reach is not asked: the visit is made by the
           isolated browser, from its own network.
         </li>
         <li>
-          <strong>When it cannot be done.</strong> Without the isolated browser (<code>BROWSER_URL</code> not set on
-          the backend) the step fails with a sentence that says so. A visit that fails is tried again like any
-          failure; a scan nobody took in five minutes fails the step.
+          <strong>When it cannot be done.</strong> Without the isolated browser (<code>BROWSER_URL</code> not set on the
+          backend) the step fails with a sentence that says so. A visit that fails is tried again like any failure; a
+          scan nobody took in five minutes fails the step.
         </li>
         <li>
           <strong>A dry run</strong> scans nothing: the step shows the address it would visit and gives every output

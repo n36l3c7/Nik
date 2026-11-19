@@ -381,8 +381,10 @@ def sql_condition(spec: FieldSpec, op: str, value: Value, position: int, ctx: Co
         return column.is_(True) if wanted else or_(column.is_(False), column.is_(None))
 
     if kind == "tags":
-        match = _tags_match(spec, value)
-        return match if op == "=" else or_(not_(match), column.is_(None))
+        # No list at all holds no tag, and that is said outright: "not" of it is then true, as it
+        # is on a row, where the database would otherwise call it unknown and leave the row out.
+        match = and_(column.is_not(None), _tags_match(spec, value))
+        return match if op == "=" else not_(match)
 
     raise _bad("bad_operator", position, "This field cannot be searched")
 

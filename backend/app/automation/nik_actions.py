@@ -128,6 +128,7 @@ INCIDENT_OUT = [
 )
 def get_incident(call: Call) -> Result:
     from .. import fields as registry
+    from .. import incident_tags
 
     wanted = _wanted(call, call.args.get("incident"))
     row = call.db.get(Incident, wanted) if wanted else None
@@ -135,8 +136,9 @@ def get_incident(call: Call) -> Result:
         raise ActionError("The incident does not exist" if wanted else "No incident was given", retry=False)
     # The fields carry the classes ``{{ incident.… }}`` gives them: a custom one has none of its own.
     held = {f"fields.{name}": classes for name, classes in payloads.registry_classes().items()}
+    fields = incident_tags.named(call.db, registry.read(call.db, row))
     return Result(
-        output={"incident": payloads.incident_data(row), "fields": registry.read(call.db, row)},
+        output={"incident": payloads.incident_data(row), "fields": fields},
         classes={**payloads.incident_classes(), **held},
     )
 
@@ -253,6 +255,78 @@ def set_assignee(call: Call) -> Result:
 )
 def set_incident_field(call: Call) -> Result:
     return _set_field(call, str(call.args.get("field") or ""), str(call.args.get("value") or "").strip())
+
+
+INCIDENT_TAGS_ARG = {
+    "name": "tags",
+    "type": "list",
+    "required": True,
+    "description": "The tags: a list, or words separated by commas",
+}
+INCIDENT_TAGS_OUT = [
+    {"name": "tags", "type": "list", "description": "The tags of the incident afterwards"},
+    {"name": "changed", "type": "bool", "description": "Whether its tags are not what they were"},
+]
+
+
+def _tag_incident(call: Call, change, would: str) -> Result:
+    """Put tags on an incident or take them off (``change`` is which). Doing it twice changes
+    nothing the second time: the incident has the tags already, or no longer has them."""
+    from .. import fields as registry
+    from .. import incident_tags
+
+    wanted = incident_tags.given(call.args.get("tags"))
+    if not wanted:
+        raise ActionError("At least one tag is needed", retry=False)
+    found = _wanted(call, call.args.get("incident"))
+    # A dry run reads the incident and changes nothing, so it does not lock it.
+    row = (call.db.get(Incident, found) if found else None) if call.dry_run else _incident(call, found)
+    if row is None:
+        raise ActionError("The incident does not exist" if found else "No incident was given", retry=False)
+    held = incident_tags.of(row)
+    try:
+        after = change(held, wanted)
+        if after != held and not call.dry_run:
+            registry.update(
+                call.db,
+                row,
+                {incident_tags.FIELD: after or None},
+                ACTOR,
+                f"run:{call.run.id}",
+                signature=signature(call),
+            )
+    except registry.FieldError as error:
+        raise ActionError(error.message, retry=False) from None
+    request = {"would": would, "tags": [str(tag) for tag in wanted][:50]} if call.dry_run else None
+    return Result(output={"tags": after, "changed": after != held}, request=request)
+
+
+@action(
+    "nik.add-incident-tags",
+    group="Nik",
+    name="Tag the incident",
+    description="Add tags to an incident. The tags it has already stay as they are.",
+    arguments=[INCIDENT_ARG, INCIDENT_TAGS_ARG],
+    outputs=INCIDENT_TAGS_OUT,
+)
+def add_incident_tags(call: Call) -> Result:
+    from .. import incident_tags
+
+    return _tag_incident(call, incident_tags.added, "tag the incident")
+
+
+@action(
+    "nik.remove-incident-tags",
+    group="Nik",
+    name="Take tags off the incident",
+    description="Remove tags from an incident. A tag it does not have changes nothing.",
+    arguments=[INCIDENT_ARG, INCIDENT_TAGS_ARG],
+    outputs=INCIDENT_TAGS_OUT,
+)
+def remove_incident_tags(call: Call) -> Result:
+    from .. import incident_tags
+
+    return _tag_incident(call, incident_tags.removed, "take tags off the incident")
 
 
 @action(

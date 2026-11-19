@@ -2614,7 +2614,7 @@ test('a connector is added from its file, a connection is made, and its commands
   await keys.getByLabel('Keep an answer for this many hours').fill('24')
   await edit.getByRole('button', { name: 'Save', exact: true }).click()
   // Saved with everything else of the instance; opened again, the key is there and shows nothing of itself.
-  await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
+  await expect(edit).toHaveCount(0) // the form closes once everything is saved
   await row.getByRole('button', { name: 'Edit Acme test' }).click()
   await edit.getByRole('tab', { name: 'Keys' }).click()
   await expect(held).toHaveCount(2)
@@ -3849,6 +3849,7 @@ test('the mappers and the classifier are set in the instance, tried on a sample,
 
   // One Save for the instance, its classifier and the mappers.
   await pane.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(pane).toHaveCount(0) // the form closes once everything is saved
   await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
   await expect(page).toHaveURL(/\/settings\/automation\/connectors$/)
   const kept = await page.evaluate(async () => {
@@ -3952,6 +3953,7 @@ test('fetching is set in the instance: how often, the look-back, why it fails, R
   await expect(goes).toContainText('It fetches once the instance is saved.')
   // The one Save of the instance keeps them, with the rest.
   await pane.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(pane).toHaveCount(0)
   await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
   const saved = await page.evaluate(async () => {
     const found = await (await fetch('/api/automation/instances', { credentials: 'include' })).json()
@@ -3993,6 +3995,7 @@ test('fetching is set in the instance: how often, the look-back, why it fails, R
   await fetching.getByLabel('How often (seconds)').fill('3600')
   await fetching.getByLabel('Look-back (minutes)').fill('0')
   await pane.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(pane).toHaveCount(0)
   await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
   await expect(row.getByRole('button', { name: /^Fetching of Acme test/ })).toHaveCount(0)
   // Who is told when a connection fails: the bell holds it, and it leads to the instance.

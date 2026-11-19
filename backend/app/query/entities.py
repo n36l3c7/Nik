@@ -23,7 +23,7 @@ from ..core.models import (
     Task,
 )
 from .fields import Context, Entity, FieldSpec, _bad, _boolean, text_matches
-from .incident_fields import spec_of
+from .incident_fields import TAG_NAMES, TAGS_FIELD, spec_of
 from .parser import Value
 
 SEVERITIES = ("low", "medium", "high", "critical")
@@ -123,7 +123,17 @@ def _kept_in_fields() -> tuple[FieldSpec, ...]:
         if name in named or system.where != "json":
             continue
         options = {"choices": list(system.options)} if system.options else {}
-        found.append(spec_of(name, system.type, label=system.label, description=system.description, options=options))
+        found.append(
+            spec_of(
+                name,
+                system.type,
+                label=system.label,
+                description=system.description,
+                options=options,
+                # The tags of an incident are asked as those of an artifact or an indicator are.
+                aliases=TAG_NAMES if name == TAGS_FIELD else (),
+            )
+        )
     return tuple(found)
 
 

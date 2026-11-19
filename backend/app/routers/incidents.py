@@ -36,7 +36,7 @@ from sqlalchemy.orm import defer
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import fields as field_registry
-from .. import incident_quick, query
+from .. import incident_quick, incident_tags, query
 from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
@@ -132,6 +132,8 @@ def _summary(r: Any, source: dict[str, Any] | None) -> dict[str, Any]:
         "assignee": r.assignee,
         "hasMail": bool(r.has_mail),
         "type": r.type_id or field_registry.UNCLASSIFIED,
+        # Its tags (the field ``labels``): a column of the list, and what its Tag filter counts.
+        "tags": incident_tags.of(r),
         # What brought it in, with the logo of its connector; null for one made here.
         "source": source,
         "createdAt": r.created_at,
@@ -238,7 +240,7 @@ def list_incidents(
     the position and the reason.
 
     ``view=summary`` returns light rows (id/name/host/username/os/ticketId/severity/
-    status/assignee/hasMail/timestamps) WITHOUT
+    status/assignee/hasMail/tags/timestamps) WITHOUT
     the heavy document body — use it for lists at scale, then fetch a single
     incident's full document from ``GET /incidents/{id}``. Backward compatible:
     with no params it returns every full document. Total count is also in the
@@ -298,6 +300,7 @@ def list_incidents(
                 Incident.updated_at,
                 Incident.type_id,
                 Incident.source_connection_id,
+                Incident.fields,
             )
             .where(*conditions)
             .order_by(order)

@@ -1,7 +1,9 @@
 """The fields of the registry as fields of the query language.
 
 Every field an incident can hold is asked by its name: ``customer:acme``,
-``amount:>=100``, ``due:[2026-11-01 TO *]``, ``labels:phish``. What a
+``amount:>=100``, ``due:[2026-11-01 TO *]``, ``labels:phish``. The tags of an
+incident are its field ``labels``, asked as ``tag:phish`` or ``tags:phish``
+too, like the tags of an artifact or of an indicator. What a
 condition means follows the type of the field, and is what the same type means
 on a field Nik always had, so that nothing about a custom field is special to
 whoever writes the query::
@@ -25,13 +27,16 @@ and on rows.
 **Names.** A name the language already uses wins: the fields Nik always had
 keep their names and their other names (``user``, ``source``, ``number``,
 ``updated``…). A custom field is also written ``field.<name>``, always, and
-that is the only way to write one whose name was taken.
+that is the only way to write one whose name was taken. One exception: a
+custom field called ``tag`` or ``tags`` was asked by that name before the tags
+of an incident were, and keeps it; ``labels:`` still asks the tags then.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import func, not_, or_, select
@@ -43,6 +48,8 @@ from .held import held_bool, held_list, held_number, held_raw, held_text
 from .parser import ANY, Value, Wild
 
 PREFIX = "field."
+TAGS_FIELD = "labels"  # the tags of an incident, by the name of their field in the registry
+TAG_NAMES = ("tag", "tags")  # the other names the tags are asked by
 
 # The type of a field of the registry → the kind of field it is in a query.
 KINDS = {
@@ -175,8 +182,16 @@ def entity(db: OrmSession, base: Entity) -> Entity:
         .order_by(Field.name)
     ).all()
     added = []
+    kept = list(base.fields)
     for name, label, description, kind, options in rows:
-        taken = base.field(name) is not None
+        found = base.field(name)
+        if found is not None and found.name == TAGS_FIELD and name.lower() in TAG_NAMES and kind in KINDS:
+            # A field of the installation had this name first: the tags give it up.
+            at = next(index for index, spec in enumerate(kept) if spec.name == TAGS_FIELD)
+            others = tuple(alias for alias in kept[at].aliases if alias.lower() != name.lower())
+            kept[at] = replace(kept[at], aliases=others)
+            found = None
+        taken = found is not None
         spec = spec_of(
             name,
             kind,
@@ -195,7 +210,7 @@ def entity(db: OrmSession, base: Entity) -> Entity:
         name=base.name,
         label=base.label,
         permission=base.permission,
-        fields=(*base.fields, *added),
+        fields=(*kept, *added),
         text_fields=base.text_fields,
         model=base.model,
         base=base.base,

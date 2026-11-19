@@ -949,7 +949,7 @@ def test_the_endpoints_know_the_custom_fields_and_a_deleted_one_is_unknown_again
     }
     assert fields["channels"]["values"] == ["mail", "phone", "chat"] and fields["channels"]["kind"] == "tags"
     assert fields["customer"]["description"] == "customer" and fields["field.number"]["aliases"] == []
-    assert fields["labels"]["custom"] is False and fields["labels"]["label"] == "Labels"
+    assert fields["labels"]["custom"] is False and fields["labels"]["label"] == "Tags"
     assert fields["tlp"]["values"] == ["clear", "green", "amber", "amber+strict", "red"]
     assert fields["status"]["label"] == "" and "customer" not in fields["status"]["aliases"]
     listed = admin.get("/api/query/schema").json()["entities"]
