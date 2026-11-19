@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FolderOpen, Plus, Upload } from 'lucide-react'
+import { FolderOpen, Plus, Trash2, Upload } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { nameProblem } from '../../domain/automation/scripts.js'
@@ -54,6 +55,9 @@ export default function ScriptsPage({ onOpen }) {
   const [createError, setCreateError] = useState(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef(null)
+  const { can } = useAuth()
+  const canEdit = can('automation.edit')
+  const [deleting, setDeleting] = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -66,6 +70,18 @@ export default function ScriptsPage({ onOpen }) {
   useEffect(() => {
     load()
   }, [load])
+
+  const remove = async () => {
+    const gone = deleting
+    setDeleting(null)
+    try {
+      await api.del(`/automation/scripts/${encodeURIComponent(gone.id)}`)
+      showToast({ message: `${gone.name} was deleted.` })
+      load()
+    } catch (failure) {
+      showToast({ message: failure.message })
+    }
+  }
 
   const wrongName = name ? nameProblem(name) : null
   const create = async (event) => {
@@ -174,6 +190,9 @@ export default function ScriptsPage({ onOpen }) {
                         actions: [{ label: 'Open', icon: FolderOpen, onSelect: () => onOpen(script.id) }],
                         link: automationPath('scripts', script.id),
                         copy: [{ label: 'Copy the name', text: script.name }],
+                        danger: canEdit
+                          ? [{ label: 'Delete…', icon: Trash2, onSelect: () => setDeleting(script) }]
+                          : [],
                       })
                     }
                   >
@@ -248,6 +267,26 @@ export default function ScriptsPage({ onOpen }) {
             </p>
           )}
         </form>
+      </Modal>
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Delete this script?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={remove}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">
+          <span className="font-semibold">{deleting?.name}</span> goes with its versions. A script a playbook uses is
+          not deleted: the answer says which.
+        </p>
       </Modal>
     </div>
   )

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { FolderOpen, ListTree, Play, Plus, Upload } from 'lucide-react'
+import { FolderOpen, ListTree, Play, Plus, Trash2, Upload } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
@@ -42,6 +42,19 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
   const [createError, setCreateError] = useState(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef(null)
+  const [deleting, setDeleting] = useState(null)
+
+  const remove = async () => {
+    const gone = deleting
+    setDeleting(null)
+    try {
+      await api.del(`/automation/playbooks/${encodeURIComponent(gone.id)}`)
+      showToast({ message: `${gone.name} was deleted.` })
+      onReload()
+    } catch (failure) {
+      showToast({ message: failure.message })
+    }
+  }
 
   const create = async (event) => {
     event.preventDefault()
@@ -182,6 +195,9 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
                       ],
                       link: automationPath('playbooks', playbook.id),
                       copy: [{ label: 'Copy the name', text: playbook.name }],
+                      danger: canEdit
+                        ? [{ label: 'Delete…', icon: Trash2, onSelect: () => setDeleting(playbook) }]
+                        : [],
                     })
                   }
                 >
@@ -271,6 +287,26 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
             </p>
           )}
         </form>
+      </Modal>
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Delete this playbook?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={remove}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">
+          <span className="font-semibold">{deleting?.name}</span> goes with its versions, its branches and its runs. One
+          with a run in progress is not deleted.
+        </p>
       </Modal>
     </div>
   )

@@ -3295,13 +3295,25 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
   await row.click({ button: 'right' })
   const menu = page.getByRole('menu')
   await expect(menu).toContainText(name)
-  await expect(menu.getByRole('menuitem')).toHaveText(['Open', 'Its runs', 'Run…', 'Copy link', 'Copy the name'])
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Open',
+    'Its runs',
+    'Run…',
+    'Copy link',
+    'Copy the name',
+    'Delete…',
+  ])
   // Open does what a click on the name does.
   await menu.getByRole('menuitem', { name: 'Open', exact: true }).click()
   await expect(page).toHaveURL(/\/automation\/playbooks\/[^/]+/)
   await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Scripts' }).click()
   await area.getByRole('table').first().getByRole('row').nth(1).click({ button: 'right' })
-  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Open', 'Copy link', 'Copy the name'])
+  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText([
+    'Open',
+    'Copy link',
+    'Copy the name',
+    'Delete…',
+  ])
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toHaveCount(0)
   await area.getByRole('button', { name: 'Close automations' }).click()
@@ -3354,6 +3366,54 @@ test('a connection of the canvas shows an × that removes it, and handles to rou
   // The playbook is left as it was.
   for (let step = 0; step < 3; step += 1) await area.getByRole('button', { name: 'Undo' }).click()
   await expect(edges).toHaveCount(before)
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
+test('a playbook and a script are deleted from their menu, and a draft is thrown away', async () => {
+  const graph = (text) => ({
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'start', config: { manual: true } },
+      { id: 'say', kind: 'action', name: 'say', config: { action: 'nik.add-note', args: { text } } },
+    ],
+    edges: [{ from: 'start', to: 'say' }],
+  })
+  const made = await (await page.request.post('/api/automation/playbooks', { data: { name: 'To be deleted' } })).json()
+  const saved = await page.request.post(`/api/automation/playbooks/${made.id}/versions`, {
+    data: { graph: graph('one') },
+  })
+  expect(saved.status()).toBe(201)
+  await page.request.put(`/api/automation/playbooks/${made.id}`, { data: { draft: graph('half done') } })
+  const script = await page.request.post('/api/automation/scripts', { data: { name: 'ToBeDeleted' } })
+  expect(script.status()).toBe(201)
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  // The draft first: thrown away, the playbook is its version in use again.
+  await area.getByRole('button', { name: 'To be deleted' }).click()
+  await area.getByRole('button', { name: 'discard the draft' }).click()
+  const discard = page.getByRole('dialog', { name: 'Discard the draft?' })
+  await discard.getByRole('button', { name: 'Discard', exact: true }).click()
+  await expect(area.getByRole('button', { name: 'discard the draft' })).toHaveCount(0)
+  expect((await (await page.request.get(`/api/automation/playbooks/${made.id}`)).json()).draft).toBeNull()
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+
+  const row = area.getByRole('row').filter({ hasText: 'To be deleted' })
+  await row.click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Delete…' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Delete this playbook?' })
+  await expect(confirm).toContainText('To be deleted')
+  await confirm.getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect(row).toHaveCount(0)
+
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Scripts' }).click()
+  const scriptRow = area.getByRole('row').filter({ hasText: 'ToBeDeleted' })
+  await scriptRow.click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Delete…' }).click()
+  await page
+    .getByRole('dialog', { name: 'Delete this script?' })
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click()
+  await expect(scriptRow).toHaveCount(0)
   await area.getByRole('button', { name: 'Close automations' }).click()
 })
 

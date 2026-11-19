@@ -27,7 +27,7 @@ import {
   undo,
 } from '../../domain/automation/graph.js'
 import { tidy } from '../../domain/automation/layout.js'
-import { AsciiSkull, Badge, Button, EmptyState } from '../ui/index.js'
+import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import Canvas from './Canvas.jsx'
 import DebugDialog from './DebugDialog.jsx'
 import Inspector from './Inspector.jsx'
@@ -141,6 +141,7 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
   const canEdit = can('automation.edit')
   const { catalog, loadCatalog, askRun } = useAutomation()
   const { showToast } = useToast()
+  const [discarding, setDiscarding] = useState(false)
 
   const [detail, setDetail] = useState(null)
   const [loadError, setLoadError] = useState(null)
@@ -366,6 +367,18 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
     }
   }
 
+  /** Throw the draft away: back to the version in use. Asked once, since it cannot be taken back. */
+  const discardDraft = async () => {
+    setDiscarding(false)
+    try {
+      await api.del(`/automation/playbooks/${encodeURIComponent(id)}/draft`)
+      adopt(await api.get(`/automation/playbooks/${encodeURIComponent(id)}`), { resetGraph: true })
+    } catch (failure) {
+      setSaveState('error')
+      showToast({ message: failure.message })
+    }
+  }
+
   /** A version was restored, or the settings changed: what the server has now. */
   const adopt = useCallback(
     (found, { resetGraph = false } = {}) => {
@@ -432,6 +445,19 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
             <p className="font-mono text-xs text-fg-muted">
               playbook · {detail.version ? `version ${detail.version}` : 'no version yet'}
               {draftChanged && detail.version ? ' · draft changed' : ''}
+              {canEdit && detail.draft && detail.version ? (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    onClick={() => setDiscarding(true)}
+                    title="Throw the draft away: the playbook is its version in use again"
+                    className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    discard the draft
+                  </button>
+                </>
+              ) : null}
               {canEdit && SAVE_TEXT[saveState] ? (
                 <span role="status" className={saveState === 'error' ? 'text-high-fg' : undefined}>
                   {' '}
@@ -629,6 +655,26 @@ export default function PlaybookPage({ id, tab, onTab, onBack, onDeleted, onChan
           <PlaybookSettingsTab playbook={detail} canEdit={canEdit} onChanged={adopt} onDeleted={onDeleted} />
         </div>
       )}
+      <Modal
+        open={discarding}
+        onClose={() => setDiscarding(false)}
+        title="Discard the draft?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDiscarding(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={discardDraft}>
+              Discard
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">
+          What was changed since version {detail?.version} is thrown away, and the playbook is its version in use again.
+          A branch keeps work that is not ready: make one first to keep this.
+        </p>
+      </Modal>
     </div>
   )
 }
