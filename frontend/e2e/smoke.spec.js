@@ -3233,6 +3233,41 @@ test('script signatures: one Nik ships is turned off and put back, one of your o
   await expect(settings).toHaveCount(0)
 })
 
+test('a side panel is made wider and narrower with its handle, and remembers its width', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const handle = settings.getByRole('separator', { name: 'Resize the sections of Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await expect(handle).toHaveAttribute('aria-valuenow', '240')
+  const before = (await sections.boundingBox()).width
+  // By keyboard: the arrow that points away from the panel makes it wider.
+  await handle.focus()
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(handle).toHaveAttribute('aria-valuenow', '320')
+  expect(Math.round((await sections.boundingBox()).width - before)).toBe(80)
+  // By pointer.
+  const box = await handle.boundingBox()
+  await page.mouse.move(box.x + 1, box.y + 200)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 41, box.y + 200, { steps: 4 })
+  await page.mouse.up()
+  await expect(handle).toHaveAttribute('aria-valuenow', '360')
+  // It is remembered: leaving Settings and coming back finds it.
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await expect(handle).toHaveAttribute('aria-valuenow', '360')
+  // The limits hold, and Enter puts the width back.
+  await handle.focus()
+  await page.keyboard.press('End')
+  await expect(handle).toHaveAttribute('aria-valuenow', '420')
+  await page.keyboard.press('Enter')
+  await expect(handle).toHaveAttribute('aria-valuenow', '240')
+  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  // The list of incidents has the same handle.
+  await expect(page.getByRole('separator', { name: 'Resize the side panel' })).toBeVisible()
+})
+
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Open platform settings' })
   await gear.click()

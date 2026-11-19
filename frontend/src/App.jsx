@@ -60,6 +60,7 @@ import CloseIncidentDialog from './components/fields/CloseIncidentDialog.jsx'
 import IncidentPanel from './components/fields/IncidentPanel.jsx'
 import { useFields } from './context/FieldsContext.jsx'
 import { orderTabs, typeOf } from './domain/fields.js'
+import ResizeHandle, { useResizablePane } from './components/ui/ResizeHandle.jsx'
 
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
@@ -99,47 +100,6 @@ const PANEL_KEY = 'nik.panel'
 const TAB_KEY = 'nik.tab'
 // Above this size a file is not hashed in the browser to look it up before the upload.
 const LOOKUP_MAX_BYTES = 100 * 1024 * 1024
-
-/** Clamp a sidebar width to [MIN, 25% of the viewport]. */
-function clampSidebarWidth(width) {
-  const max = Math.max(SIDEBAR_MIN_WIDTH, Math.round(window.innerWidth / 4))
-  return Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), max)
-}
-
-/**
- * Draggable divider between the sidebar and the main column. Reports the new
- * width (already clamped) to the parent while the pointer moves.
- */
-function SidebarResizer({ onResize }) {
-  const onPointerDown = (event) => {
-    event.preventDefault()
-    const move = (e) => onResize(clampSidebarWidth(e.clientX))
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize sidebar"
-      onPointerDown={onPointerDown}
-      className="group relative z-10 w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-accent/30"
-      title="Drag to resize the sidebar"
-    >
-      {/* Wider invisible hit area for easier grabbing. */}
-      <span className="absolute inset-y-0 -left-1 -right-1" />
-    </div>
-  )
-}
 
 /** Full-screen boot splash shown while the session probe is in flight. */
 function ConnectingScreen() {
@@ -558,24 +518,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isAuthenticated, canRead])
 
-  // Resizable sidebar width (persisted, re-clamped on load and on window resize).
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
-    return Number.isFinite(stored) && stored > 0 ? stored : SIDEBAR_DEFAULT_WIDTH
+  // The side panel can be made wider or narrower, like every side panel (ui/ResizeHandle.jsx).
+  const sidebarPane = useResizablePane('sidebar', {
+    initial: SIDEBAR_DEFAULT_WIDTH,
+    min: SIDEBAR_MIN_WIDTH,
+    max: 560,
+    legacyKey: SIDEBAR_WIDTH_KEY,
   })
-  const handleSidebarResize = useCallback((width) => {
-    setSidebarWidth(width)
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width))
-  }, [])
-
-  // Keep the sidebar within a quarter of the viewport when the window shrinks.
-  useEffect(() => {
-    const onResize = () => setSidebarWidth((w) => clampSidebarWidth(w))
-    window.addEventListener('resize', onResize)
-    // Clamp once on mount too (stored value may exceed the current viewport).
-    setSidebarWidth((w) => clampSidebarWidth(w))
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
 
   // The tabs of the incident on screen: those its type shows, in the order its type gives them.
   const { types: incidentTypes } = useFields()
@@ -843,14 +792,14 @@ export default function App() {
         <>
           <Sidebar
             panel={panel}
-            width={sidebarWidth}
+            width={sidebarPane.width}
             onCreateIncident={openCreateModal}
             onNewAnalysis={() => setAnalysisOpen(true)}
             onSelectIncident={openIncident}
             incidentShown={!artifactOpen && !libraryOpen}
             onOpenReport={() => setReportOpen(true)}
           />
-          <SidebarResizer onResize={handleSidebarResize} />
+          <ResizeHandle {...sidebarPane.handle} label="Resize the side panel" />
         </>
       )}
 

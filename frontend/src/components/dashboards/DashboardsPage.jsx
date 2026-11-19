@@ -23,6 +23,7 @@ import QueryInput from '../ui/QueryInput.jsx'
 import Grid from './Grid.jsx'
 import Widget from './Widget.jsx'
 import WidgetEditor from './WidgetEditor.jsx'
+import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 
 /*
  * ============================================================================
@@ -228,6 +229,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
   const [removing, setRemoving] = useState(false)
   const [landing, setLanding] = useState(landingDashboard)
   const [adding, setAdding] = useState(false)
+  const listPane = useResizablePane('dashboards.list', { initial: 224, min: 180, max: 420 })
 
   useEffect(() => {
     ref.current?.focus()
@@ -410,7 +412,11 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Your dashboards" className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
+        <nav
+          aria-label="Your dashboards"
+          style={listPane.style}
+          className="flex w-[var(--pane-w)] shrink-0 flex-col border-r border-line bg-panel"
+        >
           <ul className="min-h-0 flex-1 overflow-y-auto py-2">
             {(boards ?? []).map((item) => (
               <li key={item.id}>
@@ -459,6 +465,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
             />
           </div>
         </nav>
+        <ResizeHandle {...listPane.handle} label="Resize the list of dashboards" className="" />
 
         <div className="@container flex min-w-0 flex-1 flex-col overflow-y-auto">
           {error && (

@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every side panel can be resized**, not only the list of incidents: the
+  sections of Settings, the facts of an incident, the entry open in the War
+  Room, the node library and the inspector of a playbook, the steps of a
+  run, the list of dashboards. The handle is dragged, or moved with the
+  arrow keys (Shift, Home, End); a double-click or Enter puts the width
+  back, and each panel remembers its own.
 - **A reputation command adds its indicator to the incident.** `!ip`,
   `!domain`, `!url`, `!file` and `!email` in the War Room keep what they
   looked up among the indicators of the incident (source *War Room · looked

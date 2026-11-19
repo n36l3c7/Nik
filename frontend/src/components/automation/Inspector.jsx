@@ -28,6 +28,7 @@ import {
 import { ROLES } from '../../domain/permissions.js'
 import { useFields } from '../../context/FieldsContext.jsx'
 import ExpressionInput from './ExpressionInput.jsx'
+import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import {
   DurationInput,
   Field,
@@ -1483,16 +1484,21 @@ export default function Inspector({
   const entry = useMemo(() => entryOf(node, catalog), [node, catalog])
   const tree = useMemo(() => (node ? valueTree(graph, node.id, catalog) : []), [graph, node, catalog])
   const [idDraft, setIdDraft] = useState(null)
+  const pane = useResizablePane('automation.inspector', { initial: 300, min: 260, max: 640, edge: 'left' })
   const [idProblem, setIdProblem] = useState(null)
 
   if (!node) {
     return (
-      <aside
-        aria-label="Inspector"
-        className="min-h-0 w-full shrink-0 overflow-y-auto border-l border-line bg-panel p-3 md:w-[300px]"
-      >
-        <PlaybookSettings graph={graph} disabled={readOnly} onGraph={onGraph} problems={problems} />
-      </aside>
+      <>
+        <ResizeHandle {...pane.handle} label="Resize the inspector" className="hidden md:block" />
+        <aside
+          aria-label="Inspector"
+          style={pane.style}
+          className="min-h-0 w-full shrink-0 overflow-y-auto border-l border-line bg-panel p-3 md:w-[var(--pane-w)]"
+        >
+          <PlaybookSettings graph={graph} disabled={readOnly} onGraph={onGraph} problems={problems} />
+        </aside>
+      </>
     )
   }
 
@@ -1532,153 +1538,157 @@ export default function Inspector({
   const outputs = entry?.outputs ?? []
 
   return (
-    <aside
-      aria-label="Inspector"
-      className="min-h-0 w-full shrink-0 overflow-y-auto border-l border-line bg-panel p-3 md:w-[300px]"
-    >
-      <div key={node.id} className="flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-2">
-          <h2 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">
-            {headingOf(node, entry)}
-            {entry && node.kind === 'action' ? ` · ${entry.name}` : ''}
-          </h2>
-          {!readOnly && node.kind !== 'trigger' && (
-            <Button
-              variant="ghost"
-              size="xs"
-              icon={Trash2}
-              aria-label="Remove this node"
-              title="Remove this node (Delete)"
-              onClick={() => onRemove(node.id)}
-            />
-          )}
-        </div>
-
-        {update && (
-          <div
-            role="status"
-            className="flex flex-col gap-2 border border-info-line bg-info-soft/40 p-2 text-xs text-fg"
-          >
-            <span>
-              Version {update.to} of {update.script} exists. This node stays on version {update.from} until it is
-              updated.
-            </span>
-            {!readOnly && (
+    <>
+      <ResizeHandle {...pane.handle} label="Resize the inspector" className="hidden md:block" />
+      <aside
+        aria-label="Inspector"
+        style={pane.style}
+        className="min-h-0 w-full shrink-0 overflow-y-auto border-l border-line bg-panel p-3 md:w-[var(--pane-w)]"
+      >
+        <div key={node.id} className="flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+              {headingOf(node, entry)}
+              {entry && node.kind === 'action' ? ` · ${entry.name}` : ''}
+            </h2>
+            {!readOnly && node.kind !== 'trigger' && (
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="xs"
-                className="self-start"
-                onClick={() => onConfig({ script_version: update.to })}
-              >
-                Update to version {update.to}
-              </Button>
+                icon={Trash2}
+                aria-label="Remove this node"
+                title="Remove this node (Delete)"
+                onClick={() => onRemove(node.id)}
+              />
             )}
           </div>
-        )}
 
-        <Field label="Name">
-          {(id) => (
-            <TextInput
-              id={id}
-              value={node.name ?? ''}
-              disabled={readOnly}
-              maxLength={80}
-              onChange={(name) => onGraph(updateNode(graph, node.id, { name }))}
-            />
+          {update && (
+            <div
+              role="status"
+              className="flex flex-col gap-2 border border-info-line bg-info-soft/40 p-2 text-xs text-fg"
+            >
+              <span>
+                Version {update.to} of {update.script} exists. This node stays on version {update.from} until it is
+                updated.
+              </span>
+              {!readOnly && (
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="self-start"
+                  onClick={() => onConfig({ script_version: update.to })}
+                >
+                  Update to version {update.to}
+                </Button>
+              )}
+            </div>
           )}
-        </Field>
-        <Field label="Id" hint={`What expressions call it: {{ ${idDraft ?? node.id}.… }}`} problem={idProblem}>
-          {(id) => (
-            <TextInput
-              id={id}
-              value={idDraft ?? node.id}
-              disabled={readOnly}
-              maxLength={32}
-              onChange={(next) => {
-                setIdDraft(next)
-                setIdProblem(null)
-              }}
-              onBlur={commitId}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') commitId()
-              }}
-            />
-          )}
-        </Field>
 
-        {node.kind !== 'trigger' && (
-          <Field label="Phase" hint="Groups this step in the work plan of an incident: Triage, Containment…">
+          <Field label="Name">
             {(id) => (
               <TextInput
                 id={id}
-                value={node.config?.phase ?? ''}
+                value={node.name ?? ''}
                 disabled={readOnly}
-                maxLength={40}
-                onChange={(phase) => onConfig({ phase: phase || undefined })}
+                maxLength={80}
+                onChange={(name) => onGraph(updateNode(graph, node.id, { name }))}
               />
             )}
           </Field>
-        )}
+          <Field label="Id" hint={`What expressions call it: {{ ${idDraft ?? node.id}.… }}`} problem={idProblem}>
+            {(id) => (
+              <TextInput
+                id={id}
+                value={idDraft ?? node.id}
+                disabled={readOnly}
+                maxLength={32}
+                onChange={(next) => {
+                  setIdDraft(next)
+                  setIdProblem(null)
+                }}
+                onBlur={commitId}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') commitId()
+                }}
+              />
+            )}
+          </Field>
 
-        <KindSettings
-          node={node}
-          entry={entry}
-          tree={tree}
-          events={events}
-          playbooks={playbooks}
-          connections={connections}
-          approvalDefault={approvalDefault}
-          disabled={readOnly}
-          onConfig={onConfig}
-          problemAt={problemAt}
-        />
+          {node.kind !== 'trigger' && (
+            <Field label="Phase" hint="Groups this step in the work plan of an incident: Triage, Containment…">
+              {(id) => (
+                <TextInput
+                  id={id}
+                  value={node.config?.phase ?? ''}
+                  disabled={readOnly}
+                  maxLength={40}
+                  onChange={(phase) => onConfig({ phase: phase || undefined })}
+                />
+              )}
+            </Field>
+          )}
 
-        {(elsewhere.length > 0 || notReadable.length > 0) && (
-          <ul
-            role="alert"
-            aria-label="To fix on this node"
-            className="flex flex-col gap-1 border border-high-line bg-high-soft p-2 text-xs text-high-fg"
-          >
-            {elsewhere.map((problem, index) => (
-              <li key={`p${index}`}>{problem.message}</li>
-            ))}
-            {notReadable
-              .filter((item) => !elsewhere.some((problem) => problem.message.includes(`"${item.name}"`)))
-              .map((item) => (
-                <li key={item.name}>
-                  “{item.name}” {item.reason}
-                </li>
+          <KindSettings
+            node={node}
+            entry={entry}
+            tree={tree}
+            events={events}
+            playbooks={playbooks}
+            connections={connections}
+            approvalDefault={approvalDefault}
+            disabled={readOnly}
+            onConfig={onConfig}
+            problemAt={problemAt}
+          />
+
+          {(elsewhere.length > 0 || notReadable.length > 0) && (
+            <ul
+              role="alert"
+              aria-label="To fix on this node"
+              className="flex flex-col gap-1 border border-high-line bg-high-soft p-2 text-xs text-high-fg"
+            >
+              {elsewhere.map((problem, index) => (
+                <li key={`p${index}`}>{problem.message}</li>
               ))}
-          </ul>
-        )}
-
-        <GoesTo
-          graph={graph}
-          node={node}
-          disabled={readOnly}
-          onGraph={onGraph}
-          onRefused={onRefused}
-          onSelectNode={onSelectNode}
-        />
-
-        {outputs.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <SectionTitle>Gives</SectionTitle>
-            <ul className="flex flex-col gap-1">
-              {outputs.map((output) => (
-                <li key={output.name} className="text-xs">
-                  <code className="break-all font-mono text-info">{`{{ ${node.id}.${output.name} }}`}</code>
-                  <span className="text-fg-muted">
-                    {' '}
-                    {output.type}
-                    {output.description ? ` · ${output.description}` : ''}
-                  </span>
-                </li>
-              ))}
+              {notReadable
+                .filter((item) => !elsewhere.some((problem) => problem.message.includes(`"${item.name}"`)))
+                .map((item) => (
+                  <li key={item.name}>
+                    “{item.name}” {item.reason}
+                  </li>
+                ))}
             </ul>
-          </div>
-        )}
-      </div>
-    </aside>
+          )}
+
+          <GoesTo
+            graph={graph}
+            node={node}
+            disabled={readOnly}
+            onGraph={onGraph}
+            onRefused={onRefused}
+            onSelectNode={onSelectNode}
+          />
+
+          {outputs.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <SectionTitle>Gives</SectionTitle>
+              <ul className="flex flex-col gap-1">
+                {outputs.map((output) => (
+                  <li key={output.name} className="text-xs">
+                    <code className="break-all font-mono text-info">{`{{ ${node.id}.${output.name} }}`}</code>
+                    <span className="text-fg-muted">
+                      {' '}
+                      {output.type}
+                      {output.description ? ` · ${output.description}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </aside>
+    </>
   )
 }

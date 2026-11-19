@@ -10,6 +10,7 @@ import EditFieldsDialog from './EditFieldsDialog.jsx'
 import FieldList from './FieldList.jsx'
 import Mirror from './Mirror.jsx'
 import Timers from './Timers.jsx'
+import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 
 /*
  * ============================================================================
@@ -38,6 +39,7 @@ export default function IncidentPanel({ incident }) {
   const { refreshIncidents, retryActiveIncident } = useIncidents()
   const [folded, setFoldedState] = useState(() => localStorage.getItem(FOLDED_KEY) === '1')
   const [editing, setEditing] = useState(false)
+  const pane = useResizablePane('incident.facts', { initial: 250, min: 220, max: 480 })
   const [error, setError] = useState(null)
   const canWrite = can('write')
 
@@ -88,71 +90,75 @@ export default function IncidentPanel({ incident }) {
   }
 
   return (
-    <aside
-      aria-label="Incident facts"
-      className="flex shrink-0 flex-col gap-3 overflow-y-auto border-b border-line bg-panel p-3 min-[1100px]:w-[250px] min-[1100px]:border-b-0 min-[1100px]:border-r"
-    >
-      <div className="flex items-center gap-2">
-        <Badge color={type.colour}>{type.name}</Badge>
-        <span className="flex-1" />
-        {canWrite && fields.length > 0 && (
-          <Button variant="ghost" size="xs" icon={Pencil} onClick={() => setEditing(true)}>
-            Edit
-          </Button>
-        )}
-        <button
-          type="button"
-          aria-label="Hide the incident's facts"
-          aria-expanded="true"
-          title="Hide the incident's facts"
-          onClick={() => setFolded(true)}
-          className="text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <ChevronLeft className="hidden h-4 w-4 min-[1100px]:block" aria-hidden="true" />
-          <ChevronUp className="h-4 w-4 min-[1100px]:hidden" aria-hidden="true" />
-        </button>
-      </div>
-      {canWrite && types.length > 1 && (
-        <label className="flex flex-col gap-0.5" htmlFor="incident-type">
-          <span className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">Type</span>
-          <select
-            id="incident-type"
-            value={type.id}
-            onChange={(event) => changeType(event.target.value)}
-            className="w-full cursor-pointer border border-line bg-canvas px-2 py-1 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    <>
+      <aside
+        aria-label="Incident facts"
+        style={pane.style}
+        className="flex shrink-0 flex-col gap-3 overflow-y-auto border-b border-line bg-panel p-3 min-[1100px]:w-[var(--pane-w)] min-[1100px]:border-b-0 min-[1100px]:border-r"
+      >
+        <div className="flex items-center gap-2">
+          <Badge color={type.colour}>{type.name}</Badge>
+          <span className="flex-1" />
+          {canWrite && fields.length > 0 && (
+            <Button variant="ghost" size="xs" icon={Pencil} onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          )}
+          <button
+            type="button"
+            aria-label="Hide the incident's facts"
+            aria-expanded="true"
+            title="Hide the incident's facts"
+            onClick={() => setFolded(true)}
+            className="text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            {types.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {error && (
-        <p role="alert" className="text-xs text-high-fg">
-          {error}
-        </p>
-      )}
-      {/* As a band above the tabs the facts are side by side; as a column, one under the other. */}
-      <FieldList
-        fields={fields}
-        values={values}
-        dense
-        className="grid-cols-2 sm:grid-cols-3 min-[1100px]:grid-cols-1"
-      />
-      <Timers incident={incident} />
-      <Mirror incident={incident} />
-      {editing && (
-        <EditFieldsDialog
-          incident={incident}
-          type={type}
-          title={section.title}
+            <ChevronLeft className="hidden h-4 w-4 min-[1100px]:block" aria-hidden="true" />
+            <ChevronUp className="h-4 w-4 min-[1100px]:hidden" aria-hidden="true" />
+          </button>
+        </div>
+        {canWrite && types.length > 1 && (
+          <label className="flex flex-col gap-0.5" htmlFor="incident-type">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">Type</span>
+            <select
+              id="incident-type"
+              value={type.id}
+              onChange={(event) => changeType(event.target.value)}
+              className="w-full cursor-pointer border border-line bg-canvas px-2 py-1 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {types.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {error && (
+          <p role="alert" className="text-xs text-high-fg">
+            {error}
+          </p>
+        )}
+        {/* As a band above the tabs the facts are side by side; as a column, one under the other. */}
+        <FieldList
           fields={fields}
           values={values}
-          onClose={() => setEditing(false)}
+          dense
+          className="grid-cols-2 sm:grid-cols-3 min-[1100px]:grid-cols-1"
         />
-      )}
-    </aside>
+        <Timers incident={incident} />
+        <Mirror incident={incident} />
+        {editing && (
+          <EditFieldsDialog
+            incident={incident}
+            type={type}
+            title={section.title}
+            fields={fields}
+            values={values}
+            onClose={() => setEditing(false)}
+          />
+        )}
+      </aside>
+      <ResizeHandle {...pane.handle} label="Resize the incident's facts" className="hidden min-[1100px]:block" />
+    </>
   )
 }

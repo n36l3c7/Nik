@@ -33,6 +33,7 @@ import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
 import IocText from '../../ioc/IocText.jsx'
+import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 
 /*
  * ============================================================================
@@ -115,6 +116,7 @@ function Heading({ children }) {
 function Inspector({ incident, entry, raw, canWrite, onClose, onChanged, onRerun }) {
   const { showToast } = useToast()
   const [detail, setDetail] = useState(null)
+  const pane = useResizablePane('warroom.entry', { initial: 380, min: 300, max: 720, edge: 'left' })
 
   useEffect(() => {
     let alive = true
@@ -154,107 +156,111 @@ function Inspector({ incident, entry, raw, canWrite, onClose, onChanged, onRerun
   }
 
   return (
-    <aside
-      aria-label="The chosen entry"
-      className="absolute inset-y-0 right-0 z-10 flex w-full max-w-md flex-col gap-3 overflow-y-auto border-l border-line bg-panel p-3 shadow-xl min-[1100px]:static min-[1100px]:w-[380px] min-[1100px]:max-w-none min-[1100px]:shrink-0 min-[1100px]:shadow-none"
-    >
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-semibold text-fg">{line.title || 'A note'}</p>
-          <p className="text-xs text-fg-muted">
-            {authorLabel(entry.author)} · {formatDateTime(Date.parse(entry.at))}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Close the entry"
-          onClick={onClose}
-          className="text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {canWrite && (
-          <Button
-            variant={evidence ? 'secondary' : 'ghost'}
-            size="xs"
-            icon={Star}
-            aria-pressed={evidence}
-            onClick={mark}
-          >
-            {evidence ? 'Evidence' : 'Mark as evidence'}
-          </Button>
-        )}
-        <Button variant="ghost" size="xs" icon={Copy} onClick={copy}>
-          Copy JSON
-        </Button>
-        {entry.runId && (
-          <Button
-            variant="ghost"
-            size="xs"
-            icon={ExternalLink}
-            onClick={() => setPath(automationPath('runs', entry.runId))}
-          >
-            Open the run
-          </Button>
-        )}
-        {onRerun && entry.kind === 'command' && (
-          <Button variant="ghost" size="xs" icon={RefreshCw} onClick={() => onRerun(entry.body.line)}>
-            Run again
-          </Button>
-        )}
-      </div>
-      {line.text && (
-        <p className="whitespace-pre-wrap break-words text-sm text-fg">
-          <IocText text={line.text} />
-        </p>
-      )}
-      {!detail && (
-        <p role="status" className="font-mono text-xs text-fg-muted">
-          Loading…
-        </p>
-      )}
-      {step && (
-        <>
-          {step.error && (
-            <p role="alert" className="border border-high-line bg-high-soft p-2 text-xs text-high-fg">
-              {step.error}
+    <>
+      <ResizeHandle {...pane.handle} label="Resize the chosen entry" className="hidden min-[1100px]:block" />
+      <aside
+        aria-label="The chosen entry"
+        style={pane.style}
+        className="absolute inset-y-0 right-0 z-10 flex w-full max-w-md flex-col gap-3 overflow-y-auto border-l border-line bg-panel p-3 shadow-xl min-[1100px]:static min-[1100px]:w-[var(--pane-w)] min-[1100px]:max-w-none min-[1100px]:shrink-0 min-[1100px]:shadow-none"
+      >
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-sm font-semibold text-fg">{line.title || 'A note'}</p>
+            <p className="text-xs text-fg-muted">
+              {authorLabel(entry.author)} · {formatDateTime(Date.parse(entry.at))}
             </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close the entry"
+            onClick={onClose}
+            className="text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canWrite && (
+            <Button
+              variant={evidence ? 'secondary' : 'ghost'}
+              size="xs"
+              icon={Star}
+              aria-pressed={evidence}
+              onClick={mark}
+            >
+              {evidence ? 'Evidence' : 'Mark as evidence'}
+            </Button>
           )}
-          {step.output !== null && step.output !== undefined && (
-            <section className="flex flex-col gap-1">
-              <Heading>Result</Heading>
-              {raw ? <Json value={step.output} /> : <Result value={step.output} />}
-            </section>
+          <Button variant="ghost" size="xs" icon={Copy} onClick={copy}>
+            Copy JSON
+          </Button>
+          {entry.runId && (
+            <Button
+              variant="ghost"
+              size="xs"
+              icon={ExternalLink}
+              onClick={() => setPath(automationPath('runs', entry.runId))}
+            >
+              Open the run
+            </Button>
           )}
-          {step.request && (
-            <section className="flex flex-col gap-1">
-              <Heading>What was sent</Heading>
-              <Json value={step.request} />
-            </section>
+          {onRerun && entry.kind === 'command' && (
+            <Button variant="ghost" size="xs" icon={RefreshCw} onClick={() => onRerun(entry.body.line)}>
+              Run again
+            </Button>
           )}
-          {step.input && (
-            <section className="flex flex-col gap-1">
-              <Heading>What it was given</Heading>
-              <Json value={step.input} />
-            </section>
-          )}
-          {wrote.length > 0 && (
-            <section className="flex flex-col gap-1">
-              <Heading>Written to the context</Heading>
-              <ul className="flex flex-wrap gap-1">
-                {wrote.map((item) => (
-                  <li key={item} className="border border-line bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-fg">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </>
-      )}
-    </aside>
+        </div>
+        {line.text && (
+          <p className="whitespace-pre-wrap break-words text-sm text-fg">
+            <IocText text={line.text} />
+          </p>
+        )}
+        {!detail && (
+          <p role="status" className="font-mono text-xs text-fg-muted">
+            Loading…
+          </p>
+        )}
+        {step && (
+          <>
+            {step.error && (
+              <p role="alert" className="border border-high-line bg-high-soft p-2 text-xs text-high-fg">
+                {step.error}
+              </p>
+            )}
+            {step.output !== null && step.output !== undefined && (
+              <section className="flex flex-col gap-1">
+                <Heading>Result</Heading>
+                {raw ? <Json value={step.output} /> : <Result value={step.output} />}
+              </section>
+            )}
+            {step.request && (
+              <section className="flex flex-col gap-1">
+                <Heading>What was sent</Heading>
+                <Json value={step.request} />
+              </section>
+            )}
+            {step.input && (
+              <section className="flex flex-col gap-1">
+                <Heading>What it was given</Heading>
+                <Json value={step.input} />
+              </section>
+            )}
+            {wrote.length > 0 && (
+              <section className="flex flex-col gap-1">
+                <Heading>Written to the context</Heading>
+                <ul className="flex flex-wrap gap-1">
+                  {wrote.map((item) => (
+                    <li key={item} className="border border-line bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-fg">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        )}
+      </aside>
+    </>
   )
 }
 

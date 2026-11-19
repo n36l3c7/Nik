@@ -61,6 +61,7 @@ import ReportBrandingSection from './sections/ReportBrandingSection.jsx'
 import StorageSection from './sections/StorageSection.jsx'
 import ThreatIntelSection from './sections/ThreatIntelSection.jsx'
 import YaraRulesSection from './sections/YaraRulesSection.jsx'
+import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 
 /*
  * ============================================================================
@@ -120,6 +121,7 @@ const SECTION_VIEWS = {
 export default function SettingsPage({ section, onSection, onClose, onOpenArtifact }) {
   const { can } = useAuth()
   const [query, setQuery] = useState('')
+  const pane = useResizablePane('settings.nav', { initial: 240, min: 200, max: 420 })
 
   const groups = useMemo(() => visibleSettings(can), [can])
   const shown = useMemo(() => filterSettings(groups, query), [groups, query])
@@ -156,7 +158,10 @@ export default function SettingsPage({ section, onSection, onClose, onOpenArtifa
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="flex max-h-56 w-full shrink-0 flex-col border-b border-line bg-panel md:max-h-none md:w-60 md:border-b-0 md:border-r">
+        <div
+          style={pane.style}
+          className="flex max-h-56 w-full shrink-0 flex-col border-b border-line bg-panel md:max-h-none md:w-[var(--pane-w)] md:border-b-0 md:border-r"
+        >
           <div className="border-b border-line-soft p-3">
             <label htmlFor="settings-search" className="sr-only">
               Find a setting
@@ -218,6 +223,7 @@ export default function SettingsPage({ section, onSection, onClose, onOpenArtifa
             ))}
           </nav>
         </div>
+        <ResizeHandle {...pane.handle} label="Resize the sections of Settings" className="hidden md:block" />
 
         <div className="min-w-0 flex-1 overflow-y-auto p-6">
           {ActiveComponent && <ActiveComponent key={active.id} onOpenArtifact={onOpenArtifact} />}
