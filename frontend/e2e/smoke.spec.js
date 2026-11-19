@@ -3304,6 +3304,7 @@ test('the rail: the order of a working day, and the account at its foot', async 
   const listed = page.getByRole('navigation', { name: 'Incidents' }).getByRole('listitem')
   await expect(listed.first()).toBeVisible()
   for (const text of await listed.allTextContents()) expect(text).toMatch(/#\d{5}/)
+  await expect(page.getByRole('banner').getByText(/^#\d{5}$/)).toBeVisible()
   const labels = await rail
     .getByRole('button')
     .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label').replace(/ \(.*$/, '')))
