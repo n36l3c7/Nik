@@ -32,6 +32,7 @@ def published(outside, monkeypatch):
     """The packs of the repository, published as the workflow publishes them, signed with the key of the tests."""
     index, files = pack_build.build(vendor.REPO_PACKS)
     monkeypatch.setattr(catalogue, "NIK_KEY", pack_build.public_of(PRIVATE))
+    monkeypatch.setattr(catalogue.app_settings, "PACKS_CATALOGUE", "https://github.com" + BASE + "index.json")
     outside.host("github.com")
     outside.host("objects.githubusercontent.com")
     outside.answer("github.com", body=index, path=BASE + "index.json")
@@ -101,6 +102,13 @@ def test_the_catalogue_is_read_only_when_its_signature_is_right(admin: TestClien
     other = base64.b64encode(bytes(range(1, 33))).decode("ascii")
     published.answer("github.com", body=pack_build.sign(changed, other), path=BASE + "index.json.sig")
     assert admin.post("/api/packs/catalogue/refresh").status_code == 502
+
+
+def test_a_nik_with_no_catalogue_says_so_and_goes_nowhere(admin: TestClient):
+    shown = admin.get("/api/packs/catalogue").json()
+    assert (shown["address"], shown["read"], shown["packs"]) == ("", False, [])
+    refused = admin.post("/api/packs/catalogue/refresh")
+    assert refused.status_code == 409 and "No catalogue is set" in refused.json()["detail"]
 
 
 def test_an_index_keeps_only_what_is_a_pack_with_a_file():
