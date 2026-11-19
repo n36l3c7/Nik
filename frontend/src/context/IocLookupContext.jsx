@@ -50,7 +50,7 @@ const IocLookupContext = createContext(null)
  */
 function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist, onAnalysis, onOpenArtifact }) {
   const { activeIncidentId: loadedIncidentId, selectIncident } = useIncidents()
-  // "This incident" is the one on screen: with an artifact or the IoC library in the
+  // "This incident" is the one on screen: with an artifact or the Indicators page in the
   // main area no incident is, and the one it was seen in can be opened.
   const activeIncidentId = /^\/incident\//.test(underPath) ? loadedIncidentId : null
   const { showToast } = useToast()

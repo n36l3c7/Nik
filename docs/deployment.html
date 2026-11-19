@@ -263,6 +263,73 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-60">Upgrading to 6.0</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. Migration
+        <code>0039_pack_catalogue</code> runs at start and adds four columns; nothing that exists is changed.
+      </p>
+      <ul>
+        <li>
+          <strong>The connectors of vendors are packs now, and are not inside Nik.</strong> Every one this Nik has is
+          kept: at the first start each is written down as the pack it is (<em>Settings → Automation → Content packs</em
+          >), with its mappers and its playbook, its instances untouched. A new Nik starts without them and installs the
+          ones it wants from the catalogue;
+        </li>
+        <li>
+          <strong>The catalogue is read from GitHub.</strong> The server needs to reach <code>github.com</code>,
+          <code>objects.githubusercontent.com</code> and <code>release-assets.githubusercontent.com</code> over HTTPS.
+          It is the backend container that reads it (not the automation one), directly, or through
+          <code>HTTPS_PROXY</code> when that container is given one. Behind a proxy that inspects TLS, its certificate
+          authority must be among the ones the backend trusts, as for every other outgoing request. A Nik that cannot
+          reach them still installs a pack from a file, from the folder <code>NIK_PACKS_DIR</code>, or from a catalogue
+          of your own (<a href="automation.html#pack-offline">Without the catalogue</a>);
+        </li>
+        <li>
+          <strong>The API says instances.</strong> <code>/api/automation/connections</code> is
+          <code>/api/automation/instances</code>; the lists that were <code>connections</code> are
+          <code>instances</code> (the instances, the catalog of the editor, the fetch status, the mirror of an
+          incident); <code>connectionId</code> is <code>instanceId</code>. A script of yours that calls those routes
+          needs the new names. The node of a playbook still names its instance in <code>connection</code>, the tables
+          and the actions of the audit log keep their names: what is stored did not change;
+        </li>
+        <li>
+          <strong><code>status:!closed</code> is no longer read.</strong> "Is not" has been written before the field
+          since 5.0 (<code>!status:closed</code>); the old writing was read through 5.x and is now refused, with the
+          query as it is written today. The query box still rewrites it when it is left. A query kept somewhere else (a
+          script calling the API, a bookmark) needs the new writing;
+        </li>
+        <li>
+          <em>IoC library</em> is called <em>Indicators</em>, on the rail and everywhere it is named. Its address
+          (<code>/iocs</code>) and its API did not change.
+        </li>
+      </ul>
+      <p>Two optional settings of the backend (<code>.env</code>):</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>NIK_PACKS_CATALOGUE</code></td>
+              <td>
+                The address of the index of the catalogue, until an administrator sets another in Settings. Default: the
+                release <code>packs</code> of Nik's repository. Empty: no catalogue, packs come as files.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_PACKS_DIR</code></td>
+              <td>
+                A folder of packs (folders with a <code>pack.yml</code>, or <code>.nikpack</code> files) installed at
+                start when they are not here or are older. Mount it in the backend container. Not set: nothing.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <h4 id="upgrading-to-54">Upgrading to 5.4</h4>
       <p>
         Release 5.4 needs nothing more than the two commands above, and has no migration. When the server starts, the

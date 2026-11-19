@@ -301,7 +301,9 @@
 ├── mirror.py                       # Mirroring: reading the other side, the queue of what is sent, comments
 ├── dashboards.py                   # Dashboards: widgets checked and placed on the grid, sharing, the ones shipped
 ├── dashboard_report.py             # A dashboard as a document: each widget asked as the reader, written as a table
-├── packs.py                        # Content packs: the file, the plan of an import, applying it, what Nik ships
+├── packs.py                        # Content packs: the file, the plan of an import, applying and uninstalling it, what Nik ships
+├── pack_catalogue.py               # The catalogue: the signed index, a pack taken from it and checked
+├── pack_build.py                   # python -m app.pack_build: a folder of packs as a signed catalogue
 ├── ioc_history.py                  # What a check of a whole list changed: a line a check, a row a changed verdict
 ├── artifact_expiry.py              # The optional expiry of an artifact: setting it, the notice, the deletion
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
@@ -311,7 +313,7 @@
 ├── mailboxes.py                    # Mailboxes (mbox, Maildir archive, PST): one-pass index, conversations
 ├── analysis_links.py               # An indicator and the artifact that is its analysis: each finds the other
 ├── jsanalysis.py                   # Scripts of a scanned page read as text: signatures, obfuscation, libraries
-├── ioc_library.py                  # The IoC library: one row per indicator, reading pastes and files,
+├── ioc_library.py                  # The Indicators page: one row per indicator, reading pastes and files,
 │                                   #   lists, export with chosen fields, alerts of watched lists
 ├── urlscan.py                      # URL scans: the isolated browser's visit, the findings and the verdict
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
@@ -1253,7 +1255,7 @@
           their place, which is also how a feature is pointed at another list. <code>read_settings</code> fills the old
           keys from the lists and <code>PUT /api/settings</code> writes to them, so nothing that reads the settings
           changed. Reads go through a cache of a few seconds, dropped when this process writes a list. A watch list of
-          the IoC library is read through the same functions, by its name as a slug. In expressions,
+          the Indicators page is read through the same functions, by its name as a slug. In expressions,
           <code>in_list</code> is answered by the scope (<code>Scope.in_list</code>), which the engine builds with the
           database at hand.
         </li>
@@ -1328,7 +1330,10 @@
           <code>plan</code> compares to say add, update, same or conflict; <code>apply</code> does the plan in the
           caller's transaction, each kind through the function that saves it everywhere else. Items are known by kind
           and name. An inspected file waits in <code>pack_uploads</code> for an hour. What Nik ships is installed by
-          each kind's own seeding as before, and <code>register_builtin</code> writes it down as four packs.
+          each kind's own seeding as before, and <code>register_builtin</code> writes it down as one pack,
+          <em>Nik built-in</em> (four until 5.4). What is about a product of a vendor is not seeded: it is a pack of the
+          catalogue (<code>pack_catalogue.py</code>), and <code>adopt_legacy</code> writes down as packs the vendors'
+          connectors a Nik older than 6.0 holds.
         </li>
         <li>
           <strong>The debugger</strong> (<code>automation/debugger.py</code>, the column <code>runs.debug</code>). A

@@ -31,7 +31,7 @@ manager_principal = require(CONNECTORS_MANAGE)
 
 
 class StartIn(BaseModel):
-    connectionId: str = Field(max_length=32)
+    instanceId: str = Field(max_length=32)
     # The id of the object on the other side: a ticket's sys_id, an issue's key.
     mirrorId: str = Field(min_length=1, max_length=300)
     direction: str = Field(pattern="^(in|out|both)$")
@@ -53,7 +53,7 @@ def get_mirror(
     """Whether the incident is mirrored, with what, in which direction and how it goes; and the
     connections it can be mirrored with."""
     incident = _incident(db, incident_id)
-    return {**mirror.out(db, incident), "connections": mirror.mirroring_connections(db)}
+    return {**mirror.out(db, incident), "instances": mirror.mirroring_connections(db)}
 
 
 @router.post("/incidents/{incident_id}/mirror", status_code=status.HTTP_201_CREATED)
@@ -63,7 +63,7 @@ def start_mirror(
     """Mirror the incident with an object of a connection. ``out`` and ``both`` send what changes in
     Nik to the other side from now on: they need the permission to run playbooks."""
     incident = _incident(db, incident_id, lock=True)
-    connection = db.get(Connection, body.connectionId)
+    connection = db.get(Connection, body.instanceId)
     if connection is None:
         raise HTTPException(status_code=404, detail="Instance not found")
     if body.direction != "in" and not caller.has(AUTOMATION_RUN):
@@ -75,7 +75,7 @@ def start_mirror(
     except mirror.MirrorError as error:
         raise HTTPException(status_code=error.status, detail=error.message) from None
     db.commit()
-    return {**mirror.out(db, incident), "connections": mirror.mirroring_connections(db)}
+    return {**mirror.out(db, incident), "instances": mirror.mirroring_connections(db)}
 
 
 @router.delete("/incidents/{incident_id}/mirror", status_code=status.HTTP_204_NO_CONTENT)

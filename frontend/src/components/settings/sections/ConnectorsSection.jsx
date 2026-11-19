@@ -8,7 +8,7 @@ import {
   connectorRows,
   instancesText,
   problemLines,
-} from '../../../domain/automation/connections.js'
+} from '../../../domain/automation/instances.js'
 import { formatRelative } from '../../../lib/time.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
@@ -95,9 +95,9 @@ export default function ConnectorsSection() {
 
   const load = useCallback(async () => {
     try {
-      const [first, second] = await Promise.all([api.get('/automation/connectors'), api.get('/automation/connections')])
+      const [first, second] = await Promise.all([api.get('/automation/connectors'), api.get('/automation/instances')])
       setConnectors(first.connectors)
-      setInstances(second.connections)
+      setInstances(second.instances)
       // An error on the page is left: it is about what was just asked, and reading the list again is part of it.
     } catch (failure) {
       setError(failure.message)
@@ -196,7 +196,7 @@ export default function ConnectorsSection() {
     // Shown at once; the list read again says what the server kept.
     setInstances((current) => current.map((item) => (item.id === instance.id ? { ...item, enabled } : item)))
     try {
-      await api.put(`/automation/connections/${encodeURIComponent(instance.id)}`, { enabled })
+      await api.put(`/automation/instances/${encodeURIComponent(instance.id)}`, { enabled })
       said(`${instance.name} is ${enabled ? 'on' : 'off'}.`)
     } catch (failure) {
       setError(failure.message)
@@ -209,7 +209,7 @@ export default function ConnectorsSection() {
     setNotice(null)
     setError(null)
     try {
-      const result = await api.post(`/automation/connections/${encodeURIComponent(instance.id)}/test`)
+      const result = await api.post(`/automation/instances/${encodeURIComponent(instance.id)}/test`)
       if (result.ok) setNotice(`${instance.name}: ${result.message}.`)
       else setError(`${instance.name}: ${result.message}`)
       load()
@@ -224,7 +224,7 @@ export default function ConnectorsSection() {
     setError(null)
     setNotice(null)
     try {
-      await api.del(`/automation/connections/${encodeURIComponent(deleting.id)}`)
+      await api.del(`/automation/instances/${encodeURIComponent(deleting.id)}`)
       said(`${deleting.name} was deleted.`)
       setEditing(null)
       load()

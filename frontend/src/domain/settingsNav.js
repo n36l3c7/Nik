@@ -153,6 +153,14 @@ export const SETTINGS_GROUPS = [
     label: 'Automation',
     sections: [
       {
+        id: 'contentPacks',
+        slug: 'content-packs',
+        label: 'Content packs',
+        permission: 'content.manage',
+        keywords:
+          'nikpack import export share bundle install uninstall update catalogue marketplace vendor product playbooks connectors types dashboards file',
+      },
+      {
         id: 'connectors',
         slug: 'connectors',
         label: 'Connectors',
@@ -173,13 +181,6 @@ export const SETTINGS_GROUPS = [
         label: 'Fetch status',
         permission: 'connectors.manage',
         keywords: 'alerts incoming polling failing paused items incomplete mirror queue turn on',
-      },
-      {
-        id: 'contentPacks',
-        slug: 'content-packs',
-        label: 'Content packs',
-        permission: 'content.manage',
-        keywords: 'nikpack import export share bundle install playbooks connectors types dashboards file',
       },
       {
         id: 'automationNetwork',
@@ -272,6 +273,8 @@ export function settingsFromPath(pathname) {
   const [, , group, slug] = path.replace(/\/+$/, '').split('/')
   const section = SECTIONS.find((candidate) => candidate.group === group && candidate.slug === slug)
   if (section) return { id: section.id }
+  // An address of 4.x: the connections are the instances of the connectors now.
+  if (group === 'automation' && slug === 'connections') return { id: 'connectors' }
   // /settings/<group>: its first section. An id of an older link (/settings/audit) is understood too.
   const first = SECTIONS.find((candidate) => candidate.group === group)
   return { id: first?.id ?? (BY_ID.has(group) ? group : null) }

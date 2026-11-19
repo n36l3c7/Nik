@@ -787,7 +787,7 @@ test('pasted text is recognised: an address to scan, an indicator to look up', a
   await page.keyboard.press('Escape')
 })
 
-test('the IoC library: paste many, group them in a list, export with chosen fields, plan a bulk check', async () => {
+test('the Indicators page: paste many, group them in a list, export with chosen fields, plan a bulk check', async () => {
   const paste = (text) =>
     page.evaluate((value) => {
       const data = new DataTransfer()
@@ -892,7 +892,7 @@ test('the page always follows the address: incident, artifact, library, indicato
   const indicator = page.getByRole('dialog', { name: 'Indicator' })
   const openLibrary = async () => {
     if (!(await page.getByRole('complementary', { name: 'IoCs panel' }).count()))
-      await rail.getByRole('button', { name: /^IoC library/ }).click()
+      await rail.getByRole('button', { name: /^Indicators/ }).click()
     await page
       .getByRole('complementary', { name: 'IoCs panel' })
       .getByRole('button', { name: /^All indicators/ })
@@ -1012,7 +1012,7 @@ test('an indicator and the artifact that is its analysis lead to each other', as
   await expect(artifact.getByRole('heading', { name: 'dropper.bin' })).toBeVisible()
 
   // An address not analysed yet: the page and the right-click menu offer to analyse it.
-  await rail.getByRole('button', { name: /^IoC library/ }).click()
+  await rail.getByRole('button', { name: /^Indicators/ }).click()
   const library = page.getByRole('table', { name: 'Indicators' })
   await page
     .getByRole('complementary', { name: 'IoCs panel' })
@@ -1346,8 +1346,11 @@ test('a query filters the lists: typed, completed, built from rows; the filters 
   await expect(artifacts.getByText('did you mean "kind"?')).toBeVisible()
   await artifactFilter.fill('')
 
-  // The IoC library: its pickers write the query too.
-  await page.getByRole('button', { name: /^IoC library/ }).click()
+  // The Indicators page: its pickers write the query too.
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: /^Indicators/ })
+    .click()
   await page
     .getByRole('complementary', { name: 'IoCs panel' })
     .getByRole('button', { name: /^All indicators/ })
@@ -1667,7 +1670,7 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await expect(page).toHaveURL(/\/automation\/playbooks$/)
   // The playbooks Nik ships are there from the first start, off: nothing runs until someone turns one on.
   const shipped = area.getByRole('row').filter({ hasText: 'shipped with Nik' })
-  await expect(shipped).toHaveCount(5)
+  await expect(shipped).toHaveCount(3)
   await expect(shipped.filter({ hasText: 'Phishing triage' })).toHaveCount(1)
   const listed = (await (await page.request.get('/api/automation/playbooks')).json()).playbooks
   expect(listed.filter((playbook) => playbook.enabled)).toEqual([])
@@ -3163,7 +3166,40 @@ test('a dashboard is built from widgets, shows real numbers, and opens what is b
   await expect(page.getByRole('region', { name: 'Dashboards' })).toHaveCount(0)
 })
 
-test('a content pack is inspected, shown with what it would change, and imported whole', async () => {
+test('a content pack is inspected, shown with what it would change, installed whole and uninstalled', async () => {
+  // What the catalogue would list (the tests reach no other machine: its answer is given here).
+  const entry = (id, name, more) => ({
+    id,
+    name,
+    vendor: 'Atlassian',
+    category: '',
+    version: '1.0.0',
+    description: '',
+    requires: [],
+    contents: {},
+    premium: 0,
+    logo: null,
+    installed: null,
+    update: false,
+    needsNik: '',
+    ...more,
+  })
+  const listed = {
+    address: 'https://packs.example.test/index.json',
+    custom: false,
+    ownKey: false,
+    fetchedAt: new Date().toISOString(),
+    error: '',
+    read: true,
+    packs: [
+      entry('jira-cloud', 'Jira Cloud', {
+        category: 'Ticketing',
+        contents: { connectors: 1, commands: 17, mappers: 1 },
+      }),
+      entry('later-pack', 'Tomorrow', { version: '2.0.0', contents: { playbooks: 2 }, needsNik: '9.0' }),
+    ],
+  }
+  await page.route('**/api/packs/catalogue', (route) => route.fulfill({ json: listed }))
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings
@@ -3171,9 +3207,26 @@ test('a content pack is inspected, shown with what it would change, and imported
     .getByText('Content packs', { exact: true })
     .click()
   await expect(page).toHaveURL(/\/settings\/automation\/content-packs$/)
-  // What Nik ships is listed as packs.
-  const installed = settings.getByRole('list', { name: 'Installed packs' })
-  await expect(installed.getByRole('listitem').filter({ hasText: 'Nik: automation' })).toContainText('part of Nik')
+  // What Nik ships is one pack, first; the packs of the catalogue are by vendor, each with what it holds.
+  const own = settings.getByRole('region', { name: 'Packs of Nik' }).getByRole('listitem', { name: 'Nik built-in' })
+  await expect(own).toContainText('installed')
+  await expect(own.getByRole('button', { name: /Uninstall/ })).toHaveCount(0)
+  const atlassian = settings.getByRole('region', { name: 'Packs of Atlassian' })
+  const jira = atlassian.getByRole('listitem', { name: 'Jira Cloud' })
+  await expect(jira).toContainText('connector (17 commands) · 1 mapper')
+  await expect(jira.getByRole('button', { name: 'Install…' })).toBeVisible()
+  const later = atlassian.getByRole('listitem', { name: 'Tomorrow' })
+  await expect(later).toContainText('For Nik 9.0 or later.')
+  await expect(later.getByRole('button', { name: 'Install…' })).toHaveCount(0)
+  await expect(settings.getByRole('group', { name: 'The catalogue' })).toContainText('2 packs')
+  // The filters and the search narrow what is shown.
+  await settings.getByRole('button', { name: /^Installed \d+$/ }).click()
+  await expect(atlassian).toHaveCount(0)
+  await settings.getByRole('button', { name: /^All \d+$/ }).click()
+  await settings.getByLabel('Search the packs…').fill('ticketing')
+  await expect(jira).toBeVisible()
+  await expect(own).toHaveCount(0)
+  await settings.getByLabel('Search the packs…').fill('')
 
   // A pack made by hand: a list, and a field that clashes with one Nik has.
   const zip = await page.evaluate(async () => {
@@ -3254,19 +3307,22 @@ test('a content pack is inspected, shown with what it would change, and imported
   await expect(clash.getByRole('checkbox')).not.toBeChecked()
   // Put back, it stops the import.
   await clash.getByRole('checkbox').check()
-  await expect(plan.getByRole('button', { name: /^Import/ })).toBeDisabled()
+  await expect(plan.getByRole('button', { name: /^Install/ })).toBeDisabled()
   await expect(plan).toContainText('conflicts: leave it out to go on')
   await clash.getByRole('checkbox').uncheck()
-  await plan.getByRole('button', { name: 'Import (1 change)' }).click()
+  await plan.getByRole('button', { name: 'Install (1 change)' }).click()
   await expect(settings.getByRole('status')).toContainText(
     'E2E pack 1.0.0 is installed: 1 added, 0 updated, 1 left out.',
   )
 
   // It is listed with what came from it, and the list is in Lists.
-  const row = installed.getByRole('listitem').filter({ hasText: 'E2E pack' })
-  await expect(row).toContainText('1 item')
-  await row.getByRole('button', { name: 'Show what came from E2E pack' }).click()
-  await expect(row).toContainText('e2e_vips')
+  const row = settings.getByRole('region', { name: 'Packs of Other' }).getByRole('listitem', { name: 'E2E pack' })
+  await expect(row).toContainText('1 list')
+  await row.getByRole('button', { name: 'Open E2E pack' }).click()
+  const details = page.getByRole('dialog', { name: 'E2E pack' })
+  await expect(details).toContainText('1.0.0 installed, from a file')
+  await expect(details).toContainText('e2e_vips')
+  await details.getByRole('button', { name: 'Close', exact: true }).last().click()
   const made = await page.request.get('/api/lists/e2e_vips')
   expect((await made.json()).entries[0].key).toBe('ceo')
 
@@ -3276,8 +3332,8 @@ test('a content pack is inspected, shown with what it would change, and imported
   await plan.getByRole('button', { name: 'Cancel' }).click()
 
   // Making a pack: the list is chosen, the file is offered.
-  await settings.getByRole('button', { name: 'Export a pack' }).click()
-  const form = settings.getByRole('region', { name: 'Export a pack' })
+  await settings.getByRole('button', { name: 'Make a pack…' }).click()
+  const form = settings.getByRole('region', { name: 'Make a pack' })
   await form.getByLabel('Name', { exact: true }).fill('Our lists')
   await expect(form.getByLabel('Id', { exact: true })).toHaveValue('our-lists')
   await expect(form.getByRole('button', { name: 'Export' })).toBeDisabled()
@@ -3286,8 +3342,16 @@ test('a content pack is inspected, shown with what it would change, and imported
   await form.getByRole('button', { name: 'Export' }).click()
   expect((await download).suggestedFilename()).toBe('our-lists-1.0.0.nikpack')
 
-  await row.getByRole('button', { name: 'Take E2E pack off the list' }).click()
-  await expect(settings.getByRole('status')).toContainText('What it brought stays.')
+  // Uninstalling says what goes first, then removes what the pack gave.
+  await row.getByRole('button', { name: 'Uninstall E2E pack' }).click()
+  const uninstall = page.getByRole('dialog', { name: 'Uninstall E2E pack' })
+  await expect(uninstall.getByRole('status')).toContainText('1 to remove, 0 to keep.')
+  await expect(uninstall.getByRole('list', { name: 'What uninstalling does' })).toContainText('e2e_vips')
+  await uninstall.getByRole('button', { name: 'Uninstall', exact: true }).click()
+  await expect(settings.getByRole('status').first()).toContainText('E2E pack was uninstalled: 1 removed.')
+  await expect(row).toHaveCount(0)
+  expect((await page.request.get('/api/lists/e2e_vips')).status()).toBe(404)
+  await page.unroute('**/api/packs/catalogue')
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
@@ -3639,7 +3703,7 @@ test('the rail: the order of a working day, and the account at its foot', async 
     'incidents',
     'My tasks',
     'Dashboards',
-    'IoC library',
+    'Indicators',
     'Artifacts',
     'Search',
     'Playground',

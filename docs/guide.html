@@ -47,7 +47,7 @@
           <li><a href="#layout">The screen</a></li>
           <li><a href="#evidence">Add evidence</a></li>
           <li><a href="#artifacts">Analyse without an incident</a></li>
-          <li><a href="#ioc-library">The IoC library</a></li>
+          <li><a href="#ioc-library">The Indicators page</a></li>
           <li><a href="#tabs">The tabs of an incident</a></li>
           <li><a href="#overview-tabs">Summary, Timeline, Indicators</a></li>
           <li><a href="#threat-tabs">Mail, Malware, Network, URL</a></li>
@@ -138,11 +138,11 @@
       <p>
         The narrow column of icons on the left edge is the <strong>rail</strong>, in the order of a working day: the
         <strong>incidents</strong>, <strong>your tasks</strong>, the <strong>dashboards</strong>, the
-        <strong>IoC library</strong>, the <strong>artifacts</strong> (the files, e-mails and captures analysed so far),
+        <strong>Indicators</strong>, the <strong>artifacts</strong> (the files, e-mails and captures analysed so far),
         the search, the <strong>playground</strong> (a command outside any incident), then the
-        <strong>automations</strong>. Incidents, the IoC library and the artifacts open a list in the side panel: click
-        the active icon again to close the panel and give the whole width to the analysis. At the foot of the rail are
-        the notifications, the settings and <strong>your account</strong>, which says who is signed in, opens
+        <strong>automations</strong>. Incidents, the Indicators page and the artifacts open a list in the side panel:
+        click the active icon again to close the panel and give the whole width to the analysis. At the foot of the rail
+        are the notifications, the settings and <strong>your account</strong>, which says who is signed in, opens
         <em>My account</em> and signs out. The audit log, the accounts and the backup are sections of Settings. An entry
         is there for the accounts whose roles let them use it.
       </p>
@@ -339,7 +339,7 @@
         <figcaption>A defanged address pasted on the app: read as it was meant, opened only if you choose.</figcaption>
       </figure>
 
-      <h2 id="ioc-library">The IoC library</h2>
+      <h2 id="ioc-library">The Indicators page</h2>
       <p>
         The third icon of the rail opens the library: one table of every indicator Nik knows, whether an incident holds
         it, an analyst added it or it came from a file. The side panel has quick filters (added by hand, malicious,
@@ -552,7 +552,7 @@
         <strong>Open as a page</strong> gives the indicator a full page, and <strong>Copy link</strong> its address
         (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a colleague. <strong>Check all</strong> asks the
         sources about every indicator of the incident, and <strong>Save as a list</strong> makes a list of them in the
-        <a href="#ioc-library">IoC library</a>. A row is red when the indicator is malicious and amber when it is
+        <a href="#ioc-library">Indicators</a>. A row is red when the indicator is malicious and amber when it is
         suspicious; being seen in other incidents is a number, not a colour. Export the list as CSV, STIX 2.1 or MISP.
         Indicators that are known good go to the <strong>allowlist</strong> (right-click → Add to the allowlist).
       </p>
@@ -896,7 +896,7 @@
 
       <h2 id="queries">Filter the lists with a query</h2>
       <p>
-        The incidents panel, the artifacts panel and the IoC library each have a filter box that takes a
+        The incidents panel, the artifacts panel and the Indicators page each have a filter box that takes a
         <strong>query</strong>. Plain words work as they always did (<code>wks-finance</code>,
         <code>evil.example</code>); a query says more:
       </p>
@@ -985,7 +985,7 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         </li>
         <li>
           <strong>The filters write the query.</strong> The status picker and <em>mine</em> of the incidents panel,
-          <em>mine</em> of the artifacts panel, the type, verdict and origin pickers of the IoC library add their
+          <em>mine</em> of the artifacts panel, the type, verdict and origin pickers of the Indicators page add their
           condition to the box, where you can see it and change it.
         </li>
       </ul>
@@ -1088,7 +1088,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
             </tr>
             <tr>
               <td>Indicators</td>
-              <td>The IoC library by verdict, type and origin, what is new per day, the most used tags and lists.</td>
+              <td>
+                The Indicators page by verdict, type and origin, what is new per day, the most used tags and lists.
+              </td>
             </tr>
             <tr>
               <td>Storage and system</td>
@@ -1153,15 +1155,15 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           messages and conversations as they were; which messages had been imported from it does not travel.
         </li>
         <li>
-          <strong>Export and import indicators</strong> from the <a href="#ioc-library">IoC library</a>: CSV, JSON, STIX
+          <strong>Export and import indicators</strong> from the <a href="#ioc-library">Indicators</a>: CSV, JSON, STIX
           2.1, MISP or text out; the same formats in, by dropping the file anywhere.
         </li>
         <li>
           <strong>Full backup</strong> (admins, Settings → System → Backup): incidents, users, settings and the audit
           log in one file, restored from the same section. It does <strong>not</strong> contain the files: samples,
-          e-mails, captures, mailboxes and their analyses stay on the server, and so do the IoC library's own indicators
-          and lists, and what automation is made of (playbooks, scripts and connectors travel as files, or as a
-          <a href="automation.html#packs">content pack</a>; instances hold secrets and are never exported). Restoring
+          e-mails, captures, mailboxes and their analyses stay on the server, and so do the Indicators page's own
+          indicators and lists, and what automation is made of (playbooks, scripts and connectors travel as files, or as
+          a <a href="automation.html#packs">content pack</a>; instances hold secrets and are never exported). Restoring
           replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
           <a href="deployment.html#docker-podman-in-production">Deployment</a>).
         </li>
@@ -1431,9 +1433,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
               <td>
                 Every list a feature or a playbook reads by its name: those Nik ships (the IoC allowlist, your
                 organisation's domains, the trusted mail servers, the suspicious keywords, the business hours, the hosts
-                every playbook may reach), yours, and the watch lists of the IoC library. A list holds values, keys with
-                values, or one document; it is edited here, exported and imported as CSV or JSON, and says where it is
-                used. The section of a feature shows which list it reads (<em>Open in Lists</em> goes to it) and lets
+                every playbook may reach), yours, and the watch lists of the Indicators page. A list holds values, keys
+                with values, or one document; it is edited here, exported and imported as CSV or JSON, and says where it
+                is used. The section of a feature shows which list it reads (<em>Open in Lists</em> goes to it) and lets
                 another of the same kind be chosen.
               </td>
             </tr>

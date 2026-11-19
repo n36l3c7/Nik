@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.automation import expressions as ex
+from tests import vendor
 from tests.conftest import make_key
 from tests.test_connectors_api import connect, install
 from tests.test_fields import field, incident
@@ -224,7 +225,7 @@ def test_a_classifier_chooses_the_type_of_incident_an_item_becomes(admin: TestCl
     connection = connect(admin)
     url = f"/api/classifiers/{connection['id']}"
     assert admin.get(url).json() == {
-        "connectionId": connection["id"],
+        "instanceId": connection["id"],
         "rules": [],
         "defaultType": None,
         "updatedAt": None,
@@ -276,13 +277,14 @@ def test_the_shipped_connectors_come_with_their_mappers(admin: TestClient):
     with SessionLocal() as db:
         connector_actions.seed(db)
         db.flush()
-        assert mapping.seed(db) >= 5
+        assert mapping.seed(db) >= 1  # the Mail connector
         db.commit()
+        assert vendor.install(db) == len(vendor.folders())
         assert mapping.seed(db) == 0  # nothing changed: nothing is written again
         row = db.scalars(
             select(Mapper).where(Mapper.connector_id == "servicenow", Mapper.direction == "incoming")
         ).one()
-        assert row.builtin and row.incident_type == mapping.ANY_TYPE
+        assert row.incident_type == mapping.ANY_TYPE
     # A mapper someone saved is theirs: a release does not take it back.
     mine = [{"to": "name", "from": "{{ item.number }}"}]
     saved = admin.put("/api/mappers", json={"connectorId": "servicenow", "direction": "incoming", "rules": mine})

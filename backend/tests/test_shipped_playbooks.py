@@ -15,6 +15,7 @@ from app.core.db import SessionLocal
 from app.core.models import Connection, IocCheck, Playbook, Run, RunStep
 from app.core.security import now_iso
 from app.enrichment import service
+from tests import vendor
 from tests.test_automation_engine import (  # noqa: F401 - test_actions is a fixture
     T0,
     edge,
@@ -29,7 +30,8 @@ from tests.test_automation_engine import (  # noqa: F401 - test_actions is a fix
 from tests.test_mail import no_dns, phishing_message  # noqa: F401 - no_dns is a fixture
 
 IP = "185.220.101.47"
-FILES = dict(shipped.files())
+# The playbooks Nik ships and the ones of the packs of vendors (packs/<id>/playbooks).
+FILES = {**dict(shipped.files()), **vendor.playbooks()}
 NAMES = {
     "phishing-triage": "Phishing triage",
     "recheck-watched-lists": "Weekly re-check of the watched lists",
@@ -48,6 +50,7 @@ def library(admin: TestClient):
         db.flush()
         added = shipped.seed(db)
         db.commit()
+        added += vendor.install(db)  # two of them bring a playbook
     return added
 
 
@@ -88,7 +91,7 @@ def dry(admin: TestClient, playbook_id: str, **body) -> dict:
 # --------------------------------------------------------------------------- #
 def test_five_playbooks_ship_and_each_file_is_a_playbook_as_export_writes_it():
     assert {key: source["name"] for key, source in FILES.items()} == NAMES
-    for path in sorted(shipped.SEED_DIR.glob("*.json")):
+    for path in sorted([*shipped.SEED_DIR.glob("*.json"), *vendor.REPO_PACKS.glob("*/playbooks/*.json")]):
         doc = json.loads(path.read_text(encoding="utf-8"))
         assert (doc["app"], doc["type"], doc["version"]) == ("Nik", "playbook", 1), path.name
         held = doc["playbook"]
@@ -109,10 +112,13 @@ def test_five_playbooks_ship_and_each_file_is_a_playbook_as_export_writes_it():
 
 
 def test_they_are_added_once_and_off_and_are_the_teams_from_then_on(admin: TestClient, library):
-    assert library == 5
+    # Three are part of Nik; two come with the pack of the product they are about.
+    assert library == 3 + len(vendor.folders())
     listed = by_name(admin)
     assert set(NAMES.values()) <= set(listed)
-    assert all(listed[name]["builtin"] and not listed[name]["enabled"] for name in NAMES.values())
+    own = {source["name"] for _key, source in shipped.files()}
+    assert len(own) == 3
+    assert all(listed[name]["builtin"] == (name in own) and not listed[name]["enabled"] for name in NAMES.values())
     # What needs nothing chosen has a version and can be turned on; the others are drafts that say what is missing.
     ready = {name for name in NAMES.values() if listed[name]["version"] == 1}
     assert ready == {"Phishing triage", "Weekly re-check of the watched lists", "Disk almost full notice"}
@@ -135,7 +141,7 @@ def test_they_are_added_once_and_off_and_are_the_teams_from_then_on(admin: TestC
     with SessionLocal() as db:
         assert shipped.seed(db) == 0
         db.commit()
-        assert sorted(state.read(db)["shippedPlaybooks"]) == sorted(NAMES)
+        assert sorted(state.read(db)["shippedPlaybooks"]) == sorted(key for key, _source in shipped.files())
     after = by_name(admin)
     assert "Our triage" in after and "Phishing triage" not in after and "Disk almost full notice" not in after
 
@@ -146,7 +152,7 @@ def test_a_name_already_taken_is_left_to_whoever_took_it(admin: TestClient):
         scripts.seed(db)
         connector_actions.seed(db)
         db.flush()
-        assert shipped.seed(db) == 4
+        assert shipped.seed(db) == 2
         # No description sends to a place of Settings that is gone.
         for shipped_row in db.scalars(select(Playbook).where(Playbook.builtin.is_(True))).all():
             assert "Settings, Connections" not in shipped_row.description
@@ -154,7 +160,7 @@ def test_a_name_already_taken_is_left_to_whoever_took_it(admin: TestClient):
         # One that was added by an earlier release, and one somebody rewrote: only the old sentence changes.
         kept = db.scalars(select(Playbook).where(Playbook.name == NAMES["storage-low-notice"])).one()
         kept.description = "Ours now. To send it: set the SMTP server (Settings, Automation), then ask Anna."
-        rewritten = db.scalars(select(Playbook).where(Playbook.name == NAMES["incident-to-ticket"])).one()
+        rewritten = db.scalars(select(Playbook).where(Playbook.name == NAMES["recheck-watched-lists"])).one()
         rewritten.description = "Rewritten by hand."
         db.flush()
         assert shipped.reword(db) == 1
@@ -174,6 +180,8 @@ def test_each_file_is_imported_by_hand_like_any_other(admin: TestClient):
     with SessionLocal() as db:
         scripts.seed(db)
         connector_actions.seed(db)
+        for text, _connector in vendor.connectors():
+            connector_actions.install(db, text, "admin")
         db.commit()
     for key, source in FILES.items():
         made = admin.post("/api/automation/playbooks/import", json={"playbook": source})

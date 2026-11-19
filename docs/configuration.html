@@ -225,6 +225,24 @@
               </td>
             </tr>
             <tr>
+              <td><code>NIK_PACKS_CATALOGUE</code></td>
+              <td>the release <code>packs</code> of Nik's repository</td>
+              <td>
+                The address (https) of the index of the
+                <a href="automation.html#pack-catalogue">catalogue of content packs</a>, until an administrator sets
+                another in Settings. Empty (<code>NIK_PACKS_CATALOGUE=</code>): no catalogue, packs come as files.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_PACKS_DIR</code></td>
+              <td><em>empty</em></td>
+              <td>
+                A folder inside the backend container whose packs (folders with a <code>pack.yml</code>, or
+                <code>.nikpack</code> files) are installed at start when they are not here or are older. Mount it
+                read-only with a Compose override. Nothing in it is checked against a signature.
+              </td>
+            </tr>
+            <tr>
               <td><code>AUTOMATION_WORKER</code></td>
               <td><code>container</code></td>
               <td>

@@ -147,7 +147,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="5.4.0",
+    version="6.0.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -232,10 +232,16 @@ def on_startup() -> None:
 
     with SessionLocal() as db:
         try:
-            if content_packs.register_builtin(db):
+            # What came inside Nik before 6.0 and is a vendor's becomes the pack it is from now on.
+            if content_packs.register_builtin(db) + content_packs.adopt_legacy(db):
                 db.commit()
         except IntegrityError:
             db.rollback()  # another process of the server wrote them at the same moment
+        # The packs of the folder an administrator filled, for a Nik without the catalogue.
+        if app_settings.PACKS_DIR:
+            from pathlib import Path
+
+            content_packs.install_folder(db, Path(app_settings.PACKS_DIR))
     # Playbooks: the loop runs here only when there is no automation container.
     if app_settings.AUTOMATION_WORKER == "inline":
         from .automation import worker as automation_worker

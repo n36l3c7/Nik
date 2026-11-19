@@ -37,7 +37,7 @@ class OrderIn(BaseModel):
 
 
 class TryIn(BaseModel):
-    connectionId: str = Field(max_length=32)
+    instanceId: str = Field(max_length=32)
     item: Any = None
 
 
@@ -92,7 +92,7 @@ def order_rules(
 def try_rules(body: TryIn, _caller: Principal = Depends(configure_principal), db: OrmSession = Depends(get_db)) -> dict:
     """What would become of an item a connection fetched: the type and the fields it would have,
     and which rule would decide, without doing anything."""
-    connection = db.get(Connection, body.connectionId)
+    connection = db.get(Connection, body.instanceId)
     connector = fetch.connector_of(db, connection) if connection is not None else None
     if connection is None or connector is None:
         raise HTTPException(status_code=404, detail="Instance not found")

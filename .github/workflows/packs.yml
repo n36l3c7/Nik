@@ -1,0 +1,58 @@
+name: Packs
+
+# Publishes the content packs of packs/ as the catalogue Nik reads: one
+# .nikpack file for each pack, an index, and the signature of the index.
+# They are the files of the release "packs", which is never the latest
+# release of Nik.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packs/**"
+      - "backend/app/pack_build.py"
+      - "backend/app/packs.py"
+      - ".github/workflows/packs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packs
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # The only job that writes: it adds files to one release.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+      - name: Build and sign the catalogue
+        working-directory: backend
+        env:
+          PACKS_SIGNING_KEY: ${{ secrets.PACKS_SIGNING_KEY }}
+        run: |
+          test -n "$PACKS_SIGNING_KEY" || { echo "::error::The secret PACKS_SIGNING_KEY is not set"; exit 1; }
+          python -m app.pack_build ../packs ../dist-packs
+          test -s ../dist-packs/index.json.sig
+      - name: Publish to the release "packs"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view packs >/dev/null 2>&1; then
+            gh release create packs --title "Content packs" --latest=false \
+              --notes "The catalogue of content packs Nik reads (Settings, Content packs). Published by the Packs workflow from the folder packs/: not a release of Nik."
+          fi
+          # The packs first, the index and its signature last: an index never lists a file that is not there yet.
+          gh release upload packs dist-packs/*.nikpack --clobber
+          gh release upload packs dist-packs/index.json.sig dist-packs/index.json --clobber

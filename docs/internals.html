@@ -404,9 +404,9 @@
         <strong>What is never sent</strong> (<code>service.blocked</code>), whoever asks: private, loopback and other
         non-public addresses, internal names (no dot, <code>.local</code>, <code>.lan</code>, <code>.internal</code>,
         <code>.corp</code>, <code>.home.arpa</code>…) and URLs on them; values on the IOC allowlist; values seen in an
-        incident whose report is classified <strong>TLP:RED</strong>, or that an analyst or a list of the IoC library
-        classified TLP:RED; e-mail addresses. MD5 and SHA-1 of stored samples and mail attachments are not looked up
-        automatically: their SHA-256 is.
+        incident whose report is classified <strong>TLP:RED</strong>, or that an analyst or a list of the Indicators
+        page classified TLP:RED; e-mail addresses. MD5 and SHA-1 of stored samples and mail attachments are not looked
+        up automatically: their SHA-256 is.
       </p>
       <p>
         <strong>Automatic lookups</strong> are off until an analyst turns them on in
@@ -458,7 +458,7 @@
         address's network leaves the score as it was.
       </p>
       <p>
-        <strong>The IoC library</strong> (<code>app/ioc_library.py</code>) is one row per
+        <strong>The Indicators page</strong> (<code>app/ioc_library.py</code>) is one row per
         <code>(type, value)</code> merged from three tables: <code>ioc_index</code> (what the incidents hold),
         <code>iocs</code> (indicators added by hand or from a file, and the tags, note, TLP and expiry an analyst wrote
         about any indicator) and <code>ioc_list_items</code> (the lists). <code>parse()</code> reads a paste or a file:

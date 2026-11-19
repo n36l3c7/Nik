@@ -8,7 +8,7 @@ export const LIST_KINDS = {
   values: { label: 'Values', hint: 'Items, one a line: domains, networks, names…' },
   key_value: { label: 'Keys and values', hint: 'Each item is a key with a value.' },
   json: { label: 'One document', hint: 'A single JSON document.' },
-  indicators: { label: 'Indicators', hint: 'A list of the IoC library, changed where indicators are.' },
+  indicators: { label: 'Indicators', hint: 'A list of the Indicators page, changed where indicators are.' },
 }
 
 export const ITEM_TYPES = [

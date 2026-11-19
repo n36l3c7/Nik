@@ -802,7 +802,7 @@ export default function PlaybookPage({
             nodeId={selectedId}
             catalog={catalog.nodes}
             events={catalog.events}
-            connections={catalog.connections ?? {}}
+            connections={catalog.instances ?? {}}
             playbooks={playbookNames}
             problems={problems}
             updates={detail.updates ?? []}

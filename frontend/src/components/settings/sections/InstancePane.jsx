@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Trash2, X, Zap } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import { authOf, fieldsOf, formProblem, payloadOf, startingValues } from '../../../domain/automation/connections.js'
+import { authOf, fieldsOf, formProblem, payloadOf, startingValues } from '../../../domain/automation/instances.js'
 import { Button } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 
@@ -44,7 +44,7 @@ export default function InstancePane({ connector, instance, testing = false, onC
     try {
       const body = { name: name.trim(), ...payloadOf(connector, values, removed) }
       const saved = instance
-        ? await api.put(`/automation/connections/${encodeURIComponent(instance.id)}`, body)
+        ? await api.put(`/automation/instances/${encodeURIComponent(instance.id)}`, body)
         : await api.post(`/automation/connectors/${encodeURIComponent(connector.id)}/instances`, body)
       onSaved(saved)
     } catch (failure) {

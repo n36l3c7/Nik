@@ -250,7 +250,7 @@ def save_mapper(db: OrmSession, body: dict[str, Any], actor: str, *, builtin: bo
 def classifier_out(db: OrmSession, connection: Connection) -> dict[str, Any]:
     row = db.get(Classifier, connection.id)
     return {
-        "connectionId": connection.id,
+        "instanceId": connection.id,
         "rules": (row.rules if row is not None else None) or [],
         "defaultType": row.default_type if row is not None else None,
         "updatedAt": row.updated_at if row is not None else None,
@@ -437,9 +437,38 @@ def seed(db: OrmSession) -> int:
     return changed
 
 
+def state_defaults(db: OrmSession) -> dict[str, Any]:
+    """connector id → the classifier its pack gives a new instance."""
+    from .automation import state
+
+    return dict(state.read(db).get("classifierDefaults") or {})
+
+
+def keep_default_classifier(db: OrmSession, connector_id: str, spec: dict[str, Any]) -> None:
+    """Keep the classifier a connector's pack gives its new instances (the caller commits)."""
+    from .automation import state
+
+    held = dict(state.read(db).get("classifierDefaults") or {})
+    if held.get(connector_id) != spec:
+        held[connector_id] = spec
+        state.write(db, classifierDefaults=held)
+
+
+def forget_default_classifier(db: OrmSession, connector_id: str) -> None:
+    from .automation import state
+
+    held = dict(state.read(db).get("classifierDefaults") or {})
+    if held.pop(connector_id, None) is not None:
+        state.write(db, classifierDefaults=held)
+
+
 def default_classifier(db: OrmSession, connection: Connection) -> bool:
-    """Give a connection that has no classifier the one its connector ships (the caller commits)."""
-    spec = (shipped().get(connection.connector_id) or {}).get("classifier") or {}
+    """Give a connection that has no classifier the one its connector came with: the one of its pack, or
+    the one Nik ships for its own connectors (the caller commits)."""
+    from .automation import state
+
+    kept = (state.read(db).get("classifierDefaults") or {}).get(connection.connector_id)
+    spec = kept or (shipped().get(connection.connector_id) or {}).get("classifier") or {}
     if db.get(Classifier, connection.id) is not None or not (spec.get("rules") or spec.get("defaultType")):
         return False
     try:

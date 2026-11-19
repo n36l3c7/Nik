@@ -155,10 +155,10 @@ export default function Rail({
             icon={Fingerprint}
             label={
               open === 'iocs'
-                ? 'Hide the IoC library'
+                ? 'Hide the Indicators page'
                 : counts.alerts
-                  ? `IoC library (${counts.alerts} new alerts)`
-                  : 'IoC library'
+                  ? `Indicators (${counts.alerts} new alerts)`
+                  : 'Indicators'
             }
             active={open === 'iocs'}
             count={counts.iocs}

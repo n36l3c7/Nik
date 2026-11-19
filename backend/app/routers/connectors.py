@@ -112,7 +112,6 @@ def _connector_out(db: OrmSession, row: Connector, *, source: bool = False) -> d
         "version": row.version,
         "builtin": bool(row.builtin),
         # ``connections`` is the name 4.x gave to the count of instances.
-        "connections": len(instances),
         "instances": len(instances),
         "instancesOn": on,
         # Its commands are offered in the editor and the War Room when one instance is on.
@@ -397,16 +396,16 @@ def delete_connector(
 # --------------------------------------------------------------------------- #
 # Connections                                                                 #
 # --------------------------------------------------------------------------- #
-@router.get("/connections")
+@router.get("/instances")
 def list_connections(caller: Principal = Depends(chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The connections. With ``connectors.manage``: their address, which secrets are set, the last
     test. Otherwise their names only, to choose one on a node."""
     full = caller.has(CONNECTORS_MANAGE)
     rows = db.scalars(select(Connection).order_by(func.lower(Connection.name))).all()
-    return {"connections": [_connection_out(db, row, full=full) for row in rows]}
+    return {"instances": [_connection_out(db, row, full=full) for row in rows]}
 
 
-@router.post("/connections", status_code=status.HTTP_201_CREATED)
+@router.post("/instances", status_code=status.HTTP_201_CREATED)
 def create_connection(
     body: ConnectionIn, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
@@ -442,7 +441,7 @@ def create_connection(
     return _connection_out(db, row, full=True)
 
 
-@router.put("/connections/{connection_id}")
+@router.put("/instances/{connection_id}")
 def update_connection(
     connection_id: str,
     body: ConnectionPatch,
@@ -488,7 +487,7 @@ def update_connection(
     return _connection_out(db, row, full=True)
 
 
-@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/instances/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_connection(
     connection_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
@@ -536,7 +535,7 @@ def create_instance(
     )
 
 
-@router.post("/connections/{connection_id}/test")
+@router.post("/instances/{connection_id}/test")
 def test_connection(
     connection_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
 ) -> dict:

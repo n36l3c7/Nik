@@ -2,7 +2,7 @@
 
 Reading is for whoever reads incidents (a list is what Nik's analysis
 compares with); changing one is for ``lists.manage``. The watch lists of the
-IoC library are shown here too, read-only: they are changed where indicators
+Indicators page are shown here too, read-only: they are changed where indicators
 are. Which list a feature reads is chosen with ``PUT /api/lists/pointers``.
 """
 
@@ -66,7 +66,7 @@ def _own(db: OrmSession, name: str) -> NamedList:
     row = lists.find(db, name)
     if row is None:
         if lists.watch_list(db, name) is not None:
-            raise HTTPException(status_code=409, detail="A list of the IoC library is changed where indicators are")
+            raise HTTPException(status_code=409, detail="A list of the Indicators page is changed where indicators are")
         raise HTTPException(status_code=404, detail="List not found")
     return row
 

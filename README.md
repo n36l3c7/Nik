@@ -178,6 +178,11 @@ the Summary a page each type arranges like a dashboard, and added the
 Playground, a War Room without an incident; 5.4 read the platform against
 itself and put right what one release said differently from another.
 
+The 6.x series makes Nik a platform that is extended from outside. 6.0 took
+the connectors of vendors out of Nik: what Nik knows about a product is a
+content pack (its connector, mappers, playbooks, types, dashboards),
+installed from a signed catalogue published from the folder `packs/`.
+
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.
 

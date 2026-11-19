@@ -480,14 +480,9 @@
   },
   {
    "query": "owner:!anna",
-   "tree": {
-    "field": "owner",
-    "op": "!",
-    "value": {
-     "text": "anna",
-     "quoted": false
-    },
-    "position": 0
+   "error": {
+    "code": "old_not",
+    "position": 6
    }
   },
   {
@@ -1072,28 +1067,16 @@
   },
   {
    "query": "status:!closed",
-   "tree": {
-    "field": "status",
-    "op": "!",
-    "value": {
-     "text": "closed",
-     "quoted": false
-    },
-    "position": 0
+   "error": {
+    "code": "old_not",
+    "position": 7
    }
   },
   {
    "query": "-status:!closed",
-   "tree": {
-    "not": {
-     "field": "status",
-     "op": "!",
-     "value": {
-      "text": "closed",
-      "quoted": false
-     },
-     "position": 1
-    }
+   "error": {
+    "code": "old_not",
+    "position": 8
    }
   },
   {

@@ -27,11 +27,12 @@ import pytest
 from app.automation import connector_actions as ca
 from app.automation import connector_runtime as rt
 from app.automation import egress
+from tests import vendor
 
 DATA = Path(__file__).parent / "data" / "connectors"
 # The connectors that speak HTTP: each command has a recorded exchange. The native ones (mail) are
 # run by Nik's own code and have tests of their own (test_mail_connector.py).
-SHIPPED = [(text, connector) for text, connector in ca.shipped() if connector.native is None]
+SHIPPED = [(text, connector) for text, connector in vendor.connectors() if connector.native is None]
 CASES = [(connector, command.name) for _text, connector in SHIPPED for command in connector.commands]
 
 
@@ -191,7 +192,7 @@ def test_a_shipped_fetch_asks_what_the_documentation_says_and_its_mapper_reads_t
     first = ex.render(spec.first_state, ex.Scope(values={"config": config, "first": moment, "now": moment})).data
     assert first == start["state"]
 
-    shipped = mapping.shipped()[connector.id]
+    shipped = vendor.mappers()[connector.id]
     with SessionLocal() as db:
         registry.seed(db)
         db.commit()
@@ -228,10 +229,9 @@ def test_the_products_that_raise_alerts_and_keep_tickets_are_fetched():
     assert {connector.id for connector in FETCHING} >= {
         "servicenow", "jira-cloud", "jira-datacenter", "sentinelone", "sentinelone-sdl"
     }  # fmt: skip
-    from app import mapping
 
-    fetching = {connector.id for _text, connector in ca.shipped() if connector.fetch is not None}
-    assert set(mapping.shipped()) == fetching and "mail" in fetching
+    fetching = {connector.id for _text, connector in vendor.connectors() if connector.fetch is not None}
+    assert set(vendor.mappers()) == fetching and "mail" in fetching
 
 
 def test_the_mirror_of_a_shipped_connector_names_commands_that_take_what_it_gives():

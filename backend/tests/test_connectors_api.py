@@ -36,7 +36,7 @@ def connect(admin: TestClient, name: str = "Acme production", **body) -> dict:
         "secrets": {"username": "svc", "password": "s3cret-pass"},
         **body,
     }
-    res = admin.post(f"{BASE}/connections", json=payload)
+    res = admin.post(f"{BASE}/instances", json=payload)
     assert res.status_code == 201, res.text
     return res.json()
 
@@ -59,7 +59,7 @@ def test_a_connector_is_installed_from_its_file_or_refused_with_the_lines(admin:
     good = admin.post(f"{BASE}/connectors/check", json={"source": ACME}).json()
     assert good["problems"] == [] and good["connector"]["id"] == "acme"
     made = install(admin)
-    assert (made["id"], made["name"], made["version"], made["builtin"], made["connections"]) == (
+    assert (made["id"], made["name"], made["version"], made["builtin"], made["instances"]) == (
         "acme",
         "Acme Desk",
         2,
@@ -87,7 +87,7 @@ def test_credentials_are_written_and_never_read(admin: TestClient):
     assert made["config"] == {"url": "https://desk.example.com/api"}  # as it is compared: no trailing slash
     assert made["secrets"] == {"username": True, "password": True} and made["host"] == "desk.example.com"
     assert "s3cret-pass" not in json.dumps(made) and "svc" not in json.dumps(made["secrets"])
-    listed = admin.get(f"{BASE}/connections").json()["connections"]
+    listed = admin.get(f"{BASE}/instances").json()["instances"]
     assert "s3cret-pass" not in json.dumps(listed) and listed[0]["connectorName"] == "Acme Desk"
     with SessionLocal() as db:
         row = db.get(Connection, made["id"])
@@ -95,7 +95,7 @@ def test_credentials_are_written_and_never_read(admin: TestClient):
         assert ca.secrets_of(row) == {"username": "svc", "password": "s3cret-pass"}
 
     # A secret left out is kept, an empty one is removed, a new one replaces.
-    url = f"{BASE}/connections/{made['id']}"
+    url = f"{BASE}/instances/{made['id']}"
     kept = admin.put(url, json={"secrets": {"password": None}}).json()
     assert kept["secrets"] == {"username": True, "password": True}
     changed = admin.put(url, json={"secrets": {"username": "", "password": "another-pass"}}).json()
@@ -117,12 +117,12 @@ def test_credentials_are_written_and_never_read(admin: TestClient):
         ({"connector": "nope"}, "Connector not found"),
     ):
         res = admin.post(
-            f"{BASE}/connections",
+            f"{BASE}/instances",
             json={"name": "Other", "connector": "acme", "config": {"url": "https://x.example.com"}, **body},
         )
         assert res.status_code in (400, 404) and res.json()["detail"] == sentence, body
     same = admin.post(
-        f"{BASE}/connections",
+        f"{BASE}/instances",
         json={"name": "acme PRODUCTION", "connector": "acme", "config": {"url": "https://x.example.com"}},
     )
     assert same.json()["detail"] == "An instance with this name exists already"
@@ -138,18 +138,18 @@ def test_the_test_of_a_connection_reaches_its_host_and_nothing_else(admin: TestC
     made = connect(admin)
     outside.host("desk.example.com", "93.184.215.20")
     outside.answer("desk.example.com", 200, {"name": "svc"}, path="/api/me")
-    tested = admin.post(f"{BASE}/connections/{made['id']}/test").json()
+    tested = admin.post(f"{BASE}/instances/{made['id']}/test").json()
     assert (tested["ok"], tested["status"], tested["message"]) == (True, 200, "Acme Desk answered 200")
     assert outside.requests[0]["headers"]["Authorization"].startswith("Basic ")
-    assert admin.get(f"{BASE}/connections").json()["connections"][0]["lastTest"]["ok"] is True
+    assert admin.get(f"{BASE}/instances").json()["instances"][0]["lastTest"]["ok"] is True
     # Wrong credentials, a host that is not there: said, never raised. Changing the connection forgets the result.
     outside.answer("desk.example.com", 401, {"error": "no"}, path="/api/me")
-    assert admin.post(f"{BASE}/connections/{made['id']}/test").json()["message"] == "Acme Desk answered 401"
-    moved = admin.put(f"{BASE}/connections/{made['id']}", json={"config": {"url": "https://gone.example.com"}}).json()
+    assert admin.post(f"{BASE}/instances/{made['id']}/test").json()["message"] == "Acme Desk answered 401"
+    moved = admin.put(f"{BASE}/instances/{made['id']}", json={"config": {"url": "https://gone.example.com"}}).json()
     assert moved["lastTest"] is None and moved["host"] == "gone.example.com"
-    failed = admin.post(f"{BASE}/connections/{made['id']}/test").json()
+    failed = admin.post(f"{BASE}/instances/{made['id']}/test").json()
     assert failed["ok"] is False and re.search(r"gone\.example\.com", failed["message"])
-    assert admin.post(f"{BASE}/connections/nope/test").status_code == 404
+    assert admin.post(f"{BASE}/instances/nope/test").status_code == 404
 
 
 def test_what_a_playbook_uses_cannot_be_removed(admin: TestClient):
@@ -165,18 +165,18 @@ def test_what_a_playbook_uses_cannot_be_removed(admin: TestClient):
     }
     assert admin.post(f"{BASE}/playbooks/{playbook_id}/versions", json={"graph": shape}).status_code == 201
     assert admin.get(f"{BASE}/connectors/acme").json()["usedBy"] == ["Uses Acme"]
-    for url in (f"{BASE}/connections/{made['id']}", f"{BASE}/connectors/acme"):
+    for url in (f"{BASE}/instances/{made['id']}", f"{BASE}/connectors/acme"):
         res = admin.delete(url)
         assert res.status_code == 409 and res.json()["detail"] == "Used by: Uses Acme"
     # The library of the canvas lists the connections of each connector.
-    assert admin.get(f"{BASE}/catalog").json()["connections"] == {
+    assert admin.get(f"{BASE}/catalog").json()["instances"] == {
         "acme": [{"id": made["id"], "name": "Acme production", "enabled": True}]
     }
     assert admin.delete(f"{BASE}/playbooks/{playbook_id}").status_code == 204
     # A connector goes with its connections.
     assert admin.delete(f"{BASE}/connectors/acme").status_code == 204
-    assert admin.get(f"{BASE}/connections").json()["connections"] == []
-    assert admin.get(f"{BASE}/catalog").json()["connections"] == {}
+    assert admin.get(f"{BASE}/instances").json()["instances"] == []
+    assert admin.get(f"{BASE}/catalog").json()["instances"] == {}
 
 
 def test_who_builds_playbooks_sees_the_names_of_connections_and_no_more(admin: TestClient):
@@ -186,7 +186,7 @@ def test_who_builds_playbooks_sees_the_names_of_connections_and_no_more(admin: T
     manager = make_key(admin, label="cn", roles=["connectors"])
     viewer = make_key(admin, label="vi", roles=["viewer"])
     with TestClient(fastapi_app) as other:
-        names = other.get(f"{BASE}/connections", headers=builder).json()["connections"]
+        names = other.get(f"{BASE}/instances", headers=builder).json()["instances"]
         assert names == [
             {
                 "id": made["id"],
@@ -196,14 +196,14 @@ def test_who_builds_playbooks_sees_the_names_of_connections_and_no_more(admin: T
                 "enabled": True,
             }
         ]
-        assert other.get(f"{BASE}/connections", headers=viewer).status_code == 403
+        assert other.get(f"{BASE}/instances", headers=viewer).status_code == 403
         assert other.get(f"{BASE}/connectors", headers=builder).status_code == 403
-        assert other.post(f"{BASE}/connections/{made['id']}/test", headers=builder).status_code == 403
-        full = other.get(f"{BASE}/connections", headers=manager).json()["connections"][0]
+        assert other.post(f"{BASE}/instances/{made['id']}/test", headers=builder).status_code == 403
+        full = other.get(f"{BASE}/instances", headers=manager).json()["instances"][0]
         assert full["secrets"] == {"username": True, "password": True}
         # The role Connectors manages them without being an admin.
         assert (
-            other.put(f"{BASE}/connections/{made['id']}", json={"name": "Acme prod"}, headers=manager).json()["name"]
+            other.put(f"{BASE}/instances/{made['id']}", json={"name": "Acme prod"}, headers=manager).json()["name"]
             == "Acme prod"
         )
 
@@ -269,15 +269,15 @@ def test_a_connector_has_instances_and_is_enabled_when_one_is_on(admin: TestClie
     assert names == [("Production", True), ("Test", False)]
     assert admin.get(f"{BASE}/connectors/nope/instances").status_code == 404
     listed = admin.get(f"{BASE}/connectors").json()["connectors"][0]
-    assert (listed["instances"], listed["instancesOn"], listed["enabled"], listed["connections"]) == (2, 1, True, 2)
+    assert (listed["instances"], listed["instancesOn"], listed["enabled"], listed["instances"]) == (2, 1, True, 2)
     # Who builds playbooks sees which instance is on, to choose one.
-    assert {c["name"]: c["enabled"] for c in admin.get(f"{BASE}/connections").json()["connections"]} == {
+    assert {c["name"]: c["enabled"] for c in admin.get(f"{BASE}/instances").json()["instances"]} == {
         "Production": True,
         "Test": False,
     }
 
     # Turned off: it keeps what it was set up with, and the connector is enabled no more.
-    off = admin.put(f"{BASE}/connections/{first.json()['id']}", json={"enabled": False}).json()
+    off = admin.put(f"{BASE}/instances/{first.json()['id']}", json={"enabled": False}).json()
     assert off["enabled"] is False and off["secrets"] == {"username": True, "password": True}
     assert off["host"] == "desk.example.com"
     assert admin.get(f"{BASE}/connectors").json()["connectors"][0]["enabled"] is False

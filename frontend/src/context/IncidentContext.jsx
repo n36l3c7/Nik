@@ -265,7 +265,7 @@ function syncUrl(incidentId, { replace = false } = {}) {
   if (typeof window === 'undefined') return
   const path = incidentId ? `/incident/${encodeURIComponent(incidentId)}` : '/'
   if (window.location.pathname === path) return
-  // Announced, so an artifact or the IoC library open in the main area leaves it.
+  // Announced, so an artifact or the Indicators page open in the main area leaves it.
   setPath(path, { replace, state: { incidentId: incidentId ?? null } })
 }
 

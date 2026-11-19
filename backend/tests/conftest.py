@@ -15,6 +15,8 @@ os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "100000/minute")
 os.environ.setdefault("SAMPLE_STORE", os.path.join(tempfile.mkdtemp(), "samples"))
 os.environ.setdefault("ENRICHMENT_WORKER", "false")
+# No catalogue of packs unless a test gives one (the `published` fixture of test_pack_catalogue.py).
+os.environ.setdefault("NIK_PACKS_CATALOGUE", "")
 # The script sandbox is "configured"; what answers is the `sandbox` fixture (or nothing).
 os.environ.setdefault("SANDBOX_URL", "http://sandbox.test:8750")
 os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token")

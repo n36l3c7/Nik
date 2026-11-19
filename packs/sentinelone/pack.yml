@@ -1,0 +1,9 @@
+id: sentinelone
+name: SentinelOne EDR
+vendor: SentinelOne
+category: Endpoint
+version: 1.0.0
+description: >-
+  Threats of the SentinelOne console as incidents; agents, the blocklist and Deep Visibility as commands.
+author: Nik
+nik: ">=6.0"

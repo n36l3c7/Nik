@@ -32,19 +32,22 @@ from __future__ import annotations
 
 import copy
 import difflib
+import hashlib
 import io
 import json
+import logging
 import re
 import secrets
 import time
 import uuid
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
 from . import dashboards as boards
@@ -57,9 +60,11 @@ from .automation import engine as automation_engine
 from .automation.connectors import ConnectorError
 from .automation.connectors import load as load_connector
 from .core.models import (
+    Connection,
     Connector,
     Dashboard,
     Field,
+    Incident,
     IncidentType,
     NamedList,
     Pack,
@@ -68,9 +73,12 @@ from .core.models import (
     Playbook,
     PlaybookVersion,
     PreprocessRule,
+    Run,
     Script,
 )
 from .core.security import now_iso
+
+logger = logging.getLogger("nik.packs")
 
 MAX_BYTES = 20 * 1024 * 1024  # the file
 MAX_UNPACKED = 100 * 1024 * 1024  # what it holds, unpacked
@@ -105,7 +113,10 @@ LABELS = {
     "dashboards": "Dashboard",
 }
 YAML_KINDS = frozenset({"connectors", "scripts"})
-NIK_VERSION = (5, 4, 0)
+NIK_VERSION = (6, 0, 0)
+BUILTIN_ID = "nik"  # the one pack that is part of Nik
+LOGO_NAMES = ("logo.svg", "logo.png")
+CRLF, LF = bytes((13, 10)), bytes((10,))
 
 
 class PackError(ValueError):
@@ -128,6 +139,7 @@ class Item:
 class PackFile:
     manifest: dict[str, Any]
     items: list[Item] = field(default_factory=list)
+    logo: bytes | None = None  # logo.svg or logo.png beside pack.yml: what the catalogue shows
 
     def has(self, kind: str, name: str) -> bool:
         return any(item.kind == kind and item.name.lower() == name.lower() for item in self.items)
@@ -170,6 +182,8 @@ def clean_manifest(raw: Any) -> dict[str, Any]:
     return {
         "id": pack_id,
         "name": name,
+        "vendor": str(raw.get("vendor") or "").strip()[:80],
+        "category": str(raw.get("category") or "").strip()[:60],
         "version": str(raw["version"]).strip(),
         "description": str(raw.get("description") or "")[:2000],
         "author": str(raw.get("author") or "")[:200],
@@ -223,6 +237,7 @@ def read(data: bytes) -> PackFile:
         if sum(info.file_size for info in infos) > MAX_UNPACKED:
             raise PackError("The pack is too large once unpacked")
         manifest = None
+        logo = None
         items: list[Item] = []
         seen: set[tuple[str, str]] = set()
         # A connector kept as a folder: connectors/<id>/connector.yml, with a logo and a README beside it.
@@ -255,6 +270,8 @@ def read(data: bytes) -> PackFile:
                         manifest = clean_manifest(yaml.safe_load(archive.read(info).decode("utf-8")))
                     except (yaml.YAMLError, UnicodeDecodeError):
                         raise PackError("pack.yml cannot be read") from None
+                elif path.name in LOGO_NAMES:
+                    logo = archive.read(info)
                 continue  # a README beside it is nobody's business
             kind = path.parts[0]
             if kind not in KINDS or len(path.parts) != 2:
@@ -272,6 +289,11 @@ def read(data: bytes) -> PackFile:
             items.append(Item(kind, name, parsed))
     if manifest is None:
         raise PackError("This is not a content pack: it has no pack.yml")
+    if logo is not None:
+        try:
+            connector_logo.clean(logo)
+        except connector_logo.LogoError as error:
+            raise PackError(f"The logo of the pack: {error.message}") from None
     for item in items:
         if item.extras.get("logo"):
             try:
@@ -279,7 +301,7 @@ def read(data: bytes) -> PackFile:
             except connector_logo.LogoError as error:
                 raise PackError(f'The logo of the connector "{item.name}": {error.message}') from None
     items.sort(key=lambda item: (KINDS.index(item.kind), item.name.lower()))
-    return PackFile(manifest, items)
+    return PackFile(manifest, items, logo)
 
 
 def _name_of(kind: str, data: Any, stem: str) -> str:
@@ -298,6 +320,24 @@ def _name_of(kind: str, data: Any, stem: str) -> str:
     if not name:
         raise PackError(f"{kind}/{stem} has no name")
     return name[:120]
+
+
+def folder_bytes(folder: Path) -> bytes:
+    """A pack kept as a folder (``packs/<id>/`` of the repository, a folder of ``NIK_PACKS_DIR``) as the
+    bytes of its file: the same folder always gives the same bytes. Nothing is checked here: ``read`` does."""
+    held = io.BytesIO()
+    with zipfile.ZipFile(held, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted((item for item in folder.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
+            relative = path.relative_to(folder).as_posix()
+            if any(part.startswith(".") for part in relative.split("/")):
+                continue
+            info = zipfile.ZipInfo(relative, date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            # Text is written with the line ends of a repository, whatever the machine that built it.
+            data = path.read_bytes()
+            archive.writestr(info, data if path.suffix == ".png" else data.replace(CRLF, LF))
+    return held.getvalue()
 
 
 class _Readable(yaml.SafeDumper):
@@ -322,7 +362,7 @@ def _text(kind: str, data: Any) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False, sort_keys=kind != "playbooks") + "\n"
 
 
-def write(manifest: dict[str, Any], items: list[Item]) -> bytes:
+def write(manifest: dict[str, Any], items: list[Item], logo: bytes | None = None) -> bytes:
     """The bytes of a pack. The same pack always gives the same bytes: entries are in order and undated."""
     held = io.BytesIO()
     shown = {key: value for key, value in clean_manifest(manifest).items() if value not in ("", [], None)}
@@ -335,6 +375,9 @@ def write(manifest: dict[str, Any], items: list[Item]) -> bytes:
             archive.writestr(info, text if isinstance(text, bytes) else text.encode("utf-8"))
 
         put("pack.yml", yaml.safe_dump(shown, sort_keys=False, allow_unicode=True))
+        if logo:
+            cleaned, logo_kind = connector_logo.clean(logo)
+            put(f"logo.{connector_logo.EXTENSIONS[logo_kind]}", cleaned)
         used: set[str] = set()
         for item in sorted(items, key=lambda entry: (KINDS.index(entry.kind), entry.name.lower())):
             stem = (
@@ -766,7 +809,7 @@ def _conflict(db: OrmSession, pack: PackFile, item: Item, here: Any) -> str | No
             return f"Version {row.version} is installed, the pack holds version {wanted.version}: versions only go up"
     if kind == "lists":
         if named_lists.watch_list(db, item.name) is not None:
-            return "A list of the IoC library has this name"
+            return "A list of the Indicators page has this name"
         if here is not None and here["kind"] != (data.get("kind") or "values"):
             return f"There is a list with this name of another kind ({here['kind']})"
         row = named_lists.find(db, item.name)
@@ -923,6 +966,9 @@ def _apply_item(db: OrmSession, pack: PackFile, item: Item, actor: str) -> None:
                 if rules.get(direction):
                     body = {"connectorId": connector, "direction": direction, "incidentType": type_id}
                     mapping.save_mapper(db, {**body, "rules": rules[direction]}, actor)
+        if isinstance(data.get("classifier"), dict):
+            # What a new instance of the connector starts with: kept, and given when one is made.
+            mapping.keep_default_classifier(db, connector, data["classifier"])
     elif kind == "lists":
         row = named_lists.find(db, name)
         if row is None:
@@ -1016,7 +1062,9 @@ def _apply_type(db: OrmSession, data: dict[str, Any], actor: str) -> None:
     row.updated_at, row.updated_by = stamp, actor
 
 
-def apply(db: OrmSession, pack: PackFile, choices: dict[str, str] | None, actor: str) -> dict[str, Any]:
+def apply(
+    db: OrmSession, pack: PackFile, choices: dict[str, str] | None, actor: str, *, source: str = "file"
+) -> dict[str, Any]:
     """Do what the plan says, except the items the caller chose to skip (``{"kind/name": "skip"}``).
     The caller commits: anything that fails raises, and nothing of the pack stays."""
     choices = choices or {}
@@ -1039,6 +1087,8 @@ def apply(db: OrmSession, pack: PackFile, choices: dict[str, str] | None, actor:
             continue
         if entry["action"] == "same":
             done["same"] += 1
+            if item.kind == "connectors" and item.extras:
+                _give_extras(db, item)
             applied.append(item)
             continue
         try:
@@ -1055,28 +1105,63 @@ def apply(db: OrmSession, pack: PackFile, choices: dict[str, str] | None, actor:
             raise PackError(f'{entry["label"]} "{item.name}": {getattr(error, "message", str(error))}') from None
         done["added" if entry["action"] == "add" else "updated"] += 1
         applied.append(item)
-    remember(db, pack.manifest, [(item.kind, item.name) for item in applied], actor)
+    remember(db, pack.manifest, [(item.kind, item.name) for item in applied], actor, logo=pack.logo, source=source)
     return {"pack": pack.manifest, **done}
 
 
+def digest(db: OrmSession, kind: str, name: str) -> str:
+    """What an item is now, as a fingerprint: the same after someone changes it back, another after any
+    change that makes it another item. Empty for one that is not here or cannot be read."""
+    try:
+        here = current(db, kind, name, with_items=True)
+        if here is None:
+            return ""
+        shown = json.dumps(_comparable(kind, here), sort_keys=True, default=str, ensure_ascii=False)
+    except Exception:  # noqa: BLE001 - an item that cannot be read has no fingerprint, and is never removed for it
+        return ""
+    return hashlib.sha256(shown.encode("utf-8")).hexdigest()
+
+
+def _give_extras(db: OrmSession, item: Item) -> None:
+    """A connector that is here exactly as the pack has it may still lack what the pack brings beside its
+    file: the logo and the README are given where the connector has none (one set here is left)."""
+    row = db.get(Connector, item.name)
+    if row is None:
+        return
+    if item.extras.get("logo") and not row.logo:
+        row.logo, row.logo_type = connector_logo.clean(item.extras["logo"])
+    if item.extras.get("readme") and not row.readme:
+        row.readme = str(item.extras["readme"])[: connector_actions.README_MAX]
+
+
 def remember(
-    db: OrmSession, manifest: dict[str, Any], items: list[tuple[str, str]], actor: str, *, builtin: bool = False
+    db: OrmSession,
+    manifest: dict[str, Any],
+    items: list[tuple[str, str]],
+    actor: str,
+    *,
+    builtin: bool = False,
+    logo: bytes | None = None,
+    source: str = "file",
 ) -> Pack:
-    """Write down that a pack is installed, and which items came from it (an item is of the last pack that gave it)."""
+    """Write down that a pack is installed, and which items came from it (an item is of the last pack that
+    gave it), each with what it was when the pack gave it: that is how a later change is told."""
     row = db.get(Pack, manifest["id"])
     if row is None:
         row = Pack(id=manifest["id"], installed_at=now_iso(), installed_by=actor[:200])
         db.add(row)
     row.name, row.version = manifest["name"], manifest["version"]
     row.description, row.author = manifest.get("description") or "", manifest.get("author") or ""
-    row.manifest, row.builtin = manifest, builtin
+    row.manifest, row.builtin, row.source = manifest, builtin, source[:20]
+    if logo:
+        row.logo, row.logo_type = connector_logo.clean(logo)
     row.updated_at, row.updated_by = now_iso(), actor[:200]
     db.flush()
     wanted = {(kind, name) for kind, name in items}
     db.execute(delete(PackItem).where(PackItem.pack_id == row.id))
     for kind, name in sorted(wanted):
         db.execute(delete(PackItem).where(PackItem.kind == kind, func.lower(PackItem.name) == name.lower()))
-        db.add(PackItem(kind=kind, name=name, pack_id=row.id))
+        db.add(PackItem(kind=kind, name=name, pack_id=row.id, digest=digest(db, kind, name)))
     db.flush()
     return row
 
@@ -1089,7 +1174,8 @@ def out(db: OrmSession, row: Pack) -> dict[str, Any]:
     items = db.scalars(select(PackItem).where(PackItem.pack_id == row.id)).all()
     shown = [
         {"kind": item.kind, "name": item.name, "label": LABELS.get(item.kind, item.kind),
-         "there": current(db, item.kind, item.name, with_items=False) is not None}
+         "there": current(db, item.kind, item.name, with_items=False) is not None,
+         "changed": bool(item.digest) and item.digest != digest(db, item.kind, item.name)}
         for item in sorted(items, key=lambda entry: (_order(entry.kind), entry.name))
     ]  # fmt: skip
     return {
@@ -1098,6 +1184,10 @@ def out(db: OrmSession, row: Pack) -> dict[str, Any]:
         "version": row.version,
         "description": row.description,
         "author": row.author,
+        "vendor": (row.manifest or {}).get("vendor") or "",
+        "category": (row.manifest or {}).get("category") or "",
+        "source": row.source or "file",
+        "hasLogo": bool(row.logo),
         "builtin": bool(row.builtin),
         "requires": (row.manifest or {}).get("requires") or [],
         "installedAt": row.installed_at,
@@ -1112,20 +1202,222 @@ def installed(db: OrmSession) -> list[Pack]:
     return sorted(db.scalars(select(Pack)).all(), key=lambda row: (not row.builtin, row.name.lower()))
 
 
-def forget(db: OrmSession, row: Pack) -> None:
-    """Take a pack off the list of what is installed. Its items stay: they are Nik's now."""
-    if row.builtin:
-        raise PackError("A pack Nik ships is part of Nik", 409)
-    needed = [
+def _requiring(db: OrmSession, row: Pack) -> list[str]:
+    return [
         other.name
         for other in db.scalars(select(Pack)).all()
         if other.id != row.id
         and any(need.get("pack") == row.id for need in (other.manifest or {}).get("requires") or [])
     ]
+
+
+def forget(db: OrmSession, row: Pack) -> None:
+    """Take a pack off the list of what is installed. Its items stay: they are Nik's now."""
+    if row.builtin:
+        raise PackError("A pack Nik ships is part of Nik", 409)
+    needed = _requiring(db, row)
     if needed:
         raise PackError(f'The pack "{needed[0]}" requires it', 409)
     db.execute(delete(PackItem).where(PackItem.pack_id == row.id))
     db.delete(row)
+
+
+# --------------------------------------------------------------------------- #
+# Uninstalling: what the pack gave goes, except what is another thing now      #
+# --------------------------------------------------------------------------- #
+def _node_users(db: OrmSession, wanted) -> list[str]:
+    """The names of the playbooks whose current version or draft has a node ``wanted`` says yes to."""
+    found = []
+    for playbook in db.scalars(select(Playbook).order_by(Playbook.name)):
+        version = db.get(PlaybookVersion, (playbook.id, playbook.current_version)) if playbook.current_version else None
+        for shape in (version.graph if version else None, playbook.draft):
+            if shape and any(wanted(node) for node in graph.nodes_of(shape).values()):
+                found.append(playbook.name)
+                break
+    return found
+
+
+def _in_use(db: OrmSession, kind: str, name: str, going, instances: bool) -> str:
+    """Why an item of a pack that is being uninstalled stays, or "" when nothing holds it.
+    ``going(kind, name)`` says whether another item leaves with the pack: what only it uses does not hold."""
+
+    def others(names: list[str]) -> list[str]:
+        return [found for found in names if not going("playbooks", found)]
+
+    def config(node: dict) -> dict:
+        return node.get("config") or {}
+
+    if kind == "connectors":
+        count = db.scalar(select(func.count()).select_from(Connection).where(Connection.connector_id == name)) or 0
+        if count and not instances:
+            return f"It has {count} instance{'s' if count != 1 else ''}"
+        users = others(
+            _node_users(
+                db,
+                lambda node: (
+                    node.get("kind") == "action" and str(config(node).get("action") or "").startswith(name + ".")
+                ),
+            )
+        )
+        return f'The playbook "{users[0]}" uses it' if users else ""
+    if kind == "mappers":
+        return "" if db.get(Connector, name) is None or going("connectors", name) else "Its connector stays"
+    if kind == "scripts":
+        row = _script(db, name)
+        if row is not None and row.builtin:
+            return "It is a script of Nik"
+        users = others(
+            _node_users(db, lambda node: node.get("kind") == "script" and config(node).get("script") == name)
+        )
+        return f'The playbook "{users[0]}" uses it' if users else ""
+    if kind == "playbooks":
+        row = _playbook(db, name)
+        if row is None:
+            return ""
+        active = db.scalar(
+            select(func.count())
+            .select_from(Run)
+            .where(Run.playbook_id == row.id, Run.status.notin_(automation_engine.FINISHED))
+        )
+        if active:
+            return "A run of it is in progress"
+        for held in db.scalars(select(IncidentType).where(IncidentType.default_playbook_id == row.id)):
+            if not going("incident_types", held.name):
+                return f'It is the playbook of the type "{held.name}"'
+        users = [
+            found
+            for found in others(
+                _node_users(
+                    db,
+                    lambda node: node.get("kind") == "playbook" and config(node).get("playbook") in (row.name, row.id),
+                )
+            )
+            if found.lower() != row.name.lower()
+        ]
+        return f'The playbook "{users[0]}" runs it' if users else ""
+    if kind == "incident_types":
+        row = _type(db, name)
+        if row is None:
+            return ""
+        if row.id == types.UNCLASSIFIED or row.builtin:
+            return "It is a type of Nik"
+        count = db.scalar(select(func.count()).select_from(Incident).where(Incident.type_id == row.id)) or 0
+        return f"{count} incident{'s are' if count != 1 else ' is'} of this type" if count else ""
+    if kind == "fields":
+        row = db.scalars(select(Field).where(Field.name == name)).first()
+        if row is None:
+            return ""
+        if row.system:
+            return "It is a field of Nik"
+        used = registry.used_by(db, row)
+        kept = [found for found in used["types"] if not going("incident_types", found)]
+        if kept:
+            return f'The type "{kept[0]}" lists it'
+        return f"{used['incidents']} incident(s) hold a value of it" if used["incidents"] else ""
+    if kind == "lists":
+        row = named_lists.find(db, name)
+        if row is None:
+            return ""
+        if row.builtin:
+            return "It is a list of Nik"
+        used = named_lists.used_by(db, row.name)
+        return "It is used by: " + "; ".join(used[:3]) if used else ""
+    if kind == "dashboards":
+        row = _dashboard(db, name)
+        return "It is a dashboard of Nik" if row is not None and row.builtin else ""
+    return ""
+
+
+def instances_of(db: OrmSession, row: Pack) -> int:
+    """How many instances the connectors of a pack have."""
+    names = [
+        item.name
+        for item in db.scalars(select(PackItem).where(PackItem.pack_id == row.id))
+        if item.kind == "connectors"
+    ]
+    if not names:
+        return 0
+    return db.scalar(select(func.count()).select_from(Connection).where(Connection.connector_id.in_(names))) or 0
+
+
+def uninstall_plan(db: OrmSession, row: Pack, *, instances: bool = False) -> list[dict[str, Any]]:
+    """What uninstalling the pack would do to each thing it gave: ``remove`` it, ``keep`` it (with why:
+    it was changed here, or something else uses it), or nothing, for what is ``gone`` already.
+    ``instances`` says the instances of its connectors go too, with their credentials."""
+    if row.builtin:
+        raise PackError("A pack Nik ships is part of Nik", 409)
+    needed = _requiring(db, row)
+    if needed:
+        raise PackError(f'The pack "{needed[0]}" requires it', 409)
+    entries: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in db.scalars(select(PackItem).where(PackItem.pack_id == row.id)).all():
+        entry = {"kind": item.kind, "name": item.name, "label": LABELS.get(item.kind, item.kind), "why": ""}
+        now = digest(db, item.kind, item.name)
+        if current(db, item.kind, item.name, with_items=False) is None:
+            entry.update(action="gone", why="It is not here any more")
+        elif item.digest and now != item.digest:
+            entry.update(action="keep", why="It was changed here")
+        else:
+            entry["action"] = "remove"
+        entries[(item.kind, item.name.lower())] = entry
+
+    def going(kind: str, name: str) -> bool:
+        return entries.get((kind, str(name).lower()), {}).get("action") == "remove"
+
+    settled = False
+    while not settled:  # what holds an item may itself turn out to stay
+        settled = True
+        for entry in entries.values():
+            if entry["action"] != "remove":
+                continue
+            why = _in_use(db, entry["kind"], entry["name"], going, instances)
+            if why:
+                entry.update(action="keep", why=why)
+                settled = False
+    return sorted(entries.values(), key=lambda entry: (_order(entry["kind"]), entry["name"].lower()))
+
+
+def uninstall(db: OrmSession, row: Pack, *, instances: bool = False) -> dict[str, Any]:
+    """Uninstall a pack (the caller commits): what the plan removes is deleted, what it keeps stays and is
+    no pack's any more. Returns ``{removed, kept, instances}``, the first two as lists of entries."""
+    found = uninstall_plan(db, row, instances=instances)
+    removed, dropped = [], 0
+    # What uses goes before what is used.
+    for entry in sorted(found, key=lambda entry: -_order(entry["kind"])):
+        if entry["action"] != "remove":
+            continue
+        kind, name = entry["kind"], entry["name"]
+        if kind == "connectors":
+            for connection in db.scalars(select(Connection).where(Connection.connector_id == name)).all():
+                connector_actions.forget_tokens(connection.id)
+                db.delete(connection)
+                dropped += 1
+            db.flush()
+            db.delete(db.get(Connector, name))
+            mapping.forget_default_classifier(db, name)
+        elif kind == "mappers":
+            for mapper in mapping.mappers_of(db, name):
+                db.delete(mapper)
+        elif kind == "scripts":
+            db.delete(_script(db, name))
+        elif kind == "playbooks":
+            db.delete(_playbook(db, name))
+        elif kind == "incident_types":
+            db.delete(_type(db, name))
+        elif kind == "fields":
+            db.delete(db.scalars(select(Field).where(Field.name == name)).first())
+        elif kind == "lists":
+            named_lists.remove(db, named_lists.find(db, name))
+        elif kind == "dashboards":
+            db.delete(_dashboard(db, name))
+        elif kind == "preprocess_rules":
+            db.delete(_rule(db, name))
+        db.flush()
+        removed.append(entry)
+    db.execute(delete(PackItem).where(PackItem.pack_id == row.id))
+    db.delete(row)
+    db.flush()
+    return {"removed": removed, "kept": [entry for entry in found if entry["action"] == "keep"], "instances": dropped}
 
 
 # --------------------------------------------------------------------------- #
@@ -1158,79 +1450,172 @@ def take_upload(db: OrmSession, token: str, actor: str, now: float | None = None
 
 
 # --------------------------------------------------------------------------- #
-# What Nik ships, as packs                                                    #
+# What Nik ships, as one pack                                                 #
 # --------------------------------------------------------------------------- #
-def builtin_manifests() -> list[tuple[dict[str, Any], list[tuple[str, str]]]]:
-    """The packs Nik is made of: each with the items it ships, by name. They are installed by Nik
-    itself at startup (each kind by its own seeding); here they are only written down, so that what
-    ships is listed, downloaded and compared like anything that came in a file."""
+# The four packs Nik was written down as before 6.0: one pack now.
+OLD_BUILTIN = ("nik-incidents", "nik-automation", "nik-connectors", "nik-dashboards")
+LEGACY_VERSION = "0.9.0"  # what came inside Nik 5.x, as a version of the pack it became
+LEGACY_FILE = Path(__file__).parent / "automation" / "seed" / "legacy_packs.json"
+
+
+def builtin_manifest() -> tuple[dict[str, Any], list[tuple[str, str]]]:
+    """The pack Nik is made of, with the items it ships, by name. They are installed by Nik itself at
+    startup (each kind by its own seeding); here they are only written down, so that what ships is listed,
+    downloaded and compared like anything that came in a file. What is about one product of a vendor is not
+    here: it is a pack of its own, taken from the catalogue."""
     from .automation import shipped as shipped_playbooks
 
-    version = ".".join(str(part) for part in NIK_VERSION)
-
-    def manifest(pack_id: str, name: str, description: str) -> dict[str, Any]:
-        return {"id": pack_id, "name": name, "version": version, "description": description, "author": "Nik",
-                "requires": [], "nik": ""}  # fmt: skip
-
-    return [
-        (
-            manifest(
-                "nik-incidents", "Nik: incidents", "The types of incident Nik ships and the lists its settings read."
-            ),
-            [
-                *(("incident_types", str(item["name"])) for item in types.SHIPPED),
-                *(("lists", name) for name in named_lists.BUILTIN),
-            ],
-        ),
-        (
-            manifest("nik-automation", "Nik: automation", "The scripts and the playbooks Nik ships."),
-            [
-                *(("scripts", str(item["name"])) for item in scripts.shipped()),
-                *(("playbooks", str(source["name"])) for _key, source in shipped_playbooks.files()),
-            ],
-        ),
-        (
-            manifest(
-                "nik-connectors", "Nik: connectors", "The connectors Nik ships, and the mappers of those that fetch."
-            ),
-            [
-                *(("connectors", connector.id) for _text, connector in connector_actions.shipped()),
-                *(("mappers", name) for name in mapping.shipped()),
-            ],
-        ),
-        (
-            manifest("nik-dashboards", "Nik: dashboards", "The dashboards Nik ships."),
-            [("dashboards", str(data["name"])) for data in boards.shipped()],
-        ),
+    manifest = {
+        "id": BUILTIN_ID,
+        "name": "Nik built-in",
+        "vendor": "Nik",
+        "category": "",
+        "version": ".".join(str(part) for part in NIK_VERSION),
+        "description": "What Nik ships: its types of incident and lists, its scripts, playbooks and dashboards, "
+        "and the Mail connector.",
+        "author": "Nik",
+        "requires": [],
+        "nik": "",
+    }
+    items = [
+        *(("incident_types", str(item["name"])) for item in types.SHIPPED),
+        *(("lists", name) for name in named_lists.BUILTIN),
+        *(("scripts", str(item["name"])) for item in scripts.shipped()),
+        *(("playbooks", str(source["name"])) for _key, source in shipped_playbooks.files()),
+        *(("connectors", connector.id) for _text, connector in connector_actions.shipped()),
+        *(("mappers", name) for name in mapping.shipped()),
+        *(("dashboards", str(data["name"])) for data in boards.shipped()),
     ]
+    return manifest, items
 
 
 def register_builtin(db: OrmSession) -> int:
-    """Write down the packs Nik ships and what is of each (the caller commits). An item that a pack
-    someone installed gave last stays of that pack. Returns how many packs or items changed."""
+    """Write down the pack Nik ships and what is of it (the caller commits). An item that a pack someone
+    installed gave last stays of that pack. Returns how many packs or items changed."""
     changed = 0
-    owners = {(row.kind, row.name.lower()): row for row in db.scalars(select(PackItem)).all()}
-    for manifest, items in builtin_manifests():
-        row = db.get(Pack, manifest["id"])
-        if row is None or row.version != manifest["version"] or not row.builtin or row.name != manifest["name"]:
-            if row is None:
-                row = Pack(id=manifest["id"], installed_at=now_iso(), installed_by="nik")
-                db.add(row)
-            row.name, row.version, row.description = manifest["name"], manifest["version"], manifest["description"]
-            row.author, row.manifest, row.builtin = "Nik", manifest, True
-            row.updated_at, row.updated_by = now_iso(), "nik"
-            db.flush()
+    for old in OLD_BUILTIN:
+        gone = db.get(Pack, old)
+        if gone is not None and gone.builtin:
+            db.execute(delete(PackItem).where(PackItem.pack_id == old))
+            db.delete(gone)
             changed += 1
-        wanted = {(kind, name.lower()) for kind, name in items}
-        for kind, name in items:
-            if (kind, name.lower()) not in owners:
-                held = PackItem(kind=kind, name=name, pack_id=row.id)
-                db.add(held)
-                owners[(kind, name.lower())] = held
-                changed += 1
-        for key, held in list(owners.items()):
-            if held.pack_id == row.id and key not in wanted:  # a release no longer ships it
-                db.delete(held)
-                del owners[key]
-                changed += 1
+    db.flush()
+    owners = {(row.kind, row.name.lower()): row for row in db.scalars(select(PackItem)).all()}
+    manifest, items = builtin_manifest()
+    row = db.get(Pack, manifest["id"])
+    if row is None or row.version != manifest["version"] or not row.builtin or row.name != manifest["name"]:
+        if row is None:
+            row = Pack(id=manifest["id"], installed_at=now_iso(), installed_by="nik")
+            db.add(row)
+        row.name, row.version, row.description = manifest["name"], manifest["version"], manifest["description"]
+        row.author, row.manifest, row.builtin, row.source = "Nik", manifest, True, "nik"
+        row.updated_at, row.updated_by = now_iso(), "nik"
+        db.flush()
+        changed += 1
+    wanted = {(kind, name.lower()) for kind, name in items}
+    for kind, name in items:
+        if (kind, name.lower()) not in owners:
+            held = PackItem(kind=kind, name=name, pack_id=row.id, digest="")
+            db.add(held)
+            owners[(kind, name.lower())] = held
+            changed += 1
+    for key, held in list(owners.items()):
+        if held.pack_id == row.id and key not in wanted:  # a release no longer ships it
+            db.delete(held)
+            del owners[key]
+            changed += 1
     return changed
+
+
+def legacy() -> list[dict[str, Any]]:
+    """The packs of vendors' products whose content came inside Nik before 6.0."""
+    return json.loads(LEGACY_FILE.read_text(encoding="utf-8"))
+
+
+def adopt_legacy(db: OrmSession) -> int:
+    """A Nik that was here before 6.0 holds the connectors of vendors' products as its own. Each of those
+    still here, with its mappers and its playbook, is written down as the pack it is from now on, at
+    version 0.9.0 (older than anything the catalogue publishes, so that the pack is offered as an update,
+    which brings what 5.x never had: the logo), and "Uninstall" removes it (the caller commits).
+    Nothing is added or changed: a connector that was removed stays removed. Returns how many packs."""
+    adopted = 0
+    for spec in legacy():
+        connector = db.get(Connector, spec["id"])
+        if connector is None or not connector.builtin:
+            continue
+        connector.builtin = False  # it is its pack's now, not Nik's
+        if spec.get("classifier"):
+            mapping.keep_default_classifier(db, spec["id"], spec["classifier"])
+        if db.get(Pack, spec["id"]) is not None:
+            continue
+        items = [("connectors", spec["id"])]
+        if mapping.mappers_of(db, spec["id"]):
+            items.append(("mappers", spec["id"]))
+        for name in spec.get("playbooks") or []:
+            playbook = _playbook(db, name)
+            if playbook is not None and playbook.builtin:
+                items.append(("playbooks", playbook.name))
+        manifest = clean_manifest(
+            {
+                "id": spec["id"],
+                "name": spec["name"],
+                "vendor": spec["vendor"],
+                "category": spec["category"],
+                "version": LEGACY_VERSION,
+                "description": spec["description"],
+                "author": "Nik",
+            }
+        )
+        remember(db, manifest, items, "nik", source="nik-5")
+        adopted += 1
+    return adopted
+
+
+# --------------------------------------------------------------------------- #
+# A folder of packs, installed at start                                       #
+# --------------------------------------------------------------------------- #
+def install_folder(db: OrmSession, folder: Path, actor: str = "nik") -> int:
+    """Install the packs of a folder (``NIK_PACKS_DIR``): each a folder with a ``pack.yml`` or a
+    ``.nikpack`` file. One that is installed at the same version or a later one is left; an item that
+    conflicts is skipped. Each pack is committed on its own, so that one that cannot be installed does not
+    hold the others back. Returns how many were installed. This is for a Nik that cannot reach the
+    catalogue: nothing here is checked against a signature, the folder is the administrator's."""
+    if not folder.is_dir():
+        return 0
+    waiting = [
+        path
+        for path in sorted(folder.iterdir())
+        if (path.is_dir() and (path / "pack.yml").is_file()) or (path.is_file() and path.suffix == ".nikpack")
+    ]
+    installed = 0
+    for _attempt in range(3):  # a pack may require another of the same folder
+        again = []
+        for path in waiting:
+            try:
+                pack = read(folder_bytes(path) if path.is_dir() else path.read_bytes())
+                row = db.get(Pack, pack.manifest["id"])
+                if row is not None and (version_of(row.version) or (0, 0, 0)) >= version_of(pack.manifest["version"]):
+                    continue
+                found = plan(db, pack)
+                if found["problems"]:
+                    again.append(path)
+                    continue
+                skipped = {
+                    f"{entry['kind']}/{entry['name']}": "skip"
+                    for entry in found["items"]
+                    if entry["action"] == "conflict"
+                }
+                apply(db, pack, skipped, actor, source="folder")
+                db.commit()
+                installed += 1
+            except PackError as error:
+                db.rollback()
+                logger.warning("The pack %s of %s was not installed: %s", path.name, folder, error.message)
+            except IntegrityError:
+                db.rollback()  # another process of the server installed it at the same moment
+        if not again or len(again) == len(waiting):
+            for path in again:
+                logger.warning("The pack %s of %s was not installed: what it requires is not here", path.name, folder)
+            break
+        waiting = again
+    return installed

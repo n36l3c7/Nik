@@ -383,10 +383,11 @@ def test_what_nik_ships_is_listed_as_packs_and_reads_back_as_it_is(admin: TestCl
         shipped.seed(db)
         db.commit()
         assert packs.register_builtin(db) > 4
+        assert packs.adopt_legacy(db) == 0  # a new Nik holds nothing of a vendor
         db.commit()
         assert packs.register_builtin(db) == 0
     listed = admin.get("/api/packs").json()["packs"]
-    assert [row["id"] for row in listed] == ["nik-automation", "nik-connectors", "nik-dashboards", "nik-incidents"]
+    assert [row["id"] for row in listed] == ["nik"] and listed[0]["source"] == "nik"
     assert all(row["builtin"] and row["author"] == "Nik" for row in listed)
     for row in listed:
         missing = [f"{item['kind']}/{item['name']}" for item in row["items"] if not item["there"]]

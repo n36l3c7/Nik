@@ -1,31 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Download, PackageOpen, PackagePlus, Trash2, Upload } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, PackageOpen, PackagePlus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { api, apiUrl, postForBlob, upload } from '../../../services/api.js'
 import { saveBlob } from '../../../lib/download.js'
+import { formatRelative } from '../../../lib/time.js'
+import { useAuth } from '../../../context/AuthContext.jsx'
 import {
+  SOURCES,
   actionBadge,
   byKind,
+  byVendor,
+  cardCounts,
   choicesOf,
+  contentsLine,
   diffLines,
+  filterCards,
   idFromName,
   importable,
   initialSkips,
   itemKey,
-  packLine,
+  packCards,
   packProblem,
   planSummary,
   plural,
+  uninstallCounts,
 } from '../../../domain/packs.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 
 /*
  * Automation → Content packs (who manages content).
  *
- * What Nik is taught, carried as one file. Three things happen here: the
- * packs that are installed are listed with what came from each; a pack file
- * is inspected, shown item by item with what applying it would do, and then
- * applied, all of it or nothing; and a pack is made from items chosen here,
- * with what they need.
+ * What Nik is taught about a product, as one pack. The page is the catalogue:
+ * the packs there are to install (read from a signed index, see
+ * app/pack_catalogue.py) beside the ones that are installed, by vendor. A pack
+ * of the catalogue or a file is inspected, shown item by item with what
+ * applying it would do, and then applied, all of it or nothing; an installed
+ * one is opened, updated or uninstalled; and a pack is made from items chosen
+ * here, with what they need.
  */
 
 const FIELD =
@@ -148,10 +158,10 @@ function Plan({ plan, onDone, onCancel }) {
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={apply} disabled={!can.ok || busy}>
           {busy
-            ? 'Importing…'
+            ? 'Installing…'
             : can.changes
-              ? `Import (${can.changes} ${can.changes === 1 ? 'change' : 'changes'})`
-              : 'Import'}
+              ? `Install (${can.changes} ${can.changes === 1 ? 'change' : 'changes'})`
+              : 'Install'}
         </Button>
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
           Cancel
@@ -221,8 +231,8 @@ function ExportForm({ onClose, onError }) {
       .finally(() => setBusy(false))
   }
   return (
-    <section aria-label="Export a pack" className="space-y-4 border border-line p-4">
-      <h3 className="text-sm font-semibold text-fg">Export a pack</h3>
+    <section aria-label="Make a pack" className="space-y-4 border border-line p-4">
+      <h3 className="text-sm font-semibold text-fg">Make a pack</h3>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-fg-muted">Name</span>
@@ -350,33 +360,417 @@ function ExportForm({ onClose, onError }) {
   )
 }
 
+/** The logo of a pack, or its initials where it has none (Nik ships no logo of a vendor it was not given). */
+function PackLogo({ card }) {
+  const [broken, setBroken] = useState(false)
+  const path =
+    card.logo === 'catalogue'
+      ? `/packs/catalogue/${encodeURIComponent(card.id)}/logo`
+      : card.logo === 'pack'
+        ? `/packs/${encodeURIComponent(card.id)}/logo`
+        : null
+  const initials = card.name
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0].toUpperCase())
+    .join('')
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-9 w-9 shrink-0 items-center justify-center border border-line bg-canvas font-mono text-xs text-fg-muted"
+    >
+      {path && !broken ? (
+        <img src={apiUrl(path)} alt="" className="h-7 w-7 object-contain" onError={() => setBroken(true)} />
+      ) : (
+        initials || '?'
+      )}
+    </span>
+  )
+}
+
+const STATE_BADGE = {
+  installed: { color: 'emerald', label: 'installed' },
+  update: { color: 'amber', label: 'update' },
+  later: { color: 'slate', label: 'later Nik' },
+}
+
+/** One pack: what it is, what it holds, and what can be done with it here. */
+function PackCard({ card, busy, onInstall, onOpen, onUninstall }) {
+  const badge = STATE_BADGE[card.state]
+  return (
+    <li aria-label={card.name} className="flex flex-col gap-2 border border-line bg-panel p-3">
+      <div className="flex items-start gap-2.5">
+        <PackLogo card={card} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-fg">{card.name}</p>
+          <p className="truncate text-xs text-fg-muted">
+            {[card.category, card.installed ? `${card.installed} installed` : card.version].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        {badge && <Badge color={badge.color}>{card.state === 'update' ? `update ${card.version}` : badge.label}</Badge>}
+      </div>
+      <p className="text-xs text-fg-muted">{contentsLine(card.contents, card.premium)}</p>
+      {card.needsNik && <p className="text-xs text-fg-muted">For Nik {card.needsNik} or later.</p>}
+      <div className="mt-auto flex flex-wrap gap-2 pt-1">
+        {card.state === 'available' && (
+          <Button size="xs" disabled={busy} onClick={() => onInstall(card)}>
+            Install…
+          </Button>
+        )}
+        {card.state === 'update' && (
+          <Button size="xs" disabled={busy} onClick={() => onInstall(card)}>
+            See what changes…
+          </Button>
+        )}
+        <Button size="xs" variant="secondary" onClick={() => onOpen(card)} aria-label={`Open ${card.name}`}>
+          Open
+        </Button>
+        {card.installed && !card.builtin && (
+          <Button
+            size="xs"
+            variant="ghost"
+            icon={Trash2}
+            onClick={() => onUninstall(card)}
+            aria-label={`Uninstall ${card.name}`}
+          >
+            Uninstall…
+          </Button>
+        )}
+      </div>
+    </li>
+  )
+}
+
+/** What a pack is and, when it is installed, each thing it gave and whether it is still as given. */
+function PackDetails({ card, onClose, onDownload }) {
+  const pack = card.pack
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={card.name}
+      maxWidth="max-w-2xl"
+      footer={
+        <>
+          {pack && (
+            <Button variant="secondary" icon={Download} onClick={() => onDownload(pack)}>
+              Download as a file
+            </Button>
+          )}
+          <Button onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <p className="text-xs text-fg-muted">
+          {[
+            card.vendor !== 'Other' ? card.vendor : '',
+            card.category,
+            pack
+              ? `${pack.version} installed, ${SOURCES[pack.source] ?? pack.source}`
+              : `${card.version} in the catalogue`,
+            pack?.updatedBy && !pack.builtin
+              ? `by ${pack.updatedBy} on ${String(pack.updatedAt ?? '').slice(0, 10)}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+        {card.description && <p className="text-fg">{card.description}</p>}
+        {card.requires.length > 0 && (
+          <p className="text-xs text-fg-muted">
+            Requires: {card.requires.map((need) => `${need.pack} ${need.version}`).join(', ')}.
+          </p>
+        )}
+        {!pack && <p className="text-xs text-fg-muted">It holds: {contentsLine(card.contents, card.premium)}.</p>}
+        {pack && (
+          <div className="grid gap-3 border border-line bg-sunken p-3 sm:grid-cols-2">
+            {byKind(pack.items).map((group) => (
+              <div key={group.kind}>
+                <p className="mb-1 text-xs font-medium text-fg-muted">
+                  {plural(group.label, group.items.length)} ({group.items.length})
+                </p>
+                <ul className="space-y-0.5 text-sm text-fg">
+                  {group.items.map((item) => (
+                    <li key={item.name} className="flex items-center gap-2">
+                      <span className={item.there ? 'truncate' : 'truncate text-fg-muted line-through'}>
+                        {item.name}
+                      </span>
+                      {!item.there && <span className="shrink-0 text-xs text-fg-muted">no longer here</span>}
+                      {item.there && item.changed && <span className="shrink-0 text-xs text-med-fg">changed here</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            {pack.items.length === 0 && <p className="text-xs text-fg-muted">Nothing of it is listed.</p>}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+/** Uninstalling: what would go and what would stay is shown first, and the instances are asked about. */
+function UninstallDialog({ card, onClose, onDone }) {
+  const [plan, setPlan] = useState(null)
+  const [instances, setInstances] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const path = `/packs/${encodeURIComponent(card.id)}`
+  useEffect(() => {
+    let alive = true
+    api.get(`${path}/uninstall?instances=${instances}`).then(
+      (found) => alive && setPlan(found),
+      (failure) => alive && setError(failure.message),
+    )
+    return () => {
+      alive = false
+    }
+  }, [path, instances])
+  const run = (query, said) => {
+    setBusy(true)
+    setError(null)
+    api
+      .del(`${path}${query}`)
+      .then(
+        (done) => onDone(said(done)),
+        (failure) => setError(failure.message),
+      )
+      .finally(() => setBusy(false))
+  }
+  const counts = uninstallCounts(plan?.items)
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Uninstall ${card.name}`}
+      maxWidth="max-w-2xl"
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            disabled={busy}
+            title="The pack leaves the list; everything it gave stays"
+            onClick={() => run('', () => `${card.name} is off the list. What it gave stays.`)}
+          >
+            Only take it off the list
+          </Button>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            disabled={busy || !plan}
+            onClick={() =>
+              run(`?remove=true&instances=${instances}`, (done) => {
+                const kept = done?.kept?.length ?? 0
+                return `${card.name} was uninstalled: ${done?.removed?.length ?? 0} removed${kept ? `, ${kept} kept` : ''}.`
+              })
+            }
+          >
+            {busy ? 'Uninstalling…' : 'Uninstall'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <p className="text-fg-muted">
+          What the pack gave is removed. What was changed here, or is used by something else, stays and is no
+          pack&apos;s any more.
+        </p>
+        {error && (
+          <p role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-high-fg">
+            {error}
+          </p>
+        )}
+        {!plan && !error && (
+          <p role="status" className="font-mono text-xs text-fg-muted">
+            Loading…
+          </p>
+        )}
+        {plan && (
+          <>
+            <p role="status" className="text-xs text-fg-muted">
+              {counts.remove} to remove, {counts.keep} to keep{counts.gone ? `, ${counts.gone} no longer here` : ''}.
+            </p>
+            <ul aria-label="What uninstalling does" className="divide-y divide-line-soft border border-line">
+              {plan.items.map((item) => (
+                <li key={`${item.kind}/${item.name}`} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+                  <span className="w-32 shrink-0 text-xs text-fg-muted">{item.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-fg">{item.name}</span>
+                  {item.why && <span className="text-xs text-fg-muted">{item.why}</span>}
+                  <Badge color={item.action === 'remove' ? 'red' : 'slate'}>{item.action}</Badge>
+                </li>
+              ))}
+            </ul>
+            {plan.instances > 0 && (
+              <label className="flex items-start gap-2 text-fg">
+                <input
+                  type="checkbox"
+                  checked={instances}
+                  onChange={(event) => setInstances(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
+                />
+                <span>
+                  Also delete {plan.instances === 1 ? 'its instance' : `its ${plan.instances} instances`}, with the
+                  credentials {plan.instances === 1 ? 'it holds' : 'they hold'}
+                  <span className="block text-xs text-fg-muted">
+                    Without this a connector that has an instance stays, with its instance.
+                  </span>
+                </span>
+              </label>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+/** Where the catalogue is read from (admin): another address, and the key what is there is signed with. */
+function AddressDialog({ catalogue, onClose, onSaved }) {
+  const [address, setAddress] = useState(catalogue.custom ? catalogue.address : '')
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const save = (body) => {
+    setBusy(true)
+    setError(null)
+    api
+      .put('/packs/catalogue/address', body)
+      .then(onSaved, (failure) => setError(failure.message))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Catalogue address"
+      footer={
+        <>
+          {catalogue.custom && (
+            <Button variant="ghost" disabled={busy} onClick={() => save({})}>
+              Back to the catalogue of Nik
+            </Button>
+          )}
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" form="form-catalogue" disabled={busy || !address.trim()}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <form
+        id="form-catalogue"
+        className="space-y-3 text-sm"
+        onSubmit={(event) => {
+          event.preventDefault()
+          save({ address: address.trim(), key: key.trim() })
+        }}
+      >
+        <p className="text-fg-muted">
+          Nik reads the packs there are from an index and takes each pack from beside it. Set another address for a copy
+          kept inside your network, or a catalogue of your own made with{' '}
+          <span className="font-mono text-xs">python -m app.pack_build</span>.
+        </p>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-fg-muted">Address of index.json (https)</span>
+          <input
+            type="url"
+            value={address}
+            maxLength={500}
+            placeholder="https://packs.example.com/nik/index.json"
+            onChange={(event) => setAddress(event.target.value)}
+            className={`${FIELD} font-mono`}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-fg-muted">Public key it is signed with</span>
+          <input
+            type="text"
+            value={key}
+            maxLength={100}
+            autoComplete="off"
+            placeholder={catalogue.ownKey ? 'A key is set: leave empty to use the key of Nik' : 'Empty: the key of Nik'}
+            onChange={(event) => setKey(event.target.value)}
+            className={`${FIELD} font-mono`}
+          />
+          <span className="mt-1 block text-xs text-fg-muted">
+            A copy of the catalogue of Nik keeps its signature: leave this empty. A catalogue of your own is signed with
+            your key: paste its public half (base64).
+          </span>
+        </label>
+        {error && (
+          <p role="alert" className="text-high">
+            {error}
+          </p>
+        )}
+      </form>
+    </Modal>
+  )
+}
+
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'installed', label: 'Installed' },
+  { id: 'updates', label: 'Updates' },
+]
+
 export default function ContentPacksSection() {
+  const { can } = useAuth()
   const fileRef = useRef(null)
   const [packs, setPacks] = useState(null)
-  const [open, setOpen] = useState(() => new Set())
+  const [catalogue, setCatalogue] = useState(null)
+  const [show, setShow] = useState('all')
+  const [query, setQuery] = useState('')
   const [plan, setPlan] = useState(null)
   const [exporting, setExporting] = useState(false)
+  const [opened, setOpened] = useState(null) // the card in "Open"
+  const [removing, setRemoving] = useState(null) // the card being uninstalled
+  const [addressing, setAddressing] = useState(false)
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
-  const [reading, setReading] = useState(false)
+  const [busy, setBusy] = useState('') // 'file', 'catalogue', or the id of the pack being taken
 
   const reload = useCallback(
     () =>
-      api.get('/packs').then(
-        (found) => setPacks(found.packs),
+      Promise.all([api.get('/packs'), api.get('/packs/catalogue')]).then(
+        ([installed, found]) => {
+          setPacks(installed.packs)
+          setCatalogue(found)
+          return found
+        },
         (failure) => setError(failure.message),
       ),
     [],
   )
+  const readAgain = useCallback(() => {
+    setBusy('catalogue')
+    setError(null)
+    return api
+      .post('/packs/catalogue/refresh')
+      .then(setCatalogue, (failure) => {
+        setError(failure.message)
+        return api.get('/packs/catalogue').then(setCatalogue, () => {})
+      })
+      .finally(() => setBusy(''))
+  }, [])
   useEffect(() => {
-    reload()
-  }, [reload])
+    // The first time the page is opened the catalogue was never read: it is read then, once.
+    reload().then((found) => {
+      if (found && found.address && !found.read && !found.error) readAgain()
+    })
+  }, [reload, readAgain])
 
   const inspect = (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-    setReading(true)
+    setBusy('file')
     setError(null)
     setMessage(null)
     upload('/packs/inspect', file)
@@ -387,7 +781,16 @@ export default function ContentPacksSection() {
         },
         (failure) => setError(failure.message),
       )
-      .finally(() => setReading(false))
+      .finally(() => setBusy(''))
+  }
+  const take = (card) => {
+    setBusy(card.id)
+    setError(null)
+    setMessage(null)
+    api
+      .post(`/packs/catalogue/${encodeURIComponent(card.id)}/inspect`)
+      .then(setPlan, (failure) => setError(failure.message))
+      .finally(() => setBusy(''))
   }
   const download = (pack) =>
     fetch(apiUrl(`/packs/${encodeURIComponent(pack.id)}/download`), { credentials: 'include' })
@@ -398,27 +801,29 @@ export default function ContentPacksSection() {
         (blob) => saveBlob(blob, `${pack.id}-${pack.version}.nikpack`),
         (failure) => setError(failure.message),
       )
-  const forget = (pack) =>
-    api.del(`/packs/${encodeURIComponent(pack.id)}`).then(
-      () => {
-        setMessage(`${pack.name} is off the list. What it brought stays.`)
-        reload()
-      },
-      (failure) => setError(failure.message),
-    )
+
+  const cards = packCards(catalogue, packs)
+  const counts = cardCounts(cards)
+  const groups = byVendor(filterCards(cards, show, query))
+  const loading = packs === null || catalogue === null
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <PackageOpen className="h-5 w-5 text-accent" aria-hidden="true" />
             <h2 className="text-base font-semibold text-fg">Content packs</h2>
-            {packs && <Badge color="slate">{packs.length}</Badge>}
           </div>
           <div className="flex gap-2">
-            <Button size="sm" icon={Upload} onClick={() => fileRef.current?.click()} disabled={reading}>
-              {reading ? 'Reading…' : 'Import a pack'}
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Upload}
+              onClick={() => fileRef.current?.click()}
+              disabled={busy === 'file'}
+            >
+              {busy === 'file' ? 'Reading…' : 'Upload a .nikpack…'}
             </Button>
             <Button
               size="sm"
@@ -429,7 +834,7 @@ export default function ContentPacksSection() {
                 setPlan(null)
               }}
             >
-              Export a pack
+              Make a pack…
             </Button>
             <input
               ref={fileRef}
@@ -442,11 +847,53 @@ export default function ContentPacksSection() {
           </div>
         </div>
         <p className="mt-1 text-sm text-fg-muted">
-          What Nik is taught (connectors, playbooks and their scripts, types of incident and their fields, mappers,
-          lists, dashboards) carried from one Nik to another as one <span className="font-mono">.nikpack</span> file.
-          Choosing a file changes nothing: it shows what importing it would do.
+          What Nik is taught about a product, in one pack: its connector, types of incident, dashboards, classifiers and
+          mappers, playbooks and scripts. Installing a pack adds each of them to its own page of Settings. Choosing a
+          pack changes nothing: it shows what installing it would do.
         </p>
       </div>
+
+      {catalogue && (
+        <div
+          aria-label="The catalogue"
+          role="group"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-line bg-panel px-3 py-2 text-sm"
+        >
+          <span
+            aria-hidden="true"
+            className={`h-2 w-2 shrink-0 ${catalogue.error ? 'bg-high-line' : catalogue.read ? 'bg-accent' : 'bg-fg-subtle'}`}
+          />
+          <span className="text-fg">Catalogue</span>
+          <span className="min-w-0 truncate font-mono text-xs text-fg-muted" title={catalogue.address}>
+            {catalogue.address.replace(/^https:\/\//, '')}
+          </span>
+          <span className="text-xs text-fg-muted">
+            {!catalogue.address
+              ? 'none is set: packs come as files'
+              : catalogue.error
+                ? 'could not be read'
+                : catalogue.read
+                  ? `read ${formatRelative(catalogue.fetchedAt)} · ${catalogue.packs.length} packs`
+                  : 'not read yet'}
+            {catalogue.custom ? ' · set here' : ''}
+          </span>
+          <span className="flex-1" />
+          <Button
+            size="xs"
+            variant="secondary"
+            icon={RefreshCw}
+            onClick={readAgain}
+            disabled={busy === 'catalogue' || !catalogue.address}
+          >
+            {busy === 'catalogue' ? 'Reading…' : 'Read again'}
+          </Button>
+          {can('admin') && (
+            <Button size="xs" variant="secondary" onClick={() => setAddressing(true)}>
+              Catalogue address…
+            </Button>
+          )}
+        </div>
+      )}
 
       <p
         role="status"
@@ -457,6 +904,8 @@ export default function ContentPacksSection() {
       {error && (
         <p role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-sm text-high-fg">
           {error}
+          {catalogue?.error && catalogue.read ? ' What is shown is what was read before.' : ''}
+          {catalogue?.error && !catalogue.read ? ' A pack can still be uploaded as a file.' : ''}
         </p>
       )}
 
@@ -476,93 +925,78 @@ export default function ContentPacksSection() {
       )}
       {exporting && <ExportForm onClose={() => setExporting(false)} onError={setError} />}
 
-      <ul aria-label="Installed packs" className="divide-y divide-line border border-line">
-        {(packs ?? []).map((pack) => {
-          const shown = open.has(pack.id)
-          return (
-            <li key={pack.id}>
-              <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-                <button
-                  type="button"
-                  aria-expanded={shown}
-                  aria-label={`${shown ? 'Hide' : 'Show'} what came from ${pack.name}`}
-                  onClick={() =>
-                    setOpen((old) => {
-                      const next = new Set(old)
-                      if (!next.delete(pack.id)) next.add(pack.id)
-                      return next
-                    })
-                  }
-                  className="p-1 text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  {shown ? (
-                    <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-fg">
-                    {pack.name} <span className="font-mono text-xs font-normal text-fg-muted">{pack.version}</span>
-                  </p>
-                  <p className="truncate text-xs text-fg-muted">
-                    {packLine(pack)}
-                    {pack.description ? ` · ${pack.description}` : ''}
-                  </p>
-                </div>
-                {pack.builtin && <Badge color="slate">Nik</Badge>}
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  icon={Download}
-                  onClick={() => download(pack)}
-                  aria-label={`Download ${pack.name}`}
-                  title="Download as a file"
-                />
-                {!pack.builtin && (
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    icon={Trash2}
-                    onClick={() => forget(pack)}
-                    aria-label={`Take ${pack.name} off the list`}
-                    title="Take off the list: what it brought stays"
-                  />
-                )}
-              </div>
-              {shown && (
-                <div className="grid gap-3 border-t border-line-soft bg-sunken px-3 py-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {byKind(pack.items).map((group) => (
-                    <div key={group.kind}>
-                      <p className="mb-1 text-xs font-medium text-fg-muted">
-                        {plural(group.label, group.items.length)} ({group.items.length})
-                      </p>
-                      <ul className="space-y-0.5 text-sm text-fg">
-                        {group.items.map((item) => (
-                          <li
-                            key={item.name}
-                            className={item.there ? 'truncate' : 'truncate text-fg-muted line-through'}
-                            title={item.there ? item.name : 'No longer here'}
-                          >
-                            {item.name}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                  {pack.items.length === 0 && <p className="text-xs text-fg-muted">Nothing of it is listed.</p>}
-                </div>
-              )}
-            </li>
-          )
-        })}
-        {packs?.length === 0 && <li className="px-3 py-6 text-center text-sm text-fg-muted">No pack is installed.</li>}
-        {packs === null && !error && (
-          <li role="status" className="px-3 py-6 text-center font-mono text-sm text-fg-muted">
-            Loading…
-          </li>
-        )}
-      </ul>
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label="Which packs" className="flex gap-2">
+          {FILTERS.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              aria-pressed={show === filter.id}
+              onClick={() => setShow(filter.id)}
+              className={[
+                'border px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                show === filter.id ? 'border-accent text-accent-fg' : 'border-line bg-panel text-fg hover:bg-raised',
+              ].join(' ')}
+            >
+              {filter.label} {counts[filter.id === 'all' ? 'all' : filter.id]}
+            </button>
+          ))}
+        </div>
+        <span className="flex-1" />
+        <SearchInput value={query} onChange={setQuery} placeholder="Search the packs…" className="w-64 max-w-full" />
+      </div>
+
+      {loading && !error && (
+        <p role="status" className="py-6 text-center font-mono text-sm text-fg-muted">
+          Loading…
+        </p>
+      )}
+      {!loading && groups.length === 0 && (
+        <p className="border border-line px-3 py-6 text-center text-sm text-fg-muted">
+          {query || show !== 'all' ? 'No pack matches.' : 'No pack yet.'}
+        </p>
+      )}
+      {groups.map((group) => (
+        <section key={group.vendor} aria-label={`Packs of ${group.vendor}`} className="space-y-2">
+          <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">{group.vendor}</h3>
+          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {group.cards.map((card) => (
+              <PackCard
+                key={card.id}
+                card={card}
+                busy={busy === card.id}
+                onInstall={take}
+                onOpen={setOpened}
+                onUninstall={setRemoving}
+              />
+            ))}
+          </ul>
+        </section>
+      ))}
+
+      {opened && <PackDetails card={opened} onClose={() => setOpened(null)} onDownload={download} />}
+      {removing && (
+        <UninstallDialog
+          card={removing}
+          onClose={() => setRemoving(null)}
+          onDone={(said) => {
+            setRemoving(null)
+            setMessage(said)
+            reload()
+          }}
+        />
+      )}
+      {addressing && catalogue && (
+        <AddressDialog
+          catalogue={catalogue}
+          onClose={() => setAddressing(false)}
+          onSaved={(found) => {
+            setAddressing(false)
+            setCatalogue(found)
+            setMessage('The address of the catalogue was saved. Read it again to see what is there.')
+          }}
+        />
+      )}
     </section>
   )
 }

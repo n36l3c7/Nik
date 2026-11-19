@@ -45,7 +45,7 @@ import { useQuerySchema } from '../../services/querySchema.js'
 import { conditionOn, withCondition } from '../../domain/query/builder.js'
 
 /*
- * The IoC library in the main area: every indicator Nik knows (or one list),
+ * The Indicators page in the main area: every indicator Nik knows (or one list),
  * filtered, sorted and paged by the server. Rows are tinted by verdict only.
  * A selection, a list or the whole filter can be checked, exported, put in a
  * list or removed.

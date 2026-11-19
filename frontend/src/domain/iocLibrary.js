@@ -1,5 +1,5 @@
 /*
- * The IoC library (GET /api/iocs): addresses of its views, what an export can
+ * The Indicators page (GET /api/iocs): addresses of its views, what an export can
  * hold, and how pasted or dropped text is told from a single indicator.
  */
 

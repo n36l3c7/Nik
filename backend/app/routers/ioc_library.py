@@ -1,4 +1,4 @@
-"""The IoC library: every indicator, lists, bulk add, bulk check, export, feed.
+"""The Indicators page: every indicator, lists, bulk add, bulk check, export, feed.
 
 See ``app/ioc_library.py`` for what the library is. Anyone signed in (or a
 key with the write scope) adds indicators, makes lists and starts checks;

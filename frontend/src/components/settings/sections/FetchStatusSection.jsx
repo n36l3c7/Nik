@@ -19,19 +19,19 @@ import { Badge, Button } from '../../ui/index.js'
 
 const REFRESH_MS = 15_000
 
-function Items({ connectionId }) {
+function Items({ instanceId }) {
   const [items, setItems] = useState(null)
   const [outcome, setOutcome] = useState('')
   useEffect(() => {
     let cancelled = false
     api
-      .get(`/fetch/${encodeURIComponent(connectionId)}/items${outcome ? `?outcome=${outcome}` : ''}`)
+      .get(`/fetch/${encodeURIComponent(instanceId)}/items${outcome ? `?outcome=${outcome}` : ''}`)
       .then((found) => !cancelled && setItems(found.items))
       .catch(() => !cancelled && setItems([]))
     return () => {
       cancelled = true
     }
-  }, [connectionId, outcome])
+  }, [instanceId, outcome])
   return (
     <div className="flex flex-col gap-2 border-t border-line-soft bg-sunken px-3 py-2">
       <label className="flex items-center gap-2 text-xs text-fg-muted">
@@ -99,7 +99,7 @@ export default function FetchStatusSection() {
   const load = useCallback(async () => {
     try {
       const [status, waiting] = await Promise.all([api.get('/fetch'), api.get('/mirror/queue')])
-      setConnections(status.connections)
+      setConnections(status.instances)
       setJobs(waiting.jobs)
       setError(null)
     } catch (failure) {
@@ -113,7 +113,7 @@ export default function FetchStatusSection() {
   }, [load])
 
   const act = async (connection, request, done) => {
-    setBusy(connection.connectionId)
+    setBusy(connection.instanceId)
     setError(null)
     setSaid(null)
     try {
@@ -126,7 +126,7 @@ export default function FetchStatusSection() {
       setBusy(null)
     }
   }
-  const path = (connection) => `/fetch/${encodeURIComponent(connection.connectionId)}`
+  const path = (connection) => `/fetch/${encodeURIComponent(connection.instanceId)}`
 
   return (
     <div className="flex max-w-5xl flex-col gap-4">
@@ -158,18 +158,18 @@ export default function FetchStatusSection() {
         <ul aria-label="Instances that can fetch" className="flex flex-col border border-line">
           {(connections ?? []).map((connection) => {
             const badge = stateBadge(connection)
-            const expanded = open === connection.connectionId
-            const working = busy === connection.connectionId
+            const expanded = open === connection.instanceId
+            const working = busy === connection.instanceId
             const last = lastText(connection)
             const near = limitText(connection)
             return (
-              <li key={connection.connectionId} className="border-b border-line-soft last:border-b-0">
+              <li key={connection.instanceId} className="border-b border-line-soft last:border-b-0">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
                   <button
                     type="button"
                     aria-expanded={expanded}
                     aria-label={`${expanded ? 'Hide' : 'Show'} what ${connection.connection} fetched`}
-                    onClick={() => setOpen(expanded ? null : connection.connectionId)}
+                    onClick={() => setOpen(expanded ? null : connection.instanceId)}
                     className="p-1 text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -257,7 +257,7 @@ export default function FetchStatusSection() {
                     </Button>
                   </span>
                 </div>
-                {expanded && <Items connectionId={connection.connectionId} />}
+                {expanded && <Items instanceId={connection.instanceId} />}
               </li>
             )
           })}

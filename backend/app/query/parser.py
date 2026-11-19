@@ -23,9 +23,10 @@ space takes it literally, and is itself anywhere else (a Windows path). A quoted
 value is literal, with ``\\"`` and ``\\\\`` as escapes. ``field:""`` asks for an
 empty field, ``field:*`` for one that holds something.
 
-"Is not" is written before the field: ``!status:closed``. It is the same
-condition ``status:!closed`` was until 5.0, which is still read (``modern``
-gives a query in today's writing) and goes in 6.0. A list is a shorter way
+"Is not" is written before the field: ``!status:closed``. Until 5.0 the same
+condition was written ``status:!closed``: that writing was read through 5.x and
+is refused since 6.0, with where the "!" goes (``modern`` gives a query in
+today's writing, which is what the query box does). A list is a shorter way
 to write the same conditions: ``field IN (a, b)`` is ``field:a or field:b``,
 ``field NOT IN (a, b)`` is ``!field:a !field:b``, and the tree holds those.
 
@@ -53,6 +54,7 @@ MESSAGES = {
     "empty_group": "The parentheses hold nothing",
     "missing_value": "A value is expected after the colon",
     "bad_range": "A range is written [from TO to]",
+    "old_not": '"Is not" is written before the field: !status:closed',
     "bad_list": "A list is written IN (a, b, c)",
     "dangling_operator": "A condition is expected here",
 }
@@ -460,7 +462,17 @@ def _read(source: str):
 def parse(text: str | None):
     """The tree of a query; None for an empty one (it matches everything).
     Raises ``QueryError`` with the position of what cannot be read."""
-    return _read(text or "")[0]
+    node, reader = _read(text or "")
+    if reader.old:
+        # The writing before 5.0: refused, with the query as it is written now.
+        raise QueryError("old_not", min(bang for _start, bang in reader.old), suggestion=_rewritten(text or "", reader))
+    return node
+
+
+def _rewritten(source: str, reader: "_Reader") -> str:
+    for start, bang in sorted(reader.old, reverse=True):
+        source = source[:start] + "!" + source[start:bang] + source[bang + 1 :]
+    return source
 
 
 def modern(text: str | None) -> str:
@@ -471,9 +483,7 @@ def modern(text: str | None) -> str:
         reader = _read(source)[1]
     except QueryError:
         return source
-    for start, bang in sorted(reader.old, reverse=True):
-        source = source[:start] + "!" + source[start:bang] + source[bang + 1 :]
-    return source
+    return _rewritten(source, reader)
 
 
 # --------------------------------------------------------------------------- #

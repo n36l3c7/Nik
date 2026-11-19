@@ -1,4 +1,4 @@
-"""The IoC library: every indicator Nik knows, lists of them, import and export.
+"""The Indicators page: every indicator Nik knows, lists of them, import and export.
 
 An indicator is in the library when an incident holds it (``ioc_index``),
 when an analyst added it (``iocs``) or when it is in a list

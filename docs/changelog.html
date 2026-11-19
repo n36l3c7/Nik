@@ -40,6 +40,43 @@
       </p>
 
       <section class="release">
+        <h3>6.0.0 <span class="date">2026-11-19</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>A catalogue of content packs.</strong> What Nik knows about a
+            product of a vendor is a pack of its own (its connector, mappers, classifier, playbooks, types and
+            dashboards), listed by vendor in <em>Settings → Automation → Content packs</em> and installed from there.
+            The index of the catalogue is signed and each pack is checked against it (<a
+              href="automation.html#pack-catalogue"
+              >The catalogue</a
+            >).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Uninstalling a pack</strong> removes what it gave, except what
+            was changed here or is in use, which stays with its reason; instances and credentials go only when asked.
+          </li>
+          <li>
+            <span class="tag changed">changed</span>
+            <strong>The connectors of vendors are not inside Nik any more.</strong> A Nik that is upgraded keeps every
+            one it has, written down as the pack it is; a new Nik starts with <em>Nik built-in</em> alone.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> <strong>The API says instances</strong> where it said connections
+            (<code>/api/automation/instances</code>, <code>instanceId</code>), and <em>IoC library</em> is called
+            <em>Indicators</em>.
+          </li>
+          <li>
+            <span class="tag removed">removed</span> <code>status:!closed</code> is no longer read: "is not" is written
+            before the field (<code>!status:closed</code>), as since 5.0.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Upgrading: see
+            <a href="deployment.html#upgrading-to-60">Upgrading to 6.0</a>.
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>5.4.0 <span class="date">2026-11-19</span></h3>
         <ul>
           <li>

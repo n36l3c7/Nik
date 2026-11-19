@@ -42,7 +42,7 @@ def fetch_status(_caller: Principal = Depends(manager_principal), db: OrmSession
     """Every connection whose connector can fetch: whether it does, its state (``off``, ``ok``,
     ``failing``, ``paused``), when it last fetched and will next, what the last cycle found."""
     rows = [fetch.out(db, row) for row in db.scalars(select(Connection).order_by(Connection.name))]
-    return {"connections": [row for row in rows if row["canFetch"]]}
+    return {"instances": [row for row in rows if row["canFetch"]]}
 
 
 @router.put("/{connection_id}")

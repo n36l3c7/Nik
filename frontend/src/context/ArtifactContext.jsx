@@ -97,7 +97,7 @@ export function ArtifactProvider({ children }) {
 
   // Back and forward move between artifacts and incidents.
   useEffect(() => {
-    // The address decides: another page (an incident, the IoC library) leaves the artifact.
+    // The address decides: another page (an incident, the Indicators page) leaves the artifact.
     const onPopState = () => {
       if (!isOverlayPage(window.location.pathname)) setCurrentId(idFromUrl())
     }

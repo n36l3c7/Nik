@@ -1,0 +1,9 @@
+id: confluence-cloud
+name: Confluence Cloud
+vendor: Atlassian
+category: Code and knowledge
+version: 1.0.0
+description: >-
+  Pages in Confluence Cloud, made and added to.
+author: Nik
+nik: ">=6.0"

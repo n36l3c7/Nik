@@ -1,0 +1,9 @@
+id: confluence-datacenter
+name: Confluence Data Center
+vendor: Atlassian
+category: Code and knowledge
+version: 1.0.0
+description: >-
+  Pages in Confluence Data Center, made and added to.
+author: Nik
+nik: ">=6.0"
