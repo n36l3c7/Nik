@@ -347,6 +347,14 @@
         <code>ioc.watch_hit</code> webhook. <strong>Feed</strong> gives the address a firewall, a SIEM or a SOAR polls
         for the list as it is now, signed with an API key.
       </p>
+      <p id="list-history">
+        A list keeps the <strong>history of its checks</strong>. Each time the whole list is checked (with
+        <em>Check</em> on its page, or by the playbook that checks the watched lists again every week), the page says
+        what that check changed: <em>since the last check: 4 became malicious, 1 cleared</em>. Opened, the line shows
+        the indicators whose verdict changed, with what each was and is, and the last checks of the list with how many
+        indicators it had and how many of each verdict. In the table, a row the last check changed says so under its
+        verdict. A check of a selection, or of a filter, is not a check of the list and writes nothing here.
+      </p>
       <h3>Analysed or not</h3>
       <p>
         The <strong>Analysis</strong> column shows what Nik saw when it analysed the value itself, and opens it.
@@ -369,6 +377,11 @@
         Only the main ones are ticked at first; the choice is remembered and the first rows are previewed. Values can be
         defanged; allowlisted and expired indicators are left out unless you include them. The JSON export imports back
         into Nik with its tags and lists.
+      </p>
+      <p>
+        <strong>Tag…</strong>, on a selection (or on everything a filter keeps, 5 000 indicators at most), adds tags to
+        all of them and takes tags off all of them in one go. An indicator keeps the tags that are not named; one seen
+        only in incidents gets a record to hold them, as when it is edited alone.
       </p>
 
       <h2 id="tabs">The analysis tabs</h2>

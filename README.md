@@ -163,12 +163,6 @@ incident kept in step with its ticket; 4.6 dashboards, content packs that
 carry what Nik is taught from one Nik to another, and a debugger for
 playbooks.
 
-Also planned, not built yet:
-
-- **History of a list**: how many of its indicators changed verdict since the
-  last check.
-- **Tags on a selection** of indicators at once.
-
 ## Contributing
 
 Changes are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) says what one needs

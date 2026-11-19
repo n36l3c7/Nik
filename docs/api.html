@@ -389,6 +389,9 @@
                 indicator is saved on its own; <code>list</code> also groups them; <code>check</code> starts a bulk
                 check. <code>PATCH /api/iocs/item</code> edits tags, note, TLP and expiry;
                 <code>POST /api/iocs/remove</code> takes a scope out of the library.
+                <code>POST /api/iocs/tags</code> takes a scope with <code>add</code> and <code>remove</code> (lists of
+                tags) and changes the tags of every indicator in it, 5 000 at most: <code>{changed, unchanged}</code>,
+                one line of the audit log.
               </td>
             </tr>
             <tr>
@@ -397,6 +400,18 @@
                 Lists of indicators (<code>name</code>, <code>description</code>, <code>tlp</code>, <code>watch</code>;
                 <code>scope</code> to fill a new one). <code>POST …/{id}/items</code> and
                 <code>POST …/{id}/items/remove</code> add and take out. Removing a list takes its author or an admin.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/iocs/lists/{id}/history</code></td>
+              <td>
+                What the checks of the whole list found:
+                <code
+                  >{last: {checkedAt, total, changed, becameMalicious, becameSuspicious, cleared, text} | null, history:
+                  [{checkId, checkedAt, total, changed, byVerdict}], changes: [{type, value, old, new, at}]}</code
+                >. <code>changes</code> are those of the last check; a list keeps its last 200 checks. A line is written
+                when a check started with <code>scope: {list}</code> (or by the action <code>nik.recheck-list</code>)
+                ends.
               </td>
             </tr>
             <tr>

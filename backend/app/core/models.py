@@ -694,6 +694,10 @@ class IocCheck(Base):
     message: Mapped[str] = mapped_column(String, nullable=False, default="")
     pending: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     items: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # every [type, value] asked for
+    # A check of a whole watch list: the list, and the verdict of each indicator as the check started
+    # ({"type|value": verdict}), until the history of the list is written (ioc_history.py).
+    list_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    baseline: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -1384,9 +1388,41 @@ class ScriptSignature(Base):
     updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
 
+class IocListHistory(Base):
+    """What one check of a watch list found: how many indicators, how many changed verdict, how many
+    of each verdict."""
+
+    __tablename__ = "ioc_list_history"
+    __table_args__ = (Index("ix_ioc_list_history_list", "list_id", "checked_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    list_id: Mapped[str] = mapped_column(String, ForeignKey("ioc_lists.id", ondelete="CASCADE"), nullable=False)
+    check_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    checked_at: Mapped[str] = mapped_column(String, nullable=False)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    changed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    by_verdict: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class IocVerdictChange(Base):
+    """An indicator of a watch list whose verdict a check changed."""
+
+    __tablename__ = "ioc_verdict_changes"
+    __table_args__ = (Index("ix_ioc_verdict_changes_check", "check_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    list_id: Mapped[str] = mapped_column(String, ForeignKey("ioc_lists.id", ondelete="CASCADE"), nullable=False)
+    check_id: Mapped[str] = mapped_column(String, nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    value: Mapped[str] = mapped_column(String(1024), nullable=False)
+    old: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    new: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 # Created by migration 0034_misc where missing, in this order; and the columns it adds.
-MISC_TABLES = ("script_signatures",)
-MISC_COLUMNS: dict[str, tuple[str, ...]] = {}
+MISC_TABLES = ("script_signatures", "ioc_list_history", "ioc_verdict_changes")
+MISC_COLUMNS: dict[str, tuple[str, ...]] = {"ioc_checks": ("list_id", "baseline")}
 
 # Created by migration 0033_dashboards_packs where missing, in this order.
 DASHBOARD_PACK_TABLES = ("dashboards", "packs", "pack_items", "pack_uploads")

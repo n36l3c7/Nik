@@ -9,6 +9,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app import ioc_library as lib
 from app.core.db import SessionLocal
@@ -369,3 +370,110 @@ def test_only_the_author_or_an_admin_removes_a_list_and_read_keys_cannot_write(a
     assert other.post("/api/iocs", headers=reader, json={"text": IP}).status_code == 403
     assert other.delete(f"/api/iocs/lists/{listed['id']}", headers=writer).status_code == 403
     assert admin.delete(f"/api/iocs/lists/{listed['id']}").status_code == 204
+
+
+# --------------------------------------------------------------------------- #
+# The history of a list, and tags on a selection                              #
+# --------------------------------------------------------------------------- #
+def test_a_check_of_a_list_writes_its_history_and_what_changed(admin: TestClient, fake_http):
+    answers, _calls = fake_http
+    answers["https://internetdb.shodan.io/"] = (200, {"ports": [80], "tags": []})
+    answers["https://api.greynoise.io/"] = (200, {"classification": "benign", "noise": False})
+    listed = admin.post("/api/iocs", json={"text": f"{IP}\n185.220.101.48", "list": {"name": "Watched"}}).json()["list"]
+    history = f"/api/iocs/lists/{listed['id']}/history"
+    assert admin.get(history).json() == {"last": None, "history": [], "changes": []}
+    settings = admin.get("/api/settings").json()
+
+    def check(force: bool = False) -> str:
+        started = admin.post("/api/iocs/check", json={"scope": {"list": listed["id"]}, "force": force}).json()["check"]
+        with SessionLocal() as db:
+            service.run_checks(db, settings, budget_seconds=5)
+        return started["id"]
+
+    # The first check: nobody knew, now both are harmless. That is a change worth a line each.
+    first = check()
+    found = admin.get(history).json()
+    assert found["last"]["total"] == 2 and found["last"]["changed"] == 2 and found["history"][0]["checkId"] == first
+    assert found["history"][0]["byVerdict"] == {"harmless": 2}
+    assert {(c["value"], c["old"], c["new"]) for c in found["changes"]} == {
+        (IP, "", "harmless"),
+        ("185.220.101.48", "", "harmless"),
+    }
+    assert found["last"]["text"] == "2 changed otherwise"
+    # The sources change their mind about everything: the next check says how many became malicious.
+    answers["https://api.greynoise.io/"] = (200, {"classification": "malicious", "noise": True})
+    second = check(force=True)
+    found = admin.get(history).json()
+    assert [line["checkId"] for line in found["history"]] == [second, first]
+    assert found["last"]["becameMalicious"] == 2 and found["last"]["text"] == "2 became malicious"
+    assert all(change["old"] == "harmless" and change["new"] == "malicious" for change in found["changes"])
+    # Then one clears.
+    answers["https://api.greynoise.io/"] = (200, {"classification": "benign", "noise": False})
+    check(force=True)
+    found = admin.get(history).json()
+    assert found["last"]["cleared"] == 2 and found["last"]["text"] == "2 cleared" and len(found["history"]) == 3
+    # Nothing changed: a line of history, no rows.
+    check(force=True)
+    found = admin.get(history).json()
+    assert found["last"]["changed"] == 0 and found["last"]["text"] == "nothing changed" and found["changes"] == []
+    # A check of a selection, or of a filter, is not a check of the list.
+    admin.post("/api/iocs/check", json={"scope": {"items": [{"type": "ip", "value": IP}]}, "force": True})
+    with SessionLocal() as db:
+        service.run_checks(db, settings, budget_seconds=5)
+    assert len(admin.get(history).json()["history"]) == 4
+    # The history goes with its list.
+    assert admin.delete(f"/api/iocs/lists/{listed['id']}").status_code == 204
+    assert admin.get(history).status_code == 404
+    with SessionLocal() as db:
+        from app.core.models import IocListHistory, IocVerdictChange
+
+        assert db.scalars(select(IocListHistory)).all() == [] and db.scalars(select(IocVerdictChange)).all() == []
+
+
+def test_a_list_whose_sources_had_all_answered_gets_its_line_at_once(admin: TestClient, fake_http):
+    answers, _calls = fake_http
+    answers["https://internetdb.shodan.io/"] = (200, {"ports": [], "tags": []})
+    answers["https://api.greynoise.io/"] = (200, {"classification": "benign", "noise": False})
+    listed = admin.post("/api/iocs", json={"text": IP, "list": {"name": "Known"}}).json()["list"]
+    scope = {"scope": {"list": listed["id"]}}
+    admin.post("/api/iocs/check", json=scope)
+    with SessionLocal() as db:
+        service.run_checks(db, admin.get("/api/settings").json(), budget_seconds=5)
+    # Fresh answers are reused: the check is over as it starts, and the list still gets its line.
+    again = admin.post("/api/iocs/check", json=scope).json()["check"]
+    assert again["status"] == "done"
+    found = admin.get(f"/api/iocs/lists/{listed['id']}/history").json()
+    assert len(found["history"]) == 2 and found["last"]["changed"] == 0
+
+
+def test_tags_are_added_to_and_taken_off_a_selection_at_once(admin: TestClient):
+    _incident(admin, "tagged", "curl http://seen-in-incident.example/a")
+    admin.post("/api/iocs", json={"items": [{"value": IP, "tags": ["old", "keep"]}, {"value": "evil.example"}]})
+
+    def tags() -> dict[str, list[str]]:
+        return {row["value"]: row["tags"] for row in admin.get("/api/iocs").json()["iocs"]}
+
+    picked = [{"type": "ip", "value": IP}, {"type": "domain", "value": "evil.example"},
+              {"type": "domain", "value": "seen-in-incident.example"}]  # fmt: skip
+    done = admin.post("/api/iocs/tags", json={"items": picked, "add": ["Campaign-Q4", "keep"], "remove": ["OLD"]})
+    assert done.status_code == 200 and done.json() == {"changed": 3, "unchanged": 0}
+    found = tags()
+    assert found[IP] == ["keep", "campaign-q4"] and found["evil.example"] == ["campaign-q4", "keep"]
+    # One seen only in an incident got a record to hold its tags.
+    assert found["seen-in-incident.example"] == ["campaign-q4", "keep"]
+    # Again: nothing to change, and it says so.
+    assert admin.post("/api/iocs/tags", json={"items": picked, "add": ["keep"]}).json() == {
+        "changed": 0,
+        "unchanged": 3,
+    }
+    # By a filter: every indicator with a tag loses it.
+    off = admin.post("/api/iocs/tags", json={"filters": {"q": "tag:campaign-q4"}, "remove": ["campaign-q4"]})
+    assert off.json()["changed"] == 3 and "campaign-q4" not in sum(tags().values(), [])
+    assert admin.post("/api/iocs/tags", json={"items": picked}).status_code == 422
+    # One line of the audit log for each request, not one for each indicator.
+    entries = admin.get("/api/audit", params={"q": "action:ioc.tag"}).json()["entries"]
+    assert (
+        len(entries) == 3 and "Tags on 3 indicator(s): added campaign-q4, keep; removed old" in entries[-1]["details"]
+    )
+    viewer = make_key(admin, label="v", roles=["viewer"])
+    assert admin.post("/api/iocs/tags", json={"items": picked, "add": ["x"]}, headers=viewer).status_code == 403

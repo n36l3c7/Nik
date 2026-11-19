@@ -61,6 +61,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/iocs/parse"): ("read",),
     ("POST", "/api/iocs"): ("write",),
     ("PATCH", "/api/iocs/item"): ("write",),
+    ("POST", "/api/iocs/tags"): ("write",),
+    ("GET", "/api/iocs/lists/{list_id}/history"): ("read",),
     ("POST", "/api/iocs/remove"): ("write",),
     ("GET", "/api/iocs/lists"): ("read",),
     ("POST", "/api/iocs/lists"): ("write",),

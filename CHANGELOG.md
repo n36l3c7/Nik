@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beside them. A pattern is tried on long hostile texts before it is saved,
   and can be tried on a piece of code. Changes apply to the scans made from
   then on.
+- **A list of indicators keeps the history of its checks.** When a check of
+  a whole list ends, the list gets a line (how many indicators, how many
+  changed verdict, how many of each verdict) and a row for each indicator
+  whose verdict changed. Its page says what the last check changed ("4
+  became malicious, 1 cleared"), lists the changes and the last checks, and
+  marks the changed rows (`GET /api/iocs/lists/{id}/history`).
+- **Tags on a selection.** *Tag…* in the library adds tags to, and takes
+  tags off, every indicator selected or kept by a filter, 5 000 at most
+  (`POST /api/iocs/tags`), with one line of the audit log.
 
 ### Changed
 
