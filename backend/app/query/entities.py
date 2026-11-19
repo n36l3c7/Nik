@@ -51,7 +51,8 @@ INCIDENTS = Entity(
     model=Incident,
     text_fields=("name", "host", "username", "ticket"),
     fields=(
-        FieldSpec("id", "keyword", "The incident's identifier", column=Incident.id),
+        FieldSpec("id", "keyword", "The incident's uuid", aliases=("uuid",), column=Incident.id),
+        FieldSpec("number", "number", "The number it is called by: number:42", aliases=("no",), column=Incident.number),
         FieldSpec("name", "text", "The name shown in the list", column=Incident.name),
         FieldSpec("ticket", "text", "The ticket of your tracker", aliases=("ticketId",), column=Incident.ticket_id),
         FieldSpec("host", "text", "The host the incident is about", column=Incident.host),

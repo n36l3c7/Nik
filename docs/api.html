@@ -186,7 +186,18 @@
               <td><code>GET /api/incidents/{id}</code></td>
               <td>
                 One incident, with an <code>ETag</code>: its revision, which changes at every write, whoever makes it.
-                Send <code>If-None-Match</code> to get <code>304</code> while your copy is current.
+                Send <code>If-None-Match</code> to get <code>304</code> while your copy is current. <code>{id}</code> is
+                the incident's uuid, here and in every route; the document says it twice, as <code>id</code> and as
+                <code>uuid</code>, and carries <code>number</code>, the number people call the incident by
+                (<code>#00042</code>). The number is given by the server when the incident is created and is never used
+                twice; a number sent in a document is kept as <code>importedNumber</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/by-number/{number}</code></td>
+              <td>
+                The incident with that number: <code>{id, uuid, number, name}</code>. In a query it is
+                <code>number:42</code>.
               </td>
             </tr>
             <tr>

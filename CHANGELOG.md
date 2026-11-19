@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Incidents have a number.** Every incident gets the next number when it
+  is created (`number` in the API, `number:42` in a query,
+  `GET /api/incidents/by-number/{number}`), and a number is never used
+  twice, also after its incident is deleted. What was the id stays the key
+  of the incident, its uuid: the address, the API and every reference keep
+  it, and the document names it `uuid` too. Existing incidents are numbered
+  in the order they were created (migration `0035_incident_numbers`). A
+  full backup carries the numbers and a restore gives them back; an
+  incident that arrives from another Nik gets a number of this one and
+  keeps the other as `importedNumber`.
 - **Lists in the query language**: `field IN (a, b, "c d")` and
   `field NOT IN (...)`, the same as writing a condition for each value.
   Values are separated by commas or spaces, take wildcards, and are

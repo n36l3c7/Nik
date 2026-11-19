@@ -109,7 +109,8 @@ def export_backup(caller: Principal = Depends(admin_principal), db: OrmSession =
             }
             for u in users
         ],
-        "incidents": [row.doc for row in incidents],
+        # With its number: a restore gives every incident the number it had.
+        "incidents": [{**(row.doc or {}), "number": row.number} for row in incidents],
         "audit": [
             {
                 "id": e.id,
@@ -269,9 +270,19 @@ def import_backup(
                 )
 
         # 5. Incidents (mirror the scalar columns used for listing/sorting).
+        numbered: set[int] = set()
+        # The ones with a number first, so that those without get numbers after them.
+        incidents = sorted(incidents, key=lambda doc: not isinstance(doc.get("number"), int))
         for doc in incidents:
             normalize_browser_data(doc)  # backups taken before 2.0.0
-            row = Incident(id=str(doc["id"]), doc=doc)
+            # The number it had, when the backup holds one that is still free; a new one otherwise.
+            number = doc.pop("number", None)
+            doc.pop("uuid", None)
+            if not isinstance(number, int) or isinstance(number, bool) or number <= 0 or number in numbered:
+                number = None
+            else:
+                numbered.add(number)
+            row = Incident(id=str(doc["id"]), doc=doc, number=number)
             _sync_columns(row)
             db.add(row)
 

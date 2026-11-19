@@ -23,6 +23,8 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
     false,
+    func,
+    select,
     text,
     true,
 )
@@ -85,7 +87,10 @@ class Incident(Base):
 
     __tablename__ = "incidents"
 
+    # The uuid of the incident: its address, its key everywhere in the database and the API.
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    # The number people call it by (#00042): given when it is created, never used twice.
+    number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False, default="")
     host: Mapped[str] = mapped_column(String, nullable=False, default="")
     username: Mapped[str] = mapped_column(String, nullable=False, default="")
@@ -131,7 +136,47 @@ class Incident(Base):
             postgresql_where=text("source_id IS NOT NULL"),
         ),
         Index("ix_incidents_status", "status"),
+        Index("uq_incidents_number", "number", unique=True),
     )
+
+
+class Sequence(Base):
+    """A counter that only goes up: the last number given to an incident (``name`` "incidents")."""
+
+    __tablename__ = "sequences"
+
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+def take_incident_number(connection) -> int:
+    """The next number of an incident. The row of the counter is written first, so two incidents
+    created at once wait for each other; a number given to an incident that was then deleted is
+    not given again."""
+    counter = Sequence.__table__
+    incidents = Incident.__table__
+    moved = connection.execute(counter.update().where(counter.c.name == "incidents").values(value=counter.c.value + 1))
+    if moved.rowcount:
+        return int(connection.scalar(select(counter.c.value).where(counter.c.name == "incidents")))
+    # No counter yet (a database made from the models): start after the highest number there is.
+    first = int(connection.scalar(select(func.max(incidents.c.number))) or 0) + 1
+    connection.execute(counter.insert().values(name="incidents", value=first))
+    return first
+
+
+@event.listens_for(Incident, "before_insert")
+def _number_incident(_mapper, connection, target: Incident) -> None:
+    """Every incident gets its number as it is stored, whoever creates it. One given a number
+    (a backup being restored) keeps it, and the counter is moved past it."""
+    if target.number is None:
+        target.number = take_incident_number(connection)
+        return
+    counter = Sequence.__table__
+    held = connection.scalar(select(counter.c.value).where(counter.c.name == "incidents"))
+    if held is None:
+        connection.execute(counter.insert().values(name="incidents", value=int(target.number)))
+    elif held < target.number:
+        connection.execute(counter.update().where(counter.c.name == "incidents").values(value=int(target.number)))
 
 
 @event.listens_for(Incident, "before_update")
@@ -1425,6 +1470,10 @@ class IocVerdictChange(Base):
     new: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     at: Mapped[str] = mapped_column(String, nullable=False)
 
+
+# Created by migration 0035_incident_numbers where missing; and the column it adds.
+NUMBER_TABLES = ("sequences",)
+NUMBER_COLUMNS: dict[str, tuple[str, ...]] = {"incidents": ("number",)}
 
 # Created by migration 0034_misc where missing, in this order; and the columns it adds.
 MISC_TABLES = ("script_signatures", "ioc_list_history", "ioc_verdict_changes")
