@@ -297,6 +297,9 @@
 ├── fetch.py                        # Fetching: a cycle of a connection, what was seen before, limits and backoff
 ├── preprocess.py                   # Pre-processing rules: drop, link to an incident, close as duplicate, a script
 ├── mirror.py                       # Mirroring: reading the other side, the queue of what is sent, comments
+├── dashboards.py                   # Dashboards: widgets checked and placed on the grid, sharing, the ones shipped
+├── dashboard_report.py             # A dashboard as a document: each widget asked as the reader, written as a table
+├── packs.py                        # Content packs: the file, the plan of an import, applying it, what Nik ships
 ├── iocs.py                         # IOC extraction from incidents, index, allowlist, STIX/MISP
 ├── artifact_transfer.py            # Artifacts out of one Nik and into another: the export zip, the import
 │                                   #   (files only on request, AES-encrypted; SHA-256 checked on the way in)
@@ -1293,6 +1296,49 @@
       </ul>
       <p>
         Migration <code>0032_fetch_mappers</code>: the five tables and the three columns of <code>connections</code>.
+      </p>
+      <h3 id="dashboards-packs">Dashboards, content packs and the debugger (4.6)</h3>
+      <ul>
+        <li>
+          <strong>Counting</strong> (<code>query/aggregate.py</code>, <code>POST /api/query/aggregate</code>). A query
+          is compiled as for a list, then what it finds is grouped and measured. A plain count is one
+          <code>GROUP BY</code> (a date is grouped by a prefix of its ISO text, which is how Nik stores times); anything
+          else (a median, a percentile, the time between two dates, a week, a field of tags) is worked out in Python
+          from the columns that are needed, 100 000 rows at most. An entity can carry conditions of its own
+          (<code>Entity.base</code>): the runs of the debugger are never part of <code>runs</code>. Runs, approvals and
+          tasks became entities for this.
+        </li>
+        <li>
+          <strong>Dashboards</strong> (<code>dashboards</code>, <code>dashboards.py</code>). A row with its widgets in
+          <code>layout</code>. The server checks each widget as the aggregate API would and moves widgets so that none
+          covers another (<code>compact</code>; the page does the same while one is dragged,
+          <code>domain/dashboards.js</code>). It never runs a widget: the page asks for each one as the person looking,
+          six requests in flight at most, answers kept a minute (<code>services/widgetData.js</code>). Charts are plain
+          SVG (<code>components/charts/</code>). The report (<code>dashboard_report.py</code>) asks the same questions
+          on the server, as the caller, and writes them with the style sheet of the incident report.
+        </li>
+        <li>
+          <strong>Content packs</strong> (<code>packs</code>, <code>pack_items</code>, <code>pack_uploads</code>,
+          <code>packs.py</code>). <code>read</code> turns the bytes of a zip into items, refusing what is not a safe
+          pack; <code>current</code> gives any item of this Nik in the shape a pack writes it, which is what
+          <code>plan</code> compares to say add, update, same or conflict; <code>apply</code> does the plan in the
+          caller's transaction, each kind through the function that saves it everywhere else. Items are known by kind
+          and name. An inspected file waits in <code>pack_uploads</code> for an hour. What Nik ships is installed by
+          each kind's own seeding as before, and <code>register_builtin</code> writes it down as four packs.
+        </li>
+        <li>
+          <strong>The debugger</strong> (<code>automation/debugger.py</code>, the column <code>runs.debug</code>). A
+          debug run is a run the engine asks one more question of: before performing a node,
+          <code>debugger.park</code> may leave the step <code>waiting</code> with <code>{"kind": "debug"}</code>.
+          Releasing it (<code>debugger.act</code>) puts it back to <code>pending</code> with what was asked for that
+          step in <code>step.waiting</code> (<code>override</code>, <code>real</code>), which the engine reads when it
+          performs the node. A run of a draft carries its graph in <code>run.state["graph"]</code>. Everything else is
+          the engine as it is.
+        </li>
+      </ul>
+      <p>
+        Migration <code>0033_dashboards_packs</code>: the tables <code>dashboards</code>, <code>packs</code>,
+        <code>pack_items</code> and <code>pack_uploads</code>, and the column <code>runs.debug</code>.
       </p>
       <h2 id="large-data-sets">Large data sets</h2>
       <p>

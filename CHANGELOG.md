@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-11-19
+
+Additive: nothing that worked with 4.5 changes.
+
 ### Added
 
 - **Counting and measuring what a query finds.** `POST /api/query/aggregate`
@@ -64,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   approval it normally needs. Debug runs count for no limit and no statistic,
   are shown to who started them, and are deleted after a week
   (`automation.debug`).
+
+### Changed
+
+- A time range of the query language's aggregate, of a dashboard and of its
+  report includes the second it ends in, so what happened a moment ago is
+  counted.
+- `GET /api/automation/runs`, the numbers of a playbook and the limits of
+  runs leave the runs of the debugger out.
 
 ## [4.5.0] - 2026-11-18
 
@@ -2433,7 +2445,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.5.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v4.6.0...HEAD
+[4.6.0]: https://github.com/n36l3c7/Nik/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/n36l3c7/Nik/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/n36l3c7/Nik/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/n36l3c7/Nik/compare/v4.2.0...v4.3.0

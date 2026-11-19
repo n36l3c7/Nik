@@ -483,6 +483,30 @@ const isRawIp = isRawIpUrl(entry.url)
           <code>timers.sync</code>.
         </li>
         <li>
+          <strong>A kind of widget</strong>: its id in <code>TYPES</code> and how many groups it takes in
+          <code>GROUPS</code> (<code>backend/app/dashboards.py</code>), the same in <code>TYPES</code> of
+          <code>frontend/src/domain/dashboards.js</code>, and how it is drawn in
+          <code>components/dashboards/Widget.jsx</code>. A chart is a component of <code>components/charts/</code>:
+          plain SVG in the pixels of its box, colours from <code>SERIES_COLORS</code> in their fixed order (never more
+          than eight: the rest is "Other"), text in the text colours, a tooltip on hover and focus, and the same figures
+          as a table. <strong>A dashboard Nik ships</strong> is a JSON file in
+          <code>backend/app/automation/seed/dashboards/</code>, in the format of an export; the suite asks every widget
+          of every shipped dashboard.
+        </li>
+        <li>
+          <strong>An entity of the query language</strong>: an <code>Entity</code> in
+          <code>backend/app/query/entities.py</code> with a <code>FieldSpec</code> for each field (its column, or a
+          getter for an entity assembled in rows), added to <code>ENTITIES</code>; in the interface, its entry in
+          <code>ENTITIES</code> of <code>domain/dashboards.js</code> with the date it is counted on.
+        </li>
+        <li>
+          <strong>A kind of item a pack carries</strong>: its folder in <code>KINDS</code> (in the order it must be
+          applied) and <code>LABELS</code>, then a branch in each of <code>current</code>, <code>names</code>,
+          <code>_comparable</code>, <code>_conflict</code>, <code>needs</code> and <code>_apply_item</code> of
+          <code>backend/app/packs.py</code>. Applying goes through the function that saves that kind everywhere else,
+          never around it.
+        </li>
+        <li>
           <strong>A fetch or a mirror for a shipped connector</strong>: the keys <code>fetch</code>,
           <code>schema</code> and <code>mirror</code> in its file (raise its <code>version</code>), a mapper in
           <code>backend/app/automation/seed/mappers/&lt;id&gt;.json</code> (<code>incoming</code>,

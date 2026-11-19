@@ -159,8 +159,9 @@ of an incident as data playbooks read and write, and a War Room with a
 command line; 4.4 tasks and questions in playbooks, the work plan of an
 incident, SLA timers, notifications and lists; 4.5 alerts fetched from other
 products as incidents, classifiers and mappers, pre-processing rules and an
-incident kept in step with its ticket. Still to come: dashboards and content
-packs.
+incident kept in step with its ticket; 4.6 dashboards, content packs that
+carry what Nik is taught from one Nik to another, and a debugger for
+playbooks.
 
 Also planned, not built yet:
 
