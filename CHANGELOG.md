@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the name for dark and light backgrounds, PNG icons of 192 and 512 px).
   The rail draws the same mark.
 - **Right-click on what is not evidence**: a playbook, a script, a run, a
-  task, a dashboard and an entry of the War Room have a menu, built the
+  task, a dashboard and its widgets, a list of Settings and an entry of the
+  War Room have a menu, built the
   same way everywhere: what the object does, then *Copy link* and what else
   is worth copying (a name, an id, the entry as JSON).
 - **Every side panel can be resized**, not only the list of incidents: the

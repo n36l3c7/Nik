@@ -23,6 +23,7 @@ import {
   TYPES,
   arrange,
   compactGrid,
+  widgetQuery,
   dashboardsPath,
   landingDashboard,
   newWidget,
@@ -709,6 +710,26 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                     editing={editing}
                     onChange={setWidgets}
                     onEdit={setEditingWidget}
+                    onMenu={(event, widget) =>
+                      menu(event, {
+                        title: widget.title || 'A widget',
+                        actions: editing
+                          ? [{ label: 'Edit…', icon: Pencil, onSelect: () => setEditingWidget(widget) }]
+                          : [],
+                        copy: [{ label: 'Copy the query', text: widget.entity ? widgetQuery(widget, shown) : '' }],
+                        record: widget,
+                        danger: editing
+                          ? [
+                              {
+                                label: 'Remove',
+                                icon: Trash2,
+                                onSelect: () =>
+                                  setWidgets(compactGrid(draft.widgets.filter((item) => item.id !== widget.id))),
+                              },
+                            ]
+                          : [],
+                      })
+                    }
                     onDuplicate={(widget) =>
                       setWidgets(
                         compactGrid([...draft.widgets, { ...widget, id: generateId(), y: widget.y + widget.h }]),
