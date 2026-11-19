@@ -411,7 +411,7 @@ export default function ConnectorsSection() {
                               icon: Pencil,
                               onSelect: () => setEditing({ connector, instance }),
                             },
-                            { label: 'Test the connection', icon: Zap, onSelect: () => test(instance) },
+                            { label: 'Test the instance', icon: Zap, onSelect: () => test(instance) },
                             {
                               label: instance.enabled ? 'Turn off' : 'Turn on',
                               onSelect: () => toggle(instance, !instance.enabled),
@@ -445,7 +445,7 @@ export default function ConnectorsSection() {
                           size="xs"
                           icon={Zap}
                           disabled={testing !== null}
-                          aria-label={`Test the connection ${instance.name}`}
+                          aria-label={`Test the instance ${instance.name}`}
                           onClick={() => test(instance)}
                         >
                           {testing === instance.id ? 'Testing…' : 'Test'}

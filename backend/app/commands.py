@@ -253,7 +253,7 @@ def resolve(db: OrmSession, parsed: Parsed) -> Target:
     if spec.extra.get("needsConnection"):
         config["connection"] = _connection(db, connector, parsed.using)
     elif parsed.using:
-        raise CommandError(f"{name} uses no connection: using= does not apply")
+        raise CommandError(f"{name} uses no instance: using= does not apply")
     return Target(
         title=command_name(spec.id),
         node={"kind": "action", "config": config},
@@ -297,7 +297,7 @@ def _connection(db: OrmSession, connector_id: str, using: str) -> str:
     if using:
         found = next((row for row in rows if row.name.lower() == using.lower()), None)
         if found is None:
-            raise CommandError("There is no such connection: " + ", ".join(row.name for row in rows))
+            raise CommandError("There is no such instance: " + ", ".join(row.name for row in rows))
         return found.name
     if len(rows) > 1:
         raise CommandError('Which connection? using="' + '" or using="'.join(row.name for row in rows) + '"')

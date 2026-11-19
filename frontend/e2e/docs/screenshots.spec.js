@@ -23,6 +23,13 @@ test.describe.configure({ mode: 'serial', retries: 0 })
 let page
 
 const tabs = () => page.locator('nav[aria-label="Analysis tabs"]')
+const evidence = () => page.getByRole('navigation', { name: 'Evidence' })
+
+/** A kind of evidence, whole: the Evidence tab, then the name of the kind in its list. */
+async function kind(name) {
+  await tabs().getByRole('button', { name: 'Evidence', exact: true }).click()
+  await evidence().getByRole('button', { name, exact: true }).click()
+}
 /** Save the page as docs/img/<name>.png, with the mouse out of the way (no hover state). */
 async function shot(name) {
   await page.mouse.move(0, 0)
@@ -101,29 +108,29 @@ test('evidence dropped on the app', async () => {
 })
 
 test('the host tabs', async () => {
-  await tabs().getByRole('button', { name: 'Event Logs', exact: true }).click()
+  await kind('Event Logs')
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('event-logs')
-  await tabs().getByRole('button', { name: 'Endpoint Artifacts', exact: true }).click()
+  await kind('Endpoint Artifacts')
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('endpoint')
-  await tabs().getByRole('button', { name: 'Browser Forensics', exact: true }).click()
+  await kind('Browser Forensics')
   await page
     .getByRole('navigation', { name: 'Browser analysis sections' })
     .getByRole('button', { name: /^Bookmarks/ })
     .click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('browser')
-  await tabs().getByRole('button', { name: 'Command History', exact: true }).click()
+  await kind('Command History')
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('commands')
 })
 
 test('the threat tabs', async () => {
-  await tabs().getByRole('button', { name: 'Mail Analysis', exact: true }).click()
+  await kind('Mail Analysis')
   await expect(page.getByText(/^phishing · \d+$/)).toBeVisible({ timeout: 30_000 })
   await shot('mail')
-  await tabs().getByRole('button', { name: 'Malware Analysis', exact: true }).click()
+  await kind('Malware Analysis')
   await page.getByRole('list', { name: 'Samples' }).getByText('invoice_0423.pdf.exe').click()
   await expect(page.getByText('PE32 executable').first()).toBeVisible({ timeout: 30_000 })
   await shot('malware')
@@ -160,7 +167,7 @@ test('an address scanned by the isolated browser', async () => {
   // DOCS_SCAN_URL: an address the isolated browser worker can reach that serves
   // e2e/fixtures/signin.html (the worker refuses private addresses).
   test.skip(!process.env.E2E_BROWSER_URL || !process.env.DOCS_SCAN_URL, 'no isolated browser or no page to scan')
-  await tabs().getByRole('button', { name: 'URL Analysis', exact: true }).click()
+  await kind('URL Analysis')
   await page.getByLabel('Address to scan').fill(process.env.DOCS_SCAN_URL)
   await page.getByRole('button', { name: 'Scan', exact: true }).click()
   await expect(page.getByText('WHY THIS VERDICT')).toBeVisible({ timeout: 120_000 })
@@ -171,7 +178,7 @@ test('an address scanned by the isolated browser', async () => {
 
 test('a packet capture', async () => {
   test.skip(!process.env.E2E_PCAP_URL, 'the packet capture worker is not running')
-  await tabs().getByRole('button', { name: 'Network Analysis', exact: true }).click()
+  await kind('Network Analysis')
   await page
     .getByRole('button', { name: 'Upload packet captures' })
     .locator('input[type=file]')
@@ -191,12 +198,41 @@ test('the overview tabs', async () => {
   await tabs().getByRole('button', { name: 'Timeline', exact: true }).click()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('timeline')
-  await tabs().getByRole('button', { name: 'IOCs', exact: true }).click()
+  await tabs().getByRole('button', { name: 'Indicators', exact: true }).click()
   await expect(page.getByRole('button', { name: '185.220.101.47', exact: true })).toBeVisible({ timeout: 20_000 })
   await shot('iocs')
   await tabs().getByRole('button', { name: 'Summary', exact: true }).click()
   await expect(page.getByText('Incident details')).toBeVisible()
+  // The pointer off the bar: no tab looks chosen but the one that is.
+  await page.mouse.move(900, 700)
+  await page.waitForTimeout(400)
   await shot('summary')
+})
+
+test('the evidence tab and the playground', async () => {
+  // A file of the list, opened alone in the page of its kind.
+  await tabs().getByRole('button', { name: 'Evidence', exact: true }).click()
+  await evidence().getByRole('list', { name: 'Files of Mail Analysis' }).getByRole('button').first().click()
+  await expect(page.getByText('Why this verdict').first()).toBeVisible({ timeout: 20_000 })
+  await shot('evidence')
+
+  await page.getByRole('button', { name: 'Playground', exact: true }).click()
+  const room = page.getByRole('region', { name: 'Playground' })
+  const line = room.locator('#playground-line')
+  await line.fill('!nik-get-indicator 185.220.101.47')
+  await line.press('Enter')
+  const result = room
+    .getByRole('list', { name: 'Playground' })
+    .getByRole('listitem')
+    .filter({ hasText: /nik-get-indicator/ })
+    .nth(1)
+  await expect(result).toBeVisible({ timeout: 30_000 })
+  await line.fill('try the mail instance on the test tenant first')
+  await line.press('Enter')
+  await result.getByRole('button').first().click()
+  await expect(room.getByRole('heading', { name: 'Result' })).toBeVisible()
+  await shot('playground')
+  await room.getByRole('button', { name: 'Close the playground' }).click()
 })
 
 test('pasted text', async () => {

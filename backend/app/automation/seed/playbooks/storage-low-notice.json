@@ -4,7 +4,7 @@
   "version": 1,
   "playbook": {
     "name": "Disk almost full notice",
-    "description": "When the disk that holds the evidence has less than a tenth free, a message says how much is left; Nik says it once a day while it stays so. To send it: set the SMTP server (Settings, Automation), put your address in the node \"Send the notice\" and list its domain among the hosts this playbook may reach.",
+    "description": "When the disk that holds the evidence has less than a tenth free, a message says how much is left; Nik says it once a day while it stays so. To send it: add an instance of the Mail connector with an SMTP server (Settings, Connectors), put your address in the node \"Send the notice\" and list its domain among the hosts this playbook may reach.",
     "graph": {
       "nodes": [
         {

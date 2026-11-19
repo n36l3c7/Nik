@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.automation import connector_actions, scripts, shipped, state, worker
 from app.core.db import SessionLocal
-from app.core.models import Connection, IocCheck, Run, RunStep
+from app.core.models import Connection, IocCheck, Playbook, Run, RunStep
 from app.core.security import now_iso
 from app.enrichment import service
 from tests.test_automation_engine import (  # noqa: F401 - test_actions is a fixture
@@ -147,6 +147,23 @@ def test_a_name_already_taken_is_left_to_whoever_took_it(admin: TestClient):
         connector_actions.seed(db)
         db.flush()
         assert shipped.seed(db) == 4
+        # No description sends to a place of Settings that is gone.
+        for shipped_row in db.scalars(select(Playbook).where(Playbook.builtin.is_(True))).all():
+            assert "Settings, Connections" not in shipped_row.description
+            assert "Settings, Automation" not in shipped_row.description
+        # One that was added by an earlier release, and one somebody rewrote: only the old sentence changes.
+        kept = db.scalars(select(Playbook).where(Playbook.name == NAMES["storage-low-notice"])).one()
+        kept.description = "Ours now. To send it: set the SMTP server (Settings, Automation), then ask Anna."
+        rewritten = db.scalars(select(Playbook).where(Playbook.name == NAMES["incident-to-ticket"])).one()
+        rewritten.description = "Rewritten by hand."
+        db.flush()
+        assert shipped.reword(db) == 1
+        assert kept.description == (
+            "Ours now. To send it: add an instance of the Mail connector with an SMTP server "
+            "(Settings, Connectors), then ask Anna."
+        )
+        assert rewritten.description == "Rewritten by hand."
+        assert shipped.reword(db) == 0
         db.commit()
         assert shipped.seed(db) == 0
     rows = [row for name, row in by_name(admin).items() if name.lower() == "phishing triage"]

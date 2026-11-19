@@ -307,7 +307,7 @@ def test_who_may_start_a_mirror_and_what_it_may_send(admin: TestClient, outside)
         assert answer.status_code in (400, 404), answer.text
         return answer.json()["detail"]
 
-    assert refused(connectionId="nope") == "Connection not found"
+    assert refused(connectionId="nope") == "Instance not found"
     assert refused(mirrorId="  ").startswith("Say which object of the other side")
     # A connector that only reads cannot be mirrored out.
     reading = DESK.replace("id: desk", "id: readonly").replace("name: Desk", "name: Read only")

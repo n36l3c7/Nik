@@ -125,11 +125,11 @@ def test_credentials_are_written_and_never_read(admin: TestClient):
         f"{BASE}/connections",
         json={"name": "acme PRODUCTION", "connector": "acme", "config": {"url": "https://x.example.com"}},
     )
-    assert same.json()["detail"] == "A connection with this name exists already"
+    assert same.json()["detail"] == "An instance with this name exists already"
     # The audit log says where a connection points, never what opens it.
     entries = admin.get("/api/audit").json()["entries"]
     created = next(entry for entry in entries if entry["action"] == "connection.create")
-    assert created["details"] == 'Made the connection "Acme production" to Acme Desk at desk.example.com'
+    assert created["details"] == 'Made the instance "Acme production" to Acme Desk at desk.example.com'
     assert "pass" not in json.dumps(entries)
 
 

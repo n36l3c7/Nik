@@ -4,7 +4,7 @@
   "version": 1,
   "playbook": {
     "name": "Malicious indicator to a block list",
-    "description": "When the verdict of an address or a domain becomes malicious, it is added to a file of blocked addresses in a Bitbucket repository, the kind of list a firewall fetches, and to the list \"Blocked\" in Nik. The commit asks a person first. Private addresses, internal names and allowlisted values are never proposed. Before turning it on: make a Bitbucket connection (Settings, Connections), choose it in the two Bitbucket nodes and name the repository and the file there (the file must exist).",
+    "description": "When the verdict of an address or a domain becomes malicious, it is added to a file of blocked addresses in a Bitbucket repository, the kind of list a firewall fetches, and to the list \"Blocked\" in Nik. The commit asks a person first. Private addresses, internal names and allowlisted values are never proposed. Before turning it on: add an instance of the Bitbucket connector (Settings, Connectors), choose it in the two Bitbucket nodes and name the repository and the file there (the file must exist).",
     "graph": {
       "nodes": [
         {

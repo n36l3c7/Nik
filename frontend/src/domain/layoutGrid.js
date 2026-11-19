@@ -93,13 +93,13 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 export const DETAIL_FIELDS = ['name', 'ticket', 'host', 'username', 'os', 'severity', 'status', 'owner']
 
 /**
- * The rows a section of fields needs: its title and its "Edit", then a line for
- * each field it shows (two a line when it has two columns).
+ * The rows a section of fields needs: its title, then a line for each field it
+ * shows (two a line when it has two columns).
  */
 export function sectionHeight(section) {
   const shown = list(section?.fields).filter((name) => !DETAIL_FIELDS.includes(name))
   const lines = Math.ceil(shown.length / (section?.columns === 2 ? 2 : 1))
-  return clamp(Math.ceil((90 + lines * 28) / 80), 2, MAX_HEIGHT)
+  return clamp(Math.ceil((56 + lines * 28) / 80), 2, MAX_HEIGHT)
 }
 
 /** The sections a grid can show: every one but the side panel. */

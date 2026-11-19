@@ -48,7 +48,7 @@ import { buildDefaultArtifactsMap } from './artifacts.js'
  *                 kind), and `evidence` (true), beside `incident`.
  *
  * To add a tab: create the component under src/components/tabs/ and add an
- * entry below, in its group. See README.md § "Add a new analysis tab".
+ * entry below: on the bar, or, with `evidence: true`, as a kind of evidence inside the Evidence tab.
  */
 
 const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'))

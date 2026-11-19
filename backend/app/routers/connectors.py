@@ -198,7 +198,7 @@ def _clean_config(connector: files.ConnectorFile, given: dict[str, Any]) -> dict
             raise HTTPException(status_code=400, detail=f"{_label(param)} is a text")
         out[param.name] = value
     if store.host_of(connector, {**{p.name: p.default for p in plain if p.default is not None}, **out}) is None:
-        raise HTTPException(status_code=400, detail="The connection has no address to send to")
+        raise HTTPException(status_code=400, detail="The instance has no address to send to")
     return out
 
 
@@ -232,7 +232,7 @@ def _connector(db: OrmSession, connector_id: str) -> tuple[Connector, files.Conn
 def _connection(db: OrmSession, connection_id: str) -> Connection:
     row = db.get(Connection, connection_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
+        raise HTTPException(status_code=404, detail="Instance not found")
     return row
 
 
@@ -415,7 +415,7 @@ def create_connection(
     if not name:
         raise HTTPException(status_code=400, detail="A name is required")
     if db.scalars(select(Connection).where(func.lower(Connection.name) == name.lower())).first() is not None:
-        raise HTTPException(status_code=400, detail="A connection with this name exists already")
+        raise HTTPException(status_code=400, detail="An instance with this name exists already")
     now = now_iso()
     row = Connection(
         id=engine.new_id(),
@@ -435,7 +435,7 @@ def create_connection(
         db,
         caller.actor,
         "connection.create",
-        f'Made the connection "{name}" to {connector.name} at {host}',
+        f'Made the instance "{name}" to {connector.name} at {host}',
         target=name,
     )
     db.commit()
@@ -457,7 +457,7 @@ def update_connection(
         name = body.name.strip()
         taken = db.scalars(select(Connection).where(func.lower(Connection.name) == name.lower())).first()
         if not name or (taken is not None and taken.id != row.id):
-            raise HTTPException(status_code=400, detail="A connection with this name exists already")
+            raise HTTPException(status_code=400, detail="An instance with this name exists already")
         changes.append(f'renamed from "{row.name}"')
         # Nodes name a connection by its id or by its name: one named by its old name must be chosen again.
         row.name = name
@@ -481,7 +481,7 @@ def update_connection(
             db,
             caller.actor,
             "connection.update",
-            f'Changed the connection "{row.name}": {", ".join(changes)}',
+            f'Changed the instance "{row.name}": {", ".join(changes)}',
             target=row.name,
         )
         db.commit()
@@ -496,7 +496,7 @@ def delete_connection(
     users = _users_of(db, row.connector_id, row)
     if users:
         raise HTTPException(status_code=409, detail="Used by: " + ", ".join(users[:10]))
-    audit.record(db, caller.actor, "connection.delete", f'Deleted the connection "{row.name}"', target=row.name)
+    audit.record(db, caller.actor, "connection.delete", f'Deleted the instance "{row.name}"', target=row.name)
     store.forget_tokens(row.id)
     db.delete(row)
     db.commit()

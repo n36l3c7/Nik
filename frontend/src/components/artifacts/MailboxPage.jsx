@@ -658,8 +658,8 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
         <div className="space-y-3">
           <p>
             {picked.size
-              ? `The ${picked.size} selected ${picked.size === 1 ? 'message goes' : 'messages go'} in the incident's Mail Analysis tab.`
-              : `All the ${box.imported} imported messages go in the incident's Mail Analysis tab. Tick rows first to put only some.`}
+              ? `The ${picked.size} selected ${picked.size === 1 ? 'message goes' : 'messages go'} in the incident's Evidence, under Mail Analysis.`
+              : `All the ${box.imported} imported messages go in the incident's Evidence, under Mail Analysis. Tick rows first to put only some.`}
           </p>
           <p className="text-sm text-fg-muted">
             Only the phishing and suspicious ones add indicators to the incident: a mailbox is mostly ordinary mail.

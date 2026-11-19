@@ -171,7 +171,7 @@ def test_a_command_is_a_run_of_one_node_and_its_result_is_under_it(admin: TestCl
     assert refused("!test-echo") == "Needed: text="
     assert refused("!test-echo a b") == "A value with no name is the first argument: give the others as name=value"
     assert refused("!test-echo x text=y") == '"text" is given twice'
-    assert refused("!test-echo text=x using=Desk") == "test-echo uses no connection: using= does not apply"
+    assert refused("!test-echo text=x using=Desk") == "test-echo uses no instance: using= does not apply"
     # A command that fails says so under its line.
     failed = ran(admin, "!test-never")
     assert failed["kind"] == "error" and failed["body"]["error"] == "Refused by the other side"
@@ -255,7 +255,7 @@ def test_a_command_of_a_connector_names_its_connection_and_writes_to_the_context
             row.enabled = row.name != "Desk test"
         db.commit()
     refused = typed(admin, '!acme-desk-get-ticket number=T-1 using="Desk test"').json()["detail"]
-    assert refused.startswith("There is no such connection")
+    assert refused.startswith("There is no such instance")
     with SessionLocal() as db:
         for row in db.scalars(select(Connection)):
             row.enabled = True
@@ -263,7 +263,7 @@ def test_a_command_of_a_connector_names_its_connection_and_writes_to_the_context
     which = typed(admin, "!acme-desk-get-ticket number=T-9")
     assert which.json()["detail"] == 'Which connection? using="Desk" or using="Desk test"'
     assert typed(admin, "!acme-desk-get-ticket number=T-9 using=Nope").json()["detail"] == (
-        "There is no such connection: Desk, Desk test"
+        "There is no such instance: Desk, Desk test"
     )
     detail = ran(admin, "!acme-desk-get-ticket T-9 full=yes using=desk")
     assert detail["author"] == "connector:acme-desk" and detail["step"]["output"] == {"state": "open"}

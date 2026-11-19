@@ -1436,8 +1436,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           <code>host=${context.Host[0].Name}</code>. The Context tab gives the path of any value, ready to paste.
         </li>
         <li>
-          <strong>Reserved names.</strong> <code>using=&lt;connection&gt;</code> picks the connection when a connector
-          has more than one; <code>raw=true</code> shows the result as JSON; <code>extend=&lt;anything&gt;</code>
+          <strong>Reserved names.</strong> <code>using=&lt;instance&gt;</code> picks the instance when a connector has
+          more than one; <code>raw=true</code> shows the result as JSON; <code>extend=&lt;anything&gt;</code>
           keeps the result out of the context.
         </li>
         <li>
@@ -1449,7 +1449,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           <strong>Reputation.</strong> <code>!ip</code>, <code>!domain</code>, <code>!url</code>, <code>!file</code> (a
           hash) and <code>!email</code> ask what is known of an indicator: Nik's reputation sources, under the same
           rules that say what is never sent to them, and every command of a connector that declares
-          <code>reputation: &lt;kind&gt;</code> in its file, on each of its connections. The answers are put together in
+          <code>reputation: &lt;kind&gt;</code> in its file, on each of its instances. The answers are put together in
           one verdict and one score, with each source beside them and those that were not asked, with why. What is
           looked up becomes an indicator of the incident: it is in its Indicators with the source
           <em>War Room · looked up</em>, and in the library, as one found in its evidence would be.
@@ -1457,7 +1457,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       </ul>
       <p>
         <strong>A command is a run.</strong> It runs on the same engine as a playbook, as a run of one node, and needs
-        the same permission (<em>Analyst</em> has it). It reaches the host of its connection and the hosts listed for
+        the same permission (<em>Analyst</em> has it). It reaches the host of its instance and the hosts listed for
         every playbook, sends through the same data guard with <strong>no class of data opened</strong>, and writes what
         it declares to the context of the incident. A command that changes something outside is not sent until you
         confirm it in a dialog that shows the line. What it gave is under its line in the War Room, and opens beside the
@@ -1489,10 +1489,14 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         </li>
         <li><strong>Who may.</strong> Whoever may run automations (<em>Analyst</em> has it).</li>
       </ul>
+      <figure class="shot">
+        <img src="img/playground.png" alt="The Playground" width="1600" height="1000" loading="lazy" />
+        <figcaption>The Playground: a command, what it gave, and a note, with no incident behind them.</figcaption>
+      </figure>
 
       <h2 id="connectors">Connectors</h2>
       <p>
-        A <strong>connector</strong> is one YAML file that says how to talk to a product: what a connection to it needs
+        A <strong>connector</strong> is one YAML file that says how to talk to a product: what an instance of it needs
         (an address, credentials) and <strong>commands</strong>, each a request built from templates in the same
         expression language as the playbooks. There is no code in it. Every command of an installed connector is a node
         of the canvas, in a group of the library named after the connector.
@@ -1536,7 +1540,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           that have no instance yet.
         </li>
         <li>
-          On the canvas, a node of a connector has a <em>Connection</em> field, which names the instance. A version is
+          On the canvas, a node of a connector has an <em>Instance</em> field, which names the instance. A version is
           not saved while a node names none, or one that does not exist. A node that names none takes the only instance
           that is on; a step sent to an instance that is off fails and says so.
         </li>
@@ -1546,7 +1550,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         node that does (<a href="#approvals">Approvals</a>). In a dry run nothing is sent: the step shows the request
         that would have left and gives the command's <code>sample</code> as its result, so the nodes after it can be
         read. What a command sends goes through the same two gates as the HTTP node: the
-        <a href="#network">network</a> rule (the host of the node's connection is one the playbook may reach, without
+        <a href="#network">network</a> rule (the host of the node's instance is one the playbook may reach, without
         being listed) and the <a href="#data-guard">data guard</a>.
       </p>
 
@@ -1578,7 +1582,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           a type alone, which then replaces the general one for that type.
         </li>
         <li>
-          <strong>A classifier</strong> belongs to a connection that fetches and chooses the type of incident an item
+          <strong>A classifier</strong> belongs to an instance that fetches and chooses the type of incident an item
           becomes: rules, each a condition on <code>item</code> and a type; the first that holds wins, else the default
           type, else <em>Unclassified</em>.
         </li>
@@ -1593,13 +1597,13 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         <code>ext</code> field of the connector). Paste one item as the product sends it and <em>Try on the sample</em>:
         every row shows the value the incident would get, with what a field refused and what the type needs that nothing
         gave. Nothing is written until the mapper is saved, and trying never writes to an incident. The classifier of
-        each connection of the connector is the small table under it.
+        each instance of the connector is the small table under it.
       </p>
 
       <h3 id="fetching">Fetching: alerts that become incidents</h3>
       <p>
-        A connection whose connector has a <a href="#connector-fetch"><code>fetch</code></a> can bring alerts in. It
-        does nothing until it is told to (<em>Settings → Automation → Fetch status</em>, or
+        An instance whose connector has a <a href="#connector-fetch"><code>fetch</code></a> can bring alerts in. It does
+        nothing until it is told to (<em>Settings → Automation → Fetch status</em>, or
         <code>PUT /api/fetch/{connection}</code>); then the automation worker reads it every
         <code>interval_seconds</code>. One cycle:
       </p>
@@ -1610,8 +1614,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           cycle at most;
         </li>
         <li>
-          each item is told apart by its <code>item_id</code>. One this connection has fetched before is skipped: an
-          alert makes one incident, however many times the other side sends it;
+          each item is told apart by its <code>item_id</code>. One this instance has fetched before is skipped: an alert
+          makes one incident, however many times the other side sends it;
         </li>
         <li>
           a new item is classified (the type of incident) and mapped (its fields and its context), by the
@@ -1628,21 +1632,21 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         corrected rather than alerts lost.
       </p>
       <p>
-        A fetch reaches the host of its own connection and nothing else, with its credentials; the data guard is not
-        involved, since data comes in. A request that fails marks the connection <em>failing</em> and is tried again
-        later and later, an hour apart at most; whoever manages connectors is told once. A connection that makes more
-        than 500 incidents in an hour is <em>paused</em>, with nothing lost: the state stops at the last alert that
-        became an incident, and it goes on from there when someone has looked and lets it. With automation stopped,
-        nothing fetches.
+        A fetch reaches the host of its own instance and nothing else, with its credentials; the data guard is not
+        involved, since data comes in. A request that fails marks the instance <em>failing</em> and is tried again later
+        and later, an hour apart at most; whoever manages connectors is told once. An instance that makes more than 500
+        incidents in an hour is <em>paused</em>, with nothing lost: the state stops at the last alert that became an
+        incident, and it goes on from there when someone has looked and lets it. With automation stopped, nothing
+        fetches.
       </p>
 
       <p id="fetch-status">
-        <strong>Fetch status</strong> (<em>Settings → Automation → Fetch status</em>) lists the connections that can
+        <strong>Fetch status</strong> (<em>Settings → Automation → Fetch status</em>) lists the instances that can
         fetch: whether each does, when it last fetched and will next, what its last cycle found, and why it is failing
-        or paused. A connection is turned on and off there, made to fetch now, and let go on. Opened, a connection shows
+        or paused. An instance is turned on and off there, made to fetch now, and let go on. Opened, an instance shows
         what it fetched lately and what became of each item: an incident, an <em>incomplete</em> one with what its
         mapper could not give, an item dropped, linked or closed as a duplicate by a rule. In the mapper editor,
-        <em>Use the last item fetched</em> takes the last item of a connection as the sample.
+        <em>Use the last item fetched</em> takes the last item of an instance as the sample.
       </p>
 
       <h4 id="preprocessing">Before an item becomes an incident</h4>
@@ -1674,14 +1678,14 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       <p>
         A rule that finds no incident that is the same decides nothing, and the next is tried. With no rule that
         decides, the item becomes an incident. <em>Try on a sample</em> says which rule would decide for an item of a
-        connection, and does nothing.
+        instance, and does nothing.
       </p>
 
       <h3 id="mirroring">Mirroring: an incident and a ticket in step</h3>
       <p>
-        An incident can be kept in step with one object of another product, a ticket or an issue, through a connection
+        An incident can be kept in step with one object of another product, a ticket or an issue, through an instance
         whose connector has a <a href="#connector-fetch"><code>mirror</code></a
-        >. It is started from the panel of the incident (<em>Mirror with…</em>: the connection, the id of the object on
+        >. It is started from the panel of the incident (<em>Mirror with…</em>: the instance, the id of the object on
         the other side, and which way), or by a mapper that sets <code>mirror_id</code> and
         <code>mirror_direction</code> on what it fetches. The fields <code>mirror_id</code>,
         <code>mirror_direction</code> and <code>mirror_last_sync</code> of the incident say how it stands.
@@ -1707,8 +1711,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         without asking again. It needs the permission to run playbooks, it is written in the War Room and in the audit
         log with who gave it, and what is sent passes the <a href="#data-guard">data guard</a> with no class of data
         opened unless one was opened for this mirror, which needs the permission that opens classes for playbooks. It
-        reaches the host of its connection and nothing else. A loop is not possible: what the mirror's own connector
-        wrote is never sent back, and a comment Nik sent is recognised when it comes back.
+        reaches the host of its instance and nothing else. A loop is not possible: what the mirror's own connector wrote
+        is never sent back, and a comment Nik sent is recognised when it comes back.
       </p>
 
       <h3 id="mail-connector">Mail listener / sender</h3>
@@ -1753,8 +1757,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         Twelve files for nine products, and the Mail connector above. Each was written from what the vendor publishes
         about its API and is tested against answers recorded from that documentation,
         <strong>not against a real system</strong>: each says <code>verified: false</code>, and the list of connectors
-        marks it <em>not verified</em>. Test the connection and try each command in a dry run, then on something
-        harmless, before a playbook relies on it.
+        marks it <em>not verified</em>. Test the instance and try each command in a dry run, then on something harmless,
+        before a playbook relies on it.
       </p>
       <div class="table-wrap">
         <table>
@@ -1816,8 +1820,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 issues created, read and updated; comments added and read; the transitions of an issue listed and made
               </td>
               <td>
-                the issues a JQL filter of the connection finds (<em>Issues to fetch</em>), created since the last cycle
-                · an issue and its comments
+                the issues a JQL filter of the instance finds (<em>Issues to fetch</em>), created since the last cycle ·
+                an issue and its comments
               </td>
             </tr>
             <tr>
@@ -1837,7 +1841,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       </div>
       <p>
         Jira, Confluence and Bitbucket each have one file for Cloud and one for Data Center, which sign in and write
-        texts differently. The comments at the top of each file say what it was written against and what the connection
+        texts differently. The comments at the top of each file say what it was written against and what the instance
         needs.
       </p>
       <p>
@@ -1889,7 +1893,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           <tbody>
             <tr>
               <td><code>config</code></td>
-              <td>the plain values of the connection (<code>config.url</code>)</td>
+              <td>the plain values of the instance (<code>config.url</code>)</td>
               <td>everywhere</td>
             </tr>
             <tr>
@@ -1907,7 +1911,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             </tr>
             <tr>
               <td><code>secret</code></td>
-              <td>the secrets of the connection (<code>secret.password</code>)</td>
+              <td>the secrets of the instance (<code>secret.password</code>)</td>
               <td>
                 only in what is sent (a request); never in <code>outputs</code>, <code>error</code> or a condition
               </td>
@@ -1970,14 +1974,14 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             <tr>
               <td><code>configuration</code></td>
               <td>
-                What a connection is asked for: a list of entries (below), 30 at most, one set of credentials at most.
+                What an instance is asked for: a list of entries (below), 30 at most, one set of credentials at most.
               </td>
             </tr>
             <tr>
               <td><code>base_url</code> (required)</td>
               <td>
-                Where every request starts, usually from the connection's address:
-                <code>"{{ config.url }}/api/v2"</code>. Its host is <strong>the</strong> host of the connection: no
+                Where every request starts, usually from the instance's address:
+                <code>"{{ config.url }}/api/v2"</code>. Its host is <strong>the</strong> host of the instance: no
                 request of the connector goes anywhere else.
               </td>
             </tr>
@@ -2003,7 +2007,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             <tr>
               <td><code>fetch</code></td>
               <td>
-                How a connection brings alerts in as incidents (<a href="#connector-fetch">below</a>). A connector
+                How an instance brings alerts in as incidents (<a href="#connector-fetch">below</a>). A connector
                 without it only sends commands.
               </td>
             </tr>
@@ -2053,7 +2057,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             </tr>
             <tr>
               <td><code>label</code>, <code>help</code></td>
-              <td>What the form of a connection shows beside the field, and under it.</td>
+              <td>What the form of an instance shows beside the field, and under it.</td>
             </tr>
             <tr>
               <td><code>type</code></td>
@@ -2065,12 +2069,12 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             </tr>
             <tr>
               <td><code>required</code>, <code>default</code>, <code>choices</code></td>
-              <td>As they say. A value left empty in the connection takes the default.</td>
+              <td>As they say. A value left empty in the instance takes the default.</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p>The credentials, by <code>type</code>, with the secrets a connection is asked for and how they are sent:</p>
+      <p>The credentials, by <code>type</code>, with the secrets an instance is asked for and how they are sent:</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -2113,7 +2117,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>
                 <code>token_url</code> (required; may read <code>config</code>), <code>scope</code>,
                 <code>auth_style</code>: <code>form</code> (the default: id and secret in the form) or
-                <code>basic</code> (in the Authorization header). A token endpoint on another host than the connection
+                <code>basic</code> (in the Authorization header). A token endpoint on another host than the instance
                 must be among the hosts the playbook may reach.
               </td>
             </tr>
@@ -2272,8 +2276,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             <tr>
               <td><code>path</code> (required)</td>
               <td>
-                Added to <code>base_url</code>. A full address is taken as it is, and must be on the connection's host:
-                a request to any other host is refused.
+                Added to <code>base_url</code>. A full address is taken as it is, and must be on the instance's host: a
+                request to any other host is refused.
               </td>
             </tr>
             <tr>
@@ -2362,7 +2366,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         </li>
         <li>
           <code>item_id</code>: what tells one alert from another, <code>"{{ item.id }}"</code>. An alert whose id was
-          seen on this connection is skipped; <code>occurred</code>: when it happened,
+          seen on this instance is skipped; <code>occurred</code>: when it happened,
           <code>"{{ item.createdAt }}"</code>;
         </li>
         <li>
@@ -2392,7 +2396,7 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       <h4 id="connector-samples">Two complete files</h4>
       <p>
         A REST API with a user and a password: a ticketing system, with a command that changes something, one that only
-        reads, and a test of the connection.
+        reads, and a test of the instance.
       </p>
       <pre><code class="language-yaml"># Acme Desk: tickets, through its REST API. Signs in with a user and a password.
 name: Acme Desk
@@ -2601,8 +2605,8 @@ commands:
                 <em>Blocked</em> in Nik.
               </td>
               <td>
-                Make a Bitbucket connection, choose it in the two Bitbucket nodes, name the repository and the file
-                (which must exist). It is a draft until then.
+                Add an instance of the Bitbucket connector, choose it in the two Bitbucket nodes, name the repository
+                and the file (which must exist). It is a draft until then.
               </td>
             </tr>
             <tr>
@@ -2613,7 +2617,7 @@ commands:
                 note.
               </td>
               <td>
-                Make a ServiceNow connection and choose it in <em>Open a ticket</em>; an admin opens
+                Add an instance of the ServiceNow connector and choose it in <em>Open a ticket</em>; an admin opens
                 <em>Incident names and tickets</em> for the playbook, since the ticket carries the incident's name. For
                 Jira, replace the node with <em>create-issue</em>. It is a draft until then.
               </td>
@@ -2892,7 +2896,7 @@ requires:                  # packs that must be installed first
 nik: "&gt;=4.6"                # the oldest Nik it is for</code></pre>
       <ul>
         <li>
-          <strong>Never</strong> a connection, a credential, or what a playbook may reach and send: those belong to the
+          <strong>Never</strong> an instance, a credential, or what a playbook may reach and send: those belong to the
           Nik they were set in. A playbook from a pack arrives <strong>off</strong>, reaching only listed hosts and
           sending no class of data, as one imported alone does.
         </li>
@@ -2903,7 +2907,7 @@ nik: "&gt;=4.6"                # the oldest Nik it is for</code></pre>
         </li>
         <li>
           Each file is what exporting that item alone gives, so a pack can be written by hand or kept in a repository. A
-          layout travels inside its type; a classifier belongs to a connection and does not travel.
+          layout travels inside its type; a classifier belongs to an instance and does not travel.
         </li>
       </ul>
       <h3 id="pack-import">Importing</h3>
@@ -2929,7 +2933,7 @@ nik: "&gt;=4.6"                # the oldest Nik it is for</code></pre>
               <td>
                 It is here and differs: the <strong>difference</strong> is shown, line by line. A playbook or a script
                 gets a <strong>new version</strong>; the ones there are stay, and a version in use is never rewritten. A
-                playbook whose graph lacks something here (a connection, a command) is kept as a draft, with its version
+                playbook whose graph lacks something here (an instance, a command) is kept as a draft, with its version
                 in use untouched.
               </td>
             </tr>

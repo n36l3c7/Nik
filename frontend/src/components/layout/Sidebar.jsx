@@ -48,7 +48,7 @@ import ConnectorLogo from '../ui/ConnectorLogo.jsx'
  * and the JSON import; the artifacts panel is ArtifactsPanel.
  *
  * Note: incidents are NOT renamed here — their identity (host/username) is
- * edited in the Summary tab, which recomputes the display name.
+ * edited in "Edit the incident" (the details of the Summary), which recomputes the display name.
  */
 
 /** Compact icon-button used for the per-row actions of the incident list. */
@@ -387,7 +387,7 @@ export default function Sidebar({
                   {/* Per-row actions: visible on hover / keyboard focus.
                       They live OUTSIDE the selection button to avoid nested
                       <button> elements (invalid HTML). No rename here —
-                      incidents are edited from the Summary tab. */}
+                      incidents are edited in "Edit the incident". */}
                   <div className="absolute right-2 top-1/2 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
                     <RowAction
                       icon={Download}

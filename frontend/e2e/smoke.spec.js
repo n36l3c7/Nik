@@ -2159,7 +2159,7 @@ test('a connector is added from its file, a connection is made, and its commands
   await row.getByRole('switch', { name: 'Acme test is off' }).click()
   await expect(installed).toContainText('1 instance · on')
   // The test reaches the host of the instance: this one does not exist, and the row says so.
-  await row.getByRole('button', { name: 'Test the connection Acme test' }).click()
+  await row.getByRole('button', { name: 'Test the instance Acme test' }).click()
   await expect(settings.getByRole('alert')).toContainText('Acme test: ', { timeout: 30_000 })
   await expect(row).toContainText('failed')
   await settings.getByLabel('Find a connector or an instance').fill('')
@@ -2175,8 +2175,8 @@ test('a connector is added from its file, a connection is made, and its commands
   await library.getByRole('button', { name: 'get-ticket', exact: true }).click()
   const inspector = area.getByRole('complementary', { name: 'Inspector' })
   await expect(inspector.getByRole('heading', { name: /Acme Desk/ })).toBeVisible()
-  await expect(inspector.getByLabel(/^Connection/)).toHaveValue('')
-  await inspector.getByLabel(/^Connection/).selectOption('Acme test')
+  await expect(inspector.getByLabel(/^Instance/)).toHaveValue('')
+  await inspector.getByLabel(/^Instance/).selectOption('Acme test')
   await inspector.getByLabel(/^number/).fill('T-1')
   await expect(area.getByText('draft saved')).toBeVisible()
   // The playbook is left as it was.
@@ -2893,7 +2893,8 @@ test('lists: one is made and filled, a feature is pointed at it, and what Nik sh
   const picker = settings.getByLabel('Allowlist: reads the list')
   await expect(picker).toHaveValue('ioc_allowlist')
   await picker.selectOption('strict_allowlist')
-  await expect(settings.getByText('2 entries')).toBeVisible()
+  // The list just chosen is saved and read again before its entries are counted.
+  await expect(settings.getByText('2 entries')).toBeVisible({ timeout: 20_000 })
   await sections.getByText('Lists', { exact: true }).last().click()
   await table.getByRole('button', { name: 'Strict allowlist' }).click()
   await expect(strict.getByRole('region', { name: 'Where it is used' })).toContainText('Allowlist')
@@ -3033,7 +3034,7 @@ test('Fetch status: a connection is told to fetch, says why it fails, and is let
     .click()
   await expect(page).toHaveURL(/\/settings\/automation\/fetch-status$/)
   const row = settings
-    .getByRole('list', { name: 'Connections that can fetch' })
+    .getByRole('list', { name: 'Instances that can fetch' })
     .getByRole('listitem')
     .filter({ hasText: 'Acme test' })
   await expect(row).toContainText('off')

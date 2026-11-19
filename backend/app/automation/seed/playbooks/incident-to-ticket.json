@@ -4,7 +4,7 @@
   "version": 1,
   "playbook": {
     "name": "Incident to ticketing",
-    "description": "A new incident of high or critical severity that has no ticket yet gets one in ServiceNow; its number is written in the incident's ticket field and a note links to it. Before turning it on: make a ServiceNow connection (Settings, Connections) and choose it in the node \"Open a ticket\"; an admin opens \"Incident names and tickets\" in this playbook's Settings, since the ticket carries the incident's name. For Jira, replace the node with \"Create an issue\".",
+    "description": "A new incident of high or critical severity that has no ticket yet gets one in ServiceNow; its number is written in the incident's ticket field and a note links to it. Before turning it on: add an instance of the ServiceNow connector (Settings, Connectors) and choose it in the node \"Open a ticket\"; an admin opens \"Incident names and tickets\" in this playbook's Settings, since the ticket carries the incident's name. For Jira, replace the node with \"Create an issue\".",
     "graph": {
       "nodes": [
         {

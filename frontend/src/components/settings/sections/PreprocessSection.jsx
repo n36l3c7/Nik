@@ -374,7 +374,7 @@ export default function PreprocessSection() {
             <label className="flex max-w-sm flex-col gap-1">
               <span className={LABEL}>As an item fetched by</span>
               <select
-                aria-label="The connection the sample comes from"
+                aria-label="The instance the sample comes from"
                 value={connectionId}
                 onChange={(event) => setConnectionId(event.target.value)}
                 className={`${INPUT} cursor-pointer`}

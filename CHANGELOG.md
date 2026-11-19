@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-11-19
+
+The platform read against itself after the 5.x wave: what one release
+decided and another still said differently.
+
+### Changed
+
+- **An instance is called an instance everywhere.** Since 5.1 a connection
+  to a product is an instance of its connector, and since 5.2 a
+  *connection* in the playbook editor is a line between two nodes. The
+  inspector of a node now has an *Instance* field; the Connectors page
+  says *Test the instance*; Fetch status lists *instances that can fetch*;
+  the messages of the server say instance (`There is no such instance`,
+  `An instance with this name exists already`, `Instance not found`). The
+  API keeps its paths and its keys (`/api/automation/connections`,
+  `connectionId`).
+- **The playbooks Nik ships say where things are now.** Their descriptions
+  sent to *Settings, Connections* and to the SMTP server of *Settings,
+  Automation*, which 5.1 replaced with instances on the Connectors page.
+  The files are corrected, and so is the same sentence in the description
+  of a shipped playbook already installed; a description rewritten by hand
+  is left as it is.
+- **The widgets of the Summary keep their box for what they show.** *Edit
+  the incident* and the *Edit* of a section are in the line of the title;
+  the details are on two columns, the numbers on three: nothing is cut in
+  the page Nik makes for a type.
+- **The documentation follows the interface.** The screenshots of the
+  guide are retaken on the seven tabs, with two new ones (Evidence, the
+  Playground); the developer guide explains how to add a kind of evidence;
+  the guides no longer send to the buttons of the rail that 5.0 moved into
+  Settings (audit log, backup), nor to the *IOCs*, *Automation* and
+  analysis tabs by the names they had.
+
+### Fixed
+
+- The end-to-end test of the lists waited five seconds for a list just
+  chosen to be read again, which a slow runner does not always manage.
+
 ## [5.3.0] - 2026-11-19
 
 ### Changed
@@ -2697,7 +2735,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.3.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.4.0...HEAD
+[5.4.0]: https://github.com/n36l3c7/Nik/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/n36l3c7/Nik/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/n36l3c7/Nik/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/n36l3c7/Nik/compare/v5.0.1...v5.1.0

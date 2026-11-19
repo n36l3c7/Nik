@@ -186,9 +186,9 @@ export default function ThreatIntelSection() {
           Threat intelligence
         </h3>
         <p className="mt-1 text-xs text-fg-muted">
-          The reputation of indicators from external services, shown in the IOCs tab and on each indicator’s page. Never
-          sent: private addresses and internal names, allowlisted values, values of incidents whose report is TLP:RED,
-          e-mail addresses.
+          The reputation of indicators from external services, shown in the Indicators tab and on each indicator’s page.
+          Never sent: private addresses and internal names, allowlisted values, values of incidents whose report is
+          TLP:RED, e-mail addresses.
         </p>
       </div>
 

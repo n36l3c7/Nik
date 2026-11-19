@@ -175,7 +175,8 @@ that sends, reads and listens; 5.2 gave playbooks branches that are pushed
 over the version in use, connections routed by hand, and a library of
 blocks in tabs; 5.3 put the analysis tabs inside one Evidence tab, made
 the Summary a page each type arranges like a dashboard, and added the
-Playground, a War Room without an incident.
+Playground, a War Room without an incident; 5.4 read the platform against
+itself and put right what one release said differently from another.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

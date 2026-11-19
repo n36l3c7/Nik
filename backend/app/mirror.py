@@ -94,7 +94,7 @@ def _parts(db: OrmSession, state: dict[str, Any]) -> tuple[Connection, Connector
     row = db.get(Connector, connection.connector_id) if connection is not None else None
     connector = store.parsed(row) if row is not None else None
     if connection is None or connector is None or connector.mirror is None:
-        raise MirrorError("The connection this incident is mirrored with is gone, or its connector mirrors no more")
+        raise MirrorError("The instance this incident is mirrored with is gone, or its connector mirrors no more")
     return connection, connector
 
 
@@ -155,7 +155,7 @@ def start(
     row = db.get(Connector, connection.connector_id)
     connector = store.parsed(row) if row is not None else None
     if connector is None or connector.mirror is None:
-        raise MirrorError("The connector of this connection does not say how to mirror")
+        raise MirrorError("The connector of this instance does not say how to mirror")
     mirror_id = str(mirror_id or "").strip()
     if not mirror_id or len(mirror_id) > 300:
         raise MirrorError("Say which object of the other side this incident is: its id there")

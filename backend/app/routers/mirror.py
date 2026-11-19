@@ -65,7 +65,7 @@ def start_mirror(
     incident = _incident(db, incident_id, lock=True)
     connection = db.get(Connection, body.connectionId)
     if connection is None:
-        raise HTTPException(status_code=404, detail="Connection not found")
+        raise HTTPException(status_code=404, detail="Instance not found")
     if body.direction != "in" and not caller.has(AUTOMATION_RUN):
         raise HTTPException(status_code=403, detail="Sending to another system needs the permission to run playbooks")
     if body.dataAllow and not caller.has(AUTOMATION_OPEN):

@@ -95,7 +95,7 @@ def enable(db: OrmSession, connection: Connection, enabled: bool, now: float) ->
     """Tell a connection to fetch, or not to (the caller commits)."""
     connector = connector_of(db, connection)
     if enabled and (connector is None or connector.fetch is None):
-        raise FetchError("The connector of this connection does not say how to fetch")
+        raise FetchError("The connector of this instance does not say how to fetch")
     connection.fetch_enabled = bool(enabled)
     if enabled:
         mapping.default_classifier(db, connection)
@@ -302,7 +302,7 @@ def cycle(db: OrmSession, connection: Connection, now: float | None = None) -> d
     now = time.time() if now is None else now
     connector = connector_of(db, connection)
     if connector is None or connector.fetch is None:
-        raise FetchError("The connector of this connection does not say how to fetch")
+        raise FetchError("The connector of this instance does not say how to fetch")
     spec = connector.fetch
     counts = {"fetched": 0, "new": 0, "created": 0, "incomplete": 0, "dropped": 0, "linked": 0, "duplicate": 0}
     first = _moment(now - spec.first_seconds)

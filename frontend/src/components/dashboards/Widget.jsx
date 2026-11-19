@@ -121,7 +121,7 @@ function Storage({ data }) {
 
 function FetchHealth({ data }) {
   const connections = data.connections ?? []
-  if (!connections.length) return <Message>No connection can fetch.</Message>
+  if (!connections.length) return <Message>No instance can fetch.</Message>
   return (
     <ul className="h-full space-y-1.5 overflow-y-auto text-xs">
       {connections.map((connection) => {

@@ -231,7 +231,9 @@ npm run docs:screenshots   # writes docs/img/*.png
       <h2 id="add-a-new-analysis-tab">Add a new analysis tab</h2>
       <p>
         The <code>frontend/src/config/tabs.js</code> registry is the <strong>only existing file to modify</strong>.
-        Example: a "DNS Logs" tab.
+        Example: "DNS Logs", a new kind of evidence. Since 5.3 the bar of an incident holds seven tabs and what analyses
+        a file is a <em>kind of evidence</em> inside the Evidence tab: an entry of the registry marked
+        <code>evidence: true</code>. An entry without the mark is a tab of the bar.
       </p>
       <p>
         <strong>Step 1 — Create the tab component.</strong> Every tab is a component with a default export that receives
@@ -325,12 +327,13 @@ export default function DnsLogsTab({ incident }) {
       <pre><code class="language-js">// at the top of the file, next to the other lazy tabs:
 const DnsLogsTab = lazy(() =&gt; import('../components/tabs/DnsLogsTab.jsx'))
 
-// inside ANALYSIS_TABS, next to the tabs of its group (array order = order
-// in the TabBar):
+// inside ANALYSIS_TABS, next to the other kinds of evidence (array order =
+// order in the list of the Evidence tab):
 {
-  id: 'dns',                  // unique, used to select the tab
-  label: 'DNS Logs',          // label in the TabBar
-  group: 'threats',           // 'overview' | 'threats' | 'host': a thin rule separates groups
+  id: 'dns',                  // unique: also the address of the kind
+  evidence: true,             // a kind of evidence, listed in the Evidence tab
+  label: 'DNS Logs',          // its name in that list
+  group: 'threats',           // 'threats' | 'host': what kind of thing it is
   icon: Network,              // lucide-react icon (import at the top)
   component: DnsLogsTab,      // lazy component → separate build chunk
   dataKey: 'dns',             // key under incident.data
@@ -341,8 +344,12 @@ const DnsLogsTab = lazy(() =&gt; import('../components/tabs/DnsLogsTab.jsx'))
 },
 </code></pre>
       <p>
-        <strong>Step 3 — Nothing else is needed.</strong> The TabBar maps <code>ANALYSIS_TABS</code>,
-        <code>App.jsx</code> renders the active component inside <code>&lt;Suspense&gt;</code>, and
+        <strong>Step 3 — Nothing else is needed.</strong> The Evidence tab lists the kinds of
+        <code>ANALYSIS_TABS</code> and renders the component of the one that is chosen inside
+        <code>&lt;Suspense&gt;</code>, giving it <code>incident</code>, <code>focus</code> (the file chosen in the list,
+        null for the whole kind) and <code>evidence</code>. To show under the name of the kind its files, or how many
+        records it holds, add it to <code>ITEMS</code> or <code>COUNTS</code> in
+        <code>frontend/src/domain/evidence.js</code>; without that it is listed with no number. And
         <code>buildDefaultIncidentData()</code> includes the new <code>dataKey</code> in every new incident. Existing
         incidents are covered by <code>normalizeIncident()</code>, which fills missing <code>dataKey</code>s with the
         registry <code>defaultData</code> on load — no manual migration. The registry <code>defaultData</code> is also

@@ -263,6 +263,14 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-54">Upgrading to 5.4</h4>
+      <p>
+        Release 5.4 needs nothing more than the two commands above, and has no migration. When the server starts, the
+        descriptions of the playbooks Nik shipped are corrected where they still sent to
+        <em>Settings, Connections</em> or to the SMTP server of <em>Settings, Automation</em>; nothing else of a
+        playbook is touched. A script of yours that reads the text of an error of the API should expect
+        <em>instance</em> where it said <em>connection</em>; the status codes, the paths and the keys are the same.
+      </p>
       <h4 id="upgrading-to-53">Upgrading to 5.3</h4>
       <p>
         Release 5.3 needs nothing more than the two commands above. The migration
