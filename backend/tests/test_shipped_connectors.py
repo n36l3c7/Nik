@@ -8,7 +8,8 @@ every shipped connector has one, and none of them is "verified" until the
 maintainer runs "Test the connection" against a real system.
 
     {"args": {...},
-     "exchanges": [{"request": {"method", "path", "query"?, "json"?, "form"?, "headers"?, "body_has"?},
+     "exchanges": [{"request": {"method", "path", "query"?, "json"?, "form"?, "headers"?, "body_has"?,
+                                "host"? (another host the connector lists), "without_headers"?},
                     "response": {"status", "json"? | "text"?, "headers"?}}],
      "outputs": {...}}
 
@@ -55,7 +56,8 @@ class Recorded:
         wanted, answer = exchange["request"], exchange["response"]
         where = f"request {self.count} ({wanted['method']} {wanted['path']})"
         parts = urlsplit(url)
-        assert parts.hostname == self.host, f"{where}: sent to {parts.hostname}"
+        # A request to another host the connector lists says so: "host" in the fixture.
+        assert parts.hostname == wanted.get("host", self.host), f"{where}: sent to {parts.hostname}"
         assert (method, parts.path) == (wanted["method"], wanted["path"]), where
         query = {
             **dict(parse_qsl(parts.query)),
@@ -70,6 +72,8 @@ class Recorded:
         headers = sent.get("headers") or {}
         for key, value in wanted.get("headers", {}).items():
             assert headers.get(key) == value, f"{where}: header {key}"
+        for key in wanted.get("without_headers", []):
+            assert key not in headers, f"{where}: the header {key} must not be sent there"
         body = sent.get("body")
         text = body.decode() if isinstance(body, bytes) else (body or "")
         for piece in wanted.get("body_has", []):

@@ -84,6 +84,8 @@ def first_fetch_seconds(text: str) -> int | None:
 
 
 MAX_STEPS = 12
+# The name of a host as a connector may list it: labels of letters, digits and -, two at least.
+HOST_RE = re.compile(r"^(?=.{4,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 POLL_MIN, POLL_MAX_TIMEOUT = 2, 3600
 
 
@@ -462,6 +464,23 @@ class ConnectorFile(_Strict):
     schema_: SchemaSpec | None = Field(default=None, alias="schema")
     ext_fields: list[ExtField] = Field(default_factory=list, max_length=100)
     mirror: MirrorSpec | None = None
+    # Other hosts the commands may reach beside the one of ``base_url`` (6.1): a service of the same vendor
+    # on another name (internetdb.shodan.io), the registries a redirector sends to. Fixed names, written
+    # in the file: never a template, never an address. A command reaches one by giving the full https
+    # address as its ``path``; the credentials of the instance are sent to the host of ``base_url`` only.
+    more_hosts: list[str] = Field(default_factory=list, max_length=40)
+
+    @field_validator("more_hosts")
+    @classmethod
+    def _hosts(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        for host in value:
+            if not isinstance(host, str) or not HOST_RE.match(host) or host.replace(".", "").isdigit():
+                raise ValueError(f'more_hosts: "{host}" is not the name of a host (lower case, no address, no port)')
+            cleaned.append(host)
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError("more_hosts: a host is listed twice")
+        return cleaned
 
     @field_validator("id")
     @classmethod
@@ -892,6 +911,7 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
         "name": connector.name,
         "version": connector.version,
         "description": connector.description,
+        "moreHosts": list(connector.more_hosts),
         "apiVersion": connector.api_version,
         "verified": connector.verified,
         "native": connector.native,

@@ -892,3 +892,29 @@ def test_migration_0039_adds_where_a_pack_came_from(tmp_path, monkeypatch):
     with engine.connect() as conn:
         assert {c["name"] for c in sa.inspect(conn).get_columns("packs")} == {"id", "name"}
         assert "digest" not in {c["name"] for c in sa.inspect(conn).get_columns("pack_items")}
+
+
+def test_migration_0040_adds_the_keys_of_an_instance(tmp_path, monkeypatch):
+    from app.core.models import INSTANCE_KEY_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE connectors (id VARCHAR(41) PRIMARY KEY)"))
+        conn.execute(sa.text("CREATE TABLE connections (id VARCHAR(32) PRIMARY KEY, name VARCHAR(80))"))
+        conn.execute(sa.text("INSERT INTO connections (id, name) VALUES ('c1', 'Mine')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0039_pack_catalogue")
+    command.upgrade(cfg, "0040_instance_keys")
+    with engine.connect() as conn:
+        assert set(INSTANCE_KEY_TABLES) <= set(sa.inspect(conn).get_table_names())
+        assert conn.execute(sa.text("SELECT extra_keys, key_policy FROM connections")).one() == ("", None)
+    command.stamp(cfg, "0039_pack_catalogue")
+    command.upgrade(cfg, "0040_instance_keys")  # again: nothing to do
+    command.downgrade(cfg, "0039_pack_catalogue")
+    with engine.connect() as conn:
+        assert not set(INSTANCE_KEY_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert {c["name"] for c in sa.inspect(conn).get_columns("connections")} == {"id", "name"}

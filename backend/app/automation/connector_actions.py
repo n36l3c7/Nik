@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core import vault
 from ..core.models import Connection, Connector
 from ..core.security import now_iso
-from . import actions, connector_logo, egress, outbound
+from . import actions, connector_logo, egress, instance_keys, outbound
 from . import expressions as ex
 from .connector_runtime import AUTH_FIELDS, CommandError, Runtime, forget_tokens
 from .connectors import Command, ConnectorError, ConnectorFile, Problem, load
@@ -294,13 +294,18 @@ def runtime_for(
     connection: Connection,
     playbook: Any | None = None,
     now: float | None = None,
+    key: instance_keys.Key | None = None,
 ) -> Runtime:
-    """A runtime for a connection: under the playbook's policy, or (to test a connection) reaching its host only."""
+    """A runtime for a connection: under the playbook's policy, or (to test a connection) reaching its host only.
+    ``key`` is the key of the instance the requests go with (its first one when not said)."""
     host = host_of(connector, connection.config or {})
+    # Its own host, and the other hosts its file lists: installing the connector and making the instance
+    # is the permission to reach them.
+    reach = tuple(found for found in (host, *connector.more_hosts) if found)
     if playbook is not None:
-        policy = outbound.policy_for(db, playbook, extra_hosts=(host,) if host else ())
+        policy = outbound.policy_for(db, playbook, extra_hosts=reach)
     else:
-        policy = egress.Policy(mode="listed", hosts=frozenset({host} if host else set()))
+        policy = egress.Policy(mode="listed", hosts=frozenset(reach))
     # The engine's clock when it runs a step (its waits are counted on it); the wall clock otherwise.
     clock = (lambda: now) if now else time.time
     if connector.native == "mail":
@@ -310,8 +315,13 @@ def runtime_for(
         if playbook is not None:
             policy = outbound.policy_for(db, playbook)
         return MailRuntime(connector, connection.config or {}, secrets_of(connection), policy)
+    if key is None or key.id == instance_keys.MAIN:
+        return Runtime(
+            connector, connection.config or {}, secrets_of(connection), policy, token_key=connection.id, clock=clock
+        )
+    # Another key signs in on its own: its token is not the first key's.
     return Runtime(
-        connector, connection.config or {}, secrets_of(connection), policy, token_key=connection.id, clock=clock
+        connector, connection.config or {}, key.secrets, policy, token_key=f"{connection.id}:{key.id}", clock=clock
     )
 
 
@@ -365,27 +375,83 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         call, {key: value for key, value in args.items() if key not in where}, dict.fromkeys(where, "_")
     )
     args = {**said, **{key: args[key] for key in where}}
-    try:
-        runtime = runtime_for(db, connector, connection, call.playbook, call.now)
-        if call.dry_run:
-            would = {**runtime.would_send(command_name, args), "held": decided, "connection": connection.name}
-            sample = command.sample if command.sample is not None else dict.fromkeys(command.outputs)
-            return actions.Result(output=sample, request=would)
-        answer = runtime.run(command_name, args, _unseal(call.state))
-    except egress.EgressError as error:
-        raise actions.ActionError(error.message, retry=not error.refused, request=error.record) from None
-    except CommandError as error:
-        raise actions.ActionError(
-            error.message,
-            retry=error.retry,
-            unknown_outcome=error.sent and error.retry,
-            request={**(error.record or {}), "held": decided, "connection": connection.name},
-        ) from None
-    record = {**_record(answer.records, decided), "connection": connection.name}
-    if not answer.done:
-        return actions.Result(again_at=answer.again_at, state=_seal(answer.state), request=record)
-    # What comes back may repeat what was sent: it keeps the classes of what went out.
+    now = call.now or time.time()
     classes = {"": sorted(call.classes)} if call.classes else {}
+    state = _unseal(call.state)
+    # The keys of the instance take turns (instance_keys.py). Not in a dry run, which sends nothing, and
+    # not for a connector Nik speaks for, which has its own way in.
+    turns = connector.native is None and not call.dry_run
+    if turns and not state and not command.changes_outside:
+        kept = instance_keys.kept_answer(db, connection, command_name, args, now)
+        if kept is not None:
+            return actions.Result(
+                output=kept["outputs"],
+                classes=classes,
+                request={"kept": True, "keptAt": kept["at"], "held": decided, "connection": connection.name},
+                context=[tuple(pair) for pair in kept["context"]],
+                context_source=f"connector:{connector_id}",
+            )
+    # A command that waits and comes back goes on with the key it started with.
+    pinned = (state or {}).get("key") if turns else None
+    tried: set[str] = set()
+    refusal: actions.ActionError | None = None
+    while True:
+        key = None
+        if turns:
+            key = next((held for held in instance_keys.keys_of(connection) if held.id == pinned), None)
+            if key is None:
+                key, wait = instance_keys.choose(db, connection, now, skip=tried)
+            if key is None:
+                if refusal is not None:  # every key was tried for this request, and each was refused
+                    raise refusal
+                minutes = max(1, round(wait / 60))
+                said_wait = (
+                    f'Every key of the instance "{connection.name}" is used up: the first is back in {minutes} min'
+                )
+                if instance_keys.policy_of(connection)["whenExhausted"] == "wait":
+                    return actions.Result(
+                        again_at=now + wait,
+                        state=call.state,
+                        request={"waiting": "keys", "note": said_wait, "held": decided, "connection": connection.name},
+                    )
+                raise actions.ActionError(said_wait, retry=False)
+        try:
+            runtime = runtime_for(db, connector, connection, call.playbook, call.now, key=key)
+            if call.dry_run:
+                would = {**runtime.would_send(command_name, args), "held": decided, "connection": connection.name}
+                sample = command.sample if command.sample is not None else dict.fromkeys(command.outputs)
+                return actions.Result(output=sample, request=would)
+            answer = runtime.run(command_name, args, state)
+            break
+        except egress.EgressError as error:
+            raise actions.ActionError(error.message, retry=not error.refused, request=error.record) from None
+        except CommandError as error:
+            failure = actions.ActionError(
+                error.message,
+                retry=error.retry,
+                unknown_outcome=error.sent and error.retry,
+                request={**(error.record or {}), "held": decided, "connection": connection.name},
+            )
+            if key is not None and error.sent:
+                instance_keys.used(db, connection, key.id, now)
+            if key is not None and error.status == instance_keys.QUOTA_STATUS and not pinned:
+                # The vendor says this key is used up: it is left alone, and the next one is tried.
+                instance_keys.refused(db, connection, key.id, now)
+                tried.add(key.id)
+                refusal = failure
+                continue
+            raise failure from None
+    if key is not None:
+        instance_keys.used(db, connection, key.id, now)
+    record = {**_record(answer.records, decided), "connection": connection.name}
+    if key is not None and len(instance_keys.keys_of(connection)) > 1:
+        record["key"] = key.name
+    if not answer.done:
+        waiting = {**(answer.state or {}), "key": key.id} if key is not None else answer.state
+        return actions.Result(again_at=answer.again_at, state=_seal(waiting), request=record)
+    if turns and not command.changes_outside:
+        instance_keys.keep_answer(db, connection, command_name, args, answer.outputs, answer.context, now)
+    # What comes back may repeat what was sent: it keeps the classes of what went out.
     return actions.Result(
         output=answer.outputs,
         classes=classes,

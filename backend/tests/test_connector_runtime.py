@@ -537,3 +537,34 @@ def test_the_oauth_sample_of_the_documentation_pages_and_polls():
     done = edr(wire).run("isolate-host", {"host_id": "h-1"}, waiting.state)
     assert done.done and done.outputs == {"job": "j-7", "state": "finished"}
     rt.forget_tokens()
+
+
+def test_a_connector_reaches_the_other_hosts_it_lists_and_keeps_its_credentials_home():
+    found = connector(
+        """\
+        - name: fetch
+          arguments: [{ name: where, type: text }]
+          request: { method: GET, path: "{{ args.where }}" }
+        """,
+        extra="more_hosts: [open.acme.example.org]\n",
+    )
+    wire = Wire().answer(200, {"ok": 1}).answer(200, {"ok": 2})
+    assert runtime(found, wire).run("fetch", {"where": "https://open.acme.example.org/1.2.3.4"}).outputs
+    assert runtime(found, wire).run("fetch", {"where": "https://acme.example.com/api/me"}).outputs
+    # The credentials of the instance go to its own host, and to no other.
+    assert "Authorization" not in (wire.sent[0].get("headers") or {})
+    assert wire.sent[1]["headers"]["Authorization"].startswith("Basic ")
+    # Only by name, over https, on the usual port; and only the hosts that are listed.
+    for where in (
+        "http://open.acme.example.org/x",
+        "https://open.acme.example.org:8443/x",
+        "https://evil.example.net/x",
+        "https://sub.open.acme.example.org/x",
+    ):
+        with pytest.raises(rt.CommandError):
+            runtime(found, Wire()).run("fetch", {"where": where})
+    # What a file may list: names, never an address, a port or a template.
+    for wrong in ("10.0.0.1", "host", "Open.Example.org", "a.example.org:8443", "{{ config.url }}", "a.example.org/x"):
+        with pytest.raises(cn.ConnectorError):
+            connector("- name: x\n  request: { method: GET, path: / }\n", extra=f'more_hosts: ["{wrong}"]\n')
+    assert cn.summary(found)["moreHosts"] == ["open.acme.example.org"]

@@ -57,8 +57,17 @@ AUTH_FIELDS: dict[str, tuple[str, ...]] = {
 class CommandError(Exception):
     """A command that failed: a sentence safe to show, and whether trying again may help."""
 
-    def __init__(self, message: str, *, retry: bool = False, sent: bool = False, record: dict | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry: bool = False,
+        sent: bool = False,
+        record: dict | None = None,
+        status: int | None = None,
+    ):
         super().__init__(message)
+        self.status = status  # what the other side answered, when the failure is its answer
         self.message = message
         self.retry = retry
         self.sent = sent  # the request left: the other side may have acted
@@ -233,9 +242,22 @@ class Runtime:
         """The address of a request: under ``base_url``, and never on another host."""
         target = path if path.startswith(("http://", "https://")) else self.base_url + "/" + path.lstrip("/")
         parts = urlsplit(target)
-        if (parts.hostname or "").lower() != self.host:
+        host = (parts.hostname or "").lower()
+        if host != self.host and not self._other(target):
             raise CommandError(f"A request of this connector goes to {parts.hostname}, not to its instance")
         return target
+
+    def _other(self, url: str) -> bool:
+        """Whether an address is on one of the other hosts the connector lists (``more_hosts``): https, on
+        the usual port, by name."""
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        return (
+            host != self.host
+            and parts.scheme == "https"
+            and parts.port in (None, 443)
+            and host in self.connector.more_hosts
+        )
 
     def _raw(self, spec: RequestSpec, scope: ex.Scope, auth: bool = True, timeout: float = 60) -> dict[str, Any]:
         """Send one request and give back ``{response, status, headers}``. Raises ``CommandError``."""
@@ -255,13 +277,14 @@ class Runtime:
             **{key: str(ex.render_text(value, scope).data) for key, value in self.connector.headers.items()},
             **{str(key): str(value) for key, value in (rendered["headers"] or {}).items() if value is not None},
         }
-        if auth:
+        url = self._url(str(rendered["path"]))
+        # The credentials of the instance are for its own host: another host the connector lists gets none.
+        if auth and not self._other(url):
             headers.update(self._credentials())
         body = rendered["body"]
         if rendered["multipart"] is not None:
             body, content_type = _multipart(rendered["multipart"])
             headers["Content-Type"] = content_type
-        url = self._url(str(rendered["path"]))
         try:
             answer = self._send(
                 self.policy,
@@ -307,7 +330,7 @@ class Runtime:
         status = answer["status"]
         said = f"{self.connector.name} answered {status}" + (f": {message[:500]}" if message else "")
         # 429 and 5xx may pass; a refusal (4xx) will be refused again.
-        raise CommandError(_redact(said, self._hidden), retry=status == 429 or status >= 500, sent=True)
+        raise CommandError(_redact(said, self._hidden), retry=status == 429 or status >= 500, sent=True, status=status)
 
     # ------------------------------------------------------------ credentials --
     def _credentials(self) -> dict[str, str]:
