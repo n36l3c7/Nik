@@ -416,11 +416,14 @@ export default function App() {
   const [automation, setAutomation] = useState(() => automationFromPath(window.location.pathname))
   useEffect(() => onLocationChange(() => setAutomation(automationFromPath(window.location.pathname))), [])
   const automationReturn = useRef(null)
-  const openAutomation = useCallback((area = 'playbooks', id = null, tab = null, { replace = false } = {}) => {
-    const inside = Boolean(automationFromPath(window.location.pathname))
-    if (!inside) automationReturn.current = currentPath()
-    setPath(automationPath(area, id, tab), { replace })
-  }, [])
+  const openAutomation = useCallback(
+    (area = 'playbooks', id = null, tab = null, { replace = false, branch = null } = {}) => {
+      const inside = Boolean(automationFromPath(window.location.pathname))
+      if (!inside) automationReturn.current = currentPath()
+      setPath(automationPath(area, id, tab, branch), { replace })
+    },
+    [],
+  )
   const closeAutomation = useCallback(() => {
     const back = automationReturn.current
     automationReturn.current = null

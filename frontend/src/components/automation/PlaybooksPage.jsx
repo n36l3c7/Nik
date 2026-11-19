@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { FolderOpen, ListTree, Play, Plus, Upload } from 'lucide-react'
+import { FolderOpen, ListTree, Play, Plus, Trash2, Upload } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
@@ -25,7 +25,7 @@ const WARNING_COLORS = { 'any host': 'red', 'data opened': 'amber', 'updates ava
  * @param {{
  *   playbooks: object[] | null,                // null while loading
  *   error: string | null,
- *   onOpen: (id: string, tab?: string) => void,
+ *   onOpen: (id: string, tab?: string | null, branch?: string | null) => void,
  *   onReload: () => Promise<void>,
  * }} props
  */
@@ -42,6 +42,19 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
   const [createError, setCreateError] = useState(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef(null)
+  const [deleting, setDeleting] = useState(null)
+
+  const remove = async () => {
+    const gone = deleting
+    setDeleting(null)
+    try {
+      await api.del(`/automation/playbooks/${encodeURIComponent(gone.id)}`)
+      showToast({ message: `${gone.name} was deleted.` })
+      onReload()
+    } catch (failure) {
+      showToast({ message: failure.message })
+    }
+  }
 
   const create = async (event) => {
     event.preventDefault()
@@ -182,6 +195,9 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
                       ],
                       link: automationPath('playbooks', playbook.id),
                       copy: [{ label: 'Copy the name', text: playbook.name }],
+                      danger: canEdit
+                        ? [{ label: 'Delete…', icon: Trash2, onSelect: () => setDeleting(playbook) }]
+                        : [],
                     })
                   }
                 >
@@ -195,6 +211,25 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
                     </button>
                     {playbook.description && (
                       <span className="block max-w-md text-fg-muted">{playbook.description}</span>
+                    )}
+                    {canEdit && playbook.branches?.length > 0 && (
+                      <ul aria-label={`Branches of ${playbook.name}`} className="mt-1 border-l border-line pl-2">
+                        {playbook.branches.map((branch) => (
+                          <li key={branch.id} className="flex items-baseline gap-2 font-mono text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => onOpen(playbook.id, null, branch.id)}
+                              className="text-left text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                              {branch.name}
+                            </button>
+                            <span className="text-fg-muted">
+                              {branch.createdBy}
+                              {branch.behind ? ' · behind' : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </th>
                   <td className="border-b border-line-soft px-3 py-2 align-top font-mono text-fg-muted">
@@ -271,6 +306,26 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
             </p>
           )}
         </form>
+      </Modal>
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Delete this playbook?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={remove}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">
+          <span className="font-semibold">{deleting?.name}</span> goes with its versions, its branches and its runs. One
+          with a run in progress is not deleted.
+        </p>
       </Modal>
     </div>
   )

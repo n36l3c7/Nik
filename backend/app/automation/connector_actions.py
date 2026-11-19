@@ -409,7 +409,13 @@ def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
         idempotent=command.idempotent,
         timeout=command.timeout,
         run=lambda call: run_command(connector_id, name, call),
-        extra={"connector": connector.id, "connectorVersion": connector.version, "needsConnection": True},
+        extra={
+            "connector": connector.id,
+            "connectorVersion": connector.version,
+            "needsConnection": True,
+            # What an answer looks like, when the file says: the editor reads the sub-fields from it.
+            **({"sample": command.sample} if isinstance(command.sample, dict) else {}),
+        },
     )
 
 

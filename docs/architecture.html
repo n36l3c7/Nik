@@ -1419,6 +1419,31 @@
         Migration <code>0036_instances</code>: the columns <code>connections.enabled</code>,
         <code>connectors.logo</code>, <code>connectors.logo_type</code> and <code>connectors.readme</code>.
       </p>
+      <h3 id="playbook-editor">The playbook editor (5.2)</h3>
+      <ul>
+        <li>
+          <strong>Branches</strong> are rows of <code>playbook_branches</code> (migration <code>0037_branches</code>):
+          the graph, the version the branch started from, who made it. The engine never reads them: a run uses a row of
+          <code>playbook_versions</code>, and a push writes one. <code>behind</code> is computed, the base against the
+          current version; nothing is merged.
+        </li>
+        <li>
+          <strong>The corners of a connection</strong> are <code>edges[].points</code> in the graph, checked by
+          <code>graph.validate</code> (a list of at most twenty <code>{x, y}</code>) and ignored by the engine. In the
+          client, <code>domain/automation/routing.js</code> holds the geometry and <code>RoutedEdge.jsx</code> draws the
+          line, its × and its handles.
+        </li>
+        <li>
+          <strong>Sub-fields</strong>: the catalog gives each command its <code>outputs</code> and, for a command of a
+          connector, the <code>sample</code> of its file;
+          <code>domain/automation/catalog.js</code> (<code>subFields</code>) turns them into the paths suggested in
+          <code>{{ }}</code>. The library (<code>libraryOf</code>) is the same catalog split in tabs.
+        </li>
+        <li>
+          <strong>The address of a branch</strong> is read by <code>domain/automationNav.js</code>; the editor is
+          mounted again for each branch, so what was not saved is sent on the way out to where it belongs.
+        </li>
+      </ul>
       <h3 id="identity-shell">Numbers, the query language and the shell (5.0)</h3>
       <ul>
         <li>

@@ -6,6 +6,7 @@ import { api } from '../../services/api.js'
 import { objectName } from '../../domain/automation/catalog.js'
 import { inputValues, runnable } from '../../domain/automation/runs.js'
 import { Button, Modal } from '../ui/index.js'
+import IncidentPicker from '../ui/IncidentPicker.jsx'
 
 /*
  * "Run a playbook…": choose the playbook, what it runs on, what it is given,
@@ -13,8 +14,8 @@ import { Button, Modal } from '../ui/index.js'
  *
  * Opened from an incident (its right-click menu, its Automation tab): the
  * incident is set, the playbook is chosen among those that can be run by
- * hand. Opened from a playbook's page: the playbook is set, the incident is
- * chosen (or none). Opened from an analysed e-mail, file or address, or from
+ * hand. Opened from a playbook (its page, its row): it runs that playbook and
+ * no other, and the incident is found by typing its title or its number. Opened from an analysed e-mail, file or address, or from
  * an indicator: that object is set, and the playbooks offered are those that
  * run on it (their event is about it) or on anything (they have no event).
  *
@@ -42,6 +43,8 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
 
   const [playbooks, setPlaybooks] = useState(null)
   const [playbookId, setPlaybookId] = useState(runRequest.playbookId ?? '')
+  // Opened from a playbook: it is the one that runs, and no other is offered.
+  const fixed = Boolean(runRequest.playbookId)
   const [incidentId, setIncidentId] = useState(runRequest.incidentId ?? '')
   const [dryRun, setDryRun] = useState(Boolean(runRequest.dryRun))
   // An artifact or an indicator the dialog was opened on: it is not chosen here.
@@ -66,9 +69,9 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
   const choices = useMemo(() => runnable(playbooks, { dry: dryRun, on }), [playbooks, dryRun, on])
   // The choice follows what can be chosen: the first one when none is, none when it is no longer there.
   useEffect(() => {
-    if (!open || !playbooks) return
+    if (!open || !playbooks || fixed) return
     if (!choices.some((playbook) => playbook.id === playbookId)) setPlaybookId(choices[0]?.id ?? '')
-  }, [open, playbooks, choices, playbookId])
+  }, [open, playbooks, choices, playbookId, fixed])
 
   // What the chosen playbook asks for.
   useEffect(() => {
@@ -114,25 +117,37 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
     }
   }
 
-  const chosen = choices.find((playbook) => playbook.id === playbookId)
+  const chosen = (fixed ? playbooks : choices)?.find((playbook) => playbook.id === playbookId)
+  // A playbook that is not meant to be run by hand can still be tried.
+  const cannot = fixed && chosen && !dryRun && !choices.some((playbook) => playbook.id === playbookId)
   return (
     <Modal
       open={open}
       onClose={closeRun}
-      title="Run a playbook"
+      title={fixed && chosen ? `Run “${chosen.name}”` : 'Run a playbook'}
       footer={
         <>
           <Button variant="secondary" onClick={closeRun}>
             Cancel
           </Button>
-          <Button type="submit" form="form-run-playbook" disabled={busy || !playbookId}>
+          <Button type="submit" form="form-run-playbook" disabled={busy || !playbookId || cannot}>
             {dryRun ? 'Start the dry run' : 'Run'}
           </Button>
         </>
       }
     >
       <form id="form-run-playbook" onSubmit={submit} className="flex flex-col gap-4 text-sm">
-        <label className="flex flex-col gap-1" htmlFor="run-playbook">
+        {fixed && (
+          <p className="text-fg-muted">
+            {chosen?.description || 'This playbook, on the incident you choose, or on nothing.'}
+            {cannot && (
+              <span className="mt-1 block text-med">
+                Its trigger does not say “Can be run by hand”: it can be tried as a dry run.
+              </span>
+            )}
+          </p>
+        )}
+        <label className={`flex flex-col gap-1 ${fixed ? 'hidden' : ''}`} htmlFor="run-playbook">
           <span className="text-fg-muted">Playbook</span>
           <select
             id="run-playbook"
@@ -175,22 +190,17 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
             </span>
           </div>
         )}
-        <label className={`flex flex-col gap-1 ${object ? 'hidden' : ''}`} htmlFor="run-incident">
-          <span className="text-fg-muted">On</span>
-          <select
-            id="run-incident"
-            value={incidentId}
-            onChange={(event) => setIncidentId(event.target.value)}
-            className={`${FIELD} cursor-pointer`}
-          >
-            <option value="">nothing (no incident)</option>
-            {incidents.map((incident) => (
-              <option key={incident.id} value={incident.id}>
-                {incident.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!object && (
+          <div className="flex flex-col gap-1">
+            <label className="text-fg-muted" htmlFor="run-incident">
+              On which incident
+            </label>
+            <IncidentPicker id="run-incident" incidents={incidents} value={incidentId} onChange={setIncidentId} />
+            {!incidentId && (
+              <span className="text-xs text-fg-muted">Leave it empty to run on nothing (no incident).</span>
+            )}
+          </div>
+        )}
 
         {inputs.length > 0 && (
           <fieldset className="flex flex-col gap-3 border border-line-soft p-3">

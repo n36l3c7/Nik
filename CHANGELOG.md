@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-11-19
+
+### Added
+
+- **Branches of a playbook.** A branch is a copy of the graph somebody works
+  on beside the playbook: it has a name, an address of its own
+  (`/automation/playbooks/<id>/branches/<branch>`) and saves itself like the
+  draft. *Push to main* checks it and makes it the next version, over the
+  one in use; when the playbook got a newer version since the branch
+  started, the push says so and replaces it only when told (graphs are not
+  merged). Who edits playbooks sees every branch, in the side panel of the
+  editor and under the playbook in the list; who made one, or an admin,
+  changes, pushes and deletes it. At most twenty for a playbook. API:
+  `GET` / `POST /api/automation/playbooks/{id}/branches`, `GET` / `PUT` /
+  `DELETE …/branches/{branch}`, `POST …/branches/{branch}/push`; the
+  playbook and the list of playbooks carry `branches`. Migration
+  `0037_branches`.
+- **A connection is removed with its ×, and routed by hand.** A connection
+  under the pointer shows an × that removes it and small squares: drag the
+  one in the middle of a straight part to make a corner, drag a corner to
+  move it, double-click it to take it away. The corners are part of the
+  graph (`edges[].points`, twenty at most), so everybody sees the same
+  drawing, in every version.
+- **Delete from the list, and throw a draft away.** The right-click menu of
+  a playbook and of a script ends with *Delete…*; the editor of a playbook
+  with a version offers *discard the draft*
+  (`DELETE /api/automation/playbooks/{id}/draft`).
+- **The fields inside what a block gives.** *Pick a value* and the
+  suggestions of `{{ }}` go into what a command returns: the fields of a
+  message, of a ticket, of each row of a list, from the sample its
+  connector declares (`sample` on a command of a connector file).
+
+### Changed
+
+- **The library of the editor is in tabs.** *Commands* (Nik and each
+  connector, one group for each, closed until opened), *Scripts* and
+  *Flow*; the search looks in all three. A connector with no instance that
+  is on is not offered.
+- **Run on a playbook runs that playbook.** *Run…* on the page of a
+  playbook, or in its menu, no longer asks which playbook: it asks the
+  incident, found by typing its title or its number (ten suggestions at
+  most).
+
 ## [5.1.0] - 2026-11-19
 
 ### Changed
@@ -2607,7 +2650,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.1.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v5.2.0...HEAD
+[5.2.0]: https://github.com/n36l3c7/Nik/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/n36l3c7/Nik/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/n36l3c7/Nik/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/n36l3c7/Nik/compare/v4.7.0...v5.0.0

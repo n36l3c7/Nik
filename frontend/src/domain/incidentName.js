@@ -92,3 +92,36 @@ export function numberedName(incident) {
   const number = formatNumber(incident?.number)
   return number ? `${number} ${name}` : name
 }
+
+/**
+ * The incidents to offer for what is typed, the most likely first, `limit` at
+ * most. A number (`42`, `#42`, `00042`) finds the incident with it, then those
+ * whose number starts with it; words find the incidents whose name (or host,
+ * user, ticket) holds every one of them. With nothing typed: the latest changed.
+ */
+export function suggestIncidents(incidents, text, limit = 10) {
+  const all = Array.isArray(incidents) ? incidents : []
+  const typed = String(text ?? '').trim()
+  const latest = (a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''))
+  if (!typed) return [...all].sort(latest).slice(0, limit)
+  const number = numberFromText(typed)
+  const digits = typed.replace(/^#/, '').replace(/^0+(?=\d)/, '')
+  const words = typed.toLowerCase().split(/\s+/).filter(Boolean)
+  const scored = []
+  for (const incident of all) {
+    const own = Number.isInteger(incident.number) ? String(incident.number) : ''
+    const haystack = [incident.name, incident.host, incident.username, incident.ticketId]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    let score = 0
+    if (number !== null && incident.number === number) score = 3
+    else if (number !== null && own.startsWith(digits)) score = 2
+    else if (words.every((word) => haystack.includes(word))) score = 1
+    if (score) scored.push({ incident, score })
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || latest(a.incident, b.incident))
+    .slice(0, limit)
+    .map((entry) => entry.incident)
+}

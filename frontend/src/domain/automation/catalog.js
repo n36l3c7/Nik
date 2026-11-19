@@ -255,6 +255,41 @@ export function groupsOf(entries, query = '') {
   return [...groups].map(([name, found]) => ({ name, entries: found })).sort((a, b) => rank(a.name) - rank(b.name))
 }
 
+/* ---- The library in tabs (5.2) ---- */
+
+export const LIBRARY_TABS = [
+  { id: 'commands', label: 'Commands' },
+  { id: 'scripts', label: 'Scripts' },
+  { id: 'flow', label: 'Flow' },
+]
+
+/** Which tab of the library an entry is in. */
+export const tabOf = (entry) => (entry.kind === 'script' ? 'scripts' : entry.group === 'Flow' ? 'flow' : 'commands')
+
+/**
+ * What the library shows: the groups of one tab, or, while something is typed
+ * in its search, what matches in every tab. The commands of a connector that
+ * has no instance on are left out (`available: false`), and so is what is kept
+ * only for older playbooks. `counts` are those of the tabs, whatever is typed.
+ *
+ * @returns {{ groups: { name: string, entries: object[] }[], counts: object, searching: boolean, hidden: number }}
+ */
+export function libraryOf(entries, tab = 'commands', query = '') {
+  const offered = list(entries).filter((entry) => !entry.retired && entry.available !== false)
+  const hidden = list(entries).filter((entry) => !entry.retired && entry.available === false)
+  const counts = { commands: 0, scripts: 0, flow: 0 }
+  for (const entry of offered) counts[tabOf(entry)] += 1
+  const searching = String(query).trim() !== ''
+  const shown = searching ? offered : offered.filter((entry) => tabOf(entry) === tab)
+  return {
+    groups: groupsOf(shown, query),
+    counts,
+    searching,
+    // How many connectors have commands that are not offered: said under the list.
+    hidden: new Set(hidden.map((entry) => entry.connector ?? entry.group)).size,
+  }
+}
+
 /** The library entry a node was made from; null when it is gone (an action or a script removed). */
 export function entryOf(node, entries) {
   if (!node) return null
@@ -423,6 +458,64 @@ export function asksApproval(node, entry, approvalDefault = true) {
   return Boolean(entry?.changesOutside) && approvalDefault
 }
 
+const SUB_DEPTH = 3
+const SUB_MAX = 60
+
+const typeOf = (value) =>
+  Array.isArray(value)
+    ? 'list'
+    : value === null || value === undefined
+      ? 'any'
+      : typeof value === 'object'
+        ? 'object'
+        : typeof value === 'boolean'
+          ? 'bool'
+          : typeof value === 'number'
+            ? 'number'
+            : 'text'
+
+/**
+ * What is inside a value, as paths under `name`: the keys of an object, and
+ * for a list the keys of its first item (`name[0].key`). Three levels deep at
+ * most: enough to reach what a block gives without listing a whole document.
+ */
+export function subFields(name, value, depth = SUB_DEPTH) {
+  if (depth <= 0 || value === null || typeof value !== 'object') return []
+  if (Array.isArray(value)) {
+    if (value.length === 0) return []
+    const first = `${name}[0]`
+    const inside = subFields(first, value[0], depth - 1)
+    // A list of plain values: its first one is worth a path of its own.
+    return typeof value[0] === 'object' && value[0] !== null
+      ? inside
+      : [{ name: first, type: typeOf(value[0]), description: `The first of ${name}` }]
+  }
+  const found = []
+  for (const key of Object.keys(value).slice(0, 20)) {
+    // A key that is not a plain name is read with brackets; such keys are rare and left out.
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue
+    const path = `${name}.${key}`
+    found.push({ name: path, type: typeOf(value[key]), description: `Inside ${name}` })
+    found.push(...subFields(path, value[key], depth - 1))
+  }
+  return found
+}
+
+/**
+ * The outputs of a block, each followed by what is inside it when the block
+ * says what an answer looks like (`sample`, from the connector's file).
+ */
+export function withSubFields(outputs, sample) {
+  if (!sample || typeof sample !== 'object' || Array.isArray(sample)) return outputs
+  const out = []
+  for (const output of outputs) {
+    out.push(output)
+    if (output.name in sample) out.push(...subFields(output.name, sample[output.name]))
+    if (out.length >= SUB_MAX) break
+  }
+  return out.slice(0, SUB_MAX)
+}
+
 /**
  * The values the expressions of a node can pick, as a tree:
  * `[{ name, label, fields: [{ path, type, description }] }]`. `path` is what
@@ -443,8 +536,7 @@ export function valueTree(graph, id, entries) {
     const node = nodeOf(graph, other)
     if (!node || node.kind === 'trigger' || node.kind === 'end') continue
     const entry = entryOf(node, entries)
-    let outputs = list(entry?.outputs)
-    if (node.kind === 'script') outputs = list(entry?.outputs)
+    const outputs = withSubFields(list(entry?.outputs), entry?.sample)
     push(
       node.id,
       node.name || node.id,

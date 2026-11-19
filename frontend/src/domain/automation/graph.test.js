@@ -385,6 +385,21 @@ test('the addresses of the Automations area', () => {
   assert.equal(automationPath('playbooks', 'a b'), '/automation/playbooks/a%20b')
   assert.equal(automationPath('playbooks', 'ab12', 'canvas'), '/automation/playbooks/ab12')
   assert.equal(automationPath('playbooks', 'ab12', 'versions'), '/automation/playbooks/ab12/versions')
+  // A branch of a playbook has an address of its own, on the canvas.
+  assert.equal(automationPath('playbooks', 'ab12', null, 'b 1'), '/automation/playbooks/ab12/branches/b%201')
+  assert.equal(automationPath('playbooks', 'ab12', 'runs', 'b1'), '/automation/playbooks/ab12/runs')
+  assert.equal(automationPath('runs', 'r1', null, 'b1'), '/automation/runs/r1')
+  assert.deepEqual(automationFromPath('/automation/playbooks/ab12/branches/b%201'), {
+    area: 'playbooks',
+    id: 'ab12',
+    tab: 'canvas',
+    branch: 'b 1',
+  })
+  assert.deepEqual(automationFromPath('/automation/playbooks/ab12/branches'), {
+    area: 'playbooks',
+    id: 'ab12',
+    tab: 'canvas',
+  })
 })
 
 test('a pasted address is listed as its host', () => {
@@ -430,4 +445,100 @@ test('a question leaves by its choices, a task by done and overdue', () => {
   )
   assert.equal(summaryOf(node('t', 'task', { title: 'Pull the disk' })), 'Pull the disk · for the owner')
   assert.equal(summaryOf(ask), 'Encrypted? · to anyone')
+})
+
+test('the values a node can read go into what the blocks before give', async () => {
+  const { subFields, withSubFields } = await import('./catalog.js')
+  const sample = {
+    uid: 0,
+    from: '',
+    to: [''],
+    attachments: [{ name: '', size: 0, 'content-type': '' }],
+    headers: { subject: '', nested: { deep: { deeper: { deepest: 1 } } } },
+    empty: [],
+  }
+  assert.deepEqual(
+    subFields('attachments', sample.attachments).map((field) => [field.name, field.type]),
+    [
+      ['attachments[0].name', 'text'],
+      ['attachments[0].size', 'number'],
+    ], // a key that is not a plain name is left out
+  )
+  assert.deepEqual(subFields('to', sample.to), [{ name: 'to[0]', type: 'text', description: 'The first of to' }])
+  assert.deepEqual(subFields('empty', []), [])
+  assert.deepEqual(subFields('uid', 0), [])
+  // Three levels and no further.
+  assert.deepEqual(
+    subFields('headers', sample.headers).map((field) => field.name),
+    ['headers.subject', 'headers.nested', 'headers.nested.deep', 'headers.nested.deep.deeper'],
+  )
+
+  const outputs = [
+    { name: 'from', type: 'any' },
+    { name: 'attachments', type: 'any' },
+    { name: 'gone', type: 'any' },
+  ]
+  assert.deepEqual(
+    withSubFields(outputs, sample).map((field) => field.name),
+    ['from', 'attachments', 'attachments[0].name', 'attachments[0].size', 'gone'],
+  )
+  assert.equal(withSubFields(outputs, null), outputs)
+  assert.equal(withSubFields(outputs, []), outputs)
+
+  // In the tree of a node: the paths are under the block that gives them.
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', config: { manual: true } },
+      { id: 'read', kind: 'action', name: 'Read', config: { action: 'mail.get-message', args: {} } },
+      { id: 'say', kind: 'action', name: 'Say', config: { action: 'nik.add-note', args: {} } },
+    ],
+    edges: [
+      { from: 'start', to: 'read' },
+      { from: 'read', to: 'say' },
+    ],
+  }
+  const entries = [
+    { id: 'mail.get-message', kind: 'action', group: 'Mail', name: 'get-message', outputs, sample },
+    { id: 'nik.add-note', kind: 'action', group: 'Nik', name: 'Add a note', outputs: [] },
+  ]
+  const read = valueTree(graph, 'say', entries).find((root) => root.name === 'read')
+  assert.deepEqual(
+    read.fields.map((field) => field.path),
+    ['read.from', 'read.attachments', 'read.attachments[0].name', 'read.attachments[0].size', 'read.gone'],
+  )
+})
+
+test('the library is in tabs, and its search looks in all of them', async () => {
+  const { libraryOf, tabOf } = await import('./catalog.js')
+  const entries = [
+    { id: 'condition', kind: 'condition', group: 'Flow', name: 'Condition' },
+    { id: 'nik.add-note', kind: 'action', group: 'Nik', name: 'Add a note' },
+    { id: 'mail.send', kind: 'action', group: 'Mail', name: 'send', connector: 'mail', available: true },
+    { id: 'jira.create', kind: 'action', group: 'Jira', name: 'create-issue', connector: 'jira', available: false },
+    { id: 'jira.get', kind: 'action', group: 'Jira', name: 'get-issue', connector: 'jira', available: false },
+    { id: 'email.send', kind: 'action', group: 'E-mail', name: 'Send an e-mail', retired: true },
+    { id: 'script.Count', kind: 'script', group: 'Scripts', name: 'CountWords' },
+  ]
+  assert.deepEqual(entries.map(tabOf), ['flow', 'commands', 'commands', 'commands', 'commands', 'commands', 'scripts'])
+  const names = (found) => found.groups.map((group) => [group.name, group.entries.map((entry) => entry.name)])
+
+  const commands = libraryOf(entries, 'commands')
+  // Only the connectors with an instance that is on; nothing that is kept for older playbooks.
+  assert.deepEqual(names(commands), [
+    ['Nik', ['Add a note']],
+    ['Mail', ['send']],
+  ])
+  assert.deepEqual(commands.counts, { commands: 2, scripts: 1, flow: 1 })
+  assert.equal(commands.hidden, 1) // Jira, whatever the number of its commands
+  assert.equal(commands.searching, false)
+  assert.deepEqual(names(libraryOf(entries, 'scripts')), [['Scripts', ['CountWords']]])
+  assert.deepEqual(names(libraryOf(entries, 'flow')), [['Flow', ['Condition']]])
+
+  // Typed, the search does not mind which tab is open.
+  const found = libraryOf(entries, 'scripts', 'cond')
+  assert.deepEqual(names(found), [['Flow', ['Condition']]])
+  assert.equal(found.searching, true)
+  assert.deepEqual(found.counts, { commands: 2, scripts: 1, flow: 1 })
+  assert.deepEqual(names(libraryOf(entries, 'commands', 'issue')), []) // not offered, so not found
+  assert.deepEqual(libraryOf(null).groups, [])
 })
