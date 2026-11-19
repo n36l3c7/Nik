@@ -41,3 +41,15 @@ export function undatedText(undated, formatBytes) {
     count === 1 ? 'is' : 'are'
   } kept until someone deletes ${count === 1 ? 'it' : 'them'}.`
 }
+
+/** What the export dialog is asked for: the artifacts, how much their files weigh, how many are mailboxes. */
+export function exportRequest(artifacts) {
+  const rows = artifacts ?? []
+  return {
+    mode: 'export',
+    ids: rows.map((artifact) => artifact.id),
+    label: rows[0]?.name ?? '',
+    bytes: rows.reduce((sum, artifact) => sum + (Number(artifact.size) || 0), 0),
+    mailboxes: rows.filter((artifact) => artifact.kind === 'mailbox').length,
+  }
+}

@@ -5,7 +5,9 @@ An export is a zip:
 - ``manifest.json``: what the archive holds (``format: nik-artifacts``), the
   artifacts as the registry lists them, and how they relate to each other;
 - ``records/<artifact id>.json``: the analysis as stored (the sample's, the
-  e-mail's, the capture's summary, the scan's result);
+  e-mail's, the capture's summary, the scan's result), or what a mailbox is;
+- ``records/<mailbox id>.messages.jsonl``: the index of a mailbox, a message
+  a line (where it is in the file, its headers, its conversation);
 - ``files.zip``, only when asked for: the original files, in an AES-encrypted
   zip with the password ``infected``, as malware is exchanged. The files are
   live malware: the choice is made at each export and defaults to no.
@@ -13,12 +15,15 @@ An export is a zip:
 An import adds the artifacts the server does not have yet. A file is stored
 only if its SHA-256 is the one its artifact is named by; nothing is run, and
 no analysis is started: the analyses come with the archive.
+
+A mailbox travels with its file or not at all: its index says where each
+message is in that file, so without it there is nothing to read. Its file is
+copied in pieces, never held in memory, and its index must fit it.
 """
 
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import os
 import tempfile
@@ -30,10 +35,19 @@ import pyzipper
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from . import artifacts
+from . import artifacts, mailboxes
 from . import urlscan as urlscan_store
 from .core.config import settings
-from .core.models import Artifact, ArtifactRelation, Mail, NetworkCapture, Sample, UrlScan
+from .core.models import (
+    Artifact,
+    ArtifactRelation,
+    Mail,
+    Mailbox,
+    MailboxMessage,
+    NetworkCapture,
+    Sample,
+    UrlScan,
+)
 from .malware import samples as sample_store
 from .network import store as capture_store
 
@@ -89,12 +103,47 @@ _SCAN = (
     "capture_id",
     "result",
 )
+_MAILBOX = ("id", "file_name", "format", "size", "status", "error", "total", "created_at", "created_by", "meta")
+_MESSAGE = (
+    "seq",
+    "offset",
+    "length",
+    "sha256",
+    "message_id",
+    "parent",
+    "thread",
+    "duplicate_of",
+    "subject",
+    "sender",
+    "recipients",
+    "date_ms",
+    "attachments",
+)
 _MODELS = {
     "file": (Sample, _SAMPLE),
     "mail": (Mail, _MAIL),
     "pcap": (NetworkCapture, _CAPTURE),
     "url": (UrlScan, _SCAN),
+    "mailbox": (Mailbox, _MAILBOX),
 }
+MAILBOX_FILE = "mailbox.mbox"
+CHUNK = 1024 * 1024
+
+
+def workdir() -> Path:
+    """Where an archive is put together and taken apart: on the disk of the store, because a mailbox
+    does not fit in the memory a temporary directory may be."""
+    path = Path(settings.SAMPLE_STORE) / "_transfer"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def files_limit(rows: Iterable[Artifact]) -> int:
+    """How many bytes of files one export may hold: twice an upload, and a mailbox when there is one."""
+    limit = settings.ARTIFACT_MAX_MB * 2
+    if any(row.kind == "mailbox" for row in rows):
+        limit += settings.MAILBOX_MAX_MB
+    return limit * 1024 * 1024
 
 
 class TransferError(ValueError):
@@ -120,6 +169,8 @@ def _files_of(row: Artifact) -> list[tuple[Path, str]]:
     elif row.kind == "url":
         found.append((urlscan_store.screenshot_path(row.ref), f"{row.id}/screenshot.jpg"))
         found.append((urlscan_store.scripts_path(row.ref), f"{row.id}/scripts.json"))
+    elif row.kind == "mailbox":
+        found.append((mailboxes.mbox_path(row.ref), f"{row.id}/{MAILBOX_FILE}"))
     return [(path, name) for path, name in found if path.is_file()]
 
 
@@ -147,7 +198,7 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
         for r in db.scalars(select(ArtifactRelation).where(ArtifactRelation.parent_id.in_(ids)))
         if r.child_id in ids
     ]
-    handle, name = tempfile.mkstemp(prefix="nik-artifacts-", suffix=".zip")
+    handle, name = tempfile.mkstemp(prefix="nik-artifacts-", suffix=".zip", dir=workdir())
     os.close(handle)
     path = Path(name)
     inner = Path(name + ".files")
@@ -166,7 +217,7 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
                             packed.add(target)
             for row in rows:
                 if row.kind not in _MODELS:
-                    continue  # a mailbox is not exported: its messages are, one by one
+                    continue
                 model, columns = _MODELS[row.kind]
                 record = db.get(model, row.ref)
                 entry = _summary(row)
@@ -176,6 +227,8 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
                         f"records/{row.id}.json", json.dumps({c: getattr(record, c) for c in columns}, default=str)
                     )
                     entry["record"] = f"records/{row.id}.json"
+                    if row.kind == "mailbox":
+                        entry["messages"] = _write_messages(db, archive, row)
                 entries.append(entry)
             manifest = {
                 "format": FORMAT,
@@ -197,6 +250,21 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
         raise
     finally:
         inner.unlink(missing_ok=True)
+
+
+def _write_messages(db: OrmSession, archive: zipfile.ZipFile, row: Artifact) -> str:
+    """The index of a mailbox, a message a line, written as it is read."""
+    name = f"records/{row.id}.messages.jsonl"
+    found = db.execute(
+        select(*(getattr(MailboxMessage, column) for column in _MESSAGE))
+        .where(MailboxMessage.mailbox_id == row.ref)
+        .order_by(MailboxMessage.seq)
+        .execution_options(yield_per=5000)
+    )
+    with archive.open(name, "w", force_zip64=True) as out:
+        for values in found:
+            out.write(json.dumps(dict(zip(_MESSAGE, values, strict=True))).encode() + b"\n")
+    return name
 
 
 # --------------------------------------------------------------------------- #
@@ -242,6 +310,104 @@ def _columns(record: Any, columns: tuple[str, ...], kind: str) -> dict[str, Any]
         if key in values and not isinstance(values[key], dict):
             values[key] = {}
     return values
+
+
+def _whole(value: Any, low: int = 0, high: int = 2**62) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        return None
+    return value
+
+
+def _restore_mailbox(
+    db: OrmSession, archive: zipfile.ZipFile, entry: dict[str, Any], record: Any, files, names: list[str], actor: str
+) -> str | None:
+    """Add a mailbox: its file, copied in pieces, and its index, which must fit the file."""
+    ref = entry["ref"]
+    values = _columns(record, _MAILBOX, "mailbox")
+    listed = next((name for name in names if name.endswith(f"/{MAILBOX_FILE}")), None)
+    if files is None or listed is None:
+        return "a mailbox needs its file: export it with the files"
+    try:
+        info = files.getinfo(listed)
+    except KeyError:
+        return "a mailbox needs its file: export it with the files"
+    limit = settings.MAILBOX_MAX_MB * 1024 * 1024
+    if info.file_size > limit:
+        return f"its file exceeds the {settings.MAILBOX_MAX_MB} MB limit"
+    index = str(entry.get("messages") or "")
+    if index != f"records/mailbox-{ref}.messages.jsonl" or index not in archive.namelist():
+        return "its index is not in the archive"
+    target = mailboxes.mbox_path(ref)
+    try:
+        size = 0
+        with files.open(listed) as source, open(target, "wb") as out:
+            while chunk := source.read(CHUNK):
+                size += len(chunk)
+                if size > limit:
+                    raise TransferError(f"its file exceeds the {settings.MAILBOX_MAX_MB} MB limit")
+                out.write(chunk)
+        rows, seen = [], set()
+        with archive.open(index) as lines:
+            for line in lines:
+                if len(rows) >= mailboxes.MESSAGES_MAX:
+                    raise TransferError("its index holds too many messages")
+                try:
+                    message = json.loads(line)
+                except ValueError:
+                    raise TransferError("its index cannot be read") from None
+                if not isinstance(message, dict):
+                    raise TransferError("its index cannot be read")
+                seq, offset, length = (_whole(message.get(key)) for key in ("seq", "offset", "length"))
+                # Every message must be inside the file that came with it, and be there once.
+                if None in (seq, offset, length) or seq in seen or offset + length > size:
+                    raise TransferError("its index does not fit its file")
+                seen.add(seq)
+                rows.append(
+                    {
+                        "mailbox_id": ref,
+                        "seq": seq,
+                        "offset": offset,
+                        "length": length,
+                        "sha256": str(message.get("sha256") or "")[:64],
+                        "message_id": str(message.get("message_id") or "")[:400],
+                        "parent": _whole(message.get("parent")),
+                        "thread": _whole(message.get("thread")) or 0,
+                        "duplicate_of": _whole(message.get("duplicate_of")),
+                        "subject": str(message.get("subject") or "")[:500],
+                        "sender": str(message.get("sender") or "")[:320],
+                        "recipients": str(message.get("recipients") or "")[:500],
+                        "date_ms": _whole(message.get("date_ms"), -(2**62)),
+                        "attachments": bool(message.get("attachments")),
+                    }
+                )
+    except (TransferError, RuntimeError, OSError) as error:
+        mailboxes.remove(ref)
+        return str(error) if isinstance(error, TransferError) else "its file cannot be read from the archive"
+    meta = values.get("meta") if isinstance(values.get("meta"), dict) else {}
+    # What was imported from it there is not imported here: the count starts again.
+    meta = {key: value for key, value in meta.items() if key not in ("imported", "verdicts", "progress")}
+    db.add(
+        Mailbox(
+            id=ref,
+            file_name=str(values.get("file_name") or entry.get("name") or "")[:255],
+            format=str(values.get("format") or "mbox")[:16],
+            size=size,
+            status="ready",
+            error=None,
+            # Its messages without the copies of one another, as it counted them: never more than it holds.
+            total=min(len(rows), _whole(values.get("total"), 0, len(rows)) or len(rows)),
+            created_at=str(values.get("created_at") or entry.get("createdAt") or ""),
+            created_by=str(values.get("created_by") or actor),
+            meta=meta,
+        )
+    )
+    db.flush()
+    for start in range(0, len(rows), 2000):
+        db.bulk_insert_mappings(MailboxMessage, rows[start : start + 2000])
+    db.flush()
+    artifact = artifacts.register_mailbox(db, db.get(Mailbox, ref))
+    artifacts.set_tags(db, artifact, entry.get("tags") or [])
+    return None
 
 
 def _restore(db: OrmSession, entry: dict[str, Any], record: Any, files, names: list[str], actor: str) -> str | None:
@@ -320,8 +486,13 @@ def import_archive(db: OrmSession, path: Path, actor: str) -> dict[str, Any]:
         if not isinstance(entries, list) or len(entries) > MAX_ARTIFACTS:
             raise TransferError(f"The archive must list at most {MAX_ARTIFACTS} artifacts.")
         files = None
+        inner = Path(str(path) + ".files")
         if FILES in archive.namelist():
-            files = pyzipper.AESZipFile(io.BytesIO(archive.read(FILES)))
+            # To the disk, in pieces: with a mailbox in it, it does not fit in memory.
+            with archive.open(FILES) as source, open(inner, "wb") as out:
+                while chunk := source.read(CHUNK):
+                    out.write(chunk)
+            files = pyzipper.AESZipFile(inner)
             files.setpassword(PASSWORD.encode())
         added, existing, skipped = [], 0, []
         for entry in entries:
@@ -338,7 +509,10 @@ def import_archive(db: OrmSession, path: Path, actor: str) -> dict[str, Any]:
             listed = [n for n in entry.get("files") or [] if isinstance(n, str) and n.startswith(f"{artifact_id}/")]
             try:
                 record = _json(archive, f"records/{artifact_id}.json")
-                reason = _restore(db, entry, record, files, listed, actor)
+                if kind == "mailbox":
+                    reason = _restore_mailbox(db, archive, entry, record, files, listed, actor)
+                else:
+                    reason = _restore(db, entry, record, files, listed, actor)
             except TransferError as exc:
                 reason = str(exc)
             except RuntimeError:  # a wrong password or a damaged entry of files.zip
@@ -359,4 +533,5 @@ def import_archive(db: OrmSession, path: Path, actor: str) -> dict[str, Any]:
         db.commit()
         if files is not None:
             files.close()
+        inner.unlink(missing_ok=True)
     return {"added": len(added), "ids": added, "existing": existing, "skipped": skipped}

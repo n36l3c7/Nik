@@ -749,7 +749,11 @@
                 original files in an AES-encrypted <code>files.zip</code> (password <code>infected</code>). Import
                 (<strong>admin</strong>, multipart <code>file</code>) adds the artifacts the server does not have and
                 returns <code>{ added, ids, existing, skipped: [{ name, reason }] }</code>; a file whose SHA-256 is not
-                its artifact's is refused. Both are audited.
+                its artifact's is refused. A mailbox adds <code>records/&lt;id&gt;.messages.jsonl</code> (its index, a
+                message a line) and, with <code>files</code>, its file; it is imported only with its file, and only when
+                every message of the index lies inside it. With files, an export holds twice
+                <code>ARTIFACT_MAX_MB</code> at most, plus <code>MAILBOX_MAX_MB</code> when a mailbox is in it; an
+                import takes an archive of that size. Both are audited.
               </td>
             </tr>
             <tr>

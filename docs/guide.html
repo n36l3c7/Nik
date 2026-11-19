@@ -1031,7 +1031,10 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           original files are live malware, so each export asks: <em>Analyses only</em> (the default, safe to send) or
           <em>Analyses and the original files</em>, which puts them in an encrypted zip inside the archive, password
           <code>infected</code>. <strong>Import</strong> (admins) adds the artifacts the server does not have; a file is
-          stored only when its SHA-256 matches its artifact, and nothing is run. A capture comes only with its file.
+          stored only when its SHA-256 matches its artifact, and nothing is run. A capture comes only with its file, and
+          so does a <strong>mailbox</strong>: its index says where each message is in that file, so it is exported with
+          it (the dialog says how large the files are) or left out by the Nik that imports. A mailbox arrives with its
+          messages and conversations as they were; which messages had been imported from it does not travel.
         </li>
         <li>
           <strong>Export and import indicators</strong> from the <a href="#ioc-library">IoC library</a>: CSV, JSON, STIX
@@ -1040,8 +1043,10 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         <li>
           <strong>Full backup</strong> (admins, Settings → System → Backup): incidents, users, settings and the audit
           log in one file, restored from the same section. It does <strong>not</strong> contain the files: samples,
-          e-mails, captures and their analyses stay on the server, and so do the IoC library's own indicators and lists,
-          and restoring replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
+          e-mails, captures, mailboxes and their analyses stay on the server, and so do the IoC library's own indicators
+          and lists, and what automation is made of (playbooks, scripts and connectors travel as files, or as a
+          <a href="automation.html#packs">content pack</a>; connections hold secrets and are never exported). Restoring
+          replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
           <a href="deployment.html#docker-podman-in-production">Deployment</a>).
         </li>
         <li>

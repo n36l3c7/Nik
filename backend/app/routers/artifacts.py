@@ -514,10 +514,11 @@ def export_artifacts(
     rows = [row for row in (db.get(Artifact, artifact_id) for artifact_id in dict.fromkeys(body.ids)) if row]
     if not rows:
         raise HTTPException(status_code=404, detail="No such artifact")
-    if body.files and sum(row.size or 0 for row in rows) > settings.ARTIFACT_MAX_MB * 2 * 1024 * 1024:
+    allowed = artifact_transfer.files_limit(rows)
+    if body.files and sum(row.size or 0 for row in rows) > allowed:
         raise HTTPException(
             status_code=413,
-            detail=f"These files exceed {settings.ARTIFACT_MAX_MB * 2} MB together: export fewer at a time.",
+            detail=f"These files exceed {allowed // (1024 * 1024)} MB together: export fewer at a time.",
         )
     now = now_iso()
     path = artifact_transfer.export_archive(db, rows, body.files, now, request_version())
@@ -555,8 +556,11 @@ async def import_artifacts(
     import tempfile
     from pathlib import Path
 
-    limit = settings.ARTIFACT_MAX_MB * 2 * 1024 * 1024
-    handle = tempfile.NamedTemporaryFile(prefix="nik-import-", suffix=".zip", delete=False)
+    # Twice an upload, and room for a mailbox: an export with one in it is as large as the mailbox.
+    limit = (settings.ARTIFACT_MAX_MB * 2 + settings.MAILBOX_MAX_MB) * 1024 * 1024
+    handle = tempfile.NamedTemporaryFile(
+        prefix="nik-import-", suffix=".zip", delete=False, dir=artifact_transfer.workdir()
+    )
     path = Path(handle.name)
     try:
         size = 0
@@ -573,6 +577,7 @@ async def import_artifacts(
             raise HTTPException(status_code=422, detail=str(exc)) from None
     finally:
         path.unlink(missing_ok=True)
+        Path(str(path) + ".files").unlink(missing_ok=True)  # the files of the archive, taken out to be read
     _audit(
         db,
         caller,

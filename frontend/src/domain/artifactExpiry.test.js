@@ -32,3 +32,19 @@ test('the days offered, and what has no date', () => {
     '12 artifacts have no date (99 B) and are kept until someone deletes them.',
   )
 })
+
+test('what the export dialog is asked for', async () => {
+  const { exportRequest } = await import('./artifactExpiry.js')
+  const rows = [
+    { id: 'mailbox-1', name: 'finance.mbox', kind: 'mailbox', size: 1000 },
+    { id: 'file-2', name: 'invoice.exe', kind: 'file', size: 24 },
+  ]
+  assert.deepEqual(exportRequest(rows), {
+    mode: 'export',
+    ids: ['mailbox-1', 'file-2'],
+    label: 'finance.mbox',
+    bytes: 1024,
+    mailboxes: 1,
+  })
+  assert.deepEqual(exportRequest([]).ids, [])
+})

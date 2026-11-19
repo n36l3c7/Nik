@@ -187,12 +187,18 @@ podman-compose up -d --build  # or: podman compose up -d --build
             <tr>
               <td><code>db.dump</code></td>
               <td>
-                PostgreSQL dump (<code>pg_dump -Fc</code>): incidents, users, settings, audit log, sample analyses
+                PostgreSQL dump (<code>pg_dump -Fc</code>): incidents, users, settings, audit log, sample analyses, the
+                index of every mailbox, and everything automation is made of: playbooks, scripts, connectors and
+                <strong>connections</strong>, whose credentials are in it encrypted with <code>VAULT_KEY</code>. Restore
+                the dump with the <code>env</code> file of the same backup, or the connections cannot be read
               </td>
             </tr>
             <tr>
               <td><code>samples.tar</code></td>
-              <td>the sample store: <strong>live malware</strong>, keep the backups private</td>
+              <td>
+                the sample store, whole: samples, e-mails, captures, the mailboxes (<code>_mailboxes</code>) and the
+                screenshots. <strong>Live malware</strong>: keep the backups private
+              </td>
             </tr>
             <tr>
               <td><code>env</code></td>

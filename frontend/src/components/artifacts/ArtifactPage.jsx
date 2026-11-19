@@ -11,6 +11,7 @@ import { KIND_ICONS } from './ArtifactsPanel.jsx'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import AsIndicator from './AsIndicator.jsx'
 import ExpiryControl from './ExpiryControl.jsx'
+import { exportRequest } from '../../domain/artifactExpiry.js'
 import MailboxPage from './MailboxPage.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import ArtifactRuns from '../automation/ArtifactRuns.jsx'
@@ -476,7 +477,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
         </div>
       </Modal>
       <ArtifactTransferDialog
-        request={exportOpen ? { mode: 'export', ids: [artifact.id], label: artifact.name } : null}
+        request={exportOpen ? exportRequest([artifact]) : null}
         onClose={() => setExportOpen(false)}
         onImported={() => {}}
       />

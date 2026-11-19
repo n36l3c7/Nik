@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   artifact an incident that is not closed still references is not deleted:
   its date is put off by a week and it says why. *Settings → Storage* lists
   what has a date, the soonest first, and counts what has none.
+- **Mailboxes travel in an export of artifacts.** A mailbox goes out with
+  its index (a message a line) and, when the files are asked for, its file;
+  another Nik imports it with its messages and conversations as they were.
+  It is imported only with its file, copied in pieces and never held in
+  memory, and only when every message of the index lies inside that file.
+  The export dialog says how large the files are.
 
 ### Changed
 
