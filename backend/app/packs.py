@@ -113,7 +113,7 @@ LABELS = {
     "dashboards": "Dashboard",
 }
 YAML_KINDS = frozenset({"connectors", "scripts"})
-NIK_VERSION = (6, 2, 0)
+NIK_VERSION = (6, 3, 0)
 BUILTIN_ID = "nik"  # the one pack that is part of Nik
 LOGO_NAMES = ("logo.svg", "logo.png")
 CRLF, LF = bytes((13, 10)), bytes((10,))

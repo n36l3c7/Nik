@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..core import vault
@@ -48,6 +49,48 @@ def guarded(call: Call, payload: dict[str, Any], argument_names: dict[str, str] 
         if again.allowed:
             return cleaned, {**decision.as_dict(), "dropped": True}
     raise ActionError(decision.sentence(), retry=False, request={"held": decision.as_dict()})
+
+
+def guarded_files(call: Call, found: list[dict[str, Any]], decided: dict) -> bool:
+    """Whether the files a message is about to carry may leave, each given as ``{name, size, sha256}``.
+
+    A file is judged by what it is, never by opening it: it is an attachment and its name is a file
+    name; one whose hash Nik holds as a sample is a sample, one whose hash is on the allowlist is an
+    allowlisted indicator; and its name is read as any text that leaves is. The playbook sends them
+    only when every one of those classes was opened for it.
+
+    Held, the step fails with what was held; with ``held: drop`` on the node the message goes without
+    its files (False). ``decided`` is what the guard said of the arguments: what it says of the files
+    is added to it, for the step to show."""
+    if not found:
+        return True
+    from ..core.models import Sample
+
+    context = guard.context_from(call.db)
+    opened = frozenset(call.playbook.data_allow or [])
+    hashes = [str(item.get("sha256") or "") for item in found]
+    known = call.db.scalars(select(Sample.sha256).where(Sample.sha256.in_(hashes))).all()
+    listed = [value for value in hashes if context.allowlisted and context.allowlisted("sha256", value)]
+    classes = {"attachment", "attachment_name"}
+    counts = {"attachment": len(found), "attachment_name": len(found)}
+    if known:
+        classes.add("sample")
+        counts["sample"] = len(known)
+    if listed:
+        classes.add("allowlisted")
+        counts["allowlisted"] = len(listed)
+    decision = guard.check([str(item.get("name") or "") for item in found], frozenset(classes), opened, context)
+    decision.counts = {**counts, **decision.counts}
+    decided["classes"] = sorted({*decided.get("classes", ()), *decision.classes})
+    decided["held"] = sorted({*decided.get("held", ()), *decision.held})
+    decided["counts"] = {**decided.get("counts", {}), **decision.counts}
+    decided["files"] = {"count": len(found), "bytes": sum(int(item.get("size") or 0) for item in found)}
+    if decision.allowed:
+        return True
+    if call.held == "drop":
+        decided["dropped"] = True
+        return False
+    raise ActionError(decision.sentence(), retry=False, request={"held": decided})
 
 
 def _fail(error: egress.EgressError) -> ActionError:

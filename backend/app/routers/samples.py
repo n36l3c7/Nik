@@ -21,6 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
 from ..automation import triggers as automation_triggers
+from ..core import audit
 from ..core.config import settings
 from ..core.db import after_commit, get_db
 from ..core.files import attachment_headers, read_upload, safe_name
@@ -259,21 +260,22 @@ def delete_sample_data(db: OrmSession, row: Sample) -> None:
     db.delete(row)
 
 
-def store_sample(
+def keep_sample(
     db: OrmSession,
     incident: Incident | None,
     data: bytes,
     file_name: str,
-    caller: Principal,
-    background_tasks: BackgroundTasks | None,
+    actor: str,
     origin: str = "",
     parent: tuple[str, str] | None = None,
 ) -> tuple[Sample, dict[str, Any] | None]:
-    """Analyse and store a file as a sample: of the incident, or on its own
+    """Analyse and store a file as a sample (the caller commits): of the incident, or on its own
     when ``incident`` is None. Returns the row and the incident's reference.
 
     ``parent`` is ``(artifact id, relation)`` when the file was taken out of
-    another artifact (a mail attachment, an object of a capture).
+    another artifact (a mail attachment, an object of a capture). What an upload
+    does besides (the webhooks, the disassembly) is left to ``store_sample``:
+    a playbook that keeps a file has no request to hang them on.
     """
     if not data:
         raise HTTPException(status_code=400, detail="The file is empty.")
@@ -297,7 +299,7 @@ def store_sample(
             type_label=result["type"]["label"],
             entropy=result["entropy"],
             created_at=now_iso(),
-            created_by=caller.actor,
+            created_by=actor,
             analysis=result,
         )
         db.add(row)
@@ -309,15 +311,32 @@ def store_sample(
 
     ref = None
     if incident is not None:
-        ref = attach_sample(db, incident, row, file_name, caller.actor, origin)
+        ref = attach_sample(db, incident, row, file_name, actor, origin)
     automation_triggers.file_analysed(db, row, artifact, incident)
-    _audit(
+    audit.record(
         db,
-        caller,
+        actor,
         "sample.upload",
         f"Uploaded sample {file_name} ({sha256[:12]}…, {row.type_label})" + (f" from {origin}" if origin else ""),
         incident,
     )
+    return row, ref
+
+
+def store_sample(
+    db: OrmSession,
+    incident: Incident | None,
+    data: bytes,
+    file_name: str,
+    caller: Principal,
+    background_tasks: BackgroundTasks | None,
+    origin: str = "",
+    parent: tuple[str, str] | None = None,
+) -> tuple[Sample, dict[str, Any] | None]:
+    """Analyse and store a file as a sample, as an upload does: ``keep_sample``, committed, then the
+    webhooks are told and the disassembly and capa are started when their workers are configured."""
+    row, ref = keep_sample(db, incident, data, file_name, caller.actor, origin, parent)
+    sha256 = row.sha256
     db.commit()
     if incident is not None:
         emit(

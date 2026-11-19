@@ -25,6 +25,7 @@ import {
   portOf,
   removeNodes,
 } from '../../domain/automation/graph.js'
+import { SIGNS } from '../../domain/automation/compare.js'
 import { NODE_WIDTH } from '../../domain/automation/layout.js'
 import { setEdgePoints } from '../../domain/automation/routing.js'
 import RoutedEdge from './RoutedEdge.jsx'
@@ -45,7 +46,10 @@ import RoutedEdge from './RoutedEdge.jsx'
  * playbook as a table.
  *
  * `readOnly` with `statuses` draws a run: the same nodes, coloured by what
- * happened to each.
+ * happened to each. `readOnly` with `marks` draws one side of a comparison:
+ * what was added, removed or changed is told by a sign and by the style of
+ * its border, never by colour alone; with `viewport` and `onViewportChange`
+ * the page holds where the canvas looks, so that two of them move together.
  */
 
 export const DRAG_TYPE = 'application/x-nik-node'
@@ -75,6 +79,19 @@ const STATUS_BORDERS = {
   pending: 'border-line opacity-70',
 }
 
+// A node of a comparison, by what happened to it between main and the branch.
+const MARK_BORDERS = {
+  added: 'border-2 border-solid border-accent bg-accent-soft',
+  removed: 'border-2 border-dashed border-high-line bg-high-soft',
+  changed: 'border-2 border-dotted border-med-line bg-med-soft',
+}
+// A line of a comparison: drawn anew, taken away, or going somewhere else.
+const MARK_LINES = {
+  added: { stroke: '#3fb950', strokeWidth: 2.5 },
+  removed: { stroke: '#f85149', strokeWidth: 2.5, strokeDasharray: '6 4' },
+  moved: { stroke: '#e3b341', strokeWidth: 2.5, strokeDasharray: '2 3' },
+}
+
 const HANDLE = '!h-2.5 !w-2.5 !rounded-none !border !border-line !bg-raised'
 
 /** Where the handles of a node sit along its lower edge: `error` leaves from the right side. */
@@ -88,7 +105,7 @@ function handlePlaces(node) {
 }
 
 const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
-  const { node, entry, problems, status, approval, readOnly, plain } = data
+  const { node, entry, problems, status, approval, readOnly, plain, mark } = data
   // A plain node (the work plan of an incident) is its kind and a few words given with it.
   const heading = plain ? (KIND_LABELS[node.kind] ?? node.kind) : headingOf(node, entry)
   const summary = plain ? (node.summary ?? '') : summaryOf(node, entry)
@@ -98,8 +115,8 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
     <div
       style={{ width: NODE_WIDTH }}
       className={[
-        'border bg-panel text-xs text-fg',
-        border,
+        'text-xs text-fg',
+        mark ? MARK_BORDERS[mark] : `border bg-panel ${border}`,
         selected ? 'outline outline-2 outline-offset-2 outline-accent' : '',
       ].join(' ')}
     >
@@ -112,7 +129,11 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
           HEADS[node.kind] ?? HEADS.end,
         ].join(' ')}
       >
-        <span className="truncate">{heading}</span>
+        <span className="truncate">
+          {mark ? `${SIGNS[mark]} ` : ''}
+          {heading}
+          {mark ? ` · ${mark}` : ''}
+        </span>
         {approval && (
           <span className="shrink-0 normal-case tracking-normal text-med" title="Asks a person before it runs">
             asks first
@@ -158,6 +179,7 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
 })
 
 const NODE_TYPES = { playbook: PlaybookNode }
+const FIT = { maxZoom: 1, padding: 0.2 }
 
 const EDGE_TYPES = { routed: RoutedEdge }
 
@@ -177,6 +199,9 @@ function Flow({
   approvalDefault,
   readOnly,
   plain = false,
+  marks = null,
+  viewport,
+  onViewportChange,
   selection,
   onSelect,
   onChange,
@@ -215,10 +240,11 @@ function Flow({
           measured: sizes[node.id],
           selected: chosen.nodes.has(node.id),
           deletable: node.kind !== 'trigger',
-          ariaLabel: `${headingOf(node, entry)}: ${node.name || node.id}`,
+          ariaLabel: `${headingOf(node, entry)}: ${node.name || node.id}${marks?.nodes[node.id] ? `, ${marks.nodes[node.id]}` : ''}`,
           data: {
             node,
             entry,
+            mark: marks?.nodes[node.id] ?? null,
             problems: counts.get(node.id) ?? 0,
             status: statuses ? (statuses[node.id] ?? 'pending') : null,
             approval: !statuses && asksApproval(node, entry, approvalDefault),
@@ -227,7 +253,7 @@ function Flow({
           },
         }
       }),
-    [graph, catalog, chosen.nodes, counts, statuses, approvalDefault, readOnly, plain, dragged, sizes],
+    [graph, catalog, chosen.nodes, counts, statuses, approvalDefault, readOnly, plain, marks, dragged, sizes],
   )
 
   const edges = useMemo(
@@ -237,7 +263,8 @@ function Flow({
         const id = edgeId(edge, graph)
         const label = portLabel(nodeOf(graph, edge.from), port)
         const failing = port === 'error'
-        const stroke = failing ? '#f85149' : '#6e7681'
+        const mark = marks?.edges[id] ?? null
+        const stroke = mark ? MARK_LINES[mark].stroke : failing ? '#f85149' : '#6e7681'
         const same = (other) => other.from === edge.from && other.to === edge.to && portOf(other, graph) === port
         return {
           id,
@@ -256,12 +283,12 @@ function Flow({
             onPoints: (points) => onChange?.(setEdgePoints(graph, same, points)),
             onRemove: () => onChange?.(disconnect(graph, edge.from, port, edge.to)),
           },
-          style: { stroke, strokeWidth: 1.5, strokeDasharray: failing ? '4 3' : undefined },
+          style: mark ? MARK_LINES[mark] : { stroke, strokeWidth: 1.5, strokeDasharray: failing ? '4 3' : undefined },
           markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 14, height: 14 },
-          ariaLabel: `From ${edge.from} to ${edge.to}${label ? `, ${label}` : ''}`,
+          ariaLabel: `From ${edge.from} to ${edge.to}${label ? `, ${label}` : ''}${mark ? `, ${mark}` : ''}`,
         }
       }),
-    [graph, chosen.edges, readOnly, onChange],
+    [graph, chosen.edges, readOnly, onChange, marks],
   )
 
   const commitDrag = useCallback(() => {
@@ -390,8 +417,8 @@ function Flow({
       nodeTypes={NODE_TYPES}
       edgeTypes={EDGE_TYPES}
       forceColorMode="dark"
-      fitView
-      fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
+      // A canvas whose page holds where it looks is put there by the page.
+      {...(viewport ? { viewport, onViewportChange } : { fitView: true, fitViewOptions: FIT })}
       minZoom={0.2}
       maxZoom={1.5}
       nodesDraggable={!readOnly}
@@ -419,19 +446,26 @@ function Flow({
       }}
     >
       <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#21262d" />
-      <Controls showInteractive={false} position="bottom-left" />
-      <MiniMap
-        pannable
-        zoomable
-        position="bottom-right"
-        bgColor="#010409"
-        maskColor="rgba(13, 17, 23, 0.7)"
-        nodeColor="#30363d"
-        nodeStrokeColor="#6e7681"
-        nodeBorderRadius={0}
-        ariaLabel="Map of the playbook"
-      />
+      <Controls showInteractive={false} showFitView={!viewport} position="bottom-left" />
+      {/* Two canvases side by side have no room for a map each. */}
+      {!viewport && <PlaybookMap />}
     </ReactFlow>
+  )
+}
+
+function PlaybookMap() {
+  return (
+    <MiniMap
+      pannable
+      zoomable
+      position="bottom-right"
+      bgColor="#010409"
+      maskColor="rgba(13, 17, 23, 0.7)"
+      nodeColor="#30363d"
+      nodeStrokeColor="#6e7681"
+      nodeBorderRadius={0}
+      ariaLabel="Map of the playbook"
+    />
   )
 }
 
@@ -444,6 +478,9 @@ function Flow({
  *   approvalDefault?: boolean,
  *   readOnly?: boolean,
  *   plain?: boolean,                                 // nodes by kind and `node.summary`, without the library
+ *   marks?: { nodes: object, edges: object } | null, // a side of a comparison: id → added, removed, changed
+ *   viewport?: { x: number, y: number, zoom: number }, // where the canvas looks, held by the page…
+ *   onViewportChange?: (viewport: object) => void,   // …which is told when it is panned or zoomed
  *   selection?: { ids: string[] } | null,            // set by the page to select nodes
  *   onSelect?: (ids: string[]) => void,
  *   onChange?: (graph: object) => void,

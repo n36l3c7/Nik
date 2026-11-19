@@ -121,7 +121,7 @@ def locked_run(db: OrmSession, run_id: str) -> Run | None:
 def graph_of(db: OrmSession, run: Run) -> dict:
     held = (run.state or {}).get("graph")
     if isinstance(held, dict):
-        return held  # a debug run of a draft carries the graph it was started with
+        return held  # a debug run of a draft or of a branch carries the graph it was started with
     row = db.get(PlaybookVersion, (run.playbook_id, run.version))
     return row.graph if row else {"nodes": [], "edges": []}
 
@@ -225,11 +225,16 @@ def start_run(
     version: int | None = None,
     debug: dict | None = None,
     shape: dict | None = None,
+    branch: dict | None = None,
     now: float,
 ) -> Run:
     """Create a run of the playbook's current version and its first steps (the caller commits).
     ``debug`` (``{"breakpoints": [...], "step": bool}``) makes it a debug run, which stops before
-    nodes (debugger.py); ``shape`` runs a graph that is no saved version: a draft being debugged."""
+    nodes (debugger.py); ``shape`` runs a graph that is no saved version: a draft being debugged,
+    or a branch, which ``branch`` (``{"id", "name"}``) then names. Only a debug run is given a
+    graph: everything else that starts a run uses a saved version, so a branch never runs for real."""
+    if debug is None and (shape is not None or branch is not None):
+        raise ValueError("Only a debug run uses a graph that is not a saved version")
     number = version or playbook.current_version or 0
     carried = shape is not None
     if shape is None:
@@ -246,6 +251,9 @@ def start_run(
             "playbook": playbook.name,
             "caused_by_run": caused_by_run,
             "depth": depth,
+            **(
+                {"branch": {"id": str(branch.get("id") or ""), "name": str(branch.get("name") or "")}} if branch else {}
+            ),
         },
         object_kind=object_kind,
         object_id=object_id,

@@ -200,8 +200,12 @@
           instance by who manages connectors and reached wherever they are. A message is parsed and never opened
           further: an attachment is described by name, type, size and SHA-256. A value put in an IMAP command is quoted,
           and refused when it holds a quote, a backslash or a line break. A recipient must be in a domain the playbook
-          may reach, and what is said goes through the data guard. Like every connection, these are opened by the one
-          module that opens connections.
+          may reach, and what is said goes through the data guard. An attachment a playbook keeps
+          (<code>get-attachments</code>) and a message the listener keeps go to the store as bytes, under the size limit
+          of an upload, and are analysed as an upload is: never run, never opened by the program they are meant for. An
+          attachment is carried by <code>forward</code> only when it is asked to and the data guard lets it: the file is
+          judged by its class, its name, its size and its hash, and what cannot be judged is not sent. Like every
+          connection, these are opened by the one module that opens connections.
         </li>
         <li>
           <strong>Logos</strong> of connectors come from outside, in a pack or an upload, and are shown to everyone. A

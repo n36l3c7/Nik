@@ -263,6 +263,12 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-63">Upgrading to 6.3</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. No migration. A mailbox that is listened to
+        now keeps each message it makes an incident from as an e-mail of that incident: the store of samples grows with
+        the mail that comes in. A playbook branch can no longer be started by anything but the debugger.
+      </p>
       <h4 id="upgrading-to-62">Upgrading to 6.2</h4>
       <p>
         <code>git pull</code> and <code>docker compose up -d --build</code>. Migration

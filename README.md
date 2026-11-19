@@ -98,7 +98,7 @@ Every other variable and the in-app settings are in the
 
 ## Usage
 
-1. **New incident** in the incidents panel: ticket, title, host, user.
+1. **New incident** in the list of incidents: ticket, title, host, user.
 2. Drop the evidence anywhere on the app; Nik proposes the tab. An e-mail, a
    suspicious file or a capture can also be analysed on its own (**New
    analysis**) and linked to an incident later.
@@ -186,7 +186,9 @@ made the sources of threat intelligence connectors too, with every command
 of their public APIs, and gave an instance several keys that take turns;
 6.2 made the list of incidents a page with a quick view and saved filters,
 let a type arrange its tabs and add pages of its own, and put buttons that
-run a script on them.
+run a script on them; 6.3 made a playbook branch something that is compared
+with main and run only in the debugger, and taught the Mail connector to
+keep attachments and the messages it reads.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

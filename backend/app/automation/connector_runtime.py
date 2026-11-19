@@ -83,6 +83,7 @@ class Answer:
     state: dict[str, Any] | None = None
     records: list[dict] = field(default_factory=list)  # one per request sent (method, host, path, status)
     context: list[tuple[str, Any]] = field(default_factory=list)  # (context path, value) the command declares
+    classes: dict[str, list] = field(default_factory=dict)  # of the outputs, when the command knows: {path: [class]}
 
     @property
     def done(self) -> bool:

@@ -189,7 +189,13 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
                     >
                       {run.playbook || 'a deleted playbook'}
                     </button>
-                    <span className="ml-2 font-mono text-fg-subtle">v{run.version}</span>
+                    {run.branch ? (
+                      <Badge color="amber" className="ml-2">
+                        branch: {run.branch.name}
+                      </Badge>
+                    ) : (
+                      <span className="ml-2 font-mono text-fg-subtle">v{run.version}</span>
+                    )}
                     {run.dryRun && (
                       <Badge color="violet" className="ml-2">
                         dry run

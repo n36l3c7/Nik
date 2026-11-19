@@ -108,6 +108,7 @@ export default function DebugPanel({ run, graph, onChanged }) {
         <p role="status" className="min-w-0 flex-1 truncate text-sm text-fg">
           {debugLine(run, nameOf)}
           {run.debug?.draft ? ' It runs the draft, as it was when the run started.' : ''}
+          {run.debug?.branch ? ` It runs the branch ${run.debug.branch}, as it was saved when the run started.` : ''}
         </p>
         {!over && (
           <>

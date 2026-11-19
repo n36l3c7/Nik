@@ -130,7 +130,7 @@ function StepDetail({ step, node, entry, dryRun }) {
  * @param {{
  *   id: string,
  *   onBack: () => void,
- *   onOpenPlaybook: (id: string) => void,
+ *   onOpenPlaybook: (id: string, branch?: string | null) => void,  // the branch a debug run was of
  *   onOpenIncident: (id: string) => void,
  * }} props
  */
@@ -247,10 +247,14 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
               {run.playbookId ? (
                 <button
                   type="button"
-                  onClick={() => onOpenPlaybook(run.playbookId)}
+                  onClick={() => onOpenPlaybook(run.playbookId, run.branch?.id ?? null)}
                   className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  {run.debug?.draft ? 'its draft' : `version ${run.version}`}
+                  {run.branch
+                    ? `its branch ${run.branch.name}`
+                    : run.debug?.draft
+                      ? 'its draft'
+                      : `version ${run.version}`}
                 </button>
               ) : (
                 `version ${run.version}`
@@ -280,6 +284,11 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {run.dryRun && !run.debug && <Badge color="violet">dry run</Badge>}
+          {run.branch && (
+            <Badge color="amber" title="A debug run of a branch: the only run a branch has">
+              branch: {run.branch.name}
+            </Badge>
+          )}
           <span role="status" aria-label="Status of the run">
             <Badge color={RUN_COLORS[run.status] ?? 'slate'}>
               {run.status === 'waiting' && waiting.length

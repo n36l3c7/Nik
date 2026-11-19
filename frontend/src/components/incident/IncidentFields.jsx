@@ -94,7 +94,8 @@ export default function IncidentFields({ value, onChange, idPrefix = 'new', auto
         </span>
         <OsPicker value={value.os} onChange={(os) => onChange({ ...value, os })} idPrefix={`${idPrefix}-os`} />
         <p className="mt-1.5 text-xs text-fg-muted">
-          Drives the suggested artifact paths and the available shells. Left out, they are those of Windows.
+          Drives the suggested artifact paths and the available shells. Left out, the pages that depend on it ask for
+          it.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2 border border-line bg-canvas px-3 py-2">

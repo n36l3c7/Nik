@@ -14,6 +14,12 @@ read by the automation worker every ``interval_seconds``. One cycle:
    the item as it came, and a row of ``fetched_items``;
 4. ``next_state`` is saved when the whole cycle was read.
 
+A connector that can give what an item was made of gives it once the item has
+an incident, and it is kept as evidence of that incident: the Mail connector
+gives the message as it was received, which becomes an e-mail artifact with
+the analysis an uploaded ``.eml`` gets. Nothing is kept for an item a rule
+dropped; one a rule linked to an incident there was is evidence of that one.
+
 It reaches the host of its own connection and nothing else, and the data
 guard is not involved: data comes in. A connection that makes more than 500
 incidents in an hour is *paused* until someone looks; one whose request
@@ -255,10 +261,37 @@ def create_incident(
     return incident, problems
 
 
+def _evidence(db: OrmSession, runtime: Any, connector: ConnectorFile, item: Any, incident_id: str) -> str:
+    """Keep what an item was made of as evidence of its incident, when the runtime has it to give
+    (the caller commits). Gives what to say when it could not be kept, or nothing."""
+    give = getattr(runtime, "evidence", None)
+    incident = db.get(Incident, incident_id) if give is not None else None
+    if incident is None:
+        return ""
+    from .automation import mail_evidence
+
+    try:
+        found = give(item)
+    except CommandError as error:
+        return f"The message was not kept as evidence: {error.message}"
+    if found is None:
+        return ""
+    name, raw = found
+    return mail_evidence.keep_message(db, incident, raw, name, f"connector:{connector.id}")
+
+
 def ingest(
-    db: OrmSession, connection: Connection, connector: ConnectorFile, item: Any, item_id: str, occurred: Any, now: float
+    db: OrmSession,
+    connection: Connection,
+    connector: ConnectorFile,
+    item: Any,
+    item_id: str,
+    occurred: Any,
+    now: float,
+    runtime: Any = None,
 ) -> str:
-    """What becomes of one new item (the caller commits): the outcome kept in ``fetched_items``."""
+    """What becomes of one new item (the caller commits): the outcome kept in ``fetched_items``.
+    ``runtime`` is the one that fetched it, asked for what is kept as evidence."""
     from . import preprocess
 
     made = candidate(db, connection, connector, item)
@@ -280,6 +313,11 @@ def ingest(
         if decided.get("after") == "close_duplicate":
             preprocess.close_as_duplicate(db, incident, decided, now)
             outcome, note = "duplicate", decided.get("note", "")
+    if incident_id and outcome != "dropped":
+        unkept = _evidence(db, runtime, connector, item, incident_id)
+        if unkept:
+            note = "; ".join(part for part in (note, unkept) if part)
+            outcome = "incomplete" if outcome == "created" else outcome
     db.add(
         FetchedItem(
             connection_id=connection.id,
@@ -318,7 +356,25 @@ def cycle(db: OrmSession, connection: Connection, now: float | None = None) -> d
             runtime.close()
     except (CommandError, ex.ExpressionError) as error:
         return _failed(db, connection, spec.interval_seconds, getattr(error, "message", str(error)), now, counts)
+    try:
+        return _made(db, connection, connector, runtime, found, state, first, now, counts)
+    finally:
+        runtime.close()  # it may have been opened again, for what is kept as evidence
 
+
+def _made(
+    db: OrmSession,
+    connection: Connection,
+    connector: ConnectorFile,
+    runtime: Any,
+    found: dict[str, Any],
+    state: dict[str, Any],
+    first: dict[str, Any],
+    now: float,
+    counts: dict[str, int],
+) -> dict[str, Any]:
+    """The second half of a cycle: what was fetched is made into incidents, and the state moves."""
+    spec = connector.fetch
     items = found["items"]
     counts["fetched"] = len(items)
     seen_now: set[str] = set()
@@ -351,7 +407,7 @@ def cycle(db: OrmSession, connection: Connection, now: float | None = None) -> d
             except ex.ExpressionError:
                 occurred = None
         try:
-            outcome = ingest(db, connection, connector, item, item_id, occurred, now)
+            outcome = ingest(db, connection, connector, item, item_id, occurred, now, runtime)
             db.commit()
         except Exception:  # noqa: BLE001 - one item must not stop the others, nor the worker
             db.rollback()

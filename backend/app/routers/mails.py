@@ -21,6 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
 from ..automation import triggers as automation_triggers
+from ..core import audit
 from ..core.config import settings
 from ..core.db import after_commit, get_db
 from ..core.files import attachment_headers, read_upload, safe_name
@@ -168,6 +169,35 @@ def _forget_previews(sha256: str) -> None:
     walk(parsed)
 
 
+def _kept(db: OrmSession, incident: Incident | None, row: Mail, data: bytes, file_name: str, actor: str):
+    """Write an analysed message to the store and register it, in the incident when there is one
+    (the caller commits). Returns the incident's reference."""
+    write_mail(row.sha256, data)
+    file_name = file_name or f"{row.sha256[:12]}.{row.format}"
+    db.flush()
+    artifacts.register_mail(db, row, file_name)
+    ref = attach_mail(db, incident, row, file_name, actor) if incident is not None else None
+    automation_triggers.mail_analysed(db, row, incident)
+    audit.record(db, actor, "mail.upload", f"Analysed e-mail {file_name} ({row.verdict}, score {row.score})", incident)
+    return ref
+
+
+def keep_mail(
+    db: OrmSession, incident: Incident | None, data: bytes, file_name: str, actor: str
+) -> tuple[Mail, dict[str, Any] | None]:
+    """Analyse and store an e-mail where there is no request (the listener of the Mail connector):
+    what ``store_mail`` does, in the caller's thread and transaction. A message already known keeps
+    its analysis. Raises ``MailError`` for what is not a message; the caller checks the size."""
+    sha256 = hashes(data)["sha256"]
+    row = db.get(Mail, sha256)
+    if row is None:
+        result = _analyse(db, data)
+        row = Mail(sha256=sha256, created_at=now_iso(), created_by=actor)
+        _apply(row, result)
+        db.add(row)
+    return row, _kept(db, incident, row, data, file_name, actor)
+
+
 async def store_mail(
     db: OrmSession,
     incident: Incident | None,
@@ -193,13 +223,7 @@ async def store_mail(
         row = Mail(sha256=sha256, created_at=now_iso(), created_by=caller.actor)
         _apply(row, result)
         db.add(row)
-    write_mail(sha256, data)
-    file_name = file_name or f"{sha256[:12]}.{row.format}"
-    db.flush()
-    artifacts.register_mail(db, row, file_name)
-    ref = attach_mail(db, incident, row, file_name, caller.actor) if incident is not None else None
-    automation_triggers.mail_analysed(db, row, incident)
-    _audit(db, caller, "mail.upload", f"Analysed e-mail {file_name} ({row.verdict}, score {row.score})", incident)
+    ref = _kept(db, incident, row, data, file_name, caller.actor)
     db.commit()
     if incident is not None:
         emit(

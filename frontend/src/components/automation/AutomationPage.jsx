@@ -176,7 +176,8 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
               key={route.id}
               id={route.id}
               onBack={() => onNavigate('runs')}
-              onOpenPlaybook={(playbookId) => onNavigate('playbooks', playbookId)}
+              // A debug run of a branch goes back to the branch it ran.
+              onOpenPlaybook={(playbookId, branch = null) => onNavigate('playbooks', playbookId, null, { branch })}
               onOpenIncident={onOpenIncident}
             />
           ) : area?.id === 'runs' ? (

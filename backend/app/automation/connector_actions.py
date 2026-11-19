@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core import vault
 from ..core.models import Connection, Connector
 from ..core.security import now_iso
-from . import actions, connector_logo, egress, instance_keys, outbound
+from . import actions, connector_logo, egress, instance_keys, mail_evidence, outbound
 from . import expressions as ex
 from .connector_runtime import AUTH_FIELDS, CommandError, Runtime, forget_tokens
 from .connectors import Command, ConnectorError, ConnectorFile, Problem, load
@@ -417,6 +417,13 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
                 raise actions.ActionError(said_wait, retry=False)
         try:
             runtime = runtime_for(db, connector, connection, call.playbook, call.now, key=key)
+            if connector.native == "mail":
+                # What a message carries is known once it is read: the runtime asks the guard then, and
+                # keeps what it is asked to keep through the store of this run.
+                runtime.judge = lambda found: outbound.guarded_files(call, found, decided)
+                runtime.keep = lambda found, message, wanted: mail_evidence.keep_attachments(
+                    call, found, message, wanted
+                )
             if call.dry_run:
                 would = {**runtime.would_send(command_name, args), "held": decided, "connection": connection.name}
                 sample = command.sample if command.sample is not None else dict.fromkeys(command.outputs)
@@ -451,10 +458,11 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         return actions.Result(again_at=answer.again_at, state=_seal(waiting), request=record)
     if turns and not command.changes_outside:
         instance_keys.keep_answer(db, connection, command_name, args, answer.outputs, answer.context, now)
-    # What comes back may repeat what was sent: it keeps the classes of what went out.
+    # What comes back may repeat what was sent: it keeps the classes of what went out, beside those
+    # the command gives its own outputs (the name of an attachment).
     return actions.Result(
         output=answer.outputs,
-        classes=classes,
+        classes={**answer.classes, **classes},
         request=record,
         context=answer.context,
         context_source=f"connector:{connector_id}",

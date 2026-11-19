@@ -237,6 +237,29 @@
           or an admin, changes it. Somebody else's opens read-only: make a branch of your own from it.
         </li>
         <li>
+          <strong>A branch runs only in the debugger.</strong> On a branch the editor has no <em>Run…</em> and no
+          switch, and the trigger drawn on it starts nothing: no event, no schedule, no request from outside, no other
+          playbook and no run by hand ever uses the graph of a branch. The server refuses it too, whoever asks.
+          <em>Debug…</em> is how a branch is tried: it starts a <a href="#debugger">debug run</a> of the branch as it is
+          saved (what is on the canvas is saved first), which holds what goes outside as every debug run does. Who edits
+          playbooks debugs any branch. The run says which branch it was, on its page and in the list of the debug runs,
+          and goes on with the graph it started with when the branch is changed meanwhile.
+        </li>
+        <li>
+          <strong>Compare with main.</strong> Before a push, <em>Compare with main</em> (in the editor of the branch,
+          and in the dialog of the push) puts main as it is now on the left and the branch on the right: two read-only
+          canvases that pan and zoom together. A node is <em>added</em> (in the branch only, marked <code>+</code>,
+          solid border), <em>removed</em> (in main only, <code>-</code>, dashed border) or <em>changed</em> (the same id
+          with another kind, name or configuration, <code>~</code>, dotted border), so that no change is told by its
+          colour alone. A node that only sits somewhere else on the canvas is not a change, and is counted apart. The
+          counts are at the top (<em>+2 added · ~1 changed · -1 removed · 1 line moved</em>) and every change is listed
+          on the right, with the lines that were drawn, taken away or moved to another node; a line that came or went
+          with its node is not listed again. Choose a node, on either canvas or in the list, to see what changed in it
+          field by field: what it was after <code>-</code>, what it is after <code>+</code>, down to each key of its
+          configuration (a script version pinned on the node is one of them). When main got a version since the branch
+          was made, a line says that the left side is main as it is now. <em>Push to main…</em> is on the page.
+        </li>
+        <li>
           <strong>Push to main.</strong> The branch is checked like a draft saved as a version and becomes the next
           version of the playbook, the one that runs from then on; the note you give is kept with the version. The
           branch stays, to go on from, and the draft of main is not touched. <strong>Graphs are not merged</strong>:
@@ -246,8 +269,9 @@
           <em>Versions</em>, to restore.
         </li>
         <li>
-          <strong>What stays on main.</strong> <em>Run…</em> runs the version in use, not the branch, and the debugger
-          runs the draft or the version of main. To try a branch, push it, or copy it to a playbook of its own with
+          <strong>What stays on main.</strong> Running by hand, the switch, the triggers and the schedule are those of
+          the version in use: open <em>main</em> for them. The runs, the versions and the settings shown on a branch are
+          the playbook's. To run a branch for real, push it, or copy it to a playbook of its own with
           <a href="#files">export and import</a>.
         </li>
       </ul>
@@ -1819,12 +1843,41 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           recipients at most. A recipient is a destination: its domain must be among the hosts the playbook may reach,
           also for the sender of a message that is answered. What is said goes through the data guard; the recipients do
           not. <code>reply</code> stays in the conversation of the message (<code>In-Reply-To</code>,
-          <code>References</code>); <code>forward</code> quotes its text and does not carry its attachments.
+          <code>References</code>); <code>forward</code> quotes its text, and carries its attachments when
+          <code>attachments</code> is on (below).
         </li>
         <li>
           <strong>Reading</strong> (<code>search</code>, <code>get-message</code>, <code>list-folders</code>): a message
           is named by its <code>uid</code> in its folder. An attachment is described (name, type, size, SHA-256) and
           never opened. The first 2 MB of a message are read.
+        </li>
+        <li>
+          <strong>Keeping the attachments</strong> (<code>get-attachments</code>): what is attached to a message becomes
+          files in Nik, each stored under its SHA-256 and analysed as an uploaded file is (type, hashes, strings,
+          indicators, YARA), never run. They go in the incident the run works on, or the one named in
+          <code>incident</code>; a run that works on no incident keeps them on their own, as artifacts. The command
+          gives <code>attachments</code>, one entry for each (<code>name</code>, <code>type</code>, <code>size</code>,
+          <code>sha256</code>, <code>artifact</code>, <code>linked</code>, <code>note</code>), and
+          <code>artifacts</code>, the ids of those that were kept, for a <em>For each</em> to go over. An attachment
+          that is empty, that could not be read or that is above the size limit of a sample is listed with a
+          <code>note</code> and no <code>artifact</code>. The message is read whole: one above that limit
+          (<code>SAMPLE_MAX_MB</code>) is refused, and fifty attachments at most are looked at. When the message is an
+          e-mail Nik holds (the listener kept it), each file is recorded as taken out of it. The disassembly and capa of
+          a file are started from its page, as for any file.
+        </li>
+        <li>
+          <strong>Forwarding with the attachments.</strong> <code>attachments</code> is off by default, because a file
+          that leaves Nik is judged by the <a href="#data-guard">data guard</a> like anything else that leaves, and
+          <em>attachments</em> is a class the screen of a playbook does not offer to open. The guard judges each file by
+          what it is, its name, its size and its hash, without opening it: it is an attachment, its name is a file name
+          (and is read as text: an address in it is an address), a file Nik holds as a sample is a sample, and one whose
+          hash is on the allowlist is an allowlisted indicator. Every one of those classes must be open for the
+          playbook, which for <em>attachments</em> and <em>samples</em> an admin does through the API (<code
+            >PUT /api/automation/playbooks/{id}/data-allow</code
+          >, with the same double check). Otherwise the step fails and says what was held; a node set to send without
+          what is held sends the text alone, and its output says how many files stayed (<code>attachments_held</code>).
+          What cannot be judged whole is refused whatever is open: an attachment that could not be read, more than fifty
+          of them, more than 20 MB together.
         </li>
         <li>
           <strong>Changing the mailbox</strong> (<code>move</code>, <code>mark-read</code>, <code>mark-unread</code>,
@@ -1835,6 +1888,14 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           <strong>The listener.</strong> Turn on fetching for the instance (<a href="#fetching">Fetching</a>) and each
           message that arrives in the folder becomes an incident: its subject is the name, its sender and its text the
           details. A message is read once, told apart by its Message-ID.
+          <strong>The message itself is kept as evidence</strong>: as it was received, it becomes an e-mail of the
+          incident, with the analysis an uploaded <code>.eml</code> gets (route, SPF, DKIM and DMARC, links,
+          attachments, verdict), so the Evidence tab shows it and <code>mail.analysed</code> is published with the
+          incident. A message Nik holds already is not analysed twice. Nothing is kept for a message a
+          <a href="#preprocessing">pre-processing rule</a> dropped; one a rule linked to an incident there was becomes
+          evidence of that incident. A message above the size limit of an upload, or one that cannot be read as a
+          message, still becomes an incident: Fetch status lists the item as <em>incomplete</em> and says the message
+          was not kept.
         </li>
       </ul>
       <p>
@@ -2900,7 +2961,9 @@ commands:
         On the page of a playbook, <em>Debug…</em> asks three things: <strong>what to run</strong> (the draft as it is
         drawn now, with no need to save a version, or the version in use), <strong>on what</strong> (an incident, or
         nothing) and <strong>where to stop</strong> (before every node, or before the nodes that are selected on the
-        canvas: the breakpoints). The run opens on its page with the debugger above the canvas.
+        canvas: the breakpoints). The run opens on its page with the debugger above the canvas. On a
+        <a href="#branches">branch</a> there is nothing to choose for the first: the branch is what runs, as it is
+        saved, and the debugger is the only place where it does.
       </p>
       <div class="table-wrap">
         <table>

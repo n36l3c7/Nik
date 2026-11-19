@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.3.0] - 2026-11-19
+
+Playbook branches and the Mail connector, and the 6.x work read against
+itself.
+
+### Added
+
+- **Compare a branch with main.** Before a push, main as it is now and the
+  branch are shown side by side on two canvases that pan and zoom
+  together. Nodes are marked added (+), changed (~) or removed (-), by
+  their sign and the style of their border; the counts are at the top and
+  every change is listed, lines drawn, removed or moved among them.
+  Choosing a node shows what changed in it field by field, the old value
+  after "-" and the new one after "+". A line says when main moved since
+  the branch was made, and *Push to main…* is on the page.
+- **Mail connector: `get-attachments`.** A playbook keeps what is attached
+  to a message of the mailbox as files in Nik, analysed as an upload is
+  and never run, in the incident the run works on. It gives the ids of
+  the files to go over.
+- **Mail connector: `forward` can carry the attachments** (`attachments`,
+  off by default). Each file is judged by the data guard by what it is,
+  its name, its size and its hash, without being opened, and leaves only
+  from a playbook for which an administrator opened attachments; otherwise
+  the step says what was held, or sends the text alone when the node drops
+  what is held.
+- **The message a listener reads is kept as evidence.** Each message that
+  becomes an incident is stored as an e-mail of that incident, with the
+  analysis an uploaded `.eml` gets, so the Evidence tab shows it. Nothing
+  is kept for an item a pre-processing rule dropped, and a message Nik
+  holds already is not analysed twice.
+
+### Changed
+
+- **A branch runs only in the debugger.** On a branch the editor has no
+  *Run…* and no switch, and the trigger or the schedule drawn on it starts
+  nothing; the server refuses too. *Debug…* starts a debug run of the
+  branch as it is saved, and the run names its branch on its page and in
+  the list of debug runs.
+- `get-message` of the Mail connector describes an attached message by the
+  bytes of that message. The Mail connector is at version 2.
+- The list of shortcuts (`?`) names the keys of the list of incidents.
+- The screenshots of the guide are retaken on the list of incidents and
+  the pages of 6.x (the three that need an analysis worker are as they
+  were), and the form of a new incident no longer says that a system left
+  out means Windows.
+
+### Fixed
+
+- **A tab clicked right after an incident was loaded could be undone.**
+  The tab remembered for the type of the incident was applied when the
+  types arrived from the server, over a tab the person had already
+  chosen. The choice now stands, and is what is remembered.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  No migration.
+- A mailbox that is listened to now stores each message it makes an
+  incident from: the store of samples grows with the mail that comes in.
+
 ## [6.2.0] - 2026-11-19
 
 The page of an incident and the list of incidents: a type arranges its
@@ -2986,7 +3046,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.2.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.3.0...HEAD
+[6.3.0]: https://github.com/n36l3c7/Nik/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/n36l3c7/Nik/compare/v6.1.0...v6.2.0
 [6.1.0]: https://github.com/n36l3c7/Nik/compare/v6.0.0...v6.1.0
 [6.0.0]: https://github.com/n36l3c7/Nik/compare/v5.4.0...v6.0.0

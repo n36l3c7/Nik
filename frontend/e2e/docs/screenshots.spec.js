@@ -109,6 +109,11 @@ test('evidence dropped on the app', async () => {
 
 test('the host tabs', async () => {
   await kind('Event Logs')
+  // The incident was made with no system: what was collected on the machine asks for it first.
+  const system = page.getByRole('dialog', { name: 'Which system is this incident about?' })
+  await expect(system).toBeVisible()
+  await system.getByRole('button', { name: 'Use Windows' }).click()
+  await expect(system).toBeHidden()
   await expect(page.locator('tbody tr').first()).toBeVisible()
   await shot('event-logs')
   await kind('Endpoint Artifacts')
