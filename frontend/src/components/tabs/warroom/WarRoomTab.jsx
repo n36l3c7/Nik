@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Copy,
   ExternalLink,
+  FolderOpen,
   HelpCircle,
   Info,
   RefreshCw,
@@ -34,6 +35,7 @@ import { formatDateTime } from '../../../lib/time.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
 import IocText from '../../ioc/IocText.jsx'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 
 /*
  * ============================================================================
@@ -283,6 +285,7 @@ export default function WarRoomTab({ incident }) {
   const [entries, setEntries] = useState(null)
   const [error, setError] = useState(null)
   const [chosen, setChosen] = useState(null)
+  const menu = useObjectMenu()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const end = useRef(null)
@@ -470,6 +473,24 @@ export default function WarRoomTab({ incident }) {
                 {/* The row opens the entry wherever it is clicked; the button is how the keyboard does it.
                     An indicator in the text is a button of its own, so the row cannot be one. */}
                 <div
+                  onContextMenu={(event) =>
+                    menu(event, {
+                      title: line.title || 'A note',
+                      actions: [
+                        { label: 'Open the entry', icon: FolderOpen, onSelect: () => setChosen(entry.id) },
+                        entry.runId && {
+                          label: 'Open the run',
+                          icon: ExternalLink,
+                          onSelect: () => setPath(automationPath('runs', entry.runId)),
+                        },
+                      ],
+                      copy: [
+                        { label: 'Copy the text', text: [line.title, line.text].filter(Boolean).join('\n') },
+                        entry.kind === 'command' && { label: 'Copy the command', text: entry.body?.line ?? '' },
+                      ],
+                      record: entry,
+                    })
+                  }
                   onClick={() => setChosen(entry.id === chosen ? null : entry.id)}
                   className={`flex w-full cursor-pointer items-start gap-2 border-b border-line-soft px-3 py-2 text-left hover:bg-raised ${entry.id === chosen ? 'bg-raised' : ''}`}
                 >

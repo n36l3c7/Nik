@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { FolderClosed, FolderOpen, RefreshCw, Workflow } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { api } from '../../services/api.js'
 import { RUN_COLORS, RUN_STATUSES, duration, isFinished, triggerLabel } from '../../domain/automation/runs.js'
 import { formatDateTime } from '../../lib/time.js'
 import { Badge, Button } from '../ui/index.js'
 import { SelectInput } from './fields.jsx'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { automationPath } from '../../domain/automationNav.js'
+import { setPath } from '../../lib/location.js'
 
 /*
  * The runs: every one (the Runs screen), or those of one playbook (its Runs
@@ -25,6 +28,7 @@ const REFRESH_MS = 5000
  * }} props
  */
 export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun, onOpenIncident }) {
+  const menu = useObjectMenu()
   const { incidents } = useIncidents()
   const [status, setStatus] = useState('')
   const [playbook, setPlaybook] = useState('')
@@ -150,7 +154,32 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
             </thead>
             <tbody>
               {found.runs.map((run) => (
-                <tr key={run.id} className="hover:bg-raised/40">
+                <tr
+                  key={run.id}
+                  className="hover:bg-raised/40"
+                  onContextMenu={(event) =>
+                    menu(event, {
+                      title: `${run.playbook || 'a deleted playbook'} · ${formatDateTime(Date.parse(run.startedAt))}`,
+                      actions: [
+                        { label: 'Open the run', icon: FolderOpen, onSelect: () => onOpenRun(run.id) },
+                        run.playbookId && {
+                          label: 'Open the playbook',
+                          icon: Workflow,
+                          onSelect: () => setPath(automationPath('playbooks', run.playbookId)),
+                        },
+                        run.incidentId &&
+                          onOpenIncident &&
+                          names.has(run.incidentId) && {
+                            label: 'Open the incident',
+                            icon: FolderClosed,
+                            onSelect: () => onOpenIncident(run.incidentId),
+                          },
+                      ],
+                      link: automationPath('runs', run.id),
+                      copy: [{ label: 'Copy the id', text: run.id }],
+                    })
+                  }
+                >
                   <th scope="row" className="border-b border-line-soft px-3 py-2 font-normal">
                     <button
                       type="button"

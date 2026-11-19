@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Plus, Upload } from 'lucide-react'
+import { FolderOpen, Plus, Upload } from 'lucide-react'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { nameProblem } from '../../domain/automation/scripts.js'
 import { formatRelative } from '../../lib/time.js'
 import { Badge, Button, Modal } from '../ui/index.js'
 import { Field, TextInput } from './fields.jsx'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { automationPath } from '../../domain/automationNav.js'
 
 /*
  * The scripts: a library of Python blocks with named arguments and outputs,
@@ -43,6 +45,7 @@ export function SandboxBox({ available }) {
  */
 export default function ScriptsPage({ onOpen }) {
   const { showToast } = useToast()
+  const menu = useObjectMenu()
   const [found, setFound] = useState(null) // { scripts, sandbox }
   const [error, setError] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -162,7 +165,18 @@ export default function ScriptsPage({ onOpen }) {
                   </tr>
                 )}
                 {found.scripts.map((script) => (
-                  <tr key={script.id} className="hover:bg-raised/40">
+                  <tr
+                    key={script.id}
+                    className="hover:bg-raised/40"
+                    onContextMenu={(event) =>
+                      menu(event, {
+                        title: script.name,
+                        actions: [{ label: 'Open', icon: FolderOpen, onSelect: () => onOpen(script.id) }],
+                        link: automationPath('scripts', script.id),
+                        copy: [{ label: 'Copy the name', text: script.name }],
+                      })
+                    }
+                  >
                     <th scope="row" className="border-b border-line-soft px-3 py-2 align-top font-normal">
                       <button
                         type="button"

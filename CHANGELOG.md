@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click on what is not evidence**: a playbook, a script, a run, a
+  task, a dashboard and an entry of the War Room have a menu, built the
+  same way everywhere: what the object does, then *Copy link* and what else
+  is worth copying (a name, an id, the entry as JSON).
 - **Every side panel can be resized**, not only the list of incidents: the
   sections of Settings, the facts of an incident, the entry open in the War
   Room, the node library and the inspector of a playbook, the steps of a

@@ -3233,6 +3233,34 @@ test('script signatures: one Nik ships is turned off and put back, one of your o
   await expect(settings).toHaveCount(0)
 })
 
+test('right-click on a playbook, a script and a dashboard offers what they do and their link', async () => {
+  await page.getByRole('button', { name: 'Automations' }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  const playbooks = area.getByRole('table').first()
+  const row = playbooks.getByRole('row').nth(1)
+  const name = (await row.getByRole('button').first().textContent()).trim()
+  await row.click({ button: 'right' })
+  const menu = page.getByRole('menu')
+  await expect(menu).toContainText(name)
+  await expect(menu.getByRole('menuitem')).toHaveText(['Open', 'Its runs', 'Run…', 'Copy link', 'Copy the name'])
+  // Open does what a click on the name does.
+  await menu.getByRole('menuitem', { name: 'Open', exact: true }).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks\/[^/]+/)
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Scripts' }).click()
+  await area.getByRole('table').first().getByRole('row').nth(1).click({ button: 'right' })
+  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Open', 'Copy link', 'Copy the name'])
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await area.getByRole('button', { name: 'Close automations' }).click()
+
+  await page.getByRole('button', { name: 'Dashboards', exact: true }).click()
+  const boards = page.getByRole('navigation', { name: 'Your dashboards' })
+  await boards.getByRole('listitem').first().click({ button: 'right' })
+  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Open', 'Copy link', 'Copy the name'])
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Close dashboards' }).first().click()
+})
+
 test('a side panel is made wider and narrower with its handle, and remembers its width', async () => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })

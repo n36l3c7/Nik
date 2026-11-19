@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Copy, Download, FileText, House, Pencil, Plus, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react'
+import {
+  Copy,
+  Download,
+  FileText,
+  FolderOpen,
+  House,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Share2,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { api, postForBlob } from '../../services/api.js'
 import {
@@ -10,6 +23,7 @@ import {
   TYPES,
   arrange,
   compactGrid,
+  dashboardsPath,
   landingDashboard,
   newWidget,
   rangeLabel,
@@ -24,6 +38,7 @@ import Grid from './Grid.jsx'
 import Widget from './Widget.jsx'
 import WidgetEditor from './WidgetEditor.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 
 /*
  * ============================================================================
@@ -229,6 +244,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
   const [removing, setRemoving] = useState(false)
   const [landing, setLanding] = useState(landingDashboard)
   const [adding, setAdding] = useState(false)
+  const menu = useObjectMenu()
   const listPane = useResizablePane('dashboards.list', { initial: 224, min: 180, max: 420 })
 
   useEffect(() => {
@@ -419,7 +435,23 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
         >
           <ul className="min-h-0 flex-1 overflow-y-auto py-2">
             {(boards ?? []).map((item) => (
-              <li key={item.id}>
+              <li
+                key={item.id}
+                onContextMenu={(event) =>
+                  menu(event, {
+                    title: item.name,
+                    actions: [
+                      !(editing && item.id !== dashboardId) && {
+                        label: 'Open',
+                        icon: FolderOpen,
+                        onSelect: () => onSelect(item.id),
+                      },
+                    ],
+                    link: dashboardsPath(item.id),
+                    copy: [{ label: 'Copy the name', text: item.name }],
+                  })
+                }
+              >
                 <button
                   type="button"
                   aria-current={item.id === dashboardId ? 'page' : undefined}
