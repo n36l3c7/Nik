@@ -1570,6 +1570,43 @@ class IocVerdictChange(Base):
     at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class SavedFilter(Base):
+    """A query of a list kept under a name, with the sort and the columns that were on screen.
+    Its owner's alone until an administrator shares it with everyone."""
+
+    __tablename__ = "saved_filters"
+    __table_args__ = (Index("ix_saved_filters_owner", "owner", "entity"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    # The list it filters, by the name the query language gives it ("incidents").
+    entity: Mapped[str] = mapped_column(String(40), nullable=False, default="incidents")
+    query: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # {"key": a column, "dir": "asc" | "desc"}, or null for the order of the list itself.
+    sort: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # The columns in their order, by name; empty for those the person has chosen for themselves.
+    columns: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class SavedFilterDefault(Base):
+    """The filter a list opens with for one person: one for each list at most."""
+
+    __tablename__ = "saved_filter_defaults"
+
+    username: Mapped[str] = mapped_column(String(200), primary_key=True)
+    entity: Mapped[str] = mapped_column(String(40), primary_key=True)
+    filter_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("saved_filters.id", ondelete="CASCADE"), nullable=False
+    )
+
+
+# Created by migration 0041_saved_filters where missing, in this order.
+SAVED_FILTER_TABLES = ("saved_filters", "saved_filter_defaults")
+
 # Created by migration 0040_instance_keys where missing.
 INSTANCE_KEY_TABLES = ("instance_key_uses", "command_answers")
 INSTANCE_KEY_COLUMNS = {"connections": ("extra_keys", "key_policy")}

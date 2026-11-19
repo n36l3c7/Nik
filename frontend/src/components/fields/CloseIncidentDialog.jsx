@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
+import { useNavigation } from '../../context/NavigationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { UNCLASSIFIED, byName, fromInput, toInput } from '../../domain/fields.js'
+import { closeFields, closeSections, openTasksText } from '../../domain/typePages.js'
 import { Button, Modal } from '../ui/index.js'
 import FieldInput from './FieldInput.jsx'
 
@@ -10,12 +12,21 @@ import FieldInput from './FieldInput.jsx'
  * Closing an incident: a reason among those of its type, notes, and the
  * fields the type wants filled before closing.
  *
+ * A type can give the dialog a **close form** (6.2: Settings → Incidents →
+ * Types → Pages → Close form): sections of its own, shown here with their
+ * fields to edit. A field the type marks "to close" is marked required and
+ * holds the closing back while it is empty, wherever it is shown; one that is
+ * in no section of the form is asked after them, as it always was. A line
+ * says how many tasks of the work plan are still open: it stops nothing.
+ *
  * Opened whenever an incident is set to "closed" (the Summary, the menu of
  * the list): `askClose(id)` of the incident context. The server checks the
  * same things, so an incident closed through the API is held to them too.
  */
 
 const NOTES = { name: 'close_notes', label: 'Notes', type: 'long_text' }
+const WIDE = new Set(['long_text', 'json', 'list', 'multi_choice'])
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 export default function CloseIncidentDialog() {
   const { closeRequest, endClose } = useIncidents()
@@ -23,10 +34,32 @@ export default function CloseIncidentDialog() {
   return closeRequest ? <OpenDialog key={closeRequest} incidentId={closeRequest} onDone={endClose} /> : null
 }
 
+function Asked({ item, value, onChange }) {
+  const { field, needed } = item
+  const id = `close-field-${field.name}`
+  return (
+    <label className={`flex flex-col gap-1 ${WIDE.has(field.type) ? 'sm:col-span-2' : ''}`} htmlFor={id}>
+      <span className="text-fg-muted">
+        {field.label}
+        {needed && (
+          <span className="text-med" title="Needed to close">
+            {' '}
+            · required
+          </span>
+        )}
+      </span>
+      <FieldInput id={id} field={field} value={value} onChange={onChange} />
+      {field.description && <span className="text-xs text-fg-muted">{field.description}</span>}
+    </label>
+  )
+}
+
 function OpenDialog({ incidentId, onDone }) {
-  const { incidents, activeIncidentId, refreshIncidents, retryActiveIncident } = useIncidents()
+  const { incidents, activeIncidentId, refreshIncidents, retryActiveIncident, selectIncident } = useIncidents()
+  const { goTo } = useNavigation()
   const { showToast } = useToast()
-  const [loaded, setLoaded] = useState(null) // { type, fields, values }
+  const [loaded, setLoaded] = useState(null) // { type, sections, wanted, values }
+  const [openTasks, setOpenTasks] = useState(0)
   const [typed, setTyped] = useState({})
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -46,20 +79,32 @@ function OpenDialog({ incidentId, onDone }) {
           types.types.find((item) => item.id === UNCLASSIFIED) ??
           null
         const known = byName(registry.fields)
+        // The sections of the close form of the type, each with the fields it lets one edit.
+        const sections = closeSections(type?.layout)
+          .map((section) => ({ section, fields: closeFields(section, known, type?.fields) }))
+          .filter((item) => item.fields.length > 0)
+        const shown = new Set(sections.flatMap((item) => item.fields.map((asked) => asked.field.name)))
+        // What the type wants to close with and no section shows: asked after them.
         const wanted = (type?.fields ?? [])
-          .filter((item) => item.requiredOnClose && known[item.name])
-          .map((item) => known[item.name])
-        setLoaded({ type, wanted, values: held.fields })
+          .filter((item) => item.requiredOnClose && known[item.name] && !shown.has(item.name))
+          .map((item) => ({ field: known[item.name], needed: true }))
+        setLoaded({ type, sections, wanted, values: held.fields })
         // A reason kept from an earlier closing is offered again only if this type still has it.
         const offered = type?.closeReasons ?? []
         const reason = held.fields.close_reason ?? ''
+        const asked = [...sections.flatMap((item) => item.fields), ...wanted]
         setTyped({
           close_reason: offered.length && !offered.includes(reason) ? '' : reason,
           close_notes: held.fields.close_notes ?? '',
-          ...Object.fromEntries(wanted.map((field) => [field.name, toInput(field, held.fields[field.name])])),
+          ...Object.fromEntries(asked.map(({ field }) => [field.name, toInput(field, held.fields[field.name])])),
         })
       })
       .catch((failure) => alive && setError(failure.message))
+    // How much of the work plan is left: said, never in the way (who may not read it is told nothing).
+    api
+      .get(`/incidents/${encodeURIComponent(incidentId)}/work-plan`)
+      .then((plan) => alive && setOpenTasks(plan?.counts?.open ?? 0))
+      .catch(() => {})
     return () => {
       alive = false
     }
@@ -80,10 +125,12 @@ function OpenDialog({ incidentId, onDone }) {
     try {
       changes.close_reason = fromInput(reasonField, typed.close_reason)
       changes.close_notes = fromInput(NOTES, typed.close_notes)
-      for (const field of loaded.wanted) {
+      const asked = [...loaded.sections.flatMap((item) => item.fields), ...loaded.wanted]
+      for (const { field, needed } of asked) {
         const value = fromInput(field, typed[field.name])
-        if (value === null) throw new Error(`${field.label} is needed to close`)
-        changes[field.name] = value
+        if (needed && value === null) throw new Error(`${field.label} is needed to close`)
+        // A field of a section is sent when it was changed; what is needed to close, always.
+        if (needed || !same(value, loaded.values[field.name])) changes[field.name] = value
       }
     } catch (failure) {
       setError(failure.message)
@@ -103,11 +150,20 @@ function OpenDialog({ incidentId, onDone }) {
     }
   }
 
+  const showTasks = () => {
+    onDone()
+    if (incidentId !== activeIncidentId) selectIncident(incidentId)
+    goTo('work_plan')
+  }
+  const set = (fieldName) => (value) => setTyped({ ...typed, [fieldName]: value })
+  const form = (loaded?.sections.length ?? 0) > 0
+
   return (
     <Modal
       open
       onClose={onDone}
       title="Close the incident"
+      maxWidth={form ? 'max-w-2xl' : 'max-w-lg'}
       footer={
         <>
           <Button variant="secondary" onClick={onDone}>
@@ -123,6 +179,7 @@ function OpenDialog({ incidentId, onDone }) {
         <p className="text-fg-muted">
           <span className="text-fg">{name}</span>
           {loaded?.type ? ` · ${loaded.type.name}` : ''}
+          {form ? ' · the form of its type' : ''}
         </p>
         {!loaded && !error && (
           <p role="status" className="font-mono text-fg-muted">
@@ -137,35 +194,43 @@ function OpenDialog({ incidentId, onDone }) {
                 id="close-reason"
                 field={reasonField}
                 value={typed.close_reason}
-                onChange={(value) => setTyped({ ...typed, close_reason: value })}
+                onChange={set('close_reason')}
               />
             </label>
+            {loaded.sections.map(({ section, fields }) => (
+              <fieldset key={section.id} aria-label={`Section ${section.title}`} className="flex flex-col gap-2">
+                <legend className="mb-2 font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+                  Section · {section.title}
+                </legend>
+                <div className={`grid gap-3 ${section.columns === 2 ? 'sm:grid-cols-2' : ''}`}>
+                  {fields.map((item) => (
+                    <Asked
+                      key={item.field.name}
+                      item={item}
+                      value={typed[item.field.name]}
+                      onChange={set(item.field.name)}
+                    />
+                  ))}
+                </div>
+              </fieldset>
+            ))}
+            {loaded.wanted.map((item) => (
+              <Asked key={item.field.name} item={item} value={typed[item.field.name]} onChange={set(item.field.name)} />
+            ))}
+            {openTasks > 0 && (
+              <div className="flex flex-wrap items-center gap-3 border border-med-line bg-med-soft px-3 py-2">
+                <p role="status" className="min-w-0 flex-1 text-med-fg">
+                  {openTasksText(openTasks)}
+                </p>
+                <Button variant="secondary" size="xs" onClick={showTasks}>
+                  Show them
+                </Button>
+              </div>
+            )}
             <label className="flex flex-col gap-1" htmlFor="close-notes">
               <span className="text-fg-muted">Notes</span>
-              <FieldInput
-                id="close-notes"
-                field={NOTES}
-                value={typed.close_notes}
-                onChange={(value) => setTyped({ ...typed, close_notes: value })}
-              />
+              <FieldInput id="close-notes" field={NOTES} value={typed.close_notes} onChange={set('close_notes')} />
             </label>
-            {loaded.wanted.map((field) => (
-              <label key={field.name} className="flex flex-col gap-1" htmlFor={`close-field-${field.name}`}>
-                <span className="text-fg-muted">
-                  {field.label}{' '}
-                  <span className="text-med" title="Needed to close">
-                    *
-                  </span>
-                </span>
-                <FieldInput
-                  id={`close-field-${field.name}`}
-                  field={field}
-                  value={typed[field.name]}
-                  onChange={(value) => setTyped({ ...typed, [field.name]: value })}
-                />
-                {field.description && <span className="text-xs text-fg-muted">{field.description}</span>}
-              </label>
-            ))}
           </>
         )}
         {error && (

@@ -123,6 +123,15 @@
               <td><em>Analyst</em>, <em>Playbooks</em> or <em>Admin</em></td>
             </tr>
             <tr>
+              <td>
+                Type a command in the War Room, press a <a href="#script-buttons">script button</a> of an incident page
+              </td>
+              <td>
+                <em>Analyst</em> or <em>Admin</em>: running, and reading the incident it runs on (<em>Playbooks</em>
+                alone runs and reads no incident)
+              </td>
+            </tr>
+            <tr>
               <td>Create and change playbooks and scripts, turn a playbook on or off, change its limits</td>
               <td><em>Playbooks</em> or <em>Admin</em></td>
             </tr>
@@ -1136,6 +1145,53 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           >). The path is checked when the version is saved.
         </li>
       </ul>
+      <h3 id="script-buttons">Where a script runs from</h3>
+      <p>A script with a saved version runs in four ways, always in the same box:</p>
+      <ul>
+        <li><strong>as a node of a playbook</strong>, with the arguments the node gives it;</li>
+        <li>
+          <strong>typed in the War Room</strong> of an incident, by its name:
+          <code>!ExtractDomains text=${incident.details}</code> (<a href="#command-line">the command line</a>);
+        </li>
+        <li>
+          <strong>typed in the <a href="#playground">Playground</a></strong
+          >, with no incident;
+        </li>
+        <li>
+          <strong>from a script button</strong> (6.2). A type of incident puts buttons on the Summary and on its other
+          pages: each has its text, its colours, a script, and for every argument a template or nothing (<a
+            href="guide.html#script-buttons"
+            >Guide → Script buttons</a
+          >). When the button is pressed the server renders the templates on the incident as it is then, and asks for
+          the arguments that were left empty and for those whose field is empty.
+        </li>
+      </ul>
+      <p>
+        <strong>The templates of a button</strong> are <a href="#expressions">expressions</a>. They read the fields of
+        the incident by their names alone (<code>{{ sender_address }}</code>), the same under
+        <code>incident</code> (<code>{{ incident.host }}</code>, with <code>incident.number</code>,
+        <code>incident.user</code> and <code>incident.url</code> beside the fields), and its
+        <a href="#context">context</a> (<code>{{ context.Mail[0].From }}</code>). A template that is one expression
+        keeps the type of what it names; with text around it, it gives a text.
+      </p>
+      <p>
+        <strong>A field that holds several values runs the script once for each</strong>: with
+        <code>urls = {{ urls_in_mail }}</code> and three addresses in the field, the button makes three runs, each given
+        one address (as a list of one, when the argument is declared a list). One argument at most may do so: with two,
+        nobody could tell which values go together, and the press is refused with the way out, which is to join one of
+        them into a text (<code>{{ affected_hosts | join(", ") }}</code>). There is no cap on the number of runs; above
+        fifty the dialog asks a second time.
+      </p>
+      <p>
+        <strong>A press is a command nobody typed.</strong> Each run is written in the War Room of the incident as the
+        command it is (<code>!BlockSender address=billing@inv0ice.example reason="Invoice lure"</code>), runs on the
+        engine as a run of one node, puts its result under its line with what the script returned and printed, writes
+        the outputs that declare a context path, and leaves a line in the audit log (<em
+          >Pressed "Block the sender": ran BlockSender</em
+        >). What was typed in the dialog, and what a field of the incident holds, reach the script as data: an
+        expression inside them is not read. A press needs the permission to run playbooks and to read the incident, a
+        script with a saved version, and automation that is not stopped.
+      </p>
       <h3 id="sandbox">The box a script runs in</h3>
       <ul>
         <li>

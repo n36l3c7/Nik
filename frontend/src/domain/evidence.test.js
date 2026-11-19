@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { TAB_ALIASES, evidenceGroups, firstFile, resolveTab } from './evidence.js'
+import {
+  SYSTEM_KINDS,
+  TAB_ALIASES,
+  asksSystem,
+  evidenceGroups,
+  firstFile,
+  openedAlone,
+  resolveTab,
+} from './evidence.js'
 
 const TABS = [
   { id: 'summary', label: 'Summary' },
@@ -81,4 +89,25 @@ test('with nothing chosen the tab opens on the first file there is', () => {
   const hostOnly = { data: { commands: INCIDENT.data.commands } }
   assert.deepEqual(firstFile(evidenceGroups(KINDS, hostOnly)), { kind: 'commands', key: null })
   assert.equal(firstFile(evidenceGroups(KINDS, {})), null)
+})
+
+test('what was collected on the machine asks for the system of the incident', () => {
+  assert.deepEqual(SYSTEM_KINDS, ['endpoint', 'eventlogs', 'browser', 'commands'])
+  for (const kind of SYSTEM_KINDS) {
+    assert.equal(asksSystem(kind, ''), true, kind)
+    assert.equal(asksSystem(kind, 'linux'), false, kind)
+  }
+  // A file is a file whatever the machine it came from.
+  for (const kind of ['mail', 'malware', 'network', 'urls']) assert.equal(asksSystem(kind, ''), false, kind)
+  // Without a system the tab opens by itself on a file, never on a kind that would ask.
+  const groups = evidenceGroups(KINDS, INCIDENT)
+  assert.deepEqual(
+    openedAlone(groups, '').map((group) => group.id),
+    ['mail', 'malware'],
+  )
+  assert.equal(openedAlone(groups, 'windows').length, 3)
+  const only = evidenceGroups(KINDS, { data: { commands: INCIDENT.data.commands } })
+  assert.deepEqual(firstFile(only), { kind: 'commands', key: null })
+  assert.equal(firstFile(openedAlone(only, '')), null)
+  assert.deepEqual(openedAlone(null, ''), [])
 })

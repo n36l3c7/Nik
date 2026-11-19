@@ -43,6 +43,7 @@
         <ol>
           <li><a href="#sign-in">Sign in</a></li>
           <li><a href="#incidents">Incidents</a></li>
+          <li><a href="#incident-list">The list of incidents</a></li>
           <li><a href="#saving">Saving, and working together</a></li>
           <li><a href="#layout">The screen</a></li>
           <li><a href="#evidence">Add evidence</a></li>
@@ -79,10 +80,11 @@
       <h2 id="incidents">Incidents</h2>
       <p>
         An <strong>incident</strong> is one case: one machine or one user under investigation, and everything found
-        about it. The incidents panel lists them, newest first; click one to open it.
+        about it. The <a href="#incident-list">list of incidents</a> is the page Nik opens on: every incident is a row
+        of it, the last one changed first; a double click on a row opens the incident.
       </p>
       <ol>
-        <li>Click <strong>New incident</strong> at the top of the incidents panel.</li>
+        <li>Click <strong>New incident</strong> at the top of the list of incidents.</li>
         <li>
           Fill in what you know: the <strong>ticket ID</strong> from your tracker, a <strong>short title</strong>, the
           <strong>host</strong> and the <strong>user</strong>. At least one is needed. Pick the
@@ -107,10 +109,63 @@
       <p>
         Every incident has a <strong>status</strong> (open, in progress or closed) and can be
         <strong>assigned</strong> to an analyst. Set them in <em>Edit the incident</em>, or right-click an incident in
-        the panel: <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>.
-        The panel shows the status and the assignee under the name, and filters the list by status, to the incidents
-        that are <strong>mine</strong>, or by any <a href="#queries">query</a>. Both are stated in the report.
+        the list: <strong>Mark as in progress</strong>, <strong>Mark as closed</strong>, <strong>Assign to me</strong>.
+        The list shows the status and the owner in columns of their own, and is filtered by status, by owner, or by any
+        <a href="#queries">query</a>. Both are stated in the report.
       </p>
+      <h3 id="incident-list">The list of incidents</h3>
+      <p>
+        The first entry of the rail opens the list: a table that takes the whole area next to the rail, with the number,
+        the title, the type, the severity, the status, the owner and the dates of each incident. A click on the heading
+        of a column orders the list by it, a second click turns the order round. The number at the top says how many
+        incidents are listed, and of how many when a filter is on. <strong>New incident</strong> and
+        <strong>Import incident</strong> are at the top; a right-click on a row has what is done to an incident without
+        opening it (its report, its export, its link, a playbook to run on it, its status and its owner, deleting it).
+        The entry of the rail, clicked again, goes back to the incident you came from.
+      </p>
+      <ul>
+        <li>
+          <strong>The quick view.</strong> One click on a row opens a panel over the right side of the page, without
+          moving the table: the number, the type and the title of the incident, its severity, its status and the SLA
+          timer nearest to its time, then what the type of the incident chose to show there (see
+          <a href="#settings">Settings → Types</a>). A type that chose nothing shows the details of the incident, its
+          first section of fields, the numbers of its evidence and the last three lines of its War Room. With the panel
+          open, <kbd>↑</kbd> and <kbd>↓</kbd> go to the row above and below and the panel follows; <kbd>Esc</kbd> or its
+          × closes it. At its foot: <strong>Open the incident</strong>, <strong>Assign to me</strong> and
+          <strong>Close…</strong>, each for who may do it. A double click on a row, or <kbd>Enter</kbd> on it, opens the
+          incident at once. The panel is resized like every side panel.
+        </li>
+        <li>
+          <strong>The query, and the chips that write it.</strong> The box above the table takes a
+          <a href="#queries">query</a>; the list follows as you type. Under it, <em>Add:</em> <strong>Type</strong>,
+          <strong>Severity</strong>, <strong>Status</strong>, <strong>Owner</strong> and <strong>Opened</strong> each
+          open a short menu and write their condition into the query, in place of the one it had on that field; a chip
+          whose field the query has a condition on shows it, and its menu takes it out again.
+          <strong>Field…</strong> does the same for any other field, with an operator and a value.
+        </li>
+        <li>
+          <strong>Saved filters.</strong> <strong>Save the filter…</strong> keeps the query on screen under a name, with
+          the order of the rows and the columns; with one of your filters chosen, it can be saved over it instead. The
+          button <strong>Filter: …</strong> lists yours under <em>Mine</em> and those an administrator shared under
+          <em>Shared with everyone</em>; choosing one puts what it keeps on screen, and
+          <em>All incidents (no filter)</em> takes it away. When the screen is no longer what the chosen filter keeps,
+          <em>changed since saved</em> says so and <strong>Back to the saved one</strong> undoes it.
+          <strong>Set as default</strong>, beside a filter, makes it the one the list opens with for you (one at most;
+          set it on <em>All incidents</em> to have none). <strong>Manage the filters…</strong> renames and deletes
+          yours; an administrator shares one of theirs with everyone there, and takes back any that is shared. A shared
+          filter of someone else is used, not changed: save it under a name of your own to make it yours. A filter never
+          shows anyone an incident their roles do not let them read.
+        </li>
+        <li>
+          <strong>The columns.</strong> <strong>Columns…</strong> lists the columns there are: those of the list (host,
+          user, ticket, system and source beside the ones shown at first) and every field of the registry (<a
+            href="#settings"
+            >Settings → All fields</a
+          >) that applies to incidents. Tick the ones to show and move them up and down; the table follows at once. The
+          choice is remembered in your browser, a saved filter keeps the columns it was saved with, and
+          <strong>Back to the default columns</strong> undoes it.
+        </li>
+      </ul>
       <h3 id="saving">Saving, and working on the same incident</h3>
       <p>
         There is no Save button: every change is saved as you make it. Several analysts can work on one incident at the
@@ -140,19 +195,20 @@
         <strong>incidents</strong>, <strong>your tasks</strong>, the <strong>dashboards</strong>, the
         <strong>Indicators</strong>, the <strong>artifacts</strong> (the files, e-mails and captures analysed so far),
         the search, the <strong>playground</strong> (a command outside any incident), then the
-        <strong>automations</strong>. Incidents, the Indicators page and the artifacts open a list in the side panel:
-        click the active icon again to close the panel and give the whole width to the analysis. At the foot of the rail
-        are the notifications, the settings and <strong>your account</strong>, which says who is signed in, opens
-        <em>My account</em> and signs out. The audit log, the accounts and the backup are sections of Settings. An entry
-        is there for the accounts whose roles let them use it.
+        <strong>automations</strong>. The incidents are a page, <a href="#incident-list">their list</a>, from which one
+        is opened. The Indicators page and the artifacts open a list in the side panel: click the active icon again to
+        close the panel and give the whole width to the analysis. At the foot of the rail are the notifications, the
+        settings and <strong>your account</strong>, which says who is signed in, opens <em>My account</em> and signs
+        out. The audit log, the accounts and the backup are sections of Settings. An entry is there for the accounts
+        whose roles let them use it.
       </p>
       <p>
-        <strong>Every side panel can be resized</strong>: the lists of the rail, the sections of Settings, the facts of
-        an incident, the entry open in the War Room, the node library and the inspector of a playbook, the steps of a
-        run, the list of dashboards. Drag the edge the panel shares with the page, or focus it with <kbd>Tab</kbd> and
-        use the <kbd>arrow keys</kbd> (<kbd>Shift</kbd> for a larger step, <kbd>Home</kbd> and <kbd>End</kbd> for the
-        narrowest and the widest). A double-click, or <kbd>Enter</kbd>, puts the width back. Each panel remembers its
-        width in your browser.
+        <strong>Every side panel can be resized</strong>: the lists of the rail, the quick view of the incident list,
+        the sections of Settings, the facts of an incident, the entry open in the War Room, the node library and the
+        inspector of a playbook, the steps of a run, the list of dashboards. Drag the edge the panel shares with the
+        page, or focus it with <kbd>Tab</kbd> and use the <kbd>arrow keys</kbd> (<kbd>Shift</kbd> for a larger step,
+        <kbd>Home</kbd> and <kbd>End</kbd> for the narrowest and the widest). A double-click, or <kbd>Enter</kbd>, puts
+        the width back. Each panel remembers its width in your browser.
       </p>
 
       <p id="incident-facts">
@@ -457,6 +513,11 @@
           </tbody>
         </table>
       </div>
+      <p>
+        These are the tabs of an incident that was given no type. A <strong>type of incident</strong> orders them its
+        own way, hides those it has no use for, and adds <strong>pages of its own</strong> among them: see
+        <a href="#type-pages">The pages of a type</a>.
+      </p>
 
       <h3 id="evidence-tab">Evidence</h3>
       <p>
@@ -511,16 +572,18 @@
         <li><strong>Flags and notes</strong>: what was flagged and written, in order of time.</li>
       </ul>
       <p>
-        <strong>Arranging the page.</strong> In <em>Settings → Incidents → Types</em>, open a type and scroll to
-        <strong>The page</strong>. It is the grid of the dashboards, on twelve columns: drag a widget by its grip,
-        resize it by its corner, or focus the grip and use the arrow keys (<kbd>Shift</kbd> to resize); the others make
-        room. <strong>Add a widget</strong> offers the kinds: the four above, and <em>Timers</em> (the SLA),
-        <em>Evidence</em> (the files, each a link into the Evidence tab), <em>War Room</em>, <em>Work plan</em>,
-        <em>Indicators</em>, <em>Playbook buttons</em> (buttons that run the playbooks you choose on the incident) and
-        <em>A text</em> of your own. The pencil of a widget sets its title and what it shows. What does not fit in a
-        widget scrolls inside it. A type that never arranged its page shows the one Nik makes from its sections;
-        <strong>Back to the generated page</strong> returns to it. In a narrow window the widgets are one under the
-        other, in reading order.
+        <strong>Arranging the page.</strong> In <em>Settings → Incidents → Types</em>, open a type and choose
+        <strong>Pages</strong>: the Summary is the page that is selected. It is the grid of the dashboards, on twelve
+        columns: drag a widget by its grip, resize it by its corner, or focus the grip and use the arrow keys (<kbd
+          >Shift</kbd
+        >
+        to resize); the others make room. <strong>Add a widget</strong> offers the kinds: the four above, and
+        <em>Timers</em> (the SLA), <em>Evidence</em> (the files, each a link into the Evidence tab), <em>War Room</em>,
+        <em>Work plan</em>, <em>Indicators</em>, <em>Script buttons</em>, <em>Chart of a dashboard</em>,
+        <em>Linked incidents</em> and <em>A text</em> of your own. The pencil of a widget sets its title and what it
+        shows. What does not fit in a widget scrolls inside it. A type that never arranged its Summary shows the one Nik
+        makes from its sections; <strong>Back to the generated page</strong>
+        returns to it. In a narrow window the widgets are one under the other, in reading order.
       </p>
       <figure class="shot">
         <img src="img/summary.png" alt="The Summary tab" width="1600" height="1000" loading="lazy" />
@@ -528,6 +591,107 @@
           Summary: the page of the type, with the details, the numbers and the sections of fields.
         </figcaption>
       </figure>
+
+      <h3 id="script-buttons">Script buttons</h3>
+      <p>
+        A widget of <strong>script buttons</strong> holds up to eight buttons, each of which runs a
+        <a href="automation.html#scripts">script</a> on the incident. The pencil of the widget opens their settings. For
+        each button you choose:
+      </p>
+      <ul>
+        <li><strong>its text</strong>;</li>
+        <li>
+          <strong>the colour of the button and of its text</strong>, with the picker or as <code>#rrggbb</code>. The
+          button is drawn beside them as it will be, with the contrast of the two colours; under 4.5 : 1 a warning says
+          the text is hard to read. It is a warning: the button is saved all the same;
+        </li>
+        <li><strong>the script</strong>, among those that have a saved version;</li>
+        <li>
+          <strong>what each argument of the script receives</strong>. Leave an argument empty and it is asked when the
+          button is pressed. Write <code>{{ sender_address }}</code> and it is filled from that field of the incident:
+          typing <code>{{</code> offers the fields of the type, and <code>incident.number</code>,
+          <code>incident.host</code>, <code>incident.user</code> beside them. Text can stand around an expression (<code
+            >INC {{ incident.number }}</code
+          >), and the filters of <a href="automation.html#expressions">expressions</a> apply.
+        </li>
+      </ul>
+      <p>
+        On the incident the button is drawn with its colours, for whoever may run scripts (the permission to run
+        playbooks); for the others it is greyed out, and says why. Pressing it opens a dialog that shows every argument:
+        those filled from the incident, read-only, with the field each comes from, and those to fill. An argument whose
+        field is empty on this incident is asked like one that was left empty.
+        <strong>A field that holds several values runs the script once for each</strong>: the dialog says
+        <em>3 runs, one for each value</em>, and its button reads <em>Run 3 times</em>. Above fifty runs it says how
+        many there will be and asks a second time. One argument at most may hold several values; join the values of
+        another into one text with <code>| join(", ")</code>.
+      </p>
+      <p>
+        The same dialog then lists the runs as they finish: <em>done</em> with the time it took, or <em>failed</em> with
+        <em>show why</em>; <strong>Run the failed one again</strong> starts only those. Each run is a command in the
+        <strong>War Room</strong> of the incident, written as it would be typed, with its result under it, and a line of
+        the audit log. The playbook buttons of 5.3 are gone: a page that had some shows none, and a playbook is run from
+        the work plan or from the menu of the incident as before.
+      </p>
+
+      <h3 id="page-widgets">A chart of a dashboard, and the linked incidents</h3>
+      <p>
+        <strong>Chart of a dashboard</strong> shows one widget of a <a href="#dashboards">dashboard</a> on the page of
+        an incident, narrowed to what this incident shares with the others. In its settings choose the dashboard, the
+        widget, and <strong>one field</strong>: the query of the widget gets that field with what the incident holds for
+        it (<code>host:"WS-0231"</code>), so a chart of the incidents by day becomes the incidents on this host by day.
+        The field is one the <a href="#queries">query language</a> knows for what the chart counts. An incident that
+        holds nothing for the field shows no chart, and says so: a chart of everything would say nothing of this
+        incident. The dashboard is read as the person looking: choose one that is shared, or only you will see its
+        chart.
+      </p>
+      <p>
+        <strong>Linked incidents</strong> lists the incidents that have to do with this one, ten at most: first those
+        its field <em>Related incidents</em> names, by id or by number, and those that name it (an incident that came in
+        and was closed as its duplicate); then those that hold indicators this one holds too, the most shared first,
+        with the first of those indicators. Values on the <a href="#settings">allowlist</a> link nothing. A row opens
+        its incident.
+      </p>
+
+      <h3 id="type-pages">The pages of a type</h3>
+      <p>
+        <em>Settings → Incidents → Types</em>, a type, <strong>Pages</strong>. On the left,
+        <strong>Tabs of the incident</strong> lists every tab in the order of this type, each with a tag that says what
+        it is:
+      </p>
+      <ul>
+        <li>
+          <strong>a tab of Nik</strong> (War Room, Work plan, Evidence…) can be moved and hidden, not redrawn. Drag it
+          by its grip, or use its arrows; its eye hides it and shows it again;
+        </li>
+        <li><strong>the Summary</strong> is a page: it is arranged on the right, and is never hidden;</li>
+        <li>
+          <strong>a page of your own</strong>: <strong>Add a page…</strong> asks its name, which is what its tab is
+          called. It starts empty and is arranged like the Summary, with the same widgets; a widget that is on a page
+          once can be on each page. A page is renamed in its editor and deleted from there. A type has ten at most.
+        </li>
+      </ul>
+      <p>
+        The right side arranges what is selected on the left. Nothing is saved until <strong>Save the type</strong>; the
+        incidents of the type follow at once: their tabs in the new order, the hidden ones gone, each page a tab.
+      </p>
+      <p>Under the tabs are the two <strong>other views of the type</strong>:</p>
+      <ul>
+        <li>
+          <strong>Close form</strong>: the sections of the type the <em>Close the incident</em> dialog shows, in the
+          order you give them. The dialog always asks the reason and a note; with a close form it also shows those
+          sections, their fields ready to edit. A field the type marks <em>to close</em> is marked <em>required</em> and
+          holds the closing back while it is empty, as before. A line says how many tasks of the work plan are still
+          open, with <strong>Show them</strong>: it informs, and stops nothing. A type without a close form closes as it
+          always did;
+        </li>
+        <li>
+          <strong>Quick view</strong>: the blocks of the panel a click on a row of the
+          <a href="#incident-list">incident list</a> opens, one under the other in a narrow column, twelve at most: the
+          details, a section of fields, the numbers of the evidence, the timers, the last of the War Room, the linked
+          incidents, a text. A type that chose none shows the details, its first section, the numbers and the last of
+          the War Room.
+        </li>
+      </ul>
       <h3>Timeline</h3>
       <p>
         Every timestamped event of every tab in one chronological list: browser visits and downloads, commands, endpoint
@@ -711,6 +875,16 @@
 
       <h2 id="host-tabs">Endpoint, Event Logs, Browser, Commands</h2>
       <p>What was collected on the machine: four more kinds of evidence, in the same list.</p>
+      <p>
+        <strong>These four need to know the system.</strong> They show the paths and the collection commands of one
+        operating system, and an incident may have been made without one. The first time one of them is opened for such
+        an incident, a dialog asks: <em>Which system is this incident about?</em> Choose Windows, Linux or macOS and
+        <strong>Use</strong> it: it is saved on the incident, can be changed in <em>Edit the incident</em>, and is not
+        asked again. The dialog is not closed by <kbd>Esc</kbd> or by a click outside:
+        <strong>Back to the files</strong> leaves the kind for the list of evidence, and nothing is saved. Someone who
+        may not change the incident is told so, and can only go back. Until 6.2 these pages showed the paths of Windows
+        for an incident with no system, as if it had been said.
+      </p>
       <h3>Endpoint Artifacts</h3>
       <p>
         Four categories: <strong>program execution</strong>, <strong>persistence</strong>,
@@ -896,7 +1070,7 @@
 
       <h2 id="queries">Filter the lists with a query</h2>
       <p>
-        The incidents panel, the artifacts panel and the Indicators page each have a filter box that takes a
+        The list of incidents, the artifacts panel and the Indicators page each have a filter box that takes a
         <strong>query</strong>. Plain words work as they always did (<code>wks-finance</code>,
         <code>evil.example</code>); a query says more:
       </p>
@@ -984,9 +1158,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
           (one that nests groups, say) is edited as text.
         </li>
         <li>
-          <strong>The filters write the query.</strong> The status picker and <em>mine</em> of the incidents panel,
-          <em>mine</em> of the artifacts panel, the type, verdict and origin pickers of the Indicators page add their
-          condition to the box, where you can see it and change it.
+          <strong>The filters write the query.</strong> The <a href="#incident-list">chips</a> of the list of incidents
+          (type, severity, status, owner, opened, any field), <em>mine</em> of the artifacts panel, the type, verdict
+          and origin pickers of the Indicators page add their condition to the box, where you can see it and change it.
         </li>
       </ul>
       <p>
@@ -1138,7 +1312,7 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
       <h2 id="share">Export, import and backup</h2>
       <ul>
         <li>
-          <strong>Export an incident</strong> from its row in the incidents panel: a JSON file with everything the
+          <strong>Export an incident</strong> from its row in the list of incidents: a JSON file with everything the
           incident holds, to archive it or hand it to another Nik. <strong>Import incident</strong> loads one back; an
           imported incident starts <em>Unclassified</em>, since its type and its custom fields are those of the Nik it
           came from.
@@ -1364,11 +1538,14 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
                 The types of incident. A type opens in a builder: the fields of the registry on the left, to add with a
                 click or by dragging; the sections of the Summary on the right, one of which can be the side panel of
                 the incident page; for a field of your own, whether it is required, or required before closing; the
-                reasons an incident of this type is closed with; and <strong>the page</strong>, the grid of widgets that
-                is the <a href="#summary-page">Summary</a> of its incidents. Seven types ship (<em>Unclassified</em>,
-                the type of every incident that was given none, <em>Phishing</em>, <em>Malware</em>,
-                <em>Network intrusion</em>, <em>Data leak</em>, <em>Access abuse</em>, <em>Vulnerability</em>); they are
-                yours to change.
+                reasons an incident of this type is closed with. Under <strong>Pages</strong>: the order of the tabs of
+                its incidents and which are hidden, the grid of widgets that is their
+                <a href="#summary-page">Summary</a>, the pages the type adds, its close form and its quick view (<a
+                  href="#type-pages"
+                  >The pages of a type</a
+                >). Seven types ship (<em>Unclassified</em>, the type of every incident that was given none,
+                <em>Phishing</em>, <em>Malware</em>, <em>Network intrusion</em>, <em>Data leak</em>,
+                <em>Access abuse</em>, <em>Vulnerability</em>); they are yours to change.
               </td>
             </tr>
             <tr>

@@ -179,7 +179,9 @@
                 <code>limit</code> / <code>offset</code>, <code>view=summary</code> (light rows without the document
                 body). The older <code>host</code>, <code>username</code>, <code>status</code> and
                 <code>assignee</code> parameters still work and add to <code>q</code>. Total in the
-                <code>X-Total-Count</code> header.
+                <code>X-Total-Count</code> header. With <code>view=summary</code>, <code>fields=a,b</code> (names of
+                fields of the registry, 30 at most) adds to each row <code>fields</code>, the values it holds for those
+                names: what the columns of the incident list are read from.
               </td>
             </tr>
             <tr>
@@ -191,6 +193,17 @@
                 <code>uuid</code>, and carries <code>number</code>, the number people call the incident by
                 (<code>#00042</code>). The number is given by the server when the incident is created and is never used
                 twice; a number sent in a document is kept as <code>importedNumber</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/incidents/{id}/quick</code></td>
+              <td>
+                What the quick view of the incident list shows of an incident, without its evidence:
+                <code>{id, number, type, fields, createdBy, suspiciousStart, suspiciousEnd, counts, timers, last}</code
+                >. <code>counts</code> is how much evidence it holds (<code>browserEvents</code>, <code>commands</code>,
+                <code>endpointArtifacts</code>, <code>flagged</code>, <code>bookmarks</code>, <code>notes</code>),
+                <code>timers</code> its SLA timers as <code>GET …/timers</code> gives them, <code>last</code> the last
+                three entries of its War Room, oldest first.
               </td>
             </tr>
             <tr>
@@ -271,6 +284,68 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/script-buttons/scripts</code> ·
+                <code>POST /api/incidents/{id}/script-buttons/plan</code>
+              </td>
+              <td>
+                The scripts a button of a page can run: those with a saved version, each
+                <code>{name, description, version, arguments}</code>, and <code>sandbox</code> (needs
+                <code>incidents.configure</code> or <code>automation.run</code>) · what pressing a button would run,
+                without running anything (needs <code>automation.run</code>, and <code>read</code>):
+                <code>{script, args: {name: template}, values?: {name: typed}}</code>. The templates are rendered here,
+                on the incident as it is now: they read its fields by name (<code>{{ sender_address }}</code>,
+                <code>{{ incident.host }}</code>, <code>incident.number</code>, <code>incident.user</code>,
+                <code>incident.url</code>) and its <code>context</code>. Answers each argument of the script with its
+                <code>state</code>: <code>filled</code> (with <code>value</code>, the <code>source</code> field, and
+                <code>count</code> when it holds several values) or <code>ask</code> (with <code>problem</code> when a
+                template gave nothing); <code>runs</code>, one for each value of the argument named by
+                <code>each</code>; <code>missing</code>, the required arguments nobody filled. <code>400</code> for a
+                script with no saved version, and when two arguments hold several values; <code>404</code> for a script
+                that is not there.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/incidents/{id}/script-buttons/run</code> ·
+                <code>POST /api/incidents/{id}/script-buttons/status</code>
+              </td>
+              <td>
+                Needs <code>automation.run</code>, and <code>read</code>. Press a button:
+                <code>{script, label, args, values, expect?, only?}</code>. The script runs in the sandbox, once, or
+                once for each value of the argument that holds several; <code>only</code> keeps the runs at those places
+                (the failed ones, to run again). Each run is a command in the War Room of the incident (as
+                <code>!Script name=value</code>, its result under it) and a line of the audit log. Answers
+                <code>201</code> with <code>{script, total, runs: [{index, item, runId, entryId}]}</code>.
+                <code>400</code> while a required argument is missing; <code>409</code> when the press would not make
+                <code>expect</code> runs any more (the incident changed since it was planned), or when automation is
+                stopped · where runs are: <code>{runs: [ids]}</code> answers
+                <code>{runs: [{runId, status, durationMs?, error?}]}</code> with <code>status</code> one of
+                <code>running</code>, <code>done</code>, <code>failed</code> (<a href="guide.html#script-buttons"
+                  >Guide → Script buttons</a
+                >).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/incidents/{id}/linked</code> ·
+                <code>GET /api/incidents/{id}/chart?dashboard=&amp;widget=&amp;field=</code>
+              </td>
+              <td>
+                The incidents linked to this one, ten at most:
+                <code
+                  >{incidents: [{id, number, name, status, severity, type, related, shared, indicators}], total}</code
+                >. First those its field <code>related_incidents</code> names (by id or by number) and those that name
+                it, then those that hold the most indicators it holds too (<code>shared</code>, with the first three);
+                values on the allowlist link nothing · a widget of a dashboard with its query narrowed to what this
+                incident holds for <code>field</code>, a field of the query language for what the widget counts:
+                <code>{widget, board, field, value, empty}</code>, the widget to be asked of
+                <code>POST /api/query/aggregate</code> like any other. <code>empty</code> is true, with no widget, when
+                the incident holds nothing for the field. <code>404</code> for a dashboard the caller does not see or a
+                widget that is gone; <code>400</code> for a widget that asks no query, or a field it does not have.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET</code> · <code>DELETE /api/playground</code></td>
               <td>
                 Needs <code>automation.run</code>. The caller's own Playground, oldest first:
@@ -347,15 +422,30 @@
                 <code>malware</code>, <code>network</code>, <code>urls</code>, <code>endpoint</code>,
                 <code>eventlogs</code>, <code>browser</code>, <code>commands</code>), which they order and hide inside
                 the Evidence tab. <code>grid</code>, when there is one, is the Summary:
-                <code>[{id, kind, x, y, w, h, title?, section?, text?, playbooks?}]</code> on twelve columns, thirty
-                widgets at most, <code>kind</code> one of <code>facts</code>, <code>section</code> (with the id of a
-                section that is not the side panel), <code>stats</code>, <code>timeline</code>, <code>timers</code>,
-                <code>evidence</code>, <code>war_room</code>, <code>work_plan</code>, <code>indicators</code>,
-                <code>playbooks</code> (with up to eight ids) and <code>note</code> (with its <code>text</code>); all
-                but <code>section</code>, <code>playbooks</code> and <code>note</code> are on a page once. A layout
-                without a grid is drawn with one made from its sections. <code>400</code> says what is wrong. Deleting a
-                type moves its incidents to <code>moveTo</code> (<code>unclassified</code> when not said) with every
-                value they hold; <code>unclassified</code> itself cannot be deleted.
+                <code>[{id, kind, x, y, w, h, title?, section?, text?, buttons?, dashboard?, widget?, field?}]</code>
+                on twelve columns, thirty widgets at most, <code>kind</code> one of <code>facts</code>,
+                <code>section</code> (with the id of a section that is not the side panel), <code>stats</code>,
+                <code>timeline</code>, <code>timers</code>, <code>evidence</code>, <code>war_room</code>,
+                <code>work_plan</code>, <code>indicators</code>, <code>linked</code>, <code>buttons</code>,
+                <code>chart</code> and <code>note</code> (with its <code>text</code>); all but <code>section</code>,
+                <code>buttons</code>, <code>chart</code> and <code>note</code> are on a page once. A widget of
+                <code>buttons</code> holds up to eight
+                <code>{label, background, color, script, args: {name: template}}</code>: the colours as
+                <code>#rrggbb</code>, the name of a script, and for an argument a template in the
+                <code>{{ }}</code> language (one left out is asked when the button is pressed). A
+                <code>chart</code> names a <code>dashboard</code>, one of its widgets (<code>widget</code>) and the
+                <code>field</code> it is narrowed by. A widget of the kind <code>playbooks</code>, which 5.3 had, is
+                left out when a layout is read and when one is saved. A layout without a grid is drawn with one made
+                from its sections. Since 6.2 a layout also keeps <code>pages</code>, the pages the type adds:
+                <code>[{id, name, grid}]</code>, ten at most, each grid like the Summary's; a page is the tab
+                <code>page:&lt;id&gt;</code> in <code>tabs</code> and <code>hidden</code>. <code>close</code> is
+                <code>{sections: [ids]}</code>, the sections the form of closing shows, in order. <code>quick</code> is
+                the quick view of the incident list: <code>[{kind, section?, text?}]</code>, twelve blocks at most,
+                <code>kind</code> one of <code>facts</code>, <code>section</code> (a section that is not the side panel,
+                once each), <code>stats</code>, <code>timers</code>, <code>last</code>, <code>linked</code> (each once)
+                and <code>note</code> (with its <code>text</code>). <code>400</code> says what is wrong. Deleting a type
+                moves its incidents to <code>moveTo</code> (<code>unclassified</code> when not said) with every value
+                they hold; <code>unclassified</code> itself cannot be deleted.
               </td>
             </tr>
             <tr>
@@ -1553,6 +1643,41 @@
               <td>
                 (<strong>dashboards.share</strong>) Who else sees a dashboard:
                 <code>{everyone, roles, users}</code>; all empty, nobody else. Written to the audit log.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET</code> · <code>POST /api/filters</code> · <code>PUT</code> ·
+                <code>DELETE /api/filters/{id}</code>
+              </td>
+              <td>
+                (<strong>read</strong>) The saved filters of the incident list. The filters the caller sees, their own
+                first, then those shared with everyone:
+                <code>{filters: [{id, name, entity, query, sort, columns, shared, owner, mine}], default}</code>,
+                <code>default</code> being the id of the one the list opens with for the caller, or null · keep a query
+                under a name: <code>{name, query, sort: {key, dir}, columns: [names]}</code> (<code>entity</code> is
+                <code>incidents</code>). The query is read as <code>GET /api/incidents?q=…</code> reads it: one that
+                cannot be read is answered <code>422</code> with the position and the reason. A name is one's own once
+                (<code>409</code>) · change a filter of one's own, what is left out stays · delete it, which also clears
+                the default of whoever had chosen it. A filter that is not the caller's and not shared answers
+                <code>404</code>; a shared one that is not the caller's is read and not changed (<code>403</code>). The
+                rows are not here: the list asks <code>/api/incidents</code> as the person looking.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT</code> · <code>DELETE /api/filters/default/{entity}</code></td>
+              <td>
+                (<strong>read</strong>) Choose the filter the list opens with for the caller:
+                <code>{filterId}</code>, one of their own or one shared with everyone · have none again.
+                <code>{entity}</code> is <code>incidents</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/filters/{id}/sharing</code></td>
+              <td>
+                (<strong>admin</strong>) Share a filter with everyone, or take it back: <code>{shared}</code>. An
+                administrator shares a filter of their own and takes back any that is shared; taking one back clears the
+                default of whoever else had chosen it. Written to the audit log.
               </td>
             </tr>
             <tr>

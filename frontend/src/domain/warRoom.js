@@ -37,7 +37,8 @@ export function entryLine(entry) {
     case 'command':
       return {
         title: String(body.line ?? ''),
-        text: body.status === 'refused' ? String(body.error ?? '') : '',
+        // A command nobody typed says which script button of the page was pressed.
+        text: body.status === 'refused' ? String(body.error ?? '') : body.button ? `Pressed: ${body.button}` : '',
         tone: 'command',
       }
     case 'result':

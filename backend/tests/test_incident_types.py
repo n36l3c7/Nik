@@ -142,9 +142,9 @@ def test_a_type_of_your_own_with_fields_and_a_layout(admin: TestClient):
             "section": "s2",
         },
         {"id": "note-3", "kind": "note", "x": 0, "y": 4, "w": 4, "h": 2, "text": "Call the site first"},
-        {"id": "playbooks-4", "kind": "playbooks", "x": 4, "y": 4, "w": 4, "h": 2, "playbooks": ["p1", "p2"]},
-        {"id": "war_room-5", "kind": "war_room", "x": 0, "y": 6, "w": 12, "h": 6},
+        {"id": "war_room-4", "kind": "war_room", "x": 0, "y": 6, "w": 12, "h": 6},
     ]
+    # The playbook buttons of 5.3 are gone (6.2): one that is sent is left out, without a word.
     assert admin.get(url).json()["layout"]["grid"] == arranged["grid"]
 
     def bad(*widgets):
@@ -289,3 +289,194 @@ def test_a_type_can_be_for_some_roles_only(admin: TestClient):
     assert "Insider" not in names(analyst) and "Insider" in names(auditor) and "Insider" in names(None)
     assert admin.get("/api/incident-types/insider", headers=analyst).status_code == 404
     assert admin.get("/api/incident-types/insider", headers=auditor).status_code == 200
+
+
+LAYOUT = {
+    "sections": [
+        {"id": "key", "title": "Key facts", "key": True, "fields": ["status", "severity"]},
+        {"id": "outcome", "title": "Outcome", "fields": ["details", "labels"]},
+        {"id": "lessons", "title": "Lessons", "fields": ["category"]},
+    ],
+}
+BOX = {"x": 0, "y": 0, "w": 6, "h": 3}
+
+
+def test_a_type_has_pages_of_its_own_a_close_form_and_a_quick_view(admin: TestClient):
+    made = make(admin, name="Paged")
+    url = f"/api/incident-types/{made['id']}"
+
+    def saved(**more) -> dict:
+        answer = admin.put(url, json={"layout": {**LAYOUT, **more}})
+        assert answer.status_code == 200, answer.text
+        return answer.json()["layout"]
+
+    def bad(**more) -> str:
+        return refused(admin, "PUT", url, layout={**LAYOUT, **more})
+
+    # A layout that has none of them is what it was.
+    assert set(saved()) == {"sections", "tabs", "hidden"}
+
+    # Pages: a name and a grid each, shown as tabs named page:<id>, ordered and hidden with the others.
+    pages = [
+        {"id": "containment", "name": " Containment ", "grid": [{"kind": "facts", **BOX}, {"kind": "note", **BOX}]},
+        {"id": "empty", "name": "Nothing yet"},
+    ]
+    kept = saved(
+        pages=pages,
+        grid=[{"kind": "facts", **BOX}],
+        tabs=["summary", "page:containment", "evidence"],
+        hidden=["page:empty", "timeline"],
+    )
+    assert kept["pages"] == [
+        {
+            "id": "containment",
+            "name": "Containment",
+            "grid": [
+                {"id": "facts-1", "kind": "facts", **BOX},
+                {"id": "note-2", "kind": "note", **BOX, "text": ""},
+            ],
+        },
+        {"id": "empty", "name": "Nothing yet", "grid": []},
+    ]
+    # What is on a page once is once on each page: the Summary has the details too.
+    assert kept["grid"][0]["kind"] == "facts"
+    assert kept["tabs"] == ["summary", "page:containment", "evidence"] and kept["hidden"] == ["page:empty", "timeline"]
+    assert bad(tabs=["page:nowhere"]) == 'The tabs name the page "nowhere", which this type does not have'
+    assert bad(pages=[{"id": "Bad Id", "name": "x"}]).startswith("The id of a page is a lower-case letter")
+    assert bad(pages=[{"id": "a", "name": "x"}, {"id": "a", "name": "y"}]) == "Two pages have the same id"
+    assert bad(pages=[{"id": "a", "name": " "}]) == "A page needs a name: it is what its tab is called"
+    assert bad(pages=[{"id": "a", "name": "x", "grid": [{"kind": "facts", **BOX}, {"kind": "facts", **BOX}]}]) == (
+        'The widget "facts" is on a page once'
+    )
+    assert bad(pages=[{"id": f"p{index}", "name": "x"} for index in range(11)]) == (
+        "A type has 10 pages of its own at most"
+    )
+    assert bad(pages="nonsense") == "A type has 10 pages of its own at most"
+
+    # The close form: sections of the layout, in the order given; the side panel can be one.
+    assert saved(close={"sections": ["lessons", "key"]})["close"] == {"sections": ["lessons", "key"]}
+    assert "close" not in saved(close={"sections": []})
+    assert bad(close={"sections": ["gone"]}) == (
+        'The close form shows the section "gone", which this layout does not have'
+    )
+    assert bad(close={"sections": ["outcome", "outcome"]}) == "A section is in the close form twice"
+    assert bad(close=["outcome"]) == "The close form is a list of sections of the type"
+
+    # The quick view: blocks in order; a text as often as wanted, the rest once.
+    quick = [
+        {"kind": "facts", "extra": "dropped"},
+        {"kind": "section", "section": "outcome"},
+        {"kind": "note", "text": "Call the owner."},
+        {"kind": "stats"},
+        {"kind": "timers"},
+        {"kind": "last"},
+        {"kind": "linked"},
+        {"kind": "section", "section": "lessons"},
+        {"kind": "note", "text": "Then the user."},
+    ]
+    assert saved(quick=quick)["quick"] == [
+        {"kind": "facts"},
+        {"kind": "section", "section": "outcome"},
+        {"kind": "note", "text": "Call the owner."},
+        {"kind": "stats"},
+        {"kind": "timers"},
+        {"kind": "last"},
+        {"kind": "linked"},
+        {"kind": "section", "section": "lessons"},
+        {"kind": "note", "text": "Then the user."},
+    ]
+    assert "quick" not in saved(quick=[])
+    assert bad(quick=[{"kind": "war_room"}]).startswith('There is no block of the kind "war_room" in a quick view')
+    assert bad(quick=[{"kind": "section", "section": "gone"}]).startswith('The quick view shows the section "gone"')
+    # The side panel is not a block: its fields are the details.
+    assert bad(quick=[{"kind": "section", "section": "key"}]).startswith('The quick view shows the section "key"')
+    assert bad(quick=[{"kind": "facts"}, {"kind": "facts"}]) == 'The block "facts" is in a quick view once'
+    assert bad(quick=[{"kind": "section", "section": "outcome"}] * 2) == (
+        'The block "section" is in a quick view once for a section'
+    )
+    assert bad(quick=[{"kind": "note"}] * 13) == "The quick view has 12 blocks at most"
+
+
+def test_the_widgets_of_6_2_script_buttons_a_chart_linked_incidents(admin: TestClient):
+    made = make(admin, name="Widgets")
+    url = f"/api/incident-types/{made['id']}"
+
+    def grid(*widgets) -> list[dict]:
+        answer = admin.put(url, json={"layout": {**LAYOUT, "grid": list(widgets)}})
+        assert answer.status_code == 200, answer.text
+        return answer.json()["layout"].get("grid", [])
+
+    def bad(*widgets) -> str:
+        return refused(admin, "PUT", url, layout={**LAYOUT, "grid": list(widgets)})
+
+    button = {
+        "label": " Block the sender ",
+        "background": "#8B1A1A",
+        "color": "#ffffff",
+        "script": "BlockSender",
+        "args": {"address": "{{ sender_address }}", "reason": "  ", "urls": "{{ urls_in_mail | unique }}"},
+    }
+    kept = grid(
+        {"kind": "buttons", **BOX, "buttons": [button, {"label": "Later"}]},
+        {"kind": "chart", **BOX, "dashboard": "d1", "widget": "w1", "field": "host"},
+        {"kind": "linked", **BOX},
+    )
+    assert kept[0]["buttons"] == [
+        {
+            "label": "Block the sender",
+            "background": "#8b1a1a",
+            "color": "#ffffff",
+            "script": "BlockSender",
+            # An argument left empty is not kept: it is asked when the button is pressed.
+            "args": {"address": "{{ sender_address }}", "urls": "{{ urls_in_mail | unique }}"},
+        },
+        # A button that is not finished is saved: no script yet, the colours of every button.
+        {"label": "Later", "background": "#21262d", "color": "#e6edf3", "script": "", "args": {}},
+    ]
+    assert kept[1] == {"id": "chart-2", "kind": "chart", **BOX, "dashboard": "d1", "widget": "w1", "field": "host"}
+    assert kept[2] == {"id": "linked-3", "kind": "linked", **BOX}
+
+    def buttons(*items) -> str:
+        return bad({"kind": "buttons", **BOX, "buttons": list(items)})
+
+    assert buttons({"label": ""}) == "A script button needs its text"
+    assert buttons({**button, "background": "red"}) == (
+        'The colours of the button "Block the sender" are written #rrggbb'
+    )
+    assert buttons({**button, "script": "block sender"}).startswith('The button "Block the sender" names a script')
+    assert buttons({**button, "args": {"Bad-Name": "x"}}).startswith('The button "Block the sender" has an argument')
+    assert buttons({**button, "args": {"address": "{{ sender_address"}}).startswith(
+        'The button "Block the sender", argument address: '
+    )
+    assert buttons(*[{"label": f"b{index}"} for index in range(9)]) == "A widget has 8 script buttons at most"
+    assert bad({"kind": "linked", **BOX}, {"kind": "linked", **BOX}) == 'The widget "linked" is on a page once'
+
+    # A layout saved before 6.2 may hold playbook buttons: it is read without them, and a page that
+    # held nothing else is the generated one again. Nothing is rewritten until the type is saved.
+    stored = {
+        **LAYOUT,
+        "tabs": [],
+        "hidden": [],
+        "grid": [{"id": "playbooks-1", "kind": "playbooks", **BOX, "playbooks": ["p1"]}],
+        "pages": [
+            {
+                "id": "old",
+                "name": "Old",
+                "grid": [
+                    {"id": "playbooks-1", "kind": "playbooks", **BOX, "playbooks": ["p1"]},
+                    {"id": "note-2", "kind": "note", **BOX, "text": "kept"},
+                ],
+            }
+        ],
+    }
+    with SessionLocal() as db:
+        db.get(IncidentType, made["id"]).layout = stored
+        db.commit()
+    read = admin.get(url).json()
+    assert read["customLayout"] is True and "grid" not in read["layout"]
+    assert [widget["kind"] for widget in read["layout"]["pages"][0]["grid"]] == ["note"]
+    with SessionLocal() as db:
+        assert db.get(IncidentType, made["id"]).layout["grid"][0]["kind"] == "playbooks"
+    # Thirty widgets beside one that is gone are still thirty.
+    many = [{"kind": "note", **BOX, "id": f"n{index}"} for index in range(30)]
+    assert len(grid({"kind": "playbooks", **BOX}, *many)) == 30

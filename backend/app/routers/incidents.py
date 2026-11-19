@@ -32,10 +32,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import defer
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import fields as field_registry
-from .. import query
+from .. import incident_quick, query
 from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
@@ -113,6 +114,28 @@ def _shown(row: Incident, source: dict[str, Any] | None = None) -> dict[str, Any
         "number": row.number,
         "type": row.type_id or field_registry.UNCLASSIFIED,
         "fields": field_registry.stored_fields(row),
+    }
+
+
+def _summary(r: Any, source: dict[str, Any] | None) -> dict[str, Any]:
+    """The light row of a list: what the columns of ``incidents`` hold, nothing of the document."""
+    return {
+        "id": r.id,
+        "number": r.number,
+        "name": r.name,
+        "host": r.host,
+        "username": r.username,
+        "os": r.os,
+        "ticketId": r.ticket_id,
+        "severity": r.severity or None,
+        "status": r.status or "open",
+        "assignee": r.assignee,
+        "hasMail": bool(r.has_mail),
+        "type": r.type_id or field_registry.UNCLASSIFIED,
+        # What brought it in, with the logo of its connector; null for one made here.
+        "source": source,
+        "createdAt": r.created_at,
+        "updatedAt": r.updated_at,
     }
 
 
@@ -201,6 +224,12 @@ def list_incidents(
     view: str = Query(
         "full", pattern="^(full|summary)$", description="full = whole documents; summary = light rows (no data)."
     ),
+    fields: str | None = Query(
+        None,
+        max_length=1500,
+        description="With view=summary: names of fields of the registry, comma-separated; each row then "
+        "carries `fields` with the values it holds for them.",
+    ),
 ) -> dict:
     """List incidents newest-updated first, filterable and paginated.
 
@@ -236,7 +265,22 @@ def list_incidents(
 
     sources = connector_actions.logos_by_connection(db)
 
-    if view == "summary":
+    if view == "summary" and fields and fields.strip():
+        # The columns of a list that are fields of the registry: the rows are read with what they
+        # hold for those names, and still without their documents.
+        wanted = [name for name in dict.fromkeys(part.strip() for part in fields.split(",")) if name][:30]
+        stmt = select(Incident).options(defer(Incident.doc)).where(*conditions).order_by(order)
+        stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
+        incidents = []
+        for row in db.scalars(stmt).all():
+            held = field_registry.stored_fields(row)
+            incidents.append(
+                {
+                    **_summary(row, _source(db, row.source_connection_id, sources)),
+                    "fields": {name: held[name] for name in wanted if name in held},
+                }
+            )
+    elif view == "summary":
         stmt = (
             select(
                 Incident.id,
@@ -259,27 +303,7 @@ def list_incidents(
             .order_by(order)
         )
         stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
-        incidents = [
-            {
-                "id": r.id,
-                "number": r.number,
-                "name": r.name,
-                "host": r.host,
-                "username": r.username,
-                "os": r.os,
-                "ticketId": r.ticket_id,
-                "severity": r.severity or None,
-                "status": r.status or "open",
-                "assignee": r.assignee,
-                "hasMail": bool(r.has_mail),
-                "type": r.type_id or field_registry.UNCLASSIFIED,
-                # What brought it in, with the logo of its connector; null for one made here.
-                "source": _source(db, r.source_connection_id, sources),
-                "createdAt": r.created_at,
-                "updatedAt": r.updated_at,
-            }
-            for r in db.execute(stmt).all()
-        ]
+        incidents = [_summary(r, _source(db, r.source_connection_id, sources)) for r in db.execute(stmt).all()]
     else:
         stmt = select(Incident).where(*conditions).order_by(order)
         stmt = stmt.offset(offset).limit(limit) if limit is not None else stmt.offset(offset)
@@ -338,6 +362,18 @@ def get_incident(
         db.commit()
     response.headers["ETag"] = _etag(row.rev)
     return _shown(row, _source(db, row.source_connection_id))
+
+
+@router.get("/{incident_id}/quick")
+def quick_view(
+    incident_id: str,
+    _caller: Principal = Depends(reader_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """What the quick view of the list shows of an incident, without its evidence: its type and
+    ``fields``, ``counts`` (how much evidence it holds), its ``timers`` and ``last``, the last three
+    entries of its War Room, oldest first."""
+    return incident_quick.quick(db, _get_or_404(db, incident_id))
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

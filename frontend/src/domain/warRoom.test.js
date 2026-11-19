@@ -35,6 +35,14 @@ test('a line of the stream says what happened', () => {
     'not answered in time',
   )
   assert.equal(entryLine({ kind: 'command', body: { line: '!ip 1.2.3.4' } }).title, '!ip 1.2.3.4')
+  assert.deepEqual(
+    entryLine({ kind: 'command', body: { line: '!BlockSender address=a@b.example', button: 'Block the sender' } }),
+    {
+      title: '!BlockSender address=a@b.example',
+      text: 'Pressed: Block the sender',
+      tone: 'command',
+    },
+  )
   assert.equal(entryLine({ kind: 'system', body: { text: 'kept Ticket: edited by anna' } }).tone, 'system')
   assert.equal(authorLabel('nik-automation'), 'automation')
   assert.equal(authorLabel('connector:servicenow'), 'servicenow')

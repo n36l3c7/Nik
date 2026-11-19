@@ -113,7 +113,7 @@ LABELS = {
     "dashboards": "Dashboard",
 }
 YAML_KINDS = frozenset({"connectors", "scripts"})
-NIK_VERSION = (6, 1, 0)
+NIK_VERSION = (6, 2, 0)
 BUILTIN_ID = "nik"  # the one pack that is part of Nik
 LOGO_NAMES = ("logo.svg", "logo.png")
 CRLF, LF = bytes((13, 10)), bytes((10,))
@@ -441,6 +441,28 @@ def _playbook_body(data: Any) -> dict[str, Any]:
     return data["playbook"] if isinstance(data.get("playbook"), dict) else data
 
 
+def _layout_now(layout: Any) -> Any:
+    """A stored layout without the widgets of a kind that is no more (the playbook buttons of 5.3, which 6.2
+    replaced with script buttons): a type saved before then still holds them, and a pack made from it would
+    carry what no Nik can read."""
+    if not isinstance(layout, dict):
+        return layout
+
+    def kept(grid: Any) -> Any:
+        if not isinstance(grid, list):
+            return grid
+        return [widget for widget in grid if not isinstance(widget, dict) or widget.get("kind") in types.GRID_KINDS]
+
+    shown = dict(layout)
+    if "grid" in shown:
+        shown["grid"] = kept(shown["grid"])
+    if isinstance(shown.get("pages"), list):
+        shown["pages"] = [
+            {**page, "grid": kept(page.get("grid"))} if isinstance(page, dict) else page for page in shown["pages"]
+        ]
+    return shown
+
+
 def current(db: OrmSession, kind: str, name: str, *, with_items: bool = True) -> Any:
     """The item as it is in this Nik, in the shape a pack writes it; None when there is none."""
     if kind == "connectors":
@@ -508,7 +530,7 @@ def current(db: OrmSession, kind: str, name: str, *, with_items: bool = True) ->
             "colour": row.colour,
             "icon": row.icon,
             "fields": shown["fields"],
-            "layout": row.layout,
+            "layout": _layout_now(row.layout),
             "sla": shown["sla"],
             "closeReasons": shown["closeReasons"],
             "defaultPlaybook": playbook.name if playbook is not None else None,

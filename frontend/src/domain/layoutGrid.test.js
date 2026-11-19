@@ -7,6 +7,7 @@ import {
   canAdd,
   cleanGrid,
   defaultGrid,
+  drawnWidgets,
   freeSections,
   gridOf,
   sectionHeight,
@@ -62,7 +63,21 @@ test('a kept grid is drawn as it is, without what cannot be drawn', () => {
     { id: 'e', kind: 'war_room', x: 0, y: 12, w: 6, h: 6 },
     { id: 'f', kind: 'section', section: 'key', x: 0, y: 6, w: 6, h: 3 },
     { id: 'a', kind: 'note', x: 40, y: -3, w: 99, h: 99, text: 'Call the owner first' },
+    // The playbook buttons of 5.3 are gone: a stored one is left out like a kind nobody knows.
     { id: 'g', kind: 'playbooks', x: 'x', y: 2.4, playbooks: ['p1', 'p1', '', 'p2'] },
+    {
+      id: 'h',
+      kind: 'buttons',
+      x: 'x',
+      y: 2.4,
+      buttons: [
+        { label: ' Block ', background: '#ABC', script: 'BlockSender', args: { address: '{{ sender }}', x: ' ' } },
+        { label: '' },
+      ],
+    },
+    { id: 'i', kind: 'chart', x: 0, y: 4, w: 6, h: 4, dashboard: 'd1', widget: 'w1', field: 'host', query: 'dropped' },
+    { id: 'j', kind: 'linked', x: 0, y: 8, w: 6, h: 3 },
+    { id: 'k', kind: 'linked', x: 0, y: 11, w: 6, h: 3 },
     null,
   ]
   const { grid, custom } = gridOf({ layout: { ...LAYOUT, grid: kept } })
@@ -72,7 +87,25 @@ test('a kept grid is drawn as it is, without what cannot be drawn', () => {
     { id: 'b', kind: 'section', section: 'about', x: 6, y: 0, w: 6, h: 3, title: 'Where' },
     // Out of the columns, taller than a widget may be, an id used twice: put right.
     { id: 'a-3', kind: 'note', x: 0, y: 0, w: 12, h: 12, text: 'Call the owner first' },
-    { id: 'g', kind: 'playbooks', x: 0, y: 2, w: 4, h: 2, playbooks: ['p1', 'p2'] },
+    {
+      id: 'h',
+      kind: 'buttons',
+      x: 0,
+      y: 2,
+      w: 4,
+      h: 2,
+      buttons: [
+        {
+          label: 'Block',
+          background: '#aabbcc',
+          color: '#e6edf3',
+          script: 'BlockSender',
+          args: { address: '{{ sender }}' },
+        },
+      ],
+    },
+    { id: 'i', kind: 'chart', x: 0, y: 4, w: 6, h: 4, dashboard: 'd1', widget: 'w1', field: 'host' },
+    { id: 'j', kind: 'linked', x: 0, y: 8, w: 6, h: 3 },
   ])
   // A grid left with nothing is not a page: the type gets the generated one.
   assert.equal(gridOf({ layout: { ...LAYOUT, grid: [{ kind: 'unicorn' }] } }).custom, false)
@@ -92,6 +125,10 @@ test('a widget is called by its title, its section or its kind', () => {
   assert.equal(widgetTitle({ kind: 'section', section: 'gone' }, LAYOUT), 'Section')
   assert.equal(widgetTitle({ kind: 'war_room' }, LAYOUT), 'War Room')
   assert.equal(widgetTitle({ kind: 'unicorn' }, LAYOUT), 'Widget')
+  assert.equal(widgetTitle({ kind: 'buttons', buttons: [] }, LAYOUT), 'Script buttons')
+  assert.deepEqual(drawnWidgets([{ id: 'a', kind: 'linked', x: 0, y: 0, w: 6, h: 3 }], LAYOUT), [
+    { id: 'a', kind: 'linked', x: 0, y: 0, w: 6, h: 3, type: 'linked', title: 'Linked incidents' },
+  ])
 })
 
 test('a widget is added under the others; some kinds are there once', () => {
@@ -103,6 +140,21 @@ test('a widget is added under the others; some kinds are there once', () => {
   const noted = addWidget(grid, 'note')
   assert.deepEqual(noted.at(-1), { id: `note-${grid.length + 1}`, kind: 'note', x: 0, y: bottom, w: 4, h: 2, text: '' })
   // A second text is allowed, with an id of its own.
+  // Buttons start with none, a chart with nothing chosen.
+  assert.deepEqual(addWidget([], 'buttons')[0].buttons, [])
+  assert.deepEqual(addWidget([], 'chart')[0], {
+    id: 'chart-1',
+    kind: 'chart',
+    x: 0,
+    y: 0,
+    w: 6,
+    h: 4,
+    dashboard: '',
+    widget: '',
+    field: '',
+  })
+  assert.equal(canAdd(addWidget([], 'linked'), 'linked'), false)
+  assert.equal(canAdd([], 'playbooks'), false)
   const twice = addWidget(noted, 'note')
   assert.equal(new Set(twice.map((widget) => widget.id)).size, twice.length)
   // A section widget is offered for the sections that have none.

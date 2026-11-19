@@ -193,7 +193,20 @@ test('the flags of a field of a type, and what is saved of the type', () => {
   assert.equal(payload.name, 'BEC')
   assert.deepEqual(payload.closeReasons, ['Fixed', 'Not ours'])
   assert.equal(payload.colour, 'slate')
-  assert.equal(payload.layout, LAYOUT)
+  assert.deepEqual(payload.layout, LAYOUT)
+  // What names a section that was taken away is not sent: the server would refuse it.
+  const trimmed = typePayload({
+    ...TYPE,
+    layout: {
+      ...LAYOUT,
+      grid: [{ id: 'a', kind: 'section', section: 'gone', x: 0, y: 0, w: 6, h: 3 }],
+      close: { sections: ['about', 'gone'] },
+      quick: [{ kind: 'section', section: 'gone' }, { kind: 'stats' }],
+    },
+  }).layout
+  assert.deepEqual(trimmed.grid, [])
+  assert.deepEqual(trimmed.close, { sections: ['about'] })
+  assert.deepEqual(trimmed.quick, [{ kind: 'stats' }])
 })
 
 test('the page of an incident follows the layout of its type', async () => {

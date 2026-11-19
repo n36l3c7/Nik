@@ -383,10 +383,23 @@ def adhoc_playbook(db: OrmSession) -> Playbook:
 
 
 def start(
-    db: OrmSession, incident: Incident | None, line: str, target: Target, parsed: Parsed, actor: str
+    db: OrmSession,
+    incident: Incident | None,
+    line: str,
+    target: Target,
+    parsed: Parsed,
+    actor: str,
+    *,
+    button: str = "",
+    payload: dict[str, Any] | None = None,
+    classes: dict[str, list[str]] | None = None,
 ) -> tuple[Any, Run]:
     """Write the command in the War Room of the incident and start its run (the caller commits).
-    With no incident it is written in the Playground of who typed it, and its run works on nothing."""
+    With no incident it is written in the Playground of who typed it, and its run works on nothing.
+
+    ``button`` is the text of the script button that was pressed, when the command was not typed
+    (buttons.py): the entry says so, and ``payload`` (with its ``classes``) is what the node reads
+    under ``trigger`` beside the line: the arguments the server rendered for it."""
     playbook = adhoc_playbook(db)
     number = (
         db.scalar(select(func.max(PlaybookVersion.version)).where(PlaybookVersion.playbook_id == playbook.id)) or 0
@@ -397,7 +410,13 @@ def start(
             {
                 "id": "start",
                 "kind": "trigger",
-                "name": "Typed in the War Room" if incident is not None else "Typed in the Playground",
+                "name": (
+                    f"Pressed: {button}"[:200]
+                    if button
+                    else "Typed in the War Room"
+                    if incident is not None
+                    else "Typed in the Playground"
+                ),
                 "position": {"x": 40, "y": 40},
                 "config": {"manual": True},
             },
@@ -417,6 +436,8 @@ def start(
     )
     db.flush()
     said = {"line": line, "command": target.title, "raw": parsed.raw, "extend": parsed.extend}
+    if button:
+        said["button"] = button[:200]
     if incident is None:
         from . import playground
 
@@ -428,8 +449,8 @@ def start(
         db,
         playbook,
         kind="adhoc",
-        payload={"actor": actor, "line": line},
-        classes={"actor": ["private_value"]},
+        payload={**(payload or {}), "actor": actor, "line": line},
+        classes={**(classes or {}), "actor": ["private_value"]},
         object_kind="incident" if incident is not None else "",
         object_id=incident.id if incident is not None else "",
         incident_id=incident.id if incident is not None else None,

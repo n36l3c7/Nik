@@ -19,7 +19,7 @@ import {
 } from '../../../domain/fields.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import NewFieldDialog from '../../fields/NewFieldDialog.jsx'
-import TypePageEditor from './TypePageEditor.jsx'
+import TypePagesEditor from './TypePagesEditor.jsx'
 
 /*
  * ============================================================================
@@ -39,6 +39,11 @@ import TypePageEditor from './TypePageEditor.jsx'
  *           before closing.
  *   below   the reasons an incident of this type is closed with.
  *
+ * That is the part "Fields and sections". The part "Pages" (6.2) is where the
+ * tabs of the incident are ordered and hidden, the Summary and the pages of
+ * the type are arranged, and its close form and quick view are chosen
+ * (TypePagesEditor.jsx).
+ *
  * Nothing is saved until "Save the type". A field taken off the page stays
  * on the incidents that hold it: it is hidden, not deleted.
  */
@@ -46,6 +51,11 @@ import TypePageEditor from './TypePageEditor.jsx'
 const INPUT =
   'w-full border border-line bg-canvas px-3 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 const DRAG = 'application/x-nik-field'
+// The builder in two parts: what an incident of the type holds, and the pages that show it.
+const PARTS = [
+  { id: 'fields', label: 'Fields and sections' },
+  { id: 'pages', label: 'Pages' },
+]
 
 /** The custom fields a type lists: those placed on its page, with the flags they have. */
 function fieldsToSave(type, known) {
@@ -73,6 +83,7 @@ function Builder({ type: saved, fields, colours, types, onBack, onSaved, onDelet
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [reasons, setReasons] = useState((saved.closeReasons ?? []).join('\n'))
+  const [view, setView] = useState('fields')
 
   const known = useMemo(() => byName(fields), [fields])
   const layout = type.layout
@@ -194,228 +205,261 @@ function Builder({ type: saved, fields, colours, types, onBack, onSaved, onDelet
         </label>
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <section aria-label="Fields to add" className="flex flex-col gap-2 border border-line bg-panel p-3">
-          <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">Fields</h3>
-          <SearchInput value={query} onChange={setQuery} placeholder="Find a field…" />
-          <ul className="flex max-h-[420px] flex-col gap-1 overflow-y-auto">
-            {offered.map((field) => (
-              <li key={field.name}>
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) => event.dataTransfer.setData(DRAG, field.name)}
-                  onClick={() => add(field.name)}
-                  title={`Add ${field.label} to the chosen section`}
-                  className="flex w-full items-center gap-2 border border-line-soft bg-canvas px-2 py-1 text-left text-sm text-fg hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{field.label}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-fg-muted">
-                    {FIELD_TYPES[field.type] ?? field.type}
-                  </span>
-                </button>
-              </li>
-            ))}
-            {offered.length === 0 && (
-              <li className="px-1 py-2 text-xs text-fg-muted">
-                {query ? 'No field matches.' : 'Every field is on the page.'}
-              </li>
-            )}
-          </ul>
-          <Button variant="secondary" size="sm" icon={Plus} onClick={() => setNewField(true)}>
-            New field
-          </Button>
-          <p className="text-xs text-fg-muted">A click adds the field to the section marked “adding here”.</p>
-        </section>
+      <div role="tablist" aria-label="Parts of the type" className="flex gap-1 border-b border-line">
+        {PARTS.map((part) => (
+          <button
+            key={part.id}
+            type="button"
+            role="tab"
+            id={`type-part-${part.id}`}
+            aria-selected={view === part.id}
+            aria-controls="type-part-panel"
+            onClick={() => setView(part.id)}
+            className={`-mb-px border-b-2 px-3 py-2 font-mono text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              view === part.id
+                ? 'border-accent text-fg'
+                : 'border-transparent text-fg-muted hover:border-line hover:text-fg'
+            }`}
+          >
+            {part.label}
+          </button>
+        ))}
+      </div>
 
-        <div className="flex min-w-0 flex-col gap-3">
-          {layout.sections.map((section, at) => (
-            <section
-              key={section.id}
-              aria-label={`Section ${section.title}`}
-              onDragOver={(event) => event.dataTransfer.types.includes(DRAG) && event.preventDefault()}
-              onDrop={(event) => drop(event, section.id)}
-              className={`flex flex-col gap-2 border bg-panel p-3 ${target === section.id ? 'border-accent-strong' : 'border-line'}`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  aria-label="Title of the section"
-                  value={section.title}
-                  maxLength={80}
-                  onChange={(event) => setLayout(updateSection(layout, section.id, { title: event.target.value }))}
-                  className={`${INPUT} min-w-[160px] flex-1 font-semibold`}
-                />
-                <label className="flex items-center gap-1.5 text-xs text-fg-muted">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(section.key)}
-                    onChange={(event) => setLayout(updateSection(layout, section.id, { key: event.target.checked }))}
-                    className="accent-accent"
-                  />
-                  <PanelLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                  Side panel
-                </label>
-                <select
-                  aria-label="Columns of the section"
-                  value={section.columns}
-                  onChange={(event) =>
-                    setLayout(updateSection(layout, section.id, { columns: Number(event.target.value) }))
-                  }
-                  className="cursor-pointer border border-line bg-canvas px-2 py-1 text-xs text-fg"
-                >
-                  <option value={1}>1 column</option>
-                  <option value={2}>2 columns</option>
-                </select>
-                <Button
-                  variant={target === section.id ? 'secondary' : 'ghost'}
-                  size="xs"
-                  aria-pressed={target === section.id}
-                  onClick={() => setTarget(section.id)}
-                >
-                  {target === section.id ? 'Adding here' : 'Add here'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  icon={ArrowUp}
-                  aria-label={`Move the section ${section.title} up`}
-                  disabled={at === 0}
-                  onClick={() => setLayout(moveSection(layout, section.id, -1))}
-                />
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  icon={ArrowDown}
-                  aria-label={`Move the section ${section.title} down`}
-                  disabled={at === layout.sections.length - 1}
-                  onClick={() => setLayout(moveSection(layout, section.id, 1))}
-                />
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  icon={Trash2}
-                  aria-label={`Remove the section ${section.title}`}
-                  onClick={() => setLayout(removeSection(layout, section.id))}
-                />
-              </div>
-              <ul className="flex flex-col gap-1">
-                {section.fields.map((name, index) => {
-                  const field = known[name]
-                  if (!field) return null
-                  const flags = flagsOf(name)
-                  return (
-                    <li
-                      key={name}
+      <div id="type-part-panel" role="tabpanel" aria-labelledby={`type-part-${view}`} className="flex flex-col gap-4">
+        {view === 'pages' && (
+          <TypePagesEditor type={type} layout={layout} onLayout={setLayout} fields={fields} known={known} />
+        )}
+        {view === 'fields' && (
+          <div className="grid items-start gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <section aria-label="Fields to add" className="flex flex-col gap-2 border border-line bg-panel p-3">
+              <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">Fields</h3>
+              <SearchInput value={query} onChange={setQuery} placeholder="Find a field…" />
+              <ul className="flex max-h-[420px] flex-col gap-1 overflow-y-auto">
+                {offered.map((field) => (
+                  <li key={field.name}>
+                    <button
+                      type="button"
                       draggable
-                      onDragStart={(event) => event.dataTransfer.setData(DRAG, name)}
-                      onDragOver={(event) => event.dataTransfer.types.includes(DRAG) && event.preventDefault()}
-                      onDrop={(event) => drop(event, section.id, index)}
-                      className="flex flex-wrap items-center gap-2 border border-line-soft bg-canvas px-2 py-1 text-sm"
+                      onDragStart={(event) => event.dataTransfer.setData(DRAG, field.name)}
+                      onClick={() => add(field.name)}
+                      title={`Add ${field.label} to the chosen section`}
+                      className="flex w-full items-center gap-2 border border-line-soft bg-canvas px-2 py-1 text-left text-sm text-fg hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-fg-subtle" aria-hidden="true" />
-                      <span className="min-w-0 flex-1 truncate text-fg">
-                        {field.label}
-                        <span className="ml-2 font-mono text-[10px] text-fg-muted">
-                          {FIELD_TYPES[field.type] ?? field.type}
-                        </span>
+                      <Plus className="h-3.5 w-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate">{field.label}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-fg-muted">
+                        {FIELD_TYPES[field.type] ?? field.type}
                       </span>
-                      {!field.system && (
-                        <>
-                          <label className="flex items-center gap-1 text-xs text-fg-muted">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(flags.required)}
-                              onChange={(event) =>
-                                setType({
-                                  ...type,
-                                  fields: setFieldFlags(type.fields, name, { required: event.target.checked }),
-                                })
-                              }
-                              className="accent-accent"
-                            />
-                            required
-                          </label>
-                          <label className="flex items-center gap-1 text-xs text-fg-muted">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(flags.requiredOnClose)}
-                              onChange={(event) =>
-                                setType({
-                                  ...type,
-                                  fields: setFieldFlags(type.fields, name, { requiredOnClose: event.target.checked }),
-                                })
-                              }
-                              className="accent-accent"
-                            />
-                            to close
-                          </label>
-                        </>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        icon={ArrowUp}
-                        aria-label={`Move ${field.label} up`}
-                        onClick={() => setLayout(moveField(layout, name, -1))}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        icon={ArrowDown}
-                        aria-label={`Move ${field.label} down`}
-                        onClick={() => setLayout(moveField(layout, name, 1))}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        icon={X}
-                        aria-label={`Take ${field.label} off the page`}
-                        onClick={() => setLayout(unplaceField(layout, name))}
-                      />
-                    </li>
-                  )
-                })}
-                {section.fields.length === 0 && (
-                  <li className="border border-dashed border-line px-2 py-3 text-center text-xs text-fg-muted">
-                    No field yet: add one from the list, or drag it here.
+                    </button>
+                  </li>
+                ))}
+                {offered.length === 0 && (
+                  <li className="px-1 py-2 text-xs text-fg-muted">
+                    {query ? 'No field matches.' : 'Every field is on the page.'}
                   </li>
                 )}
               </ul>
+              <Button variant="secondary" size="sm" icon={Plus} onClick={() => setNewField(true)}>
+                New field
+              </Button>
+              <p className="text-xs text-fg-muted">A click adds the field to the section marked “adding here”.</p>
             </section>
-          ))}
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={Plus}
-            className="self-start"
-            onClick={() => {
-              const next = addSection(layout)
-              setLayout(next)
-              setTarget(next.sections[next.sections.length - 1].id)
-            }}
-          >
-            Add a section
-          </Button>
 
-          <label className="flex flex-col gap-1 text-sm" htmlFor="type-reasons">
-            <span className="text-fg-muted">Close reasons, one per line</span>
-            <textarea
-              id="type-reasons"
-              value={reasons}
-              rows={4}
-              onChange={(event) => setReasons(event.target.value)}
-              className={`${INPUT} resize-y`}
-            />
-            <span className="text-xs text-fg-muted">
-              What the form of closing offers. With none, any reason can be written.
-            </span>
-          </label>
-        </div>
+            <div className="flex min-w-0 flex-col gap-3">
+              {layout.sections.map((section, at) => (
+                <section
+                  key={section.id}
+                  aria-label={`Section ${section.title}`}
+                  onDragOver={(event) => event.dataTransfer.types.includes(DRAG) && event.preventDefault()}
+                  onDrop={(event) => drop(event, section.id)}
+                  className={`flex flex-col gap-2 border bg-panel p-3 ${target === section.id ? 'border-accent-strong' : 'border-line'}`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      aria-label="Title of the section"
+                      value={section.title}
+                      maxLength={80}
+                      onChange={(event) => setLayout(updateSection(layout, section.id, { title: event.target.value }))}
+                      className={`${INPUT} min-w-[160px] flex-1 font-semibold`}
+                    />
+                    <label className="flex items-center gap-1.5 text-xs text-fg-muted">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(section.key)}
+                        onChange={(event) =>
+                          setLayout(updateSection(layout, section.id, { key: event.target.checked }))
+                        }
+                        className="accent-accent"
+                      />
+                      <PanelLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                      Side panel
+                    </label>
+                    <select
+                      aria-label="Columns of the section"
+                      value={section.columns}
+                      onChange={(event) =>
+                        setLayout(updateSection(layout, section.id, { columns: Number(event.target.value) }))
+                      }
+                      className="cursor-pointer border border-line bg-canvas px-2 py-1 text-xs text-fg"
+                    >
+                      <option value={1}>1 column</option>
+                      <option value={2}>2 columns</option>
+                    </select>
+                    <Button
+                      variant={target === section.id ? 'secondary' : 'ghost'}
+                      size="xs"
+                      aria-pressed={target === section.id}
+                      onClick={() => setTarget(section.id)}
+                    >
+                      {target === section.id ? 'Adding here' : 'Add here'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      icon={ArrowUp}
+                      aria-label={`Move the section ${section.title} up`}
+                      disabled={at === 0}
+                      onClick={() => setLayout(moveSection(layout, section.id, -1))}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      icon={ArrowDown}
+                      aria-label={`Move the section ${section.title} down`}
+                      disabled={at === layout.sections.length - 1}
+                      onClick={() => setLayout(moveSection(layout, section.id, 1))}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      icon={Trash2}
+                      aria-label={`Remove the section ${section.title}`}
+                      onClick={() => setLayout(removeSection(layout, section.id))}
+                    />
+                  </div>
+                  <ul className="flex flex-col gap-1">
+                    {section.fields.map((name, index) => {
+                      const field = known[name]
+                      if (!field) return null
+                      const flags = flagsOf(name)
+                      return (
+                        <li
+                          key={name}
+                          draggable
+                          onDragStart={(event) => event.dataTransfer.setData(DRAG, name)}
+                          onDragOver={(event) => event.dataTransfer.types.includes(DRAG) && event.preventDefault()}
+                          onDrop={(event) => drop(event, section.id, index)}
+                          className="flex flex-wrap items-center gap-2 border border-line-soft bg-canvas px-2 py-1 text-sm"
+                        >
+                          <GripVertical
+                            className="h-3.5 w-3.5 shrink-0 cursor-grab text-fg-subtle"
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-fg">
+                            {field.label}
+                            <span className="ml-2 font-mono text-[10px] text-fg-muted">
+                              {FIELD_TYPES[field.type] ?? field.type}
+                            </span>
+                          </span>
+                          {!field.system && (
+                            <>
+                              <label className="flex items-center gap-1 text-xs text-fg-muted">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(flags.required)}
+                                  onChange={(event) =>
+                                    setType({
+                                      ...type,
+                                      fields: setFieldFlags(type.fields, name, { required: event.target.checked }),
+                                    })
+                                  }
+                                  className="accent-accent"
+                                />
+                                required
+                              </label>
+                              <label className="flex items-center gap-1 text-xs text-fg-muted">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(flags.requiredOnClose)}
+                                  onChange={(event) =>
+                                    setType({
+                                      ...type,
+                                      fields: setFieldFlags(type.fields, name, {
+                                        requiredOnClose: event.target.checked,
+                                      }),
+                                    })
+                                  }
+                                  className="accent-accent"
+                                />
+                                to close
+                              </label>
+                            </>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={ArrowUp}
+                            aria-label={`Move ${field.label} up`}
+                            onClick={() => setLayout(moveField(layout, name, -1))}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={ArrowDown}
+                            aria-label={`Move ${field.label} down`}
+                            onClick={() => setLayout(moveField(layout, name, 1))}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={X}
+                            aria-label={`Take ${field.label} off the page`}
+                            onClick={() => setLayout(unplaceField(layout, name))}
+                          />
+                        </li>
+                      )
+                    })}
+                    {section.fields.length === 0 && (
+                      <li className="border border-dashed border-line px-2 py-3 text-center text-xs text-fg-muted">
+                        No field yet: add one from the list, or drag it here.
+                      </li>
+                    )}
+                  </ul>
+                </section>
+              ))}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Plus}
+                className="self-start"
+                onClick={() => {
+                  const next = addSection(layout)
+                  setLayout(next)
+                  setTarget(next.sections[next.sections.length - 1].id)
+                }}
+              >
+                Add a section
+              </Button>
+
+              <label className="flex flex-col gap-1 text-sm" htmlFor="type-reasons">
+                <span className="text-fg-muted">Close reasons, one per line</span>
+                <textarea
+                  id="type-reasons"
+                  value={reasons}
+                  rows={4}
+                  onChange={(event) => setReasons(event.target.value)}
+                  className={`${INPUT} resize-y`}
+                />
+                <span className="text-xs text-fg-muted">
+                  What the form of closing offers. With none, any reason can be written.
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
       </div>
-
-      <TypePageEditor layout={layout} onLayout={setLayout} />
 
       {newField && (
         <NewFieldDialog

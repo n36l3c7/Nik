@@ -17,6 +17,25 @@ export const TAB_ALIASES = { automation: 'work_plan' }
 export const EVIDENCE_TAB = 'evidence'
 
 /**
+ * The kinds that show the paths and the collection commands of ONE operating
+ * system: what was collected on the machine. An incident may name no system
+ * (5.3); since 6.2 these kinds ask for it before they show anything, instead
+ * of showing the paths of Windows as if it were said.
+ */
+export const SYSTEM_KINDS = ['endpoint', 'eventlogs', 'browser', 'commands']
+
+/** Whether a kind of evidence cannot be shown yet: it needs the system, and the incident has none (`os` is ''). */
+export const asksSystem = (kindId, os) => SYSTEM_KINDS.includes(kindId) && !os
+
+/**
+ * The groups the Evidence tab may open by itself: without a system, not the
+ * kinds that would ask for one. Nobody is asked a question for a page they
+ * did not choose.
+ */
+export const openedAlone = (groups, os) =>
+  os ? list(groups) : list(groups).filter((group) => !SYSTEM_KINDS.includes(group.id))
+
+/**
  * What the page shows for the tab that was asked: `{ bar, kind }`. `bar` is
  * the tab of the bar that is lit, `kind` the kind of evidence on screen (null
  * outside Evidence, or for the list alone). A tab that is not there (hidden by

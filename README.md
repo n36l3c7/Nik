@@ -183,7 +183,10 @@ the connectors of vendors out of Nik: what Nik knows about a product is a
 content pack (its connector, mappers, playbooks, types, dashboards),
 installed from a signed catalogue published from the folder `packs/`; 6.1
 made the sources of threat intelligence connectors too, with every command
-of their public APIs, and gave an instance several keys that take turns.
+of their public APIs, and gave an instance several keys that take turns;
+6.2 made the list of incidents a page with a quick view and saved filters,
+let a type arrange its tabs and add pages of its own, and put buttons that
+run a script on them.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

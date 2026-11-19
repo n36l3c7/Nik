@@ -1,9 +1,15 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { FolderOpen, FolderSearch, List } from 'lucide-react'
-import { evidenceGroups, firstFile } from '../../../domain/evidence.js'
+import { useAuth } from '../../../context/AuthContext.jsx'
+import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useNavigation } from '../../../context/NavigationContext.jsx'
+import { useToast } from '../../../context/ToastContext.jsx'
+import { normalizeOs } from '../../../config/os.js'
+import { EVIDENCE_TAB, asksSystem, evidenceGroups, firstFile, openedAlone } from '../../../domain/evidence.js'
 import { AsciiSkull, EmptyState, ErrorBoundary } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
+import SystemDialog from './SystemDialog.jsx'
 
 /*
  * ============================================================================
@@ -23,6 +29,12 @@ import { useObjectMenu } from '../../menu/useObjectMenu.js'
  *     page.
  *
  * A file dropped anywhere in the window is added as before.
+ *
+ * What was collected on the machine (Endpoint, Event logs, Browser, Commands)
+ * shows the paths and the commands of one operating system. An incident that
+ * names none is asked for it when one of those kinds is opened (6.2,
+ * SystemDialog.jsx): the page is not drawn with the paths of a system nobody
+ * said. The tab never opens one of them by itself for such an incident.
  */
 
 // The colour of what an analysis concluded, as the badges of the artifacts use them: "clean" has none
@@ -51,15 +63,31 @@ export default function EvidenceTab({ incident, kinds, kind, onKind }) {
   const groups = useMemo(() => evidenceGroups(kinds, incident, query), [kinds, incident, query])
   const every = useMemo(() => evidenceGroups(kinds, incident), [kinds, incident])
 
-  // Nothing was asked: the first file there is.
-  const first = useMemo(() => firstFile(every), [every])
+  const { can } = useAuth()
+  const { updateIncidentMeta } = useIncidents()
+  const { take } = useNavigation()
+  const { showToast } = useToast()
+  const os = normalizeOs(incident.os)
+
+  // Nothing was asked: the first file there is (never a kind that would ask for the system).
+  const first = useMemo(() => firstFile(openedAlone(every, os)), [every, os])
   const shownKind = kind ?? kinds.find((item) => item.id === first?.kind) ?? null
   const fallback = !kind && first?.key ? first.key : null
   const group = every.find((item) => item.id === shownKind?.id) ?? null
   const wanted = shownKind ? (chosen[shownKind.id] ?? fallback) : null
   // A file that is no longer there (removed, another incident) is not asked for.
   const focus = wanted && group?.items.some((item) => item.key === wanted) ? wanted : null
-  const Viewer = shownKind?.component ?? null
+  // The kind needs the system of the incident and it has none: it is asked, and nothing is drawn meanwhile.
+  const asking = Boolean(shownKind) && asksSystem(shownKind.id, os)
+  const Viewer = asking ? null : (shownKind?.component ?? null)
+  const collected = every.some((item) => item.count > 0)
+
+  const backToFiles = () => {
+    // A file that was on its way to this kind is not kept for later: nobody would know when it lands.
+    const pending = take(shownKind.id)
+    if (pending?.file) showToast({ message: `${pending.file.name} was not added: its kind needs the system.` })
+    onKind(EVIDENCE_TAB)
+  }
 
   const open = (kindId, key) => {
     setChosen((before) => ({ ...before, [kindId]: key }))
@@ -176,6 +204,19 @@ export default function EvidenceTab({ incident, kinds, kind, onKind }) {
               <Viewer incident={incident} focus={focus} evidence />
             </ErrorBoundary>
           </Suspense>
+        ) : asking ? (
+          <SystemDialog
+            kind={shownKind}
+            canEdit={can('write')}
+            onBack={backToFiles}
+            onUse={(chosen) => updateIncidentMeta(incident.id, { os: chosen })}
+          />
+        ) : collected ? (
+          <EmptyState
+            icon={FolderSearch}
+            title="Choose a kind at the side"
+            message="What was collected on the machine is under Endpoint, Event logs, Browser and Commands: each asks for the system of the incident before it shows anything."
+          />
         ) : (
           <EmptyState
             illustration={<AsciiSkull preset="medium" tone="muted" />}
