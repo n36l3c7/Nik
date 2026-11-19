@@ -818,3 +818,28 @@ def test_migration_0036_leaves_every_connection_on(tmp_path, monkeypatch):
         assert {c["name"] for c in sa.inspect(conn).get_columns("connections")} == {"id", "name"}
         assert {c["name"] for c in sa.inspect(conn).get_columns("connectors")} == {"id", "name"}
         assert conn.execute(sa.text("SELECT COUNT(*) FROM connections")).scalar() == 2
+
+
+def test_migration_0037_adds_the_branches_of_playbooks(tmp_path, monkeypatch):
+    from app.core.models import BRANCH_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE playbooks (id VARCHAR(32) PRIMARY KEY, name VARCHAR(120))"))
+        conn.execute(sa.text("INSERT INTO playbooks (id, name) VALUES ('p1', 'One')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0036_instances")
+    command.upgrade(cfg, "0037_branches")
+    with engine.connect() as conn:
+        assert set(BRANCH_TABLES) <= set(sa.inspect(conn).get_table_names())
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM playbook_branches")).scalar() == 0
+    command.stamp(cfg, "0036_instances")
+    command.upgrade(cfg, "0037_branches")  # again: nothing to do
+    command.downgrade(cfg, "0036_instances")
+    with engine.connect() as conn:
+        assert "playbook_branches" not in sa.inspect(conn).get_table_names()
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM playbooks")).scalar() == 1

@@ -46,7 +46,17 @@ from ..commands import ADHOC_ID
 from ..core import audit, vault
 from ..core.config import settings as app_settings
 from ..core.db import get_db
-from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep, Script, ScriptVersion
+from ..core.models import (
+    Approval,
+    Incident,
+    Playbook,
+    PlaybookBranch,
+    PlaybookVersion,
+    Run,
+    RunStep,
+    Script,
+    ScriptVersion,
+)
 from ..core.permissions import AUTOMATION_DEBUG, AUTOMATION_RUN
 from ..core.ratelimit import limiter
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, require, runner_principal
@@ -77,6 +87,28 @@ class PlaybookPatch(BaseModel):
     onePerObject: bool | None = None
     maxSeconds: int | None = Field(default=None, ge=60, le=7 * 86400)
     approvalDefault: bool | None = None
+
+
+class BranchIn(BaseModel):
+    """A new branch: of ``graph`` when given; otherwise of the branch ``from_`` names, of the draft
+    (``"draft"``) or of the version in use (``"main"``, the default)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=80)
+    from_: str = Field(default="main", alias="from", max_length=40)
+    graph: dict[str, Any] | None = None
+
+
+class BranchPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    graph: dict[str, Any] | None = None
+
+
+class PushIn(BaseModel):
+    note: str = Field(default="", max_length=500)
+    # Push although the playbook has a newer version than the one the branch started from.
+    overwrite: bool = False
 
 
 class VersionIn(BaseModel):
@@ -197,6 +229,63 @@ def _summary(db: OrmSession, row: Playbook) -> dict[str, Any]:
     }
 
 
+MAX_BRANCHES = 20
+
+
+def _branch(row: PlaybookBranch, playbook: Playbook, *, graph_too: bool = False) -> dict[str, Any]:
+    out = {
+        "id": row.id,
+        "name": row.name,
+        "baseVersion": row.base_version,
+        # The playbook has a version newer than the one this branch started from.
+        "behind": row.base_version != playbook.current_version,
+        "createdBy": row.created_by,
+        "updatedAt": row.updated_at,
+        "updatedBy": row.updated_by,
+    }
+    if graph_too:
+        out["graph"] = row.graph
+        out["playbookId"] = playbook.id
+    return out
+
+
+def _branches(db: OrmSession, playbook: Playbook) -> list[dict[str, Any]]:
+    rows = db.scalars(
+        select(PlaybookBranch)
+        .where(PlaybookBranch.playbook_id == playbook.id)
+        .order_by(func.lower(PlaybookBranch.name))
+    ).all()
+    return [_branch(row, playbook) for row in rows]
+
+
+def _get_branch(db: OrmSession, playbook_id: str, branch_id: str) -> tuple[Playbook, PlaybookBranch]:
+    playbook = _get(db, playbook_id)
+    row = db.get(PlaybookBranch, branch_id)
+    if row is None or row.playbook_id != playbook.id:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    return playbook, row
+
+
+def _own_branch(row: PlaybookBranch, caller: Principal) -> None:
+    """A branch is changed, pushed and deleted by who made it, or by an admin."""
+    if row.created_by != caller.actor and not caller.has("admin"):
+        raise HTTPException(status_code=403, detail=f"This branch is {row.created_by}'s: make one of your own from it")
+
+
+def _branch_name(db: OrmSession, playbook: Playbook, name: str, except_id: str | None = None) -> str:
+    cleaned = " ".join(name.split())
+    if not cleaned or cleaned.lower() in ("main", "draft"):
+        raise HTTPException(status_code=400, detail='A branch needs a name of its own: not "main" nor "draft"')
+    taken = db.scalars(
+        select(PlaybookBranch).where(
+            PlaybookBranch.playbook_id == playbook.id, func.lower(PlaybookBranch.name) == cleaned.lower()
+        )
+    ).first()
+    if taken is not None and taken.id != except_id:
+        raise HTTPException(status_code=400, detail="This playbook has a branch with this name already")
+    return cleaned
+
+
 def _detail(db: OrmSession, row: Playbook) -> dict[str, Any]:
     version = db.get(PlaybookVersion, (row.id, row.current_version)) if row.current_version else None
     shape = version.graph if version else None
@@ -204,6 +293,7 @@ def _detail(db: OrmSession, row: Playbook) -> dict[str, Any]:
         **_summary(db, row),
         "graph": shape,
         "draft": row.draft,
+        "branches": _branches(db, row),
         "updates": catalog.updates(db, row.draft or shape or {}),
         "egressMode": row.egress_mode,
         "egressHosts": row.egress_hosts or [],
@@ -461,6 +551,195 @@ def save_version(
     )
     db.commit()
     return _detail(db, row)
+
+
+@router.delete("/playbooks/{playbook_id}/draft", status_code=status.HTTP_204_NO_CONTENT)
+def discard_draft(
+    playbook_id: str, caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    """Throw the draft away: the playbook is its version in use again. One that has no version yet is
+    only its draft, and is deleted as a playbook instead."""
+    row = _get(db, playbook_id)
+    if row.draft is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    if not row.current_version:
+        raise HTTPException(status_code=409, detail="This playbook is only a draft: delete the playbook instead")
+    row.draft = None
+    row.updated_at, row.updated_by = now_iso(), caller.actor
+    audit.record(db, caller.actor, "playbook.draft_discard", f'Discarded the draft of "{row.name}"', target=row.name)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --------------------------------------------------------------------------- #
+# Branches                                                                    #
+# --------------------------------------------------------------------------- #
+@router.get("/playbooks/{playbook_id}/branches")
+def list_branches(
+    playbook_id: str, _caller: Principal = Depends(editor_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """The branches of a playbook, by name: who made each, and whether the playbook moved on since."""
+    return {"branches": _branches(db, _get(db, playbook_id))}
+
+
+@router.post("/playbooks/{playbook_id}/branches", status_code=status.HTTP_201_CREATED)
+def create_branch(
+    playbook_id: str,
+    body: BranchIn,
+    caller: Principal = Depends(editor_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Make a branch: a copy of the version in use, of the draft, of another branch, or of a graph."""
+    playbook = _get(db, playbook_id)
+    name = _branch_name(db, playbook, body.name)
+    count = db.scalar(select(func.count()).select_from(PlaybookBranch).where(PlaybookBranch.playbook_id == playbook.id))
+    if (count or 0) >= MAX_BRANCHES:
+        raise HTTPException(status_code=409, detail=f"A playbook has {MAX_BRANCHES} branches at most: delete one")
+    base = playbook.current_version
+    if body.graph is not None:
+        shape = body.graph
+    elif body.from_ == "draft":
+        shape = playbook.draft
+    elif body.from_ == "main":
+        version = db.get(PlaybookVersion, (playbook.id, base)) if base else None
+        shape = version.graph if version else playbook.draft
+    else:
+        _playbook, source = _get_branch(db, playbook.id, body.from_)
+        shape, base = source.graph, source.base_version
+    if shape is None:
+        raise HTTPException(status_code=400, detail="There is nothing to make a branch from")
+    _size_ok(shape)
+    now = now_iso()
+    row = PlaybookBranch(
+        id=engine.new_id(),
+        playbook_id=playbook.id,
+        name=name,
+        graph=shape,
+        base_version=base,
+        created_at=now,
+        created_by=caller.actor,
+        updated_at=now,
+        updated_by=caller.actor,
+    )
+    db.add(row)
+    audit.record(
+        db, caller.actor, "playbook.branch", f'Made the branch "{name}" of "{playbook.name}"', target=playbook.name
+    )
+    db.commit()
+    return _branch(row, playbook, graph_too=True)
+
+
+@router.get("/playbooks/{playbook_id}/branches/{branch_id}")
+def get_branch(
+    playbook_id: str,
+    branch_id: str,
+    _caller: Principal = Depends(editor_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    playbook, row = _get_branch(db, playbook_id, branch_id)
+    return {**_branch(row, playbook, graph_too=True), "updates": catalog.updates(db, row.graph or {})}
+
+
+@router.put("/playbooks/{playbook_id}/branches/{branch_id}")
+def update_branch(
+    playbook_id: str,
+    branch_id: str,
+    body: BranchPatch,
+    caller: Principal = Depends(editor_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Save a branch (its graph need not be valid) or rename it. Nothing a run uses changes."""
+    playbook, row = _get_branch(db, playbook_id, branch_id)
+    _own_branch(row, caller)
+    if body.name is not None:
+        row.name = _branch_name(db, playbook, body.name, except_id=row.id)
+    if body.graph is not None:
+        _size_ok(body.graph)
+        row.graph = body.graph
+        flag_modified(row, "graph")
+    row.updated_at, row.updated_by = now_iso(), caller.actor
+    db.commit()
+    return _branch(row, playbook, graph_too=True)
+
+
+@router.delete("/playbooks/{playbook_id}/branches/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_branch(
+    playbook_id: str,
+    branch_id: str,
+    caller: Principal = Depends(editor_principal),
+    db: OrmSession = Depends(get_db),
+) -> Response:
+    playbook, row = _get_branch(db, playbook_id, branch_id)
+    _own_branch(row, caller)
+    audit.record(
+        db,
+        caller.actor,
+        "playbook.branch_delete",
+        f'Deleted the branch "{row.name}" of "{playbook.name}"',
+        target=playbook.name,
+    )
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/playbooks/{playbook_id}/branches/{branch_id}/push", response_model=None)
+def push_branch(
+    playbook_id: str,
+    branch_id: str,
+    body: PushIn,
+    caller: Principal = Depends(editor_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict | JSONResponse:
+    """Make the branch the next version of the playbook, over the one in use. ``422`` with the
+    problems when its graph is not valid; ``409`` with ``moved`` when the playbook has a newer
+    version than the one the branch started from, unless ``overwrite`` says to go on. Graphs are
+    not merged: the branch replaces what is there."""
+    playbook, row = _get_branch(db, playbook_id, branch_id)
+    _own_branch(row, caller)
+    found = graph.validate(row.graph, catalog.Library(db), playbook.name)
+    if found:
+        return _problems(found)
+    if row.base_version != playbook.current_version and not body.overwrite:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": (
+                    f"The playbook is at version {playbook.current_version or 0} and this branch started from "
+                    f"{row.base_version or 0}: pushing it replaces what was saved since"
+                ),
+                "moved": True,
+                "baseVersion": row.base_version,
+                "currentVersion": playbook.current_version,
+            },
+        )
+    number = (
+        db.scalar(select(func.max(PlaybookVersion.version)).where(PlaybookVersion.playbook_id == playbook.id)) or 0
+    ) + 1
+    now = now_iso()
+    note = body.note.strip() or f'From the branch "{row.name}"'
+    db.add(
+        PlaybookVersion(
+            playbook_id=playbook.id, version=number, graph=row.graph, note=note[:500], created_at=now,
+            created_by=caller.actor,
+        )
+    )  # fmt: skip
+    playbook.current_version = number
+    playbook.updated_at, playbook.updated_by = now, caller.actor
+    # The branch is now what the playbook is: it stays, to go on from.
+    row.base_version = number
+    row.updated_at, row.updated_by = now, caller.actor
+    db.flush()
+    triggers.sync_schedule(db, playbook, time.time())
+    audit.record(
+        db,
+        caller.actor,
+        "playbook.version",
+        f'Pushed the branch "{row.name}" as version {number} of the playbook "{playbook.name}"',
+        target=playbook.name,
+    )
+    db.commit()
+    return _detail(db, playbook)
 
 
 @router.post("/playbooks/{playbook_id}/validate", response_model=None)

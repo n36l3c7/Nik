@@ -852,6 +852,31 @@ class Playbook(Base):
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
+class PlaybookBranch(Base):
+    """A copy of a playbook someone works on beside the version in use (5.2).
+
+    Its graph need not be valid while it is edited. ``base_version`` is the version of the
+    playbook it was made from, or last pushed over: when the playbook has moved on since, a push
+    says so before it overwrites. Seen by whoever may edit playbooks; changed by its author.
+    """
+
+    __tablename__ = "playbook_branches"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    playbook_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("playbooks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    graph: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    base_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+    __table_args__ = (UniqueConstraint("playbook_id", "name", name="uq_playbook_branches_name"),)
+
+
 class PlaybookVersion(Base):
     """A saved, valid graph of a playbook. A run finishes with the version it started with."""
 
@@ -1478,6 +1503,9 @@ class IocVerdictChange(Base):
     new: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     at: Mapped[str] = mapped_column(String, nullable=False)
 
+
+# Created by migration 0037_branches where missing.
+BRANCH_TABLES = ("playbook_branches",)
 
 # The columns migration 0036_instances adds where missing.
 INSTANCE_COLUMNS: dict[str, tuple[str, ...]] = {
