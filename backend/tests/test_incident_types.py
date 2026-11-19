@@ -119,6 +119,57 @@ def test_a_type_of_your_own_with_fields_and_a_layout(admin: TestClient):
     )
     assert refused(admin, "PUT", url, layout={"tabs": ["cinema"]}).startswith('There is no tab called "cinema"')
     assert refused(admin, "PUT", url, layout={"hidden": ["summary"]}).startswith("The Summary cannot be hidden")
+    # The Summary as a grid (5.3): widgets on twelve columns, a section widget for a section of the page.
+    assert "grid" not in saved["layout"]  # none was arranged: the page makes one from the sections
+    grid = [
+        {"id": "facts", "kind": "facts", "x": 0, "y": 0, "w": 7, "h": 4},
+        {"kind": "section", "section": "s2", "x": 7, "y": 0, "w": 5, "h": 4, "title": " Who was reached "},
+        {"kind": "note", "x": 0, "y": 4, "w": 4, "h": 2, "text": "Call the site first"},
+        {"kind": "playbooks", "x": 4, "y": 4, "w": 4, "h": 2, "playbooks": ["p1", "p1", "", "p2"]},
+        {"kind": "war_room", "x": 0, "y": 6, "w": 12, "h": 6},
+    ]
+    arranged = admin.put(url, json={"layout": {**layout, "grid": grid}}).json()["layout"]
+    assert arranged["grid"] == [
+        {"id": "facts", "kind": "facts", "x": 0, "y": 0, "w": 7, "h": 4},
+        {
+            "id": "section-2",
+            "kind": "section",
+            "x": 7,
+            "y": 0,
+            "w": 5,
+            "h": 4,
+            "title": "Who was reached",
+            "section": "s2",
+        },
+        {"id": "note-3", "kind": "note", "x": 0, "y": 4, "w": 4, "h": 2, "text": "Call the site first"},
+        {"id": "playbooks-4", "kind": "playbooks", "x": 4, "y": 4, "w": 4, "h": 2, "playbooks": ["p1", "p2"]},
+        {"id": "war_room-5", "kind": "war_room", "x": 0, "y": 6, "w": 12, "h": 6},
+    ]
+    assert admin.get(url).json()["layout"]["grid"] == arranged["grid"]
+
+    def bad(*widgets):
+        return refused(admin, "PUT", url, layout={**layout, "grid": list(widgets)})
+
+    box = {"x": 0, "y": 0, "w": 6, "h": 3}
+    assert bad({"kind": "unicorn", **box}).startswith('There is no widget of the kind "unicorn"')
+    assert bad({"kind": "facts", **box}, {"kind": "facts", **box}) == 'The widget "facts" is on a page once'
+    assert bad({"kind": "note", **box, "id": "a"}, {"kind": "note", **box, "id": "a"}) == "Two widgets have the same id"
+    assert bad({"kind": "note", **box, "w": 13}) == "The width of a widget is between 1 and 12"
+    assert bad({"kind": "note", **box, "x": 7}) == "The column of a widget is between 0 and 6"
+    assert bad({"kind": "note", **box, "h": 0}) == "The height of a widget is between 1 and 12"
+    assert bad({"kind": "note", **box, "y": 1.5}) == "The row of a widget is a whole number"
+    assert bad({"kind": "note", "x": 0, "y": 0, "h": 2}) == "The width of a widget is a whole number"
+    # A section widget shows a section of the page: not the side panel, not one that is not there.
+    assert bad({"kind": "section", "section": "key", **box}).startswith('A widget shows the section "key"')
+    assert bad({"kind": "section", "section": "gone", **box}).startswith('A widget shows the section "gone"')
+    assert bad("nonsense") == "A widget is an object with a kind and a place"
+    assert bad(*[{"kind": "note", **box, "id": f"n{index}"} for index in range(31)]) == (
+        "The page of a type has 30 widgets at most"
+    )
+    # An empty grid is no grid: the page makes one again.
+    assert "grid" not in admin.put(url, json={"layout": {**layout, "grid": []}}).json()["layout"]
+    admin.put(url, json={"layout": {**layout, "grid": grid}})
+
     assert refused(admin, "PUT", url, autoRun=True) == "To run by itself a type needs its playbook"
     assert refused(admin, "PUT", url, defaultPlaybookId="nope") == "The playbook of the type does not exist"
     assert refused(admin, "PUT", url, visibleToRoles=["wizard"]) == "The roles that see a type are roles that exist"
