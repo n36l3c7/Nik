@@ -157,14 +157,8 @@ export const SETTINGS_GROUPS = [
         slug: 'connectors',
         label: 'Connectors',
         permission: 'connectors.manage',
-        keywords: 'integrations yaml file commands products servicenow jira upload samples',
-      },
-      {
-        id: 'connections',
-        slug: 'connections',
-        label: 'Connections',
-        permission: 'connectors.manage',
-        keywords: 'credentials address token instance test systems',
+        keywords:
+          'integrations yaml file commands products servicenow jira upload samples instances connections credentials address token test systems',
       },
       {
         id: 'mappers',

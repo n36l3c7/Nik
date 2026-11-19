@@ -1408,9 +1408,11 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         of the canvas, in a group of the library named after the connector.
       </p>
       <p>
-        A <strong>connection</strong> is a connector plus an address and credentials: "ServiceNow, production". A node
-        of a connector names the connection it sends through, so the same playbook can be pointed at a test instance
-        first. Both are under <em>Settings → Automation</em>, for the role <em>Connectors</em> (an admin has it):
+        An <strong>instance</strong> is one system of that product: a connector plus an address and credentials,
+        "ServiceNow, production". A connector may have several, and a node of a connector names the instance it sends
+        through, so the same playbook can be pointed at a test instance first. Until 5.1 an instance was called a
+        connection, and the API still calls it so. Both are on one page, <em>Settings → Automation → Connectors</em>,
+        for the role <em>Connectors</em> (an admin has it):
       </p>
       <ul>
         <li>
@@ -1421,13 +1423,21 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           a playbook uses cannot be removed.
         </li>
         <li>
-          <strong>Connections</strong>: the form is built from what the connector asks for. <em>Test</em> sends the
-          connector's test request with the credentials and says what came back. Credentials are stored encrypted with
-          the vault key and are never shown again, in the screen or in the API: to change one, type it again.
+          <strong>Instances</strong> are listed under their connector. <em>Add instance</em> opens a form built from
+          what the connector asks for. <em>Test</em> sends the connector's test request with the credentials and says
+          what came back. Credentials are stored encrypted with the vault key and are never shown again, in the screen
+          or in the API: to change one, type it again.
         </li>
         <li>
-          On the canvas, a node of a connector has a <em>Connection</em> field. A version is not saved while a node
-          names no connection, or one that does not exist.
+          <strong>On and off.</strong> The switch beside an instance turns it off without losing what it was set up
+          with: off, it runs no command, fetches nothing and is not offered for mirroring. A connector is
+          <em>enabled</em> while one of its instances is on; the filters of the page count the enabled ones and those
+          that have no instance yet.
+        </li>
+        <li>
+          On the canvas, a node of a connector has a <em>Connection</em> field, which names the instance. A version is
+          not saved while a node names none, or one that does not exist. A node that names none takes the only instance
+          that is on; a step sent to an instance that is off fails and says so.
         </li>
       </ul>
       <p>

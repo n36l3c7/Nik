@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import {
   ArrowLeftRight,
-  Cable,
   Clock,
   DatabaseBackup,
   DownloadCloud,
@@ -42,7 +41,6 @@ import AutomationNetworkSection from './sections/AutomationNetworkSection.jsx'
 import AutomationSwitchSection from './sections/AutomationSwitchSection.jsx'
 import BackupSection from './sections/BackupSection.jsx'
 import CapaRulesSection from './sections/CapaRulesSection.jsx'
-import ConnectionsSection from './sections/ConnectionsSection.jsx'
 import FieldsSection from './sections/FieldsSection.jsx'
 import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import SlaSection from './sections/SlaSection.jsx'
@@ -95,7 +93,6 @@ const SECTION_VIEWS = {
   preprocess: { icon: Filter, Component: PreprocessSection },
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
-  connections: { icon: Cable, Component: ConnectionsSection },
   mappers: { icon: ArrowLeftRight, Component: MappersSection },
   fetchStatus: { icon: DownloadCloud, Component: FetchStatusSection },
   contentPacks: { icon: PackageOpen, Component: ContentPacksSection },

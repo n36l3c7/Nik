@@ -1119,11 +1119,25 @@
               <td>The connector files Nik ships, in a zip.</td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/automation/connectors/{id}/instances</code> ·
+                <code>POST /api/automation/connectors/{id}/instances</code>
+              </td>
+              <td>
+                The instances of a connector · add one: <code>{name, config, secrets, enabled}</code>. An instance is
+                what the API calls a connection: it is changed, tested and deleted through
+                <code>/api/automation/connections/{id}</code>. A connector in
+                <code>GET /api/automation/connectors</code> says how many it has (<code>instances</code>,
+                <code>instancesOn</code>) and whether it is <code>enabled</code>: one of them is on.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/automation/connections</code></td>
               <td>
-                The connections. With <code>connectors.manage</code>: their values, <strong>which</strong> secrets are
-                set (never the secrets), the last test. With <code>automation.run</code> or
-                <code>automation.edit</code>: names and connectors only, to choose one in a node.
+                The instances of every connector. With <code>connectors.manage</code>: their values,
+                <strong>which</strong> secrets are set (never the secrets), the last test. With
+                <code>automation.run</code> or <code>automation.edit</code>: names, connectors and whether each is
+                <code>enabled</code>, to choose one in a node.
               </td>
             </tr>
             <tr>
@@ -1132,9 +1146,10 @@
                 <code>DELETE …/connections/{id}</code>
               </td>
               <td>
-                <code>{name, connector, config, secrets}</code>. <code>config</code> is checked against what the
-                connector asks for. On <code>PUT</code> a secret left out stays as it is and an empty one is removed. A
-                connection a playbook uses is not deleted (<code>409</code>).
+                <code>{name, connector, config, secrets, enabled}</code>. <code>config</code> is checked against what
+                the connector asks for. On <code>PUT</code> a secret left out stays as it is and an empty one is
+                removed; <code>{enabled: false}</code> turns the instance off: it runs no command, fetches nothing and
+                is not offered for mirroring. A connection a playbook uses is not deleted (<code>409</code>).
               </td>
             </tr>
             <tr>

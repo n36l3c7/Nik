@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Connectors and connections are one page.** *Settings → Automation →
+  Connectors* lists each connector with its instances under it: what was a
+  connection is an instance of its connector, added, edited and tested
+  there. The *Connections* section is gone; an address that named it opens
+  the connectors. The API keeps `/api/automation/connections` and adds
+  `GET` / `POST /api/automation/connectors/{id}/instances`.
+
+### Added
+
+- **An instance is turned on and off.** Off, it keeps what it was set up
+  with and runs no command, fetches nothing and is not offered for
+  mirroring (`enabled` on a connection; migration `0036_instances` leaves
+  every connection on). A connector is *enabled* while one of its instances
+  is on (`instances`, `instancesOn`, `enabled` in
+  `GET /api/automation/connectors`); the page filters the enabled ones and
+  those not configured yet, and finds a connector or an instance by name.
+
 ## [5.0.0] - 2026-11-19
 
 ### Changed

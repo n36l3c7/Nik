@@ -134,3 +134,70 @@ export function problemLines(problems) {
     where: problem.where ?? '',
   }))
 }
+
+/* ---- Connectors with their instances (Settings → Connectors) ---- */
+
+export const CONNECTOR_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'enabled', label: 'Enabled' },
+  { id: 'unused', label: 'Not configured' },
+]
+
+/** What a connector can do besides its commands, in a few words: "9 commands · fetch · mirror". */
+export function capabilities(connector) {
+  const count = connector.commands?.length
+  const parts = [count === undefined ? null : `${count} ${count === 1 ? 'command' : 'commands'}`]
+  if (connector.fetch) parts.push('fetch')
+  if (connector.mirror) parts.push('mirror')
+  return parts.filter(Boolean).join(' · ')
+}
+
+/** "2 instances · 1 on", "1 instance · on", "1 instance · off", "not configured". */
+export function instancesText(instances) {
+  const count = instances.length
+  if (count === 0) return 'not configured'
+  const on = instances.filter((instance) => instance.enabled).length
+  if (count === 1) return `1 instance · ${on ? 'on' : 'off'}`
+  return `${count} instances · ${on} on`
+}
+
+/**
+ * The connectors as the page lists them: each with its instances (by name),
+ * narrowed by what is typed (the name, the id, the description of a connector,
+ * the name or the host of an instance) and by the filter. `counts` are those of
+ * the filters before the text narrows them.
+ */
+export function connectorRows(connectors, instances, { query = '', filter = 'all' } = {}) {
+  const byConnector = new Map()
+  for (const instance of instances ?? []) {
+    if (!byConnector.has(instance.connector)) byConnector.set(instance.connector, [])
+    byConnector.get(instance.connector).push(instance)
+  }
+  const all = (connectors ?? []).map((connector) => {
+    const own = (byConnector.get(connector.id) ?? []).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+    )
+    return { ...connector, instances: own, enabled: own.some((instance) => instance.enabled) }
+  })
+  const counts = {
+    all: all.length,
+    enabled: all.filter((row) => row.enabled).length,
+    unused: all.filter((row) => row.instances.length === 0).length,
+  }
+  const words = String(query).trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const rows = all.filter((row) => {
+    if (filter === 'enabled' && !row.enabled) return false
+    if (filter === 'unused' && row.instances.length > 0) return false
+    const text = [
+      row.name,
+      row.id,
+      row.description,
+      ...row.instances.flatMap((instance) => [instance.name, instance.host]),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return words.every((word) => text.includes(word))
+  })
+  return { rows, counts }
+}
