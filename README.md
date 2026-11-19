@@ -171,9 +171,10 @@ number, moved "is not" before the field in a query and added lists to it,
 made every side panel resizable and put a right-click menu on what is not
 evidence; 5.1 put connectors and their instances on one page, made a
 connector a package with a logo and a README, and made mail a connector
-that sends, reads and listens. Next in 5.x: the playbook editor (branches,
-free connections), the page of an incident with layouts made like
-dashboards, and a playground for commands.
+that sends, reads and listens; 5.2 gave playbooks branches that are pushed
+over the version in use, connections routed by hand, and a library of
+blocks in tabs. Next in 5.x: the page of an incident with layouts made
+like dashboards, and a playground for commands.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

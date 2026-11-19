@@ -132,11 +132,17 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ErrorBoundary resetKey={`${route.area}:${route.id}:${route.tab}`}>
+        <ErrorBoundary resetKey={`${route.area}:${route.id}:${route.tab}:${route.branch ?? ''}`}>
           {area?.id === 'playbooks' && route.id ? (
             <PlaybookPage
-              key={route.id}
+              // A branch is another canvas: the page starts again, and what was not saved is sent first.
+              key={`${route.id}:${route.branch ?? ''}`}
               id={route.id}
+              branchId={route.branch ?? null}
+              playbooks={playbooks ?? []}
+              onOpenPlaybook={(playbookId, branch = null, options = {}) =>
+                onNavigate('playbooks', playbookId, null, { ...options, branch })
+              }
               tab={route.tab ?? 'canvas'}
               onTab={(tab) => onNavigate('playbooks', route.id, tab, { replace: true })}
               onBack={() => onNavigate('playbooks')}
@@ -185,7 +191,7 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
             <PlaybooksPage
               playbooks={playbooks}
               error={error}
-              onOpen={(id, tab = null) => onNavigate('playbooks', id, tab)}
+              onOpen={(id, tab = null, branch = null) => onNavigate('playbooks', id, tab, { branch })}
               onReload={reload}
             />
           )}

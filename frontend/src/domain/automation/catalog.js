@@ -255,6 +255,41 @@ export function groupsOf(entries, query = '') {
   return [...groups].map(([name, found]) => ({ name, entries: found })).sort((a, b) => rank(a.name) - rank(b.name))
 }
 
+/* ---- The library in tabs (5.2) ---- */
+
+export const LIBRARY_TABS = [
+  { id: 'commands', label: 'Commands' },
+  { id: 'scripts', label: 'Scripts' },
+  { id: 'flow', label: 'Flow' },
+]
+
+/** Which tab of the library an entry is in. */
+export const tabOf = (entry) => (entry.kind === 'script' ? 'scripts' : entry.group === 'Flow' ? 'flow' : 'commands')
+
+/**
+ * What the library shows: the groups of one tab, or, while something is typed
+ * in its search, what matches in every tab. The commands of a connector that
+ * has no instance on are left out (`available: false`), and so is what is kept
+ * only for older playbooks. `counts` are those of the tabs, whatever is typed.
+ *
+ * @returns {{ groups: { name: string, entries: object[] }[], counts: object, searching: boolean, hidden: number }}
+ */
+export function libraryOf(entries, tab = 'commands', query = '') {
+  const offered = list(entries).filter((entry) => !entry.retired && entry.available !== false)
+  const hidden = list(entries).filter((entry) => !entry.retired && entry.available === false)
+  const counts = { commands: 0, scripts: 0, flow: 0 }
+  for (const entry of offered) counts[tabOf(entry)] += 1
+  const searching = String(query).trim() !== ''
+  const shown = searching ? offered : offered.filter((entry) => tabOf(entry) === tab)
+  return {
+    groups: groupsOf(shown, query),
+    counts,
+    searching,
+    // How many connectors have commands that are not offered: said under the list.
+    hidden: new Set(hidden.map((entry) => entry.connector ?? entry.group)).size,
+  }
+}
+
 /** The library entry a node was made from; null when it is gone (an action or a script removed). */
 export function entryOf(node, entries) {
   if (!node) return null

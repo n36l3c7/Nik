@@ -486,6 +486,21 @@ def _call_cycle(name: str | None, graph: dict, library: Library) -> bool:
     return visit(graph, (name,) if name else ())
 
 
+MAX_EDGE_POINTS = 20
+
+
+def _points_ok(points: Any) -> bool:
+    if not isinstance(points, list) or len(points) > MAX_EDGE_POINTS:
+        return False
+    for point in points:
+        if not isinstance(point, dict) or set(point) != {"x", "y"}:
+            return False
+        for value in point.values():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or abs(value) > 1_000_000:
+                return False
+    return True
+
+
 def validate(graph: Any, library: Library, name: str | None = None) -> list[Problem]:
     """Everything that keeps the graph from being saved as a version ([] when it is valid)."""
     if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list):
@@ -540,6 +555,12 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
         if (edge["from"], port, edge["to"]) in pairs:
             problems.append(Problem("The same edge is drawn twice", source["id"]))
         pairs.add((edge["from"], port, edge["to"]))
+        # The corners somebody gave the line (5.2): a drawing, which the engine never reads.
+        points = edge.get("points")
+        if points is not None and not _points_ok(points):
+            problems.append(
+                Problem(f"The corners of an edge are at most {MAX_EDGE_POINTS} points with x and y", source["id"])
+            )
 
     order = topological(graph)
     if order is None:

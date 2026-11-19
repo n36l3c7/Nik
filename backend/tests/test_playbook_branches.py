@@ -34,6 +34,11 @@ def test_a_branch_is_made_worked_on_and_pushed_over_the_version_in_use(admin: Te
         "admin",
     )
     assert branch["graph"] == admin.get(url).json()["graph"]  # a copy of the version in use
+    # The list of playbooks names the branches of each, without their graphs.
+    listed = {row["id"]: row for row in admin.get(BASE).json()["playbooks"]}
+    assert [(item["name"], item["createdBy"]) for item in listed[pb]["branches"]] == [("louder words", "admin")]
+    assert "graph" not in listed[pb]["branches"][0]
+    assert all(row["branches"] == [] for key, row in listed.items() if key != pb)
     for bad in ("main", "Draft", "   ", "louder WORDS"):
         assert admin.post(f"{url}/branches", json={"name": bad}).status_code in (400, 422), bad
 
@@ -124,3 +129,26 @@ def test_a_draft_is_thrown_away_and_a_playbook_that_is_only_a_draft_is_deleted(a
     only = admin.delete(f"{BASE}/{fresh['id']}/draft")
     assert only.status_code == 409 and "delete the playbook instead" in only.json()["detail"]
     assert admin.delete(f"{BASE}/{fresh['id']}").status_code == 204
+
+
+def test_the_corners_of_a_connection_are_part_of_the_graph(admin: TestClient, test_actions):  # noqa: F811
+    """A line routed by hand (5.2): its corners are kept with the edge, and checked as a drawing."""
+    pb = playbook(admin, "Routed", [note("one")], [edge("start", "say")])
+    url = f"{BASE}/{pb}"
+    shape = graph_of("two")
+    shape["edges"][0]["points"] = [{"x": 40, "y": 120}, {"x": 200, "y": 120.5}]
+    saved = admin.post(f"{url}/versions", json={"graph": shape})
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["graph"]["edges"][0]["points"] == shape["edges"][0]["points"]
+    for bad in (
+        [{"x": 1}],
+        [{"x": "1", "y": 2}],
+        [{"x": 1, "y": 2, "z": 3}],
+        [{"x": True, "y": 2}],
+        "here",
+        [{"x": 1, "y": 2}] * 21,
+        [{"x": 1e9, "y": 0}],
+    ):
+        shape["edges"][0]["points"] = bad
+        refused = admin.post(f"{url}/versions", json={"graph": shape})
+        assert refused.status_code == 422 and "corners of an edge" in refused.json()["detail"], bad

@@ -148,16 +148,24 @@
       </p>
       <ul>
         <li>
-          <strong>The library</strong>, on the left: every node there is, in groups (<em>Flow</em>, <em>Nik</em>,
-          <em>HTTP</em>, <em>E-mail</em>, <em>Scripts</em>). Drag a node onto the canvas, or click it: it lands after
-          the selected node, joined to it when that node's line is free. A node marked <em>changes</em> does something
-          outside Nik and asks for approval by default.
+          <strong>The library</strong>, on the left, in three tabs: <em>Commands</em> (what Nik does and what each
+          connector does, one group for each, closed until you open it), <em>Scripts</em> and <em>Flow</em> (condition,
+          for each, wait, approval, task, question, another playbook, end). The search looks in all three at once. A
+          connector is there only while one of its instances is on. Drag a node onto the canvas, or click it: it lands
+          after the selected node, joined to it when that node's line is free. A node marked <em>changes</em> does
+          something outside Nik and asks for approval by default. Above the tabs are
+          <a href="#branches">the playbooks and their branches</a>.
         </li>
         <li>
           <strong>The playbook</strong>, in the middle. Drag from the square under a node to another node to draw an
           edge; a condition has two squares (<em>yes</em>, <em>no</em>), an approval two (<em>approved</em>,
           <em>refused</em>), and the nodes that can fail have one on their right side for the <em>on error</em> line.
-          <strong>Tidy up</strong> puts the nodes in order; the minimap and the zoom buttons are in the corners.
+          <strong>Tidy up</strong> puts the nodes in order; the minimap and the zoom buttons are in the corners. A
+          connection under the pointer (or selected) shows an <strong>×</strong> that removes it, and small squares to
+          <strong>route it by hand</strong>: drag the hollow one in the middle of a straight part and it becomes a
+          corner; drag a corner to move it (the arrow keys move it too); double-click it, or press <kbd>Delete</kbd> on
+          it, to take it away. A connection has twenty corners at most; with none it draws itself again. The corners are
+          saved with the playbook, so everybody sees the same drawing.
         </li>
         <li>
           <strong>The inspector</strong>, on the right: the settings of the selected node, where it goes next, what it
@@ -185,6 +193,55 @@
         <strong>Settings</strong> (its name, limits, <a href="#outside">network and data</a>, export, delete). The
         switch in its header turns it <em>on</em>: a playbook that is off is started by nothing but a person.
       </p>
+      <p>
+        <strong>Throwing away and deleting.</strong> A playbook that has a version and a draft shows
+        <em>discard the draft</em> under its name: the canvas goes back to the version in use (it asks first; a draft
+        thrown away is not kept anywhere). The right-click menu of a playbook and of a script in their lists ends with
+        <em>Delete…</em>: a playbook goes with its versions, its branches and its runs, and is not deleted while a run
+        is in progress; a script a playbook uses is not deleted, and the answer says which playbook.
+      </p>
+
+      <h3 id="branches">Branches</h3>
+      <p>
+        A <strong>branch</strong> is a copy of a playbook's graph to work on beside it: a change that takes days, an
+        experiment, something a colleague should look at before it runs. Nothing a run uses changes while a branch is
+        edited.
+      </p>
+      <ul>
+        <li>
+          <strong>Where they are.</strong> The top of the side panel lists the playbooks; each opens into
+          <em>main</em> (the version in use, with its draft) and its branches, each with the name of who made it. A
+          click goes there. The list of playbooks shows the branches under each playbook as well. A branch has an
+          address of its own, <code>/automation/playbooks/&lt;id&gt;/branches/&lt;branch&gt;</code>, to send to
+          somebody.
+        </li>
+        <li>
+          <strong>Making one.</strong> <em>New branch</em> copies what is on the canvas: main with its draft, or the
+          branch that is open. A name is asked; <em>main</em> and <em>draft</em> are taken. A playbook has twenty
+          branches at most.
+        </li>
+        <li>
+          <strong>Working on it.</strong> A branch saves itself a moment after each change, like the draft (<em
+            >Save branch</em
+          >
+          saves it at once), and need not be valid. Everybody who edits playbooks sees every branch; only who made it,
+          or an admin, changes it. Somebody else's opens read-only: make a branch of your own from it.
+        </li>
+        <li>
+          <strong>Push to main.</strong> The branch is checked like a draft saved as a version and becomes the next
+          version of the playbook, the one that runs from then on; the note you give is kept with the version. The
+          branch stays, to go on from, and the draft of main is not touched. <strong>Graphs are not merged</strong>:
+          when the playbook got a newer version since the branch started (the header says
+          <em>started from version N</em>, the list <em>behind</em>), the push stops and says so, and
+          <em>Push over it</em> replaces what was saved since. Nothing is lost: the earlier versions are under
+          <em>Versions</em>, to restore.
+        </li>
+        <li>
+          <strong>What stays on main.</strong> <em>Run…</em> runs the version in use, not the branch, and the debugger
+          runs the draft or the version of main. To try a branch, push it, or copy it to a playbook of its own with
+          <a href="#files">export and import</a>.
+        </li>
+      </ul>
 
       <h2 id="nodes">The nodes</h2>
       <h3 id="trigger">Trigger</h3>
@@ -208,9 +265,10 @@
         <li>
           <strong>By hand</strong>: <em>Run a playbook…</em> in the right-click menu of an incident, of an analysed
           e-mail, file or address, and of an indicator; on an incident's <em>Automation</em> tab; on an artifact's page;
-          or <em>Run…</em> on the playbook's page. A playbook whose event is about one kind of object is offered on that
-          kind only (one that waits for e-mails is not offered on a file); a playbook with no event is offered
-          everywhere, and reads whatever it was run on.
+          or <em>Run…</em> on the playbook's page, which runs that playbook and asks only the incident: type a part of
+          its title or its number, and choose among the ten suggested. A playbook whose event is about one kind of
+          object is offered on that kind only (one that waits for e-mails is not offered on a file); a playbook with no
+          event is offered everywhere, and reads whatever it was run on.
         </li>
       </ul>
       <div class="table-wrap">
@@ -699,7 +757,10 @@ Content-Type: application/json
       <p>
         Every text field of a node takes values from the run with <code>{{ }}</code>. Type them, or use
         <strong>Pick a value</strong> (the <code>{ }</code> button beside the field), which lists what this node can
-        read and writes the expression where the caret is.
+        read and writes the expression where the caret is. The list goes into what a block gives: after
+        <code>get_message.</code> it offers <code>from</code>, <code>subject</code>, <code>attachments[*].name</code>
+        and the rest, taken from the outputs the command declares and, for a command of a connector, from the
+        <code>sample</code> answer in its file.
       </p>
       <pre><code>{{ trigger.incident.name }}
 {{ search.recipients[*].office | unique | join(", ") }}

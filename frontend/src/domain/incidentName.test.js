@@ -66,3 +66,31 @@ test('the number of an incident is written #00042 and read back from what is typ
   assert.equal(numberedName({ name: 'Being created' }), 'Being created')
   assert.equal(numberedName({ number: 7 }), '#00007 Untitled incident')
 })
+
+test('an incident is found by typing its number or words of its name, ten at most', async () => {
+  const { suggestIncidents } = await import('./incidentName.js')
+  const incidents = [
+    { id: 'a', number: 4, name: 'Invoice phishing, finance', host: 'WKS-01', updatedAt: '2026-11-19T10:00' },
+    { id: 'b', number: 42, name: 'Beaconing from SRV-DB-02', updatedAt: '2026-11-19T09:00' },
+    { id: 'c', number: 421, name: 'Phishing report 42', updatedAt: '2026-11-19T11:00' },
+    { id: 'd', number: 7, name: 'Macro dropper', username: 'm.rossi', updatedAt: '2026-11-18T08:00' },
+  ]
+  const ids = (text, limit) => suggestIncidents(incidents, text, limit).map((incident) => incident.id)
+  // Nothing typed: the latest changed first.
+  assert.deepEqual(ids(''), ['c', 'a', 'b', 'd'])
+  // A number: the incident with it, then those whose number starts with it, then a name that holds it.
+  assert.deepEqual(ids('42'), ['b', 'c'])
+  assert.deepEqual(ids('#42'), ['b', 'c'])
+  assert.deepEqual(ids('00042'), ['b', 'c'])
+  assert.deepEqual(ids('4'), ['a', 'c', 'b'])
+  // Words: every one of them, in the name, the host, the user or the ticket.
+  assert.deepEqual(ids('phishing'), ['c', 'a'])
+  assert.deepEqual(ids('PHISHING finance'), ['a'])
+  assert.deepEqual(ids('wks-01'), ['a'])
+  assert.deepEqual(ids('m.rossi'), ['d'])
+  assert.deepEqual(ids('zzz'), [])
+  assert.deepEqual(ids('', 2), ['c', 'a'])
+  const many = Array.from({ length: 30 }, (_, index) => ({ id: `i${index}`, number: index + 1, name: 'Same name' }))
+  assert.equal(suggestIncidents(many, 'same').length, 10)
+  assert.deepEqual(suggestIncidents(null, 'x'), [])
+})
