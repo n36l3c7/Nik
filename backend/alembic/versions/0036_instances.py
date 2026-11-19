@@ -1,9 +1,11 @@
-"""instances of a connector can be turned off
+"""instances of a connector can be turned off; a connector has a logo and a README
 
 Release 5.1. A connection is an instance of its connector; ``enabled`` says
 whether it is on. Every connection there is stays on: nothing changes until
-someone turns one off. Added only where it is missing: the baseline creates
-the schema from the models.
+someone turns one off. A connector gains what a package brings beside its
+file: a logo and a README, both empty for the connectors there are. Each
+column is added only where it is missing: the baseline creates the schema
+from the models.
 
 Revision ID: 0036_instances
 Revises: 0035_incident_numbers
@@ -23,6 +25,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    from app.core.db import Base
     from app.core.models import INSTANCE_COLUMNS
 
     bind = op.get_bind()
@@ -32,8 +35,12 @@ def upgrade() -> None:
             continue
         held = {column["name"] for column in sa.inspect(bind).get_columns(table)}
         for name in columns:
-            if name not in held:
-                op.add_column(table, sa.Column(name, sa.Boolean(), nullable=False, server_default=sa.true()))
+            if name in held:
+                continue
+            column = Base.metadata.tables[table].columns[name]
+            op.add_column(
+                table, sa.Column(name, column.type, nullable=column.nullable, server_default=column.server_default)
+            )
 
 
 def downgrade() -> None:

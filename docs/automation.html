@@ -1429,6 +1429,17 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           or in the API: to change one, type it again.
         </li>
         <li>
+          <strong>A connector is a package.</strong> Beside its file it may have a <strong>logo</strong> and a
+          <strong>README</strong>, and its own scripts and mappers travel with it in a
+          <a href="#packs">content pack</a>: in a pack a connector is a file (<code>connectors/&lt;id&gt;.yml</code>) or
+          a folder, <code>connectors/&lt;id&gt;/connector.yml</code> with <code>logo.svg</code> or
+          <code>logo.png</code> and <code>README.md</code> beside it. A connector opened on the page shows its README
+          and takes a logo: a PNG or an SVG of 256 KB at most, and an SVG that holds anything but a drawing (a script,
+          an event handler, a reference outside the file) is refused. The logo marks the connector in the list and the
+          incidents its instances bring in. Nik ships no vendor's logo: the place is empty until you give the connector
+          one, and a connector of no product has none.
+        </li>
+        <li>
           <strong>On and off.</strong> The switch beside an instance turns it off without losing what it was set up
           with: off, it runs no command, fetches nothing and is not offered for mirroring. A connector is
           <em>enabled</em> while one of its instances is on; the filters of the page count the enabled ones and those

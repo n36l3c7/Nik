@@ -33,6 +33,7 @@ import { STATUSES } from '../../domain/incidentName.js'
 import ArtifactsPanel from '../artifacts/ArtifactsPanel.jsx'
 import IocsPanel from '../iocs/IocsPanel.jsx'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
+import ConnectorLogo from '../ui/ConnectorLogo.jsx'
 
 /*
  * ============================================================================
@@ -368,6 +369,7 @@ export default function Sidebar({
                         <Mail className="h-3.5 w-3.5 shrink-0 text-accent" aria-label="Holds e-mails" />
                       )}
                       <IncidentNumber number={incident.number} className="text-xs" />
+                      <ConnectorLogo source={incident.source} />
                       <span className="truncate">{incident.name}</span>
                     </span>
                     <span className="flex items-center gap-1.5 text-[11px] text-fg-muted">

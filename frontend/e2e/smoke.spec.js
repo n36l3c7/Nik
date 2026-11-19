@@ -2070,7 +2070,20 @@ test('a connector is added from its file, a connection is made, and its commands
   await expect(shown.getByRole('table', { name: 'Commands of Acme Desk' }).getByRole('row')).toHaveCount(3)
   await shown.getByText('The file', { exact: true }).click()
   await expect(shown.getByLabel('The file of Acme Desk')).toContainText('base_url: "{{ config.url }}"')
+  // It is given a logo: an image that is not a drawing is refused, a drawing marks the connector.
+  const svg = (inner) => ({
+    name: 'logo.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">${inner}</svg>`),
+  })
+  await shown.getByLabel('Logo of Acme Desk').setInputFiles(svg('<script>alert(1)</script>'))
+  await expect(shown.getByRole('alert')).toContainText('a drawing and nothing else')
+  await shown.getByLabel('Logo of Acme Desk').setInputFiles(svg('<rect width="8" height="8" fill="#246"/>'))
+  await expect(shown.getByRole('button', { name: 'Change the logo' })).toBeVisible()
   await shown.getByRole('button', { name: 'Close', exact: true }).last().click()
+  const logo = installed.locator('img').first()
+  await expect(logo).toHaveAttribute('src', /\/api\/automation\/connectors\/acme\/logo\?v=/)
+  expect(await logo.evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true)
 
   // An instance, under its connector: the form is the connector's; credentials are written and
   // never shown again. There is no Connections section any more.
@@ -3285,6 +3298,12 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
 
 test('the rail: the order of a working day, and the account at its foot', async () => {
   const rail = page.getByRole('navigation', { name: 'Sections' })
+  // Every incident of the list has its number, opened in this visit or not.
+  const shows = rail.getByRole('button', { name: 'Incidents', exact: true })
+  if (await shows.count()) await shows.click()
+  const listed = page.getByRole('navigation', { name: 'Incidents' }).getByRole('listitem')
+  await expect(listed.first()).toBeVisible()
+  for (const text of await listed.allTextContents()) expect(text).toMatch(/#\d{5}/)
   const labels = await rail
     .getByRole('button')
     .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label').replace(/ \(.*$/, '')))

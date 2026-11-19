@@ -5,6 +5,7 @@ import { getOsById } from '../../config/os.js'
 import { formatRelative } from '../../lib/time.js'
 import { SeverityTag, StatusTag } from '../ui/index.js'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
+import ConnectorLogo from '../ui/ConnectorLogo.jsx'
 
 /*
  * ============================================================================
@@ -59,6 +60,7 @@ export default function Header({
             <h1 className="flex items-center gap-2 truncate font-mono text-lg font-semibold leading-tight text-fg">
               {OsIcon && <OsIcon className={`h-4 w-4 shrink-0 ${os.accent}`} aria-label={os.label} />}
               <IncidentNumber number={activeIncident.number} />
+              <ConnectorLogo source={activeIncident.source} className="h-5 w-5" />
               <span className="truncate">{activeIncident.name}</span>
               <SeverityTag severity={activeIncident.severity} />
               <StatusTag status={activeIncident.status} />

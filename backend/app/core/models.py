@@ -1039,6 +1039,11 @@ class Connector(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # What a connector comes with besides its file (5.1): a logo, checked by connector_logo.clean
+    # before it is kept (``logo_type`` is image/png or image/svg+xml, "" for none), and a README.
+    logo: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    logo_type: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    readme: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -1475,7 +1480,10 @@ class IocVerdictChange(Base):
 
 
 # The columns migration 0036_instances adds where missing.
-INSTANCE_COLUMNS: dict[str, tuple[str, ...]] = {"connections": ("enabled",)}
+INSTANCE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "connections": ("enabled",),
+    "connectors": ("logo", "logo_type", "readme"),
+}
 
 # Created by migration 0035_incident_numbers where missing; and the column it adds.
 NUMBER_TABLES = ("sequences",)

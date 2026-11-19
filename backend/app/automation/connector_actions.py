@@ -28,12 +28,13 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core import vault
 from ..core.models import Connection, Connector
 from ..core.security import now_iso
-from . import actions, egress, outbound
+from . import actions, connector_logo, egress, outbound
 from . import expressions as ex
 from .connector_runtime import AUTH_FIELDS, CommandError, Runtime, forget_tokens
 from .connectors import Command, ConnectorError, ConnectorFile, Problem, load
 
 SEED_DIR = Path(__file__).parent / "seed" / "connectors"
+README_MAX = 100_000
 
 # Parsed files, by what they are made of: a connector is read once per version of its text.
 _PARSED: dict[str, ConnectorFile] = {}
@@ -55,13 +56,24 @@ def parsed(row: Connector) -> ConnectorFile | None:
 # --------------------------------------------------------------------------- #
 # Installing                                                                  #
 # --------------------------------------------------------------------------- #
-def install(db: OrmSession, text: str, actor: str, *, builtin: bool = False) -> tuple[Connector, ConnectorFile]:
+def install(
+    db: OrmSession, text: str, actor: str, *, builtin: bool = False, extras: dict[str, Any] | None = None
+) -> tuple[Connector, ConnectorFile]:
     """Add a connector, or replace the one with the same id (the caller commits).
 
     Raises ``ConnectorError`` with every problem of the file. A file whose
     version is lower than the one installed is refused: versions only go up.
+
+    ``extras`` is what a package brings beside the file: ``logo`` (bytes, checked here) and
+    ``readme``. One that is not given keeps what the connector has; a file alone changes neither.
     """
     connector = load(text)
+    logo = None
+    if extras and extras.get("logo"):
+        try:
+            logo = connector_logo.clean(extras["logo"])
+        except connector_logo.LogoError as error:
+            raise ConnectorError([Problem(0, f"The logo: {error.message}")]) from None
     row = db.get(Connector, connector.id)
     now = now_iso()
     if row is None:
@@ -79,18 +91,45 @@ def install(db: OrmSession, text: str, actor: str, *, builtin: bool = False) -> 
     row.version = connector.version
     row.source = text
     row.builtin = builtin
+    if logo is not None:
+        row.logo, row.logo_type = logo
+    if extras and extras.get("readme") is not None:
+        row.readme = str(extras["readme"])[:README_MAX]
     row.updated_at = now
     row.updated_by = actor
     db.flush()
     return row, connector
 
 
+def package_of(folder: Path) -> tuple[str, dict[str, Any]]:
+    """A connector kept as a folder (``connector.yml``, and beside it ``logo.svg`` or ``logo.png``
+    and ``README.md``): its file and what it comes with."""
+    extras: dict[str, Any] = {}
+    for path in sorted(folder.iterdir()):
+        if path.is_file() and connector_logo.by_name(path.name):
+            extras["logo"] = path.read_bytes()
+        elif path.is_file() and path.name.lower() == "readme.md":
+            extras["readme"] = path.read_text(encoding="utf-8")
+    return (folder / "connector.yml").read_text(encoding="utf-8"), extras
+
+
 def shipped() -> list[tuple[str, ConnectorFile]]:
-    """The connectors that come with Nik (``seed/connectors/*.yml``): their text, parsed."""
+    """The connectors that come with Nik: their text, parsed. Each is a file (``seed/connectors/<id>.yml``)
+    or a package (``seed/connectors/<id>/connector.yml`` with its logo and README, see ``shipped_extras``)."""
     found = []
-    for path in sorted(SEED_DIR.glob("*.yml")):
+    for path in sorted([*SEED_DIR.glob("*.yml"), *SEED_DIR.glob("*/connector.yml")], key=lambda p: p.as_posix()):
         text = path.read_text(encoding="utf-8")
         found.append((text, load(text)))
+    return found
+
+
+def shipped_extras() -> dict[str, dict[str, Any]]:
+    """connector id → the logo and the README a shipped connector comes with (packages only)."""
+    found = {}
+    for path in sorted(SEED_DIR.glob("*/connector.yml")):
+        text, extras = package_of(path.parent)
+        if extras:
+            found[load(text).id] = extras
     return found
 
 
@@ -98,11 +137,12 @@ def seed(db: OrmSession) -> int:
     """Add the shipped connectors that are missing and replace those a release changed
     (the caller commits). One an admin uploaded under the same id is theirs and is left."""
     changed = 0
+    extras = shipped_extras()
     for text, connector in shipped():
         row = db.get(Connector, connector.id)
         if row is not None and (not row.builtin or row.source == text):
             continue
-        install(db, text, "nik", builtin=True)
+        install(db, text, "nik", builtin=True, extras=extras.get(connector.id))
         changed += 1
     return changed
 
@@ -137,6 +177,32 @@ def store_secrets(connection: Connection, secrets: dict[str, Any]) -> None:
 
 def connections_of(db: OrmSession, connector_id: str) -> list[Connection]:
     return list(db.scalars(select(Connection).where(Connection.connector_id == connector_id).order_by(Connection.name)))
+
+
+def logo_path(row: Connector | None) -> str | None:
+    """Where the logo of a connector is served from (under ``/api``), or None when it has none. The
+    address changes when the logo does, so a browser may keep it."""
+    if row is None or not row.logo:
+        return None
+    mark = hashlib.sha256(bytes(row.logo)).hexdigest()[:12]
+    return f"/automation/connectors/{row.id}/logo?v={mark}"
+
+
+def logos_by_connection(db: OrmSession) -> dict[str, dict[str, Any]]:
+    """connection id → the connector it is an instance of, by name, and its logo: what an incident
+    a connector brought in is marked with."""
+    connectors = {row.id: row for row in db.scalars(select(Connector))}
+    found = {}
+    for connection_id, name, connector_id in db.execute(
+        select(Connection.id, Connection.name, Connection.connector_id)
+    ):
+        row = connectors.get(connector_id)
+        found[connection_id] = {
+            "connection": name,
+            "connector": row.name if row is not None else connector_id,
+            "logo": logo_path(row),
+        }
+    return found
 
 
 def enabled_connectors(db: OrmSession) -> set[str]:

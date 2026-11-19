@@ -16,8 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the connectors. The API keeps `/api/automation/connections` and adds
   `GET` / `POST /api/automation/connectors/{id}/instances`.
 
+### Fixed
+
+- The number of an incident was not shown in the list of incidents nor in
+  the header (5.0.0): it was dropped when a document was read, and a new
+  incident did not get it until the list was read again.
+
 ### Added
 
+- **A connector is a package.** Beside its file it may have a logo and a
+  README (`connectors.logo`, `readme`), and in a content pack it may be a
+  folder: `connectors/<id>/connector.yml` with `logo.svg` or `logo.png` and
+  `README.md`. Its scripts and mappers travel in the same pack. A shipped
+  connector may be such a folder too.
+- **Logos of connectors.** A connector takes a logo on its page
+  (`PUT /api/automation/connectors/{id}/logo`: a PNG, or an SVG that holds
+  a drawing and nothing else, 256 KB at most). It is shown in the list of
+  connectors and beside the incidents its instances bring in (`source` on
+  an incident). Nik ships no vendor's logo, and its own mark is never used
+  in their place.
 - **An instance is turned on and off.** Off, it keeps what it was set up
   with and runs no command, fetches nothing and is not offered for
   mirroring (`enabled` on a connection; migration `0036_instances` leaves

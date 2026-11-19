@@ -16,20 +16,20 @@ import io
 import zipfile
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..automation import connector_actions as store
+from ..automation import connector_logo, engine, graph
 from ..automation import connectors as files
-from ..automation import engine, graph
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Connection, Connector, Playbook, PlaybookVersion
 from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_RUN, CONNECTORS_MANAGE
-from ..core.security import Principal, now_iso, require
+from ..core.security import Principal, now_iso, reader_principal, require
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
@@ -118,6 +118,8 @@ def _connector_out(db: OrmSession, row: Connector, *, source: bool = False) -> d
         # Its commands are offered in the editor and the War Room when one instance is on.
         "enabled": on > 0,
         "readable": connector is not None,
+        # Where its logo is served from, or null: a connector of no product has none.
+        "logo": store.logo_path(row),
         "updatedAt": row.updated_at,
         "updatedBy": row.updated_by,
     }
@@ -126,6 +128,7 @@ def _connector_out(db: OrmSession, row: Connector, *, source: bool = False) -> d
         out["secrets"] = store.secret_names(connector)
     if source:
         out["source"] = row.source
+        out["readme"] = row.readme or ""
         out["usedBy"] = _users_of(db, row.id)
     return out
 
@@ -259,6 +262,10 @@ def connector_samples(_caller: Principal = Depends(manager_principal)) -> Respon
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(store.SEED_DIR.glob("*.yml")):
             archive.writestr(path.name, path.read_text(encoding="utf-8"))
+        # A connector kept as a package goes as its folder.
+        for folder in sorted(path.parent for path in store.SEED_DIR.glob("*/connector.yml")):
+            for path in sorted(item for item in folder.iterdir() if item.is_file()):
+                archive.writestr(f"{folder.name}/{path.name}", path.read_bytes())
     return Response(
         content=buffer.getvalue(),
         media_type="application/zip",
@@ -298,6 +305,74 @@ def get_connector(
     if row is None:
         raise HTTPException(status_code=404, detail="Connector not found")
     return _connector_out(db, row, source=True)
+
+
+@router.get("/connectors/{connector_id}/logo")
+def connector_logo_image(
+    connector_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    """The logo of a connector, for whoever reads incidents: an image and nothing else."""
+    row = db.get(Connector, connector_id)
+    if row is None or not row.logo or row.logo_type not in connector_logo.TYPES:
+        raise HTTPException(status_code=404, detail="This connector has no logo")
+    return Response(
+        content=bytes(row.logo),
+        media_type=row.logo_type,
+        headers={
+            # Its address changes with it (``?v=``): it may be kept. An SVG opened on its own runs nothing.
+            "Cache-Control": "private, max-age=86400",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": f'inline; filename="{row.id}-logo.{connector_logo.EXTENSIONS[row.logo_type]}"',
+        },
+    )
+
+
+@router.put("/connectors/{connector_id}/logo")
+async def set_connector_logo(
+    connector_id: str,
+    request: Request,
+    caller: Principal = Depends(manager_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Give a connector its logo: the body is the image, a PNG or an SVG of 256 KB at most. The SVG is
+    refused when it holds anything but a drawing."""
+    row = db.get(Connector, connector_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > connector_logo.MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"A logo is {connector_logo.MAX_BYTES // 1024} KB at most")
+    data = b""
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > connector_logo.MAX_BYTES:
+            raise HTTPException(status_code=413, detail=f"A logo is {connector_logo.MAX_BYTES // 1024} KB at most")
+    try:
+        row.logo, row.logo_type = connector_logo.clean(data)
+    except connector_logo.LogoError as error:
+        raise HTTPException(status_code=400, detail=error.message) from None
+    row.updated_at, row.updated_by = now_iso(), caller.actor
+    audit.record(db, caller.actor, "connector.logo", f'Set the logo of the connector "{row.name}"', target=row.id)
+    db.commit()
+    return _connector_out(db, row)
+
+
+@router.delete("/connectors/{connector_id}/logo", status_code=status.HTTP_204_NO_CONTENT)
+def remove_connector_logo(
+    connector_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> Response:
+    row = db.get(Connector, connector_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    if row.logo:
+        row.logo, row.logo_type = None, ""
+        row.updated_at, row.updated_by = now_iso(), caller.actor
+        audit.record(
+            db, caller.actor, "connector.logo", f'Removed the logo of the connector "{row.name}"', target=row.id
+        )
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)

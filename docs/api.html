@@ -1115,6 +1115,18 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/automation/connectors/{id}/logo</code> · <code>PUT …/logo</code> ·
+                <code>DELETE …/logo</code>
+              </td>
+              <td>
+                The logo of a connector, for whoever reads incidents · set it (<code>connectors.manage</code>): the body
+                is the image, a PNG or an SVG of 256 KB at most; <code>400</code> says what an SVG must not hold ·
+                remove it. A connector says where its logo is in <code>logo</code> (null when it has none), and an
+                incident a connector brought in carries <code>source: {connection, connector, logo}</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/automation/connectors/samples</code></td>
               <td>The connector files Nik ships, in a zip.</td>
             </tr>

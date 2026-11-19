@@ -196,6 +196,12 @@
           store.
         </li>
         <li>
+          <strong>Logos</strong> of connectors come from outside, in a pack or an upload, and are shown to everyone. A
+          logo is a PNG, by its signature, or an SVG that holds a drawing and nothing else: no script, no
+          <code>foreignObject</code>, no event handler, no DOCTYPE, no reference outside the file. It is drawn with
+          <code>&lt;img&gt;</code>, which runs nothing of an SVG, and served with a content security policy of its own.
+        </li>
+        <li>
           <strong>Expiry</strong> deletes nothing by default: an artifact has a date only if someone who may change
           artifacts set one, and the deletion is in the audit log like one made by hand.
         </li>

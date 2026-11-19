@@ -230,6 +230,10 @@ function normalizeIncident(raw) {
     // written only through the field registry (PATCH …/fields), never by a change made here.
     type: typeof raw.type === 'string' && raw.type ? raw.type : 'unclassified',
     fields: raw.fields && typeof raw.fields === 'object' && !Array.isArray(raw.fields) ? raw.fields : {},
+    // Given by the server too: the number the incident is called by (null until it is saved), and
+    // what brought it in when a connector did, with the connector's logo.
+    number: Number.isInteger(raw.number) ? raw.number : null,
+    source: raw.source && typeof raw.source === 'object' ? raw.source : null,
   }
 }
 
@@ -280,6 +284,7 @@ function toSummary(incident) {
     assignee: incident.assignee ?? '',
     hasMail: (incident.data?.mail?.messages?.length ?? 0) > 0,
     type: incident.type ?? 'unclassified',
+    source: incident.source ?? null,
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt,
   }
@@ -293,6 +298,9 @@ function normalizeSummary(raw) {
     typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : deriveIncidentName({ host, username })
   return {
     id: raw.id,
+    // The number it is called by, and what brought it in when a connector did (with its logo).
+    number: Number.isInteger(raw.number) ? raw.number : null,
+    source: raw.source && typeof raw.source === 'object' ? raw.source : null,
     name,
     host,
     username,
@@ -698,9 +706,14 @@ export function IncidentProvider({ children }) {
             etag = headers.get('ETag')
           },
         })
-        .then(() => {
+        .then((made) => {
           setStorageError(null)
-          queue.track(incident.id, incident, etag)
+          // The server gives the incident its number: it is part of the document from then on, here
+          // as there, so the list shows it at once and it is never sent back as a change.
+          const given = Number.isInteger(made?.number) ? { number: made.number, uuid: made.uuid ?? incident.id } : {}
+          const current = documentsRef.current[incident.id]
+          if (current && given.number) storeDocument({ ...current, ...given })
+          queue.track(incident.id, { ...incident, ...given }, etag)
           queue.touch(incident.id)
           return true
         })
@@ -711,7 +724,7 @@ export function IncidentProvider({ children }) {
       savedRef.current.set(incident.id, saved)
       return saved
     },
-    [queue],
+    [queue, storeDocument],
   )
 
   /* ---- incident CRUD ---- */
@@ -1492,7 +1505,15 @@ export function IncidentProvider({ children }) {
       }
       // The type and the custom fields are those of the Nik the file came from, which this one may
       // not have: an imported incident starts Unclassified, with the fields every incident has.
-      const incident = normalizeIncident({ ...raw, id: generateId(), updatedAt: nowIso(), type: null, fields: null })
+      const incident = normalizeIncident({
+        ...raw,
+        id: generateId(),
+        updatedAt: nowIso(),
+        type: null,
+        fields: null,
+        number: null,
+        source: null,
+      })
       storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
       syncUrl(incident.id)

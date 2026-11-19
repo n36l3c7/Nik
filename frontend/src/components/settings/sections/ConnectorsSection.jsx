@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, FileCode2, Pencil, Plug, Plus, Trash2, Upload, Zap } from 'lucide-react'
+import { Download, FileCode2, ImageUp, Pencil, Plug, Plus, Trash2, Upload, Zap } from 'lucide-react'
 import { api, apiUrl } from '../../../services/api.js'
 import {
   CONNECTOR_FILTERS,
@@ -89,6 +89,8 @@ export default function ConnectorsSection() {
   const [testing, setTesting] = useState(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef(null)
+  const logoInput = useRef(null)
+  const [logoError, setLogoError] = useState(null)
   const menu = useObjectMenu()
 
   const load = useCallback(async () => {
@@ -147,7 +149,22 @@ export default function ConnectorsSection() {
     }
   }
 
+  /** Give the connector the image of a file as its logo, or take its logo away (`file` null). */
+  const setLogo = async (connector, file) => {
+    setLogoError(null)
+    const path = `/automation/connectors/${encodeURIComponent(connector.id)}/logo`
+    try {
+      if (file) await api.put(path, file)
+      else await api.del(path)
+      setShown(await api.get(`/automation/connectors/${encodeURIComponent(connector.id)}`))
+      load()
+    } catch (failure) {
+      setLogoError(failure.message)
+    }
+  }
+
   const open = async (id) => {
+    setLogoError(null)
     setError(null)
     try {
       setShown(await api.get(`/automation/connectors/${encodeURIComponent(id)}`))
@@ -555,6 +572,50 @@ export default function ConnectorsSection() {
               {shown.instances === 1 ? 'instance' : 'instances'}
               {shown.usedBy?.length ? ` · used by ${shown.usedBy.join(', ')}` : ' · no playbook uses it'}
             </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <LogoSlot connector={shown} />
+              <input
+                ref={logoInput}
+                type="file"
+                accept=".svg,.png,image/svg+xml,image/png"
+                className="hidden"
+                aria-label={`Logo of ${shown.name}`}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) setLogo(shown, file)
+                }}
+              />
+              <Button variant="secondary" size="sm" icon={ImageUp} onClick={() => logoInput.current?.click()}>
+                {shown.logo ? 'Change the logo' : 'Set a logo'}
+              </Button>
+              {shown.logo && (
+                <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setLogo(shown, null)}>
+                  Remove the logo
+                </Button>
+              )}
+              <span className="basis-full text-xs text-fg-muted sm:basis-auto">
+                A PNG or an SVG, 256 KB at most. It marks the connector here and the incidents it brings in.
+              </span>
+              {logoError && (
+                <span role="alert" className="basis-full text-xs text-high">
+                  {logoError}
+                </span>
+              )}
+            </div>
+            {shown.readme && (
+              <details open>
+                <summary className="cursor-pointer text-sm text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                  README
+                </summary>
+                <pre
+                  aria-label={`README of ${shown.name}`}
+                  className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap border border-line bg-sunken p-3 text-xs leading-relaxed text-fg"
+                >
+                  {shown.readme}
+                </pre>
+              </details>
+            )}
             {shown.commands && (
               <div className="overflow-x-auto border border-line">
                 <table className="w-full min-w-[520px] border-collapse text-left text-xs">

@@ -284,3 +284,98 @@ def test_a_connector_has_instances_and_is_enabled_when_one_is_on(admin: TestClie
         # A node that names no instance takes the only one that is on.
         assert ca.find_connection(db, "acme", "").name == "Test"
         assert ca.find_connection(db, "acme", "Production").enabled is False
+
+
+# --------------------------------------------------------------------------- #
+# A connector as a package: its logo and its README (5.1)                     #
+# --------------------------------------------------------------------------- #
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="#135"/></svg>'
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+
+
+def test_a_logo_is_an_image_and_nothing_else():
+    from app.automation import connector_logo as logo
+
+    assert logo.clean(SVG) == (SVG, "image/svg+xml")
+    assert logo.clean(b'<?xml version="1.0"?>\n<!-- made by hand -->\n' + SVG)[1] == "image/svg+xml"
+    assert logo.clean(PNG) == (PNG, "image/png")
+    inner = b'<svg xmlns="http://www.w3.org/2000/svg"><use href="#a"/><rect fill="url(#g)"/></svg>'
+    assert logo.clean(inner)[1] == "image/svg+xml"  # what points inside the file is a drawing still
+    for bad, why in (
+        (b"", "empty"),
+        (b"GIF89a....", "PNG or an SVG"),
+        (b"<html><svg></svg></html>", "PNG or an SVG"),
+        (b"\xff\xfe\x00not text", "PNG or an SVG"),
+        (SVG.replace(b"<rect", b"<script>alert(1)</script><rect"), "not a drawing"),
+        (SVG.replace(b"<rect", b"<foreignObject/><rect"), "not a drawing"),
+        (SVG.replace(b"<rect", b'<rect onload="x()"'), "event handler"),
+        (SVG.replace(b"<rect", b'<a href="javascript:alert(1)"/><rect'), "script address"),
+        (SVG.replace(b"<rect", b'<image href="https://evil.example/x.png"/><rect'), "outside the file"),
+        (SVG.replace(b'fill="#135"', b'style="fill:url(https://evil.example/a)"'), "outside the file"),
+        (b'<!DOCTYPE svg [<!ENTITY x "y">]>' + SVG, "DOCTYPE"),
+        (SVG.replace(b"<rect", b"<style>@import 'a.css';</style><rect"), "imported"),
+        (b"<svg>" + b" " * (logo.MAX_BYTES + 1) + b"</svg>", "KB at most"),
+    ):
+        try:
+            logo.clean(bad)
+        except logo.LogoError as error:
+            assert why in error.message, (bad[:40], error.message)
+        else:
+            raise AssertionError(f"accepted: {bad[:40]!r}")
+
+
+def test_a_connector_is_given_a_logo_and_everyone_who_reads_sees_it(admin: TestClient):
+    install(admin)
+    assert admin.get(f"{BASE}/connectors").json()["connectors"][0]["logo"] is None
+    assert admin.get(f"{BASE}/connectors/acme/logo").status_code == 404
+
+    bad = admin.put(f"{BASE}/connectors/acme/logo", content=SVG.replace(b"<rect", b"<script/><rect"))
+    assert bad.status_code == 400 and "not a drawing" in bad.json()["detail"]
+    assert admin.put(f"{BASE}/connectors/acme/logo", content=b"x" * (300 * 1024)).status_code == 413
+    assert admin.put(f"{BASE}/connectors/nope/logo", content=SVG).status_code == 404
+
+    made = admin.put(f"{BASE}/connectors/acme/logo", content=SVG)
+    assert made.status_code == 200, made.text
+    path = made.json()["logo"]
+    assert path.startswith("/automation/connectors/acme/logo?v=")
+    image = admin.get("/api" + path)
+    assert image.status_code == 200 and image.content == SVG
+    assert image.headers["content-type"].startswith("image/svg+xml")
+    assert "default-src 'none'" in image.headers["content-security-policy"]
+    assert image.headers["x-content-type-options"] == "nosniff"
+    # A viewer sees the logo (it marks incidents); only who manages connectors changes it.
+    viewer = make_key(admin, label="vi", roles=["viewer"])
+    with TestClient(fastapi_app) as other:
+        assert other.get("/api" + path, headers=viewer).status_code == 200
+        assert other.put(f"{BASE}/connectors/acme/logo", content=SVG, headers=viewer).status_code == 403
+        assert other.delete(f"{BASE}/connectors/acme/logo", headers=viewer).status_code == 403
+
+    # Another image: another address, so a browser does not show the old one.
+    again = admin.put(f"{BASE}/connectors/acme/logo", content=PNG).json()["logo"]
+    assert again != path and admin.get("/api" + again).headers["content-type"] == "image/png"
+    # A new file of the connector keeps its logo; removing the logo leaves the connector.
+    install(admin, ACME.replace("version: 1", "version: 2"))
+    assert admin.get(f"{BASE}/connectors/acme").json()["logo"] == again
+    assert admin.delete(f"{BASE}/connectors/acme/logo").status_code == 204
+    assert admin.get(f"{BASE}/connectors/acme").json()["logo"] is None
+    assert admin.delete(f"{BASE}/connectors/acme/logo").status_code == 204
+
+
+def test_a_shipped_connector_may_be_a_folder_with_its_logo_and_readme(admin: TestClient, tmp_path, monkeypatch):
+    folder = tmp_path / "acme"
+    folder.mkdir()
+    (folder / "connector.yml").write_text(ACME, encoding="utf-8")
+    (folder / "logo.svg").write_bytes(SVG)
+    (folder / "README.md").write_text("# Acme Desk\n\nHow to get a token.\n", encoding="utf-8")
+    (tmp_path / "other.yml").write_text(ACME.replace("id: acme", "id: other"), encoding="utf-8")
+    monkeypatch.setattr(ca, "SEED_DIR", tmp_path)
+
+    assert sorted(connector.id for _text, connector in ca.shipped()) == ["acme", "other"]
+    assert ca.shipped_extras() == {"acme": {"logo": SVG, "readme": "# Acme Desk\n\nHow to get a token.\n"}}
+    with SessionLocal() as db:
+        assert ca.seed(db) == 2
+        db.commit()
+        row = db.get(ca.Connector, "acme")
+        assert (bytes(row.logo), row.logo_type, row.readme.startswith("# Acme Desk")) == (SVG, "image/svg+xml", True)
+        assert db.get(ca.Connector, "other").logo is None and ca.logo_path(db.get(ca.Connector, "other")) is None
+        assert ca.seed(db) == 0
