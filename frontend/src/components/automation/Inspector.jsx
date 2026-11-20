@@ -184,7 +184,7 @@ function ArgumentField({ argument, value, onChange, tree, disabled, problem }) {
             id={id}
             tree={tree}
             disabled={disabled}
-            multiline={['text', 'body', 'description', 'html'].includes(argument.name)}
+            multiline={['text', 'body', 'description', 'html', 'content'].includes(argument.name)}
             value={value ?? ''}
             onChange={onChange}
           />

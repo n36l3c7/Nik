@@ -664,6 +664,10 @@ Content-Type: application/json
       </p>
 
       <h3 id="nik-actions">What a playbook does in Nik</h3>
+      <p>
+        The nodes of the group <em>Nik</em> of the library. Those that work on files and artifacts are a group of their
+        own, <a href="#file-nodes">Files</a>, after this one.
+      </p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -774,14 +778,6 @@ Content-Type: application/json
               </td>
             </tr>
             <tr>
-              <td>Link an artifact</td>
-              <td>
-                <code>artifact</code> (<code>file-…</code>, <code>mail-…</code>, <code>url-…</code>),
-                <code>incident</code>
-              </td>
-              <td><code>linked</code></td>
-            </tr>
-            <tr>
               <td>Scan an address</td>
               <td>
                 <code>url</code> (http or https; defanged text is understood), <code>incident</code>,
@@ -865,6 +861,293 @@ Content-Type: application/json
         its time is <em>breached</em>, once: the incident is marked (<code>{{ incident.sla_breached }}</code>), its War
         Room says so, its owner is told, and <code>sla.breached</code> starts the playbooks that wait for it. The worker
         looks every minute.
+      </p>
+
+      <h3 id="file-nodes">Files and artifacts</h3>
+      <p>
+        What an analyst does with a file on the screens, a playbook does with a node of the group <em>Files</em> of the
+        library: add a file to an incident, link an artifact or take it out, list the artifacts of an incident, read
+        one, start its analysis again, read what the analysis found, tag it, give it a day to expire on. Three things
+        hold for all of them.
+      </p>
+      <ul>
+        <li>
+          <strong>Nothing is run or opened.</strong> An analysis a node starts is one Nik already makes of an artifact:
+          the static analysis and the YARA rules, the disassembly and capa on their workers, the analysis of an e-mail,
+          of a packet capture. A file a node keeps is stored as it came, under its SHA-256, like an upload. No node
+          executes a sample, and none opens one with the program it is meant for.
+        </li>
+        <li>
+          <strong>A file is passed by reference.</strong> A node gives the artifact (its id, name, type, size, SHA-256),
+          never its bytes: nothing of a sample enters what a run keeps. An argument called <code>artifact</code> takes
+          the id (<code>file-…</code>, <code>mail-…</code>, <code>pcap-…</code>, <code>url-…</code>), the SHA-256 of a
+          file, or what another node gave, whole: <code>{{ add_file }}</code> works as well as
+          <code>{{ add_file.artifact }}</code>, and so does <code>{{ trigger.file }}</code>.
+        </li>
+        <li>
+          <strong>The backend does what the worker cannot.</strong> The automation worker reads the store of files
+          read-only and reaches no analysis worker. Keeping a file and starting an analysis are written down as a job;
+          the backend takes it within a few seconds and does what it does for an analyst, and the step looks again
+          meanwhile, without holding a worker. What the job sets off (<code>file.analysed</code>,
+          <code>mail.analysed</code>) says which run caused it, so a playbook that waits for that event does not start
+          on its own doing.
+        </li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Takes</th>
+              <th>Gives</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Add a file</td>
+              <td>
+                <code>incident</code>; then either <code>artifact</code> (a file Nik holds, or an e-mail with
+                <code>attachment</code>: the file name or the place of the attachment to take out), or
+                <code>content</code> with <code>encoding</code> (text, base64), <code>name</code>, <code>type</code> and
+                <code>as</code> (file, mail)
+              </td>
+              <td>
+                The artifact: <code>artifact</code>, <code>kind</code>, <code>name</code>, <code>type</code>,
+                <code>size</code>, <code>sha256</code>, <code>verdict</code>, <code>score</code>, <code>tags</code>,
+                <code>page</code>; <code>linked</code> (it is in an incident), <code>known</code> (Nik held this very
+                file before)
+              </td>
+            </tr>
+            <tr>
+              <td>Add host evidence</td>
+              <td>
+                <code>incident</code>, <code>kind</code> (eventlogs, browser, commands, endpoint),
+                <code>artifact</code> or <code>content</code> with <code>encoding</code>, <code>name</code>, and what
+                the kind asks: <code>browser</code>, <code>profile</code>, <code>source</code>, <code>shell</code>,
+                <code>category</code>
+              </td>
+              <td><code>rows</code>, <code>format</code>, <code>target</code> (commands/bash, eventlogs/Security…)</td>
+            </tr>
+            <tr>
+              <td>Link an artifact · Take an artifact out of the incident</td>
+              <td><code>artifact</code>, <code>incident</code></td>
+              <td>
+                <code>linked</code> · <code>removed</code>. A capture belongs to one incident at most. Taken out, the
+                artifact and its analysis stay in Nik.
+              </td>
+            </tr>
+            <tr>
+              <td>List the artifacts of an incident</td>
+              <td>
+                <code>incident</code>, <code>kind</code> (file, mail, pcap, url; all when empty), <code>name</code> (a
+                text the name holds, or a pattern: <code>*.docx</code>)
+              </td>
+              <td>
+                <code>artifacts</code> (each as <em>Add a file</em> gives one), <code>ids</code>, <code>count</code>,
+                <code>total</code>. The oldest first, 200 at most.
+              </td>
+            </tr>
+            <tr>
+              <td>Get an artifact</td>
+              <td><code>artifact</code></td>
+              <td>
+                <code>found</code>, the artifact as above, <code>incidents</code> (their ids), <code>expires</code>,
+                <code>parents</code> and <code>children</code> (what it was taken out of, what was taken out of it)
+              </td>
+            </tr>
+            <tr>
+              <td>Analyse an artifact</td>
+              <td>
+                <code>artifact</code>, <code>analysis</code> (of a file: static, code, capabilities; what
+                <em>Re-analyse</em> does when empty), <code>wait</code> (on by default), <code>wait_minutes</code> (15;
+                1 to 120)
+              </td>
+              <td>
+                <code>asked</code>, <code>finished</code>, <code>started</code> (static, code, capabilities, mail,
+                capture), <code>skipped</code> (each <code>{analysis, reason}</code>), <code>verdict</code>,
+                <code>artifact</code>, <code>kind</code>, <code>page</code>, <code>summary</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Read an analysis</td>
+              <td><code>artifact</code></td>
+              <td>
+                <code>found</code>, <code>status</code> (done, running, error, none), <code>verdict</code>,
+                <code>score</code>, <code>summary</code>, <code>indicators</code> (each <code>{type, value}</code>) and
+                <code>indicator_count</code>, <code>artifact</code>, <code>kind</code>, <code>name</code>,
+                <code>page</code>, and one object for each kind: <code>file</code>, <code>mail</code>,
+                <code>capture</code>, <code>scan</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Tag an artifact · Take tags off an artifact</td>
+              <td><code>artifact</code>, <code>tags</code> (a list, or words separated by commas)</td>
+              <td>
+                <code>tags</code> afterwards, <code>changed</code>. A tag of an artifact is lower-case letters, digits
+                and <code>. _ : -</code>; an artifact has 12 at most.
+              </td>
+            </tr>
+            <tr>
+              <td>Set the expiry of an artifact</td>
+              <td>
+                <code>artifact</code>, <code>expires</code> (a day, a number of days from today, or empty to take the
+                date away)
+              </td>
+              <td><code>expires</code>, <code>changed</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="add-a-file">
+        <strong>Add a file.</strong> A playbook has no browser to upload from, so "a file" is one of three things a step
+        before gave:
+      </p>
+      <ul>
+        <li>
+          <strong>A file Nik holds already</strong>: what a command of a connector kept (<a href="#connector-files"
+            >its <code>artifact</code></a
+          >), what <code>get-attachments</code> of the Mail connector kept, the file of a
+          <code>file.analysed</code> event. The node puts it in the incident, as <em>Link to incident</em> does.
+        </li>
+        <li>
+          <strong>An attachment of an e-mail Nik holds</strong>: <code>artifact</code> is the e-mail (<code
+            >{{ trigger.mail.artifact_id }}</code
+          >) and <code>attachment</code> the file name of the attachment, or its place in the message (<code>0</code>,
+          <code>1</code>, <code>2.0</code> inside an attached message; the <code>place</code> that
+          <em>Read an analysis</em> gives). The attachment becomes a file artifact, shown as taken out of the e-mail:
+          what <em>Send to Malware Analysis</em> does.
+        </li>
+        <li>
+          <strong>A content</strong> a step produced (a report, a JSON answer, a CSV), as text or as base64, with a file
+          name. It becomes a file artifact, analysed as an upload is. A value that is an object or a list is written as
+          JSON. With <code>as: mail</code> the content is a message (<code>.eml</code>, <code>.msg</code>) and gets the
+          analysis of an e-mail.
+        </li>
+      </ul>
+      <p>
+        The file goes to the incident the node names, to the one the run works on when it names none, and stays on its
+        own when there is none. The limit of an upload applies (<code>SAMPLE_MAX_MB</code>): a larger content or
+        attachment fails the step and nothing is kept. So does an empty one, a content that is not base64 when it says
+        it is, and a "mail" that is not a message. A file the backend has not kept in five minutes fails the step. There
+        is no node that fetches a file from an address: the screens have none either, and a file that comes from outside
+        comes through a command of a connector, under the hosts the playbook may reach.
+      </p>
+      <p id="add-host-evidence">
+        <strong>Add host evidence</strong> is <em>Add a file…</em> for the four kinds that are not artifacts: a Windows
+        event log (<code>.evtx</code>), a browser's history, a shell history, an endpoint collection. The file is a file
+        artifact Nik holds or a content; it is parsed as the upload of the API is (<code
+          >POST /api/incidents/{id}/upload</code
+        >, with the same <code>browser</code>, <code>profile</code>, <code>source</code>, <code>shell</code> and
+        <code>category</code>) and what it holds goes to the tab of its kind. The file itself is not kept.
+      </p>
+      <p id="analyse-an-artifact">
+        <strong>Analyse an artifact</strong> starts again what Nik made of the artifact when it arrived. With
+        <code>analysis</code> empty it does what <em>Re-analyse</em> does for that kind: of a file the static analysis
+        and the YARA rules, then the disassembly and capa where their workers are configured and the file is one they
+        read (what is left out is in <code>skipped</code>, with the reason); of an e-mail its analysis, with the DNS
+        checks; of a capture the packet capture worker. Of a file, <code>static</code>,
+        <code>code</code> (<em>Disassemble</em>) or <code>capabilities</code> (<em>Run capa</em>) asks for that one
+        alone. An address is visited again with <a href="#scan-an-address">Scan an address</a>, which the data guard
+        judges.
+      </p>
+      <ul>
+        <li>
+          <strong>Waiting.</strong> With <code>wait</code> on, the step ends when everything that was started has ended,
+          and fails when it has not after <code>wait_minutes</code>, with a sentence that says what is still running and
+          on which worker. With <code>wait</code> off the step asks and goes on: <code>asked</code> is true,
+          <code>finished</code> false, and a later <em>Read an analysis</em> says where things are
+          (<code>status</code>).
+        </li>
+        <li>
+          <strong>A worker that is not there.</strong> One analysis asked for by name whose worker is not configured
+          fails the step and names the worker ("The analyzer worker is not configured (ANALYZER_URL): the file was not
+          disassembled"). A worker that is configured and does not answer fails it with what the worker's client said
+          and the name of the worker; <em>Settings → System → Workers</em> shows which are down.
+        </li>
+      </ul>
+      <p id="read-an-analysis">
+        <strong>Read an analysis</strong> gives what a playbook can decide on, bounded: lists are cut at 100 items (50
+        attachments), and nothing of the file or the message itself is given: no bytes, no strings, no body.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Under</th>
+              <th>What is there</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>file</code></td>
+              <td>
+                <code>sha256</code>, <code>sha1</code>, <code>md5</code>, <code>size</code>, <code>type</code>,
+                <code>entropy</code>, <code>packed</code>, <code>yara</code> (the names of the rules that matched),
+                <code>yara_severity</code>, <code>strings</code> (how many), <code>code_status</code>,
+                <code>functions</code>, <code>capabilities_status</code>, <code>capabilities</code>,
+                <code>attack</code> (the ATT&amp;CK techniques)
+              </td>
+            </tr>
+            <tr>
+              <td><code>mail</code></td>
+              <td>
+                <code>subject</code>, <code>sender</code>, <code>sender_domain</code>, <code>spf</code>,
+                <code>dkim</code>, <code>dmarc</code>, <code>findings</code> (the reasons behind the verdict by their
+                codes: <code>dmarc-fail</code>, <code>from-lookalike</code>…), <code>urls</code>,
+                <code>attachments</code> (each <code>{name, sha256, size, type, place}</code>)
+              </td>
+            </tr>
+            <tr>
+              <td><code>capture</code></td>
+              <td>
+                <code>status</code>, <code>error</code>, <code>packets</code>, <code>hosts</code> (the public
+                addresses), <code>domains</code>, <code>posts</code>, <code>beacons</code>, <code>objects</code> (how
+                many of each)
+              </td>
+            </tr>
+            <tr>
+              <td><code>scan</code></td>
+              <td>
+                <code>url</code>, <code>final_url</code>, <code>redirected</code>, <code>title</code>,
+                <code>password_form</code>, <code>findings</code>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The four objects are always there, empty for the kinds the artifact is not, so a path the editor offers always
+        leads somewhere. <code>indicators</code> are those an incident that holds the artifact lists: there is no node
+        that "adds the indicators to the incident", because an artifact in an incident gives it its indicators at once,
+        as on the screens. To keep them in the library, give them to <em>Add indicators</em>.
+      </p>
+      <p id="files-and-the-guard">
+        <strong>The data guard.</strong> None of these nodes sends anything out, so none is held. What they give carries
+        its classes, and the guard decides when a later node sends it: a file name is a <em>file name</em>, the subject
+        of an e-mail a <em>subject</em>, its sender an <em>e-mail address</em>; hashes, verdicts, scores, types and ids
+        leave as they always do. The artifact made from a content carries the classes the content came in with: the id
+        and the hash of a file written from the name of an incident are held as that name is. A file that leaves does so
+        through a command of a connector that sends files, which judges it as
+        <a href="#connector-files">an attachment and a sample</a>, whatever it was made from.
+      </p>
+      <p id="files-dry-run">
+        <strong>A dry run and the debugger</strong> keep nothing and start nothing: <em>Add a file</em> gives the
+        artifact the file would be (its name, size and SHA-256 are known without storing it),
+        <em>Analyse an artifact</em> says what it would start, and <em>Read an analysis</em> of a file that was not kept
+        gives every output empty, with <code>found</code> false. Tags, dates and links are not changed.
+      </p>
+      <p id="files-example">
+        <strong>An example.</strong> "Analyse every file that arrives and say so when it is flagged": a trigger on
+        <code>file.analysed</code>; <em>Analyse an artifact</em> with <code>artifact</code>
+        <code>{{ trigger.file }}</code>; <em>Read an analysis</em> of the same; a condition on
+        <code>{{ read.file.yara_severity }}</code> equal to <code>high</code>; <em>Tag an artifact</em> with
+        <code>needs-review</code> and, when the file is in an incident, <em>Add a note</em>. The shipped playbook
+        <a href="#shipped">Analyse the attachments of an e-mail</a> does the same for what a message carries.
+      </p>
+      <p>
+        <strong>What stays a person's act.</strong> Deleting an artifact, downloading a sample or exporting artifacts,
+        the TLS keys of a capture, the isolated browser, the import of the messages of a mailbox, and the names and
+        comments of the functions of a disassembly have no node.
       </p>
 
       <h3 id="http-node">HTTP request</h3>
@@ -3443,10 +3726,10 @@ commands:
 
       <h2 id="shipped">The playbooks Nik ships</h2>
       <p>
-        Five playbooks are in the list from the first start, marked <em>shipped with Nik</em> and <strong>off</strong>:
+        Six playbooks are in the list from the first start, marked <em>shipped with Nik</em> and <strong>off</strong>:
         nothing runs until you turn one on. They are playbooks like any other: read them on the canvas, change them,
         rename them, delete them. One you deleted does not come back, and one you changed is not overwritten by an
-        upgrade. The same five are files in <code>backend/app/automation/seed/playbooks/</code>, to bring in again with
+        upgrade. The same six are files in <code>backend/app/automation/seed/playbooks/</code>, to bring in again with
         <em>Import</em>. Try each with a dry run before turning it on.
       </p>
       <div class="table-wrap">
@@ -3470,6 +3753,17 @@ commands:
                 Opens an incident, puts the e-mail in it, writes in a note the hosts its links lead to (defanged) and
                 its attachments, then asks whether the sender's domain goes in the watched list
                 <em>Phishing senders</em>. Nothing leaves Nik.
+              </td>
+              <td>Nothing.</td>
+            </tr>
+            <tr>
+              <td>Analyse the attachments of an e-mail</td>
+              <td><code>mail.analysed</code>, when the e-mail has attachments and was not imported from a mailbox</td>
+              <td>
+                Takes each attachment out of the e-mail and keeps it as a file of its own, in the incident the e-mail is
+                in when there is one; analyses it as an upload is, and tags the e-mail
+                <code>flagged-attachment</code> when the analysis of one gives a verdict. Nothing is run or opened, and
+                nothing leaves Nik.
               </td>
               <td>Nothing.</td>
             </tr>
@@ -4061,6 +4355,12 @@ nik: "&gt;=6.0"                # the oldest Nik it is for</code></pre>
 
       <h2 id="later">What this release does not do yet</h2>
       <ul>
+        <li>
+          The <a href="#file-nodes">nodes for files</a> keep a file from a content, from an attachment or from what a
+          connector gave: a packet capture cannot be added from a content, a file artifact cannot be analysed as an
+          e-mail or as a capture, and no node fetches a file from an address. No event says that a disassembly, a capa
+          run or the analysis of a capture ended: a playbook waits for them with <em>Analyse an artifact</em>.
+        </li>
         <li>
           Fetching and mirroring are written for ServiceNow, Jira and SentinelOne; the other shipped connectors send
           commands only. A fetch asks at an interval: nothing is pushed to Nik by the other product except through a

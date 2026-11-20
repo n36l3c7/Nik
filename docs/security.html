@@ -377,6 +377,19 @@
           allowlisted values typed by hand.
         </li>
         <li>
+          <strong>Files.</strong> The nodes that work on files (<a href="automation.html#file-nodes">Automation</a>) add
+          no way of running or opening one. A file a playbook adds is stored as it came, under its SHA-256, within the
+          size of an upload, and gets the analyses an upload gets; an analysis a playbook starts is one Nik already
+          makes of an artifact. The automation container still reads the store read-only and reaches no analysis worker:
+          a node writes what it wants as a row of the database, and the backend, which serves the same thing to an
+          analyst, does it. A file is passed between nodes by its id: what an analysis found is given bounded, and no
+          byte, string or body of a sample or a message enters what a run keeps. None of these nodes sends anything out;
+          what they give carries its class (a file name, a subject, an e-mail address), and the artifact made from a
+          content carries the classes of that content. No node deletes an artifact, downloads a sample or exports one: a
+          playbook can take an artifact out of an incident, tag it and give it a day to expire on, each written to the
+          audit log under <code>nik-automation</code> with the run.
+        </li>
+        <li>
           <strong>Expressions.</strong> The <code>{{ }}</code> language compares, counts and chooses, and is still not
           code: it is read by a parser written for it, a name is a path into the data or one of four functions, and
           nothing in it reaches Python (no attribute of an object, no call that is not in its table of filters). Its

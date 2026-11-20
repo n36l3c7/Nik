@@ -352,6 +352,18 @@ def store_sample(
     return row, ref
 
 
+def analyse_again(db: OrmSession, row: Sample) -> None:
+    """Run the static analysis of a stored sample again and keep what it gives (the caller commits
+    and writes the audit entry). What "Re-analyse" does before it starts the workers."""
+    result = full_analysis(db, read_sample(row.sha256))
+    row.analysis = result
+    row.type_id = result["type"]["id"]
+    row.type_label = result["type"]["label"]
+    row.entropy = result["entropy"]
+    flag_modified(row, "analysis")
+    automation_triggers.file_analysed(db, row, artifacts.register_file(db, row))
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -386,13 +398,7 @@ def reanalyse_sample(
 ) -> dict:
     """Run the current analysis engine again on the stored file (after a Nik upgrade or a YARA rule change)."""
     row = _sample_or_404(db, sha256)
-    result = full_analysis(db, read_sample(sha256))
-    row.analysis = result
-    row.type_id = result["type"]["id"]
-    row.type_label = result["type"]["label"]
-    row.entropy = result["entropy"]
-    flag_modified(row, "analysis")
-    automation_triggers.file_analysed(db, row, artifacts.register_file(db, row))
+    analyse_again(db, row)
     _audit(db, caller, "sample.reanalyse", f"Re-analysed sample {sha256[:12]}… ({row.type_label})", None)
     db.commit()
     _queue_code(db, background_tasks, sha256, caller.actor)

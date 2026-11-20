@@ -171,7 +171,7 @@ test('no line runs over a node after Tidy up: branches that join, an error far d
 })
 
 test('the playbooks Nik ships are tidied with no line over a node', async () => {
-  for (const name of ['phishing-triage', 'recheck-watched-lists', 'storage-low-notice']) {
+  for (const name of ['phishing-triage', 'recheck-watched-lists', 'storage-low-notice', 'mail-attachments']) {
     const file = new URL(`../../../../backend/app/automation/seed/playbooks/${name}.json`, import.meta.url)
     const graph = normalise(JSON.parse(readFileSync(file, 'utf8')).playbook.graph)
     assert.deepEqual(wrong(await tidied(graph)), [], name)

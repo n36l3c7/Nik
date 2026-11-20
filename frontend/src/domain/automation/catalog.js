@@ -252,8 +252,11 @@ const RUN_FIELDS = [
 
 const list = (value) => (Array.isArray(value) ? value : [])
 
-/** The library in groups: Flow, Nik, the connectors as the server lists them, then HTTP, E-mail and Scripts. */
-const GROUP_RANK = { Flow: 0, Nik: 1, HTTP: 3, 'E-mail': 4, Scripts: 5 }
+/**
+ * The library in groups: Flow, Nik, Files (what Nik does with files and artifacts), the connectors as the
+ * server lists them, then HTTP, E-mail and Scripts.
+ */
+const GROUP_RANK = { Flow: 0, Nik: 1, Files: 1.5, HTTP: 3, 'E-mail': 4, Scripts: 5 }
 export function groupsOf(entries, query = '') {
   const words = String(query).toLowerCase().split(/\s+/).filter(Boolean)
   const groups = new Map()

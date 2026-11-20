@@ -1602,6 +1602,35 @@ class SavedFilterDefault(Base):
     )
 
 
+class ArtifactJob(Base):
+    """Something a playbook asked the API process to do with a file: keep one, or analyse one again.
+
+    The automation worker reads the store of files read-only and is on no network with the analysis
+    workers, so a node writes what it wants here and the API process does it (``artifact_jobs.py``).
+    ``status`` is queued → running → done | error. ``data`` holds the bytes of a file to keep, only
+    until it is kept; ``result`` what the node reads back. A row is deleted a day after it was made.
+    """
+
+    __tablename__ = "artifact_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # store | attachment | analyse
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued", index=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    actor: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # The run that asked, and how deep it is: what the job sets off says so, which stops a loop.
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_epoch: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    finished_epoch: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+
+# Created by migration 0047_playbook_files where missing.
+PLAYBOOK_FILE_TABLES = ("artifact_jobs",)
+
 # Created by migration 0041_saved_filters where missing, in this order.
 SAVED_FILTER_TABLES = ("saved_filters", "saved_filter_defaults")
 

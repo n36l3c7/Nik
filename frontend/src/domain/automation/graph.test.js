@@ -541,6 +541,22 @@ test('the library is in tabs, and its search looks in all of them', async () => 
   assert.deepEqual(found.counts, { commands: 2, scripts: 1, flow: 1 })
   assert.deepEqual(names(libraryOf(entries, 'commands', 'issue')), []) // not offered, so not found
   assert.deepEqual(libraryOf(null).groups, [])
+
+  // The nodes for files are Nik's own, in a group of their own: after Nik, before the connectors.
+  const files = [
+    { id: 'acme.block', kind: 'action', group: 'Acme', name: 'block', connector: 'acme', available: true },
+    { id: 'nik.add-file', kind: 'action', group: 'Files', name: 'Add a file' },
+    { id: 'nik.get-analysis', kind: 'action', group: 'Files', name: 'Read an analysis' },
+    { id: 'http.request', kind: 'action', group: 'HTTP', name: 'HTTP request' },
+  ]
+  assert.deepEqual(names(libraryOf([...files, ...entries], 'commands')), [
+    ['Nik', ['Add a note']],
+    ['Files', ['Add a file', 'Read an analysis']],
+    ['Acme', ['block']],
+    ['Mail', ['send']],
+    ['HTTP', ['HTTP request']],
+  ])
+  assert.deepEqual(names(libraryOf(files, 'commands', 'analysis')), [['Files', ['Read an analysis']]])
 })
 
 test('an output that says what is inside it is listed with it, from the shapes of the catalog', async () => {
