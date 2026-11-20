@@ -12,7 +12,7 @@
 # VT Monitor, group administration): the API refuses a key that
 # lacks the privilege.
 #
-# Verdicts are derived as Nik's own enrichment does: 3 engines or more that
+# Verdicts are derived as Nik's own look-up code did: 3 engines or more that
 # say malicious make it malicious; fewer, or any that says suspicious, make
 # it suspicious; otherwise harmless when an engine says so, unknown when
 # VirusTotal does not have the indicator.
@@ -22,15 +22,23 @@
 # second one gives the descriptors (type and id) only. Lists are read page
 # by page with VirusTotal's cursor: each page is one request of the quota.
 #
-# What is not here: the endpoints that take or give a file as it is (file
-# upload, sample, PCAP, EVTX, memory dump and ZIP download, the feed
-# batches). The README lists them.
+# A command that sends a file (scan-file, scan-private-file,
+# upload-monitor-file) takes it from Nik's store; one that downloads
+# (download-…) keeps what comes as an artifact, never opened. VirusTotal
+# answers most downloads with a redirect to a signed address: the one host
+# its reference names for that is listed in more_hosts, and the key of the
+# instance never goes there.
+#
+# What is not here: granting view or edit rights on a graph. The README says
+# why.
 name: VirusTotal
 id: virustotal
-version: 1
+version: 3
 description: "Files, URLs, domains and IP addresses in VirusTotal: reports with a verdict, relationships, comments, votes, behaviour, search, and the premium services (Intelligence, Livehunt, Retrohunt, private scanning, Monitor)."
 api_version: "VirusTotal API v3"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 3 }
 configuration:
   - name: credentials
     label: "API key"
@@ -39,6 +47,8 @@ configuration:
     help: "The API key of your VirusTotal account: the user menu, API key."
 base_url: "https://www.virustotal.com/api/v3"
 headers: { Accept: application/json }
+# Where the reference shows a signed download address to be (GET /files/{id}/download_url).
+more_hosts: [vtsamples.commondatastorage.googleapis.com]
 test:
   request: { method: GET, path: "/popular_threat_categories" }
 commands:
@@ -52,17 +62,45 @@ commands:
       status: [200, 404]
     error: { message: "{{ response.error.message }}" }
     outputs:
-      verdict: "{{ response.data.attributes.last_analysis_stats | default('none') | where('malicious', 'lt', 3) | first | default('malicious') | where('malicious', 'lt', 1) | first | default('suspicious') | where('suspicious', 'lt', 1) | first | default('suspicious') | where('harmless', 'lt', 1) | first | default('harmless') | regex_extract('^(malicious|suspicious|harmless)$') | map('', 'unknown') }}"
-      summary: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }} malicious, {{ response.data.attributes.last_analysis_stats.suspicious | default(0) }} suspicious, {{ response.data.attributes.last_analysis_stats.harmless | default(0) }} harmless, {{ response.data.attributes.last_analysis_stats.undetected | default(0) }} undetected"
+      # The rule of Nik's own look-up: 3 engines or more that say malicious make it malicious; 1 or 2,
+      # or any that says suspicious, make it suspicious; otherwise harmless when an engine says so.
+      # An indicator VirusTotal does not have (404) has no counts: unknown.
+      verdict: >-
+        {{ if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 3, 'malicious',
+        if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 1 or first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, 'suspicious',
+        if(first_of(response.data.attributes.last_analysis_stats.harmless, 0) >= 1, 'harmless', 'unknown'))) }}
+      summary: >-
+        {{ if(response.data,
+        first_of(response.data.attributes.last_analysis_stats.malicious, 0) ~ '/' ~ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) ~ ' engines flag it'
+        ~ if(first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, ', ' ~ response.data.attributes.last_analysis_stats.suspicious ~ ' suspicious', ''),
+        'not in VirusTotal') }}
       malicious: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }}"
       suspicious: "{{ response.data.attributes.last_analysis_stats.suspicious | default(0) }}"
       harmless: "{{ response.data.attributes.last_analysis_stats.harmless | default(0) }}"
       undetected: "{{ response.data.attributes.last_analysis_stats.undetected | default(0) }}"
+      total: "{{ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) }}"
       stats: "{{ response.data.attributes.last_analysis_stats }}"
+      # The engines that flag it, those that say malicious first, each group by name.
+      engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category') }}
+      # Every engine: those above first, then the others by name.
+      all_engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category')
+        | union(response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key') | pick(engine='key', category='value.category', result='value.result')) }}
       reputation: "{{ response.data.attributes.reputation }}"
+      last_analysis: "{{ if(response.data.attributes.last_analysis_date, response.data.attributes.last_analysis_date * 1000) }}"
+      tags: "{{ response.data.attributes.tags | default([]) | limit(12) }}"
+      country: "{{ response.data.attributes.country }}"
+      asn: "{{ response.data.attributes.asn }}"
+      owner: "{{ response.data.attributes.as_owner }}"
+      network: "{{ response.data.attributes.network }}"
       id: "{{ response.data.id }}"
       attributes: "{{ response.data.attributes }}"
-      link: "https://www.virustotal.com/gui/ip-address/{{ response.data.id }}"
+      link: "https://www.virustotal.com/gui/ip-address/{{ first_of(response.data.id, args.ip) }}"
 
   - name: rescan-ip
     description: "Ask VirusTotal to analyse an IP address again; gives the id of the analysis."
@@ -92,12 +130,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-ip-comment
     description: "Write a comment on an IP address."
@@ -160,12 +200,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-ip-related-descriptors
     description: "The objects related to an IP address through one relationship, as descriptors: type and id only."
@@ -199,12 +241,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-ip-votes
     description: "The votes the community gave an IP address."
@@ -291,12 +335,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-port-info-related-descriptors
     description: "The objects related to a port through one relationship, as descriptors: type and id only."
@@ -319,12 +365,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-port-analysis
     description: "One dated scan of a port."
@@ -359,12 +407,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-port-analysis-related-descriptors
     description: "The objects related to the scan of a port through one relationship, as descriptors: type and id only."
@@ -387,12 +437,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-domain-report
     description: "What VirusTotal knows of a domain, with a verdict from what the engines say."
@@ -404,17 +456,44 @@ commands:
       status: [200, 404]
     error: { message: "{{ response.error.message }}" }
     outputs:
-      verdict: "{{ response.data.attributes.last_analysis_stats | default('none') | where('malicious', 'lt', 3) | first | default('malicious') | where('malicious', 'lt', 1) | first | default('suspicious') | where('suspicious', 'lt', 1) | first | default('suspicious') | where('harmless', 'lt', 1) | first | default('harmless') | regex_extract('^(malicious|suspicious|harmless)$') | map('', 'unknown') }}"
-      summary: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }} malicious, {{ response.data.attributes.last_analysis_stats.suspicious | default(0) }} suspicious, {{ response.data.attributes.last_analysis_stats.harmless | default(0) }} harmless, {{ response.data.attributes.last_analysis_stats.undetected | default(0) }} undetected"
+      # The rule of Nik's own look-up: 3 engines or more that say malicious make it malicious; 1 or 2,
+      # or any that says suspicious, make it suspicious; otherwise harmless when an engine says so.
+      # An indicator VirusTotal does not have (404) has no counts: unknown.
+      verdict: >-
+        {{ if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 3, 'malicious',
+        if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 1 or first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, 'suspicious',
+        if(first_of(response.data.attributes.last_analysis_stats.harmless, 0) >= 1, 'harmless', 'unknown'))) }}
+      summary: >-
+        {{ if(response.data,
+        first_of(response.data.attributes.last_analysis_stats.malicious, 0) ~ '/' ~ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) ~ ' engines flag it'
+        ~ if(first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, ', ' ~ response.data.attributes.last_analysis_stats.suspicious ~ ' suspicious', ''),
+        'not in VirusTotal') }}
       malicious: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }}"
       suspicious: "{{ response.data.attributes.last_analysis_stats.suspicious | default(0) }}"
       harmless: "{{ response.data.attributes.last_analysis_stats.harmless | default(0) }}"
       undetected: "{{ response.data.attributes.last_analysis_stats.undetected | default(0) }}"
+      total: "{{ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) }}"
       stats: "{{ response.data.attributes.last_analysis_stats }}"
+      # The engines that flag it, those that say malicious first, each group by name.
+      engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category') }}
+      # Every engine: those above first, then the others by name.
+      all_engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category')
+        | union(response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key') | pick(engine='key', category='value.category', result='value.result')) }}
       reputation: "{{ response.data.attributes.reputation }}"
+      last_analysis: "{{ if(response.data.attributes.last_analysis_date, response.data.attributes.last_analysis_date * 1000) }}"
+      tags: "{{ response.data.attributes.tags | default([]) | limit(12) }}"
+      registrar: "{{ response.data.attributes.registrar }}"
+      created: "{{ if(response.data.attributes.creation_date, response.data.attributes.creation_date * 1000) }}"
+      categories: "{{ response.data.attributes.categories | default([]) | values | unique | sort | limit(8) }}"
       id: "{{ response.data.id }}"
       attributes: "{{ response.data.attributes }}"
-      link: "https://www.virustotal.com/gui/domain/{{ response.data.id }}"
+      link: "https://www.virustotal.com/gui/domain/{{ first_of(response.data.id, args.domain) }}"
 
   - name: rescan-domain
     description: "Ask VirusTotal to analyse a domain again; gives the id of the analysis."
@@ -444,12 +523,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-domain-comment
     description: "Write a comment on a domain."
@@ -522,12 +603,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-domain-related-descriptors
     description: "The objects related to a domain through one relationship, as descriptors: type and id only."
@@ -571,12 +654,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-resolution
     description: "One DNS resolution: an IP address and the domain that resolved to it."
@@ -625,6 +710,29 @@ commands:
       type: vote
       attributes: { date: 1611677240, value: -1, verdict: malicious }
 
+  - name: scan-file
+    description: "Send a file Nik holds to be analysed; gives the id of the analysis, to read with get-analysis or wait-for-analysis. The file joins VirusTotal's dataset. One larger than 32 MB goes to an address get-file-upload-url gives."
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: sample, type: file, required: true, description: "The file: an artifact of Nik (file-<sha256>) or the SHA-256 of a file Nik holds" }
+      - { name: password, description: "The password, when the file is a protected ZIP that holds the one file to scan" }
+      - { name: upload_url, description: "For a file larger than 32 MB: the address get-file-upload-url gave, good for one upload" }
+    request:
+      method: POST
+      path: "{{ first_of(args.upload_url, '/files') }}"
+      multipart: { password: "{{ args.password }}" }
+      files:
+        file: { artifact: "{{ args.sample }}" }
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      analysis_id: "{{ response.data.id }}"
+      type: "{{ response.data.type }}"
+    sample:
+      analysis_id: "OTFiMDcwMjVjZDIzZTI0NGU4ZDlmMjI2NjkzZDczNGE6MTY1MzY1NDM3Nw=="
+      type: analysis
+    timeout: 300
+
   - name: get-file-upload-url
     description: "A one-time address to upload a file larger than 32 MB to (650 MB at most)."
     request: { method: GET, path: "/files/upload_url" }
@@ -641,17 +749,50 @@ commands:
       status: [200, 404]
     error: { message: "{{ response.error.message }}" }
     outputs:
-      verdict: "{{ response.data.attributes.last_analysis_stats | default('none') | where('malicious', 'lt', 3) | first | default('malicious') | where('malicious', 'lt', 1) | first | default('suspicious') | where('suspicious', 'lt', 1) | first | default('suspicious') | where('harmless', 'lt', 1) | first | default('harmless') | regex_extract('^(malicious|suspicious|harmless)$') | map('', 'unknown') }}"
-      summary: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }} malicious, {{ response.data.attributes.last_analysis_stats.suspicious | default(0) }} suspicious, {{ response.data.attributes.last_analysis_stats.harmless | default(0) }} harmless, {{ response.data.attributes.last_analysis_stats.undetected | default(0) }} undetected"
+      # The rule of Nik's own look-up: 3 engines or more that say malicious make it malicious; 1 or 2,
+      # or any that says suspicious, make it suspicious; otherwise harmless when an engine says so.
+      # An indicator VirusTotal does not have (404) has no counts: unknown.
+      verdict: >-
+        {{ if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 3, 'malicious',
+        if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 1 or first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, 'suspicious',
+        if(first_of(response.data.attributes.last_analysis_stats.harmless, 0) >= 1, 'harmless', 'unknown'))) }}
+      summary: >-
+        {{ if(response.data,
+        first_of(response.data.attributes.last_analysis_stats.malicious, 0) ~ '/' ~ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) ~ ' engines flag it'
+        ~ if(first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, ', ' ~ response.data.attributes.last_analysis_stats.suspicious ~ ' suspicious', ''),
+        'not in VirusTotal') }}
       malicious: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }}"
       suspicious: "{{ response.data.attributes.last_analysis_stats.suspicious | default(0) }}"
       harmless: "{{ response.data.attributes.last_analysis_stats.harmless | default(0) }}"
       undetected: "{{ response.data.attributes.last_analysis_stats.undetected | default(0) }}"
+      total: "{{ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) }}"
       stats: "{{ response.data.attributes.last_analysis_stats }}"
+      # The engines that flag it, those that say malicious first, each group by name.
+      engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category') }}
+      # Every engine: those above first, then the others by name.
+      all_engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category')
+        | union(response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key') | pick(engine='key', category='value.category', result='value.result')) }}
       reputation: "{{ response.data.attributes.reputation }}"
+      last_analysis: "{{ if(response.data.attributes.last_analysis_date, response.data.attributes.last_analysis_date * 1000) }}"
+      tags: "{{ response.data.attributes.tags | default([]) | limit(12) }}"
+      name: "{{ response.data.attributes.meaningful_name | default('') | limit(200) }}"
+      names: "{{ response.data.attributes.names | default([]) | limit(8) }}"
+      type: "{{ response.data.attributes.type_description }}"
+      size: "{{ response.data.attributes.size }}"
+      label: "{{ response.data.attributes.popular_threat_classification.suggested_threat_label }}"
+      signer: "{{ response.data.attributes.signature_info.signers | default('') | limit(200) }}"
+      created: "{{ if(response.data.attributes.creation_date, response.data.attributes.creation_date * 1000) }}"
+      first_seen: "{{ if(response.data.attributes.first_submission_date, response.data.attributes.first_submission_date * 1000) }}"
+      last_seen: "{{ if(response.data.attributes.last_submission_date, response.data.attributes.last_submission_date * 1000) }}"
       id: "{{ response.data.id }}"
       attributes: "{{ response.data.attributes }}"
-      link: "https://www.virustotal.com/gui/file/{{ response.data.id }}"
+      link: "https://www.virustotal.com/gui/file/{{ first_of(response.data.id, args.id) }}"
 
   - name: rescan-file
     description: "Ask VirusTotal to analyse again a file it already has; gives the id of the analysis."
@@ -677,6 +818,19 @@ commands:
     error: { message: "{{ response.error.message }}" }
     outputs: { download_url: "{{ response.data }}" }
 
+  - name: download-file
+    description: "Download a file from VirusTotal by its hash, kept as an artifact as it came, never opened. It counts as a download in the quota. VirusTotal answers with a redirect to a signed address on its storage host."
+    premium: true
+    arguments:
+      - { name: id, required: true, description: "The SHA-256, SHA-1 or MD5 of the file" }
+    request:
+      method: GET
+      path: "/files/{{ args.id }}/download"
+      answer: file
+      save_as: { name: "{{ args.id }}" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
   - name: list-file-comments
     description: "The comments the community wrote on a file."
     arguments:
@@ -690,12 +844,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-file-comment
     description: "Write a comment on a file."
@@ -786,12 +942,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-file-related-descriptors
     description: "The objects related to a file through one relationship, as descriptors: type and id only."
@@ -853,12 +1011,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-sigma-rule
     description: "A crowdsourced Sigma rule that matched files."
@@ -895,12 +1055,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-file-vote
     description: "Vote a file harmless or malicious."
@@ -985,12 +1147,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-file-behaviour-related-descriptors
     description: "The objects related to a behaviour report through one relationship, as descriptors: type and id only."
@@ -1008,12 +1172,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-file-behaviour-html
     description: "The detailed report of a sandbox for a file, as an HTML page."
@@ -1025,6 +1191,45 @@ commands:
       answer: text
     error: { message: "{{ response.error.message }}" }
     outputs: { html: "{{ response.text }}" }
+
+  - name: download-file-behaviour-pcap
+    description: "Download the network capture (PCAP) of a sandbox run of a file, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: sandbox_id, required: true, description: "The id of the sandbox report: the SHA-256 of the file, _ and the name of the sandbox" }
+    request:
+      method: GET
+      path: "/file_behaviours/{{ args.sandbox_id }}/pcap"
+      answer: file
+      save_as: { name: "{{ args.sandbox_id }}.pcap", type: "application/vnd.tcpdump.pcap" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-file-behaviour-evtx
+    description: "Download the Windows event log (EVTX) of a sandbox run of a file, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: sandbox_id, required: true, description: "The id of the sandbox report: the SHA-256 of the file, _ and the name of the sandbox" }
+    request:
+      method: GET
+      path: "/file_behaviours/{{ args.sandbox_id }}/evtx"
+      answer: file
+      save_as: { name: "{{ args.sandbox_id }}.evtx" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-file-behaviour-memdump
+    description: "Download the memory dump of a sandbox run of a file, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: sandbox_id, required: true, description: "The id of the sandbox report: the SHA-256 of the file, _ and the name of the sandbox" }
+    request:
+      method: GET
+      path: "/file_behaviours/{{ args.sandbox_id }}/memdump"
+      answer: file
+      save_as: { name: "{{ args.sandbox_id }}.memdump" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
 
   - name: scan-url
     description: "Send a URL to be analysed; gives the id of the analysis, to read with get-analysis or wait-for-analysis."
@@ -1055,42 +1260,97 @@ commands:
       status: [200, 404]
     error: { message: "{{ response.error.message }}" }
     outputs:
-      verdict: "{{ response.data.attributes.last_analysis_stats | default('none') | where('malicious', 'lt', 3) | first | default('malicious') | where('malicious', 'lt', 1) | first | default('suspicious') | where('suspicious', 'lt', 1) | first | default('suspicious') | where('harmless', 'lt', 1) | first | default('harmless') | regex_extract('^(malicious|suspicious|harmless)$') | map('', 'unknown') }}"
-      summary: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }} malicious, {{ response.data.attributes.last_analysis_stats.suspicious | default(0) }} suspicious, {{ response.data.attributes.last_analysis_stats.harmless | default(0) }} harmless, {{ response.data.attributes.last_analysis_stats.undetected | default(0) }} undetected"
+      # The rule of Nik's own look-up: 3 engines or more that say malicious make it malicious; 1 or 2,
+      # or any that says suspicious, make it suspicious; otherwise harmless when an engine says so.
+      # An indicator VirusTotal does not have (404) has no counts: unknown.
+      verdict: >-
+        {{ if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 3, 'malicious',
+        if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 1 or first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, 'suspicious',
+        if(first_of(response.data.attributes.last_analysis_stats.harmless, 0) >= 1, 'harmless', 'unknown'))) }}
+      summary: >-
+        {{ if(response.data,
+        first_of(response.data.attributes.last_analysis_stats.malicious, 0) ~ '/' ~ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) ~ ' engines flag it'
+        ~ if(first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, ', ' ~ response.data.attributes.last_analysis_stats.suspicious ~ ' suspicious', ''),
+        'not in VirusTotal') }}
       malicious: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }}"
       suspicious: "{{ response.data.attributes.last_analysis_stats.suspicious | default(0) }}"
       harmless: "{{ response.data.attributes.last_analysis_stats.harmless | default(0) }}"
       undetected: "{{ response.data.attributes.last_analysis_stats.undetected | default(0) }}"
+      total: "{{ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) }}"
       stats: "{{ response.data.attributes.last_analysis_stats }}"
+      # The engines that flag it, those that say malicious first, each group by name.
+      engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category') }}
+      # Every engine: those above first, then the others by name.
+      all_engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category')
+        | union(response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key') | pick(engine='key', category='value.category', result='value.result')) }}
       reputation: "{{ response.data.attributes.reputation }}"
+      last_analysis: "{{ if(response.data.attributes.last_analysis_date, response.data.attributes.last_analysis_date * 1000) }}"
+      tags: "{{ response.data.attributes.tags | default([]) | limit(12) }}"
+      categories: "{{ response.data.attributes.categories | default([]) | values | unique | sort | limit(8) }}"
+      final_url: "{{ response.data.attributes.last_final_url | default('') | limit(500) }}"
+      title: "{{ response.data.attributes.title | default('') | limit(200) }}"
+      http_status: "{{ response.data.attributes.last_http_response_code }}"
       id: "{{ response.data.id }}"
       attributes: "{{ response.data.attributes }}"
-      link: "https://www.virustotal.com/gui/url/{{ response.data.id }}"
+      link: "https://www.virustotal.com/gui/url/{{ first_of(response.data.id, args.id) }}"
       url: "{{ response.data.attributes.url }}"
 
   - name: get-url-reputation
-    description: "What VirusTotal knows of a URL, found by the URL itself, with a verdict from what the engines say. It asks the search endpoint, which takes the URL as it is."
+    description: "What VirusTotal knows of a URL, found by the URL itself, with a verdict from what the engines say. The identifier of the URL is computed here: the URL in base64 without padding."
     reputation: url
     arguments:
       - { name: url, required: true, description: "The URL" }
-    request:
-      method: GET
-      path: "/search"
-      query: { query: "{{ args.url }}" }
+    request: { method: GET, path: "/urls/{{ args.url | base64url }}" }
+    success:
+      status: [200, 404]
     error: { message: "{{ response.error.message }}" }
     outputs:
-      verdict: "{{ response.data[0].attributes.last_analysis_stats | default('none') | where('malicious', 'lt', 3) | first | default('malicious') | where('malicious', 'lt', 1) | first | default('suspicious') | where('suspicious', 'lt', 1) | first | default('suspicious') | where('harmless', 'lt', 1) | first | default('harmless') | regex_extract('^(malicious|suspicious|harmless)$') | map('', 'unknown') }}"
-      summary: "{{ response.data[0].attributes.last_analysis_stats.malicious | default(0) }} malicious, {{ response.data[0].attributes.last_analysis_stats.suspicious | default(0) }} suspicious, {{ response.data[0].attributes.last_analysis_stats.harmless | default(0) }} harmless, {{ response.data[0].attributes.last_analysis_stats.undetected | default(0) }} undetected"
-      malicious: "{{ response.data[0].attributes.last_analysis_stats.malicious | default(0) }}"
-      suspicious: "{{ response.data[0].attributes.last_analysis_stats.suspicious | default(0) }}"
-      harmless: "{{ response.data[0].attributes.last_analysis_stats.harmless | default(0) }}"
-      undetected: "{{ response.data[0].attributes.last_analysis_stats.undetected | default(0) }}"
-      stats: "{{ response.data[0].attributes.last_analysis_stats }}"
-      reputation: "{{ response.data[0].attributes.reputation }}"
-      id: "{{ response.data[0].id }}"
-      attributes: "{{ response.data[0].attributes }}"
-      link: "https://www.virustotal.com/gui/url/{{ response.data[0].id }}"
-      url: "{{ response.data[0].attributes.url }}"
+      # The rule of Nik's own look-up: 3 engines or more that say malicious make it malicious; 1 or 2,
+      # or any that says suspicious, make it suspicious; otherwise harmless when an engine says so.
+      # An indicator VirusTotal does not have (404) has no counts: unknown.
+      verdict: >-
+        {{ if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 3, 'malicious',
+        if(first_of(response.data.attributes.last_analysis_stats.malicious, 0) >= 1 or first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, 'suspicious',
+        if(first_of(response.data.attributes.last_analysis_stats.harmless, 0) >= 1, 'harmless', 'unknown'))) }}
+      summary: >-
+        {{ if(response.data,
+        first_of(response.data.attributes.last_analysis_stats.malicious, 0) ~ '/' ~ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) ~ ' engines flag it'
+        ~ if(first_of(response.data.attributes.last_analysis_stats.suspicious, 0) >= 1, ', ' ~ response.data.attributes.last_analysis_stats.suspicious ~ ' suspicious', ''),
+        'not in VirusTotal') }}
+      malicious: "{{ response.data.attributes.last_analysis_stats.malicious | default(0) }}"
+      suspicious: "{{ response.data.attributes.last_analysis_stats.suspicious | default(0) }}"
+      harmless: "{{ response.data.attributes.last_analysis_stats.harmless | default(0) }}"
+      undetected: "{{ response.data.attributes.last_analysis_stats.undetected | default(0) }}"
+      total: "{{ if(response.data.attributes.last_analysis_stats, response.data.attributes.last_analysis_stats | values | sum, 0) }}"
+      stats: "{{ response.data.attributes.last_analysis_stats }}"
+      # The engines that flag it, those that say malicious first, each group by name.
+      engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category') }}
+      # Every engine: those above first, then the others by name.
+      all_engines: >-
+        {{ response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key')
+        | where('value.category', 'in', ['malicious', 'suspicious'])
+        | pick(engine='key', category='value.category', result='value.result') | sort_by('category')
+        | union(response.data.attributes.last_analysis_results | default([]) | entries | sort_by('key') | pick(engine='key', category='value.category', result='value.result')) }}
+      reputation: "{{ response.data.attributes.reputation }}"
+      last_analysis: "{{ if(response.data.attributes.last_analysis_date, response.data.attributes.last_analysis_date * 1000) }}"
+      tags: "{{ response.data.attributes.tags | default([]) | limit(12) }}"
+      categories: "{{ response.data.attributes.categories | default([]) | values | unique | sort | limit(8) }}"
+      final_url: "{{ response.data.attributes.last_final_url | default('') | limit(500) }}"
+      title: "{{ response.data.attributes.title | default('') | limit(200) }}"
+      http_status: "{{ response.data.attributes.last_http_response_code }}"
+      id: "{{ response.data.id }}"
+      attributes: "{{ response.data.attributes }}"
+      link: "https://www.virustotal.com/gui/url/{{ first_of(response.data.id, args.url | base64url) }}"
+      url: "{{ response.data.attributes.url }}"
 
   - name: rescan-url
     description: "Ask VirusTotal to analyse a URL again; gives the id of the analysis."
@@ -1124,12 +1384,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-url-comment
     description: "Write a comment on a URL."
@@ -1201,12 +1463,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-url-related-descriptors
     description: "The objects related to a URL through one relationship, as descriptors: type and id only."
@@ -1247,12 +1511,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-url-votes
     description: "The votes the community gave a URL."
@@ -1269,12 +1535,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-url-vote
     description: "Vote a URL harmless or malicious."
@@ -1318,12 +1586,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-comment
     description: "One comment."
@@ -1368,12 +1638,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-comment-related-objects
     description: "The objects related to a comment through one relationship, with all their attributes."
@@ -1541,12 +1813,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-attack-tactic-related-descriptors
     description: "The objects related to an ATT&CK tactic through one relationship, as descriptors: type and id only."
@@ -1564,12 +1838,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-attack-technique
     description: "A MITRE ATT&CK technique."
@@ -1602,12 +1878,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-attack-technique-related-descriptors
     description: "The objects related to an ATT&CK technique through one relationship, as descriptors: type and id only."
@@ -1629,12 +1907,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-popular-threat-categories
     description: "The malware categories antivirus verdicts commonly use: trojan, dropper…"
@@ -1685,12 +1965,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-saved-search
     description: "One saved search."
@@ -1864,12 +2146,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-saved-search-related-descriptors
     description: "The objects related to a saved search through one relationship, as descriptors: type and id only."
@@ -1887,12 +2171,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: search
     description: "Search VirusTotal for a file hash, a URL, a domain, an IP address, or comments by tag (#tag)."
@@ -1934,12 +2220,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-search-snippet
     description: "The content of a file around what a content search matched, as hexdump and text."
@@ -2075,12 +2363,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-collection-comment
     description: "Write a comment on a collection."
@@ -2142,12 +2432,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-collection-related-descriptors
     description: "The objects related to a collection through one relationship, as descriptors: type and id only."
@@ -2180,12 +2472,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-collection-items
     description: "Add indicators of one kind to a collection."
@@ -2243,12 +2537,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: export-collection-iocs
     description: "The indicators of a collection, as JSON, CSV or STIX. VirusTotal marks this endpoint as deprecated in favour of Google Threat Intelligence."
@@ -2327,12 +2623,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: create-zip-file
     description: "Ask VirusTotal to build a ZIP of files VirusTotal has, with a password if you give one; it is not ready at once."
@@ -2410,6 +2708,19 @@ commands:
       path: "/intelligence/zip_files/{{ args.id }}/download_url"
     error: { message: "{{ response.error.message }}" }
 
+  - name: download-zip-file
+    description: "Download a finished ZIP file of samples, kept as an artifact as it came, never opened (it keeps the password it was created with). VirusTotal answers with a redirect to a signed address."
+    premium: true
+    arguments:
+      - { name: id, required: true, description: "The id of the ZIP file" }
+    request:
+      method: GET
+      path: "/intelligence/zip_files/{{ args.id }}/download"
+      answer: file
+      save_as: { name: "{{ args.id }}.zip", type: application/zip }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
   - name: list-yara-rules
     description: "The crowdsourced YARA rules VirusTotal runs."
     arguments:
@@ -2428,12 +2739,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-yara-rule
     description: "One crowdsourced YARA rule, with its text."
@@ -2505,6 +2818,7 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
@@ -2512,6 +2826,7 @@ commands:
       notification_ids: "{{ response.items | pluck('context_attributes.notification_id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: delete-ioc-stream-notifications
     description: "Delete every IoC stream notification a filter matches (all of them with no filter)."
@@ -2571,12 +2886,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: create-livehunt-ruleset
     description: "Create a Livehunt ruleset: YARA rules run on what reaches VirusTotal from now on."
@@ -2832,12 +3149,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: delete-livehunt-notifications
     description: "Delete your Livehunt notifications: those with a tag, or all of them when no tag is given."
@@ -2902,12 +3221,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-retrohunt-jobs
     description: "Your Retrohunt jobs."
@@ -2926,12 +3247,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: create-retrohunt-job
     description: "Run YARA rules over the files VirusTotal received in the past months. Ten jobs at a time, 300 rules a job at most."
@@ -3063,12 +3386,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: search-graphs
     description: "Search the graphs you can see."
@@ -3092,12 +3417,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: create-graph
     description: "Create a graph from its nodes and links. A private graph counts in the private graphs of a paid plan."
@@ -3187,12 +3514,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: add-graph-comment
     description: "Write a comment on a graph."
@@ -3243,12 +3572,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-graph-related-descriptors
     description: "The objects related to a graph through one relationship, as descriptors: type and id only."
@@ -3270,12 +3601,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-graph-viewers
     description: "The users and groups that may view a graph."
@@ -3292,12 +3625,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: check-graph-viewer
     description: "Whether a user or a group may view a graph."
@@ -3339,12 +3674,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: check-graph-editor
     description: "Whether a user or a group may edit a graph."
@@ -3383,18 +3720,71 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-private-file-upload-url
     description: "A one-time address to upload privately a file larger than 32 MB to."
     premium: true
     request: { method: GET, path: "/private/files/upload_url" }
     error: { message: "{{ response.error.message }}" }
+
+  - name: scan-private-file
+    description: "Send a file Nik holds to be analysed privately: it does not join VirusTotal's dataset. Gives the id of the private analysis, to read with get-private-analysis or wait-for-private-analysis. One larger than 32 MB goes to an address get-private-file-upload-url gives."
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: sample, type: file, required: true, description: "The file: an artifact of Nik (file-<sha256>) or the SHA-256 of a file Nik holds" }
+      - { name: password, description: "The password, when the file is a protected ZIP that holds the one file to scan" }
+      - { name: disable_sandbox, type: choice, choices: ["true", "false"], description: "true: do not run the file in sandboxes" }
+      - { name: enable_internet, type: choice, choices: ["true", "false"], description: "true: let the file reach the internet when it runs" }
+      - name: intercept_tls
+        type: choice
+        choices: ["true", "false"]
+        description: "true: intercept HTTPS to see encrypted URLs, host names and headers (a sample that checks certificates can tell)"
+      - { name: command_line, description: "Command line arguments to run the file with" }
+      - name: retention_period_days
+        type: number
+        description: "Days the report and the file are kept: 1 to 28 (the setting of the group when empty, 1 day unless changed)"
+      - { name: storage_region, type: choice, choices: [US, EU], description: "Where it is stored (the setting of the group when empty)" }
+      - { name: interaction_sandbox, description: "The sandbox to use interactively" }
+      - { name: interaction_timeout, type: number, description: "Seconds of interaction: 60 to 1800" }
+      - name: locale
+        type: choice
+        choices: [EN_US, AR_SA, DE_DE, ES_ES, PT_BR]
+        description: "The locale of the sandbox: on Windows, the language and the keyboard of the machine (EN_US when empty)"
+      - { name: upload_url, description: "For a file larger than 32 MB: the address get-private-file-upload-url gave, good for one upload" }
+    request:
+      method: POST
+      path: "{{ first_of(args.upload_url, '/private/files') }}"
+      multipart:
+        password: "{{ args.password }}"
+        disable_sandbox: "{{ args.disable_sandbox }}"
+        enable_internet: "{{ args.enable_internet }}"
+        intercept_tls: "{{ args.intercept_tls }}"
+        command_line: "{{ args.command_line }}"
+        retention_period_days: "{{ args.retention_period_days }}"
+        storage_region: "{{ args.storage_region }}"
+        interaction_sandbox: "{{ args.interaction_sandbox }}"
+        interaction_timeout: "{{ args.interaction_timeout }}"
+        locale: "{{ args.locale }}"
+      files:
+        file: { artifact: "{{ args.sample }}" }
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      analysis_id: "{{ response.data.id }}"
+      type: "{{ response.data.type }}"
+    sample:
+      analysis_id: "OTFiMDcwMjVjZDIzZTI0NGU4ZDlmMjI2NjkzZDczNGE6MTY1MzY1NDM3Nw=="
+      type: analysis
+    timeout: 300
 
   - name: rescan-private-file
     description: "Analyse a private file again, with the sandbox options you give; gives the id of the private analysis."
@@ -3478,12 +3868,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-private-file-related-descriptors
     description: "The objects related to a private file through one relationship, as descriptors: type and id only."
@@ -3502,12 +3894,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-private-analyses
     description: "Your latest private analyses, newest first."
@@ -3526,12 +3920,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-private-analysis
     description: "A private analysis as it is now, with the hashes of the file it is of."
@@ -3649,12 +4045,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-private-file-behaviour-related-descriptors
     description: "The objects related to the behaviour report of a private file through one relationship, as descriptors: type and id only."
@@ -3673,12 +4071,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-private-file-behaviour-summary
     description: "What a private file did in the sandboxes, the reports of all of them merged."
@@ -3715,6 +4115,45 @@ commands:
       answer: text
     error: { message: "{{ response.error.message }}" }
     outputs: { html: "{{ response.text }}" }
+
+  - name: download-private-file-behaviour-pcap
+    description: "Download the network capture (PCAP) of a sandbox run of a private file, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: sandbox_id, required: true, description: "The id of the sandbox report: the SHA-256 of the file, _ and the name of the sandbox" }
+    request:
+      method: GET
+      path: "/private/file_behaviours/{{ args.sandbox_id }}/pcap"
+      answer: file
+      save_as: { name: "{{ args.sandbox_id }}.pcap", type: "application/vnd.tcpdump.pcap" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-private-file-behaviour-evtx
+    description: "Download the Windows event log (EVTX) of a sandbox run of a private file, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: sandbox_id, required: true, description: "The id of the sandbox report: the SHA-256 of the file, _ and the name of the sandbox" }
+    request:
+      method: GET
+      path: "/private/file_behaviours/{{ args.sandbox_id }}/evtx"
+      answer: file
+      save_as: { name: "{{ args.sandbox_id }}.evtx" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-private-file-behaviour-memdump
+    description: "Download the memory dump of a sandbox run of a private file, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: sandbox_id, required: true, description: "The id of the sandbox report: the SHA-256 of the file, _ and the name of the sandbox" }
+    request:
+      method: GET
+      path: "/private/file_behaviours/{{ args.sandbox_id }}/memdump"
+      answer: file
+      save_as: { name: "{{ args.sandbox_id }}.memdump" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
 
   - name: scan-private-url
     description: "Send a URL to be analysed privately; gives the id of the analysis."
@@ -3787,12 +4226,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-private-url-related-descriptors
     description: "The objects related to a private URL through one relationship, as descriptors: type and id only."
@@ -3817,12 +4258,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: create-private-zip-file
     description: "Ask VirusTotal to build a ZIP of private files, with a password if you give one; it is not ready at once."
@@ -3900,6 +4343,19 @@ commands:
       path: "/private/zip_files/{{ args.id }}/download_url"
     error: { message: "{{ response.error.message }}" }
 
+  - name: download-private-zip-file
+    description: "Download a finished ZIP file of private files, kept as an artifact as it came, never opened (it keeps the password it was created with). VirusTotal answers with a redirect to a signed address."
+    premium: true
+    arguments:
+      - { name: id, required: true, description: "The id of the ZIP file" }
+    request:
+      method: GET
+      path: "/private/zip_files/{{ args.id }}/download"
+      answer: file
+      save_as: { name: "{{ args.id }}.zip", type: application/zip }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
   - name: get-feed-behaviour-html
     description: "The detailed HTML report of a sandbox run published in the file behaviour feed, by the token the feed gives."
     premium: true
@@ -3911,6 +4367,188 @@ commands:
       answer: text
     error: { message: "{{ response.error.message }}" }
     outputs: { html: "{{ response.text }}" }
+
+  - name: download-feed-behaviour-pcap
+    description: "Download the network capture (PCAP) of a sandbox run published in the file behaviour feed, by the token the feed gives, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: token, required: true, description: "The download token, from the pcap link of a behaviour of the feed" }
+    request:
+      method: GET
+      path: "/feeds/file_behaviours/{{ args.token }}/pcap"
+      answer: file
+      save_as: { name: "{{ args.token }}.pcap", type: "application/vnd.tcpdump.pcap" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-feed-behaviour-evtx
+    description: "Download the Windows event log (EVTX) of a sandbox run published in the file behaviour feed, by the token the feed gives, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: token, required: true, description: "The download token, from the evtx link of a behaviour of the feed" }
+    request:
+      method: GET
+      path: "/feeds/file_behaviours/{{ args.token }}/evtx"
+      answer: file
+      save_as: { name: "{{ args.token }}.evtx" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-feed-behaviour-memdump
+    description: "Download the memory dump of a sandbox run published in the file behaviour feed, by the token the feed gives, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: token, required: true, description: "The download token, from the memdump link of a behaviour of the feed" }
+    request:
+      method: GET
+      path: "/feeds/file_behaviours/{{ args.token }}/memdump"
+      answer: file
+      save_as: { name: "{{ args.token }}.memdump" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-feed-file
+    description: "Download a file published in the file feed, by the token the feed gives, kept as an artifact as it came, never opened. The link works for the 7 days the feed is kept; the key needs the download privilege too."
+    premium: true
+    arguments:
+      - { name: token, required: true, description: "The download token, from the download_url of a file of the feed" }
+    request:
+      method: GET
+      path: "/feeds/files/{{ args.token }}/download"
+      answer: file
+      save_as: { name: "{{ args.token }}" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-file-feed
+    description: "Download one minute of the feed of files VirusTotal analysed, kept as an artifact as it came, never opened: a bzip2 text file, one JSON object a line (a file object, with download_url and submitter). Batches are kept 7 days and the latest is 60 minutes old. A minute without a batch answers 404: go on with the next."
+    premium: true
+    arguments:
+      - { name: time, description: "The minute, in UTC, as YYYYMMDDhhmm: 202701150700. Empty: 60 minutes ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/files/{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}"
+      answer: file
+      save_as: { name: "files-{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-file-feed-hourly
+    description: "Download one hour of the feed of files VirusTotal analysed, kept as an artifact as it came, never opened: a .tar.bz2 that holds the 60 batches of the hour. Batches are kept 7 days and the latest is 2 hours old."
+    premium: true
+    arguments:
+      - { name: time, description: "The hour, in UTC, as YYYYMMDDhh: 2027011506. Empty: 2 hours ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/files/hourly/{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}"
+      answer: file
+      save_as: { name: "files-{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}.tar.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-file-behaviour-feed
+    description: "Download one minute of the feed of sandbox reports VirusTotal made, kept as an artifact as it came, never opened: a bzip2 text file, one JSON object a line (a sandbox report, with the links to its PCAP, HTML, EVTX and memory dump). Batches are kept 7 days and the latest is 60 minutes old. A minute without a batch answers 404: go on with the next."
+    premium: true
+    arguments:
+      - { name: time, description: "The minute, in UTC, as YYYYMMDDhhmm: 202701150700. Empty: 60 minutes ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/file_behaviours/{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}"
+      answer: file
+      save_as: { name: "file_behaviours-{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-file-behaviour-feed-hourly
+    description: "Download one hour of the feed of sandbox reports VirusTotal made, kept as an artifact as it came, never opened: a .tar.bz2 that holds the 60 batches of the hour. Batches are kept 7 days and the latest is 2 hours old."
+    premium: true
+    arguments:
+      - { name: time, description: "The hour, in UTC, as YYYYMMDDhh: 2027011506. Empty: 2 hours ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/file_behaviours/hourly/{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}"
+      answer: file
+      save_as: { name: "file_behaviours-{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}.tar.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-domain-feed
+    description: "Download one minute of the feed of domains VirusTotal analysed, kept as an artifact as it came, never opened: a bzip2 text file, one JSON object a line (a domain object). Batches are kept 7 days and the latest is 60 minutes old. A minute without a batch answers 404: go on with the next."
+    premium: true
+    arguments:
+      - { name: time, description: "The minute, in UTC, as YYYYMMDDhhmm: 202701150700. Empty: 60 minutes ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/domains/{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}"
+      answer: file
+      save_as: { name: "domains-{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-domain-feed-hourly
+    description: "Download one hour of the feed of domains VirusTotal analysed, kept as an artifact as it came, never opened: a .tar.bz2 that holds the 60 batches of the hour. Batches are kept 7 days and the latest is 2 hours old."
+    premium: true
+    arguments:
+      - { name: time, description: "The hour, in UTC, as YYYYMMDDhh: 2027011506. Empty: 2 hours ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/domains/hourly/{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}"
+      answer: file
+      save_as: { name: "domains-{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}.tar.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-ip-feed
+    description: "Download one minute of the feed of IP addresses VirusTotal analysed, kept as an artifact as it came, never opened: a bzip2 text file, one JSON object a line (an IP address object). Batches are kept 7 days and the latest is 60 minutes old. A minute without a batch answers 404: go on with the next."
+    premium: true
+    arguments:
+      - { name: time, description: "The minute, in UTC, as YYYYMMDDhhmm: 202701150700. Empty: 60 minutes ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/ip_addresses/{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}"
+      answer: file
+      save_as: { name: "ip_addresses-{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-ip-feed-hourly
+    description: "Download one hour of the feed of IP addresses VirusTotal analysed, kept as an artifact as it came, never opened: a .tar.bz2 that holds the 60 batches of the hour. Batches are kept 7 days and the latest is 2 hours old."
+    premium: true
+    arguments:
+      - { name: time, description: "The hour, in UTC, as YYYYMMDDhh: 2027011506. Empty: 2 hours ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/ip_addresses/hourly/{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}"
+      answer: file
+      save_as: { name: "ip_addresses-{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}.tar.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-url-feed
+    description: "Download one minute of the feed of URLs VirusTotal analysed, kept as an artifact as it came, never opened: a bzip2 text file, one JSON object a line (a URL object, with submitter). Batches are kept 7 days and the latest is 60 minutes old. A minute without a batch answers 404: go on with the next."
+    premium: true
+    arguments:
+      - { name: time, description: "The minute, in UTC, as YYYYMMDDhhmm: 202701150700. Empty: 60 minutes ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/urls/{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}"
+      answer: file
+      save_as: { name: "urls-{{ first_of(args.time, now.iso | date_add(-60, 'minutes') | date('%Y%m%d%H%M')) }}.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
+  - name: download-url-feed-hourly
+    description: "Download one hour of the feed of URLs VirusTotal analysed, kept as an artifact as it came, never opened: a .tar.bz2 that holds the 60 batches of the hour. Batches are kept 7 days and the latest is 2 hours old."
+    premium: true
+    arguments:
+      - { name: time, description: "The hour, in UTC, as YYYYMMDDhh: 2027011506. Empty: 2 hours ago, the latest there is" }
+    request:
+      method: GET
+      path: "/feeds/urls/hourly/{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}"
+      answer: file
+      save_as: { name: "urls-{{ first_of(args.time, now.iso | date_add(-2, 'hours') | date('%Y%m%d%H')) }}.tar.bz2", type: application/x-bzip2 }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
 
   - name: get-user
     description: "A user: the profile, and for yourself or as an administrator of the group, the privileges and the quotas with what is used of them."
@@ -4010,12 +4648,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-user-related-descriptors
     description: "The objects related to a user through one relationship, as descriptors: type and id only."
@@ -4051,12 +4691,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-user-api-usage
     description: "How many API requests a user made, by day and by endpoint (the last 30 days when no dates are given)."
@@ -4242,12 +4884,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: list-group-related-descriptors
     description: "The objects related to a group through one relationship, as descriptors: type and id only."
@@ -4270,12 +4914,14 @@ commands:
       items: "{{ response.data | where('id') }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-group-api-usage
     description: "How many API requests a group made, by day and by endpoint (the last 30 days when no dates are given)."
@@ -4323,12 +4969,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: create-service-account
     description: "Create service accounts in your group, each from an identifier unique in the group."
@@ -4416,12 +5064,14 @@ commands:
       items: "{{ response.data }}"
       next: "{{ response.meta.cursor }}"
       max_pages: 5
+      keep: { total: "{{ response.meta.count }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       items: "{{ response.items }}"
       ids: "{{ response.items | pluck('id') }}"
       count: "{{ response.items | length }}"
       truncated: "{{ response.truncated }}"
+      total: "{{ response.kept.total }}"
 
   - name: get-widget-url
     description: "An address, good for three days, of the VirusTotal report of an indicator to show in a frame, with how many engines flag it."
@@ -4493,6 +5143,26 @@ commands:
     error: { message: "{{ response.error.message }}" }
     outputs: { id: "{{ response.data.id }}", type: "{{ response.data.type }}" }
     sample: { id: L215bmV3Zm9sZGVyLw, type: monitor_item }
+
+  - name: upload-monitor-file
+    description: "Put a file Nik holds in your Monitor collection, or overwrite one that is there. Give the path it goes to, or the id of the Monitor item to overwrite. One larger than 32 MB goes to an address get-monitor-upload-url gives."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: sample, type: file, required: true, description: "The file: an artifact of Nik (file-<sha256>) or the SHA-256 of a file Nik holds" }
+      - { name: path, description: "Where it goes, from the root of your collection, with the name of the file: /folder/myfile.exe" }
+      - { name: item, description: "Instead of a path: the id of the Monitor item to overwrite" }
+      - { name: upload_url, description: "For a file larger than 32 MB: the address get-monitor-upload-url gave, good for one upload" }
+    request:
+      method: POST
+      path: "{{ first_of(args.upload_url, '/monitor/items') }}"
+      multipart: { path: "{{ args.path }}", item: "{{ args.item }}" }
+      files:
+        file: { artifact: "{{ args.sample }}" }
+    error: { message: "{{ response.error.message }}" }
+    outputs: { id: "{{ response.data.id }}", type: "{{ response.data.type }}" }
+    sample: { id: L2ZvbGRlci9teWZpbGUuZXhl, type: monitor_item }
+    timeout: 300
 
   - name: get-monitor-upload-url
     description: "An address to upload to Monitor a file larger than 32 MB, good for one upload."
@@ -4566,6 +5236,18 @@ commands:
       - { name: id, required: true, description: "The id of the Monitor item" }
     request: { method: GET, path: "/monitor/items/{{ args.id }}/download_url" }
     error: { message: "{{ response.error.message }}" }
+
+  - name: download-monitor-item
+    description: "Download a file of your Monitor collection, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: id, required: true, description: "The id of the Monitor item" }
+    request:
+      method: GET
+      path: "/monitor/items/{{ args.id }}/download"
+      answer: file
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
 
   - name: list-monitor-item-analyses
     description: "The latest analyses of a Monitor file."
@@ -4829,6 +5511,19 @@ commands:
       path: "/monitor_partner/files/{{ args.sha256 }}/download_url"
     error: { message: "{{ response.error.message }}" }
 
+  - name: download-monitor-partner-file
+    description: "Download a Monitor file by its hash, kept as an artifact as it came, never opened."
+    premium: true
+    arguments:
+      - { name: sha256, required: true, description: "The SHA-256 of the file" }
+    request:
+      method: GET
+      path: "/monitor_partner/files/{{ args.sha256 }}/download"
+      answer: file
+      save_as: { name: "{{ args.sha256 }}" }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
+
   - name: get-monitor-partner-bundle-download-url
     description: "An address to download the daily list (CSV) of what an engine detects in the Monitor collections."
     premium: true
@@ -4838,6 +5533,20 @@ commands:
       method: GET
       path: "/monitor_partner/detections_bundle/{{ args.engine_name }}/download_url"
     error: { message: "{{ response.error.message }}" }
+
+  - name: download-monitor-partner-bundle
+    description: "Download the daily list (CSV) of what an engine detects in the Monitor collections, kept as an artifact as it came, never opened: a line holds the owner, the hash, the link to its analyses and its download address."
+    premium: true
+    arguments:
+      - { name: engine_name, required: true, description: "The name of your engine" }
+      - { name: date, description: "An earlier day, as YYYY-MM-DD; the latest list when empty" }
+    request:
+      method: GET
+      path: "/monitor_partner/detections_bundle/{{ args.engine_name }}{{ if(args.date, '/' ~ args.date, '') }}/download"
+      answer: file
+      save_as: { name: "{{ args.engine_name }}-detections{{ if(args.date, '-' ~ args.date, '') }}.csv", type: text/csv }
+    error: { message: "{{ response.error.message }}" }
+    timeout: 300
 
   - name: list-monitor-partner-statistics
     description: "Day by day, how many Monitor hashes your engine analysed and how many it detected."

@@ -1,82 +1,48 @@
 {
   "args": {
-    "url": "https://www.virustotal.com/"
+    "url": "https://example.org/a?b=c"
   },
   "exchanges": [
     {
       "request": {
         "method": "GET",
-        "path": "/api/v3/search",
-        "query": {
-          "query": "https://www.virustotal.com/"
-        },
+        "path": "/api/v3/urls/aHR0cHM6Ly9leGFtcGxlLm9yZy9hP2I9Yw",
         "headers": {
           "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         }
       },
       "response": {
-        "status": 200,
+        "status": 404,
         "json": {
-          "data": [
-            {
-              "type": "url",
-              "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
-              "attributes": {
-                "url": "https://www.virustotal.com/",
-                "last_final_url": "https://www.virustotal.com/",
-                "last_http_response_code": 200,
-                "reputation": 12,
-                "last_analysis_stats": {
-                  "harmless": 70,
-                  "malicious": 2,
-                  "suspicious": 0,
-                  "timeout": 0,
-                  "undetected": 20
-                },
-                "times_submitted": 5,
-                "tags": []
-              },
-              "links": {
-                "self": "https://www.virustotal.com/api/v3/urls/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2"
-              }
-            }
-          ]
+          "error": {
+            "code": "NotFoundError",
+            "message": "URL \"aHR0cHM6Ly9leGFtcGxlLm9yZy9hP2I9Yw\" not found"
+          }
         }
       }
     }
   ],
   "outputs": {
-    "verdict": "suspicious",
-    "summary": "2 malicious, 0 suspicious, 70 harmless, 20 undetected",
-    "malicious": 2,
+    "verdict": "unknown",
+    "summary": "not in VirusTotal",
+    "malicious": 0,
     "suspicious": 0,
-    "harmless": 70,
-    "undetected": 20,
-    "stats": {
-      "harmless": 70,
-      "malicious": 2,
-      "suspicious": 0,
-      "timeout": 0,
-      "undetected": 20
-    },
-    "reputation": 12,
-    "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
-    "attributes": {
-      "url": "https://www.virustotal.com/",
-      "last_final_url": "https://www.virustotal.com/",
-      "last_http_response_code": 200,
-      "reputation": 12,
-      "last_analysis_stats": {
-        "harmless": 70,
-        "malicious": 2,
-        "suspicious": 0,
-        "timeout": 0,
-        "undetected": 20
-      },
-      "times_submitted": 5,
-      "tags": []
-    },
-    "link": "https://www.virustotal.com/gui/url/f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
-    "url": "https://www.virustotal.com/"
+    "harmless": 0,
+    "undetected": 0,
+    "total": 0,
+    "stats": null,
+    "engines": [],
+    "all_engines": [],
+    "reputation": null,
+    "last_analysis": null,
+    "tags": [],
+    "categories": [],
+    "final_url": "",
+    "title": "",
+    "http_status": null,
+    "id": null,
+    "attributes": null,
+    "link": "https://www.virustotal.com/gui/url/aHR0cHM6Ly9leGFtcGxlLm9yZy9hP2I9Yw",
+    "url": null
   }
 }

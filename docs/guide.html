@@ -738,17 +738,21 @@
         from everything in the incident. Click an indicator to open its window: the overall verdict (a score weighted by
         source), one line per threat-intelligence source and, on the right, the tabs and the other incidents that hold
         it. A source expands to what it returned (engines, reports, pulses, open ports…), with its whole answer to copy
-        or download as JSON and how its verdict changed over time. <strong>Registration</strong> is the source that
-        needs no key: for a domain, its registrar, dates, name servers and age, read from the registry (RDAP, or WHOIS
-        where there is none); for an address, its network and holder. A domain registered in the last 30 days is flagged
-        next to the verdict and counts in the score. <strong>Check now</strong> asks the providers configured in
-        Settings; an answer older than the retention set there is asked again by itself.
-        <strong>Open as a page</strong> gives the indicator a full page, and <strong>Copy link</strong> its address
-        (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a colleague. <strong>Check all</strong> asks the
-        sources about every indicator of the incident, and <strong>Save as a list</strong> makes a list of them in the
-        <a href="#ioc-library">Indicators</a>. A row is red when the indicator is malicious and amber when it is
-        suspicious; being seen in other incidents is a number, not a colour. Export the list as CSV, STIX 2.1 or MISP.
-        Indicators that are known good go to the <strong>allowlist</strong> (right-click → Add to the allowlist).
+        or download as JSON and how its verdict changed over time. A <strong>source</strong> is a connector that judges
+        indicators (VirusTotal, AbuseIPDB, urlscan.io, ThreatFox, URLhaus, MalwareBazaar, OTX, GreyNoise, Shodan, Safe
+        Browsing, RDAP, or any other whose file marks a command for it), asked through an instance of that connector: a
+        source whose connector has no instance that is on is listed as <em>off</em>, and when none is installed the
+        window says so. <strong>RDAP</strong> gives, for a domain, its registrar, dates, name servers and age as the
+        registry holds them (a host is looked up as the domain it is under), and for an address its network and holder.
+        A domain registered in the last 30 days is flagged next to the verdict and counts in the score.
+        <strong>Check now</strong> asks every source that is on; an answer older than the retention set in Settings is
+        asked again by itself. <strong>Open as a page</strong> gives the indicator a full page, and
+        <strong>Copy link</strong> its address (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a
+        colleague. <strong>Check all</strong> asks the sources about every indicator of the incident, and
+        <strong>Save as a list</strong> makes a list of them in the <a href="#ioc-library">Indicators</a>. A row is red
+        when the indicator is malicious and amber when it is suspicious; being seen in other incidents is a number, not
+        a colour. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
+        <strong>allowlist</strong> (right-click → Add to the allowlist).
       </p>
       <figure class="shot">
         <img src="img/iocs.png" alt="The Indicators tab" width="1600" height="1000" loading="lazy" />
@@ -1604,11 +1608,16 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             <tr>
               <td>Threat intelligence</td>
               <td>
-                Providers, API keys (never shown again; several per provider, used in rotation; one refused three times
-                is marked rejected), which indicator types may be sent out, how many days an answer stands per type (30
-                for IP addresses and URLs, 180 for hashes) and whether an expired one is asked again, and what
-                VirusTotal lists: the vendors that flag, all or none, with Relations and Community comments off by
-                default because each costs one more request (admins).
+                Which indicator types are looked up automatically, how many days an answer stands per type (30 for IP
+                addresses and URLs, 180 for hashes) and whether an expired one is asked again, and the
+                <strong>sources</strong>: the connectors that judge indicators, each with what it judges, how much its
+                verdict weighs, whether it is on and through which instance it is asked. A source is on when an instance
+                of its connector is; with several, the oldest that is on is the one asked. Its keys, the requests a key
+                may make a minute and a day, and the answers kept without asking again are set on that instance, under
+                <em>Connectors</em>, not here. A source that needs no key (RDAP, Shodan's InternetDB, urlscan.io and
+                GreyNoise without an account) has a <em>Turn on</em> button that makes its instance. The API keys
+                entered on this page before 6.5 are listed until an instance has them: each moves by itself when the
+                pack of its source is installed (admins).
               </td>
             </tr>
             <tr>

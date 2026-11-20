@@ -6,7 +6,7 @@ store), so they are typed as ``dict``/``Any`` rather than fully modeled.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -173,25 +173,16 @@ class EnrichmentRetentionIn(BaseModel):
     hash: int = Field(default=180, ge=1, le=730)
 
 
-class VirusTotalOptionsIn(BaseModel):
-    """What a VirusTotal lookup asks for: the engines listed, and the
-    sections that take one more request each from the quota."""
-
-    engines: Literal["flagged", "all"] = "flagged"
-    relations: bool = False
-    comments: bool = False
-
-
 class EnrichmentSettingsIn(BaseModel):
     """Threat intelligence: automatic lookups per type (IP addresses, URLs and
     domains, file hashes), how long answers stand and whether expired ones are
-    asked again, VirusTotal's options, providers the analysts allow."""
+    asked again. Which sources are asked is not set here: a source is on when an
+    instance of its connector is (a client that still sends ``virustotal`` or
+    ``providers``, the settings of before 6.5, is not refused: they are ignored)."""
 
     auto: EnrichmentAutoIn = Field(default_factory=EnrichmentAutoIn)
     retentionDays: EnrichmentRetentionIn = Field(default_factory=EnrichmentRetentionIn)
     refreshExpired: bool = True
-    virustotal: VirusTotalOptionsIn = Field(default_factory=VirusTotalOptionsIn)
-    providers: dict[str, bool] = Field(default_factory=dict)
 
 
 class SettingsIn(BaseModel):

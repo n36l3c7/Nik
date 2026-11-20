@@ -1,0 +1,35 @@
+{
+  "args": {
+    "sandbox_id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/file_behaviours/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox/pcap",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItcGNhcCBnaXZlcy4K"
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.pcap",
+      "type": "application/vnd.tcpdump.pcap",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItcGNhcCBnaXZlcy4K"
+    }
+  ],
+  "outputs": {
+    "name": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.pcap",
+    "type": "application/vnd.tcpdump.pcap",
+    "size": 69,
+    "sha256": "sha256:275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.pcap",
+    "artifact": "artifact:275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.pcap",
+    "linked": false
+  }
+}

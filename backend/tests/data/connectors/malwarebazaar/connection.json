@@ -1,6 +1,7 @@
 {
   "config": {},
   "secrets": {
-    "value": "abusech-auth-key-0123456789abcdef"
+    "value": "abusech-auth-key-0123456789abcdef",
+    "auth_key": "abusech-auth-key-0123456789abcdef"
   }
 }

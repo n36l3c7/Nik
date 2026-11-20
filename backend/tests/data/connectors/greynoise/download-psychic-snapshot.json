@@ -1,0 +1,46 @@
+{
+  "args": {
+    "model": "3",
+    "days": "30",
+    "format": "mmdb"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/psychic/snapshots",
+        "json": {
+          "model": "3",
+          "days": 30,
+          "format": "mmdb"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "aW52ZW50ZWQgc25hcHNob3QgYnl0ZXMgq83vTWF4TWluZC5jb20=",
+        "headers": {
+          "content-type": "application/vnd.maxmind.maxmind-db",
+          "content-disposition": "attachment; filename=\"m3-2026-06-17-to-2026-06-23.mmdb\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "m3-2026-06-17-to-2026-06-23.mmdb",
+      "type": "application/vnd.maxmind.maxmind-db",
+      "base64": "aW52ZW50ZWQgc25hcHNob3QgYnl0ZXMgq83vTWF4TWluZC5jb20="
+    }
+  ],
+  "outputs": {
+    "name": "m3-2026-06-17-to-2026-06-23.mmdb",
+    "type": "application/vnd.maxmind.maxmind-db",
+    "size": 38,
+    "sha256": "sha256:m3-2026-06-17-to-2026-06-23.mmdb",
+    "artifact": "artifact:m3-2026-06-17-to-2026-06-23.mmdb",
+    "linked": false
+  }
+}

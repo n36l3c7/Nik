@@ -1,0 +1,33 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/file_behaviours/hourly/2027011506",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItZmVlZC1ob3VybHkgZ2l2ZXMuCg=="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "file_behaviours-2027011506.tar.bz2",
+      "type": "application/x-bzip2",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItZmVlZC1ob3VybHkgZ2l2ZXMuCg=="
+    }
+  ],
+  "outputs": {
+    "name": "file_behaviours-2027011506.tar.bz2",
+    "type": "application/x-bzip2",
+    "size": 76,
+    "sha256": "sha256:file_behaviours-2027011506.tar.bz2",
+    "artifact": "artifact:file_behaviours-2027011506.tar.bz2",
+    "linked": false
+  }
+}

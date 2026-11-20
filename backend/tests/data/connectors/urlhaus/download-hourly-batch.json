@@ -1,0 +1,39 @@
+{
+  "args": {
+    "hour": "2026-11-19-23"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "datalake.abuse.ch",
+        "path": "/urlhaus/hourly/2026-11-19-23.zip",
+        "without_headers": [
+          "Auth-Key"
+        ]
+      },
+      "response": {
+        "status": 200,
+        "base64": "UEsDBCBhbiBpbnZlbnRlZCBhcmNoaXZlLCBub3QgYSBzYW1wbGU=",
+        "headers": {
+          "content-type": "application/zip"
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "2026-11-19-23.zip",
+      "type": "application/zip",
+      "base64": "UEsDBCBhbiBpbnZlbnRlZCBhcmNoaXZlLCBub3QgYSBzYW1wbGU="
+    }
+  ],
+  "outputs": {
+    "name": "2026-11-19-23.zip",
+    "type": "application/zip",
+    "size": 38,
+    "sha256": "sha256:2026-11-19-23.zip",
+    "artifact": "artifact:2026-11-19-23.zip",
+    "linked": false
+  }
+}

@@ -3,7 +3,6 @@ one walked to its end in a dry run. The two actions written for them."""
 
 from __future__ import annotations
 
-import dataclasses
 import json
 
 import pytest
@@ -14,7 +13,6 @@ from app.automation import connector_actions, scripts, shipped, state, worker
 from app.core.db import SessionLocal
 from app.core.models import Connection, IocCheck, Playbook, Run, RunStep
 from app.core.security import now_iso
-from app.enrichment import service
 from tests import vendor
 from tests.test_automation_engine import (  # noqa: F401 - test_actions is a fixture
     T0,
@@ -270,7 +268,8 @@ SMTP = {"host": "smtp.example.org", "port": 587, "security": "starttls", "userna
 
 def test_the_report_of_a_recheck_says_what_changed(admin: TestClient, library, sandbox, outside):
     """The shipped graph with the check's answers put in by hand: the comparison, the condition, the message."""
-    service.limiter.reset()
+    with SessionLocal() as db:
+        vendor.source(db, "shodan")  # a source that is on: there is someone to ask
     outside.host("smtp.example.org", "93.184.215.25")
     assert admin.put("/api/automation/settings", json={"smtp": SMTP}).status_code == 200
     admin.post("/api/iocs", json={"text": f"{IP}\nevil.example", "list": {"name": "AsyncRAT C2", "watch": True}})
@@ -284,11 +283,8 @@ def test_the_report_of_a_recheck_says_what_changed(admin: TestClient, library, s
 
     def answers(db, shared, budget_seconds=60.0, max_calls=300):
         """The enrichment worker: one source says the address is malicious."""
-        fake = dataclasses.replace(
-            service.BY_ID["virustotal"], lookup=lambda *a: {"verdict": "malicious", "summary": "7 engines"}, interval=0
-        )
         for check in db.scalars(select(IocCheck).where(IocCheck.status == "running")).all():
-            service.lookup_one(db, fake, "ip", IP, None)
+            vendor.said(db, "virustotal", "ip", IP, "malicious", "7 engines")
             check.status, check.pending, check.done = "done", [], check.total
         db.commit()
 
@@ -312,7 +308,6 @@ def test_the_report_of_a_recheck_says_what_changed(admin: TestClient, library, s
     assert (mail["to"], mail["subject"]) == ("soc@example.org", 'Nik: the watched list "AsyncRAT C2" changed')
     assert "185[.]220[.]101[.]47" in mail["text"] and IP not in mail["text"]
     assert "Became suspicious or malicious (1):" in mail["text"] and "No longer flagged (0):" in mail["text"]
-    service.limiter.reset()
 
 
 def test_the_block_list_in_a_dry_run(admin: TestClient, library, outside):
@@ -494,7 +489,8 @@ def test_the_lists_of_the_library_are_read_by_a_playbook(admin: TestClient):
 
 
 def test_a_recheck_waits_for_its_answers_but_not_for_ever(admin: TestClient):
-    service.limiter.reset()
+    with SessionLocal() as db:
+        vendor.source(db, "shodan")  # a source that is on, and that nobody asks here: the worker is not running
     admin.post("/api/iocs", json={"text": IP, "list": {"name": "Watched", "watch": True}})
     pb = playbook(
         admin,
@@ -521,4 +517,3 @@ def test_a_recheck_waits_for_its_answers_but_not_for_ever(admin: TestClient):
         and out["output"]["total"] == 1
     )
     assert out["output"]["before"] == out["output"]["after"]
-    service.limiter.reset()

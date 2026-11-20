@@ -228,9 +228,10 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
   await attacker.click()
   const dialog = page.getByRole('dialog', { name: 'Indicator' })
   await expect(dialog.getByRole('region', { name: 'Seen in' })).toContainText('WKS-FINANCE-01')
-  // Sources: keyless providers are ready; nothing is sent until asked.
-  await expect(dialog.getByRole('button', { name: 'Check now' })).toBeVisible()
-  await expect(dialog.getByRole('region', { name: 'Sources' })).toContainText('Not checked yet')
+  // Sources: a source is a connector with an instance, and none is installed here: nothing can be
+  // asked, and the page says what an administrator does about it.
+  await expect(dialog.getByRole('region', { name: 'Sources' })).toContainText('No source is installed for this type')
+  await expect(dialog.getByRole('button', { name: 'Check now' })).toHaveCount(0)
   await expect(dialog).toContainText('not checked')
   await page.keyboard.press('Escape')
   // Seen in another incident is a plain number now: only the verdict colours a row.
@@ -253,42 +254,58 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
   await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
 })
 
-test('threat intelligence is configured in Settings, keys never shown', async () => {
+test('threat intelligence is set in Settings, and a source is a connector with an instance', async () => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
-  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Threat intelligence').click()
   const ips = settings.getByRole('switch', { name: /IP addresses/ })
   await expect(ips).not.toBeChecked()
   await ips.check()
   await expect(ips).toBeChecked()
-  const virustotal = settings.getByRole('listitem').filter({ hasText: 'VirusTotal' }).first()
-  await settings.getByLabel('VirusTotal API key', { exact: true }).fill('e2e-virustotal-key-0042')
-  await virustotal.getByRole('button', { name: 'Add key' }).click()
-  await expect(virustotal.getByText('key …0042')).toBeVisible()
-  await expect(settings.getByLabel('VirusTotal API key', { exact: true })).toHaveValue('')
-  // A second key, with a label: the lookups will go round the two.
-  await settings.getByLabel('VirusTotal API key', { exact: true }).fill('e2e-virustotal-key-0043')
-  await settings.getByLabel('Label of the VirusTotal key').fill('second account')
-  await virustotal.getByRole('button', { name: 'Add key' }).click()
-  await expect(virustotal.getByText('2 keys in rotation')).toBeVisible()
-  const keys = settings.getByRole('list', { name: 'VirusTotal API keys' })
-  await expect(keys.getByRole('listitem')).toHaveCount(2)
-  await expect(keys).toContainText('second account')
-  await expect(settings).not.toContainText('e2e-virustotal-key')
-  await keys.getByRole('button', { name: 'Remove the VirusTotal key ending in 0043' }).click()
-  await expect(keys.getByRole('listitem')).toHaveCount(1)
-  // How long an answer stands, per type, and what VirusTotal is asked for.
+  // No pack of a source is installed: the page says so, and where the sources come from. No key is asked here.
+  await expect(settings).toContainText('No source is installed.')
+  await expect(settings.getByRole('button', { name: 'Open Content packs' })).toBeVisible()
+  await expect(settings.getByLabel(/API key/)).toHaveCount(0)
+  // The connector of a source that needs no key, as its pack installs it: it is listed, and off.
+  const source = readFileSync(new URL('../../packs/rdap/connectors/rdap/connector.yml', import.meta.url), 'utf8')
+  expect((await page.request.post('/api/automation/connectors', { data: { source } })).status()).toBe(201)
+  await sections.getByText('IOC allowlist').click()
+  await sections.getByText('Threat intelligence').click()
+  const rdap = settings
+    .getByRole('list', { name: 'Sources of threat intelligence' })
+    .getByRole('listitem')
+    .filter({ hasText: 'RDAP' })
+  await expect(rdap).toContainText('no instance')
+  await expect(rdap).toContainText('counted only when it flags the value')
+  // Turning it on makes the instance the look-ups go through.
+  await rdap.getByRole('button', { name: 'Turn on RDAP (registration data)' }).click()
+  await expect(rdap).toContainText('Asked through the instance “RDAP (registration data)”')
+  await expect(rdap.getByRole('button', { name: /^Turn on/ })).toHaveCount(0)
+  await expect(settings.getByRole('button', { name: 'Open Connectors' })).toBeVisible()
+  // How long an answer stands, per type.
   await expect(settings.getByLabel('File hashes: days an answer stands')).toHaveValue('180')
   await expect(settings.getByRole('switch', { name: /Ask again when an answer has expired/ })).toBeChecked()
-  await expect(settings.getByLabel('VirusTotal vendors listed')).toHaveValue('flagged')
-  await expect(settings.getByRole('switch', { name: /^Relations/ })).not.toBeChecked()
   await settings.getByLabel('IP addresses: days an answer stands').fill('45')
   await ips.uncheck()
   await settings.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: 'Open platform settings' }).click()
-  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Threat intelligence').click()
+  await sections.getByText('Threat intelligence').click()
   await expect(settings.getByLabel('IP addresses: days an answer stands')).toHaveValue('45')
   await settings.getByRole('button', { name: 'Close settings' }).click()
+  // With a source that is on, an indicator can be checked; nothing is sent until someone asks.
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
+  const attacker = page.getByRole('button', { name: '185.220.101.47', exact: true })
+  await expect(attacker).toBeVisible({ timeout: 20_000 })
+  await attacker.click()
+  const dialog = page.getByRole('dialog', { name: 'Indicator' })
+  await expect(dialog.getByRole('button', { name: 'Check now' })).toBeVisible()
+  await expect(dialog.getByRole('region', { name: 'Sources' })).toContainText('Not checked yet')
+  await expect(dialog.getByRole('region', { name: 'Sources' })).toContainText('RDAP (registration data)')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  // The connector goes, with its instance: the tests that follow start without a source, as this one did.
+  expect((await page.request.delete('/api/automation/connectors/rdap')).status()).toBe(204)
 })
 
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {

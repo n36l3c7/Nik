@@ -42,11 +42,12 @@
   ],
   "outputs": {
     "verdict": "suspicious",
-    "summary": "2 malicious, 0 suspicious, 70 harmless, 20 undetected",
+    "summary": "2/92 engines flag it",
     "malicious": 2,
     "suspicious": 0,
     "harmless": 70,
     "undetected": 20,
+    "total": 92,
     "stats": {
       "harmless": 70,
       "malicious": 2,
@@ -54,7 +55,15 @@
       "timeout": 0,
       "undetected": 20
     },
+    "engines": [],
+    "all_engines": [],
     "reputation": 12,
+    "last_analysis": null,
+    "tags": [],
+    "categories": [],
+    "final_url": "https://www.virustotal.com/",
+    "title": "",
+    "http_status": 200,
     "id": "f11f7cc900638fae209f68498a90158fbfb067fc4191549ddb657e39cc4428c2",
     "attributes": {
       "url": "https://www.virustotal.com/",

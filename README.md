@@ -191,7 +191,9 @@ with main and run only in the debugger, and taught the Mail connector to
 keep attachments and the messages it reads; 6.4 gave incidents tags and
 made every field of theirs something a query can ask for, put fetching,
 the classifier and the mappers in the instance, and made Nik's own menu
-answer the right button on every page.
+answer the right button on every page; 6.5 taught connectors to keep and
+send files and their expressions to decide and count, and made the
+reputation of an indicator something only connectors are asked for.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

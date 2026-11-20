@@ -43,26 +43,69 @@ needs a paid plan.
   last 3 days.
 - `search-tag` and `search-signature` give the URLs with a tag, or that
   served a malware family.
+- `download-payload` downloads a payload by its SHA256 hash and keeps it as
+  an artifact of the incident the playbook works on.
+- `download-hourly-batch` and `download-daily-batch` download the batch of
+  the payloads of an hour or of a day.
+- `download-export` downloads one of the database dumps and feeds
+  (`recent.csv` unless another name is given).
+- `submit-url` reports a URL that is serving malware to URLhaus, under your
+  abuse.ch account: it changes something at URLhaus and asks a person
+  first. Read the submission policy of URLhaus before using it.
 
-Each command gives `query_status`, the word the API answers with (`ok`,
+Each look-up gives `query_status`, the word the API answers with (`ok`,
 `no_results`, `invalid_url`…): a look-up that finds nothing is not a
 failure.
 
+## Files
+
+A payload comes as URLhaus sends it: a ZIP file, which at the time of
+writing has no password and may set an antivirus off. Nik keeps that
+archive as an artifact and opens nothing. The batches are ZIP files with
+the password `infected`, on `datalake.abuse.ch`, which the connector
+reaches beside the API and which is never sent the Auth-Key. A batch is
+often hundreds of megabytes (a daily one over a gigabyte): one that is
+larger than the limit of a sample in Nik (`SAMPLE_MAX_MB`) is refused, and
+nothing is kept.
+
+## The second Auth-Key
+
+The key of the instance travels in the `Auth-Key` header, to
+`urlhaus-api.abuse.ch` and nowhere else. Two commands need it elsewhere:
+
+- `download-export`: the address of a dump holds the key
+  (`/v2/files/exports/<Auth-Key>/recent.csv`);
+- `submit-url`: the submission API is on another host, `urlhaus.abuse.ch`,
+  which wants the key in its header.
+
+For those an instance is given the key a second time, as *Auth-Key, for
+submissions and exports*. Giving it is the permission to send it there; it
+is replaced in what a step records. Left empty, these two commands fail and
+every other command works. URLhaus names one dump, `recent.csv`; the names
+of the others (CSV and JSON dumps, host file, RPZ, IDS rules, ClamAV
+signatures, MISP) are shown on <https://urlhaus.abuse.ch/api/> to a
+signed-in account, and `download-export` takes any of them.
+
 ## What is not here
 
-- Submitting a URL: the submission API is on another host
-  (`urlhaus.abuse.ch`, not `urlhaus-api.abuse.ch`), and a connector reaches
-  one host.
-- Downloading a payload: the API answers a ZIP file, which a connector
-  cannot carry.
-- The feeds and database dumps (CSV, hostfile, RPZ, IDS rules, ClamAV
-  signatures, MISP): files whose address holds the Auth-Key, described by
-  URLhaus only to a signed-in account.
+Every part of the API the documentation describes has a command.
 
 ## Not run against the service
 
 The connector was written from the documentation at
-<https://urlhaus-api.abuse.ch/> and is tested against the answers that page
-shows, not against URLhaus itself. One thing the documentation does not
-settle and the first real run should confirm: `get-url-by-id` sends the
-field `urlid` (the example of the documentation; its table says `id`).
+<https://urlhaus-api.abuse.ch/> and <https://urlhaus.abuse.ch/api/>, and is
+tested against the answers those pages show, not against URLhaus itself.
+What the documentation does not settle and the first real run should
+confirm:
+
+- `get-url-by-id` sends the field `urlid` (the example of the
+  documentation; its table says `id`);
+- `download-payload` keeps the answer only when its type says it is an
+  archive (`zip` or `octet-stream`): the documentation says a hash URLhaus
+  does not hold is answered `not_found`, and does not say with what type
+  either comes;
+- the documentation shows no answer for a submission: `submit-url` gives
+  the answer as it comes and does not judge it;
+- the names of the batches (`2026-11-19-23.zip`, `2026-11-18.zip`) are
+  those the listings of `datalake.abuse.ch` show; the documentation only
+  links to the listings.

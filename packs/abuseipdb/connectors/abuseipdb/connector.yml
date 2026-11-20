@@ -10,22 +10,23 @@
 # the arguments it changes (the size of the blacklist, its filters, the size
 # of a network and the age of the reports in check-block) and in the README.
 #
-# The verdict of check-ip is the one Nik's own enrichment gives for this
+# The verdict of check-ip is the one Nik's own look-up code gave for this
 # source: harmless when AbuseIPDB has the address on a whitelist, malicious
-# from a confidence of 75, suspicious from 25, unknown below. An expression
-# has no "if": each word is written by the one piece that holds for it.
+# from a confidence of 75, suspicious from 25, unknown below.
 #
 # "verbose" is a flag without a value (the reference sends "-d verbose"), and
 # a query value that is empty is not sent: the flag is written in the path.
 #
-# BULK-REPORT is not here: it takes a CSV file as an upload, and a multipart
-# field of a connector is a text without a file name.
+# bulk-report (6.5) sends a CSV file Nik holds, as the "csv" part of a
+# multipart form.
 name: AbuseIPDB
 id: abuseipdb
-version: 1
+version: 3
 description: What AbuseIPDB's users reported of an IP address or a network, its blacklist, and reporting an address.
 api_version: "AbuseIPDB API v2 (api.abuseipdb.com/api/v2)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 2 }
 configuration:
   - name: credentials
     type: header
@@ -51,11 +52,12 @@ commands:
         maxAgeInDays: "{{ args.max_age_days }}"
     error: { message: "{{ response.errors[0].detail }}" }
     outputs:
-      verdict: "{{ response.data | where('isWhitelisted') | length | map('1', 'harmless', else='') }}\
-        {{ response.data | where('isWhitelisted', 'ne', true) | where('abuseConfidenceScore', 'gte', 75) | length | map('1', 'malicious', else='') }}\
-        {{ response.data | where('isWhitelisted', 'ne', true) | where('abuseConfidenceScore', 'gte', 25) | where('abuseConfidenceScore', 'lt', 75) | length | map('1', 'suspicious', else='') }}\
-        {{ response.data | where('isWhitelisted', 'ne', true) | where('abuseConfidenceScore', 'lt', 25) | length | map('1', 'unknown', else='') }}"
-      summary: "confidence {{ response.data.abuseConfidenceScore }} %, {{ response.data.totalReports }} reports in {{ args.max_age_days }} days"
+      # Harmless on a whitelist of AbuseIPDB; else by the confidence: malicious from 75, suspicious from 25.
+      verdict: >-
+        {{ if(response.data.isWhitelisted | default(false), 'harmless',
+        if(response.data.abuseConfidenceScore | default(0) | int >= 75, 'malicious',
+        if(response.data.abuseConfidenceScore | default(0) | int >= 25, 'suspicious', 'unknown'))) }}
+      summary: "confidence {{ response.data.abuseConfidenceScore | default(0) | int }} %, {{ response.data.totalReports | default(0) | int | plural('report') }} in {{ args.max_age_days }} days"
       link: "https://www.abuseipdb.com/check/{{ args.ip }}"
       score: "{{ response.data.abuseConfidenceScore }}"
       total_reports: "{{ response.data.totalReports }}"
@@ -89,10 +91,12 @@ commands:
       limit: 100
       items: "{{ response.data.results }}"
       max_pages: 10
+      keep: { total: "{{ response.data.total }}" }
     error: { message: "{{ response.errors[0].detail }}" }
     outputs:
       reports: "{{ response.items }}"
       count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
       truncated: "{{ response.truncated }}"
 
   - name: check-block
@@ -192,6 +196,28 @@ commands:
       ip: "{{ response.data.ipAddress }}"
       score: "{{ response.data.abuseConfidenceScore }}"
     sample: { ip: 203.0.113.7, score: 52 }
+
+  - name: bulk-report
+    description: >-
+      Report many IP addresses at once, from a CSV file Nik holds: the headings IP, Categories, ReportDate and
+      Comment, under 8 MB and 10 000 lines (www.abuseipdb.com/bulk-report describes it). Gives how many reports
+      were saved and the rows refused, each with its reason. Comments are public.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: csv, type: file, required: true, description: "The CSV file: an artifact of Nik (file-<sha256>) or its SHA-256" }
+    request:
+      method: POST
+      path: /bulk-report
+      files:
+        csv: { artifact: "{{ args.csv }}", type: text/csv }
+    error: { message: "{{ response.errors[0].detail }}" }
+    timeout: 120
+    outputs:
+      saved_reports: "{{ response.data.savedReports }}"
+      invalid_reports: "{{ response.data.invalidReports }}"
+      invalid_count: "{{ response.data.invalidReports | default([]) | length }}"
+    sample: { saved_reports: 60, invalid_reports: [], invalid_count: 0 }
 
   - name: clear-address
     description: Delete the reports your own account made of an IP address. The reports of other users stay.

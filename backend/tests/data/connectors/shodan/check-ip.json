@@ -39,7 +39,10 @@
   ],
   "outputs": {
     "verdict": "malicious",
-    "summary": "ports: 22, 80, 443; CVEs: 2; tags: cloud, compromised",
+    "summary": "ports 22, 80, 443; 2 CVEs; tags cloud, compromised",
+    "bad_tags": [
+      "compromised"
+    ],
     "link": "https://www.shodan.io/host/203.0.113.24",
     "ports": [
       22,

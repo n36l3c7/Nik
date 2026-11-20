@@ -18,9 +18,12 @@ behind a warning and a double check. A held value fails the step with a
 sentence that says what was held; a node can instead ask to send without it.
 Nothing is allowed by default.
 
-The rule of the threat-intelligence lookups (never send private, allowlisted
-or TLP:RED values to the public sources) is separate and unchanged: it lives
-in ``enrichment/`` and no setting here loosens it.
+The rule of the threat-intelligence look-ups (never send private, allowlisted
+or TLP:RED values to the sources) is separate and unchanged: it lives in
+``enrichment/`` and no setting here loosens it. A look-up a playbook makes
+(``nik.reputation``) passes both: that rule first, then this guard, once for
+all the sources. A reputation command a playbook runs as a node of its own is
+judged by this guard alone, like any other command.
 """
 
 from __future__ import annotations

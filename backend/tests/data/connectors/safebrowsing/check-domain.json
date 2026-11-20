@@ -48,6 +48,7 @@
   "outputs": {
     "verdict": "unknown",
     "summary": "not on Google Safe Browsing lists",
+    "link": "https://transparencyreport.google.com/safe-browsing/search?url=example.org",
     "threats": [],
     "matches": [],
     "count": 0

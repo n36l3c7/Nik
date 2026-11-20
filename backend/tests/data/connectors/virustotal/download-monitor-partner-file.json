@@ -1,0 +1,35 @@
+{
+  "args": {
+    "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f/download",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtbW9uaXRvci1wYXJ0bmVyLWZpbGUgZ2l2ZXMuCg=="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+      "type": "application/octet-stream",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtbW9uaXRvci1wYXJ0bmVyLWZpbGUgZ2l2ZXMuCg=="
+    }
+  ],
+  "outputs": {
+    "name": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "type": "application/octet-stream",
+    "size": 70,
+    "sha256": "sha256:275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "artifact": "artifact:275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "linked": false
+  }
+}

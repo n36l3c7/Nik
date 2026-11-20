@@ -414,12 +414,9 @@ def _reads(rules: list | None) -> set[str]:
         if not isinstance(template, str) or "{{" not in template:
             continue
         try:
-            parts = ex.parse(template)
+            found |= ex.first_names(template, "incident")
         except ex.ExpressionError:
             continue
-        for part in parts:
-            if isinstance(part, ex.Expr) and part.root == "incident" and part.steps and isinstance(part.steps[0], str):
-                found.add(part.steps[0])
     return found
 
 

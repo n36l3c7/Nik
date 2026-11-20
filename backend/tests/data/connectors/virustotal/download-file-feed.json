@@ -1,0 +1,33 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/files/202701150700",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1mZWVkIGdpdmVzLgo="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "files-202701150700.bz2",
+      "type": "application/x-bzip2",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1mZWVkIGdpdmVzLgo="
+    }
+  ],
+  "outputs": {
+    "name": "files-202701150700.bz2",
+    "type": "application/x-bzip2",
+    "size": 59,
+    "sha256": "sha256:files-202701150700.bz2",
+    "artifact": "artifact:files-202701150700.bz2",
+    "linked": false
+  }
+}

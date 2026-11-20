@@ -264,6 +264,41 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-65">Upgrading to 6.5</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. Migration
+        <code>0045_lookups_through_connectors</code> files the stored answers of the look-ups under the ids of the
+        connectors; abuse.ch answers that flagged nothing are dropped and asked again.
+      </p>
+      <ul>
+        <li>
+          <strong>A source of threat intelligence is a connector now, asked through an instance of it.</strong> Install
+          the packs of the sources you use (<em>Settings → Automation → Content packs</em>); the API keys entered under
+          <em>Threat intelligence</em> move by themselves to an instance of each connector when its pack is installed,
+          with the limits the look-ups kept for that source, and are listed in Settings until then. Until a source has
+          an instance nothing is asked of it;
+        </li>
+        <li>
+          RDAP, Shodan InternetDB, urlscan.io and GreyNoise, which answered without a key, each need their pack and an
+          instance too: one click on <em>Turn on</em> in <em>Settings → Threat intelligence</em>;
+        </li>
+        <li>
+          instances you already had have no limits set: give them the requests a minute and a day your plan allows;
+        </li>
+        <li>
+          the packs of the eleven sources are at version 1.1.0 and need Nik 6.5: update Nik first, then the packs;
+        </li>
+        <li>
+          a playbook condition written against the sources <code>abusech</code>, <code>internetdb</code> or
+          <code>registration</code> no longer matches: write <code>threatfox</code>, <code>urlhaus</code>,
+          <code>malwarebazaar</code>, <code>shodan</code>, <code>rdap</code>. The routes
+          <code>/api/enrichment/providers…</code> are gone;
+        </li>
+        <li>
+          the age of a domain comes from RDAP only: a TLD whose registry has no RDAP server gives none, since WHOIS on
+          port 43 is no longer asked.
+        </li>
+      </ul>
       <h4 id="upgrading-to-64">Upgrading to 6.4</h4>
       <p>
         <code>git pull</code> and <code>docker compose up -d --build</code>. Migrations
@@ -680,7 +715,7 @@ sudo podman compose up -d --build
         <li>
           <code>deploy/init-env.sh</code> generates what <code>.env</code> lacks. If <code>SECRET_KEY</code> was never
           set (or is an example value), it writes a new one and keeps the old as <code>SECRET_KEY_PREVIOUS</code>: at
-          the next start the provider API keys and TLS key logs already stored are re-encrypted with the new key, and
+          the next start the secrets of instances and TLS key logs already stored are re-encrypted with the new key, and
           the line can then be removed. If <code>DB_PASSWORD</code> was never set, it writes the old default, which is
           what the existing database uses.
         </li>

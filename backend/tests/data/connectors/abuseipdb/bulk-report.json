@@ -1,0 +1,76 @@
+{
+  "args": {
+    "csv": "store:report.csv"
+  },
+  "store": {
+    "report.csv": {
+      "text": "IP,Categories,ReportDate,Comment\n203.0.113.7,\"18,22\",2026-11-18T10:00:00-04:00,\"Failed password for root\"\n127.0.foo.bar,\"18\",2026-11-18T10:00:00-04:00,\"x\"\n"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v2/bulk-report",
+        "headers": {
+          "Key": "abuseipdb-key-0123456789abcdef0123456789abcdef",
+          "Accept": "application/json"
+        },
+        "files": [
+          {
+            "field": "csv",
+            "name": "report.csv",
+            "type": "text/csv",
+            "text": "IP,Categories,ReportDate,Comment\n203.0.113.7,\"18,22\",2026-11-18T10:00:00-04:00,\"Failed password for root\"\n127.0.foo.bar,\"18\",2026-11-18T10:00:00-04:00,\"x\"\n"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "savedReports": 60,
+            "invalidReports": [
+              {
+                "error": "Duplicate IP",
+                "input": "41.188.138.68",
+                "rowNumber": 5
+              },
+              {
+                "error": "Invalid IP",
+                "input": "127.0.foo.bar",
+                "rowNumber": 6
+              },
+              {
+                "error": "Invalid Category",
+                "input": "189.87.146.50",
+                "rowNumber": 8
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "saved_reports": 60,
+    "invalid_reports": [
+      {
+        "error": "Duplicate IP",
+        "input": "41.188.138.68",
+        "rowNumber": 5
+      },
+      {
+        "error": "Invalid IP",
+        "input": "127.0.foo.bar",
+        "rowNumber": 6
+      },
+      {
+        "error": "Invalid Category",
+        "input": "189.87.146.50",
+        "rowNumber": 8
+      }
+    ],
+    "invalid_count": 3
+  }
+}

@@ -64,7 +64,7 @@
   ],
   "outputs": {
     "verdict": "suspicious",
-    "summary": "URLhaus: 120 malware URL(s) on this host",
+    "summary": "URLhaus: 120 malware URLs on this host",
     "link": "https://urlhaus.abuse.ch/host/vektorex.com/",
     "query_status": "ok",
     "url_count": 120,

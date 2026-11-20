@@ -4,19 +4,37 @@
  * vectors: backend/tests/data/expressions.json.
  *
  *   template := (text | "{{" expr "}}")*
- *   expr     := path ( "|" filter )*
+ *   expr     := and ( "or" and )*
+ *   and      := not ( "and" not )*
+ *   not      := "not" not | compared
+ *   compared := joined [ ("==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "not" "in") joined ]
+ *   joined   := sum ( "~" sum )*
+ *   sum      := product ( ("+" | "-") product )*
+ *   product  := signed ( ("*" | "/") signed )*
+ *   signed   := "-" signed | piped
+ *   piped    := value ( "|" filter )*
+ *   value    := path | string | number | true | false | null
+ *             | "[" [ expr ("," expr)* ] "]" | "(" expr ")" | function "(" expr ("," expr)* ")"
  *   path     := name ( "." name | "[" index "]" )*
  *   index    := integer | "*" | string
  *   filter   := name [ "(" arg ("," arg)* ")" ]
+ *   arg      := expr | name "=" expr
  *
- * Only paths and filters: no arithmetic, no comparisons, no code. The canvas
- * uses this to say where an expression is wrong while it is typed, to list
- * what a node reads, and to rewrite expressions when a node is renamed. The
- * server decides: what runs is what its own parser reads.
+ * Paths, filters, comparisons, and / or / not, in, the four operations on
+ * numbers, ~ to join texts, lists and four functions (if, first_of, min,
+ * max): no code. The canvas uses this to say where an expression is wrong
+ * while it is typed, to list what a node reads, and to rewrite expressions
+ * when a node is renamed. The server decides: what runs is what its own
+ * parser reads.
  */
 
 export const MAX_TEMPLATE = 20_000
 export const MAX_EXPRESSIONS = 200
+const MAX_STRING = 1_000_000
+const MAX_NODES = 200 // the parts of one expression: values, operators, filters' arguments
+const MAX_NESTING = 40 // parentheses, lists and arguments inside one another
+const MAX_NUMBER = 1e15 // beyond it the two parsers would not count alike
+const MAX_COMPARED = 1_000_000 // items of one list times items of the other, for the filters that compare them all
 
 export class ExpressionError extends Error {
   constructor(position, message) {
@@ -34,6 +52,27 @@ const NUMBER = /-?\d+(?:\.\d+)?/y
 const INTEGER = /-?\d+/y
 const SPACE = ' \t\r\n'
 
+const WORDS = { true: true, false: false, null: null }
+const COMPARISONS = [
+  ['==', 'eq'],
+  ['!=', 'ne'],
+  ['<=', 'lte'],
+  ['>=', 'gte'],
+  ['<', 'lt'],
+  ['>', 'gt'],
+]
+// What a name followed by a parenthesis may be, and how many values each takes.
+const FUNCTIONS = { if: [2, 3], first_of: [1, 40], min: [1, 40], max: [1, 40] }
+const ARITY = {
+  if: 'if takes a condition, the value when it holds and, if wanted, the value when it does not',
+  first_of: 'first_of takes one value at least',
+  min: 'min takes one value at least',
+  max: 'max takes one value at least',
+}
+// One of these where a value is expected, by where it is: the wording of before there were operators is kept.
+const A_NAME = 'A name is expected here'
+const A_LITERAL = 'A text in quotes, a number, true, false or null is expected here'
+
 function matchAt(pattern, text, index) {
   pattern.lastIndex = index
   const found = pattern.exec(text)
@@ -44,6 +83,9 @@ class Reader {
   constructor(text, i) {
     this.text = text
     this.i = i
+    this.depth = 0
+    this.nodes = 0
+    this.paths = []
   }
 
   skip() {
@@ -55,12 +97,12 @@ class Reader {
   }
 
   fail(message, at = this.i) {
-    throw new ExpressionError(at, message)
+    throw new ExpressionError(at ?? this.i, message)
   }
 
   name() {
     const found = matchAt(NAME, this.text, this.i)
-    if (!found) this.fail('A name is expected here')
+    if (!found) this.fail(A_NAME)
     this.i += found.length
     return found
   }
@@ -85,26 +127,6 @@ class Reader {
       }
     }
     return this.fail('A quote is not closed', start)
-  }
-
-  literal() {
-    if (this.peek() === '"' || this.peek() === "'") return this.string()
-    const number = matchAt(NUMBER, this.text, this.i)
-    if (number) {
-      this.i += number.length
-      return Number(number)
-    }
-    for (const [word, value] of [
-      ['true', true],
-      ['false', false],
-      ['null', null],
-    ]) {
-      if (this.text.startsWith(word, this.i) && !/[A-Za-z_]/.test(this.text[this.i + word.length] ?? '')) {
-        this.i += word.length
-        return value
-      }
-    }
-    return this.fail('A text in quotes, a number, true, false or null is expected here')
   }
 
   path() {
@@ -137,57 +159,273 @@ class Reader {
     }
   }
 
-  filter() {
+  // ------------------------------------------------------------ operators --
+  /** Whether the word `wanted` is next (after spaces), as a whole word; nothing is consumed. */
+  word(wanted) {
+    let at = this.i
+    while (at < this.text.length && SPACE.includes(this.text[at])) at += 1
+    return matchAt(NAME, this.text, at) === wanted
+  }
+
+  /** Consume the word `wanted` and give where it was. */
+  take(wanted) {
+    this.skip()
     const at = this.i
-    const name = this.name()
-    if (!Object.hasOwn(FILTERS, name)) this.fail(`There is no filter "${name}"`, at)
-    const args = []
-    const named = []
-    if (this.peek() === '(') {
+    this.i += wanted.length
+    return at
+  }
+
+  /** Count what an expression is made of: its evaluation walks every part, so there is a most. */
+  made(node) {
+    this.nodes += 1
+    if (this.nodes > MAX_NODES) this.fail('The expression is too long: compute it in several steps')
+    return node
+  }
+
+  deeper() {
+    this.depth += 1
+    if (this.depth > MAX_NESTING) this.fail('The expression nests too deep')
+  }
+
+  either(message) {
+    let left = this.both(message)
+    while (this.word('or')) {
+      const at = this.take('or')
+      this.skip()
+      left = this.made({ type: 'binary', op: 'or', left, right: this.both(A_NAME), position: at })
+    }
+    return left
+  }
+
+  both(message) {
+    let left = this.negation(message)
+    while (this.word('and')) {
+      const at = this.take('and')
+      this.skip()
+      left = this.made({ type: 'binary', op: 'and', left, right: this.negation(A_NAME), position: at })
+    }
+    return left
+  }
+
+  negation(message) {
+    // "not" is the operator unless it is the start of a path (a node may be called "not").
+    if (this.word('not') && !['.', '['].includes(this.text.slice(this.i + 3, this.i + 4))) {
+      const at = this.take('not')
+      this.skip()
+      this.deeper()
+      const node = this.made({ type: 'unary', op: 'not', operand: this.negation(A_NAME), position: at })
+      this.depth -= 1
+      return node
+    }
+    return this.comparison(message)
+  }
+
+  comparison(message) {
+    const left = this.joined(message)
+    this.skip()
+    const at = this.i
+    const sign = COMPARISONS.find(([symbol]) => this.peek(symbol.length) === symbol)
+    let op
+    if (sign) {
+      op = sign[1]
+      this.i += sign[0].length
+    } else if (this.word('in')) {
+      this.take('in')
+      op = 'in'
+    } else if (this.word('not')) {
+      this.take('not')
+      if (!this.word('in')) {
+        this.i = at
+        return left
+      }
+      this.take('in')
+      op = 'not_in'
+    } else {
+      return left
+    }
+    this.skip()
+    return this.made({ type: 'binary', op, left, right: this.joined(A_NAME), position: at })
+  }
+
+  /** One level of operators that go from left to right: `signs` between what `next` reads. */
+  chain(message, signs, next) {
+    let left = next.call(this, message)
+    for (;;) {
+      this.skip()
+      if (!signs.includes(this.peek()) || this.peek() === '') return left
+      const at = this.i
       this.i += 1
       this.skip()
-      while (this.peek() !== ')') {
-        const key = matchAt(NAME, this.text, this.i)
-        const rest = key ? this.text.slice(this.i + key.length).replace(/^[ \t\r\n]+/, '') : ''
-        if (key && rest.startsWith('=') && !['true', 'false', 'null'].includes(key)) {
-          this.i += key.length
-          this.skip()
-          this.i += 1 // =
-          this.skip()
-          named.push([key, this.literal()])
-        } else {
-          args.push(this.literal())
-        }
+      left = this.made({ type: 'binary', op: this.text[at], left, right: next.call(this, A_NAME), position: at })
+    }
+  }
+
+  joined(message) {
+    return this.chain(message, ['~'], this.summed)
+  }
+
+  summed(message) {
+    return this.chain(message, ['+', '-'], this.multiplied)
+  }
+
+  multiplied(message) {
+    return this.chain(message, ['*', '/'], this.signed)
+  }
+
+  signed(message) {
+    if (this.peek() === '-' && matchAt(NUMBER, this.text, this.i) === null) {
+      const at = this.i
+      this.i += 1
+      this.skip()
+      this.deeper()
+      const node = this.made({ type: 'unary', op: 'neg', operand: this.signed(A_NAME), position: at })
+      this.depth -= 1
+      return node
+    }
+    return this.piped(message)
+  }
+
+  /** A value and the filters that follow it: a filter applies to what is just before it. */
+  piped(message) {
+    const operand = this.primary(message)
+    const filters = []
+    for (;;) {
+      this.skip()
+      if (this.peek() !== '|') break
+      this.i += 1
+      this.skip()
+      filters.push(this.filter())
+    }
+    return filters.length ? this.made({ type: 'piped', operand, filters }) : operand
+  }
+
+  primary(message) {
+    const char = this.peek()
+    if (char === '(') {
+      const start = this.i
+      this.i += 1
+      this.skip()
+      this.deeper()
+      const node = this.either(A_NAME)
+      this.depth -= 1
+      this.skip()
+      if (this.peek() !== ')') {
+        this.fail('A parenthesis is not closed: add )', this.i >= this.text.length ? start : this.i)
+      }
+      this.i += 1
+      return node
+    }
+    if (char === '[') {
+      this.i += 1
+      this.skip()
+      this.deeper()
+      const items = []
+      while (this.peek() !== ']') {
+        items.push(this.either(A_LITERAL))
         this.skip()
         if (this.peek() === ',') {
           this.i += 1
           this.skip()
-        } else if (this.peek() !== ')') {
-          this.fail('A comma or a closing parenthesis is expected here')
+        } else if (this.peek() !== ']') {
+          this.fail('A comma or a closing bracket is expected here')
         }
       }
       this.i += 1
+      this.depth -= 1
+      return this.made({ type: 'list', items })
     }
+    if (char === '"' || char === "'") return this.made({ type: 'literal', value: this.string() })
+    const number = matchAt(NUMBER, this.text, this.i)
+    if (number) {
+      this.i += number.length
+      return this.made({ type: 'literal', value: Number(number) })
+    }
+    const word = matchAt(NAME, this.text, this.i)
+    if (!word) this.fail(message)
+    const after = this.text.slice(this.i + word.length, this.i + word.length + 1)
+    if (Object.hasOwn(WORDS, word) && after !== '.' && after !== '[') {
+      this.i += word.length
+      return this.made({ type: 'literal', value: WORDS[word] })
+    }
+    if (after === '(') return this.call(word)
+    const at = this.i
+    const { root, steps } = this.path()
+    const node = { type: 'path', root, rootAt: at, steps, position: at }
+    this.paths.push(node)
+    return this.made(node)
+  }
+
+  /** What is between the parentheses of a filter or of a function, the opening one being next. */
+  arguments(named) {
+    this.i += 1
+    this.skip()
+    this.deeper()
+    const args = []
+    while (this.peek() !== ')') {
+      const key = matchAt(NAME, this.text, this.i)
+      const rest = key ? this.text.slice(this.i + key.length).replace(/^[ \t\r\n]+/, '') : ''
+      if (named && key && rest.startsWith('=') && !rest.startsWith('==') && !Object.hasOwn(WORDS, key)) {
+        this.i += key.length
+        this.skip()
+        this.i += 1 // =
+        this.skip()
+        named.push([key, this.either(A_LITERAL)])
+      } else {
+        args.push(this.either(A_LITERAL))
+      }
+      this.skip()
+      if (this.peek() === ',') {
+        this.i += 1
+        this.skip()
+      } else if (this.peek() !== ')') {
+        this.fail('A comma or a closing parenthesis is expected here')
+      }
+    }
+    this.i += 1
+    this.depth -= 1
+    return args
+  }
+
+  call(name) {
+    const at = this.i
+    if (!Object.hasOwn(FUNCTIONS, name)) this.fail(`There is no function "${name}"`, at)
+    this.i += name.length
+    const args = this.arguments(null)
+    const [least, most] = FUNCTIONS[name]
+    if (args.length < least || args.length > most) this.fail(ARITY[name], at)
+    return this.made({ type: 'call', name, args, position: at })
+  }
+
+  filter() {
+    const at = this.i
+    const name = this.name()
+    if (!Object.hasOwn(FILTERS, name)) this.fail(`There is no filter "${name}"`, at)
+    const named = []
+    const args = this.peek() === '(' ? this.arguments(named) : []
     return { name, args, named, position: at }
   }
 
   expression(start) {
     this.skip()
-    const rootAt = this.i
-    const { root, steps } = this.path()
-    const filters = []
+    const node = this.either(A_NAME)
     this.skip()
-    while (this.peek() === '|') {
-      this.i += 1
-      this.skip()
-      filters.push(this.filter())
-      this.skip()
-    }
     if (this.peek(2) !== '}}') {
       this.fail(this.i >= this.text.length ? 'The expression is not closed: add }}' : '}} is expected here')
     }
     this.i += 2
-    return { root, rootAt, steps, filters, position: start, end: this.i }
+    // When the expression is one path (with or without filters), what it reads is said as before.
+    const one = node.type === 'piped' ? node.operand : node
+    const path = one.type === 'path' ? one : null
+    return {
+      node,
+      paths: this.paths,
+      root: path ? path.root : '',
+      rootAt: path ? path.rootAt : -1,
+      steps: path ? path.steps : [],
+      filters: node.type === 'piped' ? node.filters : [],
+      position: start,
+      end: this.i,
+    }
   }
 }
 
@@ -230,22 +468,22 @@ export function problemOf(template) {
 
 /**
  * The root names the expressions of a value (a text, or a structure of
- * texts) read: `[{ name, position }]`. Throws ExpressionError on a text that
- * cannot be read.
+ * texts) read, one for each path: `[{ name, position }]`, the position being
+ * that of the expression. Throws ExpressionError on a text that cannot be read.
  */
 export function references(value) {
   if (typeof value === 'string') {
     if (!value.includes('{{')) return []
     return parse(value)
       .filter((part) => typeof part !== 'string')
-      .map((part) => ({ name: part.root, position: part.position }))
+      .flatMap((part) => part.paths.map((path) => ({ name: path.root, position: part.position })))
   }
   if (Array.isArray(value)) return value.flatMap(references)
   if (value && typeof value === 'object') return Object.values(value).flatMap(references)
   return []
 }
 
-/** `value` with every expression that reads `from` reading `to` instead (texts that cannot be read are left). */
+/** `value` with every path that reads `from` reading `to` instead (texts that cannot be read are left). */
 export function renameRoot(value, from, to) {
   if (typeof value === 'string') {
     if (!value.includes('{{')) return value
@@ -255,10 +493,14 @@ export function renameRoot(value, from, to) {
     } catch {
       return value
     }
+    const places = parts
+      .filter((item) => typeof item !== 'string')
+      .flatMap((item) => item.paths)
+      .filter((path) => path.root === from)
+      .map((path) => path.rootAt)
+      .sort((a, b) => b - a)
     let out = value
-    for (const part of parts.filter((item) => typeof item !== 'string' && item.root === from).reverse()) {
-      out = out.slice(0, part.rootAt) + to + out.slice(part.rootAt + from.length)
-    }
+    for (const at of places) out = out.slice(0, at) + to + out.slice(at + from.length)
     return out
   }
   if (Array.isArray(value)) return value.map((item) => renameRoot(item, from, to))
@@ -391,29 +633,35 @@ const MONTHS = [
 ]
 const ISO = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
 
-function date(value, format = '%Y-%m-%d %H:%M') {
-  if (typeof format !== 'string' || format.length > 60) fail()
-  let moment
-  if (typeof value === 'number') moment = new Date(value * 1000)
+/** A moment as it is written: a number of seconds since 1970, or an ISO 8601 text (UTC when it names no zone). */
+function moment(value) {
+  let found
+  if (typeof value === 'number') found = new Date(value * 1000)
   else {
     const source = text(value)
     if (!ISO.test(source)) fail()
     const withTime = source.length === 10 ? `${source}T00:00:00` : source.replace(' ', 'T')
-    moment = new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(withTime) ? withTime : `${withTime}Z`)
+    found = new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(withTime) ? withTime : `${withTime}Z`)
   }
-  if (Number.isNaN(moment.getTime())) fail()
+  if (Number.isNaN(found.getTime())) fail()
+  return found
+}
+
+function date(value, format = '%Y-%m-%d %H:%M') {
+  if (typeof format !== 'string' || format.length > 60) fail()
+  const at = moment(value)
   const fields = {
-    Y: moment.getUTCFullYear(),
-    y: pad(moment.getUTCFullYear() % 100),
-    m: pad(moment.getUTCMonth() + 1),
-    d: pad(moment.getUTCDate()),
-    H: pad(moment.getUTCHours()),
-    M: pad(moment.getUTCMinutes()),
-    S: pad(moment.getUTCSeconds()),
-    A: DAYS[moment.getUTCDay()],
-    a: DAYS[moment.getUTCDay()].slice(0, 3),
-    B: MONTHS[moment.getUTCMonth()],
-    b: MONTHS[moment.getUTCMonth()].slice(0, 3),
+    Y: at.getUTCFullYear(),
+    y: pad(at.getUTCFullYear() % 100),
+    m: pad(at.getUTCMonth() + 1),
+    d: pad(at.getUTCDate()),
+    H: pad(at.getUTCHours()),
+    M: pad(at.getUTCMinutes()),
+    S: pad(at.getUTCSeconds()),
+    A: DAYS[at.getUTCDay()],
+    a: DAYS[at.getUTCDay()].slice(0, 3),
+    B: MONTHS[at.getUTCMonth()],
+    b: MONTHS[at.getUTCMonth()].slice(0, 3),
     Z: 'UTC',
     z: '+0000',
     '%': '%',
@@ -524,9 +772,179 @@ const length = (value) =>
         ? Object.keys(value).length
         : 0
 
+// --------------------------------------------------------------------------- //
+// Counting and deciding (6.5): as the server computes them, number for number  //
+// --------------------------------------------------------------------------- //
+const numeric = (value) => (typeof value === 'number' ? value : fail())
+
+/** A number that was computed: never beyond what the two parsers count alike. */
+function tidy(number) {
+  if (!Number.isFinite(number) || Math.abs(number) > MAX_NUMBER) fail()
+  return number === 0 ? 0 : number
+}
+
+/** `in`: an item of a list, a part of a text, a key of an object. */
+function contained(left, right) {
+  if (typeof right === 'string') return right.toLowerCase().includes(fold(left))
+  if (isObject(right)) return Object.hasOwn(right, text(left))
+  return listed(right).some((item) => compare(left, 'eq', item))
+}
+
+/** To so many decimals, a half away from zero (2.5 is 3, -2.5 is -3). */
+function round(value, digits = 0) {
+  const number = numeric(value)
+  if (!Number.isInteger(digits) || digits < 0 || digits > 10) fail()
+  const scale = 10 ** digits
+  const out = Math.floor(Math.abs(number) * scale + 0.5) / scale
+  return tidy(number < 0 ? -out : out)
+}
+
+const numbers = (value) => listed(value).map(numeric)
+const total = (value) => tidy(numbers(value).reduce((sum, item) => sum + item, 0))
+const smallest = (value) => numbers(value).reduce((kept, item) => (kept === null || item < kept ? item : kept), null)
+const largest = (value) => numbers(value).reduce((kept, item) => (kept === null || item > kept ? item : kept), null)
+
+function percent(value, whole, digits = 0) {
+  const part = numeric(value)
+  return numeric(whole) === 0 ? 0 : round((part * 100) / whole, digits)
+}
+
+function both(value, other) {
+  const left = listed(value)
+  const right = listed(other)
+  if (left.length * right.length > MAX_COMPARED) fail()
+  return [left, right]
+}
+
+function intersect(value, other) {
+  const [left, right] = both(value, other)
+  return left.filter((item) => right.some((wanted) => compare(item, 'eq', wanted)))
+}
+
+function without(value, other) {
+  const [left, right] = both(value, other)
+  return left.filter((item) => !right.some((wanted) => compare(item, 'eq', wanted)))
+}
+
+/** The items of the list, then those of the other that it does not have already. */
+function union(value, other) {
+  const [left, right] = both(value, other)
+  return [...left, ...right.filter((item) => !left.some((have) => compare(item, 'eq', have)))]
+}
+
+function hasAll(value, other) {
+  const [left, right] = both(value, other)
+  return right.every((wanted) => left.some((item) => compare(item, 'eq', wanted)))
+}
+
+/** A count with its noun: "1 report", "2 reports". A list counts as its length. */
+function plural(value, one, many = null) {
+  const number = Array.isArray(value) ? value.length : isObject(value) ? Object.keys(value).length : numeric(value)
+  const noun = number === 1 ? text(one) : many === null ? `${text(one)}s` : text(many)
+  return `${text(number)} ${noun}`
+}
+
+function limit(value, count) {
+  if (!Number.isInteger(count) || count < 0) fail()
+  return Array.isArray(value) ? value.slice(0, count) : [...text(value)].slice(0, count).join('')
+}
+
+const fieldOf = (item, path) => {
+  const value = lookup(item, text(path))
+  return value === MISSING ? null : value
+}
+
+/** Each item as a new object: pick(name='attributes.name', id='id'). One object gives one object. */
+function pick(value, named, flat = []) {
+  if (!named.length || flat.length) fail()
+  const shaped = (item) => Object.fromEntries(named.map(([key, path]) => [key, fieldOf(item, path)]))
+  return Array.isArray(value) ? value.map(shaped) : shaped(value)
+}
+
+/** The items in the order of one of their fields: numbers as numbers, anything else as text. */
+function sortBy(value, key, order = 'asc') {
+  if (!['asc', 'desc'].includes(text(order))) fail()
+  const items = listed(value)
+  let keys = items.map((item) => fieldOf(item, key))
+  if (!keys.every((item) => typeof item === 'number')) keys = keys.map(text)
+  const ordered = (a, b) => (keys[a] < keys[b] ? -1 : keys[a] > keys[b] ? 1 : 0)
+  return items
+    .map((_item, at) => at)
+    .sort(text(order) === 'desc' ? (a, b) => ordered(b, a) : ordered)
+    .map((at) => items[at])
+}
+
+const SHA_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
+  0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8,
+  0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
+  0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+  0xc67178f2,
+]
+
+/** The SHA-256 of a text (its UTF-8 bytes), in hexadecimal: the preview cannot wait for the browser's own. */
+function sha256(value) {
+  const bytes = [...new TextEncoder().encode(text(value))]
+  const bits = bytes.length * 8
+  bytes.push(0x80)
+  while (bytes.length % 64 !== 56) bytes.push(0)
+  for (let shift = 56; shift >= 0; shift -= 8) bytes.push(Math.floor(bits / 2 ** shift) & 0xff)
+  const hash = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+  const rotate = (word, by) => (word >>> by) | (word << (32 - by))
+  const words = new Array(64)
+  for (let block = 0; block < bytes.length; block += 64) {
+    for (let at = 0; at < 64; at += 1) {
+      if (at < 16) {
+        const from = block + at * 4
+        words[at] = (bytes[from] << 24) | (bytes[from + 1] << 16) | (bytes[from + 2] << 8) | bytes[from + 3] | 0
+      } else {
+        const a = words[at - 15]
+        const b = words[at - 2]
+        const low = rotate(a, 7) ^ rotate(a, 18) ^ (a >>> 3)
+        const high = rotate(b, 17) ^ rotate(b, 19) ^ (b >>> 10)
+        words[at] = (words[at - 16] + low + words[at - 7] + high) | 0
+      }
+    }
+    let [a, b, c, d, e, f, g, h] = hash
+    for (let at = 0; at < 64; at += 1) {
+      const first =
+        (h + (rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25)) + ((e & f) ^ (~e & g)) + SHA_K[at] + words[at]) | 0
+      const second = ((rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0
+      h = g
+      g = f
+      f = e
+      e = (d + first) | 0
+      d = c
+      c = b
+      b = a
+      a = (first + second) | 0
+    }
+    const mixed = [a, b, c, d, e, f, g, h]
+    for (let at = 0; at < 8; at += 1) hash[at] = (hash[at] + mixed[at]) | 0
+  }
+  return hash.map((word) => (word >>> 0).toString(16).padStart(8, '0')).join('')
+}
+
+const UNITS = { second: 1, minute: 60, hour: 3600, day: 86_400, week: 604_800 }
+
+function unit(name) {
+  const key = text(name).trim().toLowerCase().replace(/s$/, '')
+  return Object.hasOwn(UNITS, key) ? UNITS[key] : fail()
+}
+
+function dateAdd(value, amount, name = 'days') {
+  const seconds = Math.floor(moment(value).getTime() / 1000 + numeric(amount) * unit(name))
+  const later = new Date(seconds * 1000)
+  if (Number.isNaN(later.getTime()) || later.getUTCFullYear() < 1 || later.getUTCFullYear() > 9999) fail()
+  return date(seconds, '%Y-%m-%dT%H:%M:%SZ')
+}
+
 /*
  * Each filter: how many arguments it takes besides the value (`[least, most]`)
- * and the function. `named: true` lets it take name=value pairs (only "map").
+ * and the function. `named: true` lets it take name=value pairs ("map" and "pick").
  * `default` is handled by the evaluator: it is the one that takes a missing value.
  */
 const FILTERS = {
@@ -606,10 +1024,47 @@ const FILTERS = {
         return found === MISSING ? null : found
       }),
   },
+  round: { args: [0, 1], run: round },
+  abs: { args: [0, 0], run: (v) => Math.abs(numeric(v)) },
+  sum: { args: [0, 0], run: total },
+  min: { args: [0, 0], run: smallest },
+  max: { args: [0, 0], run: largest },
+  percent: { args: [1, 2], run: percent },
+  count: {
+    args: [0, 3],
+    run: (v, key = null, op = null, wanted = null) =>
+      key === null ? listed(v).length : FILTERS.where.run(v, key, op, wanted).length,
+  },
+  intersect: { args: [1, 1], run: intersect },
+  without: { args: [1, 1], run: without },
+  union: { args: [1, 1], run: union },
+  has_any: { args: [1, 1], run: (v, other) => intersect(v, other).length > 0 },
+  has_all: { args: [1, 1], run: hasAll },
+  plural: { args: [1, 2], run: plural },
+  starts_with: { args: [1, 1], run: (v, start) => fold(v).startsWith(fold(start)) },
+  ends_with: { args: [1, 1], run: (v, end) => fold(v).endsWith(fold(end)) },
+  limit: { args: [1, 1], run: limit },
+  entries: {
+    args: [0, 0],
+    run: (v) => (isObject(v) ? Object.entries(v).map(([key, value]) => ({ key, value })) : []),
+  },
+  pick: { args: [0, 0], named: true, run: pick },
+  sort_by: { args: [1, 2], run: sortBy },
+  sha256: { args: [0, 0], run: sha256 },
+  timestamp: { args: [0, 0], run: (v) => Math.floor(moment(v).getTime() / 1000) },
+  date_add: { args: [1, 2], run: dateAdd },
+  date_diff: {
+    args: [1, 2],
+    run: (v, other, name = 'days') =>
+      Math.trunc((moment(v).getTime() - moment(other).getTime()) / 1000 / unit(name)) || 0,
+  },
 }
 
 /** The filters there are, for the editor's hints. */
 export const FILTER_NAMES = Object.keys(FILTERS)
+
+/** The functions there are: a name followed by a parenthesis is one of them. */
+export const FUNCTION_NAMES = Object.keys(FUNCTIONS)
 
 // --------------------------------------------------------------------------- //
 // Evaluating                                                                  //
@@ -650,39 +1105,123 @@ export function pathText(expr) {
   return out
 }
 
-function apply(filter, data) {
+function apply(filter, data, args, named) {
   const spec = FILTERS[filter.name]
   const [least, most] = spec.args
-  if (filter.args.length < least || filter.args.length > most) fail()
-  if (filter.named.length && !spec.named) fail()
-  return spec.named ? spec.run(data, filter.named, filter.args) : spec.run(data, ...filter.args)
+  if (args.length < least || args.length > most) fail()
+  if (named.length && !spec.named) fail()
+  return spec.named ? spec.run(data, named, args) : spec.run(data, ...args)
+}
+
+/** `value`, unless it is a path that led nowhere and nothing took its place. */
+function present(value, node, expr) {
+  if (value === MISSING) {
+    const path = node.type === 'piped' ? node.operand : node
+    throw new ExpressionError(
+      expr.position,
+      `There is nothing at ${pathText(path)}: add | default(…) if it may be absent`,
+    )
+  }
+  return value
+}
+
+/**
+ * What a part of an expression gives. A path that leads nowhere gives MISSING, which only
+ * `default`, `first_of` and the condition of `if` accept: everything else asks `present`.
+ */
+function compute(node, scope, expr) {
+  const strict = (part) => present(compute(part, scope, expr), part, expr)
+  switch (node.type) {
+    case 'literal':
+      return node.value
+    case 'path':
+      if (!Object.hasOwn(scope, node.root)) {
+        throw new ExpressionError(expr.position, `"${node.root}" is not a name that can be read here`)
+      }
+      return walk(scope[node.root], node.steps)
+    case 'piped': {
+      let data = compute(node.operand, scope, expr)
+      for (const filter of node.filters) {
+        if (filter.name === 'default') {
+          // Read only when it is needed: the other value may be absent too.
+          if (data === MISSING || data === null) data = filter.args.length ? strict(filter.args[0]) : ''
+          continue
+        }
+        if (data === MISSING) break
+        const args = filter.args.map(strict)
+        const named = filter.named.map(([key, arg]) => [key, strict(arg)])
+        try {
+          data = apply(filter, data, args, named)
+        } catch (error) {
+          if (error instanceof ExpressionError) throw error
+          throw new ExpressionError(filter.position, `The filter "${filter.name}" cannot be applied to this value`)
+        }
+      }
+      return data
+    }
+    case 'list':
+      return node.items.map(strict)
+    case 'unary': {
+      const value = strict(node.operand)
+      if (node.op === 'not') return falsy(value)
+      if (typeof value !== 'number') {
+        throw new ExpressionError(node.position, 'Only a number has an opposite: use | int or | float on a text')
+      }
+      return value === 0 ? 0 : -value
+    }
+    case 'call': {
+      if (node.name === 'if') {
+        const chosen = !falsy(compute(node.args[0], scope, expr)) ? node.args[1] : node.args[2]
+        return chosen === undefined ? null : strict(chosen)
+      }
+      if (node.name === 'first_of') {
+        for (const arg of node.args) {
+          const value = compute(arg, scope, expr)
+          if (!compare(value, 'empty', null)) return value
+        }
+        return null
+      }
+      const values = node.args.map(strict)
+      try {
+        return (node.name === 'min' ? smallest : largest)(values.length === 1 ? values[0] : values)
+      } catch {
+        throw new ExpressionError(node.position, `${node.name} takes numbers`)
+      }
+    }
+    default:
+  }
+  const left = strict(node.left)
+  if (node.op === 'or' || node.op === 'and') {
+    // As a person reads it: the right side is not looked at when the left one decides.
+    return !falsy(left) === (node.op === 'or') ? left : strict(node.right)
+  }
+  const right = strict(node.right)
+  if (node.op === 'in' || node.op === 'not_in') return contained(left, right) === (node.op === 'in')
+  if (node.op === '~') {
+    const joined = text(left) + text(right)
+    if (joined.length > MAX_STRING) throw new ExpressionError(node.position, 'The text this gives is too long')
+    return joined
+  }
+  if (['+', '-', '*', '/'].includes(node.op)) {
+    if (typeof left !== 'number' || typeof right !== 'number') {
+      throw new ExpressionError(
+        node.position,
+        `"${node.op}" takes two numbers: use | int or | float on a text, ~ to join texts`,
+      )
+    }
+    if (node.op === '/' && right === 0) throw new ExpressionError(node.position, 'A number cannot be divided by zero')
+    const result =
+      node.op === '+' ? left + right : node.op === '-' ? left - right : node.op === '*' ? left * right : left / right
+    if (!Number.isFinite(result) || Math.abs(result) > MAX_NUMBER) {
+      throw new ExpressionError(node.position, 'The number this gives is too large')
+    }
+    return result
+  }
+  return compare(left, node.op, right)
 }
 
 function evaluate(expr, scope) {
-  if (!Object.hasOwn(scope, expr.root)) {
-    throw new ExpressionError(expr.position, `"${expr.root}" is not a name that can be read here`)
-  }
-  let data = walk(scope[expr.root], expr.steps)
-  for (const filter of expr.filters) {
-    if (filter.name === 'default') {
-      if (data === MISSING || data === null) data = filter.args.length ? filter.args[0] : ''
-      continue
-    }
-    if (data === MISSING) break
-    try {
-      data = apply(filter, data)
-    } catch (error) {
-      if (error instanceof ExpressionError) throw error
-      throw new ExpressionError(filter.position, `The filter "${filter.name}" cannot be applied to this value`)
-    }
-  }
-  if (data === MISSING) {
-    throw new ExpressionError(
-      expr.position,
-      `There is nothing at ${pathText(expr)}: add | default(…) if it may be absent`,
-    )
-  }
-  return data
+  return present(compute(expr.node, scope, expr), expr.node, expr)
 }
 
 /**

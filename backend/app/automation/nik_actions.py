@@ -27,7 +27,7 @@ from ..core.models import Artifact, Incident, IocList, IocListItem, Mail, Sample
 from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
 from ..iocs import TYPES, normalize
-from . import egress, payloads, triggers
+from . import payloads, triggers
 from .actions import ActionError, Call, Result, action
 
 ACTOR = SYSTEM_USER
@@ -801,8 +801,9 @@ _HASH = {32: "md5", 40: "sha1", 64: "sha256"}
     group="Nik",
     name="Reputation of an indicator",
     description=(
-        "What is known of an address, a domain, a URL, a file hash or an e-mail address: Nik's own "
-        "reputation sources and every connector command that looks that kind up, in one verdict."
+        "What is known of an address, a domain, a URL, a file hash or an e-mail address: the reputation "
+        "command of every source that is on (a connector with an instance), in one verdict. The same "
+        "look-up as Check now on the page of an indicator: answers that still stand are not asked again."
     ),
     arguments=[
         {"name": "kind", "type": "choice", "choices": ["ip", "domain", "url", "file", "email"], "required": True},
@@ -836,11 +837,11 @@ _HASH = {32: "md5", 40: "sha1", 64: "sha256"}
     timeout=120,
 )
 def reputation(call: Call) -> Result:
-    from ..core.models import Connector
     from ..enrichment import service
+    from ..enrichment import sources as lookup_sources
     from ..iocs import Allowlist
     from ..routers.settings import read_settings
-    from . import connector_actions, outbound
+    from . import outbound
 
     wanted = str(call.args.get("kind") or "")
     raw = str(call.args.get("value") or "").strip()
@@ -853,49 +854,54 @@ def reputation(call: Call) -> Result:
     skipped: list[dict[str, str]] = []
     answers: list[tuple[str, str]] = []
     sources: list[dict[str, Any]] = []
-    # Nik's own sources, under the rules that say what is never sent to them.
-    why = service.blocked(call.db, kind, value, Allowlist(shared.get("iocAllowlist") or []))
+    # Two rules, each asked once for all the sources: what a look-up never sends, which no playbook
+    # loosens, then the data guard of this playbook.
+    looked_up = kind in service.LOOKUP_TYPES
+    why = service.blocked(call.db, kind, value, Allowlist(shared.get("iocAllowlist") or [])) if looked_up else None
+    if not why and not call.dry_run:
+        try:
+            said, _decided = outbound.guarded(call, {"value": value})
+            if said.get("value") != value:  # the node drops what is held, and the value is what is held
+                why = "the data guard of the playbook holds the value back"
+        except ActionError as error:
+            why = error.message
     if why:
         skipped.append({"source": "reputation sources", "reason": why})
+    elif looked_up:
+        if not call.dry_run:
+            skipped += [
+                {"source": item["label"], "reason": item["reason"]}
+                for item in service.check_now(call.db, kind, value, shared, playbook=call.playbook)["skipped"]
+            ]
+        for item in service.results(call.db, kind, value, service.config(shared)):
+            if item.get("status") == "done":
+                answers.append((item["provider"], item.get("verdict") or "unknown"))
+                sources.append(
+                    {
+                        "source": item.get("label") or item["provider"],
+                        "verdict": item.get("verdict") or "unknown",
+                        "summary": item.get("summary") or "",
+                    }
+                )
+            elif item.get("status") == "error":
+                skipped.append({"source": item.get("label") or item["provider"], "reason": item.get("error") or ""})
     elif not call.dry_run:
-        skipped += [
-            {"source": item["label"], "reason": item["reason"]}
-            for item in service.check_now(call.db, kind, value, shared)["skipped"]
-        ]
-    for item in service.results(call.db, kind, value, service.config(shared)) if not why else []:
-        if item.get("status") == "done":
-            answers.append((item["provider"], item.get("verdict") or "unknown"))
+        # An e-mail address has no page of its own and nothing is stored of it: the sources that judge
+        # one are asked, and what they say is given to the playbook only.
+        for source in lookup_sources.sources(call.db):
+            if not source.on or not source.supports(kind):
+                continue
+            try:
+                outputs = lookup_sources.ask(call.db, source, kind, value, playbook=call.playbook)
+            except (lookup_sources.Unavailable, lookup_sources.Failed) as error:
+                skipped.append({"source": source.label, "reason": error.message[:300]})
+                continue
+            verdict = lookup_sources.verdict_of(outputs)
+            answers.append((source.id, verdict))
             sources.append(
-                {
-                    "source": item.get("label") or item["provider"],
-                    "verdict": item.get("verdict") or "unknown",
-                    "summary": item.get("summary") or "",
-                }
+                {"source": source.label, "verdict": verdict, "summary": str(outputs.get("summary") or "")[:500]}
             )
-    # The connectors that look this kind up, each on each of its connections.
-    if not call.dry_run:
-        for row in call.db.scalars(select(Connector).order_by(Connector.name)):
-            connector = connector_actions.parsed(row)
-            for command in connector.commands if connector is not None else []:
-                if command.reputation != wanted or not command.arguments:
-                    continue
-                for connection in connector_actions.connections_of(call.db, row.id):
-                    name = f"{connector.name} ({connection.name})"
-                    try:
-                        outbound.guarded(call, {"value": value})
-                        runtime = connector_actions.runtime_for(call.db, connector, connection, call.playbook, call.now)
-                        answer = runtime.run(command.name, {command.arguments[0].name: value})
-                    except (ActionError, connector_actions.CommandError, egress.EgressError) as error:
-                        skipped.append({"source": name, "reason": getattr(error, "message", str(error))[:300]})
-                        continue
-                    outputs = answer.outputs or {}
-                    verdict = str(outputs.get("verdict") or "unknown").lower()
-                    verdict = verdict if verdict in VERDICTS else "unknown"
-                    answers.append((f"connector:{row.id}", verdict))
-                    sources.append(
-                        {"source": name, "verdict": verdict, "summary": str(outputs.get("summary") or "")[:500]}
-                    )
-    summary = service.overall(answers) or {}
+    summary = service.overall(answers, lookup_sources.weights(call.db)) or {}
     output = {
         "kind": kind,
         "value": value,

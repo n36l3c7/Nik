@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .core.models import Incident, IocAlert, IocEntry, IocList, IocListItem, IocRecord
 from .enrichment import service
-from .enrichment.providers import PROVIDERS
+from .enrichment import sources as lookup_sources
 from .iocs import TYPES, Allowlist, misp_event, normalize, stix_bundle, text_iocs
 
 TLPS = ("clear", "green", "amber", "red")
@@ -790,14 +790,22 @@ def export(
             return json.dumps(stix_bundle(subject, iocs, now), indent=2), "application/json", "stix.json"
         return json.dumps(misp_event(subject, iocs, now), indent=2), "application/json", "misp.json"
 
-    providers = [p for p in PROVIDERS] if "per_source" in chosen else []
-    answers = per_source(db, rows) if providers else {}
+    # One column per source: the connectors that judge indicators, and whatever else answered once.
+    answers = per_source(db, rows) if "per_source" in chosen else {}
+    providers = (
+        sorted(
+            {source.id for source in lookup_sources.sources(db)}
+            | {name for found in answers.values() for name in found}
+        )
+        if "per_source" in chosen
+        else []
+    )
     columns = [f for f in chosen if f != "per_source"]
 
     def record(row: dict[str, Any]) -> dict[str, Any]:
         out = {f: (shown(row) if f == "value" else _cell(row, f, {})) for f in columns}
         for provider in providers:
-            out[provider.id] = answers.get((row["type"], row["value"]), {}).get(provider.id, "")
+            out[provider] = answers.get((row["type"], row["value"]), {}).get(provider, "")
         return out
 
     if fmt == "json":
@@ -811,7 +819,7 @@ def export(
         return json.dumps(body, indent=2), "application/json", "json"
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow([*columns, *(p.id for p in providers)])
+    writer.writerow([*columns, *providers])
     for row in rows:
         writer.writerow(_csv_safe(v) for v in record(row).values())
     return buffer.getvalue(), "text/csv", "csv"

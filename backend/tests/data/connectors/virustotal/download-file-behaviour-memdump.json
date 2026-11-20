@@ -1,0 +1,35 @@
+{
+  "args": {
+    "sandbox_id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/file_behaviours/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox/memdump",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItbWVtZHVtcCBnaXZlcy4K"
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.memdump",
+      "type": "application/octet-stream",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItbWVtZHVtcCBnaXZlcy4K"
+    }
+  ],
+  "outputs": {
+    "name": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.memdump",
+    "type": "application/octet-stream",
+    "size": 72,
+    "sha256": "sha256:275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.memdump",
+    "artifact": "artifact:275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f_VirusTotal Jujubox.memdump",
+    "linked": false
+  }
+}

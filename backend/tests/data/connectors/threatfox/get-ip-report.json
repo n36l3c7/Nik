@@ -104,6 +104,8 @@
     "malware": "Cobalt Strike",
     "malware_id": "win.cobalt_strike",
     "threat_type": "botnet_cc",
+    "threat": "Indicator that identifies a botnet command&control server (C&C)",
+    "reporter": "abuse_ch",
     "confidence_level": 75,
     "first_seen": "2020-12-06 09:10:23 UTC",
     "last_seen": null,

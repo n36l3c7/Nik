@@ -1,0 +1,35 @@
+{
+  "args": {
+    "token": "MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/file_behaviours/MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4/evtx",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmVlZC1iZWhhdmlvdXItZXZ0eCBnaXZlcy4K"
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4.evtx",
+      "type": "application/octet-stream",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmVlZC1iZWhhdmlvdXItZXZ0eCBnaXZlcy4K"
+    }
+  ],
+  "outputs": {
+    "name": "MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4.evtx",
+    "type": "application/octet-stream",
+    "size": 69,
+    "sha256": "sha256:MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4.evtx",
+    "artifact": "artifact:MTY2OTQwOTUxNS01MzUzZTIzZjM2NTM0MDIzMzljOTNhODU2NTMwN2M2MzA4.evtx",
+    "linked": false
+  }
+}

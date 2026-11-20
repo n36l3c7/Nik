@@ -111,6 +111,6 @@ def default_settings_doc() -> dict[str, Any]:
         # Mail Analysis: own domains and trusted Authentication-Results servers.
         "mail": {"orgDomains": [], "trustedAuthServers": []},
         # Threat intelligence: automatic lookups per type, cache period,
-        # allowed providers (the API keys live in integration_keys).
+        # refreshing expired answers (the keys of a source are those of its connector's instance).
         "enrichment": enrichment_defaults(),
     }

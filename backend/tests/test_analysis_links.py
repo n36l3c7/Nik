@@ -46,7 +46,7 @@ def test_an_analysis_speaks_as_a_reputation_only_when_it_flags():
 
     # Nik's analysis has the highest weight, and counts only when it flags.
     assert service.overall([("nik", "malicious")])["score"] == 100
-    both = service.overall([("virustotal", "harmless"), ("nik", "malicious")])
+    both = service.overall([("virustotal", "harmless"), ("nik", "malicious")], {"virustotal": (3, False)})
     assert both["verdict"] == "malicious" and both["score"] == 50 and both["checked"] == 2
     assert service.overall([("virustotal", "harmless"), ("nik", "unknown")]) == service.overall(
         [("virustotal", "harmless")]

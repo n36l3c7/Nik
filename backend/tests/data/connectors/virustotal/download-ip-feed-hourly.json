@@ -1,0 +1,33 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/ip_addresses/hourly/2027011506",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtaXAtZmVlZC1ob3VybHkgZ2l2ZXMuCg=="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "ip_addresses-2027011506.tar.bz2",
+      "type": "application/x-bzip2",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtaXAtZmVlZC1ob3VybHkgZ2l2ZXMuCg=="
+    }
+  ],
+  "outputs": {
+    "name": "ip_addresses-2027011506.tar.bz2",
+    "type": "application/x-bzip2",
+    "size": 64,
+    "sha256": "sha256:ip_addresses-2027011506.tar.bz2",
+    "artifact": "artifact:ip_addresses-2027011506.tar.bz2",
+    "linked": false
+  }
+}

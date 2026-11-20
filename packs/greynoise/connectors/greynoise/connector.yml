@@ -14,27 +14,31 @@
 # key that may not use an endpoint, and 206 with the fields left out named in
 # "restricted_fields" when the plan gives a part only.
 #
-# The verdict of get-community-ip is the one Nik's own enrichment gives for
+# The verdict of get-community-ip is the one Nik's own look-up code gave for
 # this source: harmless for a common business service (RIOT) and for what
 # GreyNoise classifies as benign, malicious for what it classifies as
 # malicious, unknown for the rest and for an address GreyNoise has not seen
-# (which it answers with 404, taken here as an answer). An expression has no
-# "if": each word is written by the one piece that holds for it.
+# (which it answers with 404, taken here as an answer: a 404 holds no
+# classification, so every field is read through first_of or asked by if).
 #
 # A yes or no in a query is written "true" or "false", as the API reads it.
 #
-# Not here, because the answer is a binary file, which a connector cannot
-# carry: the PCAP of a session or of several (/v3/sessions/export,
-# /v3/sessions/{id}/frames, /v3/sessions/{id}/export), the BSI bulk file
-# (/v3/bsi/download) and the Psychic models (/v1/psychic,
-# /v1/psychic/snapshots). And the private RSS feed (/v3/articles/rss/{token}):
-# its address is its credential, and an argument is not a secret.
+# The downloads (the PCAP of a session or of several, the raw payload of a
+# session, the BSI bulk file, the Psychic models and snapshots) are kept as
+# file artifacts: nothing opens them. The reference describes each as the
+# file itself in the answer of api.greynoise.io, with no redirect to a
+# storage host, so the connector lists no other host.
+#
+# Not here: the private RSS feed (/v3/articles/rss/{token}). Its address is
+# its credential, and an argument is not a secret.
 name: GreyNoise
 id: greynoise
-version: 1
+version: 3
 description: "What GreyNoise knows of an IP address (internet scanner, business service, classification), GNQL searches, CVEs, tags, callback addresses, blocklists, event feeds and the sessions of your own sensors."
 api_version: "GreyNoise API v3 (api.greynoise.io, OpenAPI 3.0.0 of the reference)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 2 }
 configuration:
   - name: api_key
     label: API key
@@ -56,19 +60,21 @@ commands:
     success: { status: [200, 404] }
     error: { message: "{{ response.message }}" }
     outputs:
-      verdict: "{{ response | where('riot') | length | map('1', 'harmless', else='') }}\
-        {{ response | where('riot', 'ne', true) | where('classification', 'eq', 'malicious') | length | map('1', 'malicious', else='') }}\
-        {{ response | where('riot', 'ne', true) | where('classification', 'eq', 'benign') | length | map('1', 'harmless', else='') }}\
-        {{ response | where('riot', 'ne', true) | where('classification', 'ne', 'malicious') | where('classification', 'ne', 'benign') | length | map('1', 'unknown', else='') }}"
-      summary: "{{ response | where('riot') | length | map('1', 'common business service', else='') }}\
-        {{ response | where('riot', 'ne', true) | where('noise') | pluck('classification') | join('') }}\
-        {{ response | where('riot', 'ne', true) | where('noise') | length | map('1', ' internet scanner', else='') }}\
-        {{ response | where('riot', 'ne', true) | where('noise', 'ne', true) | length | map('1', 'not seen scanning the internet', else='') }}\
-        {{ response | where('name') | where('name', 'ne', 'unknown') | length | map('1', ' (', else='') }}\
-        {{ response | where('name', 'ne', 'unknown') | pluck('name') | join('') }}\
-        {{ response | where('name') | where('name', 'ne', 'unknown') | length | map('1', ')', else='') }}"
+      # Not seen (404, or an answer that holds nothing): unknown. A business service: harmless.
+      # Otherwise by the classification: malicious, benign (harmless), anything else unknown.
+      verdict: "{{ if(status == 404 or not response, 'unknown',
+        if(response.riot, 'harmless',
+        if(first_of(response.classification, 'unknown') == 'malicious', 'malicious',
+        if(first_of(response.classification, 'unknown') == 'benign', 'harmless', 'unknown')))) }}"
+      # The name is left out of "internet scanner" when GreyNoise gives none or says "unknown".
+      summary: "{{ if(status == 404 or not response, 'not seen scanning the internet',
+        if(response.riot, 'common business service (' ~ first_of(response.name, 'known') ~ ')',
+        if(response.noise,
+        first_of(response.classification, 'unknown') ~ ' internet scanner'
+        ~ if(first_of(response.name, 'unknown') != 'unknown', ' (' ~ response.name ~ ')', ''),
+        'not seen scanning the internet'))) }}"
       link: "https://viz.greynoise.io/ip/{{ args.ip }}"
-      known: "{{ status | map('200', true, else=false) }}"
+      known: "{{ not (status == 404 or not response) }}"
       noise: "{{ response.noise }}"
       riot: "{{ response.riot }}"
       classification: "{{ response.classification }}"
@@ -1123,6 +1129,75 @@ commands:
       classification: "{{ response.classification }}"
       session: "{{ response }}"
 
+  - name: download-session-pcap
+    description: "The packets of one session as a PCAP file, kept as an artifact: what Wireshark opens."
+    premium: true
+    arguments:
+      - { name: session_id, type: text, required: true, description: "The id of the session, as search-sessions gives it" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/{{ args.session_id | urlencode }}/frames"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        scope: "{{ args.scope }}"
+      answer: file
+      save_as: { name: "session-{{ args.session_id }}.pcap", type: application/vnd.tcpdump.pcap }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: session-abc123.pcap, type: application/vnd.tcpdump.pcap, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: download-sessions-pcap
+    description: "The packets of the sessions of a time range that match a query, in one PCAP file, kept as an artifact: one page of the matches, or all of them up to 1 000 sessions. Only for the sessions of your own sensors, not the demo data."
+    premium: true
+    arguments:
+      - { name: start_time, type: text, required: true, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end_time, type: text, required: true, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: query, type: text, description: "A Lucene query that filters the sessions" }
+      - { name: mode, type: choice, choices: ["page", "all"], description: "page (the default): one page of the matches, chosen with page and page_size; all: every match, up to page_size sessions" }
+      - { name: page, type: number, description: "The page to export when mode is page: 1 when left out" }
+      - { name: page_size, type: number, description: "How many sessions a page holds, or the most that are exported when mode is all: 1 to 1 000, 100 when left out" }
+      - { name: sort_by, type: text, description: "The field the sessions are ordered by: lastPacket when left out" }
+      - { name: sort_desc, type: choice, choices: ["true", "false"], description: "Highest first (true, the default) or lowest first (false)" }
+    request:
+      method: GET
+      path: "/v3/sessions/export"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        query: "{{ args.query }}"
+        mode: "{{ args.mode }}"
+        page: "{{ args.page }}"
+        page_size: "{{ args.page_size }}"
+        sort_by: "{{ args.sort_by }}"
+        sort_desc: "{{ args.sort_desc }}"
+      answer: file
+      save_as: { name: sessions.pcap, type: application/vnd.tcpdump.pcap }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: sessions.pcap, type: application/vnd.tcpdump.pcap, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: export-session-data
+    description: "One session as a file, kept as an artifact: its packets (pcap), or the raw payload of its source (rawSource) or of its destination (rawDestination). Only for the sessions of your own sensors, not the demo data."
+    premium: true
+    arguments:
+      - { name: session_id, type: text, required: true, description: "The id of the session, as search-sessions gives it" }
+      - { name: type, type: choice, choices: ["pcap", "rawSource", "rawDestination"], default: "pcap", description: "What to export: the packets, or the raw payload of one end" }
+    request:
+      method: GET
+      path: "/v3/sessions/{{ args.session_id | urlencode }}/export"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        type: "{{ args.type }}"
+      answer: file
+      save_as:
+        name: "session-{{ args.session_id }}{{ if(args.type == 'pcap', '.pcap', '-' ~ args.type ~ '.bin') }}"
+        type: "{{ if(args.type == 'pcap', 'application/vnd.tcpdump.pcap', 'application/octet-stream') }}"
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: session-abc123.pcap, type: application/vnd.tcpdump.pcap, size: 0, sha256: "", artifact: "", linked: false }
+
   - name: get-bsi-trust-stats
     description: "How many addresses and networks of business services (BSI, once RIOT) there are for each trust level, now or on a past day. Needs the BSI entitlements."
     premium: true
@@ -1209,6 +1284,23 @@ commands:
     outputs:
       results: "{{ response.results }}"
       known: "{{ response.results | where('matches') | pluck('ip') }}"
+
+  - name: download-bsi-file
+    description: "The whole list of business services (BSI, once RIOT) of a day as a file, kept as an artifact: gzipped JSON, one record a line, each a network (ip_cidr) with its provider, category and trust level. Needs an additional licence."
+    premium: true
+    arguments:
+      - { name: date, type: text, description: "now (the default) for today's file, or a day for the file of then: YYYY-MM-DD. GreyNoise answers 404 when it has none for that day" }
+    request:
+      method: GET
+      path: "/v3/bsi/download"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        date: "{{ args.date }}"
+      answer: file
+      save_as: { type: application/gzip }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: riot-bulk-2026-05-14.json.gz, type: application/gzip, size: 0, sha256: "", artifact: "", linked: false }
 
   - name: create-blocklist
     description: "Create a blocklist in a workspace: a list of addresses defined by a GNQL query, which GreyNoise keeps current."
@@ -1773,3 +1865,47 @@ commands:
       path: "{{ response.path }}"
       sha256: "{{ response.sha256_hash }}"
       file_size: "{{ response.file_size }}"
+
+  - name: download-psychic-model
+    description: "A Psychic model file, kept as an artifact: the latest daily model, the one of a day, or one file for a range of 30 days at most, in GreyNoise's binary format or as a MaxMind DB. Needs the Psychic entitlement of that model, and its lookback entitlement for a past day."
+    premium: true
+    arguments:
+      - { name: model, type: choice, choices: ["1", "2", "3", "m1", "m2", "m3", "model1", "model2", "model3"], required: true, description: "The model: 1, 2 or 3, under any of its three spellings" }
+      - { name: date, type: text, description: "latest (the default) or a day, YYYY-MM-DD, not in the future. Not with start_date and end_date" }
+      - { name: start_date, type: text, description: "The first day of a range, YYYY-MM-DD, given together with end_date" }
+      - { name: end_date, type: text, description: "The last day of the range, YYYY-MM-DD, 30 days after the first at most" }
+      - { name: format, type: choice, choices: ["bin", "mmdb"], description: "bin (the default): the binary model format; mmdb: a MaxMind DB file" }
+    request:
+      method: POST
+      path: "/v1/psychic"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        model: "{{ args.model }}"
+        date: "{{ args.date }}"
+        start_date: "{{ args.start_date }}"
+        end_date: "{{ args.end_date }}"
+        format: "{{ args.format }}"
+      answer: file
+    error: { message: "{{ first_of(response.error, response.message) }}" }
+    timeout: 300
+    sample: { name: m2-2026-06-04.bin, type: application/octet-stream, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: download-psychic-snapshot
+    description: "A Psychic snapshot, kept as an artifact: the file GreyNoise prepared for the last 7 or 30 days of a model, in its binary format or as a MaxMind DB. Nothing is computed on request: 404 means that snapshot does not exist. Needs the Psychic entitlement of that model and its lookback entitlement."
+    premium: true
+    arguments:
+      - { name: model, type: choice, choices: ["1", "2", "3", "m1", "m2", "m3", "model1", "model2", "model3"], required: true, description: "The model: 1, 2 or 3, under any of its three spellings" }
+      - { name: days, type: choice, choices: ["7", "30"], required: true, description: "The window of the snapshot, in days" }
+      - { name: format, type: choice, choices: ["bin", "mmdb"], description: "bin (the default): the binary model format; mmdb: a MaxMind DB file" }
+    request:
+      method: POST
+      path: "/v1/psychic/snapshots"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        model: "{{ args.model }}"
+        days: "{{ args.days | int }}"
+        format: "{{ args.format }}"
+      answer: file
+    error: { message: "{{ first_of(response.error, response.message) }}" }
+    timeout: 300
+    sample: { name: m3-2026-06-17-to-2026-06-23.bin, type: application/octet-stream, size: 0, sha256: "", artifact: "", linked: false }

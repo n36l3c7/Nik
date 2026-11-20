@@ -212,6 +212,20 @@
           Like every connection, these are opened by the one module that opens connections.
         </li>
         <li>
+          <strong>Files a connector carries.</strong> A command of a connector may download a file (a sample, a capture,
+          an archive) or submit one Nik holds. A file that comes in is bytes from the answer to the store: it is never
+          decoded, unpacked or opened, an archive protected with a password stays that archive, and it is analysed as an
+          upload is, under the size limit of an upload (a larger answer stops being read at the limit and nothing is
+          kept). Its name is what the answer says, cut to a file name: never a path. A redirect on the way is followed
+          only to a host the connector's file lists, and the key of the instance, whatever header it travels in, is not
+          sent on to that host. A file that goes out is read from the store as bytes after the data guard judged it as
+          it judges an attachment (its class, its name, its size and its hash; a sample is a sample); one that is not in
+          the store, cannot be read or is over the limit is refused whatever was opened, the command that sends it must
+          be declared as changing the outside (so it asks for approval), and both directions are written to the audit
+          log (<code>connector.file.keep</code>, <code>connector.file.send</code>). The file is named by its artifact id
+          or its SHA-256, which is checked to be one before it is used as a name in the store.
+        </li>
+        <li>
           <strong>Logos</strong> of connectors come from outside, in a pack or an upload, and are shown to everyone. A
           logo is a PNG, by its signature, or an SVG that holds a drawing and nothing else: no script, no
           <code>foreignObject</code>, no event handler, no DOCTYPE, no reference outside the file. It is drawn with
@@ -271,12 +285,17 @@
             <tr>
               <td>Threat-intelligence lookups</td>
               <td>
-                when an admin has entered a provider's key; automatic lookups only for the indicator types an admin
-                switched on
+                when the connector of a source is installed and one of its instances is on, and someone asks (<em
+                  >Check now</em
+                >, a bulk check, a playbook); automatic lookups only for the indicator types an admin switched on. Nik
+                has no other way to a source: with no instance, nothing is sent
               </td>
               <td>
-                the indicator (a hash, a domain, an address), to that provider. Never a private or internal value, one
-                on the allowlist, or one of an incident marked TLP:RED
+                the indicator (a hash, a domain, an address), to the hosts the connector of that source names, with the
+                key of the instance, by the one command of its file marked for that kind of indicator: never a command
+                that changes something at the vendor or that needs a paid plan. For a domain a registry is sent the
+                registered domain only. Never a private or internal value, one on the allowlist, or one of an incident
+                marked TLP:RED: no setting and no playbook opens that
               </td>
             </tr>
             <tr>
@@ -356,6 +375,15 @@
           their own, and an admin opens one behind the same double check, for a playbook that must forward them. TLP:RED
           data is not offered to be opened. What leaves is also read as text for private addresses, internal names and
           allowlisted values typed by hand.
+        </li>
+        <li>
+          <strong>Expressions.</strong> The <code>{{ }}</code> language compares, counts and chooses, and is still not
+          code: it is read by a parser written for it, a name is a path into the data or one of four functions, and
+          nothing in it reaches Python (no attribute of an object, no call that is not in its table of filters). Its
+          work is bounded: the length of a text, 200 parts and 40 levels of nesting for one expression, numbers within
+          10<sup>15</sup>, a time limit on patterns, a most of items for the filters that compare two lists. The clock
+          it reads is a value it is given. What it computes keeps the classes of data of everything it was computed
+          from, so a condition or a sum cannot carry a held value past the data guard.
         </li>
         <li>
           <strong>Approvals.</strong> A node that changes something outside asks a person first unless someone turned
@@ -528,9 +556,10 @@
           refuses the example values. <code>deploy/init-env.sh</code> generates them.
         </li>
         <li>
-          <code>SECRET_KEY</code> encrypts the threat-intelligence API keys and the TLS key logs stored in the database.
-          It lives in <code>.env</code>, which <code>deploy/backup.sh</code> copies with each backup: a backup directory
-          holds the data, the samples and the key that decrypts the secrets.
+          <code>SECRET_KEY</code> encrypts the credentials of the instances of connectors (the keys of the
+          threat-intelligence sources among them) and the TLS key logs stored in the database. It lives in
+          <code>.env</code>, which <code>deploy/backup.sh</code> copies with each backup: a backup directory holds the
+          data, the samples and the key that decrypts the secrets.
         </li>
         <li>
           Treat a backup as you treat the server: it contains live malware and password hashes. Keep a copy off the

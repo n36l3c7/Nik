@@ -1,0 +1,45 @@
+{
+  "args": {
+    "sample": "store:invoice.zip",
+    "password": "infected"
+  },
+  "store": {
+    "invoice.zip": {
+      "text": "A few invented bytes that stand for a file.\n"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/files",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "body_has": [
+          "name=\"password\"\r\n\r\ninfected\r\n"
+        ],
+        "files": [
+          {
+            "field": "file",
+            "name": "invoice.zip",
+            "text": "A few invented bytes that stand for a file.\n"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "analysis",
+            "id": "OTFiMDcwMjVjZDIzZTI0NGU4ZDlmMjI2NjkzZDczNGE6MTY1MzY1NDM3Nw=="
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "analysis_id": "OTFiMDcwMjVjZDIzZTI0NGU4ZDlmMjI2NjkzZDczNGE6MTY1MzY1NDM3Nw==",
+    "type": "analysis"
+  }
+}

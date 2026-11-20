@@ -1,0 +1,39 @@
+{
+  "args": {
+    "sample": "store:invoice.bin"
+  },
+  "store": {
+    "invoice.bin": {
+      "text": "invented bytes of a file, not a sample"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/indicators/submit_file",
+        "headers": {
+          "X-OTX-API-KEY": "5f0c1d2e3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+        },
+        "files": [
+          {
+            "field": "file",
+            "name": "invoice.bin",
+            "text": "invented bytes of a file, not a sample"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "status": "ok"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "status": "ok"
+    }
+  }
+}

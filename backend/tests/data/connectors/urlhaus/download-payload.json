@@ -1,0 +1,38 @@
+{
+  "args": {
+    "sha256_hash": "254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v1/download/254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b/",
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "UEsDBCBhbiBpbnZlbnRlZCBhcmNoaXZlLCBub3QgYSBzYW1wbGU=",
+        "headers": {
+          "content-type": "application/zip"
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b.zip",
+      "type": "application/zip",
+      "base64": "UEsDBCBhbiBpbnZlbnRlZCBhcmNoaXZlLCBub3QgYSBzYW1wbGU="
+    }
+  ],
+  "outputs": {
+    "name": "254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b.zip",
+    "type": "application/zip",
+    "size": 38,
+    "sha256": "sha256:254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b.zip",
+    "artifact": "artifact:254ca6a7a7ef7f17d9884c4a86f88b5d5fd8fe5341c0996eaaf1d4bcb3b2337b.zip",
+    "linked": false
+  }
+}

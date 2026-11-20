@@ -1,0 +1,50 @@
+{
+  "args": {
+    "start_time": "2025-01-01T00:00:00Z",
+    "end_time": "2025-01-07T23:59:59Z",
+    "query": "source.ip:203.0.113.45",
+    "mode": "all",
+    "page_size": 500
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/export",
+        "query": {
+          "start_time": "2025-01-01T00:00:00Z",
+          "end_time": "2025-01-07T23:59:59Z",
+          "query": "source.ip:203.0.113.45",
+          "mode": "all",
+          "page_size": 500
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "1MOyoSBpbnZlbnRlZCBjYXB0dXJlIG9mIHNldmVyYWwgc2Vzc2lvbnM=",
+        "headers": {
+          "content-type": "application/vnd.tcpdump.pcap",
+          "content-disposition": "attachment; filename=\"sessions.pcap\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "sessions.pcap",
+      "type": "application/vnd.tcpdump.pcap",
+      "base64": "1MOyoSBpbnZlbnRlZCBjYXB0dXJlIG9mIHNldmVyYWwgc2Vzc2lvbnM="
+    }
+  ],
+  "outputs": {
+    "name": "sessions.pcap",
+    "type": "application/vnd.tcpdump.pcap",
+    "size": 41,
+    "sha256": "sha256:sessions.pcap",
+    "artifact": "artifact:sessions.pcap",
+    "linked": false
+  }
+}

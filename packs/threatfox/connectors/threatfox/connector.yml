@@ -14,20 +14,26 @@
 #
 # ThreatFox drops indicators older than 6 months from its API.
 #
-# The four report commands give a verdict the way Nik's own enrichment
-# does: an indicator ThreatFox holds is malicious (it takes confirmed
+# The four report commands give a verdict the way Nik's own look-up code
+# did: an indicator ThreatFox holds is malicious (it takes confirmed
 # indicators only), anything else is unknown. They search for the exact
-# value; an IP address also finds its "ip:port" entries. Their summary is
-# built without conditions, which the expression language does not have: a
-# field of the first indicator is read as a JSON list ([] when nothing was
-# found, [null] when the field is empty, ["value"] otherwise), the first
-# two are mapped to a sentence and the brackets of the third are replaced.
+# value; an IP address also finds its "ip:port" entries. Their summary
+# names the first indicator: its malware family, or its threat type when
+# it has no family.
+#
+# Files (6.5): the address of a data export holds the Auth-Key
+# (/v2/files/exports/<key>/full.csv.zip), on the host of the API. The key
+# of the instance travels in its header and nowhere else, so the instance
+# is asked for the key a second time ("auth_key"), for that address only;
+# it is replaced in what a step records.
 name: ThreatFox
 id: threatfox
-version: 1
+version: 3
 description: Indicators of compromise shared on ThreatFox (abuse.ch), looked up by value, file hash, tag or malware family, and submitted.
 api_version: "ThreatFox Community API v1 (threatfox-api.abuse.ch/api/v1)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 3 }
 configuration:
   - name: credentials
     label: Auth-Key
@@ -35,6 +41,10 @@ configuration:
     header: Auth-Key
     required: true
     help: "The Auth-Key of your abuse.ch account, from https://auth.abuse.ch/. One key works for ThreatFox, URLhaus and MalwareBazaar."
+  - name: auth_key
+    label: Auth-Key, for the exports
+    type: secret
+    help: "The same Auth-Key, typed again, for download-export only: the address of an export holds the key, and a command writes there only a key it was given for that. Leave it empty when exports are not used."
 base_url: "https://threatfox-api.abuse.ch"
 test:
   request:
@@ -54,10 +64,17 @@ commands:
       json: { query: search_ioc, search_term: "{{ args.ip }}", exact_match: true }
     error: { message: "{{ response.query_status }}" }
     outputs:
-      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      # Malicious when ThreatFox holds an indicator for the value (it takes confirmed ones only), unknown otherwise.
+      verdict: "{{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''), 'malicious', 'unknown') }}"
+      # "ThreatFox: <family> (<threat type>)", or the threat type alone when the indicator has no family.
       summary: >-
-        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
-      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+        {{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''),
+        'ThreatFox: '
+        ~ first_of(response.data[0].malware_printable, response.data[0].threat_type_desc, response.data[0].threat_type, 'known IOC')
+        ~ if(first_of(response.data[0].malware_printable, '') and first_of(response.data[0].threat_type_desc, response.data[0].threat_type, ''),
+        ' (' ~ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) ~ ')', ''),
+        'not in ThreatFox') }}
+      link: "{{ if(first_of(response.data[0].id, ''), 'https://threatfox.abuse.ch/ioc/' ~ response.data[0].id ~ '/', 'https://threatfox.abuse.ch/') }}"
       query_status: "{{ response.query_status }}"
       iocs: "{{ response.data | default('') | where('ioc') }}"
       values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
@@ -65,6 +82,8 @@ commands:
       malware: "{{ response.data[0].malware_printable }}"
       malware_id: "{{ response.data[0].malware }}"
       threat_type: "{{ response.data[0].threat_type }}"
+      threat: "{{ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) }}"
+      reporter: "{{ response.data[0].reporter }}"
       confidence_level: "{{ response.data[0].confidence_level }}"
       first_seen: "{{ response.data[0].first_seen }}"
       last_seen: "{{ response.data[0].last_seen }}"
@@ -81,10 +100,17 @@ commands:
       json: { query: search_ioc, search_term: "{{ args.domain }}", exact_match: true }
     error: { message: "{{ response.query_status }}" }
     outputs:
-      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      # Malicious when ThreatFox holds an indicator for the value (it takes confirmed ones only), unknown otherwise.
+      verdict: "{{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''), 'malicious', 'unknown') }}"
+      # "ThreatFox: <family> (<threat type>)", or the threat type alone when the indicator has no family.
       summary: >-
-        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
-      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+        {{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''),
+        'ThreatFox: '
+        ~ first_of(response.data[0].malware_printable, response.data[0].threat_type_desc, response.data[0].threat_type, 'known IOC')
+        ~ if(first_of(response.data[0].malware_printable, '') and first_of(response.data[0].threat_type_desc, response.data[0].threat_type, ''),
+        ' (' ~ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) ~ ')', ''),
+        'not in ThreatFox') }}
+      link: "{{ if(first_of(response.data[0].id, ''), 'https://threatfox.abuse.ch/ioc/' ~ response.data[0].id ~ '/', 'https://threatfox.abuse.ch/') }}"
       query_status: "{{ response.query_status }}"
       iocs: "{{ response.data | default('') | where('ioc') }}"
       values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
@@ -92,6 +118,8 @@ commands:
       malware: "{{ response.data[0].malware_printable }}"
       malware_id: "{{ response.data[0].malware }}"
       threat_type: "{{ response.data[0].threat_type }}"
+      threat: "{{ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) }}"
+      reporter: "{{ response.data[0].reporter }}"
       confidence_level: "{{ response.data[0].confidence_level }}"
       first_seen: "{{ response.data[0].first_seen }}"
       last_seen: "{{ response.data[0].last_seen }}"
@@ -108,10 +136,17 @@ commands:
       json: { query: search_ioc, search_term: "{{ args.url }}", exact_match: true }
     error: { message: "{{ response.query_status }}" }
     outputs:
-      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      # Malicious when ThreatFox holds an indicator for the value (it takes confirmed ones only), unknown otherwise.
+      verdict: "{{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''), 'malicious', 'unknown') }}"
+      # "ThreatFox: <family> (<threat type>)", or the threat type alone when the indicator has no family.
       summary: >-
-        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
-      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+        {{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''),
+        'ThreatFox: '
+        ~ first_of(response.data[0].malware_printable, response.data[0].threat_type_desc, response.data[0].threat_type, 'known IOC')
+        ~ if(first_of(response.data[0].malware_printable, '') and first_of(response.data[0].threat_type_desc, response.data[0].threat_type, ''),
+        ' (' ~ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) ~ ')', ''),
+        'not in ThreatFox') }}
+      link: "{{ if(first_of(response.data[0].id, ''), 'https://threatfox.abuse.ch/ioc/' ~ response.data[0].id ~ '/', 'https://threatfox.abuse.ch/') }}"
       query_status: "{{ response.query_status }}"
       iocs: "{{ response.data | default('') | where('ioc') }}"
       values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
@@ -119,6 +154,8 @@ commands:
       malware: "{{ response.data[0].malware_printable }}"
       malware_id: "{{ response.data[0].malware }}"
       threat_type: "{{ response.data[0].threat_type }}"
+      threat: "{{ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) }}"
+      reporter: "{{ response.data[0].reporter }}"
       confidence_level: "{{ response.data[0].confidence_level }}"
       first_seen: "{{ response.data[0].first_seen }}"
       last_seen: "{{ response.data[0].last_seen }}"
@@ -135,10 +172,17 @@ commands:
       json: { query: search_hash, hash: "{{ args.hash }}" }
     error: { message: "{{ response.query_status }}" }
     outputs:
-      verdict: "{{ response.data[0].ioc | default('') | length | map('0', 'unknown', else='malicious') }}"
+      # Malicious when ThreatFox holds an indicator for the value (it takes confirmed ones only), unknown otherwise.
+      verdict: "{{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''), 'malicious', 'unknown') }}"
+      # "ThreatFox: <family> (<threat type>)", or the threat type alone when the indicator has no family.
       summary: >-
-        {{ response.data[0] | default('') | where('ioc') | pluck('malware_printable') | json | map('[]', 'not in ThreatFox', '[null]', 'ThreatFox: known IOC') | replace('["', 'ThreatFox: ') | replace('"]', '') }}{{ response.data[0] | default('') | where('ioc') | pluck('threat_type_desc') | json | map('[]', '', '[null]', '') | replace('["', ' (') | replace('"]', ')') }}
-      link: "https://threatfox.abuse.ch/ioc/{{ response.data[0].id }}/"
+        {{ if(response.query_status | default('') == 'ok' and first_of(response.data[0].ioc, ''),
+        'ThreatFox: '
+        ~ first_of(response.data[0].malware_printable, response.data[0].threat_type_desc, response.data[0].threat_type, 'known IOC')
+        ~ if(first_of(response.data[0].malware_printable, '') and first_of(response.data[0].threat_type_desc, response.data[0].threat_type, ''),
+        ' (' ~ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) ~ ')', ''),
+        'not in ThreatFox') }}
+      link: "{{ if(first_of(response.data[0].id, ''), 'https://threatfox.abuse.ch/ioc/' ~ response.data[0].id ~ '/', 'https://threatfox.abuse.ch/') }}"
       query_status: "{{ response.query_status }}"
       iocs: "{{ response.data | default('') | where('ioc') }}"
       values: "{{ response.data | default('') | where('ioc') | pluck('ioc') }}"
@@ -146,6 +190,8 @@ commands:
       malware: "{{ response.data[0].malware_printable }}"
       malware_id: "{{ response.data[0].malware }}"
       threat_type: "{{ response.data[0].threat_type }}"
+      threat: "{{ first_of(response.data[0].threat_type_desc, response.data[0].threat_type) }}"
+      reporter: "{{ response.data[0].reporter }}"
       confidence_level: "{{ response.data[0].confidence_level }}"
       first_seen: "{{ response.data[0].first_seen }}"
       last_seen: "{{ response.data[0].last_seen }}"
@@ -333,3 +379,20 @@ commands:
       details: "{{ response.data }}"
       count: "{{ response.data | keys | length }}"
       query_status: "{{ response.query_status }}"
+
+  # ----------------------------------------------------------------- files --
+  - name: download-export
+    description: >-
+      Download one of the data exports of ThreatFox (every indicator of the last 6 months as one file), kept as
+      an artifact. The export page (threatfox.abuse.ch/export) lists their names to a signed-in account. Needs
+      "Auth-Key, for the exports" in the instance.
+    arguments:
+      - { name: file, type: text, default: full.csv.zip, description: "The name of the export, as the export page gives it: full.csv.zip" }
+    request:
+      method: GET
+      # The Auth-Key is part of the address of an export, as the export page says.
+      path: "/v2/files/exports/{{ secret.auth_key }}/{{ args.file | urlencode }}"
+      answer: file
+      save_as: { name: "threatfox-{{ args.file }}" }
+    timeout: 300
+    sample: { name: threatfox-full.csv.zip, type: application/zip, size: 0, sha256: "", artifact: "", linked: false }

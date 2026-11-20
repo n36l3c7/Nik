@@ -9,9 +9,20 @@ maintainer runs "Test the connection" against a real system.
 
     {"args": {...},
      "exchanges": [{"request": {"method", "path", "query"?, "json"?, "form"?, "headers"?, "body_has"?,
-                                "host"? (another host the connector lists), "without_headers"?},
-                    "response": {"status", "json"? | "text"?, "headers"?}}],
-     "outputs": {...}}
+                                "host"? (another host the connector lists), "without_headers"?,
+                                "files"? [{"field", "name", "type"?, "text" | "base64"}]},
+                    "response": {"status", "json"? | "text"? | "base64"?, "headers"?}}],
+     "outputs": {...},
+     "store"? {"<name>": {"text" | "base64"}}, "kept"? [{"name", "type"?, "text" | "base64"}]}
+
+A command that carries a file (6.5) says so in three more places. ``store`` is
+what Nik holds for the fixture: an argument whose value is ``store:<name>``
+is given the artifact of that file. A request that sends files lists them in
+``files``, and the body must carry each one byte for byte, in the field and
+under the name it says; an answer that is a file is ``base64`` in the
+response. ``kept`` is what the command must have handed to the store, in
+order. In ``outputs``, ``sha256:<name>`` and ``artifact:<name>`` stand for the
+hash and the artifact of a file of ``kept``.
 
 ``connection.json`` beside them holds the configuration and the (invented)
 credentials the fixtures are run with.
@@ -19,6 +30,8 @@ credentials the fixtures are run with.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
@@ -39,6 +52,59 @@ CASES = [(connector, command.name) for _text, connector in SHIPPED for command i
 
 def _connection(connector_id: str) -> dict:
     return json.loads((DATA / connector_id / "connection.json").read_text(encoding="utf-8"))
+
+
+def _bytes(item: dict) -> bytes:
+    """The content a fixture gives a file: as text, or in base64 when it is not text."""
+    return base64.b64decode(item["base64"]) if "base64" in item else str(item.get("text", "")).encode()
+
+
+def _sent(value) -> str:
+    """A query value as it goes: yes and no as an address carries them."""
+    return {True: "true", False: "false"}.get(value, str(value)) if isinstance(value, bool) else str(value)
+
+
+class Held:
+    """The store of a fixture: the files it says Nik holds, and what a command handed to it."""
+
+    limit_mb = 100
+    limit = 100 * 1024 * 1024
+
+    def __init__(self, files: dict):
+        self.files = {hashlib.sha256(_bytes(item)).hexdigest(): (name, _bytes(item)) for name, item in files.items()}
+        self.kept: list[dict] = []
+
+    def artifact(self, name: str) -> str:
+        return next(f"file-{sha}" for sha, (held, _data) in self.files.items() if held == name)
+
+    def describe(self, wanted) -> dict:
+        sha = str(wanted).removeprefix("file-")
+        name, data = self.files[sha]
+        return {"name": name, "size": len(data), "sha256": sha}
+
+    def judge(self, found: list[dict]) -> bool:
+        return True
+
+    def read(self, sha: str) -> bytes:
+        return self.files[sha][1]
+
+    def keep(self, data: bytes, name: str, kind: str) -> dict:
+        sha = hashlib.sha256(data).hexdigest()
+        self.kept.append({"name": name, "type": kind, "data": data})
+        return {"name": name or sha, "type": kind, "size": len(data), "sha256": sha, "artifact": f"file-{sha}",
+                "linked": False}  # fmt: skip
+
+
+def _named(value, kept: dict[str, bytes]):
+    """An expected output with ``sha256:<name>`` and ``artifact:<name>`` replaced by those of a kept file."""
+    if isinstance(value, dict):
+        return {key: _named(item, kept) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_named(item, kept) for item in value]
+    if isinstance(value, str) and value.partition(":")[0] in ("sha256", "artifact") and value.partition(":")[2] in kept:
+        sha = hashlib.sha256(kept[value.partition(":")[2]]).hexdigest()
+        return sha if value.startswith("sha256:") else f"file-{sha}"
+    return value
 
 
 class Recorded:
@@ -63,7 +129,7 @@ class Recorded:
             **dict(parse_qsl(parts.query)),
             **{key: str(value) for key, value in (sent.get("query") or {}).items()},
         }
-        assert query == {key: str(value) for key, value in wanted.get("query", {}).items()}, f"{where}: query"
+        assert query == {key: _sent(value) for key, value in wanted.get("query", {}).items()}, f"{where}: query"
         for kind in ("json", "form"):
             if kind in wanted:
                 assert sent.get(kind) == wanted[kind], f"{where}: {kind}"
@@ -75,13 +141,27 @@ class Recorded:
         for key in wanted.get("without_headers", []):
             assert key not in headers, f"{where}: the header {key} must not be sent there"
         body = sent.get("body")
-        text = body.decode() if isinstance(body, bytes) else (body or "")
+        raw = body if isinstance(body, bytes) else (body or "").encode()
+        text = raw.decode(errors="replace")
         for piece in wanted.get("body_has", []):
             assert piece in text, f"{where}: the body lacks {piece!r}"
-        content = answer["text"] if "text" in answer else json.dumps(answer.get("json", {}))
-        head = {"content-type": "text/plain" if "text" in answer else "application/json", **answer.get("headers", {})}
+        for item in wanted.get("files", []):
+            if item.get("field"):
+                head = f'name="{item["field"]}"; filename="{item["name"]}"\r\nContent-Type: '
+                head += item.get("type", "application/octet-stream")
+                part = head.encode() + b"\r\n\r\n" + _bytes(item) + b"\r\n"
+                assert part in raw, f"{where}: the body lacks the file {item['name']} as the field {item['field']}"
+            else:
+                assert raw == _bytes(item), f"{where}: the body is not the file {item['name']}"
+        if "base64" in answer:
+            content, kind = base64.b64decode(answer["base64"]), "application/octet-stream"
+        elif "text" in answer:
+            content, kind = answer["text"].encode(), "text/plain"
+        else:
+            content, kind = json.dumps(answer.get("json", {})).encode(), "application/json"
+        head = {"content-type": kind, **answer.get("headers", {})}
         record = {"method": method, "host": parts.hostname, "path": parts.path, "status": answer["status"]}
-        return egress.Response(status=answer["status"], headers=head, body=content.encode(), record=record)
+        return egress.Response(status=answer["status"], headers=head, body=content, record=record)
 
 
 def test_the_shipped_connectors_load_and_say_what_they_were_written_against():
@@ -103,7 +183,11 @@ def test_the_shipped_connectors_load_and_say_what_they_were_written_against():
 @pytest.mark.parametrize(("connector", "name"), CASES, ids=[f"{connector.id}.{name}" for connector, name in CASES])
 def test_a_command_sends_what_the_documentation_says_and_reads_the_answer(connector, name):
     fixture = json.loads((DATA / connector.id / f"{name}.json").read_text(encoding="utf-8"))
-    connection = _connection(connector.id)
+    played(connector, name, fixture, _connection(connector.id))
+
+
+def played(connector, name: str, fixture: dict, connection: dict) -> None:
+    """Run a command against the exchanges of its fixture, and check what it sent, gave and kept."""
     config = {**connection["config"], **fixture.get("config", {})}
     host = ca.host_of(connector, config).split(":")[0]
     wire = Recorded(fixture["exchanges"], host)
@@ -111,23 +195,143 @@ def test_a_command_sends_what_the_documentation_says_and_reads_the_answer(connec
     policy = egress.Policy(mode="listed", hosts=frozenset({host}))
     rt.forget_tokens()
 
-    def runtime() -> rt.Runtime:
-        return rt.Runtime(connector, config, connection["secrets"], policy, send=wire, clock=lambda: now[0])
+    # A command that carries a file has the store of its fixture; the others have none, as before 6.5.
+    command = connector.command(name)
+    held = Held(fixture.get("store", {})) if command.gives_file or command.sends_file else None
+    args = {
+        key: held.artifact(value[6:]) if held and isinstance(value, str) and value.startswith("store:") else value
+        for key, value in fixture["args"].items()
+    }
 
-    answer = runtime().run(name, fixture["args"])
+    def runtime() -> rt.Runtime:
+        live = rt.Runtime(connector, config, connection["secrets"], policy, send=wire, clock=lambda: now[0])
+        live.store = held
+        return live
+
+    answer = runtime().run(name, args)
     waits = 0
     while not answer.done:
         # A command that waits: the engine would call again at that time, with the state it was given.
         waits += 1
         assert waits < 20 and answer.again_at > now[0]
         now[0] = answer.again_at
-        answer = runtime().run(name, fixture["args"], answer.state)
+        answer = runtime().run(name, args, answer.state)
     assert wire.exchanges == [], "the command sent fewer requests than the documentation says"
-    assert answer.outputs == fixture["outputs"]
+    wanted = [
+        {"name": item["name"], "data": _bytes(item), **({"type": item["type"]} if "type" in item else {})}
+        for item in fixture.get("kept", [])
+    ]
+    if held is not None:
+        got = [
+            {key: item[key] for key in ("name", "data", *(("type",) if "type" in want else ()))}
+            for item, want in zip(held.kept, wanted, strict=True)
+        ]
+        assert got == wanted, "the command did not hand the store the files the fixture says"
+    assert answer.outputs == _named(fixture["outputs"], {item["name"]: item["data"] for item in wanted})
     # No secret of the connection is in what the step would record.
     recorded = json.dumps([answer.outputs, answer.records])
     for value in connection["secrets"].values():
         assert value not in recorded
+
+
+def test_a_fixture_can_describe_a_file_that_comes_back_and_a_file_that_is_sent():
+    """The format of the fixtures of a command that carries a file, run on a connector made for it: a
+    fixture that names another file than the one sent must fail."""
+    from app.automation import connectors as cn
+
+    connector = cn.load(
+        """\
+name: Depot
+id: depot
+version: 1
+api_version: v1
+configuration:
+  - { name: url, type: url, required: true }
+  - { name: credentials, type: query, param: key }
+base_url: "{{ config.url }}"
+commands:
+  - name: download
+    description: Download a file.
+    arguments: [{ name: id, type: text, required: true }, { name: raw, type: bool, default: true }]
+    request: { method: GET, path: "/files/{{ args.id }}", query: { raw: "{{ args.raw }}" }, answer: file }
+    outputs: { artifact: "{{ response.artifact }}", sha256: "{{ response.sha256 }}", name: "{{ response.name }}" }
+  - name: submit
+    description: Submit a file.
+    changes_outside: true
+    arguments: [{ name: sample, type: file, required: true }]
+    request:
+      method: POST
+      path: /files
+      multipart: { note: from Nik }
+      files: { file: { artifact: "{{ args.sample }}", type: application/x-dosexec } }
+    outputs: { id: "{{ response.id }}" }
+    sample: { id: "" }
+"""
+    )
+    connection = {"config": {"url": "https://depot.example.com/api"}, "secrets": {"value": "depot-key-1234"}}
+    blob = base64.b64encode(b"MZ\x90\x00\xff binary").decode()
+    played(
+        connector,
+        "download",
+        {
+            "args": {"id": "f-1"},
+            "exchanges": [
+                {
+                    "request": {
+                        "method": "GET",
+                        "path": "/api/files/f-1",
+                        "query": {"raw": True, "key": "depot-key-1234"},
+                    },
+                    "response": {
+                        "status": 200,
+                        "base64": blob,
+                        "headers": {"content-disposition": "attachment; filename=a.exe"},
+                    },
+                }
+            ],
+            "kept": [{"name": "a.exe", "type": "application/octet-stream", "base64": blob}],
+            "outputs": {"artifact": "artifact:a.exe", "sha256": "sha256:a.exe", "name": "a.exe"},
+        },
+        connection,
+    )
+    played(
+        connector,
+        "submit",
+        {
+            "args": {"sample": "store:a.exe"},
+            "store": {"a.exe": {"base64": blob}},
+            "exchanges": [
+                {
+                    "request": {
+                        "method": "POST",
+                        "path": "/api/files",
+                        "query": {"key": "depot-key-1234"},
+                        "body_has": ['name="note"', "from Nik"],
+                        "files": [{"field": "file", "name": "a.exe", "type": "application/x-dosexec", "base64": blob}],
+                    },
+                    "response": {"status": 200, "json": {"id": "s-9"}},
+                }
+            ],
+            "outputs": {"id": "s-9"},
+        },
+        connection,
+    )
+    # A fixture that names another file than the one sent, or keeps another than it says, fails.
+    wrong = {
+        "args": {"sample": "store:a.exe"},
+        "store": {"a.exe": {"base64": blob}},
+        "exchanges": [
+            {
+                "request": {"method": "POST", "path": "/api/files", "query": {"key": "depot-key-1234"},
+                            "files": [{"field": "file", "name": "a.exe", "type": "application/x-dosexec",
+                                       "text": "other"}]},
+                "response": {"status": 200, "json": {"id": "s-9"}},
+            }
+        ],
+        "outputs": {"id": "s-9"},
+    }  # fmt: skip
+    with pytest.raises(AssertionError, match="the body lacks the file a.exe"):
+        played(connector, "submit", wrong, connection)
 
 
 @pytest.mark.parametrize(("connector", "name"), CASES, ids=[f"{connector.id}.{name}" for connector, name in CASES])

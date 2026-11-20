@@ -55,7 +55,7 @@
   ],
   "outputs": {
     "verdict": "malicious",
-    "summary": "confidence 100 %, 1 reports in 90 days",
+    "summary": "confidence 100 %, 1 report in 90 days",
     "link": "https://www.abuseipdb.com/check/118.25.6.39",
     "score": 100,
     "total_reports": 1,

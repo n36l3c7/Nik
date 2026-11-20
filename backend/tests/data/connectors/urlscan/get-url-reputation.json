@@ -103,7 +103,8 @@
   ],
   "outputs": {
     "verdict": "malicious",
-    "summary": "2 public scans, 1 of the last 2 judged malicious",
+    "summary": "2 public scans, 1 judged malicious",
+    "link": "https://urlscan.io/search/#page.url%3A%22https%3A//login.example-bank.test/signin%22",
     "total": 2,
     "malicious": 1,
     "scans": [

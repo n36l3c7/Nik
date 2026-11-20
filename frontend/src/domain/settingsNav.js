@@ -69,7 +69,7 @@ export const SETTINGS_GROUPS = [
         slug: 'threat-intelligence',
         label: 'Threat intelligence',
         permission: 'admin',
-        keywords: 'providers api keys virustotal abuseipdb reputation lookups retention automatic enrichment',
+        keywords: 'sources connectors instances api keys virustotal reputation lookups retention automatic enrichment',
       },
     ],
   },

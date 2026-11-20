@@ -80,6 +80,8 @@
     "malware": "Houdini",
     "malware_id": "win.houdini",
     "threat_type": "botnet_cc",
+    "threat": "Indicator that identifies a botnet command&control server (C&C)",
+    "reporter": "abuse_ch",
     "confidence_level": 100,
     "first_seen": "2021-03-23 14:50:33 UTC",
     "last_seen": null,

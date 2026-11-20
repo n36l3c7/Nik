@@ -151,7 +151,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="6.4.0",
+    version="6.5.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -252,6 +252,14 @@ def on_startup() -> None:
             from pathlib import Path
 
             content_packs.install_folder(db, Path(app_settings.PACKS_DIR))
+        # The API keys the look-ups kept before 6.5 become keys of instances of the connectors that are here.
+        from .enrichment import old_keys
+
+        try:
+            old_keys.adopt(db)
+            db.commit()
+        except IntegrityError:
+            db.rollback()  # another process of the server made the instances at the same moment
     # Playbooks: the loop runs here only when there is no automation container.
     if app_settings.AUTOMATION_WORKER == "inline":
         from .automation import worker as automation_worker

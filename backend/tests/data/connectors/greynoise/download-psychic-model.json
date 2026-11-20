@@ -1,0 +1,44 @@
+{
+  "args": {
+    "model": "model2",
+    "date": "2026-06-04"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/psychic",
+        "json": {
+          "model": "model2",
+          "date": "2026-06-04"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "aW52ZW50ZWQgbW9kZWwgYnl0ZXMgAAEC",
+        "headers": {
+          "content-type": "application/octet-stream",
+          "content-disposition": "attachment; filename=\"m2-2026-06-04.bin\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "m2-2026-06-04.bin",
+      "type": "application/octet-stream",
+      "base64": "aW52ZW50ZWQgbW9kZWwgYnl0ZXMgAAEC"
+    }
+  ],
+  "outputs": {
+    "name": "m2-2026-06-04.bin",
+    "type": "application/octet-stream",
+    "size": 24,
+    "sha256": "sha256:m2-2026-06-04.bin",
+    "artifact": "artifact:m2-2026-06-04.bin",
+    "linked": false
+  }
+}

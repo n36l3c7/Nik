@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-11-20
+
+The connector engine handles files and its expressions decide and count;
+the sources of threat intelligence use it for everything their vendors
+document; and the reputation of an indicator is asked of the connectors,
+and of nothing else.
+
+### Added
+
+- **A command of a connector can keep a file.** `answer: file` on a
+  request stores what comes back (a sample, a capture, a screenshot, an
+  archive) as an artifact of the incident the playbook works on, as it
+  came and never opened; the node gives its name, type, size, SHA-256 and
+  artifact. The size is limited as an upload is; a redirect is followed
+  only to a host the connector lists in `more_hosts`, and the instance's
+  credentials do not follow it there. Such a command is never served from
+  the answers an instance keeps.
+- **A command of a connector can send a file** Nik holds: an argument of
+  type `file` (an artifact or a SHA-256), carried as a part of a multipart
+  body (`files`) or as the body itself (`body_file`). The data guard
+  judges the file as it judges an attachment before anything leaves; held,
+  nothing is sent at all, and the step says what was held.
+- **Expressions decide and count.** Inside `{{ }}`: comparisons, `and`,
+  `or`, `not`, `if(condition, then, else)`, `first_of(...)`, arithmetic,
+  `~` to join text, lists and `in`, `min` and `max`, and the filters
+  `round`, `abs`, `sum`, `percent`, `count`, `plural`, `starts_with`,
+  `ends_with`, `limit`, `sha256`, `has_any`, `has_all`, `intersect`,
+  `without`, `union`, `entries`, `pick`, `sort_by`, `timestamp`,
+  `date_diff` and `date_add`; `now` where a command runs. The editor checks
+  them as they are typed, with the rules of the server.
+- **Smaller things in a connector file**: a key sent as a query parameter
+  (credential type `query`), a key that may be left empty, page sizes
+  taken from arguments with the totals kept (`keep`), polls that honour
+  `Retry-After`, an argument that defaults to a value of the instance
+  (`default_from`), HEAD requests; booleans in a query are sent as `true`
+  and `false`.
+- **The sources of threat intelligence: 51 more commands, 586 in all.**
+  Playbooks download samples, captures, screenshots and feed batches from
+  VirusTotal, MalwareBazaar, URLhaus, ThreatFox, GreyNoise and urlscan,
+  and send a file to VirusTotal, MalwareBazaar, OTX and AbuseIPDB. The
+  verdict of each source is written as plain conditions in its file. The
+  eleven packs are at version 1.1.0 and need Nik 6.5.
+- **A pack can add a source of reputation.** A connector that marks a
+  command `reputation` takes part in the look-ups; `lookups` in its file
+  says how much its verdict weighs, and `reputation_of: registered_domain`
+  has a command asked about the registered domain of a host.
+- *Settings → Threat intelligence* lists the sources, whether each is on
+  and through which instance, with *Turn on* for a source that needs no
+  key (`GET /api/enrichment/sources`).
+
+### Changed
+
+- **The reputation of an indicator is asked of the connectors only
+  (breaking).** Nik's own code for VirusTotal, AbuseIPDB, urlscan.io,
+  abuse.ch, OTX, GreyNoise, Shodan InternetDB, Safe Browsing and RDAP is
+  removed: a look-up runs the `reputation` command of each installed
+  connector, on its oldest instance that is on, with that instance's
+  keys, limits and kept answers. Without an instance a source is not
+  asked, and a new server looks nothing up until a pack is installed and
+  an instance made. The routes `/api/enrichment/providers…` and the
+  settings `enrichment.virustotal` and `enrichment.providers` are gone.
+- **abuse.ch is three sources**, ThreatFox, URLhaus and MalwareBazaar,
+  each with its own verdict. *Shodan InternetDB* is *Shodan* (`shodan`)
+  and *Registration* is *RDAP* (`rdap`); the `sources` of the trigger
+  `ioc.verdict_changed` and the columns of an export name the connectors.
+- **RDAP only for the age of a domain**: WHOIS on port 43 is no longer
+  asked, so a TLD whose registry has no RDAP server gives no age.
+- `nik.reputation` is the same look-up as *Check now*: one instance for
+  each source, and a value the look-ups never send (a private or internal
+  address, an allowlisted value, TLP:RED) is not sent by a playbook
+  either, whatever is open for it.
+- Verdicts that changed: RDAP judges a domain registered less than 30
+  days ago *suspicious*; urlscan counts a result judged malicious overall;
+  a 404 of RDAP or urlscan is *unknown* instead of a failed step; Shodan
+  compares tags without regard to case.
+- The relations and the comments of VirusTotal are not part of a look-up
+  any more: they are commands of the connector.
+
+### Fixed
+
+- A dry run showed a secret that travels in the path of a request.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migration `0045_lookups_through_connectors` files the stored answers
+  under the ids of the connectors; abuse.ch answers that flagged nothing
+  are dropped and asked again.
+- **Install the packs of the sources you use** (*Settings → Automation →
+  Content packs*). The API keys entered under *Threat intelligence* move
+  by themselves to an instance of each connector when its pack is
+  installed, with the limits the look-ups kept for that source, and are
+  listed in Settings until then.
+- RDAP, Shodan InternetDB, urlscan.io and GreyNoise, which answered
+  without a key, each need their pack and an instance too: *Turn on* in
+  *Settings → Threat intelligence*.
+- Instances you already had have no limits set: give them the requests a
+  minute and a day your plan allows.
+- A playbook condition written against the sources `abusech`,
+  `internetdb` or `registration` no longer matches: write `threatfox`,
+  `urlhaus`, `malwarebazaar`, `shodan`, `rdap`.
+- The connectors of ThreatFox, URLhaus and MalwareBazaar show a second,
+  optional key (*Auth-Key, for the exports*): the exports and the URLhaus
+  submission send the key where the key of the instance never goes.
+
 ## [6.4.0] - 2026-11-20
 
 The playbook editor, the fields and tags of an incident, and an instance
@@ -3186,7 +3291,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.4.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.5.0...HEAD
+[6.5.0]: https://github.com/n36l3c7/Nik/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/n36l3c7/Nik/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/n36l3c7/Nik/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/n36l3c7/Nik/compare/v6.1.0...v6.2.0

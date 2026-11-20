@@ -82,12 +82,33 @@
       "Example pulse 1",
       "Example pulse 2"
     ],
+    "pulse_details": [
+      {
+        "id": "58f17acb98e10f0199f85c0c",
+        "name": "Example pulse 1",
+        "author": "aperson",
+        "modified": "2017-05-01T15:32:16.030000",
+        "tags": [
+          "test",
+          "atag"
+        ],
+        "tlp": "white"
+      },
+      {
+        "id": "58f15111d3bb0b0b8ac54662",
+        "name": "Example pulse 2",
+        "author": "aperson",
+        "modified": "2017-05-01T15:33:24.178000",
+        "tags": [],
+        "tlp": "green"
+      }
+    ],
     "families": [
       "Mirai"
     ],
     "validation": [],
     "asn": "AS64500 Example Networks",
     "country": "Netherlands",
-    "link": "https://otx.alienvault.com/indicator/ip/203.0.113.77"
+    "link": "https://otx.alienvault.com/indicator/ipv4/203.0.113.77"
   }
 }

@@ -381,12 +381,13 @@ class ArtifactRelation(Base):
 
 
 class IntegrationKey(Base):
-    """One API key of a threat-intelligence provider, encrypted (``vault.py``).
+    """One API key of a threat-intelligence source as the look-ups kept it before 6.5, encrypted
+    (``vault.py``). ``provider`` is the name the source had then.
 
-    A provider can have several: lookups rotate over them, each with its own
-    rate limit and daily quota. A key the provider refuses several times in a
-    row (``failures``) is marked ``rejected``, with what it answered, and
-    skipped until an admin replaces it.
+    Nothing writes here any more: a source is a connector, and its keys are those of an instance of
+    it. A row stays until an instance of each connector it belongs to holds the key
+    (``enrichment/old_keys.py``); one the vendor had refused (``rejected``) stays until an
+    administrator removes it.
     """
 
     __tablename__ = "integration_keys"
@@ -405,9 +406,10 @@ class IntegrationKey(Base):
 
 
 class Enrichment(Base):
-    """One provider's latest answer about one indicator (``enrichment/``),
+    """One source's latest answer about one indicator (``enrichment/``),
     valid for the retention of its type (Settings -> Threat intelligence).
-    ``raw`` is the provider's own answer, for the JSON download."""
+    ``provider`` is the id of the source's connector; ``data`` the outputs of its
+    reputation command as the page gets them, ``raw`` all of them, for the JSON download."""
 
     __tablename__ = "ioc_enrichment"
 
@@ -429,7 +431,7 @@ class Enrichment(Base):
 
 
 class EnrichmentHistory(Base):
-    """A provider's earlier answers about an indicator: verdict and summary
+    """A source's earlier answers about an indicator: verdict and summary
     of each check, the last few kept, to see a reputation change over time."""
 
     __tablename__ = "ioc_enrichment_history"
@@ -723,7 +725,7 @@ class IocListItem(Base):
 class IocCheck(Base):
     """A bulk reputation check, worked through by the enrichment worker.
 
-    ``pending`` holds what is left: ``[type, value, [provider ids]]``. The
+    ``pending`` holds what is left: ``[type, value, [source ids]]``. The
     status is ``running``, ``waiting`` (every source left has used its quota:
     it goes on by itself when one resets), ``done`` or ``stopped``.
     """

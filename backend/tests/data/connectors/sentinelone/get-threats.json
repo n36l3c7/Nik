@@ -10,7 +10,7 @@
         "path": "/web/api/v2.1/threats",
         "query": {
           "contentHashes": "3395856ce81f2b7382dee72602f798b642f14140",
-          "resolved": "False",
+          "resolved": "false",
           "limit": 100
         },
         "headers": {

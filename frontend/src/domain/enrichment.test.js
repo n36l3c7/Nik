@@ -102,3 +102,54 @@ test('the menu offers to analyse a value, or to open its analysis', async () => 
   assert.equal(analysisColor({ verdict: 'medium' }), 'amber')
   assert.equal(analysisColor({ verdict: 'clean' }), 'slate')
 })
+
+test('a source of Settings says how it stands, and what turning it on takes', async () => {
+  const { limitsLine, sourceState } = await import('./enrichment.js')
+  assert.equal(limitsLine({ perMinute: 4, perDay: 500, cacheHours: 24 }), '4 a minute · 500 a day · answers kept 24 h')
+  assert.equal(limitsLine({ perMinute: 0, perDay: 0, cacheHours: 0 }), '')
+  assert.equal(limitsLine(null), '')
+  const on = sourceState({
+    on: true,
+    instance: 'VirusTotal',
+    keys: 2,
+    limits: { perMinute: 4, perDay: 500, cacheHours: 0 },
+  })
+  assert.equal(on.state, 'on')
+  assert.equal(on.line, 'Asked through the instance “VirusTotal”, 2 keys in rotation · 4 a minute · 500 a day')
+  assert.ok(sourceState({ on: true, instance: 'RDAP', keys: 1, limits: {} }).line.endsWith('no limit set'))
+  assert.equal(sourceState({ on: false, instances: 2 }).state, 'off')
+  const free = sourceState({ on: false, instances: 0, needsNothing: true })
+  assert.equal(free.state, 'none')
+  assert.ok(free.line.includes('turned on here'))
+  assert.ok(sourceState({ on: false, instances: 0, needsNothing: false }).line.includes('in Connectors'))
+})
+
+test('a key kept from before 6.5 says what it waits for', async () => {
+  const { oldKeyLine } = await import('./enrichment.js')
+  const waiting = {
+    state: 'waiting',
+    connectors: [
+      { id: 'threatfox', installed: true },
+      { id: 'urlhaus', installed: false },
+    ],
+  }
+  assert.equal(
+    oldKeyLine(waiting),
+    'It moves to an instance by itself when the pack urlhaus is installed (Content packs).',
+  )
+  const both = {
+    state: 'waiting',
+    connectors: [
+      { id: 'urlhaus', installed: false },
+      { id: 'malwarebazaar', installed: false },
+    ],
+  }
+  assert.ok(oldKeyLine(both).includes('the packs urlhaus, malwarebazaar are installed'))
+  assert.ok(oldKeyLine({ state: 'rejected', connectors: [] }).startsWith('The vendor had refused this key'))
+  assert.ok(oldKeyLine({ state: 'unreadable', connectors: [] }).includes('SECRET_KEY'))
+  assert.ok(
+    oldKeyLine({ state: 'waiting', connectors: [{ id: 'otx', installed: true }] }).startsWith(
+      'It could not be moved to otx',
+    ),
+  )
+})

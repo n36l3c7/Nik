@@ -5,23 +5,37 @@
 # pages beside it (quickstart, rate limits, error codes, best practices).
 # Not run against the real service: see "verified" below.
 #
-# The key goes in the API-Key header, as urlscan asks. A scan is asked for
-# with submit-url and read with wait-for-result: until the scan is finished
-# the result answers 404, and 410 once it was deleted. Every action has its
-# own quota by the minute, the hour and the day: a request over it is
-# answered 429, which is tried again.
+# The key goes in the API-Key header, as urlscan asks. It is optional: the
+# description says "most" endpoints require authentication, and that the
+# search answers unauthenticated requests with a shorter history. An instance
+# without a key sends no header, and only the search (and so the two
+# reputation commands) is known to answer it.
+#
+# A scan is asked for with submit-url and read with wait-for-result: until
+# the scan is finished the result answers 404, and 410 once it was deleted.
+# Every action has its own quota by the minute, the hour and the day: a
+# request over it is answered 429, which is tried again; a poll waits as long
+# as a Retry-After header says.
+#
+# The verdict of the two reputation commands is the one Nik's own look-up code
+# gave for this source. A result counts as judged malicious when its
+# verdicts.malicious is set (what the search documents) or its
+# verdicts.overall.malicious is (the shape of the result API, which older
+# answers of the search had). One with both counts once: the results where
+# the first is set, plus, among the others, those where the second is.
 #
 # The commands marked premium are the ones the documentation gives to
-# urlscan Pro. Three endpoints answer a binary file, which a command cannot
-# carry: the screenshot of a scan (its address is in the outputs of the
-# result), the download of a file by hash, and the download link of a data
-# dump.
+# urlscan Pro. Three commands keep a file as an artifact: the screenshot of
+# a scan, a file by its hash (an encrypted ZIP, never opened here) and a data
+# dump file.
 name: urlscan.io
 id: urlscan
-version: 1
+version: 3
 description: Scans of web pages on urlscan.io - submit an address, read the result, search what was scanned before - and the urlscan Pro endpoints.
 api_version: "urlscan.io API v1 (OpenAPI description 1.0.0)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 2 }
 configuration:
   - name: api_key
     label: API key
@@ -44,12 +58,30 @@ commands:
       query:
         q: 'page.url:"{{ args.url | replace("\\", "\\\\") | replace("\"", "\\\"") }}"'
         size: 10
+    # A 404 is read as Nik's own look-up reads it: nothing was scanned.
+    success: { status: [200, 404] }
     error: { message: "{{ response.message }}" }
     outputs:
-      verdict: "{{ response.results | where('verdicts.malicious') | length | map('0', 'unknown', else='malicious') }}"
-      summary: "{{ response.total | default(0) }} public scans, {{ response.results | where('verdicts.malicious') | length }} of the last {{ response.results | length }} judged malicious"
-      total: "{{ response.total }}"
-      malicious: "{{ response.results | where('verdicts.malicious') | length }}"
+      # Malicious when one of the results read (the last ten) was judged malicious, in either shape of the
+      # answer; urlscan never says "clean".
+      verdict: "{{ if(response.results | default([]) | count('verdicts.malicious') > 0
+        or response.results | default([]) | count('verdicts.overall.malicious') > 0,
+        'malicious', 'unknown') }}"
+      # "3 public scans, 1 judged malicious". The total is the one urlscan counts, or the results read when it
+      # gives none; a result judged malicious in both shapes counts once.
+      summary: "{{ if(response.results | default([]),
+        if(response.total, response.total | int, response.results | default([]) | length) | plural('public scan')
+        ~ if(response.results | default([]) | count('verdicts.malicious') > 0
+        or response.results | default([]) | count('verdicts.overall.malicious') > 0,
+        ', ' ~ (response.results | default([]) | count('verdicts.malicious')
+        + response.results | default([]) | without(response.results | default([]) | where('verdicts.malicious'))
+        | count('verdicts.overall.malicious')) ~ ' judged malicious', ''),
+        'never scanned on urlscan.io') }}"
+      link: 'https://urlscan.io/search/#{{ ("page.url:\"" ~ (args.url | replace("\\", "\\\\") | replace("\"", "\\\"")) ~ "\"") | urlencode | replace("%2F", "/") }}'
+      total: "{{ if(response.total, response.total | int, response.results | default([]) | length) }}"
+      malicious: "{{ (response.results | default([]) | count('verdicts.malicious')
+        + response.results | default([]) | without(response.results | default([]) | where('verdicts.malicious'))
+        | count('verdicts.overall.malicious')) }}"
       scans: "{{ response.results }}"
       reports: "{{ response.results | pluck('result') }}"
 
@@ -64,12 +96,30 @@ commands:
       query:
         q: 'page.domain:"{{ args.domain | replace("\\", "\\\\") | replace("\"", "\\\"") }}"'
         size: 10
+    # A 404 is read as Nik's own look-up reads it: nothing was scanned.
+    success: { status: [200, 404] }
     error: { message: "{{ response.message }}" }
     outputs:
-      verdict: "{{ response.results | where('verdicts.malicious') | length | map('0', 'unknown', else='malicious') }}"
-      summary: "{{ response.total | default(0) }} public scans, {{ response.results | where('verdicts.malicious') | length }} of the last {{ response.results | length }} judged malicious"
-      total: "{{ response.total }}"
-      malicious: "{{ response.results | where('verdicts.malicious') | length }}"
+      # Malicious when one of the results read (the last ten) was judged malicious, in either shape of the
+      # answer; urlscan never says "clean".
+      verdict: "{{ if(response.results | default([]) | count('verdicts.malicious') > 0
+        or response.results | default([]) | count('verdicts.overall.malicious') > 0,
+        'malicious', 'unknown') }}"
+      # "3 public scans, 1 judged malicious". The total is the one urlscan counts, or the results read when it
+      # gives none; a result judged malicious in both shapes counts once.
+      summary: "{{ if(response.results | default([]),
+        if(response.total, response.total | int, response.results | default([]) | length) | plural('public scan')
+        ~ if(response.results | default([]) | count('verdicts.malicious') > 0
+        or response.results | default([]) | count('verdicts.overall.malicious') > 0,
+        ', ' ~ (response.results | default([]) | count('verdicts.malicious')
+        + response.results | default([]) | without(response.results | default([]) | where('verdicts.malicious'))
+        | count('verdicts.overall.malicious')) ~ ' judged malicious', ''),
+        'never scanned on urlscan.io') }}"
+      link: 'https://urlscan.io/search/#{{ ("page.domain:\"" ~ (args.domain | replace("\\", "\\\\") | replace("\"", "\\\"")) ~ "\"") | urlencode | replace("%2F", "/") }}'
+      total: "{{ if(response.total, response.total | int, response.results | default([]) | length) }}"
+      malicious: "{{ (response.results | default([]) | count('verdicts.malicious')
+        + response.results | default([]) | without(response.results | default([]) | where('verdicts.malicious'))
+        | count('verdicts.overall.malicious')) }}"
       scans: "{{ response.results }}"
       reports: "{{ response.results | pluck('result') }}"
 
@@ -136,11 +186,12 @@ commands:
       meta: "{{ response.meta }}"
 
   - name: wait-for-result
-    description: Wait until a scan is finished (five minutes at most) and give its result. Fails when the result was deleted.
+    description: Wait until a scan is finished (five minutes at most) and give its result. Fails when the result was deleted. Asked every five seconds, or as long after as urlscan says in Retry-After.
     arguments:
       - { name: scan_id, type: text, required: true, description: "The id (UUID) of the scan, as submit-url gave it" }
     request: { method: GET, path: "/api/v1/result/{{ args.scan_id }}/" }
-    # 404: not finished yet. 410: the result was deleted.
+    # 404: not finished yet. 410: the result was deleted. A Retry-After header on an answer is honoured by
+    # the poll itself: the next try waits that long when it is longer than "every".
     success: { status: [200, 404, 410] }
     error: { message: "{{ response.message }}" }
     poll:
@@ -179,6 +230,18 @@ commands:
     request: { method: GET, path: "/dom/{{ args.scan_id }}/", answer: text }
     outputs:
       dom: "{{ response.text }}"
+
+  - name: get-screenshot
+    description: The screenshot of the page as the scan left it, a PNG image kept as an artifact. For a scan that is finished.
+    arguments:
+      - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan }
+    request:
+      method: GET
+      path: "/screenshots/{{ args.scan_id | urlencode }}.png"
+      answer: file
+      save_as: { name: "{{ args.scan_id }}.png", type: image/png }
+    error: { message: "{{ response.message }}" }
+    sample: { name: 68e26c59-2eae-437b-aeb1-cf750fafe7d7.png, type: image/png, size: 0, sha256: "", artifact: "", linked: false }
 
   - name: get-response
     description: What a scanned page was answered for one of its requests (a script, a document, a fetch), as text, by the SHA-256 of the content.
@@ -276,9 +339,11 @@ commands:
       limit_param: size
       limit: 100
       max_pages: 10
+      keep: { total: "{{ response.total }}" }
     outputs:
       results: "{{ response.items }}"
       count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
       ids: "{{ response.items | pluck('_id') }}"
       malicious: "{{ response.items | where('verdicts.malicious') | length }}"
       truncated: "{{ response.truncated }}"
@@ -1061,6 +1126,26 @@ commands:
       states: "{{ response.incidentstates }}"
       count: "{{ response.incidentstates | length }}"
 
+  # ------------------------------------------------------------------- files --
+  - name: download-file
+    description: "A file a scanned page made the browser download, by its SHA-256, kept as an artifact: a ZIP encrypted with a password (urlscan! unless you give another) that holds the one file, named after its SHA-256. Nik stores the ZIP as it came and never opens it."
+    premium: true
+    arguments:
+      - { name: file_hash, type: text, required: true, description: The SHA-256 of the file }
+      - { name: password, type: text, description: "The password the ZIP is encrypted with: urlscan! (with the exclamation mark) when left out" }
+      - { name: filename, type: text, description: "The name of the ZIP: the hash and .zip when left out. The file inside keeps its name" }
+    request:
+      method: GET
+      path: "/downloads/{{ args.file_hash | urlencode }}"
+      query:
+        password: "{{ args.password }}"
+        filename: "{{ args.filename }}"
+      answer: file
+      save_as: { name: "{{ first_of(args.filename, args.file_hash ~ '.zip') }}", type: application/zip }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: sample.zip, type: application/zip, size: 0, sha256: "", artifact: "", linked: false }
+
   # -------------------------------------------------------------- data dumps --
   - name: list-data-dumps
     description: The data dump files there are for a window of time, a kind of file and a day.
@@ -1075,3 +1160,17 @@ commands:
       files: "{{ response.files }}"
       paths: "{{ response.files | pluck('path') }}"
       count: "{{ response.files | length }}"
+
+  - name: download-data-dump
+    description: "One data dump file, by the path list-data-dumps gives, kept as an artifact (gzip). urlscan makes a temporary download link for it: when that link is on another host than urlscan.io, the host must be listed in the connector before the file can be fetched."
+    premium: true
+    arguments:
+      - { name: path, type: text, required: true, description: "The path of the file, as list-data-dumps gives it: days/search/20251001.gz" }
+    request:
+      method: GET
+      path: "/api/v1/datadump/link/{{ args.path | urlencode | replace('%2F', '/') }}"
+      answer: file
+      save_as: { name: "{{ args.path | replace('/', '-') }}", type: application/gzip }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: days-search-20251001.gz, type: application/gzip, size: 0, sha256: "", artifact: "", linked: false }

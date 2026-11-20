@@ -177,7 +177,9 @@
   ],
   "outputs": {
     "verdict": "unknown",
-    "summary": "registered 1990-12-31, registrar Example Registrar Inc.",
+    "summary": "registered 1990-12-31, Example Registrar Inc.",
+    "link": "https://client.rdap.org/?type=domain&object=example.com",
+    "age_days": 13163,
     "name": "example.com",
     "unicode_name": null,
     "handle": "XXXX",

@@ -26,10 +26,13 @@
 # or ask for credentials this connector does not send.
 name: RDAP (registration data)
 id: rdap
-version: 1
+version: 3
 description: Registration data of domains, IP networks, AS numbers, name servers and entities, read from the registries over RDAP.
 api_version: "RDAP: RFC 9082 (queries) and RFC 9083 (JSON answers), rdap_level_0"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3),
+# and that it gives facts rather than a judgement: it is counted only when it flags the value.
+lookups: { weight: 2, informational: true }
 configuration:
   - name: url
     label: RDAP server
@@ -86,17 +89,37 @@ test:
   request: { method: GET, path: /help }
 commands:
   - name: get-domain
-    description: The registration of a domain as its registry holds it (registrar, dates, status, name servers, DNSSEC); the verdict is always unknown, since the age cannot be judged here.
+    description: The registration of a domain as its registry holds it (registrar, dates, status, name servers, DNSSEC), with its age; the verdict is suspicious for a domain registered less than 30 days ago, unknown otherwise.
     reputation: domain
+    # A look-up of a host asks for the domain it is under: the registry knows nothing of www.example.com.
+    reputation_of: registered_domain
     arguments:
       - { name: domain, type: text, required: true, description: "The registered domain name (example.com), not a host under it; an IDN as A-labels or U-labels" }
     request:
       method: GET
       path: "/domain/{{ args.domain }}"
+    # A domain the registry has no record of (404) is an answer, not a failure.
+    success: { status: [200, 404] }
     error: { message: "{{ response.title }}" }
     outputs:
-      verdict: unknown
-      summary: "registered {{ response.events | default('') | where('eventAction', 'eq', 'registration') | first | get('eventDate') | regex_extract('^[0-9-]+') | map('', 'on an unknown date') }}, registrar {{ response.entities | default('') | where('roles', 'contains', 'registrar') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') | default('unknown') }}"
+      # Suspicious when the domain was registered less than 30 days ago; unknown otherwise: RDAP informs, it
+      # does not judge.
+      verdict: >-
+        {{ if(first_of(response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate'), '')
+        and now.iso | date_diff(response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate'), 'days') < 30,
+        'suspicious', 'unknown') }}
+      # "registered 16 days ago (2026-12-30), <registrar>" for a young domain, "registered 1995-08-14, <registrar>" otherwise.
+      summary: >-
+        {{ if(status == 404, 'the registry has no record of this domain',
+        if(first_of(response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate'), ''),
+        if(now.iso | date_diff(response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate'), 'days') < 30,
+        'registered ' ~ (max(0, now.iso | date_diff(response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate'), 'days')) | plural('day')) ~ ' ago (' ~ (response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate') | date('%Y-%m-%d')) ~ ')',
+        'registered ' ~ (response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate') | date('%Y-%m-%d'))),
+        'registered an unknown date')
+        ~ if(response.entities | default([]) | where('roles', 'contains', 'registrar') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') | default(''),
+        ', ' ~ (response.entities | default([]) | where('roles', 'contains', 'registrar') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3')), '')) }}
+      link: "https://client.rdap.org/?type=domain&object={{ args.domain | lower | urlencode }}"
+      age_days: "{{ if(first_of(response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate'), ''), max(0, now.iso | date_diff(response.events | default([]) | where('eventAction', 'eq', 'registration') | first | get('eventDate'), 'days'))) }}"
       name: "{{ response.ldhName | lower }}"
       unicode_name: "{{ response.unicodeName }}"
       handle: "{{ response.handle }}"
@@ -121,10 +144,18 @@ commands:
     request:
       method: GET
       path: "/ip/{{ args.ip }}"
+    # An address no registry has a record of (404) is an answer, not a failure.
+    success: { status: [200, 404] }
     error: { message: "{{ response.title }}" }
     outputs:
       verdict: unknown
-      summary: "network {{ response.name | default('') }} ({{ response.handle | default('') }}), held by {{ response.entities | default('') | where('roles', 'contains', 'registrant') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') | default('an unknown holder') }}"
+      # "<network> · <holder> · <country>", each when the registry gives it.
+      summary: >-
+        {{ if(status == 404, 'the registry has no record of this address',
+        first_of([first_of(response.name, response.handle, ''),
+        response.entities | default([]) | where('roles', 'contains', 'registrant') | first | get('vcardArray.1') | where('0', 'eq', 'fn') | first | get('3') | default(''),
+        first_of(response.country, '')] | without(['']) | join(' · '), 'registered network')) }}
+      link: "https://client.rdap.org/?type=ip&object={{ args.ip | urlencode }}"
       name: "{{ response.name }}"
       handle: "{{ response.handle }}"
       start_address: "{{ response.startAddress }}"

@@ -1,0 +1,55 @@
+{
+  "args": {
+    "sample": "store:setup.bin",
+    "disable_sandbox": "false",
+    "enable_internet": "true",
+    "command_line": "/quiet",
+    "retention_period_days": 7,
+    "storage_region": "EU",
+    "locale": "DE_DE"
+  },
+  "store": {
+    "setup.bin": {
+      "base64": "AAEgaW52ZW50ZWQgYnl0ZXMg//4="
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/private/files",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "body_has": [
+          "name=\"disable_sandbox\"\r\n\r\nfalse\r\n",
+          "name=\"enable_internet\"\r\n\r\ntrue\r\n",
+          "name=\"command_line\"\r\n\r\n/quiet\r\n",
+          "name=\"retention_period_days\"\r\n\r\n7\r\n",
+          "name=\"storage_region\"\r\n\r\nEU\r\n",
+          "name=\"locale\"\r\n\r\nDE_DE\r\n"
+        ],
+        "files": [
+          {
+            "field": "file",
+            "name": "setup.bin",
+            "base64": "AAEgaW52ZW50ZWQgYnl0ZXMg//4="
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "private_analysis",
+            "id": "OTFiMDcwMjVjZDIzZTI0NGU4ZDlmMjI2NjkzZDczNGE6MTY1MzY1NDM3Nw=="
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "analysis_id": "OTFiMDcwMjVjZDIzZTI0NGU4ZDlmMjI2NjkzZDczNGE6MTY1MzY1NDM3Nw==",
+    "type": "private_analysis"
+  }
+}

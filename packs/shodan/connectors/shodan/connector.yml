@@ -19,12 +19,14 @@
 #
 # The key goes in the query of a request (?key=...), as the API asks: on
 # api.shodan.io and trends.shodan.io only. The services that take no key are
-# never sent it.
+# never sent it, and an instance without a key can use their commands
+# (check-ip, CVEDB, EntityDB, GeoNet): the key is read with a default, so a
+# request that wants one leaves without it and Shodan refuses it (401).
 #
 # Not here: the Exploits API (exploits.shodan.io), whose reference could not
 # be read, and the Streaming API (stream.shodan.io), an endless stream.
 #
-# check-ip reads InternetDB and gives the verdict Nik's own enrichment gives
+# check-ip reads InternetDB and gives the verdict Nik's own look-up code gave
 # from it: malicious when the host is tagged malware, c2, compromised or
 # botnet, suspicious when its only such tag is tor, unknown otherwise (Shodan
 # says what a host exposes, not that it is clean). A host InternetDB has
@@ -33,7 +35,7 @@
 # Not run against the real services: see "verified" below.
 name: Shodan
 id: shodan
-version: 1
+version: 2
 description: >-
   Hosts, searches, on-demand scans, network alerts and DNS of Shodan, the search engine of what is exposed
   on the Internet, with InternetDB, CVEDB, EntityDB, GeoNet and Trends.
@@ -43,8 +45,7 @@ configuration:
   - name: api_key
     label: API key
     type: secret
-    required: true
-    help: "The API key of a Shodan account: https://account.shodan.io"
+    help: "The API key of a Shodan account: https://account.shodan.io. Left empty, only the commands of InternetDB (check-ip), CVEDB, EntityDB and GeoNet work: they take no key."
 base_url: "https://api.shodan.io"
 more_hosts:
   - internetdb.shodan.io
@@ -55,7 +56,7 @@ more_hosts:
 headers:
   Accept: application/json
 test:
-  request: { method: GET, path: /api-info, query: { key: "{{ secret.api_key }}" } }
+  request: { method: GET, path: /api-info, query: { key: "{{ secret.api_key | default('') }}" } }
   expect: { status: 200 }
 commands:
   # ----------------------------------------------------------------- hosts --
@@ -73,8 +74,18 @@ commands:
     success: { status: [200, 404] }
     error: { message: "{{ response.detail }}" }
     outputs:
-      verdict: "{{ response.tags | default('') | join(',') | regex_extract('(?<![^,])(?:malware|c2|compromised|botnet)(?![^,])|(?<![^,])tor(?![^,])(?!.*(?<![^,])(?:malware|c2|compromised|botnet)(?![^,]))') | map('', 'unknown', 'tor', 'suspicious', else='malicious') }}"
-      summary: "{{ status | map(200, 'ports: ', else='no open port known to Shodan') }}{{ response.ports | default('') | join(', ') }}{{ response.vulns | default('') | length | map(0, '', else='; CVEs: ') }}{{ response.vulns | default('') | length | map(0, '') }}{{ response.tags | default('') | length | map(0, '', else='; tags: ') }}{{ response.tags | default('') | join(', ') }}"
+      # Malicious when the host is tagged malware, c2, compromised or botnet; suspicious when its only such
+      # tag is tor; unknown otherwise.
+      verdict: >-
+        {{ if(response.tags | default([]) | has_any(['malware', 'c2', 'compromised', 'botnet']), 'malicious',
+        if(response.tags | default([]) | has_any(['tor']), 'suspicious', 'unknown')) }}
+      # "ports 22, 443; 1 CVE; tags c2": the first 8 ports, the number of CVEs, the first 5 tags.
+      summary: >-
+        {{ if(status == 404 or not response, 'no open port known to Shodan',
+        if(response.ports | default([]), 'ports ' ~ (response.ports | limit(8) | join(', ')), 'no open port')
+        ~ if(response.vulns | default([]), '; ' ~ (response.vulns | plural('CVE')), '')
+        ~ if(response.tags | default([]), '; tags ' ~ (response.tags | limit(5) | join(', ')), '')) }}
+      bad_tags: "{{ response.tags | default([]) | intersect(['malware', 'c2', 'compromised', 'botnet', 'tor']) | sort }}"
       link: "https://www.shodan.io/host/{{ args.ip }}"
       ports: "{{ response.ports }}"
       hostnames: "{{ response.hostnames }}"
@@ -92,7 +103,7 @@ commands:
       method: GET
       path: "/shodan/host/{{ args.ip }}"
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         history: "{{ args.history }}"
         minify: "{{ args.minify }}"
     error: { message: "{{ response.error }}" }
@@ -121,7 +132,7 @@ commands:
       method: GET
       path: /shodan/host/count
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         query: "{{ args.query }}"
         facets: "{{ args.facets }}"
     error: { message: "{{ response.error }}" }
@@ -143,7 +154,7 @@ commands:
       method: GET
       path: /shodan/host/search
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         query: "{{ args.query }}"
         facets: "{{ args.facets }}"
         page: "{{ args.page }}"
@@ -168,7 +179,7 @@ commands:
       method: GET
       path: /shodan/host/search
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         query: "{{ args.query }}"
         minify: "{{ args.minify }}"
         fields: "{{ args.fields }}"
@@ -178,11 +189,13 @@ commands:
       limit: 100
       items: "{{ response.matches }}"
       max_pages: 5
+      keep: { total: "{{ response.total }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       matches: "{{ response.items }}"
       ips: "{{ response.items[*].ip_str | unique }}"
       count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
       truncated: "{{ response.truncated }}"
 
   - name: list-search-facets
@@ -190,7 +203,7 @@ commands:
     request:
       method: GET
       path: /shodan/host/search/facets
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       facets: "{{ response }}"
@@ -200,7 +213,7 @@ commands:
     request:
       method: GET
       path: /shodan/host/search/filters
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       filters: "{{ response }}"
@@ -213,7 +226,7 @@ commands:
       method: GET
       path: /shodan/host/search/tokens
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         query: "{{ args.query }}"
     error: { message: "{{ response.error }}" }
     outputs:
@@ -228,7 +241,7 @@ commands:
     request:
       method: GET
       path: /shodan/ports
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       ports: "{{ response }}"
@@ -238,7 +251,7 @@ commands:
     request:
       method: GET
       path: /shodan/protocols
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       protocols: "{{ response }}"
@@ -261,7 +274,7 @@ commands:
     request:
       method: POST
       path: /shodan/scan
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
       form:
         ips: "{{ args.ips }}"
     error: { message: "{{ response.error }}" }
@@ -284,7 +297,7 @@ commands:
     request:
       method: POST
       path: /shodan/scan/internet
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
       form:
         port: "{{ args.port }}"
         protocol: "{{ args.protocol }}"
@@ -298,7 +311,7 @@ commands:
     request:
       method: GET
       path: /shodan/scans
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       scans: "{{ response.matches }}"
@@ -312,7 +325,7 @@ commands:
     request:
       method: GET
       path: "/shodan/scan/{{ args.id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       status: "{{ response.status }}"
@@ -327,7 +340,7 @@ commands:
     request:
       method: GET
       path: "/shodan/scan/{{ args.id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     poll:
       until: { all: [{ left: "{{ response.status }}", op: eq, right: DONE }] }
       every: 30
@@ -351,7 +364,7 @@ commands:
     request:
       method: POST
       path: /shodan/alert
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
       json:
         name: "{{ args.name }}"
         filters:
@@ -373,7 +386,7 @@ commands:
     request:
       method: GET
       path: "/shodan/alert/{{ args.id }}/info"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       id: "{{ response.id }}"
@@ -394,7 +407,7 @@ commands:
     request:
       method: DELETE
       path: "/shodan/alert/{{ args.id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -409,7 +422,7 @@ commands:
     request:
       method: POST
       path: "/shodan/alert/{{ args.id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
       json:
         filters:
           ip: "{{ args.ips }}"
@@ -426,7 +439,7 @@ commands:
     request:
       method: GET
       path: /shodan/alert/info
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       alerts: "{{ response }}"
@@ -438,7 +451,7 @@ commands:
     request:
       method: GET
       path: /shodan/alert/triggers
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       triggers: "{{ response }}"
@@ -453,7 +466,7 @@ commands:
     request:
       method: PUT
       path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -468,7 +481,7 @@ commands:
     request:
       method: DELETE
       path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -484,7 +497,7 @@ commands:
     request:
       method: PUT
       path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}/ignore/{{ args.service }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -500,7 +513,7 @@ commands:
     request:
       method: DELETE
       path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}/ignore/{{ args.service }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -515,7 +528,7 @@ commands:
     request:
       method: PUT
       path: "/shodan/alert/{{ args.id }}/notifier/{{ args.notifier_id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -530,7 +543,7 @@ commands:
     request:
       method: DELETE
       path: "/shodan/alert/{{ args.id }}/notifier/{{ args.notifier_id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -542,7 +555,7 @@ commands:
     request:
       method: GET
       path: /notifier
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       notifiers: "{{ response.matches }}"
@@ -554,7 +567,7 @@ commands:
     request:
       method: GET
       path: /notifier/provider
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       providers: "{{ response }}"
@@ -579,7 +592,7 @@ commands:
     request:
       method: POST
       path: /notifier
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
       form:
         provider: "{{ args.provider }}"
         description: "{{ args.description }}"
@@ -603,7 +616,7 @@ commands:
     request:
       method: GET
       path: "/notifier/{{ args.id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       id: "{{ response.id }}"
@@ -626,7 +639,7 @@ commands:
     request:
       method: PUT
       path: "/notifier/{{ args.id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
       form:
         to: "{{ args.to }}"
         url: "{{ args.url }}"
@@ -649,7 +662,7 @@ commands:
     request:
       method: DELETE
       path: "/notifier/{{ args.id }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -665,7 +678,7 @@ commands:
       method: GET
       path: /shodan/query
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         sort: "{{ args.sort }}"
         order: "{{ args.order }}"
     pagination:
@@ -674,10 +687,12 @@ commands:
       limit: 10
       items: "{{ response.matches }}"
       max_pages: 10
+      keep: { total: "{{ response.total }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       queries: "{{ response.items }}"
       count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
       truncated: "{{ response.truncated }}"
 
   - name: search-saved-queries
@@ -688,7 +703,7 @@ commands:
       method: GET
       path: /shodan/query/search
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         query: "{{ args.query }}"
     pagination:
       type: page
@@ -696,10 +711,12 @@ commands:
       limit: 10
       items: "{{ response.matches }}"
       max_pages: 10
+      keep: { total: "{{ response.total }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       queries: "{{ response.items }}"
       count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
       truncated: "{{ response.truncated }}"
 
   - name: list-query-tags
@@ -710,7 +727,7 @@ commands:
       method: GET
       path: /shodan/query/tags
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         size: "{{ args.size }}"
     error: { message: "{{ response.error }}" }
     outputs:
@@ -725,7 +742,7 @@ commands:
     request:
       method: GET
       path: /shodan/data
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       datasets: "{{ response }}"
@@ -741,7 +758,7 @@ commands:
     request:
       method: GET
       path: "/shodan/data/{{ args.dataset }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       files: "{{ response }}"
@@ -756,7 +773,7 @@ commands:
     request:
       method: GET
       path: /org
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       id: "{{ response.id }}"
@@ -778,7 +795,7 @@ commands:
       method: PUT
       path: "/org/member/{{ args.user }}"
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         notify: "{{ args.notify }}"
     error: { message: "{{ response.error }}" }
     outputs:
@@ -794,7 +811,7 @@ commands:
     request:
       method: DELETE
       path: "/org/member/{{ args.user }}"
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       success: "{{ response.success }}"
@@ -806,7 +823,7 @@ commands:
     request:
       method: GET
       path: /account/profile
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       member: "{{ response.member }}"
@@ -819,7 +836,7 @@ commands:
     request:
       method: GET
       path: /api-info
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       plan: "{{ response.plan }}"
@@ -844,7 +861,7 @@ commands:
       method: GET
       path: "/dns/domain/{{ args.domain }}"
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         history: "{{ args.history }}"
         type: "{{ args.type }}"
         page: "{{ args.page }}"
@@ -864,7 +881,7 @@ commands:
       method: GET
       path: /dns/resolve
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         hostnames: "{{ args.hostnames }}"
     error: { message: "{{ response.error }}" }
     outputs:
@@ -879,7 +896,7 @@ commands:
       method: GET
       path: /dns/reverse
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         ips: "{{ args.ips }}"
     error: { message: "{{ response.error }}" }
     outputs:
@@ -891,7 +908,7 @@ commands:
     request:
       method: GET
       path: /tools/httpheaders
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       headers: "{{ response }}"
@@ -901,7 +918,7 @@ commands:
     request:
       method: GET
       path: /tools/myip
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       ip: "{{ response }}"
@@ -1213,7 +1230,7 @@ commands:
       method: GET
       path: https://trends.shodan.io/api/v1/search
       query:
-        key: "{{ secret.api_key }}"
+        key: "{{ secret.api_key | default('') }}"
         query: "{{ args.query }}"
         facets: "{{ args.facets }}"
     error: { message: "{{ response.error }}" }
@@ -1228,7 +1245,7 @@ commands:
     request:
       method: GET
       path: https://trends.shodan.io/api/v1/search/filters
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       filters: "{{ response }}"
@@ -1239,7 +1256,7 @@ commands:
     request:
       method: GET
       path: https://trends.shodan.io/api/v1/search/facets
-      query: { key: "{{ secret.api_key }}" }
+      query: { key: "{{ secret.api_key | default('') }}" }
     error: { message: "{{ response.error }}" }
     outputs:
       facets: "{{ response }}"

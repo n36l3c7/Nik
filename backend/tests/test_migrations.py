@@ -1042,3 +1042,68 @@ def test_migration_0025_has_nothing_to_fill_on_a_database_that_never_had_the_sin
         names = {c["name"] for c in sa.inspect(conn).get_columns("users")}
     assert "roles" in names and "role" not in names
     command.upgrade(cfg, "0044_no_legacy_roles")
+
+
+def test_migration_0045_files_the_stored_answers_under_the_connectors(tmp_path, monkeypatch):
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    answers = [
+        ("ip", "198.51.100.7", "internetdb", "malicious", "ports 22; tags c2"),
+        ("ip", "198.51.100.7", "virustotal", "malicious", "7/88 engines flag it"),
+        ("domain", "evil.example", "registration", "suspicious", "registered 3 days ago"),
+        ("sha256", "a" * 64, "abusech", "malicious", "MalwareBazaar: AgentTesla"),
+        ("url", "http://evil.example/x", "abusech", "malicious", "URLhaus: malware_download (online)"),
+        ("ip", "198.51.100.7", "abusech", "malicious", "ThreatFox: Cobalt Strike (botnet_cc)"),
+        ("domain", "evil.example", "abusech", "unknown", "not in ThreatFox or URLhaus"),
+    ]
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE ioc_enrichment (type VARCHAR, value VARCHAR, provider VARCHAR, verdict VARCHAR,"
+                " summary VARCHAR, PRIMARY KEY (type, value, provider))"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "CREATE TABLE ioc_enrichment_history (id VARCHAR PRIMARY KEY, type VARCHAR, value VARCHAR,"
+                " provider VARCHAR, verdict VARCHAR, summary VARCHAR)"
+            )
+        )
+        conn.execute(sa.text("CREATE TABLE integration_keys (id VARCHAR PRIMARY KEY, provider VARCHAR)"))
+        conn.execute(sa.text("INSERT INTO integration_keys VALUES ('k1', 'abusech')"))
+        for index, row in enumerate(answers):
+            values = dict(zip(("type", "value", "provider", "verdict", "summary"), row, strict=True))
+            conn.execute(
+                sa.text("INSERT INTO ioc_enrichment VALUES (:type, :value, :provider, :verdict, :summary)"), values
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO ioc_enrichment_history VALUES (:id, :type, :value, :provider, :verdict, :summary)"
+                ),
+                {"id": f"h{index}", **values},
+            )
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    expected = {
+        ("ip", "198.51.100.7", "shodan", "malicious"),
+        ("ip", "198.51.100.7", "virustotal", "malicious"),
+        ("domain", "evil.example", "rdap", "suspicious"),
+        ("sha256", "a" * 64, "malwarebazaar", "malicious"),
+        ("url", "http://evil.example/x", "urlhaus", "malicious"),
+        ("ip", "198.51.100.7", "threatfox", "malicious"),
+    }
+    for _again in range(2):  # the second time there is nothing to do
+        command.stamp(cfg, "0044_no_legacy_roles")
+        command.upgrade(cfg, "0045_lookups_through_connectors")
+        with engine.connect() as conn:
+            for table in ("ioc_enrichment", "ioc_enrichment_history"):
+                found = conn.execute(sa.text(f"SELECT type, value, provider, verdict FROM {table}")).all()
+                assert {tuple(row) for row in found} == expected, table
+            # The keys are not touched here: the application moves them when it can.
+            assert conn.execute(sa.text("SELECT provider FROM integration_keys")).scalar() == "abusech"
+    command.downgrade(cfg, "0044_no_legacy_roles")
+    with engine.connect() as conn:
+        providers = set(conn.execute(sa.text("SELECT provider FROM ioc_enrichment")).scalars())
+        assert {"internetdb", "registration", "malwarebazaar"} <= providers and "shodan" not in providers

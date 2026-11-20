@@ -220,8 +220,9 @@
               <td><code>ENRICHMENT_WORKER</code></td>
               <td><code>true</code></td>
               <td>
-                Background thread of the automatic threat-intelligence lookups; <code>false</code> turns it off (Check
-                now still works).
+                Background thread of the automatic threat-intelligence lookups and of the bulk checks;
+                <code>false</code> turns it off (Check now still works). It asks only the sources that are on: the
+                connectors with an instance.
               </td>
             </tr>
             <tr>
@@ -640,15 +641,16 @@
           <h3>IOC allowlist</h3>
           <p>
             Known-good indicators (addresses, networks, domains) left out of the Indicators tab and never sent to a
-            threat-intelligence provider.
+            threat-intelligence source.
           </p>
         </div>
         <div class="card">
           <h3>Report header, mail analysis, threat intelligence</h3>
           <p>
             Admins set the organisation's name and logo on reports, the organisation's own mail domains and the mail
-            servers whose authentication results are trusted, and the threat-intelligence providers: their keys (never
-            shown again) and which indicator types may be looked up automatically.
+            servers whose authentication results are trusted, and for threat intelligence which indicator types are
+            looked up automatically and how long an answer stands. The sources themselves are connectors: a source is on
+            when an instance of its connector is, and its keys are the keys of that instance (Connectors).
           </p>
         </div>
         <div class="card">
