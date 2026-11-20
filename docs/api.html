@@ -1322,7 +1322,13 @@
                 <code>at</code>), <code>problem</code> (<code>kind</code>: <code>edited</code>, <code>missing</code>,
                 <code>reordered</code>, <code>relinked</code>, <code>start</code>, <code>cut</code>,
                 <code>rewritten</code>; <code>seq</code>, <code>text</code>, <code>since</code>) or null. Every entry of
-                <code>GET /api/audit</code> carries its <code>seq</code>, <code>prev</code> and <code>hash</code>.
+                <code>GET /api/audit</code> carries its <code>seq</code>, <code>prev</code> and <code>hash</code>, and
+                <code>origin</code>: <code>import</code> for an entry that came in a file of content from another server
+                (its time and author are that file's), null otherwise; <code>q=origin:import</code> asks for them;
+                <code>outside</code> for one the server found in the table and did not write itself.
+                <code>mac</code> and <code>keyId</code> are its signature and the id of the key that made it;
+                <code>GET /api/audit/chain</code> gives the <code>keyId</code> in use, and <code>unchecked</code>: how
+                many entries were signed by keys the server can no longer make.
               </td>
             </tr>
             <tr>

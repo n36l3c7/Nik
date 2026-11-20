@@ -6,6 +6,8 @@ import {
   forwardingForm,
   forwardingProblem,
   forwardingStatus,
+  isImported,
+  originMark,
   levelOptions,
   parseHead,
   shortHash,
@@ -48,6 +50,32 @@ test('the chain says how far it holds, or where it broke', () => {
     text: 'Broken at entry 3120',
     detail: 'The content of entry 3120 was changed after it was written. Found at T2.',
   })
+})
+
+test('an entry that came in a file from another server is told apart', () => {
+  assert.equal(isImported({ origin: 'import' }), true)
+  assert.equal(isImported({ origin: null }), false)
+  assert.equal(isImported({}), false)
+  assert.equal(isImported(null), false)
+  assert.equal(originMark({ origin: 'import' }).text, 'imported')
+  assert.equal(originMark({ origin: 'outside' }).text, 'written outside')
+  assert.match(originMark({ origin: 'outside' }).note, /a restore leaves one such entry/)
+  assert.equal(originMark({ origin: null }), null)
+})
+
+test('entries whose key the server no longer has are said, and are not a break', () => {
+  const chain = {
+    verified: { seq: 9, at: 'T1' },
+    problem: null,
+    unchecked: { 'derived-0a1b2c3d4e5f': 4, 'set-111122223333': 1 },
+  }
+  const status = chainStatus(chain, (iso) => `at ${iso}`)
+  assert.equal(status.color, 'emerald')
+  assert.match(
+    status.detail,
+    /The signature of 5 entries cannot be checked: this server no longer has the key derived-0a1b2c3d4e5f, set-111122223333\.$/,
+  )
+  assert.doesNotMatch(chainStatus({ verified: { seq: 9, at: 'T1' }, unchecked: {} }).detail, /cannot be checked/)
 })
 
 test('a head is typed as its number and its hash', () => {

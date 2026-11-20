@@ -182,6 +182,12 @@ class AuditOut(BaseModel):
     seq: Optional[int] = None
     prev: Optional[str] = None
     hash: Optional[str] = None
+    # "import": it came in a file of content from another server; its time and author are that file's.
+    # "outside": it was found in the table, not written by the server's own transactions.
+    origin: Optional[str] = None
+    # The signature of the entry and the id of the key that made it.
+    mac: Optional[str] = None
+    keyId: Optional[str] = None
 
 
 class AuditEnvelope(BaseModel):

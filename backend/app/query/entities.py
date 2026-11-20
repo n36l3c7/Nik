@@ -244,6 +244,13 @@ AUDIT = Entity(
         FieldSpec(
             "incidentId", "keyword", "The id of the incident concerned", column=AuditEntry.incident_id, nullable=True
         ),
+        FieldSpec(
+            "origin",
+            "keyword",
+            "import for an entry that came in a file from another server",
+            column=AuditEntry.origin,
+            nullable=True,
+        ),
     ),
 )
 

@@ -11,7 +11,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
-PROJECT=nik-smoke
+PROJECT=${SMOKE_PROJECT:-nik-smoke}
 HTTP_PORT=${SMOKE_HTTP_PORT:-18080}
 TLS_PORT=${SMOKE_TLS_PORT:-18443}
 ENV_FILE=$(mktemp)
@@ -73,8 +73,10 @@ api=$(get -o /dev/null -D - "$base/api/health" | tr -d '\r')
 grep -qi '^X-Content-Type-Options: nosniff' <<<"$api" || fail "the API lacks nosniff"
 grep -qi '^Content-Security-Policy' <<<"$api" && fail "the API carries the app's policy (it breaks /api/docs)"
 
-echo "== metrics are not published"
-[ "$(get -o /dev/null -w '%{http_code}' "$base/api/metrics")" = 404 ] || fail "/api/metrics is reachable through nginx"
+echo "== the metrics answer to their scrape token only"
+[ "$(get -o /dev/null -w '%{http_code}' "$base/api/metrics")" = 401 ] || fail "/api/metrics answers without a token"
+[ "$(get -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-the-token' "$base/api/metrics")" = 401 ] ||
+  fail "/api/metrics answers to a token that is not the one"
 
 echo "== the first account, a Secure session cookie, and a sign-in limit counted per client"
 [ "$(get -o /dev/null -w '%{http_code}' -X POST "$base/api/users" -H 'Content-Type: application/json' \
@@ -94,6 +96,14 @@ for _ in $(seq 1 20); do
   sleep 2
 done
 grep -q '"workerAlive":true' <<<"$alive" || fail "the automation worker does not report in ($alive)"
+
+echo "== a signed-in administrator's cookie does not open the metrics; the token made on the health page does"
+[ "$(get -o /dev/null -w '%{http_code}' -b "$jar" "$base/api/metrics")" = 401 ] ||
+  fail "/api/metrics answers to a session cookie"
+token=$(get -b "$jar" -X POST "$base/api/health/metrics-token" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+[ -n "$token" ] || fail "no scrape token was made"
+get -H "Authorization: Bearer $token" "$base/api/metrics" | grep -q '^nik_health_state{' ||
+  fail "/api/metrics does not answer to its scrape token"
 
 echo "== a script runs in the sandbox, which has no way out"
 script=$(get -b "$jar" -X POST "$base/api/automation/scripts" -H 'Content-Type: application/json' -d '{"name":"SmokeTest"}')

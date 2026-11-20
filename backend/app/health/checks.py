@@ -238,13 +238,22 @@ def database_facts(db: OrmSession) -> dict[str, Any]:
             db.execute(text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()")).scalar() or 0
         )
         facts["maxConnections"] = int(db.execute(text("SHOW max_connections")).scalar() or 0)
+        # A backup reads the whole database in one transaction, for as long as that takes: it is
+        # not what this row is for. Its connection is known by the advisory lock a dump holds
+        # (backups/database.py; the upgrade holds the same one). The rehearsal of an upgrade and
+        # the restore test run in scratch databases, which the first condition leaves out already.
+        from ..backups.database import MIGRATION_LOCK
+
         facts["longest"] = float(
             db.execute(
                 text(
                     "SELECT coalesce(max(extract(epoch FROM clock_timestamp() - xact_start)), 0) "
                     "FROM pg_stat_activity WHERE datname = current_database() AND xact_start IS NOT NULL "
-                    "AND state <> 'idle' AND pid <> pg_backend_pid()"
-                )
+                    "AND state <> 'idle' AND pid <> pg_backend_pid() AND pid NOT IN ("
+                    "SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 1 "
+                    "AND classid = :high AND objid = :low)"
+                ),
+                {"high": MIGRATION_LOCK >> 32, "low": MIGRATION_LOCK & 0xFFFFFFFF},
             ).scalar()
             or 0
         )

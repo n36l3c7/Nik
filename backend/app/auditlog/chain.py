@@ -23,7 +23,17 @@ construction, and the same code runs without the lock.
 An entry that reaches the table without going through a session of the
 server (a restore writes one with plain SQL; a script might) has no number:
 the next transaction that links entries links it too, and so does the
-verification pass, which runs every few minutes.
+verification pass, which runs every few minutes: marked ``outside``.
+
+**Signing.** In the same step each entry gets its signature: an HMAC of its
+hash under a key that is not in the database (``key.py``), and the id of that
+key. Somebody who can write to the database can compute the hashes of a
+rewritten log again; they cannot make its signatures. So that this holds,
+the server signs as its own only what its own transaction wrote: an entry it
+finds without a number that this transaction did not write is linked and
+signed with its ``origin`` set to ``outside`` (hashed, like the rest).
+Otherwise taking the numbers away from a stretch of the log would be a way to
+have the server sign whatever was put in it.
 
 **Nothing edits or removes an entry**, with one exception that says so
 itself: ``trim`` removes the oldest entries and writes an ``audit.trim``
@@ -67,8 +77,9 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified, set_committed_value
 
 from ..core.models import AuditChain, AuditEntry, Setting
+from . import key as signing
 from . import verifier
-from .verifier import CHAINED, RESTORE, TRIM, ZERO
+from .verifier import CHAINED, OUTSIDE, RESTORE, TRIM, ZERO
 
 logger = logging.getLogger("nik.audit")
 
@@ -84,6 +95,7 @@ HEADS_KEPT = 500
 ACTOR = "nik"
 
 _PENDING = "audit_entries_to_link"
+_OWN = "audit_entries_written_here"
 _T = AuditEntry.__table__
 _H = AuditChain.__table__
 _COLUMNS = (
@@ -95,6 +107,7 @@ _COLUMNS = (
     _T.c.details,
     _T.c.incident_id,
     _T.c.incident_name,
+    _T.c.origin,
 )
 _started = False
 
@@ -104,8 +117,10 @@ _started = False
 # --------------------------------------------------------------------------- #
 @event.listens_for(OrmSession, "before_flush")
 def _note_entries(session: OrmSession, _context, _instances) -> None:
-    if not session.info.get(_PENDING) and any(isinstance(row, AuditEntry) for row in session.new):
+    mine = [row.id for row in session.new if isinstance(row, AuditEntry)]
+    if mine:
         session.info[_PENDING] = True
+        session.info.setdefault(_OWN, set()).update(mine)
 
 
 @event.listens_for(OrmSession, "before_commit")
@@ -114,7 +129,7 @@ def _link_entries(session: OrmSession) -> None:
         return  # a savepoint: the entries are linked when the whole transaction commits
     session.flush()
     if session.info.pop(_PENDING, False):
-        linked = link(session.connection())
+        linked = link(session.connection(), session.info.pop(_OWN, set()))
         for entry_id, values in linked.items():
             row = session.identity_map.get(sa_inspect(AuditEntry).identity_key_from_primary_key((entry_id,)))
             if row is not None:
@@ -127,6 +142,7 @@ def _forget_entries(session: OrmSession) -> None:
     # Only when the whole transaction went: what a savepoint rolls back leaves the rest to link.
     if not session.in_nested_transaction():
         session.info.pop(_PENDING, None)
+        session.info.pop(_OWN, None)
 
 
 def _head(conn: Connection) -> tuple[int, str]:
@@ -147,25 +163,51 @@ def _head(conn: Connection) -> tuple[int, str]:
     return int(found[0]), str(found[1])
 
 
-def link(conn: Connection) -> dict[str, dict[str, Any]]:
-    """Number and link every entry this transaction can see that has no number yet, in the
-    order of their time. Returns what each got. The caller's transaction commits it."""
+def link(conn: Connection, own: set[str] | frozenset[str] = frozenset()) -> dict[str, dict[str, Any]]:
+    """Number, link and sign every entry this transaction can see that has no number yet, in
+    the order of their time. ``own`` are the ids of the entries this transaction wrote itself:
+    any other is marked as written outside the server. Returns what each got. The caller's
+    transaction commits it."""
     seq, held = _head(conn)
     waiting = conn.execute(select(*_COLUMNS).where(_T.c.seq.is_(None)).order_by(_T.c.at, _T.c.id)).mappings().all()
     if not waiting:
         return {}
+    key_id, key = signing.current()
     linked: dict[str, dict[str, Any]] = {}
-    for entry in waiting:
+    for found in waiting:
+        entry = dict(found) if found["id"] in own else {**found, "origin": OUTSIDE}
         seq += 1
         hashed = verifier.entry_hash(seq, held, entry)
-        linked[entry["id"]] = {"seq": seq, "prev_hash": held, "hash": hashed}
+        linked[entry["id"]] = {
+            "seq": seq,
+            "prev_hash": held,
+            "hash": hashed,
+            "origin": entry["origin"],
+            "mac": verifier.sign(key, hashed),
+            "key_id": key_id,
+        }
         held = hashed
     conn.execute(
         update(_T)
         .where(_T.c.id == bindparam("entry"), _T.c.seq.is_(None))
-        .values(seq=bindparam("number"), prev_hash=bindparam("before"), hash=bindparam("hashed")),
+        .values(
+            seq=bindparam("number"),
+            prev_hash=bindparam("before"),
+            hash=bindparam("hashed"),
+            origin=bindparam("from_where"),
+            mac=bindparam("signed"),
+            key_id=bindparam("signed_by"),
+        ),
         [
-            {"entry": entry_id, "number": values["seq"], "before": values["prev_hash"], "hashed": values["hash"]}
+            {
+                "entry": entry_id,
+                "number": values["seq"],
+                "before": values["prev_hash"],
+                "hashed": values["hash"],
+                "from_where": values["origin"],
+                "signed": values["mac"],
+                "signed_by": values["key_id"],
+            }
             for entry_id, values in linked.items()
         ],
     )
@@ -220,7 +262,7 @@ def _number_of(db: OrmSession, hashed: str) -> int | None:
 
 def _entry(row) -> dict[str, Any]:
     return {**{column.name: row[column.name] for column in _COLUMNS}, "seq": row["seq"], "prev": row["prev_hash"],
-            "hash": row["hash"]}  # fmt: skip
+            "hash": row["hash"], "mac": row["mac"], "key_id": row["key_id"]}  # fmt: skip
 
 
 # --------------------------------------------------------------------------- #
@@ -283,12 +325,12 @@ def _stamp(text: str | None) -> float:
 # Checking                                                                    #
 # --------------------------------------------------------------------------- #
 def _walk(db: OrmSession, upto: int, after: tuple[int, str] | None) -> verifier.Walk:
-    walk = verifier.Walk(after=after, locate=lambda hashed: _number_of(db, hashed))
+    walk = verifier.Walk(after=after, locate=lambda hashed: _number_of(db, hashed), keys=signing.known())
     last = after[0] if after else 0
     while walk.problem is None:
         rows = (
             db.execute(
-                select(*_COLUMNS, _T.c.seq, _T.c.prev_hash, _T.c.hash)
+                select(*_COLUMNS, _T.c.seq, _T.c.prev_hash, _T.c.hash, _T.c.mac, _T.c.key_id)
                 .where(_T.c.seq > last, _T.c.seq <= upto)
                 .order_by(_T.c.seq)
                 .limit(BATCH)
@@ -393,6 +435,12 @@ def verify(
         state["verified"] = {"seq": walk.last_seq, "hash": walk.last_hash, "at": now, "first": walk.first_seq}
         state["problem"] = None
         state["outside"] = bool(write_head(walk.last_seq, walk.last_hash, count, now)) if walk.last_seq else False
+        # The entries whose key this server can no longer make: counted, not a problem. A walk of
+        # what is new adds to what the last full walk counted.
+        before = {} if whole else dict(state.get("unchecked") or {})
+        for name, number in walk.unchecked.items():
+            before[name] = int(before.get(name) or 0) + number
+        state["unchecked"] = before
         if whole:
             state["full"] = {"at": now, "entries": walk.count, "seconds": round(time.monotonic() - clock, 3)}
     else:
@@ -473,6 +521,12 @@ def out(db: OrmSession) -> dict[str, Any]:
         "headFile": ({"seq": noted["seq"], "hash": noted.get("hash"), "at": _iso(noted.get("at"))} if noted else None),
         "everySeconds": VERIFY_EVERY,
         "guard": False,
+        # The key that signs entries now (its id, never the key), and the entries of the last walks
+        # whose key this server can no longer make, by key id: they cannot be checked.
+        "keyId": signing.current()[0],
+        # Entries the server linked without having written them itself (a restore leaves one).
+        "outside": db.execute(select(func.count()).select_from(_T).where(_T.c.origin == OUTSIDE)).scalar() or 0,
+        "unchecked": dict(state.get("unchecked") or {}),
     }
 
 
@@ -492,7 +546,7 @@ def trim(db: OrmSession, actor: str, *, older_than_days: int | None = None, now:
     now = time.time() if now is None else now
     # What this transaction wrote so far is linked first: it comes before the entry of the trim.
     db.flush()
-    link(db.connection())
+    link(db.connection(), db.info.get(_OWN) or frozenset())
     last, _held_hash = head(db)
     through = last
     if older_than_days is not None:

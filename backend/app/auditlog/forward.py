@@ -762,7 +762,9 @@ def ship(now: float | None = None, holder: str | None = None) -> list[str]:
             else:
                 _unconfirmed = (position, last_hash, written)
         if seq and clock - float(state.get("checkpointAt") or 0) >= int(active["checkpointMinutes"]) * 60:
-            link.send([syslog.checkpoint(seq, held, count, clock, active)])
+            from . import key as signing
+
+            link.send([syslog.checkpoint(seq, held, count, clock, active, signing.current()[0])])
             state = _note(checkpointAt=clock)
             did.append("checkpoint")
             if not written and not link.datagram:

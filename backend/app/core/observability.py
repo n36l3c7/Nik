@@ -67,14 +67,36 @@ def setup_logging(level: str = "INFO") -> None:
     root.setLevel(level.upper())
 
 
+def _templates(routes, prefix: str = "") -> dict[int, str]:
+    """Every route of the application by identity, with its whole path: a route of a router that
+    was included under a prefix knows only its own part (``/incidents/{incident_id}``)."""
+    found: dict[int, str] = {}
+    for route in routes:
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            context = getattr(route, "include_context", None)
+            found.update(_templates(inner.routes, prefix + (getattr(context, "prefix", "") or "")))
+        elif hasattr(route, "path"):
+            found[id(route)] = prefix + route.path
+    return found
+
+
 def _route_template(request: Request) -> str:
-    """Low-cardinality path label: the matched route, never the concrete URL.
+    """Low-cardinality path label: the matched route as it is written in the API
+    (``/api/incidents/{incident_id}``), never the concrete URL.
 
     A request that matches no route is counted under one label, so a scanner
     asking for random paths cannot grow the metrics without bound.
     """
     route = request.scope.get("route")
-    return getattr(route, "path", "unmatched")
+    if route is None:
+        return "unmatched"
+    state = request.app.state
+    known = getattr(state, "nik_route_templates", None)
+    if known is None or id(route) not in known:
+        known = _templates(request.app.routes)
+        state.nik_route_templates = known
+    return known.get(id(route)) or getattr(route, "path", "unmatched")
 
 
 async def observability_middleware(request: Request, call_next):

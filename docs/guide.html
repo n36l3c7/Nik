@@ -2018,6 +2018,13 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           socket said. A change is itself an entry, and the receiver that was set hears of it before it takes effect.
         </li>
         <li>
+          An entry marked <strong>imported</strong> came in a file of content from another server: its time and its
+          author are what that file said, not something this server saw. <code>origin:import</code> in a query finds
+          them. One marked <strong>written outside</strong> was put into the table by something other than the server
+          and linked when the server found it: a restore leaves one such entry, and nothing else should. Nothing removes
+          entries by itself: the log is kept without limit.
+        </li>
+        <li>
           <strong>Remove the entries…</strong> (a signed-in admin) removes what the log holds and leaves one entry in
           its place: how many were removed, by whom, and the hash of the last, so the chain still verifies. While the
           log is forwarded, what was not sent yet stays.

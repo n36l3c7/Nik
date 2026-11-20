@@ -297,6 +297,14 @@ class AuditEntry(Base):
     seq: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     prev_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Nothing for an entry this server wrote; "import" for one that came in a file of content
+    # from another server, whose time and author are the file's word; "outside" for one that
+    # was found in the table and not written by a session of the server. It is hashed.
+    origin: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # The signature: an HMAC of ``hash`` under a key that is not in the database, and the id
+    # of that key (app/auditlog/key.py).
+    mac: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    key_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (Index("ux_audit_log_seq", "seq", unique=True),)
 

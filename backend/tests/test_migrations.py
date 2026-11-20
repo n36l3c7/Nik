@@ -1317,7 +1317,9 @@ def test_migration_0051_links_the_entries_that_are_there_as_they_are_and_says_so
     with engine.connect() as conn:
         inspector = sa.inspect(conn)
         assert set(AUDIT_CHAIN_TABLES) <= set(inspector.get_table_names())
-        assert {"seq", "prev_hash", "hash"} <= {column["name"] for column in inspector.get_columns("audit_log")}
+        assert {"seq", "prev_hash", "hash", "origin", "mac", "key_id"} <= {
+            column["name"] for column in inspector.get_columns("audit_log")
+        }
         assert any(
             index["name"] == "ux_audit_log_seq" and index["unique"] for index in inspector.get_indexes("audit_log")
         )
@@ -1333,6 +1335,14 @@ def test_migration_0051_links_the_entries_that_are_there_as_they_are_and_says_so
     assert f"sequence 1 to 4, up to hash {found[3]['hash']}" in marker["details"]
     walk = verifier.check(found)
     assert walk.problem is None and walk.count == 5
+    # Signed in the same pass, every one, with the key of the server; none is marked.
+    from app.auditlog import key as signing
+
+    signed = verifier.check(found, signing.known())
+    assert signed.problem is None and signed.signed == 5 and signed.unchecked == {}
+    assert {entry["key_id"] for entry in found} == {signing.current()[0]} and {entry["origin"] for entry in found} == {
+        None
+    }
     with engine.connect() as conn:
         assert tuple(conn.execute(sa.text("SELECT seq, hash FROM audit_chain WHERE id = 1")).one()) == (
             5,
@@ -1354,7 +1364,9 @@ def test_migration_0051_links_the_entries_that_are_there_as_they_are_and_says_so
     with engine.connect() as conn:
         inspector = sa.inspect(conn)
         assert not set(AUDIT_CHAIN_TABLES) & set(inspector.get_table_names())
-        assert not {"seq", "prev_hash", "hash"} & {column["name"] for column in inspector.get_columns("audit_log")}
+        assert not {"seq", "prev_hash", "hash", "origin", "mac", "key_id"} & {
+            column["name"] for column in inspector.get_columns("audit_log")
+        }
         # The entries are as they were, with the one the upgrade added.
         assert conn.execute(sa.text("SELECT count(*) FROM audit_log")).scalar() == 6
 

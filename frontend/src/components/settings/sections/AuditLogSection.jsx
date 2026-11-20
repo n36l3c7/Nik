@@ -4,6 +4,7 @@ import { useItemMenu } from '../../menu/useRowMenu.js'
 import { Badge, Button, DataTable, EmptyState, Wait } from '../../ui/index.js'
 import { useAudit } from '../../../context/AuditContext.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
+import { originMark } from '../../../domain/auditChain.js'
 import { formatDateTime } from '../../../lib/time.js'
 import AuditChainPanel from './AuditChainPanel.jsx'
 import AuditForwardingForm from './AuditForwardingForm.jsx'
@@ -58,7 +59,18 @@ const COLUMNS = [
   {
     key: 'details',
     label: 'Details',
-    render: (row) => <span className="text-fg-muted">{row.details || '—'}</span>,
+    render: (row) => (
+      <span className="text-fg-muted">
+        {originMark(row) && (
+          <>
+            <Badge color="slate" title={originMark(row).note}>
+              {originMark(row).text}
+            </Badge>{' '}
+          </>
+        )}
+        {row.details || '—'}
+      </span>
+    ),
   },
   {
     key: 'incidentName',

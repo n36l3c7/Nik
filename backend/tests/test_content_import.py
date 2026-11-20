@@ -84,7 +84,24 @@ def test_an_import_adds_what_is_not_here_and_changes_nothing_that_is(admin: Test
         assert db.get(Incident, "here-1").doc["name"] == "As it is on this server"
         assert db.get(Incident, "here-1").number == kept["number"]
         assert db.get(Incident, "came-1").number == 500
-        assert db.get(AuditEntry, "a-new") is not None
+        came = db.get(AuditEntry, "a-new")
+        # Marked as what it is: the time and the author are the file's word. The mark is hashed
+        # with the entry, and the entries this server wrote have none.
+        assert (came.origin, came.actor, came.at) == ("import", "paul", "2026-01-01T00:00:00+00:00")
+        from app.auditlog import verifier
+
+        as_stored = {name: getattr(came, name) for name in (*verifier.FIELDS, "origin")}
+        assert came.seq and came.hash == verifier.entry_hash(came.seq, came.prev_hash, as_stored)
+        assert came.hash != verifier.entry_hash(came.seq, came.prev_hash, as_stored | {"origin": None})
+        assert db.query(AuditEntry).filter_by(action="backup.import").one().origin is None
+    listed = {entry["id"]: entry for entry in admin.get("/api/audit").json()["entries"]}
+    assert listed["a-new"]["origin"] == "import"
+    assert {entry["origin"] for key, entry in listed.items() if key != "a-new"} == {None}
+    assert verifier.check(listed.values()).problem is None
+    # Asked for by its mark, in the query language.
+    asked = admin.get("/api/audit", params={"q": "origin:import"}).json()["entries"]
+    assert [entry["id"] for entry in asked] == ["a-new"]
+    with SessionLocal() as db:
         assert db.query(SessionModel).count() == sessions_before
         line = db.query(AuditEntry).filter_by(action="backup.import").one().details
     assert line == (

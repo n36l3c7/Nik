@@ -225,6 +225,13 @@ class Receiver:
         while len(self.raw) < count and time.time() < deadline:
             time.sleep(0.02)
 
+    def wait_seq(self, seq: int, timeout: float = 10.0) -> None:
+        """Wait until the entry with this number arrived (checkpoints are messages too: counting
+        messages does not say which entries are there)."""
+        deadline = time.time() + timeout
+        while seq not in self.numbers() and time.time() < deadline:
+            time.sleep(0.02)
+
     @property
     def lines(self) -> list[str]:
         return [message.decode("utf-8") for message in list(self.raw)]

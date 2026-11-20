@@ -10,12 +10,12 @@ from collections import namedtuple
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from app.auditlog import chain
 from app.core import audit
 from app.core.config import settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, engine
 from app.core.models import (
     ArtifactJob,
     AuditEntry,
@@ -626,6 +626,34 @@ def parse(text: str) -> dict[str, dict]:
     return families
 
 
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="what pg_stat_activity and pg_locks say")
+def test_the_transaction_of_a_backup_is_not_a_long_transaction(client: TestClient):
+    from app.backups.database import MIGRATION_LOCK
+
+    def longest() -> float:
+        with SessionLocal() as db:
+            return checks.database_facts(db)["longest"]
+
+    assert longest() < 1
+    # A dump: one transaction that reads for as long as it takes, holding the lock a dump holds.
+    dump = engine.connect()
+    other = engine.connect()
+    try:
+        dump.execute(text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": MIGRATION_LOCK})
+        dump.execute(text("SELECT count(*) FROM users"))
+        time.sleep(1.5)
+        assert longest() < 1, "the transaction of a backup was counted"
+        # Any other transaction left open is what the row is for.
+        other.execute(text("SELECT count(*) FROM users"))
+        time.sleep(1.2)
+        found = longest()
+        assert 1 <= found < 60, found
+    finally:
+        other.close()
+        dump.close()
+    assert longest() < 1
+
+
 def test_the_metrics_answer_to_their_token_and_to_nothing_else(admin: TestClient):
     key = make_key(admin, label="adm", roles=["admin"])
     # Nobody without the token: not a signed-in administrator's cookie, not an administrator's key.
@@ -719,6 +747,13 @@ def test_the_metrics_parse_are_named_by_the_rules_and_name_nobody(admin: TestCli
     assert samples[("nik_audit_chain_ok", ())] == 1 and samples[("nik_audit_forward_enabled", ())] == 1
     assert samples[("nik_health_state", (("check", "disk.store"),))] == 0
     assert samples[("nik_health_state", (("check", "tls.certificate"),))] == -1
+    # A route is named as it is written in the API, with the prefix of its router, never by what was asked.
+    paths = {dict(labels).get("path") for (name, labels) in samples if name == "nik_http_requests_total"}
+    assert {"/api/users", "/api/incidents", "/api/audit/forwarding", "/api/health/metrics-token"} <= paths
+    assert all(path == "unmatched" or path.startswith("/api/") or path.startswith("/docs") for path in paths), paths
+    admin.get("/api/incidents/made-up-id")
+    again = TestClient(fastapi_app).get("/api/metrics", headers={"Authorization": f"Bearer {token}"}).text
+    assert 'path="/api/incidents/{incident_id}"' in again and "made-up-id" not in again
     # A path nobody routed is counted under one label, whatever was asked.
     assert any(
         dict(labels).get("path") == "unmatched" for (name, labels) in samples if name == "nik_http_requests_total"

@@ -83,7 +83,8 @@ export default function AuditChainPanel({ onVerified }) {
           )}
           {chain?.head?.seq > 0 && (
             <p className="mt-1 font-mono text-xs text-fg-muted">
-              head {chain.head.seq}:{shortHash(chain.head.hash)}
+              head {chain.head.seq}:{shortHash(chain.head.hash)} · signed with the key {chain.keyId}
+              {chain.outside ? ` · ${chain.outside} written outside the server` : ''}
             </p>
           )}
         </div>

@@ -7,6 +7,7 @@ copied out and run alone, on another machine, against what left the server::
     python verifier.py EXPORT --syslog CAPTURE     ... held against what the receiver got
     python verifier.py --syslog CAPTURE            what the receiver got, alone
     python verifier.py EXPORT --head SEQ:HASH      ... held against a head noted elsewhere
+    python verifier.py EXPORT --keys FILE          ... and the signatures checked with the keys of FILE
 
 ``EXPORT`` is what ``python -m app.auditlog export`` prints (one JSON object
 a line) or what ``GET /api/audit`` answers. ``CAPTURE`` is a file of the
@@ -36,11 +37,44 @@ the SHA-256 of them, written as 64 lower-case hexadecimal digits::
     incident_id <length>:<bytes>\\n
     incident_name <length>:<bytes>\\n
 
+and, **only for an entry that has an origin**, one more line after them::
+
+    origin <length>:<bytes>\\n
+
 ``\\n`` is one byte, 0x0A. ``<bytes>`` is the text in UTF-8, exactly as
 stored (no trimming, no normalisation), and ``<length>`` the number of those
 bytes in decimal. A field that holds nothing (null, not the empty text) is
 written ``<name> -\\n`` instead. Nothing else goes in: the lengths make the
 form unambiguous whatever a text contains.
+
+**The origin.** An entry the server wrote itself has none, and its form
+ends at ``incident_name``. An entry that came in a file of content from
+another server has ``origin`` ``import``: its time, its author and its
+sentence are what that file said, and the server vouches only for the moment
+it joined the chain (its number). The origin is hashed, so the mark cannot be
+taken off unseen.
+
+**The signature.** Beside its hash every entry carries ``mac`` and ``key_id``
+(``keyId`` in the API and in the messages). ``mac`` is HMAC-SHA-256, in
+hexadecimal, of the bytes ``nik-audit-mac-1\\n<the 64 digits of the hash>\\n``
+under a key that is not in the database. ``key_id`` names the key without
+giving it away: ``set-`` or ``derived-`` and the first twelve hexadecimal
+digits of SHA-256 of ``nik audit key id\\n`` followed by the key. The hashes
+are checked by anybody; the signatures only by who holds the key. Give the
+keys in a file (``--keys FILE``, one a line) or in the environment variable
+``NIK_AUDIT_KEYS`` (separated by commas or line breaks), never on the command
+line: a key is a text, taken as its UTF-8 bytes, or ``hex:`` and the bytes
+spelled out. Without a key the signatures are **not checked**, and the output
+says so. With keys, an entry signed by a key that was not given **cannot be
+checked** (said, and not a problem); one that has no signature is
+``unsigned``; one whose signature the key it names did not make is ``forged``:
+that is what a chain computed again by somebody without the key looks like.
+
+**An entry written outside the server.** The server signs what its own
+transactions wrote. An entry it finds in the table without a number (the one
+a restore leaves, written with plain SQL; one somebody inserted by hand; one
+whose number somebody took away to have it linked again) is linked and
+signed too, but marked: its ``origin`` is ``outside``.
 
 **What a chain may contain besides ordinary entries.** They are entries like
 the others, told apart by their ``action``:
@@ -61,7 +95,8 @@ what its hash was made of), ``missing`` (numbers that are not there),
 ``relinked`` (an entry does not follow the one before it: one of the two was
 replaced), ``start`` (the log begins after its first entry and nothing in it
 says why), ``cut`` (a head known elsewhere is past the end of the log),
-``rewritten`` (an entry known elsewhere has another hash here).
+``rewritten`` (an entry known elsewhere has another hash here), ``unsigned``
+and ``forged`` (the signature, when keys are given).
 
 A hash chain alone proves that what is there is linked. It cannot show that
 the newest entries were removed, nor that the whole log was computed again
@@ -73,7 +108,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
+import os
 import re
 import sys
 from collections.abc import Callable, Iterable, Mapping
@@ -83,6 +120,10 @@ from typing import Any
 FORMAT = 1
 ZERO = "0" * 64
 FIELDS = ("id", "at", "actor", "action", "target", "details", "incident_id", "incident_name")
+IMPORTED = "import"
+OUTSIDE = "outside"
+MAC_LABEL = b"nik-audit-mac-1\n"
+KEY_ID_LABEL = b"nik audit key id\n"
 # The names the API and the syslog messages use for the two that differ.
 _API = {"incident_id": "incidentId", "incident_name": "incidentName"}
 CHAINED = "audit.chain"
@@ -102,11 +143,63 @@ def canonical(seq: int, prev: str, entry: Mapping[str, Any]) -> bytes:
             continue
         data = str(value).encode("utf-8", "surrogatepass")
         lines.append(f"{name} {len(data)}:".encode("ascii") + data + b"\n")
+    origin = entry.get("origin")
+    if origin is not None:
+        data = str(origin).encode("utf-8", "surrogatepass")
+        lines.append(f"origin {len(data)}:".encode("ascii") + data + b"\n")
     return b"".join(lines)
 
 
 def entry_hash(seq: int, prev: str, entry: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical(seq, prev, entry)).hexdigest()
+
+
+def key_bytes(text: str) -> bytes:
+    """A key as it is written down: a text (its UTF-8 bytes), or ``hex:`` and the bytes spelled out."""
+    text = text.strip()
+    if text.startswith("hex:"):
+        return bytes.fromhex(text[4:])
+    return text.encode("utf-8")
+
+
+def fingerprint(key: bytes) -> str:
+    """The twelve digits that name a key in its id."""
+    return hashlib.sha256(KEY_ID_LABEL + key).hexdigest()[:12]
+
+
+def sign(key: bytes, hashed: str) -> str:
+    """The signature of an entry: an HMAC of its hash."""
+    return hmac.new(key, MAC_LABEL + hashed.encode("ascii") + b"\n", hashlib.sha256).hexdigest()
+
+
+def keyring(texts: Iterable[str]) -> dict[str, bytes]:
+    """Keys as written down, by fingerprint."""
+    keys = [key_bytes(text) for text in texts if text.strip()]
+    return {fingerprint(key): key for key in keys}
+
+
+def signature(entry: Mapping[str, Any], keys: Mapping[str, bytes]) -> str:
+    """How the signature of an entry stands against the keys given: ``ok``, ``unknown`` (its key
+    is not among them: it cannot be checked), ``unsigned`` or ``forged``."""
+    mac, key_id = str(entry.get("mac") or ""), str(entry.get("key_id") or "")
+    if not mac:
+        return "unsigned"
+    key = keys.get(key_id.rsplit("-", 1)[-1])
+    if key is None:
+        return "unknown"
+    return "ok" if hmac.compare_digest(sign(key, str(entry.get("hash") or "")), mac) else "forged"
+
+
+def _signature_problem(state: str, seq: int) -> Problem:
+    if state == "unsigned":
+        return Problem(
+            "unsigned", seq, f"Entry {seq} carries no signature: it was not written, or was rewritten, without the key"
+        )
+    return Problem(
+        "forged",
+        seq,
+        f"The signature of entry {seq} was not made with the key it names: it was rewritten without the key",
+    )
 
 
 def normal(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -115,6 +208,10 @@ def normal(raw: Mapping[str, Any]) -> dict[str, Any]:
     entry["seq"] = raw.get("seq")
     entry["prev"] = raw.get("prev", raw.get("prev_hash"))
     entry["hash"] = raw.get("hash")
+    entry["mac"] = raw.get("mac")
+    entry["key_id"] = raw.get("key_id", raw.get("keyId"))
+    if raw.get("origin") is not None:
+        entry["origin"] = raw["origin"]
     if raw.get("truncated"):
         entry["truncated"] = True
     return entry
@@ -149,10 +246,21 @@ class Walk:
     ``after`` resumes after an entry already checked (its number and hash).
     ``locate`` answers the number of the entry that carries a hash, or None:
     it is only asked when something is wrong, to tell a reordering from an edit.
+    ``keys`` are the keys the signatures are checked with, by fingerprint; None leaves them
+    unchecked. ``signed`` counts the signatures that held, ``unchecked`` the entries whose key
+    was not given, by key id.
     The walk stops at the first problem: ``problem`` keeps it.
     """
 
-    def __init__(self, after: tuple[int, str] | None = None, locate: Callable[[str], int | None] | None = None) -> None:
+    def __init__(
+        self,
+        after: tuple[int, str] | None = None,
+        locate: Callable[[str], int | None] | None = None,
+        keys: Mapping[str, bytes] | None = None,
+    ) -> None:
+        self.keys = keys
+        self.signed = 0
+        self.unchecked: dict[str, int] = {}
         self.count = 0
         self.first_seq: int | None = None
         self.last_seq, self.last_hash = after if after else (0, ZERO)
@@ -207,6 +315,16 @@ class Walk:
                 seq,
                 f"Entry {seq} does not follow entry {seq - 1}: one of the two was replaced",
             )
+        if self.keys is not None:
+            state = signature(entry, self.keys)
+            if state in ("unsigned", "forged"):
+                self.problem = _signature_problem(state, seq)
+                return self.problem
+            if state == "ok":
+                self.signed += 1
+            else:
+                name = str(entry.get("key_id") or "")
+                self.unchecked[name] = self.unchecked.get(name, 0) + 1
         if first:
             self.first_seq = seq
         found = trimmed(entry)
@@ -238,14 +356,14 @@ class Walk:
         return self.problem
 
 
-def check(entries: Iterable[Mapping[str, Any]]) -> Walk:
+def check(entries: Iterable[Mapping[str, Any]], keys: Mapping[str, bytes] | None = None) -> Walk:
     """Walk a whole log, in any order: the entries that are not chained yet are left out."""
     chained = [entry for entry in map(normal, entries) if isinstance(entry.get("seq"), int)]
     chained.sort(key=lambda entry: entry["seq"])
     where: dict[str, int] = {}
     for entry in chained:
         where.setdefault(str(entry.get("hash") or ""), entry["seq"])
-    walk = Walk(locate=where.get)
+    walk = Walk(locate=where.get, keys=keys)
     for entry in chained:
         if walk.feed(entry) is not None:
             break
@@ -282,6 +400,8 @@ class Capture:
     checkpoint: tuple[int, str] | None = None  # the latest head the server announced
     messages: int = 0
     repeated: int = 0
+    signed: int = 0
+    unchecked: dict[str, int] = field(default_factory=dict)
 
     @property
     def head(self) -> tuple[int, str] | None:
@@ -291,7 +411,7 @@ class Capture:
         return last, self.chain[last]
 
 
-def read_capture(lines: Iterable[str]) -> Capture:
+def read_capture(lines: Iterable[str], keys: Mapping[str, bytes] | None = None) -> Capture:
     """Check the messages of a receiver's file. A message that arrives twice is normal (the
     server sends again what it is not sure arrived); a number that arrives with another
     content is a rewriting, unless it is the entry a restore leaves."""
@@ -325,6 +445,16 @@ def read_capture(lines: Iterable[str]) -> Capture:
                 Problem("edited", seq, f"The content of entry {seq} is not what its hash was made of")
             )
             continue
+        if keys is not None:
+            state = signature(entry, keys)
+            if state in ("unsigned", "forged"):
+                found.problems.append(_signature_problem(state, seq))
+                continue
+            if state == "ok":
+                found.signed += 1
+            else:
+                name = str(entry.get("key_id") or "")
+                found.unchecked[name] = found.unchecked.get(name, 0) + 1
         if seq in found.chain:
             follows = found.chain.get(seq - 1) in (None, prev)
             if entry.get("action") == RESTORE and follows:
@@ -431,16 +561,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("export", nargs="?", help="an export of the log (JSON, or one JSON object a line)")
     parser.add_argument("--syslog", help="a file of the syslog receiver, one message a line")
     parser.add_argument("--head", type=_head, help="a head noted elsewhere, as SEQ:HASH")
+    parser.add_argument("--keys", help="a file of the keys the signatures are checked with, one a line")
     args = parser.parse_args(argv)
     if not args.export and not args.syslog:
         parser.error("give an export, a file of the receiver, or both")
+    given = os.environ.get("NIK_AUDIT_KEYS", "").replace(",", "\n").splitlines()
+    if args.keys:
+        with open(args.keys, encoding="utf-8") as source:
+            given += source.read().splitlines()
+    keys = keyring(given) if any(text.strip() for text in given) else None
+
+    def signatures(where: str, signed: int, unchecked: dict[str, int]) -> None:
+        if keys is None:
+            print(f"{where}: signatures not checked: no key")
+            return
+        print(f"{where}: {signed} signatures hold")
+        for name, count in sorted(unchecked.items()):
+            print(f"{where}: {count} cannot be checked: the key {name or '(none named)'} was not given")
+
     problems: list[Problem] = []
     walk, held = None, {}
     if args.export:
         with open(args.export, encoding="utf-8") as source:
             entries = [normal(entry) for entry in read_export(source.read())]
         waiting = sum(1 for entry in entries if not isinstance(entry.get("seq"), int))
-        walk = check(entries)
+        walk = check(entries, keys)
         held = {entry["seq"]: str(entry.get("hash") or "") for entry in entries if isinstance(entry.get("seq"), int)}
         print(
             f"export: {walk.count} entries hold together, from {walk.first_seq or 0} to {walk.last_seq}"
@@ -448,12 +593,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         if walk.last_seq:
             print(f"export: head {walk.last_seq}:{walk.last_hash}")
+        signatures("export", walk.signed, walk.unchecked)
         if walk.problem is not None:
             problems.append(walk.problem)
     capture = None
     if args.syslog:
         with open(args.syslog, encoding="utf-8", errors="replace") as source:
-            capture = read_capture(source)
+            capture = read_capture(source, keys)
         print(
             f"syslog: {len(capture.chain)} entries, {capture.repeated} received more than once"
             + (f", head {capture.head[0]}:{capture.head[1]}" if capture.head else "")
@@ -464,6 +610,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"syslog: entries {first} to {last} never arrived")
         for note in capture.notes:
             print(f"syslog: {note}")
+        signatures("syslog", capture.signed, capture.unchecked)
         problems += capture.problems
     if walk is not None and walk.problem is None:
         if capture is not None:

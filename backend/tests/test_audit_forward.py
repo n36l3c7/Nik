@@ -134,6 +134,11 @@ def test_an_entry_is_one_rfc_5424_message_that_carries_the_entry_and_its_place_i
         "incidentId": None,
         "incidentName": None,
     }
+    # The signature travels with the entry, and the id of its key: never the key.
+    signed = entry | {"mac": "c" * 64, "key_id": "derived-0a1b2c3d4e5f"}
+    line = syslog.render(signed, {}).decode()
+    assert ' action="user.update" keyid="derived-0a1b2c3d4e5f"] ' in line
+    assert json.loads(HEADER.match(line).group(8)) == body | {"mac": "c" * 64, "keyId": "derived-0a1b2c3d4e5f"}
     # What the receiver holds is enough to make the hash again.
     assert verifier.entry_hash(body["seq"], body["prev"], verifier.normal(body)) == body["hash"]
     # Settable facility and severity, by number; a header field never holds a space or a non-ASCII character.
@@ -182,6 +187,8 @@ def test_a_message_too_large_for_a_datagram_is_shortened_and_says_so():
 
 
 def test_a_checkpoint_carries_the_head_and_the_count():
+    named = syslog.checkpoint(4182, "b" * 64, 4000, 1795166102.5, {}, "set-0a1b2c3d4e5f").decode()
+    assert ' count="4000" keyid="set-0a1b2c3d4e5f"] ' in named and '"keyId":"set-0a1b2c3d4e5f"}' in named
     line = syslog.checkpoint(4182, "b" * 64, 4000, 1795166102.5, {"hostname": "nik"}).decode()
     found = HEADER.match(line)
     assert found and found.group(6) == "checkpoint"
@@ -316,7 +323,7 @@ def test_entries_leave_in_order_over_tcp_and_the_cursor_follows(admin: TestClien
         assert _state()["backlog"]["entries"] == total and _state()["destination"] == ""
         did = clock.passes(1)
         assert f"sent:{total}" in did
-        receiver.wait(total)
+        receiver.wait_seq(total)
         assert receiver.errors == []
         assert receiver.numbers() == list(range(1, total + 1))  # the whole log, from its first entry
         # Written is not arrived: the cursor moves at the next pass, when the receiver is still there.
@@ -328,8 +335,10 @@ def test_entries_leave_in_order_over_tcp_and_the_cursor_follows(admin: TestClien
         # What is written afterwards follows, over the same connection.
         _write(5, start=100)
         clock.passes(2)
-        receiver.wait(total + 5)
+        receiver.wait_seq(total + 5)
         assert receiver.numbers() == list(range(1, total + 6)) and receiver.connections == 1
+        # An entry of this server carries no origin, in the object or beside it.
+        assert all("origin" not in line for line in receiver.lines)
         # Every message is whole, and the copy of the receiver verifies on its own.
         assert all(HEADER.match(line) for line in receiver.lines)
         found = verifier.read_capture(receiver.lines)
@@ -351,6 +360,13 @@ def test_checkpoints_are_sent_when_due_even_when_nothing_happened(admin: TestCli
             seq, held = chain.head(db)
             count = db.scalar(select(func.count()).select_from(AuditEntry))
         assert (marks[-1]["seq"], marks[-1]["hash"], marks[-1]["count"]) == (seq, held, count)
+        from app.auditlog import key as signing
+
+        assert marks[-1]["keyId"] == signing.current()[0] and signing.current()[1].hex() not in "".join(receiver.lines)
+        # Every entry arrived with its signature, which the key of the server made.
+        ring = signing.known()
+        checked = verifier.read_capture(receiver.lines, ring)
+        assert checked.problems == [] and checked.signed == len(receiver.bodies()) and checked.unchecked == {}
         assert verifier.read_capture(receiver.lines).checkpoint == (seq, held)
         assert _state()["checkpointAt"] is not None
 
@@ -361,13 +377,13 @@ def test_a_receiver_that_restarts_gets_everything_at_least_once_and_in_order(adm
         _set(admin, **_to(receiver))
         _write(10)
         clock.passes(2)
-        receiver.wait(_head())
+        receiver.wait_seq(_head())
         confirmed = _state()["cursor"]
         assert confirmed == _head()
         # More is written and sent, and the receiver dies before the sender knows it arrived.
         _write(10, start=10)
         clock.passes(1)
-        receiver.wait(_head())
+        receiver.wait_seq(_head())
         receiver.stop()
         got_before = receiver.numbers()
         _write(10, start=20)
@@ -406,7 +422,7 @@ def test_a_receiver_that_does_not_read_holds_the_sender_and_nothing_else(admin: 
     with Receiver("tcp") as receiver:
         _set(admin, **_to(receiver))
         clock.passes(2)
-        receiver.wait(_head())
+        receiver.wait_seq(_head())
         receiver.reading.clear()  # connected, and taking nothing
         with SessionLocal() as db:
             for number in range(4000):
@@ -454,7 +470,7 @@ def test_a_log_changed_after_it_was_sent_is_said_and_sent_again_so_the_receiver_
         _write(4, start=6)
         clock.passes(2)
         total = _head()
-        receiver.wait(total)
+        receiver.wait_seq(total)
         assert _state()["cursor"] == total
         with SessionLocal() as db:
             sent_head = forward.cursor(db)
@@ -497,7 +513,7 @@ def test_one_process_sends_at_a_time(admin: TestClient, clock: Clock):
         assert any(word.startswith("sent:") for word in forward.ship(now=clock.now(), holder="one"))
         # Another process finds the lease taken: it sends nothing, and holds no connection.
         assert forward.ship(now=clock.now() + 1, holder="two") == []
-        receiver.wait(_head())
+        receiver.wait_seq(_head())
         assert receiver.numbers() == list(range(1, _head() + 1)) and receiver.connections == 1
 
 
@@ -524,7 +540,7 @@ def test_tls_verifies_the_receiver_against_what_was_pasted_and_presents_a_client
         # With the client certificate: everything leaves.
         _set(admin, clientCert=certificate, clientKey=key)
         clock.passes(4, step=70)
-        receiver.wait(_head())
+        receiver.wait_seq(_head())
         assert receiver.numbers()[: _head()] == list(range(1, _head() + 1))
         clock.passes(1)
         assert _state()["error"] == "" and _state()["cursor"] >= 4
@@ -583,14 +599,14 @@ def test_the_old_receiver_hears_of_the_change_before_it_takes_effect(admin: Test
         _set(admin, **_to(old))
         _write(3)
         clock.passes(2)
-        old.wait(_head())
+        old.wait_seq(_head())
         # Pointed elsewhere: the entry that says so goes to the old receiver, and is the last it gets.
         _set(admin, port=new.port, startFrom="now")
         change = _head()
         _write(2, start=10)  # written after the change: not for the old receiver
         assert _state()["pendingChange"] is True
         clock.passes(1)
-        old.wait(change)
+        old.wait_seq(change)
         assert new.raw == []
         last = old.bodies()[-1]
         assert last["seq"] == change and last["action"] == "audit.forward.settings"
@@ -625,13 +641,13 @@ def test_a_dead_receiver_does_not_keep_the_forwarding_from_being_changed(admin: 
         clock.passes(3, step=2)
         assert _state()["pendingChange"] is True and new.raw == []  # still trying to tell the old one
         clock.passes(2, step=forward.LAST_WORD_SECONDS)
-        new.wait(_head())
+        new.wait_seq(_head())
         assert _state()["pendingChange"] is False
         # A new receiver gets the log from its beginning, and an entry says what the old one never heard.
         numbers = new.numbers()
         assert numbers[0] == 1
         clock.passes(2)
-        new.wait(_head())
+        new.wait_seq(_head())
         unheard = [body for body in new.bodies() if body["action"] == "audit.forward.unheard"]
         assert (
             len(unheard) == 1 and f"The receiver tcp://127.0.0.1:{port} did not take the last" in unheard[0]["details"]

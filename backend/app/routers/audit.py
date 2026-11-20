@@ -64,6 +64,10 @@ def _entry_to_dict(entry: AuditEntry) -> dict:
         "seq": entry.seq,
         "prev": entry.prev_hash,
         "hash": entry.hash,
+        # "import" for an entry that came in a file of content from another server.
+        "origin": entry.origin,
+        "mac": entry.mac,
+        "keyId": entry.key_id,
     }
 
 

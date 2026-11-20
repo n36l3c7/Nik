@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select, text, update
 
 from app.auditlog import chain, forward, restored, syslog, verifier
+from app.auditlog import key as signing
 from app.core import audit
 from app.core.config import settings
 from app.core.db import SessionLocal, engine
@@ -57,7 +58,7 @@ def _verify(**options) -> dict:
 
 
 def _as_dict(row: AuditEntry) -> dict:
-    return {name: getattr(row, name) for name in verifier.FIELDS} | {
+    return {name: getattr(row, name) for name in (*verifier.FIELDS, "origin", "mac", "key_id")} | {
         "seq": row.seq,
         "prev": row.prev_hash,
         "hash": row.hash,
@@ -96,6 +97,11 @@ def test_the_canonical_form_is_the_one_written_down_byte_for_byte():
     # Nothing and the empty text are not the same entry, nor is a text that looks like the next field.
     assert verifier.entry_hash(12, ZERO, entry) != verifier.entry_hash(12, ZERO, {**entry, "target": ""})
     assert verifier.entry_hash(12, ZERO, {**entry, "actor": "a\naction 1:x"}) != verifier.entry_hash(12, ZERO, entry)
+    # An entry that came in a file from another server has one more line, hashed with the rest:
+    # the entries the server wrote itself are hashed exactly as before.
+    assert verifier.canonical(12, "ab" * 32, {**entry, "origin": "import"}) == expected + b"origin 6:import\n"
+    assert verifier.canonical(12, "ab" * 32, {**entry, "origin": None}) == expected
+    assert verifier.normal({"origin": "import"})["origin"] == "import" and "origin" not in verifier.normal({})
     # The API's names for the two fields that differ are read as the columns.
     assert verifier.normal({"incidentId": "i", "incidentName": "n", "prev": "p"}) | {} == verifier.normal(
         {"incident_id": "i", "incident_name": "n", "prev_hash": "p"}
@@ -251,6 +257,8 @@ def test_an_entry_written_outside_a_session_is_linked_by_the_next_one(client: Te
     assert chain.link_strays() == 1
     rows = _rows()
     assert [(row.id == "raw", row.seq) for row in rows][-1] == (True, 3)
+    # Linked and signed, and marked as what the server did not write itself.
+    assert [row.origin for row in rows] == [None, None, "outside"] and rows[-1].mac
     assert verifier.check(map(_as_dict, rows)).problem is None
     assert chain.link_strays() == 0
 
@@ -301,6 +309,17 @@ def test_an_edited_entry_is_found_and_named(client: TestClient, heads):
     rows = _rows()
     forged = verifier.entry_hash(3, rows[2].prev_hash, _as_dict(rows[2]))
     _tamper(update(AuditEntry).where(AuditEntry.seq == 3).values(hash=forged))
+    # Without the key the forged hash has no signature to go with it: found at the entry itself.
+    problem = _verify(full=True)["problem"]
+    assert (problem["kind"], problem["seq"]) == ("forged", 3)
+    assert problem["text"] == (
+        "The signature of entry 3 was not made with the key it names: it was rewritten without the key"
+    )
+    # With the signature taken away instead: an entry the server never signed.
+    _tamper(update(AuditEntry).where(AuditEntry.seq == 3).values(mac=None))
+    assert (_verify(full=True)["problem"]["kind"], _verify(full=True)["problem"]["seq"]) == ("unsigned", 3)
+    # Signed again by somebody who has the key, it is found at the entry after it, by the hashes.
+    _tamper(update(AuditEntry).where(AuditEntry.seq == 3).values(mac=verifier.sign(signing.current()[1], forged)))
     problem = _verify(full=True)["problem"]
     assert (problem["kind"], problem["seq"]) == ("relinked", 4)
     with SessionLocal() as db:
@@ -350,22 +369,57 @@ def test_a_cut_tail_is_found_by_whatever_still_knows_the_head(client: TestClient
     assert problem["text"].startswith("The head given knows the log up to entry 6 and it ends at entry 4")
 
 
-def test_a_log_computed_again_from_some_point_shows_only_against_a_head_from_outside(client: TestClient, heads):
-    _write(5)
-    before = _rows()
-    # Entry 3 changed, and everything from it on computed again, head included: consistent in itself.
+def _compute_again(before: list[AuditEntry], key: bytes | None) -> None:
+    """Entry 3 changed, and everything from it on computed again, head included: what somebody
+    who can write to the database does. With ``key`` they sign what they wrote, too."""
     prev = before[1].hash
     with engine.begin() as conn:
         for row in before[2:]:
             entry = _as_dict(row) | ({"details": "rewritten"} if row.seq == 3 else {})
             hashed = verifier.entry_hash(row.seq, prev, entry)
             conn.execute(
-                update(AuditEntry).where(AuditEntry.seq == row.seq).values(
-                    details=entry["details"], prev_hash=prev, hash=hashed
+                update(AuditEntry)
+                .where(AuditEntry.seq == row.seq)
+                .values(
+                    details=entry["details"],
+                    prev_hash=prev,
+                    hash=hashed,
+                    **({"mac": verifier.sign(key, hashed)} if key else {}),
                 )
-            )  # fmt: skip
+            )
             prev = hashed
         conn.execute(update(AuditChain).values(hash=prev))
+
+
+def test_a_log_computed_again_without_the_key_is_found_by_its_signatures(client: TestClient, heads):
+    _write(5)
+    second = _rows()[1].hash
+    _compute_again(_rows(), None)
+    # The hashes hold together again; the signatures are the ones of what was there before.
+    assert verifier.check(map(_as_dict, _rows())).problem is None
+    problem = _verify(full=True)["problem"]
+    assert (problem["kind"], problem["seq"]) == ("forged", 3)
+    # Taking the numbers away to have the server link and sign the stretch again does not launder it:
+    # what the server did not write itself is marked, and the mark is hashed.
+    with engine.begin() as conn:
+        conn.execute(
+            update(AuditEntry).where(AuditEntry.seq >= 3).values(seq=None, prev_hash=None, hash=None, mac=None)
+        )
+        conn.execute(update(AuditChain).values(seq=2, hash=second))
+    assert chain.link_strays() == 3
+    rows = _rows()
+    assert [row.origin for row in rows] == [None, None, "outside", "outside", "outside"]
+    assert _verify(full=True)["problem"] is None  # linked and signed, and plainly not the server's own
+    for row in rows[2:]:
+        assert row.hash == verifier.entry_hash(row.seq, row.prev_hash, _as_dict(row))
+        assert row.hash != verifier.entry_hash(row.seq, row.prev_hash, _as_dict(row) | {"origin": None})
+
+
+def test_a_log_computed_again_with_the_key_shows_only_against_a_head_from_outside(client: TestClient, heads):
+    _write(5)
+    before = _rows()
+    _compute_again(before, signing.current()[1])
+    # Consistent in itself, signatures included: nothing on the server can tell.
     assert _verify(full=True)["problem"] is None
     problem = _verify(full=True, outside=(5, before[4].hash))["problem"]
     assert (problem["kind"], problem["seq"]) == ("rewritten", 5)
@@ -380,6 +434,166 @@ def test_a_log_that_starts_late_without_saying_why_is_found(client: TestClient, 
     problem = _verify(full=True)["problem"]
     assert problem["kind"] == "start"
     assert "starts at entry 3 and no entry says that the 2 before it were removed" in problem["text"]
+
+
+# --------------------------------------------------------------------------- #
+# The key                                                                     #
+# --------------------------------------------------------------------------- #
+@pytest.fixture()
+def no_audit_key(monkeypatch):
+    for name in ("AUDIT_KEY", "AUDIT_KEY_FILE", "AUDIT_KEY_PREVIOUS", "AUDIT_KEY_PREVIOUS_FILE", "NIK_AUDIT_KEYS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(settings, "SECRET_KEY", "the-secret-key-of-the-tests")
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
+
+
+def test_the_signature_is_an_hmac_of_the_hash_and_the_id_names_the_key_without_giving_it():
+    import hmac
+
+    key = b"a key of the tests"
+    hashed = "ab" * 32
+    expected = hmac.new(key, b"nik-audit-mac-1\n" + hashed.encode() + b"\n", hashlib.sha256).hexdigest()
+    assert verifier.sign(key, hashed) == expected
+    assert verifier.fingerprint(key) == hashlib.sha256(b"nik audit key id\n" + key).hexdigest()[:12]
+    assert verifier.key_bytes("  a key of the tests\n") == key and verifier.key_bytes("hex:00ff10") == b"\x00\xff\x10"
+    entry = {"hash": hashed, "mac": expected, "key_id": f"set-{verifier.fingerprint(key)}"}
+    ring = verifier.keyring(["a key of the tests"])
+    assert verifier.signature(entry, ring) == "ok"
+    assert verifier.signature(entry | {"mac": "0" * 64}, ring) == "forged"
+    assert verifier.signature(entry | {"hash": "cd" * 32}, ring) == "forged"
+    assert verifier.signature(entry | {"mac": None}, ring) == "unsigned"
+    assert verifier.signature(entry, verifier.keyring(["another key"])) == "unknown"
+    assert verifier.normal({"keyId": "set-1", "mac": "m"})["key_id"] == "set-1"
+
+
+def test_every_entry_is_signed_with_a_key_derived_from_secret_key_unless_one_is_set(
+    client: TestClient, heads, no_audit_key, monkeypatch, tmp_path
+):
+    derived_id, derived = signing.current()
+    assert derived_id == f"derived-{verifier.fingerprint(derived)}" and len(derived) == 32
+    assert derived == signing.derived("the-secret-key-of-the-tests") != signing.derived("another")
+    _write(2)
+    rows = _rows()
+    assert all(row.key_id == derived_id and row.mac == verifier.sign(derived, row.hash) for row in rows)
+    # The key is nowhere in the database: only its id.
+    with engine.connect() as conn:
+        everything = json.dumps(
+            [[str(value) for value in row] for row in conn.execute(text("SELECT * FROM audit_log"))]
+        )
+        everything += json.dumps([str(row) for row in conn.execute(text("SELECT * FROM settings"))])
+    assert derived.hex() not in everything and "the-secret-key-of-the-tests" not in everything
+    # A key of its own, from the environment or from a file: it signs from the next entry on.
+    monkeypatch.setenv("AUDIT_KEY", "a key of its own")
+    own_id, own = signing.current()
+    assert own_id == f"set-{verifier.fingerprint(b'a key of its own')}" and own == b"a key of its own"
+    _write(1, start=5)
+    monkeypatch.delenv("AUDIT_KEY")
+    (tmp_path / "audit.key").write_text("hex:" + "5a" * 32 + "\n", encoding="utf-8")
+    monkeypatch.setenv("AUDIT_KEY_FILE", str(tmp_path / "audit.key"))
+    assert signing.current() == (f"set-{verifier.fingerprint(b'Z' * 32)}", b"Z" * 32)
+    _write(1, start=6)
+    assert [row.key_id.split("-")[0] for row in _rows()] == ["derived", "derived", "set", "set"]
+    assert len({row.key_id for row in _rows()}) == 3
+    # Entries of the derived key still verify (it is made from SECRET_KEY); those of the key that was
+    # replaced and not kept cannot be checked, which is said and is not a break.
+    state = _verify(full=True)
+    assert state["problem"] is None and state["unchecked"] == {own_id: 1}
+    with SessionLocal() as db:
+        found = chain.out(db)
+    assert found["keyId"].startswith("set-") and found["unchecked"] == {own_id: 1} and found["outside"] == 0
+    # Kept as an earlier key, they are checked again.
+    monkeypatch.setenv("AUDIT_KEY_PREVIOUS", "something else, a key of its own")
+    assert _verify(full=True)["unchecked"] == {}
+    # A key that cannot be checked is not a way round: an entry rewritten under it is still found
+    # by the hashes, and one whose signature is taken away is unsigned whatever the key.
+    monkeypatch.delenv("AUDIT_KEY_PREVIOUS")
+    _tamper(update(AuditEntry).where(AuditEntry.seq == 3).values(mac=None))
+    assert _verify(full=True)["problem"]["kind"] == "unsigned"
+
+
+def test_changing_secret_key_starts_a_new_derived_key_and_the_old_entries_follow_the_previous_one(
+    client: TestClient, heads, no_audit_key, monkeypatch, capsys
+):
+    from app.auditlog import __main__ as command
+
+    old_id, old = signing.current()
+    _write(3)
+    assert command.main(["key", "--derived"]) == 0
+    printed = capsys.readouterr().out.strip()
+    assert printed == "hex:" + old.hex()
+    # SECRET_KEY is changed, with the old value kept for the start: nothing is lost.
+    monkeypatch.setattr(settings, "SECRET_KEY", "a-new-secret-key")
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", ["the-secret-key-of-the-tests"])
+    new_id, _new = signing.current()
+    assert new_id != old_id and new_id.startswith("derived-")
+    _write(2, start=10)
+    assert [row.key_id for row in _rows()] == [old_id] * 3 + [new_id] * 2
+    state = _verify(full=True)
+    assert state["problem"] is None and state["unchecked"] == {}
+    assert command.main(["key"]) == 0
+    said = capsys.readouterr().out
+    assert f"Entries are signed with the key {new_id}." in said and old_id.split("-")[1] in said
+    # The old value is taken away: the entries it signed cannot be checked any more, and that is
+    # what is said. Their place in the chain of hashes is verified all the same.
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
+    state = _verify(full=True)
+    assert state["problem"] is None and state["unchecked"] == {old_id: 3} and state["verified"]["seq"] == 5
+    assert command.main(["verify-audit", "--full"]) == 0
+    assert f"3 entries cannot be checked: this server can no longer make the key {old_id}." in capsys.readouterr().out
+    # Unless the old derived key was kept, as the command printed it.
+    monkeypatch.setenv("AUDIT_KEY_PREVIOUS", printed)
+    assert _verify(full=True)["unchecked"] == {}
+    # A walk of what is new adds to what the full one counted, and does not count twice.
+    monkeypatch.delenv("AUDIT_KEY_PREVIOUS")
+    assert _verify(full=True)["unchecked"] == {old_id: 3}
+    _write(1, start=20)
+    assert _verify()["unchecked"] == {old_id: 3}
+
+
+def test_the_standalone_verifier_checks_signatures_only_when_it_is_given_the_key(
+    client: TestClient, heads, no_audit_key, monkeypatch, tmp_path, capsys
+):
+    from app.auditlog import __main__ as command
+
+    _write(4)
+    export = tmp_path / "audit.jsonl"
+    assert command.main(["export", str(export)]) == 0
+    capsys.readouterr()
+    rows = [_as_dict(row) for row in _rows()]
+    capture = tmp_path / "capture.log"
+    capture.write_text("\n".join(_capture(rows)) + "\n", encoding="utf-8")
+    # No key: the hashes are checked, and it says plainly that the signatures were not.
+    assert verifier.main([str(export), "--syslog", str(capture)]) == 0
+    said = capsys.readouterr().out
+    assert "export: signatures not checked: no key" in said and "syslog: signatures not checked: no key" in said
+    # The key in a file, or in the environment: never on the command line.
+    keys = tmp_path / "keys"
+    keys.write_text("hex:" + signing.derived(settings.SECRET_KEY).hex() + "\n", encoding="utf-8")
+    assert verifier.main([str(export), "--syslog", str(capture), "--keys", str(keys)]) == 0
+    said = capsys.readouterr().out
+    assert "export: 4 signatures hold" in said and "syslog: 4 signatures hold" in said
+    monkeypatch.setenv("NIK_AUDIT_KEYS", "not the key")
+    assert verifier.main([str(export)]) == 0
+    said = capsys.readouterr().out
+    assert "export: 0 signatures hold" in said
+    assert f"export: 4 cannot be checked: the key {rows[0]['key_id']} was not given" in said
+    monkeypatch.delenv("NIK_AUDIT_KEYS")
+    # A log computed again by somebody without the key: fine to who has no key, forged to who has it.
+    entries = [json.loads(line) for line in export.read_text(encoding="utf-8").splitlines()]
+    prev = entries[0]["hash"]
+    for entry in entries[1:]:
+        entry["details"] = entry["details"] + " (rewritten)"
+        entry["prev"] = prev
+        entry["hash"] = prev = verifier.entry_hash(entry["seq"], prev, verifier.normal(entry))
+    export.write_text("\n".join(json.dumps(entry) for entry in entries), encoding="utf-8")
+    assert verifier.main([str(export)]) == 0
+    assert verifier.main([str(export), "--keys", str(keys)]) == 1
+    assert "PROBLEM (forged, entry 2)" in capsys.readouterr().out
+    # The receiver's copy is checked the same way, message by message.
+    forged = [line.replace(rows[2]["mac"], "0" * 64) for line in _capture(rows)]
+    found = verifier.read_capture(forged, verifier.keyring(keys.read_text().splitlines()))
+    assert [(problem.kind, problem.seq) for problem in found.problems] == [("forged", 3)]
+    assert verifier.read_capture(forged).problems == []
 
 
 # --------------------------------------------------------------------------- #
@@ -484,6 +698,7 @@ def test_a_restore_leaves_an_entry_and_the_chain_goes_on_from_the_restored_head(
     assert chain.link_strays() == 1
     last = _rows()[-1]
     assert (last.seq, last.action, last.actor, last.prev_hash) == (5, "audit.restore", "server console", backup_head)
+    assert last.origin == "outside"  # written by the restore command, not by a transaction of the server
     assert "restored from the backup nik-20261120-023000, taken 2026-11-20T02:30:00+00:00" in last.details
     assert "between the backup and this restore is not in this log" in last.details
     # The heads noted before the restore are not held against the restored log.
@@ -507,6 +722,30 @@ def test_the_export_command_and_the_verifier_agree_with_the_server(client: TestC
     export = tmp_path / "audit.jsonl"
     assert command.main(["export", str(export)]) == 0
     assert len(export.read_text(encoding="utf-8").splitlines()) == 5
+    # An imported entry keeps its mark in the export and in the message, and verifies in both.
+    with SessionLocal() as db:
+        import uuid
+
+        db.add(
+            AuditEntry(
+                id=str(uuid.uuid4()),
+                at="2019-03-01T08:00:00+00:00",
+                actor="somebody elsewhere",
+                action="incident.delete",
+                details="from a file",
+                origin="import",
+            )
+        )
+        db.commit()
+    assert command.main(["export", str(export)]) == 0
+    last = json.loads(export.read_text(encoding="utf-8").splitlines()[-1])
+    assert last["origin"] == "import" and "origin" not in json.loads(export.read_text(encoding="utf-8").splitlines()[0])
+    sent = syslog.render(_as_dict(_rows()[-1]) | {"origin": "import"}, {}).decode()
+    assert ' action="incident.delete" origin="import" keyid="' in sent and '"origin":"import","mac":"' in sent
+    assert verifier.read_capture([sent]).problems == []
+    assert verifier.read_capture([sent.replace('"origin":"import"', '"origin":null')]).problems[0].kind == "edited"
+    _tamper(delete(AuditEntry).where(AuditEntry.seq == 6))
+    _tamper(update(AuditChain).values(seq=5, hash=_rows()[-1].hash))
     assert verifier.main([str(export)]) == 0
     assert command.main(["verify-audit", "--full"]) == 0
     assert "The chain holds: 5 entries, head 5:" in capsys.readouterr().out

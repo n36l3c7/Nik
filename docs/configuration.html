@@ -98,6 +98,24 @@
               </td>
             </tr>
             <tr>
+              <td><code>AUDIT_KEY</code>, <code>AUDIT_KEY_FILE</code></td>
+              <td>derived from <code>SECRET_KEY</code></td>
+              <td>
+                The key the entries of the audit log are signed with (or the file that holds it). The same for the
+                backend and the automation worker. <code>hex:…</code> for a key written as bytes.
+              </td>
+            </tr>
+            <tr>
+              <td><code>AUDIT_KEY_PREVIOUS</code>, <code>AUDIT_KEY_PREVIOUS_FILE</code></td>
+              <td>—</td>
+              <td>
+                Earlier keys, separated by commas or line breaks: the entries they signed stay verifiable (<a
+                  href="deployment.html#audit-log-forwarding"
+                  >deployment guide</a
+                >).
+              </td>
+            </tr>
+            <tr>
               <td><code>NIK_WEB_TLS</code></td>
               <td><code>web:443</code></td>
               <td>

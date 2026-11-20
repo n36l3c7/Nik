@@ -23,11 +23,18 @@ One message for each entry::
        "action":"…","target":…,"details":"…","incidentId":…,"incidentName":…}
 
   The fields are those the hash was made of: ``verifier.py`` recomputes it
-  from a message as from an export.
+  from a message as from an export. An entry that came in a file of content
+  from another server carries ``"origin":"import"`` in the object and
+  ``origin="import"`` in the structured data: its time and its author are
+  that file's word, not something this server saw. The signature of the
+  entry travels too (``"mac"`` and ``"keyId"`` in the object, ``keyid`` in the
+  structured data): the receiver's copy can be checked with the key later.
+  The key itself never leaves the server.
 
 A **checkpoint** has the same shape with ``MSGID`` ``checkpoint`` and
-``{"nik":"checkpoint","v":1,"seq":…,"hash":"…","count":…,"at":"…"}``: the
-head of the chain, how many entries the log holds, the time. It is sent
+``{"nik":"checkpoint","v":1,"seq":…,"hash":"…","count":…,"at":"…","keyId":"…"}``:
+the head of the chain, how many entries the log holds, the time, and the id
+of the key that signs entries now. It is sent
 every few minutes whatever happened, so that silence is told from a cut line.
 
 Over TCP and TLS a message is framed by its length (octet counting, RFC 6587
@@ -101,7 +108,7 @@ def _line(settings: dict[str, Any], when: str, kind: str, element: str, body: di
 
 def body_of(entry: dict[str, Any]) -> dict[str, Any]:
     """The JSON object of an entry (``entry`` holds the columns, ``seq``, ``prev`` and ``hash``)."""
-    return {
+    body = {
         "nik": "audit",
         "v": 1,
         "seq": entry["seq"],
@@ -116,6 +123,11 @@ def body_of(entry: dict[str, Any]) -> dict[str, Any]:
         "incidentId": entry.get("incident_id"),
         "incidentName": entry.get("incident_name"),
     }
+    if entry.get("origin") is not None:
+        body["origin"] = entry["origin"]
+    if entry.get("mac"):
+        body["mac"], body["keyId"] = entry["mac"], entry.get("key_id")
+    return body
 
 
 def render(entry: dict[str, Any], settings: dict[str, Any], limit: int | None = None) -> bytes:
@@ -127,6 +139,8 @@ def render(entry: dict[str, Any], settings: dict[str, Any], limit: int | None = 
             "prev": entry["prev"],
             "id": str(entry["id"])[:64],
             "action": str(entry["action"])[:64],
+            **({"origin": str(entry["origin"])[:20]} if entry.get("origin") is not None else {}),
+            **({"keyid": str(entry["key_id"])[:40]} if entry.get("key_id") else {}),
         }
     )
     when = timestamp(entry.get("at"))
@@ -149,14 +163,16 @@ def render(entry: dict[str, Any], settings: dict[str, Any], limit: int | None = 
     return _line(settings, when, "audit", element, body)
 
 
-def checkpoint(seq: int, hashed: str, count: int, now: float, settings: dict[str, Any]) -> bytes:
+def checkpoint(seq: int, hashed: str, count: int, now: float, settings: dict[str, Any], key_id: str = "") -> bytes:
+    """``key_id`` is the id of the key that signs the entries now: never the key."""
     at = datetime.fromtimestamp(now, timezone.utc).isoformat()
+    named = {"keyId": key_id} if key_id else {}
     return _line(
         settings,
         timestamp(at),
         "checkpoint",
-        _element({"seq": seq, "hash": hashed, "count": count}),
-        {"nik": "checkpoint", "v": 1, "seq": seq, "hash": hashed, "count": count, "at": at},
+        _element({"seq": seq, "hash": hashed, "count": count, **({"keyid": key_id} if key_id else {})}),
+        {"nik": "checkpoint", "v": 1, "seq": seq, "hash": hashed, "count": count, "at": at, **named},
     )
 
 

@@ -6,6 +6,29 @@
 
 const HASH = /^[0-9a-f]{64}$/
 
+/** An entry that came in a file of content from another server (`origin` of GET /audit). */
+export const isImported = (entry) => entry?.origin === 'import'
+
+/** What the mark on such an entry says. */
+export const IMPORTED_NOTE =
+  'It came in a file of content from another server: its time and its author are what that file said, not something this server saw.'
+
+/**
+ * The mark of an entry the server did not write itself, `{ text, note }`, or null:
+ * `import` (a file of content), `outside` (found in the table: a restore leaves one, and so
+ * would somebody who writes to the database by hand).
+ */
+export function originMark(entry) {
+  if (isImported(entry)) return { text: 'imported', note: IMPORTED_NOTE }
+  if (entry?.origin === 'outside') {
+    return {
+      text: 'written outside',
+      note: 'It was put into the table by something other than the server (a restore leaves one such entry), and linked when the server found it.',
+    }
+  }
+  return null
+}
+
 /** A hash as it is shown: its first twelve digits. */
 export const shortHash = (hash) => (HASH.test(String(hash ?? '')) ? `${hash.slice(0, 12)}…` : '')
 
@@ -36,10 +59,19 @@ export function chainStatus(chain, ago = (iso) => iso) {
     detail:
       `Verified ${ago(chain.verified.at)}.` +
       (chain.fullWalk ? ` Every entry was read ${ago(chain.fullWalk.at)}.` : '') +
+      uncheckedText(chain.unchecked) +
       (chain.unlinked
         ? ` ${chain.unlinked} ${chain.unlinked === 1 ? 'entry waits' : 'entries wait'} to be linked.`
         : ''),
   }
+}
+
+/** " 12 entries cannot be checked: …", for the entries whose key the server can no longer make. */
+function uncheckedText(unchecked) {
+  const count = Object.values(unchecked ?? {}).reduce((sum, some) => sum + some, 0)
+  if (!count) return ''
+  const keys = Object.keys(unchecked).filter(Boolean).join(', ')
+  return ` The signature of ${count} ${count === 1 ? 'entry' : 'entries'} cannot be checked: this server no longer has the key${keys ? ` ${keys}` : ''}.`
 }
 
 /**

@@ -819,7 +819,11 @@
           many went, their numbers, by whom and the hash of the last one, so the log still verifies from where it now
           starts. While the log is forwarded, an entry that was not sent yet is never removed. Entries that come in a
           file of content from another server join the chain when they arrive, with the time and the author the file
-          gives them: the entry of the import says how many, and the chain shows where they joined.
+          gives them: the entry of the import says how many, and the chain shows where they joined. Each of them is
+          <strong>marked as imported</strong> (<code>origin: import</code>), on the screen, in the API and in the
+          message sent to syslog, and the mark is hashed with the entry: nobody reading the receiver's copy can take an
+          entry of another server, with a date of years ago, for something this server saw. Entries imported before 6.8
+          have no mark: nothing told them apart then.
         </li>
         <li>
           <strong>Verification.</strong> The server walks the chain every five minutes (only what is new; every entry
@@ -839,6 +843,42 @@
           a head typed by hand, such as the last checkpoint the syslog receiver got. Somebody who controls the database
           <em>and</em> the host can make all of those on the server agree. What they cannot change is what already left:
           that is what the forwarding is for.
+        </li>
+        <li>
+          <strong>The chain is signed with a key that is not in the database.</strong> Beside its hash every entry
+          carries an HMAC-SHA-256 of that hash and the id of the key that made it. Whoever can write to the database can
+          compute the hashes of a rewritten log again; without the key they cannot make its signatures, and the walk
+          names the first entry that has none (<em>unsigned</em>) or one the key did not make (<em>forged</em>). The key
+          is <code>AUDIT_KEY</code>, a secret of its own; when it is not set, a key derived from
+          <code>SECRET_KEY</code> is used, so an upgraded server is protected without anybody doing anything. The hashes
+          stay what anybody can check, the syslog receiver included; the signatures are checked by who holds the key
+          (the standalone verifier takes it from a file or from its environment, never from its command line, and says
+          "not checked: no key" without it). The signature and the id of the key travel in the syslog messages; the key
+          never leaves the server.
+        </li>
+        <li>
+          <strong>The server signs as its own only what its own transactions wrote.</strong> An entry it finds in the
+          table without a number (the one a restore leaves; one inserted by hand; one whose number was taken away so
+          that it would be linked again) is linked and signed, and marked <code>origin: outside</code>, which is hashed
+          and shown. Without that, emptying the numbers of a stretch of the log would be a way to have the server sign
+          whatever was put there.
+        </li>
+        <li>
+          <strong>When the key changes</strong>, the new one signs from the next entry on and the entries before it keep
+          the id of theirs. They stay verifiable while the server can still make their key: the earlier keys in
+          <code>AUDIT_KEY_PREVIOUS</code>, and the keys derived from <code>SECRET_KEY</code> and from every
+          <code>SECRET_KEY_PREVIOUS</code>. Setting <code>AUDIT_KEY</code> on a server that used the derived key
+          therefore loses nothing. Changing <code>SECRET_KEY</code> starts a new derived key; the old entries verify
+          while <code>SECRET_KEY_PREVIOUS</code> holds the old value, and after that only if the old derived key was put
+          in <code>AUDIT_KEY_PREVIOUS</code> (<code>python -m app.auditlog key --derived</code> prints it, before the
+          change). An entry whose key the server can no longer make is reported as one that
+          <strong>cannot be checked</strong>, never as tampering, and its place in the chain of hashes is verified all
+          the same.
+        </li>
+        <li>
+          <strong>What the key does not change.</strong> Somebody who holds the key as well as the database (the
+          backend's container, its environment) can sign what they rewrite: the copy outside the server remains what
+          shows it. And a signature says nothing of entries removed from the end of the log.
         </li>
         <li>
           <strong>There is no database trigger</strong> that refuses an <code>UPDATE</code> or a <code>DELETE</code> on
@@ -1135,8 +1175,9 @@
         <li>
           The chain of the audit log shows a change to what is there. Without a copy off the server (the syslog
           receiver, its checkpoints) it cannot show that the newest entries were removed, nor that the whole log was
-          computed again by somebody who controls the database and the host. Anybody who can write to the database can
-          also add entries: a chain says that nothing was changed, not that everything in it is true.
+          computed again by somebody who controls the database and holds the key that signs it (the host). Anybody who
+          can write to the database can also add entries: a chain says that nothing was changed, not that everything in
+          it is true.
         </li>
         <li>
           Over plain TCP and UDP the audit log crosses the network in clear and the receiver is not authenticated; over

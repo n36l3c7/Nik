@@ -1103,11 +1103,12 @@ podman compose up -d --build
         </li>
         <li>
           <strong>On the receiver</strong> each message is one line: an RFC 5424 header, the structured data
-          <code>[nik@32473 seq="…" hash="…" prev="…" id="…" action="…"]</code> and the entry as JSON. Keep the raw
-          message (rsyslog: a template with <code>%rawmsg%</code>; syslog-ng: <code>${MSG}</code> with
-          <code>flags(syslog-protocol)</code> keeps the JSON), in a file the administrators of Nik cannot write to. A
-          message with the id <code>checkpoint</code> arrives every five minutes even when nothing happened: alert on
-          its absence.
+          <code>[nik@32473 seq="…" hash="…" prev="…" id="…" action="…"]</code> and the entry as JSON (with
+          <code>origin="import"</code> and <code>"origin":"import"</code> for an entry that came in a file of content
+          from another server: its date is that file's word). Keep the raw message (rsyslog: a template with
+          <code>%rawmsg%</code>; syslog-ng: <code>${MSG}</code> with <code>flags(syslog-protocol)</code> keeps the
+          JSON), in a file the administrators of Nik cannot write to. A message with the id
+          <code>checkpoint</code> arrives every five minutes even when nothing happened: alert on its absence.
         </li>
         <li>
           <strong>Checking the log against the receiver's copy</strong>, on any machine with Python:
@@ -1121,7 +1122,25 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
 </code></pre>
           It exits 0 when everything holds, and names what does not: an entry edited, entries missing, a log cut at its
           end (the receiver knows entries the server no longer has), a log rewritten (the same number with another
-          content).
+          content). The signatures are checked only when the verifier is given the key, in a file (<code
+            >--keys FILE</code
+          >, one key a line) or in <code>NIK_AUDIT_KEYS</code>; without it, it says
+          <em>signatures not checked: no key</em>.
+        </li>
+        <li>
+          <strong>The key the log is signed with.</strong> Nothing has to be set: the key is derived from
+          <code>SECRET_KEY</code>. To give it a secret of its own, set <code>AUDIT_KEY</code> (or
+          <code>AUDIT_KEY_FILE</code>, the path of a file that holds it) for the <code>api</code> <em>and</em> the
+          <code>automation</code> containers, which both write entries: with different keys, each could not check what
+          the other signed. A text is taken as it is; <code>hex:…</code> as the bytes it spells.
+          <code>python -m app.auditlog key</code> says which key signs now and which earlier ones the server can still
+          make. To change the key, put the old one in <code>AUDIT_KEY_PREVIOUS</code> (several separated by commas) and
+          the new one in <code>AUDIT_KEY</code>. <strong>Before changing <code>SECRET_KEY</code></strong> on a server
+          that uses the derived key, run <code>python -m app.auditlog key --derived</code> and keep what it prints in
+          <code>AUDIT_KEY_PREVIOUS</code>: while <code>SECRET_KEY_PREVIOUS</code> is set the old entries verify anyway,
+          and once it is removed they would otherwise be reported as entries that cannot be checked (not as a break).
+          Keep the key with the other secrets, away from the backups of the database: it is what a copy of the database
+          alone must not hold.
         </li>
         <li>
           <strong>After a restore</strong> the server's log is the backup's, with one new entry that says so. The
@@ -1130,6 +1149,7 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
           the receiver. Those are the ones written between the backup and the restore.
         </li>
         <li>
+          <strong>Nothing is trimmed by itself</strong>: the audit log is kept without limit.
           <strong>Removing old entries</strong> (<em>Remove the entries…</em> on the page, or
           <code>DELETE /api/audit?olderThanDays=N</code> as a signed-in administrator) leaves an entry that says how
           many went and up to which hash. Nothing removes entries by itself: there is no retention to set.
@@ -1153,9 +1173,9 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
           fine again: a disk past 80% (a problem at 90%) or that will be full within 30 days (7), a queue whose oldest
           item has waited 10 minutes (60), a schedule or a fetch 5 minutes late (60), the certificate 30 days from its
           end (7), an audit entry that has waited 5 minutes to be forwarded (30), a broken chain, the database at 80% of
-          its connections (95%) or a pool with none left, a transaction open for 15 minutes, clocks 5 seconds apart
-          (60). A value has to be found twice in a row before anybody is told. Workers and backups keep their own
-          notices; this page does not repeat them.
+          its connections (95%) or a pool with none left, a transaction open for 15 minutes (the one a backup reads the
+          database in is not counted), clocks 5 seconds apart (60). A value has to be found twice in a row before
+          anybody is told. Workers and backups keep their own notices; this page does not repeat them.
         </li>
         <li>
           <strong>The disk of the database</strong> cannot be read from the backend (it belongs to the
@@ -1342,7 +1362,10 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
             </tr>
             <tr>
               <td><code>nik_http_requests_total</code></td>
-              <td><code>method</code>, <code>path</code> (the route, never the address asked), <code>status</code></td>
+              <td>
+                <code>method</code>, <code>path</code> (the route as the API writes it,
+                <code>/api/incidents/{incident_id}</code>, never the address asked), <code>status</code>
+              </td>
               <td>Requests answered, by every API process.</td>
             </tr>
             <tr>
