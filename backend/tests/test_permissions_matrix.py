@@ -282,6 +282,12 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/automation/instances/{connection_id}/test"): ("connectors.manage",),
     ("POST", "/api/automation/instances/{connection_id}/keys/test"): ("connectors.manage",),
     ("DELETE", "/api/automation/instances/{connection_id}/answers"): ("connectors.manage",),
+    # Stored credentials: who manages the instances and their keys, and nobody else.
+    ("POST", "/api/automation/instances/{connection_id}/credentials"): ("connectors.manage",),
+    ("GET", "/api/automation/credentials"): ("connectors.manage",),
+    ("POST", "/api/automation/credentials"): ("connectors.manage",),
+    ("PUT", "/api/automation/credentials/{credential_id}"): ("connectors.manage",),
+    ("DELETE", "/api/automation/credentials/{credential_id}"): ("connectors.manage",),
     ("GET", "/api/automation/state"): ("automation.run",),
     ("PUT", "/api/automation/state"): ("admin",),
     ("GET", "/api/automation/data-classes"): ("automation.run",),

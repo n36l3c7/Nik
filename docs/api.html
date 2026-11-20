@@ -1417,6 +1417,45 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>GET /api/automation/credentials</code> · <code>POST /api/automation/credentials</code> ·
+                <code>PUT /api/automation/credentials/{id}</code> ·
+                <code>DELETE /api/automation/credentials/{id}</code>
+              </td>
+              <td>
+                <a href="automation.html#credentials">Stored credentials</a> (6.6), with <code>connectors.manage</code>.
+                The list:
+                <code
+                  >credentials: [{id, name, title, kind, username, readable, usedBy, createdAt, createdBy, updatedAt,
+                  updatedBy}]</code
+                >, where <code>kind</code> is <code>secret</code> or <code>pair</code>, <code>username</code> is that of
+                a pair, <code>readable</code> is false once <code>SECRET_KEY</code> changed under the value, and
+                <code>usedBy</code> is <code>[{instance, name, connector, connectorName, key, keyName, fields}]</code>:
+                one entry for each key of each instance that names it. <strong>Never the value.</strong> · make one:
+                <code>{name, title, kind, username, value}</code> · change one:
+                <code>{name, title, username, value}</code>, each optional; a <code>value</code> left out stays, and one
+                that is used keeps its name (<code>409</code>) · delete one that no instance names (<code>409</code>
+                with the instances otherwise).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                A secret of an instance that names a credential ·
+                <code>POST /api/automation/instances/{id}/credentials</code>
+              </td>
+              <td>
+                Wherever an instance takes a secret (<code>secrets</code>, and the <code>secrets</code> of each of its
+                <code>keys</code>), the value may be <code>"{{ credentials.&lt;name&gt; }}"</code>, or
+                <code>.username</code> / <code>.password</code> of a pair: the instance stores that name, and
+                <code>400</code> says so when no such credential exists or its kind has no such part. An instance
+                answers with <code>credentials: {field: {name, part, missing}}</code> for the secrets that name one, and
+                each of its <code>keys</code> does too · <code>{key, field, name, title}</code> turns the typed secret
+                of a field (of the key <code>main</code>, or another by its id) into a credential called
+                <code>name</code> and leaves the instance naming it; a user name and a password held together become one
+                pair. Answers with the instance.
+              </td>
+            </tr>
+            <tr>
               <td><code>PUT /api/automation/playbooks/{id}/egress</code></td>
               <td>
                 <strong>admin</strong>. <code>{mode: "listed" | "any", hosts}</code>. Switching to <code>any</code> also

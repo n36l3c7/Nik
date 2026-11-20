@@ -9,7 +9,9 @@
 # Not run against the real service: see "verified" below.
 #
 # The key is an API key of a Google Cloud project where "Safe Browsing API"
-# is enabled; it travels as the "key" query parameter of every request.
+# is enabled; it travels as the "key" query parameter of every request: it
+# is the credentials of the instance ("query"), which Nik adds, so no command
+# says it.
 #
 # The v5 methods are asked for JSON ("alt=json", which the discovery document
 # gives as the default); the v5 guide speaks of protocol buffers, which this
@@ -19,7 +21,7 @@
 # the JSON form of the API has them.
 name: Google Safe Browsing
 id: safebrowsing
-version: 3
+version: 4
 description: Checks URLs and hash prefixes against Google's lists of unsafe web resources, and reads the lists themselves.
 api_version: "Safe Browsing API v4 and v5 (safebrowsing.googleapis.com)"
 verified: false
@@ -28,7 +30,8 @@ lookups: { weight: 3 }
 configuration:
   - name: api_key
     label: API key
-    type: secret
+    type: query
+    param: key
     required: true
     help: "An API key of a Google Cloud project where the Safe Browsing API is enabled (APIs & Services, Credentials)."
   - name: client_id
@@ -46,7 +49,6 @@ test:
   request:
     method: GET
     path: /v4/threatLists
-    query: { key: "{{ secret.api_key }}" }
 commands:
   # ------------------------------------------------------------------ v4 --
   - name: check-url
@@ -57,7 +59,6 @@ commands:
     request:
       method: POST
       path: /v4/threatMatches:find
-      query: { key: "{{ secret.api_key }}" }
       json:
         client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
         threatInfo:
@@ -87,7 +88,6 @@ commands:
     request:
       method: POST
       path: /v4/threatMatches:find
-      query: { key: "{{ secret.api_key }}" }
       json:
         client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
         threatInfo:
@@ -132,7 +132,6 @@ commands:
     request:
       method: POST
       path: /v4/threatMatches:find
-      query: { key: "{{ secret.api_key }}" }
       json:
         client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
         threatInfo:
@@ -172,7 +171,6 @@ commands:
     request:
       method: POST
       path: /v4/fullHashes:find
-      query: { key: "{{ secret.api_key }}" }
       json:
         client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
         clientStates: "{{ args.client_states }}"
@@ -205,7 +203,6 @@ commands:
     request:
       method: POST
       path: /v4/threatListUpdates:fetch
-      query: { key: "{{ secret.api_key }}" }
       json:
         client: { clientId: "{{ config.client_id }}", clientVersion: "{{ config.client_version }}" }
         listUpdateRequests:
@@ -236,7 +233,6 @@ commands:
     request:
       method: GET
       path: /v4/threatLists
-      query: { key: "{{ secret.api_key }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
       threat_lists: "{{ response.threatLists }}"
@@ -251,7 +247,6 @@ commands:
       method: GET
       path: "/v4/encodedFullHashes/{{ args.encoded_request }}"
       query:
-        key: "{{ secret.api_key }}"
         clientId: "{{ config.client_id }}"
         clientVersion: "{{ config.client_version }}"
         alt: json
@@ -271,7 +266,6 @@ commands:
       method: GET
       path: "/v4/encodedUpdates/{{ args.encoded_request }}"
       query:
-        key: "{{ secret.api_key }}"
         clientId: "{{ config.client_id }}"
         clientVersion: "{{ config.client_version }}"
         alt: json
@@ -299,7 +293,6 @@ commands:
     request:
       method: POST
       path: /v4/threatHits
-      query: { key: "{{ secret.api_key }}" }
       json:
         threatType: "{{ args.threat_type }}"
         platformType: "{{ args.platform_type }}"
@@ -325,7 +318,6 @@ commands:
       method: GET
       path: /v5/urls:search
       query:
-        key: "{{ secret.api_key }}"
         urls: "{{ args.urls }}"
         alt: json
     error: { message: "{{ response.error.message }}" }
@@ -344,7 +336,6 @@ commands:
       method: GET
       path: /v5/hashes:search
       query:
-        key: "{{ secret.api_key }}"
         hashPrefixes: "{{ args.hash_prefixes }}"
         alt: json
     error: { message: "{{ response.error.message }}" }
@@ -360,7 +351,6 @@ commands:
       method: GET
       path: /v5/hashLists
       query:
-        key: "{{ secret.api_key }}"
         alt: json
     pagination:
       type: cursor
@@ -388,7 +378,6 @@ commands:
       method: GET
       path: "/v5/hashList/{{ args.name }}"
       query:
-        key: "{{ secret.api_key }}"
         version: "{{ args.version }}"
         sizeConstraints.maxUpdateEntries: "{{ args.max_update_entries }}"
         sizeConstraints.maxDatabaseEntries: "{{ args.max_database_entries }}"
@@ -414,7 +403,6 @@ commands:
       method: GET
       path: /v5/hashLists:batchGet
       query:
-        key: "{{ secret.api_key }}"
         names: "{{ args.names }}"
         version: "{{ args.versions }}"
         sizeConstraints.maxUpdateEntries: "{{ args.max_update_entries }}"

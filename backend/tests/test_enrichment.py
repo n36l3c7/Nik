@@ -758,7 +758,7 @@ def test_the_keys_kept_before_6_5_become_keys_of_instances_when_the_connectors_a
         ]
         policy = instance_keys.policy_of(vt)
         assert (policy["perMinute"], policy["perDay"], policy["cacheHours"], vt.enabled) == (4, 500, 0, True)
-        assert instance_keys.keys_of(made["greynoise"])[0].secrets == {"api_key": "greynoise-key-0005"}
+        assert instance_keys.keys_of(made["greynoise"])[0].secrets == {"value": "greynoise-key-0005"}
         assert made["greynoise"].enabled is False  # off, as the source was
         assert instance_keys.keys_of(made["threatfox"])[0].secrets == {"value": "abuse-ch-key-0009"}
         vt_id = vt.id
