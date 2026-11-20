@@ -66,9 +66,14 @@ services:
       SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
       # The app is served over HTTPS only, so the session cookie is Secure.
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
-      # The client address comes from nginx (X-Forwarded-For), the only thing
-      # that reaches this port: rate limits and lock-outs are per client.
-      FORWARDED_ALLOW_IPS: "*"
+      # The client address is the one the web container writes in
+      # X-Forwarded-For, believed from that container only: the backend checks
+      # itself who the connection comes from (TRUSTED_PROXIES: host names,
+      # addresses or networks), so gunicorn must not rewrite addresses for
+      # whoever sends the header (FORWARDED_ALLOW_IPS stays empty). The waits
+      # after failed sign-ins and the administrators' networks go by it.
+      FORWARDED_ALLOW_IPS: ""
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-web}
       # Optional bearer token for /api/metrics (never published by nginx).
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
@@ -111,8 +116,16 @@ services:
       # here yourself (a Compose override with a read-only volume).
       NIK_PACKS_CATALOGUE: ${NIK_PACKS_CATALOGUE-https://github.com/n36l3c7/Nik/releases/download/packs/index.json}
       NIK_PACKS_DIR: ${NIK_PACKS_DIR:-}
+      # Backups: written here by the server, each one encrypted (Settings → Backup). Before a
+      # release changes the database a snapshot goes here too, and its migrations are tried on
+      # a copy first; `false` skips that rehearsal (never the snapshot) on a very large database.
+      BACKUP_DIR: /app/backups
+      NIK_UPGRADE_REHEARSAL: ${NIK_UPGRADE_REHEARSAL:-true}
     volumes:
       - sample-store:/app/samples
+      # The volume `backups`, or a directory of the host when NIK_BACKUP_DIR names one
+      # (another disk than the data: /srv/nik-backups).
+      - ${NIK_BACKUP_DIR:-backups}:/app/backups
     networks: [default, analysis, browser-control, automation-internal]
     depends_on:
       db:
@@ -143,7 +156,8 @@ services:
   # command. It reads the database as the backend does and serves nothing. It is
   # the only container a playbook reaches the outside from (automation-egress):
   # the backend is not on that network. It runs unprivileged from the start, on
-  # a read-only filesystem, and reads the sample store read-only.
+  # a read-only filesystem, and reads the sample store read-only. It also sends
+  # the copy of each backup off the server, for the same reason.
   automation:
     build: ./backend
     command: ["python", "-m", "app.automation.worker"]
@@ -169,8 +183,12 @@ services:
       # A proxy for what playbooks send outside, when the server has no direct way out.
       HTTPS_PROXY: ${AUTOMATION_HTTPS_PROXY:-}
       NO_PROXY: ${AUTOMATION_NO_PROXY:-}
+      BACKUP_DIR: /app/backups
     volumes:
       - sample-store:/app/samples:ro
+      # Read-only: this container sends the copy of each backup off the server (it is the one
+      # with a way out) and never writes one.
+      - ${NIK_BACKUP_DIR:-backups}:/app/backups:ro
     networks: [default, automation-egress, automation-internal]
     depends_on:
       api:
@@ -374,6 +392,8 @@ volumes:
   # with `podman volume rm <project>_db-data` once you no longer need a rollback.
   db-data:
   sample-store:
+  # The backups the server takes (unused when NIK_BACKUP_DIR names a directory of the host).
+  backups:
   # Where the document worker converts a PST: holds a file only while one is being converted.
   pst-work:
   web-certs:

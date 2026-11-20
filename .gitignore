@@ -33,4 +33,7 @@ backend/*.db
 # Malware sample store (dev default; production sets SAMPLE_STORE)
 backend/samples/
 backend/.e2e-samples/
+# Backups (dev default; production sets BACKUP_DIR)
+backend/backups/
+backend/.e2e-backups/
 backend/.env

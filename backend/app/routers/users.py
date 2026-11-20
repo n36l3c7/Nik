@@ -9,35 +9,41 @@ An account holds one or more roles (``core/permissions.py``); only an admin
 gives them. Rules that keep the platform reachable: there is always at least
 one admin that can sign in, and an admin cannot disable, demote or delete
 themselves.
+
+What protects an account ends its sessions when it changes: a new password,
+other roles, the account disabled, its second factor turned on, off or
+reset. An administrator sees the open sessions of any account and ends them,
+and resets the second factor of somebody who lost theirs (never their own:
+that is what recovery codes are for, and the command on the server for the
+last administrator).
 """
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
-from sqlalchemy import delete, func, select
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import saved_filters
-from ..core import audit
+from .. import saved_filters, signin
+from ..core import audit, signin_policy
+from ..core.config import settings
 from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Incident, User
-from ..core.models import Session as SessionModel
 from ..core.permissions import ADMIN, SYSTEM_ROLE, SYSTEM_USER, RoleError, clean_roles, stored_roles
 from ..core.schemas import PasswordChange, UserCreate, UserEnvelope, UsersEnvelope, UserUpdate
 from ..core.security import (
     Principal,
     admin_principal,
+    admin_session,
     current_user,
     hash_password,
     now_iso,
     optional_principal,
     principal,
-    user_to_dict,
-    verify_password,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -88,10 +94,7 @@ def _people(db: OrmSession) -> int:
 
 def revoke_sessions(db: OrmSession, user_id: str, keep: str | None = None) -> None:
     """Sign the user out everywhere (except the session ``keep``)."""
-    stmt = delete(SessionModel).where(SessionModel.user_id == user_id)
-    if keep:
-        stmt = stmt.where(SessionModel.token != keep)
-    db.execute(stmt)
+    signin.revoke_sessions(db, user_id, keep)
 
 
 def _rename_assignee(db: OrmSession, old: str, new: str) -> int:
@@ -157,15 +160,18 @@ def create_user(body: UserCreate, request: Request, db: OrmSession = Depends(get
         target=username,
     )
     db.commit()
-    return {"user": user_to_dict(user)}
+    return {"user": signin.account_out(db, user)}
 
 
 @router.get("", response_model=UsersEnvelope)
 def list_users(_admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
     """List all users (admin session or admin key)."""
     users = db.scalars(select(User).order_by(User.created_at.asc())).all()
+    policy, having = signin_policy.load(db), signin.with_factors(db)
     # The system account of the automation engine is not one people manage.
-    return {"users": [user_to_dict(u) for u in users if stored_roles(u.roles) != [SYSTEM_ROLE]]}
+    return {
+        "users": [signin.account_out(db, u, policy, having) for u in users if stored_roles(u.roles) != [SYSTEM_ROLE]]
+    }
 
 
 @router.get("/names")
@@ -177,15 +183,20 @@ def list_user_names(_caller: Principal = Depends(principal), db: OrmSession = De
 
 @router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
 def change_own_password(
+    request: Request,
     body: PasswordChange,
     user: User = Depends(current_user),
     db: OrmSession = Depends(get_db),
     nik_session: str | None = Cookie(default=None),
 ):
-    """Change the signed-in user's password; the other sessions of the account end."""
-    if not verify_password(body.currentPassword, user.password_hash):
-        raise HTTPException(status_code=400, detail="The current password is not correct")
+    """Change the signed-in user's password; the other sessions of the account end.
+
+    An account with a second factor sends a current ``code`` of it too (or a
+    ``recoveryCode``). Wrong values are counted like failed sign-ins.
+    """
+    # Looked at first, so that a code is not spent on a password that would be refused anyway.
     _check_password(body.newPassword)
+    signin.confirm_identity(db, request, user, body.currentPassword, body.code, body.recoveryCode)
     user.password_hash = hash_password(body.newPassword)
     revoke_sessions(db, user.id, keep=nik_session)
     audit.record(db, user.username, "user.password", "Changed their own password", target=user.username)
@@ -197,6 +208,7 @@ def change_own_password(
 def update_user(
     user_id: str,
     body: UserUpdate,
+    request: Request,
     admin: Principal = Depends(admin_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
@@ -206,9 +218,9 @@ def update_user(
     - A new **name** is carried to the incidents assigned to the account. What
       the account already wrote (notes, flags, the audit log) keeps the name it
       had then.
-    - A new **password** or **disabling** the account ends its sessions. A
-      change of its **roles** takes effect at its next request, with no need
-      to sign in again.
+    - A new **password**, other **roles** or **disabling** the account ends
+      its sessions: the person signs in again. (An administrator who changes
+      their own account keeps the session they are making the change from.)
     - The last admin that can sign in cannot be demoted or disabled, and an
       admin cannot demote or disable themselves.
     """
@@ -216,6 +228,8 @@ def update_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
     is_self = admin.user is not None and admin.user.id == target.id
+    # The session an administrator changes their own account from goes on.
+    own_session = request.cookies.get(settings.SESSION_COOKIE_NAME) if is_self else None
     changes: list[str] = []
 
     current_roles = stored_roles(target.roles)
@@ -247,13 +261,14 @@ def update_user(
         changes.append(f"roles {', '.join(current_roles) or 'none'} → {', '.join(roles)}")
         target.roles = roles
         target.session_epoch = (target.session_epoch or 0) + 1
+        revoke_sessions(db, target.id, keep=own_session)
 
     if body.password is not None:
         _check_password(body.password)
         target.password_hash = hash_password(body.password)
-        target.failed_logins = 0
-        target.locked_until = None
-        revoke_sessions(db, target.id)
+        # Whatever wait the wrong passwords had earned the account is over with them.
+        signin.succeeded(db, [signin.account_key(signin.PASSWORD, target.username)])
+        revoke_sessions(db, target.id, keep=own_session)
         changes.append("password reset")
 
     if disabled != target.disabled:
@@ -261,8 +276,7 @@ def update_user(
         if disabled:
             revoke_sessions(db, target.id)
         else:
-            target.failed_logins = 0
-            target.locked_until = None
+            signin.succeeded(db, [signin.account_key(signin.PASSWORD, target.username)])
         changes.append("disabled" if disabled else "enabled")
 
     if changes:
@@ -274,7 +288,116 @@ def update_user(
             target=target.username,
         )
     db.commit()
-    return {"user": user_to_dict(target)}
+    return {"user": signin.account_out(db, target)}
+
+
+# --------------------------------------------------------------------------- #
+# The sessions and the second factor of an account                            #
+# --------------------------------------------------------------------------- #
+def _account(db: OrmSession, user_id: str) -> User:
+    target = db.get(User, user_id)
+    if target is None or stored_roles(target.roles) == [SYSTEM_ROLE]:
+        raise HTTPException(status_code=404, detail="User not found")
+    return target
+
+
+@router.get("/{user_id}/sessions")
+def list_sessions(
+    user_id: str,
+    request: Request,
+    _admin: Principal = Depends(admin_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """The open sessions of an account (admin): when each began, when it was
+    last used, from which address and with which browser."""
+    target = _account(db, user_id)
+    return {"sessions": signin.sessions_out(db, target, request.cookies.get(settings.SESSION_COOKIE_NAME))}
+
+
+@router.delete("/{user_id}/sessions", status_code=status.HTTP_200_OK)
+def end_sessions(
+    user_id: str,
+    request: Request,
+    admin: Principal = Depends(admin_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """End every session of an account (admin): each is refused at its next
+    request. On the caller's own account the session of this request goes on."""
+    target = _account(db, user_id)
+    is_self = admin.user is not None and admin.user.id == target.id
+    ended = signin.revoke_sessions(
+        db, target.id, keep=request.cookies.get(settings.SESSION_COOKIE_NAME) if is_self else None
+    )
+    if ended:
+        audit.record(
+            db,
+            admin.actor,
+            "auth.session.end",
+            f'Ended {ended} session{"" if ended == 1 else "s"} of the account "{target.username}"',
+            target=target.username,
+        )
+    db.commit()
+    return {"ended": ended}
+
+
+@router.delete("/{user_id}/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def end_session(
+    user_id: str,
+    session_id: str,
+    admin: Principal = Depends(admin_principal),
+    db: OrmSession = Depends(get_db),
+) -> Response:
+    """End one session of an account (admin): its next request is refused."""
+    target = _account(db, user_id)
+    row = signin.find_session(db, target.id, session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    audit.record(
+        db,
+        admin.actor,
+        "auth.session.end",
+        f'Ended a session of the account "{target.username}" (from {row.address or "an unknown address"})',
+        target=target.username,
+    )
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{user_id}/second-factor/reset")
+def reset_second_factor(
+    user_id: str,
+    admin: Principal = Depends(admin_session),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Take the second factor of another account away, for somebody who lost
+    theirs (a signed-in admin; never an API key, never one's own account).
+
+    The account's recovery codes and sessions go with it. The person is told
+    at their next sign-in, and is led to set a factor up again at once when
+    their roles ask for one.
+    """
+    target = _account(db, user_id)
+    if admin.user is not None and admin.user.id == target.id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot reset your own second factor: sign in with a recovery code, then turn it off "
+            "in My account",
+        )
+    if not signin.remove_factors(db, target):
+        raise HTTPException(status_code=409, detail="The account has no second factor")
+    target.signin_notice = "second_factor_reset"
+    signin.succeeded(db, [signin.account_key(signin.CODE, target.id)])
+    revoke_sessions(db, target.id)
+    audit.record(
+        db,
+        admin.actor,
+        "auth.factor.reset",
+        f'Reset the second factor of the account "{target.username}"',
+        target=target.username,
+    )
+    db.commit()
+    return {"user": signin.account_out(db, target)}
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

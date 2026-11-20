@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.7.0] - 2026-11-20
+
+One can always go back: Nik takes its own backups and proves they
+restore, an upgrade is rehearsed before it touches the data, and an
+account is protected by more than a password.
+
+### Added
+
+- **Nik takes its own backups.** The database and the store of files in
+  one encrypted file, on a schedule (every 6 hours at first; every N
+  hours, every day or every week), kept by retention (the latest 8 good
+  ones and one a week for 4 weeks; the last good one is never removed).
+  The passphrase is set once in *Settings → System → Backup* and is not
+  `SECRET_KEY`; nothing is backed up until it is set.
+- **Each backup is proven to restore.** Right after it is written it is
+  read back, restored into a scratch database and compared: the schema,
+  the rows of every table, the checksum of every file. A backup that
+  fails its test is marked, and never counted as a good one.
+- **A copy on a second host.** Each verified backup is sent over SFTP
+  (key or password, pinned host key), resumed and checked after upload,
+  by the automation worker: the backend still has no way out. Upgrade
+  snapshots are copied too.
+- **Administrators are told** when a backup fails, fails its test, is
+  missed, when the last good one is old (13 hours at first), when the
+  directory fills or the copy fails: one notice for a problem, one when
+  it is solved.
+- **`deploy/restore.sh`** puts a backup back from the command line, on the
+  same server or on a new one, and refuses to write over a server that
+  is not empty unless told to. **`deploy/rollback.sh`** puts back the
+  snapshot of an upgrade.
+- **An upgrade is rehearsed.** Before a release migrates the database it
+  takes an encrypted snapshot and runs the migrations on a copy. When
+  they fail there the data is not touched: the server stays up, says
+  what failed on the page and in the log, and answers nothing else.
+- **A second factor at sign-in.** An account protects itself with the
+  code of an authenticator app (*My account*): the QR code is drawn in
+  the browser, ten single-use recovery codes are shown once, and setting
+  it up asks for the password. Signing in then takes the password and
+  the code; the password alone opens nothing.
+- **Required of administrators.** One switch in *Settings → Sign-in and
+  sessions*, off at first: an administrator without a second factor can
+  then do nothing but set one up. An administrator resets the second
+  factor of somebody who lost theirs; a command on the server does it
+  for the last administrator.
+- **Sessions can be seen and ended.** *My account* lists where the
+  account is signed in; an administrator sees and ends anybody's
+  sessions. A change of roles, of the password or of the second factor
+  signs the account out elsewhere.
+- **Administrators only from listed networks** (optional), which says so
+  plainly on a set-up where the server cannot know the caller's address.
+
+### Changed
+
+- **Sessions end when unused.** After 30 minutes for an administrator and
+  8 hours for everybody else (the lifetime stays 12 hours), with a
+  warning a minute before; what the page asks by itself does not count
+  as use. Both times are settings.
+- **Failed sign-ins wait instead of locking.** After five in a row the
+  next attempt waits, twice as long each time up to fifteen minutes, by
+  account and by address; an account that does not exist is answered
+  exactly like a wrong password. The lock of five minutes after ten
+  failures is gone.
+- **A change of an account's roles signs it out**; before, it took effect
+  on the session that was open.
+- **"Full backup" is "Export as one file"**, and importing one adds what
+  is not on the server instead of replacing the server: no account,
+  setting, session or credential is deleted by it any more.
+- `deploy/backup.sh` asks the server for a backup; the nightly timer of
+  `deploy/install-systemd.sh` is gone, since Nik keeps its own schedule.
+- The automation worker waits for the database to be at its own revision
+  before it starts.
+
+### Fixed
+
+- The session a browser already held stayed alive on the server after a
+  new sign-in.
+- A forwarded address was believed whoever sent it: the compose file now
+  trusts the web container only (`TRUSTED_PROXIES`).
+- A request that changes something and comes from another site is
+  refused.
+- An upgrade whose migration failed left the API restarting for ever
+  behind "Cannot reach the server".
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  The compose file gained a volume, `backups`; to keep backups on another
+  disk set `NIK_BACKUP_DIR` in `.env` first. Migrations `0048_backups`
+  and `0049_two_factor` run at start, after a snapshot (encrypted under
+  `SECRET_KEY` while no passphrase is set) and a rehearsal.
+- **Set the backup passphrase** in *Settings → System → Backup* and write
+  it down: no backup is taken until then, and none can be restored
+  without it. An administrator is told after a day without one.
+- **An administrator's session unused for 30 minutes now ends.** People
+  signed in stay signed in through the upgrade, and nobody is asked for
+  a second factor until the switch is turned on.
+- Remove any override that sets `FORWARDED_ALLOW_IPS=*`.
+- Run `sudo deploy/install-systemd.sh` again to remove the old backup
+  timer, or two backups are taken each night. `deploy/backup.sh` no
+  longer reads `BACKUP_DIR` or `KEEP_DAYS`; directories it wrote before
+  6.7 stay where they are, unencrypted.
+- After a restore or a rollback everybody signs in again.
+- New dependency of the backend: paramiko.
+
 ## [6.6.1] - 2026-11-20
 
 ### Added
@@ -3457,7 +3561,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.6.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.7.0...HEAD
+[6.7.0]: https://github.com/n36l3c7/Nik/compare/v6.6.1...v6.7.0
 [6.6.1]: https://github.com/n36l3c7/Nik/compare/v6.6.0...v6.6.1
 [6.6.0]: https://github.com/n36l3c7/Nik/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/n36l3c7/Nik/compare/v6.4.0...v6.5.0

@@ -66,6 +66,7 @@ import { useNavigation } from './context/NavigationContext.jsx'
 import { detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import SessionExpiredDialog from './components/auth/SessionExpiredDialog.jsx'
+import SessionGuards, { RequiredEnrolmentScreen } from './components/auth/SessionGuards.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 import { useAutomation } from './context/AutomationContext.jsx'
 import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
@@ -146,17 +147,27 @@ function ConnectingScreen() {
 
 /** Full-screen error card shown when the backend cannot be reached. */
 function UnreachableScreen({ error, onRetry }) {
+  // The server is there and says why it does not serve: an upgrade it stopped (backend/app/backups/upgrade.py).
+  const stopped = /^The upgrade of Nik /.test(error ?? '')
   return (
     <div className="flex h-screen items-center justify-center bg-canvas p-4">
       <div className="w-full max-w-sm border border-line bg-panel p-6 text-center">
         <div className="mb-4 flex justify-center">
           <MicroSkull mood="x" className="text-2xl text-high-fg" />
         </div>
-        <h1 className="text-base font-semibold text-fg">Cannot reach the server</h1>
-        <p className="mt-1.5 text-sm text-fg-muted">
-          The application could not contact the backend API. Check that the service is running, then try again.
-        </p>
-        {error && <p className="mt-3 break-words bg-canvas px-3 py-2 font-mono text-xs text-fg-muted">{error}</p>}
+        <h1 className="text-base font-semibold text-fg">
+          {stopped ? 'Nik is not running' : 'Cannot reach the server'}
+        </h1>
+        {stopped ? (
+          <p className="mt-1.5 text-sm text-fg-muted">{error}</p>
+        ) : (
+          <>
+            <p className="mt-1.5 text-sm text-fg-muted">
+              The application could not contact the backend API. Check that the service is running, then try again.
+            </p>
+            {error && <p className="mt-3 break-words bg-canvas px-3 py-2 font-mono text-xs text-fg-muted">{error}</p>}
+          </>
+        )}
         <Button icon={RefreshCw} onClick={onRetry} className="mt-5 w-full justify-center">
           Retry
         </Button>
@@ -166,7 +177,7 @@ function UnreachableScreen({ error, onRetry }) {
 }
 
 export default function App() {
-  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout, can } = useAuth()
+  const { hasUsers, isAuthenticated, enrolling, authReady, serverError, retry, logout, can } = useAuth()
   // What the roles of the signed-in account allow: the shell shows what it can use.
   const canRead = can('read')
   const canWrite = can('write')
@@ -686,6 +697,15 @@ export default function App() {
 
   // ---- Auth gate ----
   if (!hasUsers) return <FirstRunSetup />
+  // An account that must set its second factor up does that before the app is shown.
+  if (enrolling) {
+    return (
+      <>
+        <RequiredEnrolmentScreen />
+        <SessionExpiredDialog />
+      </>
+    )
+  }
   if (!isAuthenticated) return <LoginScreen />
 
   const openCreateModal = () => {
@@ -1233,6 +1253,7 @@ export default function App() {
 
       <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <SessionExpiredDialog unsavedChanges={unsavedChanges} unsaved={unsavedList} />
+      <SessionGuards />
       <PastePrompt
         pasted={pasted}
         busy={pastedBusy}

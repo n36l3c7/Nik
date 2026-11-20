@@ -15,6 +15,7 @@ const API_PORT = 8765
 const WEB_PORT = 4173
 const E2E_DB = '.e2e.db'
 const E2E_SAMPLES = '.e2e-samples'
+const E2E_BACKUPS = '.e2e-backups'
 
 export default defineConfig({
   testDir: 'e2e',
@@ -35,7 +36,7 @@ export default defineConfig({
   webServer: [
     {
       timeout: 120_000,
-      command: `node -e "const fs = require('fs'); fs.rmSync('${E2E_DB}', { force: true }); fs.mkdirSync('${E2E_SAMPLES}', { recursive: true }); for (const f of fs.readdirSync('${E2E_SAMPLES}')) fs.rmSync('${E2E_SAMPLES}/' + f, { recursive: true, force: true })" && uvicorn app.main:app --port ${API_PORT}`,
+      command: `node -e "const fs = require('fs'); fs.rmSync('${E2E_DB}', { force: true }); fs.rmSync('${E2E_BACKUPS}', { recursive: true, force: true }); fs.mkdirSync('${E2E_SAMPLES}', { recursive: true }); for (const f of fs.readdirSync('${E2E_SAMPLES}')) fs.rmSync('${E2E_SAMPLES}/' + f, { recursive: true, force: true })" && uvicorn app.main:app --port ${API_PORT}`,
       cwd: '../backend',
       url: `http://127.0.0.1:${API_PORT}/api/health`,
       reuseExistingServer: false,
@@ -44,6 +45,8 @@ export default defineConfig({
         COOKIE_SECURE: 'false',
         RATE_LIMIT_DEFAULT: '100000/minute',
         SAMPLE_STORE: E2E_SAMPLES,
+        // The backups of the test server: a folder of its own, emptied before every run.
+        BACKUP_DIR: E2E_BACKUPS,
         // No automatic threat-intelligence lookups from the test server.
         ENRICHMENT_WORKER: 'false',
         // No catalogue of packs: the tests reach no other machine (a pack comes as a file).

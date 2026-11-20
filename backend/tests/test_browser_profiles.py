@@ -62,11 +62,11 @@ def test_create_and_backup_restore_normalize_legacy_documents(admin: TestClient)
     assert firefox["activeProfile"] == "default"
     assert firefox["profiles"]["default"]["meta"] == LEGACY_SLOT["meta"]
 
+    # A file exported by a release before 2.0.0 is normalized when it is imported (it adds: another id).
     backup = admin.get("/api/backup/export").json()
-    backup["incidents"] = [legacy]
-    assert admin.post("/api/backup/import", json=backup).status_code == 200, "restore failed"
-    admin.post("/api/auth/login", json={"username": "admin", "password": "supersecret"})
-    restored = admin.get("/api/incidents/old").json()["data"]["browser"]["browsers"]["firefox"]
+    backup["incidents"] = [{**legacy, "id": "older"}]
+    assert admin.post("/api/backup/import", json=backup).status_code == 200, "import failed"
+    restored = admin.get("/api/incidents/older").json()["data"]["browser"]["browsers"]["firefox"]
     assert restored["profiles"]["default"]["history"] == LEGACY_SLOT["history"]
 
 

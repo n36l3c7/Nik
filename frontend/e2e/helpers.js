@@ -3,6 +3,7 @@
  * screenshots: a harmless PE sample and a phishing e-mail. They are generated,
  * not stored, so no antivirus quarantines a fixture on a developer machine.
  */
+import { createHmac } from 'node:crypto'
 
 /**
  * A harmless but valid PE32 (one .text section) with a few indicators inside.
@@ -92,4 +93,34 @@ export function phishingEml() {
     '--b1--',
     '',
   ].join('\r\n')
+}
+
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+
+/** The code an authenticator app shows for a secret at a time step (RFC 6238: SHA-1, six digits, 30 seconds). */
+export function totpCode(secret, step) {
+  let bits = ''
+  for (const letter of secret.replace(/=+$/, '').toUpperCase())
+    bits += BASE32.indexOf(letter).toString(2).padStart(5, '0')
+  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((byte) => Number.parseInt(byte, 2)))
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(step))
+  const digest = createHmac('sha1', key).update(counter).digest()
+  const offset = digest[digest.length - 1] & 0x0f
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0')
+}
+
+const usedSteps = new Map()
+
+/**
+ * A code the server will take for this secret now. It takes each time step once, and one step ahead
+ * of its clock: so the step after the last one used here, waiting for the clock when that is further.
+ */
+export async function nextCode(secret) {
+  const last = usedSteps.get(secret) ?? -1
+  const now = () => Math.floor(Date.now() / 30_000)
+  if (last >= now() + 1) await new Promise((resolve) => setTimeout(resolve, last * 30_000 - Date.now() + 500))
+  const step = Math.max(now(), last + 1)
+  usedSteps.set(secret, step)
+  return totpCode(secret, step)
 }

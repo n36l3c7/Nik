@@ -6,7 +6,7 @@
 #
 # PostgreSQL 18 cannot open a version 16 data directory, so the data is moved
 # with a dump and a restore:
-#   1. full backup with deploy/backup.sh, from the stack still running 16;
+#   1. dump of the database with pg_dump, from the stack still running 16;
 #   2. the number of rows of every table is noted;
 #   3. the stack is stopped; PostgreSQL 18 starts on the new db-data-18 volume;
 #   4. the dump is restored and the row counts are compared;
@@ -18,7 +18,10 @@
 # volume is dumped with a temporary PostgreSQL 16 instead. Running the script
 # again is always safe.
 #
-# Settings (environment): NIK_DIR, ENGINE, BACKUP_DIR as for backup.sh.
+# Settings (environment): NIK_DIR, ENGINE (podman or docker), and BACKUP_DIR,
+# where the dump is kept (default /var/backups/nik). This dump is a plain
+# pg_dump for this one move, not a backup of Nik: those are taken by the
+# server itself since 6.7 (Settings → Backup).
 set -euo pipefail
 
 NIK_DIR=${NIK_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -99,8 +102,8 @@ if [ -n "$version" ] && [ "$version" -ge 180000 ]; then
 fi
 
 if [ -n "$version" ]; then
-  # The previous release is still running (the documented order): a full
-  # backup with backup.sh, from the running PostgreSQL 16.
+  # The previous release is still running (the documented order): a dump
+  # from the running PostgreSQL 16.
   old_volume=$(mounted_volume "$db" /var/lib/postgresql/data)
   log "PostgreSQL $(sql "$db" 'SHOW server_version') on volume ${old_volume:-?}"
   # Nothing may be written between the backup, the row count and the
@@ -108,10 +111,13 @@ if [ -n "$version" ]; then
   # database without any sign of it. The app stops first; the database stays.
   log "stopping the app (the database stays up for the backup)"
   $COMPOSE stop web api
-  log "step 1/5: full backup"
-  "$NIK_DIR/deploy/backup.sh"
-  dump=$(find "$backup_dir" -maxdepth 1 -type d -name 'nik-*' ! -name '*.partial' | sort | tail -n 1)/db.dump
-  [ -s "$dump" ] || die "backup not found in $backup_dir"
+  log "step 1/5: dump of the database"
+  target="$backup_dir/nik-$(date '+%Y%m%d-%H%M%S')-pg16"
+  (umask 077 && mkdir -p "$target")
+  $ENGINE exec -i "$db" pg_dump -U nik -d nik -Fc >"$target/db.dump"
+  dump="$target/db.dump"
+  [ -s "$dump" ] || die "the dump is empty: $dump"
+  log "dump: $dump"
   log "step 2/5: counting rows"
   before=$(row_counts "$db")
   $COMPOSE down

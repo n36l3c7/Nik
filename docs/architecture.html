@@ -216,8 +216,8 @@
 │   └── sandbox/                    # scripts of playbooks: Dockerfile (Python and nothing else),
 │                                   #   harness.py (the child a script runs in), runner.py (the limits),
 │                                   #   server.py, tests/
-├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, upgrade-postgres.sh,
-│                                   #   install-systemd.sh + systemd/, check-images.sh
+├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
+│                                   #   upgrade-postgres.sh, install-systemd.sh + systemd/, check-images.sh
 ├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
 ├── docker-compose.yml              # db + api + automation + sandbox + analyzer + capa + docview +
@@ -227,21 +227,26 @@
 </code></pre>
       <p>The backend package, <code>backend/app/</code>:</p>
       <pre><code>app/
-├── main.py                         # FastAPI app and its /api routers (the schema is Alembic's:
-│                                   #   the image runs `alembic upgrade head` at every start)
+├── main.py                         # FastAPI app and its /api routers (the schema is Alembic's: the
+│                                   #   image runs the migrations at every start, backups/upgrade.py)
 ├── core/                           # Infrastructure shared by every feature
 │   ├── config.py                   # Env-based settings (DATABASE_URL, SECRET_KEY, …)
 │   ├── db.py                       # SQLAlchemy engine / session factory
 │   ├── models.py                   # users, sessions, incidents, audit_log, settings, samples, …
 │   ├── schemas.py                  # Pydantic request/response models
-│   ├── security.py                 # bcrypt hashing, sessions, the Principal and require("&lt;permission&gt;")
+│   ├── security.py                 # bcrypt hashing, sessions (idle time, lifetime), the Principal and
+│   │                               #   require("&lt;permission&gt;"), the two refusals that carry a code
+│   ├── signin_policy.py            # The sign-in policy an admin sets: required roles, times, waits, networks
+│   ├── totp.py                     # Time-based one-time passwords (RFC 6238), each time step accepted once
+│   ├── client_address.py           # The address a request comes from: X-Forwarded-For from trusted proxies only
 │   ├── permissions.py              # The roles, the permissions and what each role grants
 │   ├── locking.py                  # Row lock every writer of an incident document takes first
 │   ├── files.py                    # read_upload (size limit while reading), safe_name,
 │   │                               #   attachment_headers (RFC 5987 download names)
 │   ├── audit.py                    # record(): the audit trail, written by the handlers;
 │   │                               #   describe_patch(): what a merge patch means (flag, note, status…)
-│   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY);
+│   ├── vault.py                    # Encryption of API keys, second-factor secrets and TLS key logs (Fernet,
+│   │                               #   HKDF of SECRET_KEY);
 │   │                               #   re-encryption after SECRET_KEY changes (SECRET_KEY_PREVIOUS)
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
@@ -327,6 +332,16 @@
 ├── artifact_convert.py             # A file artifact analysed as the e-mail or the capture it is
 ├── unpack.py                       # The files of a zip archive, in memory: bounded, a name never a path
 ├── worker_watch.py                 # Workers that stop answering: the check, and the notices to the admins
+├── backups/                        # Backups Nik takes by itself, and upgrades one can come back from
+│   ├── container.py                #   the file format (encrypted, streamed); also runs alone, without Nik
+│   ├── database.py · store.py      #   the database and the store inside a backup; scratch databases
+│   ├── runner.py · policy.py       #   taking one, its restore test; the schedule and the retention
+│   ├── scheduler.py · watch.py     #   the loops; the notices to the admins
+│   ├── offsite.py                  #   the copy off the server (SFTP), sent by the automation worker
+│   ├── upgrade.py                  #   before migrating: snapshot, rehearsal (the entrypoint runs it)
+│   └── restore.py · now.py         #   the command line behind deploy/restore.sh, rollback.sh, backup.sh
+├── signin.py                       # Signing in: waits after failures, second factors, recovery codes, sessions
+├── account.py                      # python -m app.account: reset a second factor, clear the admins' networks
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
 ├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&amp;CK) and PDF (WeasyPrint)
@@ -1005,11 +1020,10 @@
         </table>
       </div>
       <p>
-        A backup is therefore two things: a dump of the database and a copy of the sample store (<code
-          >deploy/backup.sh</code
-        >
-        takes both, with <code>.env</code>). The in-app full backup covers the first four tables' worth of work only;
-        see <a href="deployment.html#full-platform-backup">Full platform backup</a>.
+        A backup is therefore two things: the database and the sample store. The server takes both by itself, in one
+        encrypted file, and tests it (<code>backend/app/backups/</code>; see
+        <a href="deployment.html#backups">Backups</a>). The export of content as one file covers the first four tables'
+        worth of work only; see <a href="deployment.html#full-platform-backup">The export of content as one file</a>.
       </p>
       <h2 id="authentication-sessions-and-the-audit-log">Authentication, sessions and the audit log</h2>
       <h3 id="authentication">Authentication</h3>
@@ -1018,13 +1032,28 @@
         successful <code>POST /api/auth/login</code> creates a server-side session row and sets the
         <strong>httpOnly</strong> <code>nik_session</code> cookie (with the <code>Secure</code> flag when
         <code>COOKIE_SECURE=true</code>, the default); <code>credentials: 'include'</code> on every fetch keeps it
-        flowing. Sessions expire after <code>SESSION_TTL_HOURS</code>.
+        flowing. An account with a second factor (<code>user_factors</code>, <code>recovery_codes</code>) gets a ticket
+        instead (<code>signin_tickets</code>, a cookie of its own) and its session from
+        <code>POST /api/auth/login/code</code> (<code>backend/app/signin.py</code>, <code>core/totp.py</code>). A
+        session ends when it was not used for the idle time of the sign-in policy (<code>sessions.last_used_at</code>;
+        requests the page sends by itself carry <code>X-Nik-Background</code> and do not count,
+        <code>frontend/src/lib/activity.js</code>) and at most <code>lifetimeHours</code> after the sign-in (<code
+          >SESSION_TTL_HOURS</code
+        >
+        until an admin sets it). The policy is one row of <code>settings</code> (<code>core/signin_policy.py</code>).
       </p>
       <p>
-        User shape: <code>{ id, username, roles, permissions, createdAt, createdBy, disabled }</code> — the password
-        hash never leaves the backend. A sign-in that names an unknown account does the same hashing work as a wrong
-        password, ten wrong passwords in a row lock the account for five minutes (<code>users.failed_logins</code>,
-        <code>users.locked_until</code>), and expired sessions are purged at each sign-in.
+        User shape:
+        <code
+          >{ id, username, roles, permissions, createdAt, createdBy, disabled, secondFactor, secondFactorRequired
+          }</code
+        >
+        — the password hash never leaves the backend. A sign-in that names an unknown account does the same hashing work
+        as a wrong password and is counted the same way; failures in a row make the next attempt wait, per account and
+        per address (<code>signin_attempts</code>; <code>users.failed_logins</code> and
+        <code>users.locked_until</code> are no longer read), and expired sessions are purged at each sign-in. The
+        client's address is the connection's, or the one <code>X-Forwarded-For</code> names when the connection comes
+        from a proxy of <code>TRUSTED_PROXIES</code> (<code>core/client_address.py</code>).
       </p>
       <p>
         The App shell (<code>App.jsx</code>) implements a three-state <strong>auth gate</strong>, driven by
@@ -1066,13 +1095,15 @@
       </p>
       <p>Entry shape: <code>{ id, at, actor, action, target, details, incidentId, incidentName }</code>.</p>
       <p>
-        Action strings include: <code>auth.login</code> / <code>.logout</code> / <code>.locked</code>,
-        <code>user.create</code> / <code>.update</code> / <code>.delete</code> / <code>.password</code>,
-        <code>apikey.create</code> / <code>.revoke</code>, <code>settings.update</code>, <code>incident.create</code> /
-        <code>.update</code> / <code>.delete</code> / <code>.export</code>, <code>evidence.update</code>,
-        <code>flag.add</code> / <code>.remove</code> / <code>.comment</code>, <code>note.add</code> /
-        <code>.update</code> / <code>.remove</code>, the sample, e-mail, capture and URL actions,
-        <code>backup.export</code> / <code>backup.import</code> and <code>audit.clear</code>.
+        Action strings include: <code>auth.login</code> / <code>.logout</code> / <code>.failed</code> /
+        <code>.refused</code> / <code>.code.failed</code> / <code>.factor.on</code> / <code>.factor.off</code> /
+        <code>.factor.reset</code> / <code>.recovery.new</code> / <code>.recovery.used</code> /
+        <code>.session.end</code> / <code>.policy</code>, <code>user.create</code> / <code>.update</code> /
+        <code>.delete</code> / <code>.password</code>, <code>apikey.create</code> / <code>.revoke</code>,
+        <code>settings.update</code>, <code>incident.create</code> / <code>.update</code> / <code>.delete</code> /
+        <code>.export</code>, <code>evidence.update</code>, <code>flag.add</code> / <code>.remove</code> /
+        <code>.comment</code>, <code>note.add</code> / <code>.update</code> / <code>.remove</code>, the sample, e-mail,
+        capture and URL actions, <code>backup.export</code> / <code>backup.import</code> and <code>audit.clear</code>.
       </p>
       <p>
         The <strong>Audit log</strong> section of Settings (<code>AuditLogSection.jsx</code>) reads the trail each time
