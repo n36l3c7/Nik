@@ -127,7 +127,7 @@ export default function NewAnalysisDialog({ open, onClose, onFile, onUrl, initia
               placeholder="https://… (hxxps://evil[.]top works too)"
               className="h-9 min-w-0 flex-1 border border-line bg-canvas px-3 font-mono text-sm text-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
-            <Button type="submit" icon={Search} disabled={busy || !address.trim()}>
+            <Button waiting={busy} type="submit" icon={Search} disabled={busy || !address.trim()}>
               {busy ? 'Starting…' : 'Scan address'}
             </Button>
           </div>

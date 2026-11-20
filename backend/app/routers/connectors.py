@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .. import fetch as fetching
 from ..automation import connector_actions as store
-from ..automation import connector_logo, credentials, engine, graph, instance_keys
+from ..automation import connector_logo, credentials, download_hosts, engine, graph, instance_keys
 from ..automation import connectors as files
 from ..core import audit, vault
 from ..core.db import get_db
@@ -209,6 +209,14 @@ def _clean_config(connector: files.ConnectorFile, given: dict[str, Any]) -> dict
         elif param.type == "bool":
             if not isinstance(value, bool):
                 raise HTTPException(status_code=400, detail=f"{_label(param)} is true or false")
+        elif param.type == "hosts":
+            # The hosts downloads may come from: names and *. patterns, kept as a list a person reads.
+            try:
+                value = ", ".join(download_hosts.patterns(value if isinstance(value, str) else ""))
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=f"{_label(param)}: {error}") from None
+            if not value:
+                continue
         elif param.type == "choice":
             if value not in (param.choices or []):
                 raise HTTPException(
@@ -483,11 +491,14 @@ def create_connection(
     _merge_secrets(db, connector, row, body.secrets)
     db.add(row)
     host = store.host_of(connector, row.config)
+    entry = connector.download_hosts_from
+    listed = str(row.config.get(entry) or "") if entry else ""
     audit.record(
         db,
         caller.actor,
         "connection.create",
-        f'Made the instance "{name}" to {connector.name} at {host}',
+        f'Made the instance "{name}" to {connector.name} at {host}'
+        + (f"; hosts downloads may come from: {listed}" if listed else ""),
         target=name,
     )
     db.commit()
@@ -518,9 +529,15 @@ def update_connection(
         changes.append("turned on" if body.enabled else "turned off")
     if body.config is not None:
         before = store.host_of(connector, row.config or {})
+        entry = connector.download_hosts_from
+        from_before = str((row.config or {}).get(entry) or "") if entry else ""
         row.config = _clean_config(connector, body.config)
         after = store.host_of(connector, row.config)
         changes.append(f"address {before} → {after}" if before != after else "settings")
+        from_after = str(row.config.get(entry) or "") if entry else ""
+        if from_after != from_before:
+            # Where its downloads may come from is said in full: it is what the instance lets in.
+            changes.append(f"hosts downloads may come from: {from_before or 'none'} → {from_after or 'none'}")
         row.last_test = None
     if body.secrets is not None and any(value is not None for value in body.secrets.values()):
         _merge_secrets(db, connector, row, body.secrets)

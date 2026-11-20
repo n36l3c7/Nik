@@ -306,11 +306,7 @@ export default function EventLogsTab({ incident }) {
       </Card>
 
       {events.length === 0 && loaded.length === 0 ? (
-        <EmptyState
-          icon={ScrollText}
-          title="No event logs yet"
-          message="Upload .evtx files or the script's JSON above."
-        />
+        <EmptyState skull title="No event logs yet" message="Upload .evtx files or the script's JSON above." />
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

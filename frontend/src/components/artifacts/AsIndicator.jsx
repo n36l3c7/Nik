@@ -66,7 +66,7 @@ export default function AsIndicator({ indicator }) {
         <Badge>Reputation: not checked</Badge>
       )}
       {data && !data.blocked && !data.held && data.providers.length > 0 && (
-        <Button size="xs" variant="ghost" icon={Radar} disabled={busy} onClick={check}>
+        <Button waiting={busy} size="xs" variant="ghost" icon={Radar} disabled={busy} onClick={check}>
           {busy ? 'Checking…' : summary ? 'Check again' : 'Check reputation'}
         </Button>
       )}

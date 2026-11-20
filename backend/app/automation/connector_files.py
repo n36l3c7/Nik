@@ -12,7 +12,9 @@ what happens to them here is decided in this module, for one step of a run:
   kept, and the step says so. When the command says the file is an archive
   to unpack (``unpack``), each file inside it is kept as an artifact of its
   own, taken out of the archive (``unpack.py``): read in memory, never run,
-  never written anywhere but the store.
+  never written anywhere but the store. An archive that cannot be unpacked
+  (a wrong password, not an archive, too much inside) is kept all the same,
+  alone, and the step fails naming it.
 - **A file that goes out** is one of the store, named by its artifact id
   (``file-<sha256>``) or its SHA-256. Before it leaves, the data guard judges
   it as it judges an attachment of a message (``outbound.guarded_message``): by
@@ -72,11 +74,18 @@ class Store:
         kept as it came, each file inside it as an artifact of its own, and what describes them is
         given too: ``files`` (each ``name``, ``type``, ``size``, ``sha256``, ``artifact``), ``count``
         and ``skipped`` (each ``name`` and ``reason``). An archive that cannot be unpacked (not one,
-        a password that does not open it, more inside than an archive may hold) fails the step, and
-        nothing is kept."""
+        a password that does not open it, more inside than an archive may hold) is evidence all the
+        same: it is kept as a file that is not unpacked would be, nothing inside it is, and the step
+        fails with a sentence that says why and names the artifact (``CommandError.kept``)."""
         call, db, keeper = self.call, self.call.db, self.keeper
         if len(data) > self.limit:
             raise CommandError(f"The file is larger than the {self.limit_mb} MB limit of a sample: it was not kept")
+        incident_id = str(call.run.incident_id or "")
+        if incident_id and db.get(Incident, incident_id) is None:
+            incident_id = ""
+        origin = f"{self.connector_name} ({self.command})"
+        playbook = (call.run.trigger or {}).get("playbook", "")
+        who = f", approved by {call.approved_by}" if call.approved_by else ""
         found = None
         if unpack_as is not None:
             try:
@@ -84,11 +93,23 @@ class Store:
                     data, str(unpack_as.get("password") or ""), limit=self.limit, fmt=str(unpack_as.get("format"))
                 )
             except unpack.UnpackError as error:
-                raise CommandError(error.message, retry=False, sent=True) from None
-        incident_id = str(call.run.incident_id or "")
-        if incident_id and db.get(Incident, incident_id) is None:
-            incident_id = ""
-        origin = f"{self.connector_name} ({self.command})"
+                try:
+                    kept = keeper.file(data, name, incident_id, origin)
+                except artifact_jobs.JobError as unkept:
+                    raise CommandError(f"{error.message}. The archive was not kept either: {unkept}") from None
+                keeper.audit(
+                    "connector.file.keep",
+                    f"Kept the archive {name or kept['sha256']} ({kept['sha256'][:12]}…) that {origin} gave, "
+                    f'not unpacked (playbook "{playbook}", run {call.run.id}{who})',
+                    incident_id,
+                )
+                if incident_id and keeper.direct:
+                    triggers.incident_changed(db, db.get(Incident, incident_id), "incident.updated", ["data"])
+                failure = CommandError(
+                    f"{error.message}. The archive was kept as {kept['artifact']}", retry=False, sent=True
+                )
+                failure.kept = kept["artifact"]  # the step fails once the archive is in the store
+                raise failure from None
         try:
             kept = keeper.file(data, name, incident_id, origin)
             files = []
@@ -105,8 +126,6 @@ class Store:
                 )
         except artifact_jobs.JobError as error:
             raise CommandError(f"The file was not kept: {error}") from None
-        playbook = (call.run.trigger or {}).get("playbook", "")
-        who = f", approved by {call.approved_by}" if call.approved_by else ""
         inside = f" and the {len(files)} file(s) inside it" if found is not None else ""
         keeper.audit(
             "connector.file.keep",

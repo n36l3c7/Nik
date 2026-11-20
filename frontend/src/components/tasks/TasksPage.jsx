@@ -3,7 +3,7 @@ import { FolderClosed, FolderOpen, X } from 'lucide-react'
 import { useTasks } from '../../context/TasksContext.jsx'
 import { api } from '../../services/api.js'
 import { byUrgency, dueText, statusBadge, tasksPath } from '../../domain/tasks.js'
-import { AsciiSkull, Badge, EmptyState } from '../ui/index.js'
+import { Badge, EmptyState } from '../ui/index.js'
 import TaskCard from './TaskCard.jsx'
 import { numberedName } from '../../domain/incidentName.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
@@ -133,7 +133,7 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident, o
           ) : tasks.length === 0 ? (
             <div className="p-4">
               <EmptyState
-                illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                skull
                 title={view === 'mine' ? 'Nothing waits for you' : 'No task here'}
                 message={
                   view === 'mine'

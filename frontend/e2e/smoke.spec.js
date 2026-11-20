@@ -20,6 +20,7 @@ test.describe.configure({ mode: 'serial', retries: 0 })
 const GENERAL_MENU = ['Search…ctrl k', 'Keyboard shortcuts?', 'Backalt ←', 'Copy the address of this page']
 
 let page
+let lastIncident = null
 // What the Content-Security-Policy blocked, if anything: the suite ends by checking it is empty.
 const blocked = []
 
@@ -49,6 +50,12 @@ test.beforeAll(async ({ browser }) => {
   })
   page.on('console', (message) => {
     if (/Content Security Policy|Content-Security-Policy/i.test(message.text())) blocked.push(message.text())
+  })
+  // The incident that was open last: where the tests go back to from the pages that take its place.
+  page.on('framenavigated', (frame) => {
+    if (frame !== page.mainFrame()) return
+    const path = new URL(frame.url()).pathname
+    if (path.startsWith('/incident/')) lastIncident = path
   })
 })
 
@@ -85,15 +92,23 @@ async function openIncidentFromList(text = null) {
   await expect(page).toHaveURL(/\/incident\//)
 }
 
+/** Open again the incident that was open last, as a link to it would (the page of the artifacts took its place). */
+async function backToIncident() {
+  await page.evaluate((path) => {
+    window.history.pushState({}, '', path)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, lastIncident)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+}
+
 /**
- * Leave the side panel of the artifacts or of the indicators for the incident that is open: the list
- * of incidents from the rail (it takes the panel away), and Back. (Hiding the panel with its own
- * button would keep it hidden for what is opened next.)
+ * Leave the page of the artifacts, or the side panel of the indicators, for the incident that was
+ * open: the list of incidents from the rail (it takes the panel away), then the incident. (Hiding the
+ * panel with its own button would keep it hidden for what is opened next.)
  */
 async function leaveSidePanel() {
   await openIncidentList()
-  await page.goBack()
-  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  await backToIncident()
 }
 
 test('first run creates the admin account', async () => {
@@ -1121,15 +1136,18 @@ test('the page always follows the address: incident, artifact, library, indicato
   await expect(page).toHaveURL(/\/artifact\//)
   await expect(artifact).toBeVisible()
   await expect(library).toHaveCount(0)
-  // The entry of the artifacts showed their panel beside the incident: that is where Back goes first.
+  // The entry of the artifacts showed their page, with none open: that is where Back goes first.
+  const none = page.getByRole('heading', { name: 'No artifact selected' })
   await page.goBack()
-  await expectIncident()
+  await expect(page).toHaveURL(/\/artifacts$/)
+  await expect(none).toBeVisible()
   await page.goBack()
   await expect(page).toHaveURL(/\/iocs$/)
   await expect(library).toBeVisible()
   await expect(artifact).toHaveCount(0)
+  await expect(none).toHaveCount(0)
   await page.goForward()
-  await expectIncident()
+  await expect(none).toBeVisible()
   await page.goForward()
   await expect(page).toHaveURL(/\/artifact\//)
   await expect(artifact).toBeVisible()
@@ -6100,29 +6118,104 @@ test('an entry of the rail always shows the first screen of its section, and doe
   await entry(/^Indicators/).click()
   await expect(iocs).toBeVisible()
 
-  // ---- Artifacts: the panel with no artifact open and nothing filtered, beside the incident ----
+  // ---- Artifacts: a page of their own, the list at the side and the skull until one is chosen ----
+  await openIncidentFromList(number)
   await entry('Artifacts').click()
+  await expect(page).toHaveURL(/\/artifacts$/)
+  await expect(entry('Artifacts')).toHaveAttribute('aria-pressed', 'true')
   const artifacts = page.getByRole('complementary', { name: 'Artifacts panel' })
+  const none = page.getByRole('heading', { name: 'No artifact selected' })
   await expect(artifacts).toBeVisible()
-  await expect(page).not.toHaveURL(/\/iocs/)
+  await expect(none).toBeVisible()
+  await expect(page.getByRole('main')).toContainText('Choose an artifact in the list to open it')
+  // The incident is not shown under it, and the list is part of the page: nothing hides it here.
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Hide the artifacts panel' })).toHaveCount(0)
+  // Pressed there, the entry does nothing; a reload stays there.
+  await entry('Artifacts').click()
+  await expect(page).toHaveURL(/\/artifacts$/)
+  await page.reload()
+  await expect(none).toBeVisible()
+  await expect(artifacts).toBeVisible()
+  // A filter is taken off by the entry.
   const filter = artifacts.getByRole('combobox', { name: 'Filter artifacts' })
   await filter.fill('verdict:phishing')
   await expect(filter).toHaveValue('verdict:phishing')
   await entry('Artifacts').click()
   await expect(filter).toHaveValue('')
+  // Choosing one opens it; the entry goes back to the empty page, and so does Back.
   await artifacts.getByRole('navigation', { name: 'Artifacts' }).locator('li button').first().click()
   await expect(page).toHaveURL(/\/artifact\//)
+  await expect(page.getByRole('region', { name: 'Artifact' })).toBeVisible()
+  await expect(none).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Hide the artifacts panel' })).toBeVisible()
   await entry('Artifacts').click()
-  await expect(page).not.toHaveURL(/\/artifact\//)
-  await expect(artifacts).toBeVisible()
+  await expect(page).toHaveURL(/\/artifacts$/)
+  await expect(none).toBeVisible()
   await expect(artifacts.locator('[aria-current="true"]')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Hide the artifacts panel' }).click()
-  await expect(artifacts).toHaveCount(0)
-
-  // Left as it was: the incident open, and the side panel shown again by what is opened next.
-  await entry('Artifacts').click()
-  await openIncidentFromList(number)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/artifact\//)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/artifacts$/)
+  await expect(none).toBeVisible()
+  // Back once more is the incident the entry was pressed from.
+  await page.goBack()
   await expect(page).toHaveURL(incidentUrl)
+
+  // Left as it was: the incident open, with no side panel beside it.
+  await leaveSidePanel()
+  await expect(page).toHaveURL(incidentUrl)
+})
+
+test('transfers show a bar or the wait, and an empty list shows the skull, in the new sections too', async () => {
+  const rail = page.getByRole('navigation', { name: 'Sections' })
+  await rail.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+
+  // ---- An upload with no place of its own on the screen is shown in the tray, with what it is ----
+  await sections.getByRole('button', { name: 'Content packs', exact: true }).click()
+  await page.route('**/api/packs/inspect', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    await route.continue()
+  })
+  await settings.getByLabel('A pack file').setInputFiles({
+    name: 'not-a-pack.nikpack',
+    mimeType: 'application/zip',
+    buffer: Buffer.alloc(200_000, 7),
+  })
+  const tray = page.getByRole('list', { name: 'Transfers' })
+  // (The request is held back here before a byte of it leaves, so there is no amount to draw a bar
+  // with yet: the tray shows the wait and its sentence, as it does for anything whose size is not known.)
+  await expect(tray.getByRole('status')).toContainText('Uploading not-a-pack.nikpack')
+  // The button that started it waits with it, and says what it does.
+  await expect(settings.getByRole('button', { name: 'Reading…' })).toHaveAttribute('aria-busy', 'true')
+  // It ends (this file is no pack: the page says so), and the tray is gone.
+  await expect(tray).toHaveCount(0, { timeout: 20_000 })
+  await expect(settings.getByRole('alert').first()).toBeVisible()
+  await page.unroute('**/api/packs/inspect')
+
+  // ---- Content packs: nothing matches what is typed ----
+  const search = settings.getByRole('search', { name: 'Find a pack' }).getByLabel('Search the packs')
+  await search.fill('no-pack-is-called-this')
+  await expect(settings.getByRole('heading', { name: 'No pack matches' })).toBeVisible()
+  await search.fill('')
+  await expect(settings.getByRole('heading', { name: 'No pack matches' })).toHaveCount(0)
+
+  // ---- Credentials: none yet ----
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  await expect(settings.getByRole('heading', { name: 'No credential yet' })).toBeVisible()
+  await expect(settings.getByRole('table', { name: 'Credentials' })).toContainText('Nothing here yet.')
+  await page.getByRole('button', { name: 'Close settings' }).click()
+
+  // ---- The Indicators page: a search that finds nothing says so, with other words than an empty library ----
+  await rail.getByRole('button', { name: /^Indicators/ }).click()
+  await expect(page).toHaveURL(/\/iocs$/)
+  await page.getByLabel('Filter indicators').fill('no-indicator-is-called-this')
+  await expect(page.getByRole('heading', { name: 'No indicator matches' })).toBeVisible()
+  await page.getByLabel('Filter indicators').fill('')
+  await expect(page.getByRole('table', { name: 'Indicators' })).toBeVisible()
+  await leaveSidePanel()
 })
 
 test('nothing unsaved is lost without asking: Stay, Leave without saving, Save and leave', async () => {
@@ -6483,7 +6576,7 @@ test('a side panel is made wider and narrower with its handle, and remembers its
   await incidentRow().click()
   await expect(page.getByRole('separator', { name: 'Resize the quick view' })).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.goBack()
+  await backToIncident()
 })
 
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
@@ -6711,9 +6804,9 @@ test("right-click opens Nik's menu on every screen: the incident and its tabs, t
   await nativeMenuNeverOpens(page, 'the panel of the indicators')
   await page.goBack()
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
-  // The artifacts are a panel beside the incident.
+  // The artifacts are a page of their own, with their list at the side.
   await sections.getByRole('button', { name: 'Artifacts' }).click()
-  await expect(page.getByRole('button', { name: 'Hide the artifacts panel' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'No artifact selected' })).toBeVisible()
   await nativeMenuNeverOpens(page, 'the panel of the artifacts')
   await leaveSidePanel()
 

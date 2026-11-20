@@ -100,6 +100,10 @@ const PATH_RE = /^\/artifact\/((?:file|mail)-[0-9a-f]{64}|(?:pcap|url|mailbox)-[
 
 export const artifactPath = (id) => `/artifact/${id}`
 
+/** The page of the artifacts: their list, and nothing open yet (the first screen of the section). */
+export const ARTIFACTS_ROOT = '/artifacts'
+export const isArtifactsPath = (pathname) => /^\/artifacts\/?$/.test(String(pathname ?? '').split('?')[0])
+
 export function artifactIdFromPath(pathname) {
   return PATH_RE.exec(String(pathname ?? ''))?.[1] ?? null
 }

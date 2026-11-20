@@ -39,7 +39,7 @@ export default function UnsavedDialog() {
             Leave without saving
           </Button>
           {canSaveAll(lost) && (
-            <Button variant="secondary" disabled={saving} onClick={() => answer('save')}>
+            <Button variant="secondary" waiting={saving} disabled={saving} onClick={() => answer('save')}>
               {saving ? 'Saving…' : 'Save and leave'}
             </Button>
           )}

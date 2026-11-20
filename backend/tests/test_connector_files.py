@@ -542,24 +542,77 @@ def test_an_archive_is_kept_as_it_came_and_each_file_inside_it_is_an_artifact_of
     assert SECRET not in str(result.output) and SECRET not in str(result.request)
 
 
-def test_an_archive_that_does_not_open_fails_the_step_and_nothing_is_kept(collector):
-    from app.core.models import Sample
+def failing(collector, password=SECRET, **more) -> actions.ActionError:
+    """The command run as a step that fails after keeping something: the step gives itself back once,
+    which is what keeps the file, and fails when it is called again."""
+    first = fetched(collector, password, **more)
+    assert first.output is None and first.again_at is not None and first.state["kept"]["fail"]
+    with pytest.raises(actions.ActionError) as failed:
+        fetched(collector, password, state=first.state, **more)
+    return failed.value
 
+
+def test_an_archive_that_does_not_open_is_kept_as_it_came_and_the_step_fails_naming_it(collector):
+    from app.core.models import Sample
+    from app.malware.samples import read_sample
+
+    admin = collector.admin
+    incident(admin, "inc-shut")
+    kept = f"file-{collector.sha}"
     for password, said in (
         ("guessed-wrong", "The password does not open the archive: nothing was unpacked"),
         (None, "The archive is protected by a password and none was given: nothing was unpacked"),
     ):
-        with pytest.raises(actions.ActionError) as failed:
-            fetched(collector, password)
-        assert failed.value.message == said and failed.value.retry is False
-        assert "guessed-wrong" not in failed.value.message and "guessed-wrong" not in str(failed.value.request)
-    collector.outside.answer(DESK, 200, body=b"<html>not an archive</html>", path="/api/fetched/7")
-    with pytest.raises(actions.ActionError) as failed:
-        fetched(collector)
-    assert failed.value.message == "The file is not a zip archive Nik can read: nothing was unpacked"
+        failed = failing(collector, password, incident_id="inc-shut")
+        assert failed.message == f"{said}. The archive was kept as {kept}" and failed.retry is False
+        # What the step records names the artifact, for a person or a later node to find it.
+        assert failed.request["kept"] == kept and failed.request["status"] == 200
+        assert "guessed-wrong" not in failed.message and "guessed-wrong" not in str(failed.request)
+    # The archive is evidence of the incident, byte for byte and still shut; nothing inside it was kept.
+    # Asked twice, it is there once: the same bytes are the same artifact.
+    assert read_sample(collector.sha) == collector.archive
     with SessionLocal() as db:
-        db.rollback()
-        assert db.scalars(select(Sample)).all() == []
+        assert [row.sha256 for row in db.scalars(select(Sample))] == [collector.sha]
+    refs = admin.get("/api/incidents/inc-shut").json()["data"]["malware"]["samples"]
+    assert [(ref["sha256"], ref["fileName"]) for ref in refs] == [(collector.sha, "fetched-7.zip")]
+    assert admin.get(f"/api/artifacts/{kept}").json()["children"] == []
+    said = audited("connector.file.keep")
+    assert len(said) == 2 and said[0].startswith(
+        f"Kept the archive fetched-7.zip ({collector.sha[:12]}…) that Fetch Desk (fetched-files) gave, not unpacked"
+    )
+
+    # Not an archive at all: kept as the file it is.
+    page = b"<html>not an archive</html>"
+    collector.outside.answer(DESK, 200, body=page, path="/api/fetched/7")
+    failed = failing(collector)
+    other = "file-" + hashlib.sha256(page).hexdigest()
+    assert (
+        failed.message
+        == f"The file is not a zip archive Nik can read: nothing was unpacked. The archive was kept as {other}"
+    )
+    assert read_sample(other.removeprefix("file-")) == page
+    # Opened later with the right password, by the node that unpacks an archive Nik holds.
+    assert admin.get(f"/api/artifacts/{kept}").json()["kind"] == "file"
+
+
+def test_an_archive_that_does_not_open_is_kept_through_the_api_process_before_the_step_fails(collector, read_only):
+    from app import artifact_jobs
+    from app.malware.samples import read_sample
+
+    waiting = fetched(collector, "guessed-wrong", now=NOW)
+    assert waiting.again_at == NOW + artifact_jobs.WAIT_EVERY and waiting.state["kept"]["fail"]
+    with SessionLocal() as db:
+        jobs = db.scalars(select(artifact_jobs.ArtifactJob)).all()
+        assert [job.params["name"] for job in jobs] == ["fetched-7.zip"]
+    # Called again before the archive is in the store: the step still waits, it does not fail yet.
+    again = fetched(collector, "guessed-wrong", now=NOW + 2, state=waiting.state)
+    assert again.again_at == NOW + 4 and len(collector.outside.requests) == 1
+    assert read_only() == 1
+    settled = fetched(collector, "guessed-wrong", now=NOW + 4, state=again.state)
+    with pytest.raises(actions.ActionError) as failed:
+        fetched(collector, "guessed-wrong", now=NOW + 5, state=settled.state)
+    assert failed.value.message.endswith(f"The archive was kept as file-{collector.sha}")
+    assert read_sample(collector.sha) == collector.archive and len(audited("connector.file.keep")) == 1
 
 
 def test_the_password_of_an_archive_is_not_shown_in_a_run_and_a_dry_run_unpacks_nothing(collector):
@@ -683,3 +736,42 @@ def test_the_password_of_an_archive_may_be_a_stored_credential_of_the_instance(c
     assert SECRET not in str(result.output) and SECRET not in str(result.request)
     shown = admin.get(f"/api/artifacts/file-{collector.sha}").json()
     assert sorted(child["name"] for child in shown["children"]) == ["notes.txt", "run.log"]
+
+
+def test_in_a_run_the_step_fails_and_the_archive_it_could_not_open_is_in_the_incident(collector):
+    """Through the engine, where a step that fails keeps nothing it wrote in its last call: the
+    archive is kept by the call before, and the step that failed says where it is."""
+    from app.automation import worker
+    from app.malware.samples import read_sample
+    from tests.test_automation_engine import T0, run_of, start
+
+    admin = collector.admin
+    incident(admin, "inc-run")
+    fetch = node(
+        "fetch",
+        "action",
+        action="fetchdesk.fetched-files",
+        connection="Desk",
+        args={"id": "7", "password": "guessed-wrong"},
+    )
+    after = node("after", "action", action="nik.get-artifact", args={"artifact": f"file-{collector.sha}"})
+    pb = playbook(
+        admin, "Fetches a shut archive", [fetch, after], [edge("start", "fetch"), edge("fetch", "after", "error")]
+    )
+    with SessionLocal() as db:
+        db.get(Playbook, pb).egress_hosts = [DESK]
+        db.commit()
+    run_id = start(admin, pb, objectKind="incident", objectId="inc-run")
+    for index in range(4):
+        worker.drain(T0 + index * 5)
+    run = run_of(admin, run_id)
+    failed = steps(run)["fetch"]
+    assert failed["status"] == "failed" and failed["error"] == (
+        f"The password does not open the archive: nothing was unpacked. The archive was kept as file-{collector.sha}"
+    )
+    assert failed["request"]["kept"] == f"file-{collector.sha}" and failed["input"]["args"]["password"] == "•••"
+    # Downloaded once; the node on the error line finds the archive, and so does the incident.
+    assert len(collector.outside.requests) == 1
+    assert steps(run)["after"]["output"]["found"] is True and steps(run)["after"]["output"]["incidents"] == ["inc-run"]
+    assert read_sample(collector.sha) == collector.archive
+    assert len(audited("connector.file.keep")) == 1

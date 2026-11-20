@@ -341,3 +341,11 @@ export function instanceTabs(connector, instance) {
     (fetches || Boolean(connector?.mirror)) && exists && { id: 'mappers', label: 'Mappers', wide: true },
   ].filter(Boolean)
 }
+
+/**
+ * A list of hosts as its box shows it: one a line. What is stored comes back with commas between
+ * the hosts; what is being typed is left as it is, a comma or a semicolon becoming the next line.
+ */
+export function hostLines(text) {
+  return String(text ?? '').replace(/[ \t]*[,;][ \t]*/g, '\n')
+}

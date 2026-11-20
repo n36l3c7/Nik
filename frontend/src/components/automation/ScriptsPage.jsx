@@ -5,12 +5,13 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { nameProblem } from '../../domain/automation/scripts.js'
 import { formatRelative } from '../../lib/time.js'
-import { Badge, Button, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import { Field, TextInput } from './fields.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { usePageMenu } from '../menu/usePageMenu.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { transfer } from '../../lib/transfers.js'
 
 /*
  * The scripts: a library of Python blocks with named arguments and outputs,
@@ -111,7 +112,9 @@ export default function ScriptsPage({ onOpen }) {
     try {
       const parsed = JSON.parse(await file.text())
       if (parsed?.type !== 'script' || !parsed.script) throw new Error('Not a script file')
-      const made = await api.post('/automation/scripts/import', { script: parsed.script })
+      const made = await transfer(`Importing ${file.name}`, () =>
+        api.post('/automation/scripts/import', { script: parsed.script }),
+      )
       showToast({ message: `${made.name} was imported as a draft: it enters the library when its test passes here.` })
       onOpen(made.id)
     } catch (failure) {
@@ -182,8 +185,12 @@ export default function ScriptsPage({ onOpen }) {
               <tbody>
                 {found.scripts.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-3 py-4 text-sm text-fg-muted">
-                      No script yet.
+                    <td colSpan={4} className="p-3">
+                      <EmptyState
+                        skull
+                        title="No script yet"
+                        message="A script is Python a playbook runs as a node: it enters the library when its test passes."
+                      />
                     </td>
                   </tr>
                 )}

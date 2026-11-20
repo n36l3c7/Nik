@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Boxes, Flag, Network, PanelLeftClose, PanelLeftOpen, Trash2 } from 'lucide-react'
 import { useItemMenu } from '../../menu/useRowMenu.js'
 import { captureFlaggable } from '../../../domain/network.js'
-import { AsciiSkull, Badge, Button, Card, EmptyState } from '../../ui/index.js'
+import { Badge, Button, Card, EmptyState } from '../../ui/index.js'
 import SampleDropZone from '../malware/SampleDropZone.jsx'
 import DownloadDialog from '../malware/DownloadDialog.jsx'
 import CaptureDetail from './CaptureDetail.jsx'
@@ -13,6 +13,7 @@ import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api, upload } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * ============================================================================
@@ -187,7 +188,12 @@ export default function NetworkAnalysisTab({ incident, onReference, focus = null
   }
 
   const handleKeylog = (file) => {
-    if (file && current) act(() => upload(`/captures/${current.id}/keylog`, file, { method: 'PUT' }), 'TLS keys')
+    if (!file || !current) return
+    const path = `/captures/${current.id}/keylog`
+    act(
+      () => transfer(`Uploading ${file.name}`, (onProgress) => upload(path, file, { method: 'PUT', onProgress })),
+      'TLS keys',
+    )
   }
 
   const handleSend = async (object) => {
@@ -259,7 +265,7 @@ export default function NetworkAnalysisTab({ incident, onReference, focus = null
   if (captures.length === 0) {
     return (
       <EmptyState
-        illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+        skull
         title="No captures yet"
         message="Drop a pcap or pcapng to read it as in Wireshark: packet list, protocol tree, bytes, display filters, Follow Stream, Export Objects. Sessions of the isolated browser opened from this incident appear here too."
         action={

@@ -39,13 +39,13 @@ import re
 import secrets as pysecrets
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit
 
-from . import egress
+from . import download_hosts, egress
 from . import expressions as ex
 from .connectors import MAX_PAGES, PAGE_MAX, Command, ConfigParam, ConnectorFile, Poll, RequestSpec, Step, Success
 
@@ -298,6 +298,9 @@ class Runtime:
         # for a playbook (connector_files.Store). None where no file can be carried.
         self.store: Any = None
         self._output_classes: dict[str, list] = {}
+        # The hosts a file may be downloaded from, as the instance says them, when the connector asks it.
+        entry = connector.download_hosts_from
+        self.download_hosts = download_hosts.tolerant(self.config.get(entry)) if entry else ()
         base = ex.render_text(connector.base_url, ex.Scope(values={"config": self.config})).data
         self.base_url = str(base or "").strip().rstrip("/")
         parts = urlsplit(self.base_url)
@@ -349,14 +352,38 @@ class Runtime:
         return ex.Scope(values=values, classes=classes)
 
     # ---------------------------------------------------------------- sending --
-    def _url(self, path: str) -> str:
-        """The address of a request: under ``base_url``, and never on another host."""
+    def _url(self, path: str, file: bool = False) -> str:
+        """The address of a request: under ``base_url``, and never on another host. A request whose
+        answer is a file (``file``) may also go to a host the instance says downloads come from."""
         target = path if path.startswith(("http://", "https://")) else self.base_url + "/" + path.lstrip("/")
         parts = urlsplit(target)
         host = (parts.hostname or "").lower()
-        if host != self.host and not self._other(target):
-            raise CommandError(f"A request of this connector goes to {parts.hostname}, not to its instance")
+        if host != self.host and not self._other(target) and not (file and self._download(target)):
+            said = f"A request of this connector goes to {parts.hostname}, not to its instance"
+            raise CommandError(said + (self._where_to_add() if file else ""))
         return target
+
+    def _download(self, url: str) -> bool:
+        """Whether an address is on a host the instance says downloads may come from: https, on the
+        usual port, by name. Not the instance itself nor a host of the file, which are reached as such."""
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        return (
+            host != self.host
+            and host not in self.connector.more_hosts
+            and parts.scheme == "https"
+            and parts.port in (None, 443)
+            and download_hosts.matches(self.download_hosts, host)
+        )
+
+    def _where_to_add(self) -> str:
+        """What is added to a refusal of a download, for a connector whose instance lists such hosts."""
+        entry = self.connector.download_hosts_from
+        param = next((item for item in self.connector.configuration if item.name == entry), None)
+        if param is None:
+            return ""
+        label = param.label or param.name.replace("_", " ").capitalize()
+        return f": add it under {label} in the instance if it is the vendor's storage"
 
     def _other(self, url: str) -> bool:
         """Whether an address is on one of the other hosts the connector lists (``more_hosts``): https, on
@@ -429,11 +456,16 @@ class Runtime:
             **{key: str(ex.render_text(value, scope).data) for key, value in self.connector.headers.items()},
             **{str(key): str(value) for key, value in (rendered["headers"] or {}).items() if value is not None},
         }
-        url = self._url(str(rendered["path"]))
+        url = self._url(str(rendered["path"]), file=spec.answer == "file")
         query = {key: _queried(value) for key, value in (rendered["query"] or {}).items() if value not in (None, "")}
+        # A file on a host downloads may come from is asked for with nothing of the connector: no header
+        # of the file, none of the request, and no credentials. A link that carries its signature wants none.
+        away = spec.answer == "file" and self._download(url)
+        if away:
+            headers = {}
         # The credentials of the instance are for its own host: another host the connector lists gets none.
         own: dict[str, str] = {}
-        if auth and not self._other(url):
+        if auth and not away and not self._other(url):
             own = self._credentials()
             headers.update(own)
             # A key that goes in the address goes first, where a file that wrote it by hand had it.
@@ -455,12 +487,16 @@ class Runtime:
                     "A command that keeps a file runs from a playbook: there is no store to keep it in here"
                 )
             more["max_body"] = self.store.limit
+        policy = self.policy
+        if spec.answer == "file" and self.download_hosts:
+            # For this request alone: a redirect to one of those hosts is followed, with nothing sent along.
+            policy = replace(policy, downloads=frozenset(self.download_hosts))
         if own:
             # The header a key goes in is not one of the usual ones: it must not follow a redirect elsewhere.
             more["secret_headers"] = tuple(own)
         try:
             answer = self._send(
-                self.policy,
+                policy,
                 spec.method,
                 url,
                 headers=headers,
@@ -480,6 +516,9 @@ class Runtime:
             if record:
                 self.records.append(record)
             message = error.message
+            if spec.answer == "file" and error.refused and "is not among the hosts" in message:
+                # A link or a redirect led to a host nobody listed: where an administrator lists it.
+                message += self._where_to_add()
             if getattr(error, "too_large", False) and spec.answer == "file":
                 message = f"The file is larger than the {self.store.limit_mb} MB limit of a sample: it was not kept"
             raise CommandError(message, retry=not error.refused, sent=error.sent, record=record) from None
@@ -969,8 +1008,10 @@ class Runtime:
         spec = command.request if command.request is not None else command.steps[0].request
         scope = self._scope(args, {}, sent=True)
         path = str(ex.render_text(spec.path, scope).data)
-        url = self._url(path)
-        _scheme, host, _port, target, _address = egress.destination(self.policy, url, allow_http=self.allow_http)
+        file = spec.answer == "file"
+        url = self._url(path, file=file)
+        policy = replace(self.policy, downloads=frozenset(self.download_hosts)) if file else self.policy
+        _scheme, host, _port, target, _address = egress.destination(policy, url, allow_http=self.allow_http)
         # An API that takes its key in the address (/exports/<key>/full.csv) has a secret in the path: it is
         # replaced here as in what a real request records.
         path = _redact(target.split("?")[0][:300], self._hidden)

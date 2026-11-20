@@ -75,9 +75,19 @@ class Policy:
 
     mode: str = "listed"  # listed | any
     hosts: frozenset = frozenset()
+    # Hosts a file may be downloaded from, for one request whose answer is a file (download_hosts.py):
+    # names and ``*.`` patterns an administrator wrote in the instance. Less than a listed host: https
+    # only, nothing sent with the request, and never an address inside the network.
+    downloads: frozenset = frozenset()
 
     def lists(self, host: str, port: int) -> bool:
         return host in self.hosts or f"{host}:{port}" in self.hosts
+
+    def downloads_from(self, host: str, port: int) -> bool:
+        """Whether the host is reached only as a host downloads may come from."""
+        from .download_hosts import matches
+
+        return bool(self.downloads) and not self.lists(host, port) and matches(self.downloads, host)
 
 
 @dataclass
@@ -208,7 +218,10 @@ def destination(policy: Policy, url: str, *, allow_http: bool = False) -> tuple[
     except ValueError:
         raise EgressError("The port of the address is not valid", refused=True) from None
     listed = policy.lists(host, port)
-    if policy.mode != "any" and not listed:
+    downloading = policy.downloads_from(host, port)
+    if downloading and (parts.scheme != "https" or port != 443):
+        raise EgressError(f"A file is downloaded from {host} over https only", refused=True)
+    if policy.mode != "any" and not listed and not downloading:
         raise EgressError(f"{host} is not among the hosts this playbook may reach", refused=True)
     path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
     proxied = _proxy() is not None and not _no_proxy(host)
@@ -372,6 +385,10 @@ def request(
         elif host != first_host:
             # Credentials do not follow to another host.
             sent = {key: value for key, value in sent.items() if key.lower() not in private}
+        if policy.downloads_from(host, port):
+            # A host a file is downloaded from gets the request and nothing with it: a link that carries
+            # its own signature wants no header, and no header of the connector is its business.
+            sent = {key: value for key, value in sent.items() if key.lower() in ("user-agent", "accept")}
         record = {"method": method, "host": host, "path": path.split("?")[0][:300], "redirects": hop}
         try:
             status, answer_headers, content = _send(

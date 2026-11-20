@@ -15,7 +15,7 @@ import {
 } from '../../../domain/mappers.js'
 import { instancePath } from '../../../domain/settingsNav.js'
 import { setPath } from '../../../lib/location.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -318,7 +318,7 @@ export default function PreprocessSection() {
           Loading the rules…
         </p>
       ) : rules.length === 0 ? (
-        <p className="text-sm text-fg-muted">No rule yet: every new item becomes an incident.</p>
+        <EmptyState skull title="No rule yet" message="No rule yet: every new item becomes an incident." />
       ) : (
         <ol aria-label="Pre-processing rules" className="flex flex-col divide-y divide-line-soft border border-line">
           {rules.map((rule, index) => (

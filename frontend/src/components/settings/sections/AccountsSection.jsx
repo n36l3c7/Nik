@@ -79,7 +79,7 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="edit-account-form" disabled={saving || !dirty}>
+          <Button waiting={saving} type="submit" form="edit-account-form" disabled={saving || !dirty}>
             {saving ? 'Saving…' : 'Save changes'}
           </Button>
         </>
@@ -315,7 +315,7 @@ export default function AccountsSection() {
           <RolePicker idPrefix="add" value={newRoles} onChange={setNewRoles} />
 
           <div className="flex justify-end">
-            <Button type="submit" icon={UserPlus} disabled={submitting || newRoles.length === 0}>
+            <Button waiting={submitting} type="submit" icon={UserPlus} disabled={submitting || newRoles.length === 0}>
               {submitting ? 'Adding…' : 'Add user'}
             </Button>
           </div>

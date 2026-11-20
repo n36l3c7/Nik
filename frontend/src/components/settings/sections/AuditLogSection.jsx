@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, ScrollText, Trash2 } from 'lucide-react'
 import { useItemMenu } from '../../menu/useRowMenu.js'
-import { Badge, Button, DataTable, EmptyState } from '../../ui/index.js'
+import { Badge, Button, DataTable, EmptyState, Wait } from '../../ui/index.js'
 import { useAudit } from '../../../context/AuditContext.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { formatDateTime } from '../../../lib/time.js'
@@ -159,10 +159,12 @@ export default function AuditLogSection() {
           emptyMessage="No entries match your search."
           rowKey={(row) => row.id}
         />
+      ) : loading ? (
+        <Wait>Loading the audit log…</Wait>
       ) : (
         <EmptyState
-          icon={ScrollText}
-          title="No audit entries yet."
+          skull
+          title="No audit entries yet"
           message="Actions performed across incidents will be recorded here."
         />
       )}

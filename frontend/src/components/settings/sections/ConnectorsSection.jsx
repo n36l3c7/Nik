@@ -18,10 +18,11 @@ import { leaveHere } from '../../../lib/unsaved.js'
 import { PLAYGROUND_ROOT, leaveLine, tryLine } from '../../../domain/playground.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
-import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal, SearchInput } from '../../ui/index.js'
 import InstancePane from './InstancePane.jsx'
 import MirrorQueue from './MirrorQueue.jsx'
 import Switch from './Switch.jsx'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * Automation → Connectors (the role Connectors, or an admin).
@@ -153,7 +154,7 @@ export default function ConnectorsSection() {
     setError(null)
     try {
       const source = await file.text()
-      const found = await api.post('/automation/connectors/check', { source })
+      const found = await transfer(`Checking ${file.name}`, () => api.post('/automation/connectors/check', { source }))
       setUpload({ fileName: file.name, source, problems: found.problems, connector: found.connector })
     } catch (failure) {
       setError(`${file.name}: ${failure.message}`)
@@ -184,7 +185,7 @@ export default function ConnectorsSection() {
     setLogoError(null)
     const path = `/automation/connectors/${encodeURIComponent(connector.id)}/logo`
     try {
-      if (file) await api.put(path, file)
+      if (file) await transfer(`Uploading ${file.name}`, () => api.put(path, file))
       else await api.del(path)
       setShown(await api.get(`/automation/connectors/${encodeURIComponent(connector.id)}`))
       load()
@@ -356,9 +357,15 @@ export default function ConnectorsSection() {
           </p>
         )}
         {connectors && rows.length === 0 && (
-          <p className="text-sm text-fg-muted">
-            {connectors.length === 0 ? 'No connector is installed.' : 'No connector matches.'}
-          </p>
+          <EmptyState
+            skull
+            title={connectors.length === 0 ? 'No connector yet' : 'No connector matches'}
+            message={
+              connectors.length === 0
+                ? 'No connector is installed. A connector comes with a content pack, or as a file added here.'
+                : 'No connector matches. Change what you typed, or the filter.'
+            }
+          />
         )}
 
         <ul aria-label="Connectors" className="flex max-w-5xl flex-col gap-2.5">
@@ -485,6 +492,7 @@ export default function ConnectorsSection() {
                       )}
                       <span className="flex gap-1">
                         <Button
+                          waiting={testing === instance.id}
                           variant="secondary"
                           size="xs"
                           icon={Zap}
@@ -550,8 +558,8 @@ export default function ConnectorsSection() {
             <Button variant="secondary" onClick={() => setUpload(null)}>
               Cancel
             </Button>
-            <Button disabled={busy || lines.length > 0} onClick={install}>
-              Install
+            <Button waiting={busy} disabled={busy || lines.length > 0} onClick={install}>
+              {busy ? 'Installing…' : 'Install'}
             </Button>
           </>
         }

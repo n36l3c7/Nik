@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { KeyRound, Power, Radar, Trash2 } from 'lucide-react'
-import { Badge, Button } from '../../ui/index.js'
+import { AsciiSkull, Badge, Button, Wait } from '../../ui/index.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
@@ -143,7 +143,7 @@ function LookupGuard({ classes, sources, canManage, actor, onChanged }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const close = async (item) => {
-    setBusy(true)
+    setBusy(item.id)
     setError(null)
     try {
       await api.put('/enrichment/guard', { class: item.id, allow: false })
@@ -177,7 +177,8 @@ function LookupGuard({ classes, sources, canManage, actor, onChanged }) {
                 <Button
                   variant="secondary"
                   size="xs"
-                  disabled={busy}
+                  waiting={busy === item.id}
+                  disabled={Boolean(busy)}
                   aria-label={item.open ? `Close: ${item.label}` : `Open: ${item.label}`}
                   onClick={() => (item.open ? close(item) : setAsking(item))}
                 >
@@ -344,11 +345,12 @@ export default function ThreatIntelSection() {
           </p>
         )}
         {!found ? (
-          <p className="text-xs text-fg-muted">Loading…</p>
+          <Wait>Loading the sources…</Wait>
         ) : sources.length === 0 ? (
-          <div className="space-y-2 border border-line p-3">
-            <p className="text-sm text-fg">No source is installed.</p>
-            <p className="text-xs text-fg-muted">
+          <div className="flex flex-col items-center gap-2 border border-dashed border-line bg-panel/40 px-6 py-8 text-center">
+            <AsciiSkull preset="medium" eyes="closed" tone="muted" />
+            <p className="font-mono text-base font-semibold text-fg">No source is installed.</p>
+            <p className="max-w-prose text-sm text-fg-muted">
               The sources come as content packs (VirusTotal, AbuseIPDB, urlscan.io, ThreatFox, URLhaus, MalwareBazaar,
               OTX, GreyNoise, Shodan, Safe Browsing, RDAP, and any pack whose connector judges indicators). Install the
               ones you use, then make an instance of each connector. Until then no indicator is looked up.

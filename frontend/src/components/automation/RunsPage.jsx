@@ -4,7 +4,7 @@ import { useIncidents } from '../../context/IncidentContext.jsx'
 import { api } from '../../services/api.js'
 import { RUN_COLORS, RUN_STATUSES, duration, isFinished, triggerLabel } from '../../domain/automation/runs.js'
 import { formatDateTime } from '../../lib/time.js'
-import { Badge, Button } from '../ui/index.js'
+import { Badge, Button, EmptyState } from '../ui/index.js'
 import { SelectInput } from './fields.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { usePageMenu } from '../menu/usePageMenu.js'
@@ -129,15 +129,26 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
           Loading the runs…
         </p>
       )}
-      {found?.runs.length === 0 && (
-        <p className="text-sm text-fg-muted">
-          {debug
-            ? 'No debug run of yours is kept: they are deleted after a week.'
-            : status || playbook
-              ? 'No run matches.'
-              : 'Nothing has run yet. A playbook runs when its trigger fires, or when someone runs it by hand.'}
-        </p>
-      )}
+      {found?.runs.length === 0 &&
+        (debug ? (
+          <EmptyState
+            skull
+            title="No debug run"
+            message="No debug run of yours is kept: they are deleted after a week."
+          />
+        ) : status || playbook ? (
+          <EmptyState
+            skull
+            title="No run matches"
+            message="No run matches. Change the status or the playbook asked for."
+          />
+        ) : (
+          <EmptyState
+            skull
+            title="No run yet"
+            message="Nothing has run yet. A playbook runs when its trigger fires, or when someone runs it by hand."
+          />
+        ))}
       {found?.runs.length > 0 && (
         <div className="overflow-x-auto border border-line">
           <table className="w-full min-w-[820px] border-collapse text-left text-xs">

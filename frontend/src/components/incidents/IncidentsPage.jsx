@@ -47,7 +47,7 @@ import { isTypingTarget } from '../../domain/search.js'
 import { hasModalLayer } from '../../lib/layers.js'
 import { api } from '../../services/api.js'
 import { useQuerySchema } from '../../services/querySchema.js'
-import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import QueryInput from '../ui/QueryInput.jsx'
 import ColumnsDialog from './ColumnsDialog.jsx'
 import { ManageFiltersDialog, SaveFilterDialog } from './FilterDialogs.jsx'
@@ -386,6 +386,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
           {canWrite && (
             <>
               <Button
+                waiting={importing}
                 variant="secondary"
                 size="sm"
                 icon={Upload}
@@ -473,7 +474,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
         {incidents.length === 0 ? (
           <div className="flex h-full items-center justify-center p-6">
             <EmptyState
-              illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+              skull
               title="No incidents yet"
               message={
                 canWrite
@@ -513,7 +514,14 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
               onExport={exportRow}
               onDelete={setDeleteTarget}
             />
-            {rows.length === 0 && <p className="px-6 py-8 text-sm text-fg-muted">No incident matches the filter.</p>}
+            {rows.length === 0 && (
+              <EmptyState
+                skull
+                className="mx-6 my-6"
+                title="No incident matches"
+                message="No incident matches the filter. Change the query, or take the filter off."
+              />
+            )}
             {rows.length > drawn.length && (
               <p className="flex items-center gap-3 px-6 py-3 text-xs text-fg-muted">
                 {drawn.length} of {rows.length} shown

@@ -53,34 +53,23 @@ test('pressed on the first screen of its section an entry does nothing', () => {
   assert.equal(homeMove('automation', { path: '/automation/playbooks' }), null)
   assert.equal(homeMove('playground', { path: '/playground' }), null)
   assert.equal(homeMove('settings', { path: '/settings/analysis/detection-rules' }), null)
-  assert.equal(homeMove('artifacts', { path: '/incident/i1', panel: 'artifacts', incidentId: 'i1' }), null)
-  assert.equal(homeMove('artifacts', { path: '/incidents', panel: 'artifacts' }), null)
+  assert.equal(homeMove('artifacts', { path: '/artifacts', panel: 'artifacts' }), null)
+  assert.equal(homeMove('artifacts', { path: '/artifacts', panel: null }), null)
   assert.equal(homeMove('nothing', { path: '/' }), null)
 })
 
-test('the artifacts: their panel beside the incident or the list, no artifact open, nothing filtered', () => {
-  // An artifact open on its own is left for the incident under it…
-  assert.deepEqual(homeMove('artifacts', { path: '/artifact/a1', panel: 'artifacts', incidentId: 'i1' }), {
-    path: '/incident/i1',
-    panel: 'artifacts',
-  })
-  // …or for the list when no incident is open.
-  assert.deepEqual(homeMove('artifacts', { path: '/artifact/a1', panel: 'artifacts' }), {
-    path: '/',
-    panel: 'artifacts',
-  })
-  // From a page drawn over the incident.
-  assert.deepEqual(homeMove('artifacts', { path: '/settings/platform/sla', incidentId: 'i1' }), {
-    path: '/incident/i1',
-    panel: 'artifacts',
-  })
-  // The panel was hidden, or shows the indicators: only the panel changes.
-  assert.deepEqual(homeMove('artifacts', { path: '/incident/i1', panel: 'iocs', incidentId: 'i1' }), {
-    path: null,
-    panel: 'artifacts',
-  })
-  // A filter narrows the list: it is taken off.
-  assert.deepEqual(homeMove('artifacts', { path: '/incidents', panel: 'artifacts', filtered: true }), {
+test('the artifacts: their page, with the list at the side, no artifact open and nothing filtered', () => {
+  // From an open artifact, from an incident, from a page drawn over it: the page of the artifacts.
+  for (const at of [
+    { path: '/artifact/a1', panel: 'artifacts', incidentId: 'i1' },
+    { path: '/incident/i1', panel: null, incidentId: 'i1' },
+    { path: '/settings/platform/sla', incidentId: 'i1' },
+    { path: '/iocs', panel: 'iocs' },
+  ]) {
+    assert.deepEqual(homeMove('artifacts', at), { path: '/artifacts', panel: 'artifacts' })
+  }
+  // There already, with a filter that narrows the list: it is taken off, and the address stays.
+  assert.deepEqual(homeMove('artifacts', { path: '/artifacts', panel: 'artifacts', filtered: true }), {
     path: null,
     panel: 'artifacts',
   })

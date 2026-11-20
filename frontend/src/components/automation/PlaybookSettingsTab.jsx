@@ -10,6 +10,7 @@ import { Badge, Button, Modal } from '../ui/index.js'
 import DataGuardDialog from './DataGuardDialog.jsx'
 import { DurationInput, Field, NumberInput, SectionTitle, Seg, Switch, TextInput } from './fields.jsx'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { transfer } from '../../lib/transfers.js'
 
 /*
  * ============================================================================
@@ -262,7 +263,7 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
 
   const exportFile = async () => {
     try {
-      const file = await api.get(`${base}/export`)
+      const file = await transfer(`Preparing the export of ${playbook.name}`, () => api.get(`${base}/export`))
       saveBlob(
         new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }),
         `${playbook.name.replace(/[^\w.-]+/g, '_')}.playbook.json`,

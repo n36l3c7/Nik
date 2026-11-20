@@ -21,11 +21,18 @@ import SearchBar from './SearchBar.jsx'
  * @param {{
  *   onOpenShortcuts: () => void,
  *   onOpenReport: (() => void) | null,
- *   artifactView?: boolean,   // the main area shows an artifact, not the active incident
+ *   artifactView?: boolean,   // the main area shows the artifacts, not the active incident
+ *   artifactChosen?: boolean, // …and one of them is open
  *   libraryView?: boolean,    // the main area shows the Indicators page
  * }} props
  */
-export default function Header({ onOpenShortcuts, onOpenReport, artifactView = false, libraryView = false }) {
+export default function Header({
+  onOpenShortcuts,
+  onOpenReport,
+  artifactView = false,
+  artifactChosen = true,
+  libraryView = false,
+}) {
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
@@ -52,8 +59,14 @@ export default function Header({ onOpenShortcuts, onOpenReport, artifactView = f
           </>
         ) : artifactView ? (
           <>
-            <h1 className="truncate font-mono text-lg font-semibold leading-tight text-fg">artifact analysis</h1>
-            <p className="truncate text-xs text-fg-muted">on its own: link it to an incident from the page below</p>
+            <h1 className="truncate font-mono text-lg font-semibold leading-tight text-fg">
+              {artifactChosen ? 'artifact analysis' : 'artifacts'}
+            </h1>
+            <p className="truncate text-xs text-fg-muted">
+              {artifactChosen
+                ? 'on its own: link it to an incident from the page below'
+                : 'the files, e-mails, captures and addresses analysed so far'}
+            </p>
           </>
         ) : activeIncident ? (
           <>

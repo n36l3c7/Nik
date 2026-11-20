@@ -57,9 +57,11 @@ The two fetches ask the agent for an archive protected by a password that the re
 password opens it: the archive is kept as it came, and **each file inside it becomes an artifact of the incident
 too**. The commands give `files` (each with its name in the archive, `type`, `size`, `sha256`, `artifact`),
 `count`, and `skipped` (what was left out, and why). Nothing inside is run or opened: it is unpacked in memory
-and written to the store. An upload that is not a zip, or that the password does not open, fails the step and
-keeps nothing, so that it can be tried again; `download-agent-upload` then keeps the same upload as it is, by
-the id of its activity.
+and written to the store. An upload that is not a zip, or that the password does not open, is evidence all the
+same: **the archive is kept as it came**, in the incident, nothing inside it is, and the step fails with a
+sentence that says why and names the artifact ("The password does not open the archive: nothing was unpacked.
+The archive was kept as file-…"). The node `nik.unpack-artifact` opens that artifact later with the right
+password; tried again, the fetch keeps no second copy (the same bytes are the same artifact).
 
 The password is a required argument, is never written in the connector, and is treated as a secret: it is in no
 record of the step. For files fetched from an endpoint the console wants 10 characters or more, with upper and
@@ -67,7 +69,7 @@ lower case letters, digits and symbols; use the same for the file of a threat.
 
 The other commands do not unpack: the reference does not say what the console hands over there (the output of a
 script, a collection, a file from the cloud may or may not be an archive), and a command that unpacked something
-that is not a zip would fail and keep nothing. They keep the file as it came, and the node `nik.unpack-artifact`
+that is not a zip would fail every time. They keep the file as it came, and the node `nik.unpack-artifact`
 opens it when it is an archive, with the password the run or the collection set.
 
 Waiting for an upload, a fetch first looks at the newest upload the console already has for that threat or that
@@ -77,10 +79,21 @@ for this one.
 ### Files that come from another host
 
 `download-threat-from-cloud`, `download-event-file`, `download-script-result` and `download-forensic-collection`
-ask the console for a link and follow it when it is on the console itself. A connector reaches its own instance
-and the hosts its file lists by name, and SentinelOne's reference names no host for these links: when the link is
-on a storage host, the command fails and says which host it was, and the token goes nowhere. A playbook then does
-it in three nodes:
+ask the console for a link and follow it. A connector reaches its own instance and the hosts its file lists by
+name, and SentinelOne's reference names no host for these links: they may be on the console itself, or on a
+storage host that differs with the region and the tenant. There are two ways to have the file.
+
+**In the instance.** *Hosts downloads may come from* (Settings, Connectors, the instance, Connection) takes the
+storage hosts of your console, separated by commas: a name (`files.example.com`) or every host under a name
+(`*.storage.example.com`). The four commands then follow a link, or a redirect, to one of those hosts, over
+https, **without the token and without any header of the connector**, which is what a link that carries its own
+signature wants. Only these downloads go there: no other command does. The field is empty at first; the first
+time a link leads elsewhere the step fails and says which host it was and where to add it ("…goes to
+s1-files.example.net, not to its instance: add it under Hosts downloads may come from in the instance if it is
+the vendor's storage"), so the name to write is the one the step gives. An address inside your network is
+refused whatever the field says.
+
+**In the playbook.** Without listing the host, a playbook does it in three nodes:
 
 1. the command that gives the link: `get-threat-cloud-link`, `get-event-file-link`, `get-script-results` or
    `get-forensic-collection-link`;

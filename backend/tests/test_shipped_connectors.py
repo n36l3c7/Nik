@@ -94,7 +94,8 @@ class Held:
 
     def keep(self, data: bytes, name: str, kind: str, unpack_as: dict | None = None) -> dict:
         """As the store of a run does (connector_files.Store.keep): with ``unpack_as`` the archive is
-        really unpacked, with the password the command gave, and nothing is kept when it cannot be."""
+        really unpacked, with the password the command gave; one that cannot be is kept alone, and the
+        command fails naming it."""
         sha = hashlib.sha256(data).hexdigest()
         described = {"name": name or sha, "type": kind, "size": len(data), "sha256": sha, "artifact": f"file-{sha}",
                      "linked": False}  # fmt: skip
@@ -103,7 +104,10 @@ class Held:
             try:
                 found = unpack.members(data, unpack_as.get("password") or "", limit=self.limit, fmt=unpack_as["format"])
             except unpack.UnpackError as error:
-                raise rt.CommandError(error.message) from None
+                self.kept.append({"name": name, "type": kind, "data": data})
+                failure = rt.CommandError(f"{error.message}. The archive was kept as file-{sha}")
+                failure.kept = f"file-{sha}"
+                raise failure from None
             for member in found.members:
                 inside.append({"name": member.name, "type": "", "data": member.data})
             files = [

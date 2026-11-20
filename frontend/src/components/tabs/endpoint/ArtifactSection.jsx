@@ -197,7 +197,7 @@ export default function ArtifactSection({ incident, category, records = [] }) {
   if (records.length === 0) {
     return (
       <EmptyState
-        icon={category.icon}
+        skull
         title={`No ${category.label.toLowerCase()} yet`}
         message="Import a CSV/JSON export from the 'Data source' card above."
       />

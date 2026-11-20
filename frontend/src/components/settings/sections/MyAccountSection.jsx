@@ -124,7 +124,7 @@ export default function MyAccountSection() {
             </p>
           )}
 
-          <Button type="submit" icon={KeyRound} disabled={saving || !current || !next || !confirm}>
+          <Button waiting={saving} type="submit" icon={KeyRound} disabled={saving || !current || !next || !confirm}>
             {saving ? 'Changing…' : 'Change password'}
           </Button>
         </form>

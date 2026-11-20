@@ -23,7 +23,7 @@ import {
 } from '../../domain/artifactRegistry.js'
 import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../lib/time.js'
-import { Badge, Button, MicroSkull } from '../ui/index.js'
+import { AsciiSkull, Badge, Button, Wait } from '../ui/index.js'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import QueryInput from '../ui/QueryInput.jsx'
@@ -33,6 +33,7 @@ import { conditionOn, withCondition } from '../../domain/query/builder.js'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import { exportRequest } from '../../domain/artifactExpiry.js'
 import HidePanel from '../layout/HidePanel.jsx'
+import { transfer as showTransfer } from '../../lib/transfers.js'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
@@ -107,7 +108,10 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
           icon: FileSearch,
           onSelect: async () => {
             try {
-              openArtifact((await analyseAs(artifact.id, action.as)).id)
+              const made = await showTransfer(`${action.label}: ${artifact.name}`, () =>
+                analyseAs(artifact.id, action.as),
+              )
+              openArtifact(made.id)
             } catch (error) {
               showToast({ message: `${action.label}: ${error.message}` })
             }
@@ -181,14 +185,10 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
           </p>
         ) : artifacts.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-            {loading ? (
-              <MicroSkull className="text-lg text-fg-muted" />
-            ) : (
-              <Boxes className="h-6 w-6 text-fg-subtle" aria-hidden="true" />
-            )}
+            {loading ? <Wait>Loading the artifacts…</Wait> : <AsciiSkull preset="small" eyes="closed" tone="muted" />}
             <p className="text-sm text-fg-muted">
               {loading
-                ? 'Loading…'
+                ? ''
                 : filters.q || filters.kind
                   ? 'No artifact matches these filters.'
                   : 'No artifacts yet: start an analysis, or drop a file anywhere.'}

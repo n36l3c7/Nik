@@ -1,6 +1,5 @@
 import { Component } from 'react'
 import { RefreshCw } from 'lucide-react'
-import AsciiSkull from './AsciiSkull.jsx'
 import Button from './Button.jsx'
 import EmptyState from './EmptyState.jsx'
 
@@ -39,7 +38,7 @@ export default class ErrorBoundary extends Component {
     if (!this.state.error) return this.props.children
     return (
       <EmptyState
-        illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+        skull="error"
         title={this.props.title ?? 'This view stopped working'}
         message={`${this.state.error.message || 'Unexpected error'}. The rest of Nik is unaffected; your data is safe on the server.`}
         action={

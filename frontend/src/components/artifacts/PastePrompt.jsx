@@ -94,6 +94,7 @@ export default function PastePrompt({
         )}
         {pasted.url && (
           <Button
+            waiting={busy}
             size="sm"
             variant={pasted.known ? 'secondary' : 'primary'}
             icon={Link2}

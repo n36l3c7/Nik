@@ -3,7 +3,7 @@ import { AlertCircle, Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
 import { rolesOf } from '../../../domain/permissions.js'
-import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { Badge, Button } from '../../ui/index.js'
 import RolePicker, { RoleChips } from '../RolePicker.jsx'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
@@ -204,8 +204,7 @@ export default function ApiKeysSection() {
         </div>
         <RolePicker idPrefix="new-key" value={roles} onChange={setRoles} legend="What the key may do" />
         <div className="flex justify-end">
-          <Button type="submit" icon={busy ? null : Plus} disabled={busy || !label.trim() || roles.length === 0}>
-            {busy && <MicroSkull className="mr-2" />}
+          <Button type="submit" icon={Plus} waiting={busy} disabled={busy || !label.trim() || roles.length === 0}>
             {busy ? 'Creating…' : 'Create key'}
           </Button>
         </div>

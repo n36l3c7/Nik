@@ -576,8 +576,8 @@ class ConfigParam(_Strict):
     name: str
     label: str = Field(default="", max_length=100)
     type: Literal[
-        "url", "text", "number", "bool", "choice", "secret", "basic", "bearer", "header", "query", "oauth2_client",
-        "session", "zscaler",
+        "url", "text", "number", "bool", "choice", "hosts", "secret", "basic", "bearer", "header", "query",
+        "oauth2_client", "session", "zscaler",
     ] = "text"  # fmt: skip
     required: bool = False
     default: Any = None
@@ -664,6 +664,11 @@ class ConnectorFile(_Strict):
     # in the file: never a template, never an address. A command reaches one by giving the full https
     # address as its ``path``; the credentials of the instance are sent to the host of ``base_url`` only.
     more_hosts: list[str] = Field(default_factory=list, max_length=40)
+    # The hosts a file may be downloaded from, when the file cannot name them: the name of a configuration
+    # entry of type ``hosts``, which an administrator fills in the instance (6.6, download_hosts.py). Only a
+    # request whose answer is a file goes there, without the credentials of the instance or any header of
+    # the connector. Left out, a connector reaches its instance and ``more_hosts`` and nothing else.
+    download_hosts_from: str | None = Field(default=None, max_length=60)
     # How its reputation commands count among the sources of the look-ups (6.5); weight 1 when left out.
     lookups: Lookups | None = None
 
@@ -697,6 +702,20 @@ class ConnectorFile(_Strict):
         commands = [command.name for command in self.commands]
         if len(set(commands)) != len(commands):
             raise ValueError("two commands have the same name")
+        listed = [param.name for param in self.configuration if param.type == "hosts"]
+        if self.download_hosts_from is None:
+            if listed:
+                raise ValueError(
+                    f'the configuration entry "{listed[0]}" is a list of hosts: "download_hosts_from" names it'
+                )
+        else:
+            if listed != [self.download_hosts_from]:
+                raise ValueError(
+                    '"download_hosts_from" names the one configuration entry of type hosts: '
+                    f"- {{ name: {self.download_hosts_from}, type: hosts }}"
+                )
+            if not any(command.gives_file for command in self.commands):
+                raise ValueError('"download_hosts_from" is for a connector with a command whose answer is a file')
         if self.lookups is not None and not any(command.reputation for command in self.commands):
             raise ValueError('"lookups" is for a connector with a command marked "reputation"')
         if self.native is None:
@@ -1137,6 +1156,7 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
         "version": connector.version,
         "description": connector.description,
         "moreHosts": list(connector.more_hosts),
+        "downloadHostsFrom": connector.download_hosts_from,
         "apiVersion": connector.api_version,
         "verified": connector.verified,
         "native": connector.native,

@@ -8,6 +8,7 @@ when the file does not come, or when the console sends them to another host for 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from urllib.parse import parse_qsl, urlsplit
@@ -311,6 +312,63 @@ def test_a_download_link_on_another_host_is_not_followed_and_the_token_stays_hom
     assert [sent["host"] for sent in wire.sent] == [HOST] and held.kept == []
 
 
+@pytest.mark.parametrize(("name", "args", "shape"), LINKED, ids=[name for name, _args, _shape in LINKED])
+def test_a_download_link_on_a_host_the_instance_lists_is_followed_without_the_token(name, args, shape):
+    """The instance says where the downloads of this console come from: the link is followed there,
+    and the request carries nothing of the connector."""
+    storage = "s1-files.storage.example.net"
+    elsewhere = f"https://{storage}/a/b.zip?X-Signature=abc"
+    body = b"PK not really an archive, kept as it came"
+
+    def answer(request):
+        if request["host"] == storage:
+            return 200, body
+        return 200, {"data": json.loads(json.dumps(shape).replace("{}", elsewhere))}
+
+    connection = _connection(EDR.id)
+    for listed in (storage, "*.storage.example.net"):
+        wire, held = Wire(answer), Held({})
+        rt.forget_tokens()
+        live = rt.Runtime(
+            EDR,
+            {**connection["config"], "download_hosts": listed},
+            connection["secrets"],
+            egress.Policy(mode="listed", hosts=frozenset({HOST})),
+            send=wire,
+            clock=lambda: 1_800_000_000.0,
+        )
+        live.store = held
+        live.run(name, args)
+        assert [item["data"] for item in held.kept] == [body], listed
+        console, fetched = wire.sent[0], wire.sent[-1]
+        assert console["host"] == HOST and console["headers"]["Authorization"].startswith("ApiToken ")
+        # To the storage: the address the console gave, its signature in it, and no header at all.
+        assert (fetched["host"], fetched["path"], fetched["query"]) == (storage, "/a/b.zip", {"X-Signature": "abc"})
+        assert fetched["headers"] == {} and "ApiToken" not in json.dumps(fetched)
+
+
+def test_the_instance_of_the_console_is_asked_where_its_downloads_come_from_and_says_so_when_it_does_not_know():
+    entry = next(param for param in EDR.configuration if param.name == "download_hosts")
+    assert EDR.download_hosts_from == "download_hosts"
+    assert (entry.type, entry.label, entry.required) == ("hosts", "Hosts downloads may come from", False)
+    assert "never sent there" in entry.help
+    # Nothing listed: the refusal names the host and the field, so the name to write is the one the step gives.
+    name, args, shape = LINKED[0]
+    elsewhere = "https://s1-files.storage.example.net/a/b.zip?X-Signature=abc"
+    wire, held = Wire(lambda request: (200, {"data": json.loads(json.dumps(shape).replace("{}", elsewhere))})), Held({})
+    with pytest.raises(rt.CommandError) as refused:
+        runtime(EDR, wire, store=held).run(name, args)
+    assert refused.value.message == (
+        "A request of this connector goes to s1-files.storage.example.net, not to its instance: add it under "
+        "Hosts downloads may come from in the instance if it is the vendor's storage"
+    )
+    # The four that follow a link say both ways: the field of the instance, and the three nodes.
+    for command in ("download-threat-from-cloud", "download-event-file", "download-script-result",
+                    "download-forensic-collection"):  # fmt: skip
+        said = EDR.command(command).description
+        assert "Hosts downloads may come from" in said and "nik.download-file" in said, command
+
+
 def test_the_two_fetches_unpack_the_archive_with_the_password_they_set_and_the_other_files_are_kept_as_they_come():
     """A fetch asks the agent for an archive protected by the password the request itself sets: the same
     password opens it, and it is required. What the console hands over by a link or by the id of an
@@ -348,20 +406,25 @@ def test_the_two_fetches_unpack_the_archive_with_the_password_they_set_and_the_o
         (PASSWORD, "The file is not a zip archive"),
     ],
 )
-def test_a_fetched_archive_that_cannot_be_opened_fails_the_step_and_keeps_nothing(password, why):
-    """The upload came with another password than the one asked with, or is not a zip at all."""
+def test_a_fetched_archive_that_cannot_be_opened_fails_the_step_and_is_kept_as_it_came(password, why):
+    """The upload came with another password than the one asked with, or is not a zip at all: it is
+    evidence all the same, kept alone, and the step says where it is."""
     body = (
         zip_of({"dropper.exe": b"a harmless line\n"}, "Nik-Fetch-2026!x") if "password" in why else b"MZ not an archive"
     )
     wire, held = Wire(_uploads(new_after=1, body=body)), Held({})
     now = [1_800_000_000.0]
     args = {"threat_id": THREAT, "password": password}
-    with pytest.raises(rt.CommandError, match=why):
+    with pytest.raises(rt.CommandError, match=why) as failed:
         answer = runtime(EDR, wire, clock=lambda: now[0], store=held).run("fetch-threat-file", args)
         while not answer.done:
             now[0] = answer.again_at
             answer = runtime(EDR, wire, clock=lambda: now[0], store=held).run("fetch-threat-file", args, answer.state)
-    assert held.kept == []
+    # The archive, and nothing of what may be inside it.
+    assert [item["data"] for item in held.kept] == [body]
+    artifact = "file-" + hashlib.sha256(body).hexdigest()
+    assert failed.value.kept == artifact and failed.value.message.endswith(f"The archive was kept as {artifact}")
+    assert password not in failed.value.message
 
 
 def test_the_fetch_asks_from_the_moment_itself_in_the_order_of_creation():

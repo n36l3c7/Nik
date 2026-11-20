@@ -316,6 +316,7 @@ export default function InstanceKeys({
       {instance && (
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            waiting={busy === 'test'}
             size="sm"
             variant="secondary"
             icon={Zap}

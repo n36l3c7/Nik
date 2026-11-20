@@ -688,7 +688,9 @@ def unpack_artifact(call: Call) -> Result:
     try:
         found = unpack.members(data, str(call.args.get("password") or ""), limit=limit)
     except unpack.UnpackError as error:
-        raise ActionError(error.message, retry=False) from None
+        # The archive is an artifact already, and stays one: only what is inside it was not taken out.
+        said = f"{error.message}. The archive stays as it is ({row.id})"
+        raise ActionError(said, retry=False, request={"kept": row.id}) from None
     if call.dry_run:
         files = [
             {

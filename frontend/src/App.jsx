@@ -23,6 +23,7 @@ import {
   ErrorBoundary,
   MicroSkull,
   Modal,
+  Transfers,
   UnsavedDialog,
 } from './components/ui/index.js'
 import Rail from './components/layout/Rail.jsx'
@@ -57,7 +58,7 @@ import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
 import { useAmbientMenu } from './components/menu/usePageMenu.js'
-import { kindForTab } from './domain/artifactRegistry.js'
+import { isArtifactsPath, kindForTab } from './domain/artifactRegistry.js'
 import { recognise } from './domain/pasted.js'
 import { useIocLookup } from './context/IocLookupContext.jsx'
 import { sha256Hex } from './lib/hash.js'
@@ -76,6 +77,7 @@ import { orderTabs, typeOf } from './domain/fields.js'
 import { EVIDENCE_TAB, resolveTab } from './domain/evidence.js'
 import { pageTabs } from './components/tabs/summary/pageTabs.jsx'
 import ResizeHandle, { useResizablePane } from './components/ui/ResizeHandle.jsx'
+import { transfer } from './lib/transfers.js'
 
 // The Automations area comes with the canvas library: loaded when first opened.
 const AutomationPage = lazy(() => import('./components/automation/AutomationPage.jsx'))
@@ -292,8 +294,8 @@ export default function App() {
       // A mailbox (mbox, Maildir archive, PST) is stored and indexed as an
       // artifact of its own; what to import from it is chosen on its page.
       if (!asEvidence && (await mailboxFormatOf(file, head))) {
-        showToast({ message: `Uploading ${file.name}…` })
         try {
+          // The tray shows the upload (context/ArtifactContext.jsx).
           const box = await startAnalysis('mailbox', file)
           setPanel('artifacts')
           openArtifact(box.artifactId)
@@ -326,7 +328,11 @@ export default function App() {
         }
       }
       const analysable = Boolean(kindForTab(route?.tab ?? 'malware'))
-      const known = analysable && file.size <= LOOKUP_MAX_BYTES ? await lookup(await sha256Hex(file)) : []
+      // A large file takes a moment to read before Nik can say whether it knows it.
+      const known =
+        analysable && file.size <= LOOKUP_MAX_BYTES
+          ? await transfer(`Reading ${file.name}`, async () => lookup(await sha256Hex(file)))
+          : []
       setDrop({ file, route, known, preferAnalysis })
     },
     [lookup, openAdd, startAnalysis, openArtifact, setPanel, showToast],
@@ -538,7 +544,15 @@ export default function App() {
   // its address leaves the incident, the artifact or the page of the indicators that was open
   // (each follows the address), so the list is simply what is shown when none of them is.
   const pageOverMain = Boolean(settings) || automationShown || tasksShown || dashboardsShown || playgroundShown
-  const incidentsShown = canRead && !pageOverMain && !activeIncidentId && !artifactOpen && !libraryOpen
+  // The page of the artifacts (/artifacts): their list at the side and, until one is chosen, nothing
+  // open. With an artifact open it is the same area: `artifactArea` is either.
+  const [artifactsAsked, setArtifactsAsked] = useState(() => isArtifactsPath(window.location.pathname))
+  useEffect(() => onLocationChange(() => setArtifactsAsked(isArtifactsPath(window.location.pathname))), [])
+  const artifactsShown = artifactsAsked && canRead && !pageOverMain && !artifactOpen && !libraryOpen
+  const artifactArea = artifactOpen || artifactsShown
+  const incidentsShown = canRead && !pageOverMain && !activeIncidentId && !artifactArea && !libraryOpen
+  // On the page of the artifacts their list is part of the page: it is shown whatever panel was chosen.
+  const shownPanel = artifactsShown ? 'artifacts' : panel
   // What the dashboards and the tasks say of themselves: whether they show what a fresh visit shows
   // (each goes to its first item by itself, so the address alone cannot tell).
   const firstScreen = useRef({ dashboards: false, tasks: false })
@@ -816,8 +830,8 @@ export default function App() {
           ? 'dashboards'
           : playgroundShown
             ? 'playground'
-            : panel === 'artifacts' || panel === 'iocs'
-              ? panel
+            : shownPanel === 'artifacts' || shownPanel === 'iocs'
+              ? shownPanel
               : libraryOpen
                 ? 'iocs'
                 : artifactOpen
@@ -979,14 +993,15 @@ export default function App() {
           <PlaygroundPage key={fresh.playground ?? 0} onClose={closePlayground} />
         </Suspense>
       )}
-      {!pageOverMain && panel && canRead && (
+      {!pageOverMain && shownPanel && canRead && (
         <>
           <Sidebar
-            panel={panel}
+            panel={shownPanel}
             width={sidebarPane.width}
             onNewAnalysis={() => setAnalysisOpen(true)}
-            // Hidden from its own header: it stays hidden until its entry of the rail is pressed.
-            onHide={() => setPanel(null, { closed: true })}
+            // Hidden from its own header: it stays hidden until its entry of the rail is pressed. Not on
+            // the page of the artifacts, where the list is what there is to choose from.
+            onHide={artifactsShown ? undefined : () => setPanel(null, { closed: true })}
           />
           <ResizeHandle {...sidebarPane.handle} label="Resize the side panel" />
         </>
@@ -1009,18 +1024,19 @@ export default function App() {
         {!incidentsShown && (
           <Header
             onOpenShortcuts={() => setShortcutsOpen(true)}
-            onOpenReport={activeIncident && !artifactOpen && !libraryOpen ? () => setReportOpen(true) : null}
-            artifactView={artifactOpen}
+            onOpenReport={activeIncident && !artifactArea && !libraryOpen ? () => setReportOpen(true) : null}
+            artifactView={artifactArea}
+            artifactChosen={artifactOpen}
             libraryView={libraryOpen}
           />
         )}
         <div className="flex min-h-0 flex-1 flex-col min-[1100px]:flex-row">
-          {canRead && !artifactOpen && !libraryOpen && activeIncident && <IncidentPanel incident={activeIncident} />}
+          {canRead && !artifactArea && !libraryOpen && activeIncident && <IncidentPanel incident={activeIncident} />}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {canRead && !artifactOpen && !libraryOpen && (
+            {canRead && !artifactArea && !libraryOpen && (
               <TabBar activeTabId={activeTab.id} onChange={chooseTab} tabs={shownTabs} />
             )}
-            {canRead && !artifactOpen && !libraryOpen && incidentApprovals.length > 0 && (
+            {canRead && !artifactArea && !libraryOpen && incidentApprovals.length > 0 && (
               <div className="flex shrink-0 flex-col gap-2 border-b border-line px-6 py-3">
                 {incidentApprovals.map((approval) => (
                   <ApprovalBanner
@@ -1054,7 +1070,7 @@ export default function App() {
                 {!canRead ? (
                   <div className="flex h-full items-center justify-center">
                     <EmptyState
-                      illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                      skull
                       title="Nothing to open here"
                       message="Your roles do not include reading incidents, artifacts and indicators. What they do include is in Settings; an admin can give your account more roles."
                       action={
@@ -1068,6 +1084,25 @@ export default function App() {
                   <IocLibraryPage key={fresh.iocs ?? 0} onOpenIncident={openIncident} />
                 ) : artifactOpen ? (
                   <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
+                ) : artifactsShown ? (
+                  <div className="flex h-full items-center justify-center">
+                    <EmptyState
+                      skull
+                      title="No artifact selected"
+                      message={
+                        canWrite
+                          ? 'Choose an artifact in the list to open it, or start an analysis: a file, an e-mail, a capture or an address, on its own.'
+                          : 'Choose an artifact in the list to open it.'
+                      }
+                      action={
+                        canWrite && (
+                          <Button icon={Microscope} onClick={() => setAnalysisOpen(true)}>
+                            New analysis
+                          </Button>
+                        )
+                      }
+                    />
+                  </div>
                 ) : activeIncident ? (
                   <Suspense
                     fallback={
@@ -1098,7 +1133,7 @@ export default function App() {
                 ) : activeLoadError ? (
                   <div className="flex h-full items-center justify-center">
                     <EmptyState
-                      illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+                      skull="error"
                       title="Unable to load the incident"
                       message={activeLoadError}
                       action={
@@ -1111,7 +1146,7 @@ export default function App() {
                 ) : (
                   <div className="flex h-full items-center justify-center">
                     <EmptyState
-                      illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+                      skull
                       title="No active incident"
                       message={
                         canWrite
@@ -1267,6 +1302,7 @@ export default function App() {
           })
         }
       />
+      <Transfers />
       <UnsavedDialog />
     </div>
   )

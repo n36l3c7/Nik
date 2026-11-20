@@ -30,7 +30,7 @@ import {
   undo,
 } from '../../domain/automation/graph.js'
 import { tidy } from '../../domain/automation/layout.js'
-import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import AddNodeDialog from './AddNodeDialog.jsx'
 import BranchCompare from './BranchCompare.jsx'
 import BranchTree from './BranchTree.jsx'
@@ -704,7 +704,7 @@ export default function PlaybookPage({
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
-          illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+          skull="error"
           title="This playbook cannot be opened"
           message={loadError}
           action={
@@ -743,7 +743,7 @@ export default function PlaybookPage({
               Push over it
             </Button>
           ) : (
-            <Button key="push" disabled={busy} onClick={() => pushBranch(false)}>
+            <Button waiting={busy} key="push" disabled={busy} onClick={() => pushBranch(false)}>
               {busy ? 'Checking…' : 'Push'}
             </Button>
           )}
@@ -926,6 +926,7 @@ export default function PlaybookPage({
           )}
           {canEdit && !branchId && (
             <Button
+              waiting={savingVersion}
               size="sm"
               disabled={savingVersion || (!draftChanged && Boolean(detail.version))}
               onClick={saveVersion}

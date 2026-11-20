@@ -10,6 +10,7 @@
  * homeMove() says what pressing an entry must do; App carries it out.
  */
 
+import { ARTIFACTS_ROOT } from './artifactRegistry.js'
 import { AUTOMATION_ROOT } from './automationNav.js'
 import { DASHBOARDS_ROOT, isDashboardsPath } from './dashboards.js'
 import { INCIDENTS_ROOT, isIncidentsPath } from './incidentList.js'
@@ -33,7 +34,6 @@ export const RAIL_SECTIONS = [
 export const SETTINGS_HOME = 'detection'
 
 const pathOnly = (path) => String(path ?? '').split('?')[0]
-const incidentPath = (id) => `/incident/${encodeURIComponent(id)}`
 // The start and /incidents both show the list of incidents.
 const isListPath = (path) => path === '/' || isIncidentsPath(path)
 
@@ -65,12 +65,10 @@ export function homeMove(section, at = {}) {
       // The list alone: no side panel beside it.
       if (isListPath(path)) return panel ? { path: null, panel: null } : null
       return { path: INCIDENTS_ROOT, panel: null }
-    case 'artifacts': {
-      // The panel, with no artifact open and nothing filtered: beside the incident, or the list.
-      const home = at.incidentId ? incidentPath(at.incidentId) : isListPath(path) ? path : '/'
-      if (home === path && panel === 'artifacts' && !at.filtered) return null
-      return { path: go(home), panel: 'artifacts' }
-    }
+    case 'artifacts':
+      // Their page: the list with nothing filtered, and no artifact open beside it.
+      if (path === ARTIFACTS_ROOT && !at.filtered) return null
+      return { path: go(ARTIFACTS_ROOT), panel: 'artifacts' }
     case 'iocs':
       if (path === LIBRARY_ROOT && panel === 'iocs' && (at.quick ?? 'all') === 'all') return null
       return { path: go(LIBRARY_ROOT), panel: 'iocs' }

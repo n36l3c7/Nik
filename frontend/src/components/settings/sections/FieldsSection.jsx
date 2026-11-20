@@ -294,7 +294,7 @@ export default function FieldsSection() {
               {shown.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-3 py-4 text-center text-sm text-fg-muted">
-                    No field matches.
+                    {query.trim() ? 'No field matches.' : 'No field yet.'}
                   </td>
                 </tr>
               )}

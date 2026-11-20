@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, FileSearch, Pencil, Plus, Power, Trash2, X } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
-import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -198,9 +198,7 @@ export default function YaraRulesSection() {
         </div>
 
         {loading ? (
-          <p className="flex items-center gap-2 font-mono text-sm text-fg-muted">
-            <MicroSkull /> loading…
-          </p>
+          <Wait>Loading the rules…</Wait>
         ) : rules.length === 0 && editing === null ? (
           <p className="text-sm text-fg-muted">No admin rules yet. Add a rule set to extend the built-in detection.</p>
         ) : (
@@ -307,7 +305,7 @@ export default function YaraRulesSection() {
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" size="sm" disabled={saving || !name.trim()}>
+              <Button waiting={saving} type="submit" size="sm" disabled={saving || !name.trim()}>
                 {saving ? 'Saving…' : editing === 'new' ? 'Save rule set' : 'Save changes'}
               </Button>
               <Button type="button" variant="secondary" size="sm" onClick={validate}>

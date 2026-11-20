@@ -22,6 +22,19 @@ on every look-up; and SentinelOne written from the vendor's own reference.
   longer closes what it opened; Back returns to where one was. The side
   panels of the artifacts and of the indicators have their own button to
   hide them.
+- **Artifacts is a page.** The Artifacts entry opens `/artifacts`: the
+  list at the side and, until one is chosen, an empty page that says so.
+  The entry returns there from an open artifact; the incident is not
+  shown under it.
+- **Every transfer shows that it is happening.** Uploads and downloads
+  whose size is known show a bar with how much has passed; everything
+  else that takes a moment shows the (o.o) wait with a sentence, in the
+  button that started it or in a tray at the foot of the window for what
+  is started from a menu or by dropping a file.
+- **Empty lists look alike.** A page or a main list with nothing in it
+  shows the sleeping skull with how something gets there, and other
+  words when a search or a filter left nothing; small inner lists keep
+  their one line.
 - **A search bar in the middle of the header** of every screen replaces
   the search entry of the rail; it opens the same search as Ctrl+K.
 - **Nothing unsaved is lost without asking.** Leaving a form, an editor or
@@ -65,7 +78,17 @@ on every look-up; and SentinelOne written from the vendor's own reference.
   beside `answer: file` keeps the archive and each file inside it as
   artifacts of the incident. Zip, plain or protected (ZipCrypto, AES), in
   memory, bounded against archive bombs; a name is never a path, nothing
-  is run or opened, and the password is not shown in runs.
+  is run or opened, and the password is not shown in runs. An archive
+  that cannot be opened (a wrong password, not a zip, too much inside) is
+  kept as evidence and the step fails naming it; *Unpack an archive*
+  opens it later.
+- **Hosts downloads may come from.** A connector can ask its instance for
+  the storage hosts its files are served from (`download_hosts_from` and
+  a configuration entry of type `hosts`): an administrator writes host
+  names, or `*.name` for the hosts under a name, in the instance. A file
+  download then follows a link or a redirect there over https, with no
+  credentials and no header of the connector. Left empty, nothing
+  changes, and the failure says where to add the host.
 - A sixth shipped playbook, *Analyse the attachments of an e-mail*, off
   until someone turns it on.
 - **SentinelOne EDR 1.1.0: from 8 commands to 142**, written from
@@ -75,7 +98,9 @@ on every look-up; and SentinelOne written from the vendor's own reference.
   scripts, forensic collections, indicators of compromise, applications
   and vulnerabilities; the file of a threat, files and logs of an
   endpoint, script output and the console's exports are kept as artifacts
-  of the incident, and a fetched archive is unpacked. Every action names
+  of the incident, a fetched archive is unpacked, and downloads that
+  SentinelOne serves from its storage follow the hosts listed in the
+  instance. Every action names
   its targets: one whose id or filter is empty is stopped before it is
   sent. **SentinelOne SIEM 1.1.0**: event search and saved searches.
 
@@ -95,9 +120,6 @@ on every look-up; and SentinelOne written from the vendor's own reference.
   the credentials of the instance, like the other sources. Stored keys
   are kept when the pack is updated. GreyNoise now sends its key with the
   public RSS feed command too.
-- Pressing *Artifacts* on the Indicators page goes back to the incident
-  (or the list) with the artifacts panel, instead of changing the panel
-  only.
 - `nik.link-artifact` also links captures and is listed under *Files*.
 - "Test the instance" of SentinelOne asks `/system/info`; its fetch asks
   `createdAt__gte`.

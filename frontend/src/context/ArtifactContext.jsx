@@ -4,6 +4,7 @@ import { artifactIdFromPath, artifactKind, artifactPath } from '../domain/artifa
 import { isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
 import { leave } from '../lib/unsaved.js'
 import { useAuth } from './AuthContext.jsx'
+import { transfer } from '../lib/transfers.js'
 
 /*
  * ============================================================================
@@ -126,7 +127,11 @@ export function ArtifactProvider({ children }) {
   const startAnalysis = useCallback(
     async (kind, file, { incidentId = null, onProgress } = {}) => {
       const fields = incidentId ? { incident: incidentId } : {}
-      const artifact = await upload(artifactKind(kind).uploadPath, file, { fields, onProgress })
+      const path = artifactKind(kind).uploadPath
+      // Who gives no place of its own to the progress (a file dropped anywhere) gets the tray.
+      const artifact = onProgress
+        ? await upload(path, file, { fields, onProgress })
+        : await transfer(`Uploading ${file.name}`, (report) => upload(path, file, { fields, onProgress: report }))
       refresh()
       return artifact
     },

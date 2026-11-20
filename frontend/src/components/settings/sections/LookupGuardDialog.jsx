@@ -56,7 +56,7 @@ function OpenDialog({ item, destinations, actor, onConfirm, onClose }) {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" type="submit" form="form-lookup-guard" disabled={!ready}>
+          <Button variant="danger" type="submit" form="form-lookup-guard" waiting={busy} disabled={!ready}>
             Allow {item.label.toLowerCase()}
           </Button>
         </>

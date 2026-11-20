@@ -87,6 +87,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [tagsDraft, setTagsDraft] = useState(null) // null = not editing
   const [busy, setBusy] = useState(false)
+  const [analysing, setAnalysing] = useState(null) // 'mail' | 'pcap' while the file is read as one
   const [reference, setReference] = useState(null) // a capture's live reference
 
   useEffect(() => {
@@ -105,7 +106,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
     return (
       <div className="flex h-full items-center justify-center">
         <EmptyState
-          illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+          skull="error"
           title="Unable to open the artifact"
           message={currentError}
           action={<Button onClick={closeArtifact}>Close</Button>}
@@ -203,12 +204,14 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
     }, 'Link')
 
   // A file that is a message or a capture: the e-mail or the capture is made from it, and opened.
-  const handleAnalyseAs = (action) =>
-    run(async () => {
+  const handleAnalyseAs = (action) => {
+    setAnalysing(action.as)
+    return run(async () => {
       const made = await analyseAs(artifact.id, action.as)
       showToast({ message: `Analysed as ${action.made}. The file stays as it is.` })
       openArtifact(made.id)
-    }, action.label)
+    }, action.label).finally(() => setAnalysing(null))
+  }
 
   const handleUnlink = (target) =>
     run(async () => {
@@ -270,8 +273,15 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
             New incident from this
           </Button>
           {analyseAsActions(artifact).map((action) => (
-            <Button key={action.as} size="sm" icon={FileSearch} disabled={busy} onClick={() => handleAnalyseAs(action)}>
-              {action.label}
+            <Button
+              key={action.as}
+              size="sm"
+              icon={FileSearch}
+              waiting={analysing === action.as}
+              disabled={busy}
+              onClick={() => handleAnalyseAs(action)}
+            >
+              {analysing === action.as ? 'Analysing…' : action.label}
             </Button>
           ))}
           <Button variant="ghost" size="sm" icon={Download} onClick={() => setExportOpen(true)}>

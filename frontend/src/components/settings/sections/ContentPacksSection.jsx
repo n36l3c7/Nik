@@ -49,8 +49,9 @@ import {
   uninstallCounts,
 } from '../../../domain/packs.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * Automation → Content packs (who manages content).
@@ -193,7 +194,7 @@ function Plan({ plan, onDone, onCancel }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={apply} disabled={!can.ok || busy}>
+        <Button waiting={busy} onClick={apply} disabled={!can.ok || busy}>
           {busy
             ? 'Installing…'
             : can.changes
@@ -388,7 +389,7 @@ function ExportForm({ onClose, onError }) {
         Lists go with what they hold (otherwise only what they are)
       </label>
       <div className="flex flex-wrap items-center gap-2">
-        <Button icon={Download} onClick={make} disabled={Boolean(problem) || busy}>
+        <Button waiting={busy} icon={Download} onClick={make} disabled={Boolean(problem) || busy}>
           {busy ? 'Exporting…' : 'Export'}
         </Button>
         <Button variant="secondary" onClick={() => unsaved.leave(onClose)}>
@@ -673,6 +674,7 @@ function UninstallDialog({ card, onClose, onDone }) {
           </Button>
           {plan && held.length === 0 && (
             <Button
+              waiting={busy}
               variant="danger"
               disabled={busy}
               onClick={() =>
@@ -796,6 +798,7 @@ function BulkDialog({ action, cards, onClose }) {
               Cancel
             </Button>
             <Button
+              waiting={busy}
               variant={action === 'uninstall' ? 'danger' : 'primary'}
               disabled={busy || !plan || counts.ok === 0}
               onClick={apply}
@@ -1089,7 +1092,7 @@ export default function ContentPacksSection() {
     setBusy('file')
     setError(null)
     setMessage(null)
-    upload('/packs/inspect', file)
+    transfer(`Uploading ${file.name}`, (onProgress) => upload('/packs/inspect', file, { onProgress }))
       .then(
         (found) => {
           setPlan(found)
@@ -1103,20 +1106,21 @@ export default function ContentPacksSection() {
     setBusy(card.id)
     setError(null)
     setMessage(null)
-    api
-      .post(`/packs/catalogue/${encodeURIComponent(card.id)}/inspect`)
+    transfer(`Taking ${card.name} from the catalogue`, () =>
+      api.post(`/packs/catalogue/${encodeURIComponent(card.id)}/inspect`),
+    )
       .then(setPlan, (failure) => setError(failure.message))
       .finally(() => setBusy(''))
   }
   const download = (pack) =>
-    fetch(apiUrl(`/packs/${encodeURIComponent(pack.id)}/download`), { credentials: 'include' })
-      .then((response) =>
+    transfer(`Downloading ${pack.id}-${pack.version}.nikpack`, () =>
+      fetch(apiUrl(`/packs/${encodeURIComponent(pack.id)}/download`), { credentials: 'include' }).then((response) =>
         response.ok ? response.blob() : Promise.reject(new Error(`Request failed (${response.status})`)),
-      )
-      .then(
-        (blob) => saveBlob(blob, `${pack.id}-${pack.version}.nikpack`),
-        (failure) => setError(failure.message),
-      )
+      ),
+    ).then(
+      (blob) => saveBlob(blob, `${pack.id}-${pack.version}.nikpack`),
+      (failure) => setError(failure.message),
+    )
 
   const cards = packCards(catalogue, packs)
   const counts = cardCounts(cards)
@@ -1137,6 +1141,7 @@ export default function ContentPacksSection() {
           </div>
           <div className="flex gap-2">
             <Button
+              waiting={busy === 'file'}
               size="sm"
               variant="secondary"
               icon={Upload}
@@ -1199,6 +1204,7 @@ export default function ContentPacksSection() {
           </span>
           <span className="flex-1" />
           <Button
+            waiting={busy === 'catalogue'}
             size="xs"
             variant="secondary"
             icon={RefreshCw}
@@ -1350,9 +1356,15 @@ export default function ContentPacksSection() {
         </p>
       )}
       {!loading && groups.length === 0 && (
-        <p className="border border-line px-3 py-6 text-center text-sm text-fg-muted">
-          {narrowed ? 'No pack matches.' : 'No pack yet.'}
-        </p>
+        <EmptyState
+          skull
+          title={narrowed ? 'No pack matches' : 'No pack yet'}
+          message={
+            narrowed
+              ? 'No pack matches. Change what you typed, or the filters above.'
+              : 'A pack brings connectors, playbooks, types and lists together: install one from the catalogue, or upload a .nikpack.'
+          }
+        />
       )}
       {groups.map((group) => (
         <section key={group.vendor} aria-label={`Packs of ${group.vendor}`} className="space-y-2">

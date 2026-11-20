@@ -17,8 +17,9 @@ import {
 } from '../../domain/mailbox.js'
 import { verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatDateTime } from '../../lib/time.js'
-import { AsciiSkull, Badge, Button, EmptyState, MicroSkull, Modal, StatCard } from '../ui/index.js'
+import { AsciiSkull, Badge, Button, EmptyState, Modal, StatCard, TransferBar, Wait } from '../ui/index.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { transfer } from '../../lib/transfers.js'
 
 /*
  * A mailbox (mbox, Maildir archive, Outlook PST) as an artifact: what the file
@@ -108,7 +109,7 @@ function ImportDialog({ box, open, onClose, onStarted }) {
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={busy || !plan || plan.toImport === 0} onClick={start}>
+            <Button waiting={busy} disabled={busy || !plan || plan.toImport === 0} onClick={start}>
               {busy ? 'Starting…' : `Import ${plan?.toImport ?? 0} ${plan?.toImport === 1 ? 'message' : 'messages'}`}
             </Button>
           </span>
@@ -388,8 +389,9 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
     })
   const importOne = async (seq) => {
     try {
-      await api.post(`/mailboxes/${artifact.ref}/import`, { seqs: [seq], threads: false })
-      showToast({ message: 'Importing the message…' })
+      await transfer('Importing the message', () =>
+        api.post(`/mailboxes/${artifact.ref}/import`, { seqs: [seq], threads: false }),
+      )
       reload()
     } catch (err) {
       showToast({ message: err.message })
@@ -410,8 +412,8 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
     }
   }
 
-  if (error && !box) return <EmptyState icon={Inbox} title="Unable to load the mailbox" message={error} />
-  if (!box) return <MicroSkull className="text-lg text-fg-muted" />
+  if (error && !box) return <EmptyState skull="error" title="Unable to load the mailbox" message={error} />
+  if (!box) return <Wait>Loading the mailbox…</Wait>
   const flaggedCount = (box.verdicts.phishing ?? 0) + (box.verdicts.suspicious ?? 0)
 
   return (
@@ -457,16 +459,11 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
             {preparingText(box.preparing)}
           </p>
           {preparingPercent(box.preparing) !== null && (
-            <div
-              role="progressbar"
-              aria-label="Reading the mailbox"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={preparingPercent(box.preparing)}
-              className="h-1.5 w-64 max-w-full overflow-hidden rounded-full bg-line-soft"
-            >
-              <div className="h-full bg-accent" style={{ width: `${preparingPercent(box.preparing)}%` }} />
-            </div>
+            <TransferBar
+              label="Reading the mailbox"
+              percent={preparingPercent(box.preparing)}
+              className="w-64 max-w-full"
+            />
           )}
         </div>
       )}
@@ -496,12 +493,11 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
         >
           <b>Importing</b> · {box.progress.done} of {box.progress.total}
           {box.progress.failed > 0 && <span className="text-fg-muted"> · {box.progress.failed} could not be read</span>}
-          <div className="mt-2 flex h-1.5 bg-line-soft" aria-hidden="true">
-            <i
-              className="block h-full bg-accent"
-              style={{ width: `${(box.progress.done / Math.max(1, box.progress.total)) * 100}%` }}
-            />
-          </div>
+          <TransferBar
+            label="Importing the messages"
+            progress={{ sent: box.progress.done, total: box.progress.total }}
+            className="mt-2"
+          />
         </div>
       )}
 
@@ -517,7 +513,7 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
 
           {box.imported === 0 && box.status === 'ready' ? (
             <EmptyState
-              icon={Mail}
+              skull
               title="Nothing imported yet"
               message="The mailbox is indexed, not analysed. Choose which messages to import: each becomes an e-mail artifact, with its verdict."
               action={<Button onClick={() => setImporting(true)}>Import messages</Button>}

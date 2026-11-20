@@ -3,7 +3,7 @@ import { AlertCircle, HardDrive, RefreshCw } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
 import { formatRelative } from '../../../lib/time.js'
-import { Button, MicroSkull, StatCard } from '../../ui/index.js'
+import { Button, StatCard, Wait } from '../../ui/index.js'
 import { expiryText, undatedText } from '../../../domain/artifactExpiry.js'
 
 /*
@@ -62,11 +62,7 @@ export default function StorageSection({ onOpenArtifact }) {
     )
   }
   if (!usage) {
-    return (
-      <p className="flex items-center gap-2 text-sm text-fg-muted">
-        <MicroSkull className="h-4 w-4" /> Measuring the disk…
-      </p>
-    )
+    return <Wait>Measuring the disk…</Wait>
   }
 
   const { disk, groups, largest, limits } = usage
@@ -84,8 +80,8 @@ export default function StorageSection({ onOpenArtifact }) {
           The disk that holds the files Nik keeps (samples, e-mails, packet captures, mailboxes). The database is
           counted as on this disk, as it is with the compose file Nik ships with.
         </p>
-        <Button variant="ghost" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> Measure again
+        <Button variant="ghost" icon={RefreshCw} waiting={loading} onClick={load} disabled={loading}>
+          {loading ? 'Measuring…' : 'Measure again'}
         </Button>
       </div>
 

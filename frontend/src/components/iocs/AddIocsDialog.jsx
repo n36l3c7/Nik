@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileUp } from 'lucide-react'
 import { api } from '../../services/api.js'
 import { INDICATOR_FILE_MAX_BYTES, TLP_OPTIONS } from '../../domain/iocLibrary.js'
-import { Badge, Button, Modal, Select } from '../ui/index.js'
+import { Badge, Button, Modal, Select, Wait } from '../ui/index.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
@@ -161,7 +161,7 @@ export default function AddIocsDialog({ request, lists, onClose, onSaved }) {
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={!canSave} onClick={save}>
+            <Button waiting={busy} disabled={!canSave} onClick={save}>
               {busy ? 'Saving…' : found === 1 ? 'Save 1 indicator' : `Save ${found} indicators`}
             </Button>
           </span>
@@ -226,7 +226,11 @@ export default function AddIocsDialog({ request, lists, onClose, onSaved }) {
             What Nik found {parsed && <span className="normal-case">· {FORMATS[parsed.format] ?? parsed.format}</span>}
           </h3>
           {!summary ? (
-            <p className="text-sm text-fg-muted">{reading ? 'Reading…' : 'Nothing yet.'}</p>
+            reading ? (
+              <Wait>Reading what you gave…</Wait>
+            ) : (
+              <p className="text-sm text-fg-muted">Nothing yet.</p>
+            )
           ) : (
             <>
               <ul>

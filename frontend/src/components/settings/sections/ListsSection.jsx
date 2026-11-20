@@ -24,6 +24,7 @@ import {
 } from '../../../domain/lists.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import { leaveHere, useUnsavedChanges } from '../../../lib/unsaved.js'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * Lists (who manages lists).
@@ -428,7 +429,10 @@ function Detail({ name, onChanged, onDeleted }) {
       return
     }
     const text = await file.text()
-    apply(() => api.post(`${path}/import`, { format, text }), `Imported from ${file.name}.`)
+    apply(
+      () => transfer(`Importing ${file.name}`, () => api.post(`${path}/import`, { format, text })),
+      `Imported from ${file.name}.`,
+    )
   }
 
   if (error && !list) {

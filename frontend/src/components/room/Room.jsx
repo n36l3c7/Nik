@@ -21,7 +21,7 @@ import { argumentHints, completions, lineKind, recall, remember } from '../../do
 import { EVIDENCE, asTable, authorLabel, cell, contextWrites, entryLine, threaded } from '../../domain/warRoom.js'
 import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
-import { Badge, Button, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
 import IocText from '../ioc/IocText.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
@@ -455,13 +455,19 @@ export default function Room({ source }) {
             </li>
           )}
           {!entries && !error && (
-            <li role="status" className="px-3 py-2 font-mono text-sm text-fg-muted">
-              Loading the {label}…
+            <li className="px-3 py-2">
+              <Wait>Loading the {label}…</Wait>
             </li>
           )}
           {entries?.length === 0 && (
-            <li className="px-3 py-6 text-center text-sm text-fg-muted">
-              {show === 'all' ? source.empty : 'Nothing of this kind.'}
+            <li className="p-3">
+              <EmptyState
+                skull
+                title={show === 'all' ? 'Nothing here yet' : 'Nothing of this kind'}
+                message={
+                  show === 'all' ? source.empty : 'Nothing of this kind was said or done here. “All” shows everything.'
+                }
+              />
             </li>
           )}
           {list.map((entry) => {

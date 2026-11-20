@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { postForBlob, upload } from '../../services/api.js'
 import { saveBlob } from '../../lib/download.js'
-import { Button, Modal } from '../ui/index.js'
+import { Button, Modal, Transfer, Wait } from '../ui/index.js'
 import { formatBytes } from '../../domain/events.js'
 
 /*
@@ -25,6 +25,7 @@ import { formatBytes } from '../../domain/events.js'
 export default function ArtifactTransferDialog({ request, onClose, onImported }) {
   const [files, setFiles] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [sending, setSending] = useState(null) // { name, sent, total } while the archive goes up
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
   const input = useRef(null)
@@ -62,7 +63,7 @@ export default function ArtifactTransferDialog({ request, onClose, onImported })
               <Button variant="ghost" onClick={onClose}>
                 Cancel
               </Button>
-              <Button icon={Upload} disabled={busy} onClick={() => input.current?.click()}>
+              <Button waiting={busy} icon={Upload} disabled={busy} onClick={() => input.current?.click()}>
                 {busy ? 'Importing…' : 'Choose the archive'}
               </Button>
             </>
@@ -80,12 +81,17 @@ export default function ArtifactTransferDialog({ request, onClose, onImported })
             event.target.value = ''
             if (file)
               run(async () => {
-                const imported = await upload('/artifacts/import', file)
+                setSending({ name: file.name, sent: 0, total: file.size })
+                const imported = await upload('/artifacts/import', file, {
+                  onProgress: (progress) => setSending({ name: file.name, ...progress }),
+                }).finally(() => setSending(null))
                 setResult(imported)
                 onImported(imported)
               })
           }}
         />
+        {sending && <Transfer label={`Uploading ${sending.name}`} progress={sending} className="mb-3" />}
+        {busy && !sending && <Wait className="mb-3">The server is reading the archive…</Wait>}
         {result ? (
           <div className="space-y-2" role="status">
             <p>
@@ -139,6 +145,7 @@ export default function ArtifactTransferDialog({ request, onClose, onImported })
             Cancel
           </Button>
           <Button
+            waiting={busy}
             icon={Download}
             disabled={busy}
             onClick={() =>

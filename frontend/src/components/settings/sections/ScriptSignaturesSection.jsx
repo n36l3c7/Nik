@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, FileCode2, Pencil, Plus, Power, RotateCcw, Trash2, X } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -386,8 +386,8 @@ export default function ScriptSignaturesSection() {
             ))}
             {rows === null && !error && (
               <tr>
-                <td colSpan={5} role="status" className="px-3 py-6 text-center font-mono text-sm text-fg-muted">
-                  Loading…
+                <td colSpan={5} className="px-3 py-6">
+                  <Wait>Loading the signatures…</Wait>
                 </td>
               </tr>
             )}

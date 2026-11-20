@@ -491,7 +491,13 @@ export default function IocDetail({
             </Button>
           )}
           {canCheck && (
-            <Button size="xs" icon={RefreshCw} onClick={() => check(results.length > 0)} disabled={checking}>
+            <Button
+              size="xs"
+              icon={RefreshCw}
+              waiting={checking}
+              onClick={() => check(results.length > 0)}
+              disabled={checking}
+            >
               {checking ? 'Checking…' : results.length ? 'Check again' : 'Check now'}
             </Button>
           )}

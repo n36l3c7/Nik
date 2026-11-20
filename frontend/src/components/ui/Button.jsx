@@ -5,8 +5,13 @@
  * (transparent), 'danger' (solid red). Sizes: 'md' | 'sm' | 'xs', each
  * with a fixed height (36, 32, 28 px) so buttons side by side line up
  * whatever they hold. Optional lucide icon on the left; without children it
- * becomes a square icon-only button (give it an aria-label).
+ * becomes a square icon-only button (give it an aria-label). `waiting` puts
+ * the (o.o) wait where the icon is, while what the button started is going on
+ * (components/ui/Wait.jsx has the rule): the caller disables it and says in its
+ * label what is happening.
  */
+import { MicroSkull } from './AsciiSkull.jsx'
+
 const VARIANTS = {
   primary: 'bg-accent text-canvas hover:bg-accent-fg border border-transparent font-semibold',
   secondary: 'bg-transparent text-fg border border-line hover:bg-raised',
@@ -41,12 +46,14 @@ export default function Button({
   className = '',
   disabled = false,
   type = 'button',
+  waiting = false,
   ...rest
 }) {
   return (
     <button
       type={type}
       disabled={disabled}
+      aria-busy={waiting || undefined}
       className={[
         'inline-flex items-center justify-center font-medium',
         'transition-colors select-none',
@@ -59,7 +66,8 @@ export default function Button({
       ].join(' ')}
       {...rest}
     >
-      {Icon && <Icon className={`shrink-0 ${ICON_SIZES[size] ?? ICON_SIZES.md}`} aria-hidden="true" />}
+      {waiting && <MicroSkull className="shrink-0 text-[0.85em]" />}
+      {!waiting && Icon && <Icon className={`shrink-0 ${ICON_SIZES[size] ?? ICON_SIZES.md}`} aria-hidden="true" />}
       {children}
     </button>
   )

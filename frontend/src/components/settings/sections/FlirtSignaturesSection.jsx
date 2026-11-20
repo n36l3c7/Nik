@@ -3,8 +3,9 @@ import { AlertCircle, Fingerprint, Power, Trash2, Upload } from 'lucide-react'
 import { api, upload } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
 import { formatRelative } from '../../../lib/time.js'
-import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * FLIRT signatures settings section (admin only). The analyzer worker applies
@@ -49,7 +50,9 @@ export default function FlirtSignaturesSection() {
     setUploading(true)
     setError(null)
     try {
-      await upload('/flirt-signatures', file, { fields: { name: name.trim() } })
+      await transfer(`Uploading ${file.name}`, (onProgress) =>
+        upload('/flirt-signatures', file, { fields: { name: name.trim() }, onProgress }),
+      )
       setName('')
       setFile(null)
       setFormKey((k) => k + 1) // clears the file input
@@ -134,7 +137,7 @@ export default function FlirtSignaturesSection() {
             required
           />
         </div>
-        <Button type="submit" size="sm" icon={Upload} disabled={uploading || !file || !name.trim()}>
+        <Button waiting={uploading} type="submit" size="sm" icon={Upload} disabled={uploading || !file || !name.trim()}>
           {uploading ? 'Uploading…' : 'Upload signature'}
         </Button>
       </form>
@@ -144,9 +147,7 @@ export default function FlirtSignaturesSection() {
           Uploaded signatures · {signatures.length}
         </h3>
         {loading ? (
-          <p className="flex items-center gap-2 font-mono text-sm text-fg-muted">
-            <MicroSkull /> loading…
-          </p>
+          <Wait>Loading the signatures…</Wait>
         ) : signatures.length === 0 ? (
           <p className="text-sm text-fg-muted">None yet: only rizin&apos;s bundled signatures are applied.</p>
         ) : (

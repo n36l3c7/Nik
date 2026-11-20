@@ -167,6 +167,7 @@ export default function MailDetail({
       actions={
         <>
           <Button
+            waiting={reanalysing}
             variant="ghost"
             size="xs"
             icon={RefreshCw}

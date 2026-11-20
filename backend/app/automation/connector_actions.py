@@ -567,6 +567,25 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
             )
             if key is not None and error.sent:
                 instance_keys.used(db, connection, key.id, now)
+            if getattr(error, "kept", None):
+                # The command failed and kept something all the same (an archive that could not be
+                # unpacked). A step that fails keeps nothing of what it did, so this one first gives
+                # itself back, which keeps the file (and waits for the API process when it is the one
+                # that writes it), and fails when it is called again.
+                failed = {"message": failure.message, "request": {**(failure.request or {}), "kept": error.kept}}
+                kept = {
+                    "jobs": [*asked_before, *keeper.pending],
+                    "until": now + artifact_jobs.WAIT_FOR,
+                    "audits": [*_audits(state), *keeper.audits],
+                    "request": failed["request"],
+                    "fail": failed,
+                }
+                return actions.Result(
+                    again_at=now + (artifact_jobs.WAIT_EVERY if kept["jobs"] else 0),
+                    state={"kept": kept},
+                    request=failed["request"],
+                    log=failure.message,
+                )
             if key is not None and error.status == instance_keys.QUOTA_STATUS and not pinned:
                 # The vendor says this key is used up: it is left alone, and the next one is tried.
                 instance_keys.refused(db, connection, key.id, now)
@@ -632,6 +651,14 @@ def _when_kept(call: actions.Call, state: dict, now: float) -> actions.Result:
             request=kept.get("request"),
             log="Waiting for the server to keep the file",
         )
+    if kept.get("fail"):
+        if kept.get("jobs"):
+            # Kept by the API process just now: its line of the audit log is written with this call,
+            # and a step that fails keeps nothing it wrote. So the step fails at the next one.
+            settled = {**kept, "jobs": [], "audits": []}
+            return actions.Result(again_at=now, state={"kept": settled}, request=kept.get("request"))
+        # What was kept is kept: the command itself failed, and says so now.
+        raise actions.ActionError(str(kept["fail"]["message"]), retry=False, request=kept["fail"].get("request"))
     return actions.Result(
         output=kept.get("output"),
         classes=kept.get("classes") or {},

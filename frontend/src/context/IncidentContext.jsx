@@ -26,6 +26,7 @@ import { useAuth } from './AuthContext.jsx'
 import { freely, onLocationChange, setPath } from '../lib/location.js'
 import { leave } from '../lib/unsaved.js'
 import { useAudit } from './AuditContext.jsx'
+import { transfer } from '../lib/transfers.js'
 
 /*
  * ============================================================================
@@ -1479,12 +1480,16 @@ export function IncidentProvider({ children }) {
         // Not opened yet in this session: fetch the full document first.
         let etag = null
         try {
+          // Its whole document comes down first: the tray shows how much of it has.
           incident = normalizeIncident(
-            await api.get(incidentPath(incidentId), {
-              onHeaders: (headers) => {
-                etag = headers.get('ETag')
-              },
-            }),
+            await transfer('Downloading the incident to export', (onProgress) =>
+              api.get(incidentPath(incidentId), {
+                onProgress,
+                onHeaders: (headers) => {
+                  etag = headers.get('ETag')
+                },
+              }),
+            ),
           )
         } catch (err) {
           setStorageError(err?.message || 'Unable to load the incident to export it.')

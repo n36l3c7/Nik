@@ -453,7 +453,24 @@
           a total no larger than an upload, and 200 times as the most a member may inflate; sizes written in the archive
           are not believed, reading stops at the limit. The password is given by an expression, never written to a
           record, an output or a dry run, replaced by a mark in the arguments a run keeps, and not sent to the backend:
-          the worker unpacks, the files travel. A wrong password is said without repeating it.
+          the worker unpacks, the files travel. A wrong password is said without repeating it. An archive that cannot be
+          unpacked (the password, not a zip, more inside than an archive may hold) is kept all the same, as the file it
+          is and nothing more: it is evidence, and the step fails naming the artifact.
+        </li>
+        <li>
+          <strong>Hosts downloads may come from.</strong> A connector reaches its instance and the hosts its file lists.
+          One whose vendor serves files from storage hosts the file cannot name may ask the instance for them
+          (<code>download_hosts_from</code>, <a href="automation.html#connector-download-hosts">Automation</a>): who
+          manages connectors writes host names, or <code>*.</code> and a name for the hosts under it, and nothing looser
+          (no bare <code>*</code>, no address or range, no scheme, port or path, no internal name; checked when the
+          instance is saved, each change in the audit log). It lets out one thing: a <code>GET</code> for a file, to one
+          of those hosts, over https, when a command whose answer is a file is given a link there or is redirected
+          there. <strong>No credential follows</strong>, and no header of the connector or of the request either: the
+          egress client strips the request to its address before it leaves for such a host, because a signed link needs
+          nothing else and a key sent to a storage host would be a key given away. No other request of the connector
+          goes there, an address inside the network is still refused, and the size limit of a file and the redirect
+          limit are those of every download. With the field empty, and for every connector that does not ask for it,
+          nothing changed.
         </li>
         <li>
           <strong>A file from an address.</strong> <em>Download a file</em> is the one node that brings a file in

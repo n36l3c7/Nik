@@ -255,3 +255,17 @@ test('the form of an instance has the parts its connector gives it, as tabs', ()
     ['classifier', 'mappers'],
   )
 })
+
+test('a list of hosts is shown one a line, and typing is left alone', async () => {
+  const { hostLines } = await import('./instances.js')
+  assert.equal(
+    hostLines('files.vendor.example.com, *.storage.vendor.example.com'),
+    'files.vendor.example.com\n*.storage.vendor.example.com',
+  )
+  assert.equal(hostLines('a.example.com;b.example.com'), 'a.example.com\nb.example.com')
+  // Already one a line, with the line being typed still empty: nothing changes.
+  assert.equal(hostLines('a.example.com\nb.example.com\n'), 'a.example.com\nb.example.com\n')
+  assert.equal(hostLines('a.example.com,'), 'a.example.com\n')
+  assert.equal(hostLines(''), '')
+  assert.equal(hostLines(undefined), '')
+})

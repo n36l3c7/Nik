@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { formatRelative } from '../../lib/time.js'
-import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import { Field, Switch, TextInput } from './fields.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
@@ -12,6 +12,7 @@ import { usePageMenu } from '../menu/usePageMenu.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { setPath } from '../../lib/location.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { transfer } from '../../lib/transfers.js'
 
 /*
  * The playbooks: what starts each, whether it is on, the version that runs,
@@ -83,7 +84,9 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
     try {
       const parsed = JSON.parse(await file.text())
       if (parsed?.type !== 'playbook' || !parsed.playbook) throw new Error('Not a playbook file')
-      const made = await api.post('/automation/playbooks/import', { playbook: parsed.playbook })
+      const made = await transfer(`Importing ${file.name}`, () =>
+        api.post('/automation/playbooks/import', { playbook: parsed.playbook }),
+      )
       showToast({
         message: made.problems.length
           ? `${made.name} was imported as a draft: ${made.problems.length} to fix before it can be a version.`
@@ -152,7 +155,7 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
       )}
       {playbooks?.length === 0 && (
         <EmptyState
-          illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+          skull
           title="No playbook yet"
           message={
             canEdit

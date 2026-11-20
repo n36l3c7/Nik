@@ -14,6 +14,7 @@ import {
   instanceTabs,
   startingValues,
   takesKeys,
+  hostLines,
 } from '../../../domain/automation/instances.js'
 import {
   credentialChoices,
@@ -435,6 +436,19 @@ export default function InstancePane({
                           </option>
                         ))}
                       </select>
+                    ) : field.type === 'hosts' ? (
+                      // A list of hosts reads better one a line: what is stored with commas is shown so,
+                      // and the server takes either.
+                      <textarea
+                        id={id}
+                        rows={4}
+                        value={hostLines(values[field.name])}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={field.placeholder || 'files.vendor.example.com\n*.storage.vendor.example.com'}
+                        onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
+                        className={`${INPUT} resize-y`}
+                      />
                     ) : (
                       <input
                         id={id}
@@ -531,11 +545,23 @@ export default function InstancePane({
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2 border-t border-line-soft p-4">
-          <Button type="submit" form="form-instance" disabled={busy || Boolean(problem)} title={problem ?? undefined}>
+          <Button
+            type="submit"
+            form="form-instance"
+            waiting={busy}
+            disabled={busy || Boolean(problem)}
+            title={problem ?? undefined}
+          >
             {instance ? 'Save' : 'Create'}
           </Button>
           {instance && onTest && (
-            <Button variant="secondary" icon={Zap} disabled={testing} onClick={() => onTest(instance)}>
+            <Button
+              waiting={testing}
+              variant="secondary"
+              icon={Zap}
+              disabled={testing}
+              onClick={() => onTest(instance)}
+            >
               {testing ? 'Testing…' : 'Test the connection'}
             </Button>
           )}
@@ -557,8 +583,13 @@ export default function InstancePane({
             <Button variant="secondary" onClick={() => setKeeping(null)}>
               Cancel
             </Button>
-            <Button type="submit" form="form-keep-credential" disabled={Boolean(keepProblem) || keeping?.busy}>
-              Keep
+            <Button
+              type="submit"
+              form="form-keep-credential"
+              waiting={Boolean(keeping?.busy)}
+              disabled={Boolean(keepProblem) || keeping?.busy}
+            >
+              {keeping?.busy ? 'Keeping…' : 'Keep'}
             </Button>
           </>
         }

@@ -42,6 +42,7 @@ import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import SearchBar from '../layout/SearchBar.jsx'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { transfer } from '../../lib/transfers.js'
 
 /*
  * ============================================================================
@@ -390,7 +391,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
       (failure) => setError(failure.message),
     )
   const exportFile = () =>
-    api.get(`/dashboards/${board.id}/export`).then(
+    transfer(`Preparing the export of ${board.name}`, () => api.get(`/dashboards/${board.id}/export`)).then(
       (file) => {
         const name = board.name.replace(/[^\w.-]+/g, '-').toLowerCase() || 'dashboard'
         saveBlob(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }), `${name}.dashboard.json`)
@@ -400,7 +401,9 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
   const [reporting, setReporting] = useState(false)
   const report = () => {
     setReporting(true)
-    postForBlob(`/dashboards/${board.id}/report`, { format: 'pdf', timeRange: range })
+    transfer(`Building the report of ${board.name}`, () =>
+      postForBlob(`/dashboards/${board.id}/report`, { format: 'pdf', timeRange: range }),
+    )
       .then(
         (blob) => {
           const name = board.name.replace(/[^\w.-]+/g, '-').toLowerCase() || 'dashboard'
@@ -415,7 +418,9 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
     event.target.value = ''
     if (!file) return
     try {
-      const made = await api.post('/dashboards/import', JSON.parse(await file.text()))
+      const made = await transfer(`Importing ${file.name}`, async () =>
+        api.post('/dashboards/import', JSON.parse(await file.text())),
+      )
       reload()
       onSelect(made.id)
     } catch (failure) {
@@ -541,6 +546,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
           )}
           {!shown && !error && boards?.length === 0 && (
             <EmptyState
+              skull
               title="No dashboard yet"
               message="A dashboard is a set of widgets, each a question asked of what Nik holds: how many incidents are open, how long they take to close, which playbooks fail."
             />
@@ -580,7 +586,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                     >
                       Cancel
                     </Button>
-                    <Button size="sm" onClick={save} disabled={saving || !draft.name.trim()}>
+                    <Button waiting={saving} size="sm" onClick={save} disabled={saving || !draft.name.trim()}>
                       {saving ? 'Saving…' : 'Save'}
                     </Button>
                   </>
@@ -642,6 +648,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                       variant="ghost"
                       icon={FileText}
                       onClick={report}
+                      waiting={reporting}
                       disabled={reporting}
                       aria-label="Report"
                       title="A PDF of this dashboard, with what you see in it"
@@ -733,6 +740,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
               <div className="p-6">
                 {shown.widgets.length === 0 ? (
                   <EmptyState
+                    skull
                     title="No widget yet"
                     message={
                       editing

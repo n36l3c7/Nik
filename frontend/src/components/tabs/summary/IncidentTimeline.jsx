@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Flag, ListTree, Plus, StickyNote, Trash2, X } from 'lucide-react'
+import { Flag, Plus, StickyNote, Trash2, X } from 'lucide-react'
 import { useItemMenu, useRowMenu } from '../../menu/useRowMenu.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, EmptyState } from '../../ui/index.js'
 import EventTypeIcon from '../browser/EventTypeIcon.jsx'
 import NoteBlock from './NoteBlock.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
@@ -96,14 +96,12 @@ export default function IncidentTimeline({ incident }) {
 
       {/* ---- Timeline / empty state ---- */}
       {isEmpty ? (
-        <div className="flex flex-col items-center gap-2 border border-dashed border-line px-6 py-10 text-center">
-          <div className="flex h-12 w-12 items-center justify-center bg-canvas">
-            <ListTree className="h-6 w-6 text-fg-muted" aria-hidden="true" />
-          </div>
-          <p className="max-w-md text-sm text-fg-muted">
-            No flagged entries or notes yet. Flag entries in the Browser Forensics tab to build the incident timeline.
-          </p>
-        </div>
+        <EmptyState
+          skull
+          compact
+          title="No flags or notes yet"
+          message="No flagged entries or notes yet. Flag entries in the Browser Forensics tab to build the incident timeline."
+        />
       ) : (
         <div className="relative">
           {/* Vertical rail passing through the centre of every dot. */}

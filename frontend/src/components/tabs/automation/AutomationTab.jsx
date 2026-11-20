@@ -9,7 +9,7 @@ import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, EmptyState } from '../../ui/index.js'
 
 /*
  * ============================================================================
@@ -104,10 +104,11 @@ export default function AutomationTab({ incident }) {
         </p>
       )}
       {runs?.length === 0 && (
-        <p className="text-sm text-fg-muted">
-          No playbook has run on this incident. One runs when its trigger matches what happens here, or when you run it
-          by hand.
-        </p>
+        <EmptyState
+          skull
+          title="No run yet"
+          message="No playbook has run on this incident. One runs when its trigger matches what happens here, or when you run it by hand."
+        />
       )}
       {runs?.length > 0 && (
         <div className="overflow-x-auto border border-line">

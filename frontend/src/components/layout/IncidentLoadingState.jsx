@@ -1,5 +1,5 @@
 import { useIncidents } from '../../context/IncidentContext.jsx'
-import { AsciiSkull, Button } from '../ui/index.js'
+import { AsciiSkull, Button, TransferBar } from '../ui/index.js'
 
 /**
  * ============================================================================
@@ -27,20 +27,7 @@ export default function IncidentLoadingState({ name }) {
         <p role="status" className="text-lg font-extrabold text-fg">
           Loading <span className="text-accent">{name}</span>…
         </p>
-        <div
-          role="progressbar"
-          aria-label={`Downloading ${name}`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={pct ?? undefined}
-          className="relative h-2.5 overflow-hidden border border-line bg-panel"
-        >
-          {pct !== null ? (
-            <div className="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
-          ) : (
-            <div className="absolute inset-y-0 w-1/3 animate-pulse bg-accent/70" />
-          )}
-        </div>
+        <TransferBar label={`Downloading ${name}`} percent={pct} className="h-2.5" />
         <div className="flex justify-between text-xs text-fg-muted">
           <span>{pct !== null ? `${pct}%` : 'downloading'}</span>
           <span>{total ? `${mb(received)} / ${mb(total)} MB` : `${mb(received)} MB received`}</span>

@@ -117,10 +117,15 @@ export default function ExportIocsDialog({ request, onClose }) {
       maxWidth="max-w-3xl"
       footer={
         <>
-          <Button variant="secondary" disabled={busy} onClick={() => run('copy')}>
+          <Button variant="secondary" disabled={Boolean(busy)} onClick={() => run('copy')}>
             Copy
           </Button>
-          <Button icon={Download} disabled={busy || (withFields && fields.length === 0)} onClick={() => run('save')}>
+          <Button
+            icon={Download}
+            waiting={Boolean(busy)}
+            disabled={Boolean(busy) || (withFields && fields.length === 0)}
+            onClick={() => run('save')}
+          >
             Download {fileName}
           </Button>
         </>

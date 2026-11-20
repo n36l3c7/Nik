@@ -51,7 +51,7 @@ export default function TagDialog({ scope, count, onDone, onClose }) {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={!ready || busy}>
+          <Button waiting={busy} onClick={save} disabled={!ready || busy}>
             {busy ? 'Saving…' : 'Save'}
           </Button>
         </>

@@ -99,7 +99,11 @@ function ValuePicker({ tree, onPick, onClose }) {
         className={`${INPUT} border-0 border-b`}
       />
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
-        {shown.length === 0 && <p className="px-3 py-2 text-xs text-fg-muted">Nothing to pick matches.</p>}
+        {shown.length === 0 && (
+          <p className="px-3 py-2 text-xs text-fg-muted">
+            {query.trim() ? 'Nothing to pick matches.' : 'Nothing to pick here yet.'}
+          </p>
+        )}
         {shown.map((root) => (
           <div key={root.name} role="group" aria-label={root.label}>
             <p className="px-3 pb-0.5 pt-2 text-[11px] text-fg-muted">

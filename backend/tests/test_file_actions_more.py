@@ -284,6 +284,8 @@ def test_a_playbook_unpacks_an_archive_nik_holds_into_files_of_the_incident(admi
     ):
         failed = go(admin, chain(admin, f"Not {why[:30]}", act("unz", "nik.unpack-artifact", **args)))
         assert failed["status"] == "failed" and steps(failed)["unz"]["error"].startswith(why)
+        # The archive is an artifact already and stays one: the step says which.
+        assert steps(failed)["unz"]["error"].endswith(f"The archive stays as it is ({args['artifact']})")
         # Typed in the node it is in the playbook; what the run kept of its steps does not repeat it.
         assert "wrong-one" not in str(failed["steps"])
 

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, DatabaseBackup, Download, Upload } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { Badge, Button } from '../../ui/index.js'
 
 /*
  * Backup settings section (admin only): export / restore the entire platform.
@@ -125,12 +125,12 @@ export default function BackupSection() {
                 artifacts, flags and notes included), user accounts, the audit log and the detection settings.
               </p>
               <Button
-                icon={busy ? null : Download}
+                icon={Download}
+                waiting={busy}
                 disabled={busy}
                 onClick={handleExport}
                 className="w-full justify-center"
               >
-                {busy && <MicroSkull className="mr-2" />}
                 {busy ? 'Preparing backup…' : 'Export full backup'}
               </Button>
               <p className="text-xs text-fg-muted">
@@ -180,8 +180,7 @@ export default function BackupSection() {
               <Button variant="secondary" disabled={busy} onClick={() => setPending(null)}>
                 Cancel
               </Button>
-              <Button variant="danger" icon={busy ? null : DatabaseBackup} disabled={busy} onClick={handleRestore}>
-                {busy && <MicroSkull className="mr-2" />}
+              <Button variant="danger" icon={DatabaseBackup} waiting={busy} disabled={busy} onClick={handleRestore}>
                 {busy ? 'Restoring…' : 'Replace everything'}
               </Button>
             </div>

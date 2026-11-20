@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, Pencil, Plus, Power, Radar, Trash2, X } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
-import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -171,9 +171,7 @@ export default function CapaRulesSection() {
         </div>
 
         {loading ? (
-          <p className="flex items-center gap-2 font-mono text-sm text-fg-muted">
-            <MicroSkull /> loading…
-          </p>
+          <Wait>Loading the rules…</Wait>
         ) : rules.length === 0 && editing === null ? (
           <p className="text-sm text-fg-muted">No admin rules yet: capa uses its bundled rule set.</p>
         ) : (
@@ -267,7 +265,7 @@ export default function CapaRulesSection() {
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" size="sm" disabled={busy || !source.trim()}>
+              <Button waiting={busy} type="submit" size="sm" disabled={busy || !source.trim()}>
                 {busy ? 'Checking…' : editing === 'new' ? 'Save rule' : 'Save changes'}
               </Button>
               <Button type="button" variant="secondary" size="sm" onClick={validate} disabled={busy}>

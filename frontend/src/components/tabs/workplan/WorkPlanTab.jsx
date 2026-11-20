@@ -8,7 +8,7 @@ import { api } from '../../../services/api.js'
 import { KIND_LABELS, normalise } from '../../../domain/automation/graph.js'
 import { RUN_COLORS, isFinished } from '../../../domain/automation/runs.js'
 import { dueText, isOpen, orderPlans, phaseTitle, progress, statusBadge, stepBadge } from '../../../domain/tasks.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
 import Assign, { assigneeOf } from '../../tasks/Assign.jsx'
 import NewTaskDialog from '../../tasks/NewTaskDialog.jsx'
 import TaskCard from '../../tasks/TaskCard.jsx'
@@ -288,10 +288,16 @@ export default function WorkPlanTab({ incident }) {
         </p>
       )}
       {plan && plans.length === 0 && plan.tasks.length === 0 && (
-        <p className="text-sm text-fg-muted">
-          Nothing is planned for this incident yet. A plan appears when a playbook runs on it; a task can be added by
-          hand, or typed in the War Room as <code className="font-mono">/task Call the user @anna due=2h</code>.
-        </p>
+        <EmptyState
+          skull
+          title="Nothing planned yet"
+          message={
+            <>
+              Nothing is planned for this incident yet. A plan appears when a playbook runs on it; a task can be added
+              by hand, or typed in the War Room as <code className="font-mono">/task Call the user @anna due=2h</code>.
+            </>
+          }
+        />
       )}
       {plans.map((item) => (
         <Plan key={item.runId} plan={item} view={view} onOpen={setOpenId} />

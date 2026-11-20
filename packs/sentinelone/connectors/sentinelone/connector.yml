@@ -36,6 +36,14 @@ configuration:
     type: header
     header: Authorization
     prefix: "ApiToken "
+  # The console hands some files over as a link to a storage host that its reference does not name:
+  # whoever runs the console writes those hosts here, and the four commands that follow a link go there
+  # for the file, without the token.
+  - name: download_hosts
+    label: Hosts downloads may come from
+    type: hosts
+    help: "The storage hosts the download links of your console lead to, separated by commas: a name (files.example.com) or every host under a name (*.storage.example.com). The token is never sent there. Leave it empty when the links are on the console itself."
+download_hosts_from: download_hosts
 base_url: "{{ config.url }}/web/api/v2.1"
 # The version of the console: it is refused without a token that is valid, and needs no permission on endpoints.
 test:
@@ -1141,11 +1149,11 @@ commands:
       download_url: "{{ response.data.downloadUrl }}"
       file_name: "{{ response.data.fileName }}"
 
-  # The link is followed when it is on the host of the console. One that names another host is refused by Nik
-  # (a connector reaches its own instance and the hosts it lists by name): the link itself is what
-  # get-threat-cloud-link gives.
+  # The link is followed when it is on the host of the console, or on a host the instance lists
+  # (download_hosts): there the request goes with no token and no header of this file. One that names any
+  # other host is refused by Nik; the link itself is what get-threat-cloud-link gives.
   - name: download-threat-from-cloud
-    description: "Keep as an artifact the file of a threat that the console holds in its cloud, as it came. It follows the link only when the link is on the console itself. When it is on another host: get-threat-cloud-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
+    description: "Keep as an artifact the file of a threat that the console holds in its cloud, as it came. It follows the link on the console itself or on a host the instance lists (Hosts downloads may come from; the token does not go there). Otherwise: get-threat-cloud-link gives the link, nik.download-file fetches it with no credentials, and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: threat_id, type: text, required: true, description: "The id of the threat" }
     steps:
@@ -2218,9 +2226,9 @@ commands:
       download_url: "{{ response.data.downloadUrl }}"
       file_name: "{{ response.data.fileName }}"
 
-  # The link is followed when it is on the host of the console: see download-threat-from-cloud.
+  # The link is followed on the console or on a host the instance lists: see download-threat-from-cloud.
   - name: download-event-file
-    description: "Keep as an artifact the file of the source process of a Deep Visibility event, as it came. It follows the link only when the link is on the console itself. When it is on another host: get-event-file-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
+    description: "Keep as an artifact the file of the source process of a Deep Visibility event, as it came. It follows the link on the console itself or on a host the instance lists (Hosts downloads may come from; the token does not go there). Otherwise: get-event-file-link gives the link, nik.download-file fetches it with no credentials, and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: download_token, type: text, required: true, description: "The download token the event carries" }
     steps:
@@ -2790,9 +2798,9 @@ commands:
       file_name: "{{ response.data.downloadLinks[0].fileName }}"
       errors: "{{ response.data.errors }}"
 
-  # The link is followed when it is on the host of the console: see download-threat-from-cloud.
+  # The link is followed on the console or on a host the instance lists: see download-threat-from-cloud.
   - name: download-script-result
-    description: "Keep as an artifact the output of a finished script task, as it came (the password the run set, if any, is what opens it). It follows the link only when the link is on the console itself. When it is on another host: get-script-results gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
+    description: "Keep as an artifact the output of a finished script task, as it came (the password the run set, if any, is what opens it). It follows the link on the console itself or on a host the instance lists (Hosts downloads may come from; the token does not go there). Otherwise: get-script-results gives the link, nik.download-file fetches it with no credentials, and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: task_id, type: text, required: true, description: "The id of the task (get-script-tasks)" }
     steps:
@@ -3224,9 +3232,9 @@ commands:
       download_url: "{{ response.data.downloadUrl }}"
       file_name: "{{ response.data.fileName }}"
 
-  # The link is followed when it is on the host of the console: see download-threat-from-cloud.
+  # The link is followed on the console or on a host the instance lists: see download-threat-from-cloud.
   - name: download-forensic-collection
-    description: "Keep as an artifact what a collection task uploaded, as it came (the password the collection set, if any, is what opens it). It follows the link only when the link is on the console itself. When it is on another host: get-forensic-collection-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
+    description: "Keep as an artifact what a collection task uploaded, as it came (the password the collection set, if any, is what opens it). It follows the link on the console itself or on a host the instance lists (Hosts downloads may come from; the token does not go there). Otherwise: get-forensic-collection-link gives the link, nik.download-file fetches it with no credentials, and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: task_id, type: text, required: true, description: "The id of the task of one endpoint (get-script-tasks)" }
     steps:

@@ -160,7 +160,7 @@ export default function ContextTab({ incident }) {
                 </button>
               </li>
             ))}
-            {list.length === 0 && <li className="px-3 py-2 text-fg-muted">Nothing matches.</li>}
+            {list.length === 0 && !(empty && !query) && <li className="px-3 py-2 text-fg-muted">Nothing matches.</li>}
           </ul>
           {empty && !query && (
             <p className="text-sm text-fg-muted">

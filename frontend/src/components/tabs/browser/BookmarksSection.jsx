@@ -173,7 +173,7 @@ export default function BookmarksSection({ incident, browserId, profile = null, 
   if (!bookmarks.length) {
     return (
       <EmptyState
-        icon={Bookmark}
+        skull
         title="No bookmarks loaded"
         message="Import Chrome's 'Bookmarks' file (JSON) or a JSON/CSV export from the 'Data sources' card."
       />

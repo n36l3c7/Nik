@@ -9,6 +9,8 @@ import {
   parseTags,
   standaloneIncident,
   verdictBadge,
+  ARTIFACTS_ROOT,
+  isArtifactsPath,
 } from './artifactRegistry.js'
 
 const SHA = 'a'.repeat(64)
@@ -100,4 +102,14 @@ test('a file is offered to be analysed as what the server says it can be', async
   assert.deepEqual(analyseAsActions(null), [])
   assert.equal(RELATION_LABELS.unpacked, 'unpacked file')
   assert.equal(RELATION_LABELS.analysed, 'analysis')
+})
+
+test('the page of the artifacts has an address of its own, which is not an artifact', () => {
+  assert.equal(ARTIFACTS_ROOT, '/artifacts')
+  assert.equal(isArtifactsPath('/artifacts'), true)
+  assert.equal(isArtifactsPath('/artifacts/'), true)
+  assert.equal(isArtifactsPath('/artifacts?x=1'), true)
+  assert.equal(isArtifactsPath('/artifact/file-00'), false)
+  assert.equal(isArtifactsPath('/'), false)
+  assert.equal(artifactIdFromPath('/artifacts'), null)
 })

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Boxes, Flag, Mail, PanelLeftClose, PanelLeftOpen, Trash2 } from 'lucide-react'
 import { useItemMenu } from '../../menu/useRowMenu.js'
-import { AsciiSkull, Badge, Button, Card, EmptyState } from '../../ui/index.js'
+import { Badge, Button, Card, EmptyState } from '../../ui/index.js'
 import SampleDropZone from '../malware/SampleDropZone.jsx'
 import DownloadDialog from '../malware/DownloadDialog.jsx'
 import MailDetail from './MailDetail.jsx'
@@ -237,7 +237,7 @@ export default function MailAnalysisTab({ incident, focus = null, evidence = fal
   if (messages.length === 0) {
     return (
       <EmptyState
-        illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+        skull
         title="No e-mails yet"
         message="Drop a reported message (.eml, or .msg saved from Outlook) to read its route and authentication, check its links and attachments, and get a phishing verdict with the evidence behind it."
         action={

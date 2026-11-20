@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bug, ChevronRight, Crosshair, FolderOpen, Loader2, StickyNote, Zap } from 'lucide-react'
+import { Bug, ChevronRight, Crosshair, FolderOpen, StickyNote, Zap } from 'lucide-react'
 import { Badge } from '../ui/index.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useIocLookup } from '../../context/IocLookupContext.jsx'
@@ -11,6 +11,7 @@ import { buildTimelineEvents, TIMELINE_SOURCE_META } from '../../domain/timeline
 import { formatDateTime } from '../../lib/time.js'
 import { useLayer } from '../../lib/layers.js'
 import { numberedName } from '../../domain/incidentName.js'
+import { MicroSkull } from '../ui/index.js'
 
 /*
  * Global search palette (Ctrl/Cmd+K or "/"): a `nik>` prompt that searches
@@ -240,7 +241,11 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
             spellCheck={false}
             autoComplete="off"
           />
-          {remote.loading && <Loader2 className="h-4 w-4 animate-spin text-fg-muted" aria-label="Searching" />}
+          {remote.loading && (
+            <span role="status" aria-label="Searching" className="shrink-0 text-xs text-fg-muted">
+              <MicroSkull />
+            </span>
+          )}
           <kbd className="border border-line px-1.5 font-mono text-[10px] text-fg-subtle">esc</kbd>
         </div>
         <div id="palette-results" ref={listRef} role="listbox" className="overflow-y-auto">

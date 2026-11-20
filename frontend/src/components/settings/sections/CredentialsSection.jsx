@@ -17,7 +17,7 @@ import { useUnsavedChanges } from '../../../lib/unsaved.js'
 import { formatRelative } from '../../../lib/time.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
-import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal, SearchInput, Wait } from '../../ui/index.js'
 
 /*
  * Settings → Credentials (who manages the connectors).
@@ -85,7 +85,13 @@ function CredentialDialog({ existing, taken, onClose, onSaved }) {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="form-credential" disabled={busy || Boolean(problem)} title={problem ?? undefined}>
+          <Button
+            type="submit"
+            form="form-credential"
+            waiting={busy}
+            disabled={busy || Boolean(problem)}
+            title={problem ?? undefined}
+          >
             {existing ? 'Save' : 'Create'}
           </Button>
         </>
@@ -394,15 +400,27 @@ export default function CredentialsSection() {
             ))}
             {credentials === null && (
               <tr>
-                <td colSpan={6} className="px-3 py-3 font-mono text-sm text-fg-muted">
-                  Loading the credentials…
+                <td colSpan={6} className="px-3 py-3">
+                  <Wait>Loading the credentials…</Wait>
                 </td>
               </tr>
             )}
             {credentials !== null && shown.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-3 text-sm text-fg-muted">
-                  {credentials.length === 0 ? 'Nothing here yet.' : 'No credential matches.'}
+                <td colSpan={6} className="p-3">
+                  {credentials.length === 0 ? (
+                    <EmptyState
+                      skull
+                      title="No credential yet"
+                      message="Nothing here yet. A credential is made here, or kept from a secret typed into an instance."
+                    />
+                  ) : (
+                    <EmptyState
+                      skull
+                      title="No credential matches"
+                      message="No credential matches. Change what you typed."
+                    />
+                  )}
                 </td>
               </tr>
             )}

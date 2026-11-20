@@ -1125,8 +1125,9 @@ Content-Type: application/json
         >, with the same rules and limits: nothing is run or opened, a name is only a name, an archive inside the
         archive is kept as a file, 200 files at most, together no larger than an upload. Plain zips and protected ones
         (ZipCrypto, AES) are read; the <code>password</code> is replaced by a mark in what the run keeps of the step,
-        and a wrong one fails the step with a sentence that does not repeat it. (A password typed in the node is part of
-        the playbook, like everything typed there: take it from where the archive came from.)
+        and a wrong one fails the step with a sentence that does not repeat it and says that the archive stays as it is.
+        (A password typed in the node is part of the playbook, like everything typed there: take it from where the
+        archive came from.)
       </p>
       <p id="analyse-as">
         <strong>A file analysed as what it is.</strong> A file reaches the store in ways that do not say what it is: a
@@ -3159,6 +3160,17 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               </td>
             </tr>
             <tr>
+              <td><code>download_hosts_from</code></td>
+              <td>
+                For a connector whose files come from hosts its file cannot name (a storage host that differs with the
+                region or the tenant): the name of a configuration entry of type <code>hosts</code>, which an
+                administrator fills in the instance. A request whose answer is a file then follows a link or a redirect
+                to one of those hosts, with nothing of the connector sent along (<a href="#connector-download-hosts"
+                  >Hosts downloads may come from</a
+                >). Left out, the connector reaches its instance and <code>more_hosts</code>, as before.
+              </td>
+            </tr>
+            <tr>
               <td><code>lookups</code></td>
               <td>
                 For a connector with a command marked <code>reputation</code>: how its verdicts count in the overall
@@ -3210,8 +3222,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               <td><code>type</code></td>
               <td>
                 A plain value: <code>url</code>, <code>text</code> (the default), <code>number</code>,
-                <code>bool</code>, <code>choice</code> (with <code>choices</code>), or <code>secret</code> (stored
-                encrypted, read as <code>secret.&lt;name&gt;</code>). Or the credentials, of one of the kinds below.
+                <code>bool</code>, <code>choice</code> (with <code>choices</code>), <code>hosts</code> (the hosts
+                downloads may come from: the one entry <code>download_hosts_from</code> names), or
+                <code>secret</code> (stored encrypted, read as <code>secret.&lt;name&gt;</code>). Or the credentials, of
+                one of the kinds below.
               </td>
             </tr>
             <tr>
@@ -3611,6 +3625,55 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           Many vendors answer a download with a redirect to a storage host. The redirect is followed only to a host the
           connector lists in <code>more_hosts</code>; the key of the instance does not go there.
         </li>
+        <li id="connector-download-hosts">
+          <strong>Hosts downloads may come from.</strong> A vendor's reference seldom names its storage: the link is
+          signed, lasts a few minutes, and its host changes with the region, the tenant or the cloud. A connector that
+          cannot list those hosts asks the instance for them:
+          <pre><code>configuration:
+  - { name: url, type: url, required: true }
+  - { name: credentials, type: bearer }
+  - name: download_hosts
+    label: Hosts downloads may come from
+    type: hosts
+    help: "The storage hosts the download links lead to, separated by commas."
+download_hosts_from: download_hosts</code></pre>
+          The instance then shows the field in its <em>Connection</em> tab. It is optional, and it is configuration, not
+          a secret: shown as it was saved, and every change of it is written in the audit log with the hosts before and
+          after.
+          <ul>
+            <li>
+              <strong>What is written there</strong>: host names separated by commas (or one a line through the API): a
+              name (<code>files.vendor.example.com</code>), or every host under a name
+              (<code>*.storage.vendor.example.com</code>; the name itself is not under itself). Nothing else is taken,
+              and saving says why in a sentence: no <code>*</code> alone or in the middle, no address and no range, no
+              <code>https://</code>, no port, no path, no internal name (<code>fileserver</code>,
+              <code>nas.corp</code>). 40 at most.
+            </li>
+            <li>
+              <strong>What it opens</strong>: only a request whose <code>answer</code> is <code>file</code>. Its address
+              may be on one of those hosts (a link the console gave:
+              <code>path: "{{ steps.link.response.url }}"</code>), and a redirect to one is followed, within the three
+              redirects of every request. No other request of the connector goes there.
+            </li>
+            <li>
+              <strong>What is sent there</strong>: the request and nothing with it. Not the credentials of the instance,
+              not the <code>headers</code> of the connector, not the headers of the request: a link that carries its own
+              signature wants none, and a storage host has no business with a key. A redirect that passes through such a
+              host does not get them back afterwards.
+            </li>
+            <li>
+              <strong>The rules that still hold</strong>: https only, the size limit of a file, and the rules of every
+              request of a playbook. A name that resolves to an address inside the network is refused whatever the field
+              says. The data guard has nothing new to judge: nothing leaves but a GET of an address the vendor gave.
+            </li>
+            <li>
+              <strong>Empty</strong>, everything is as before, and the refusal says where the field is: "A request of
+              this connector goes to files.vendor.example.net, not to its instance: add it under Hosts downloads may
+              come from in the instance if it is the vendor's storage". The name to write is the one the step gives. A
+              connector without <code>download_hosts_from</code> has no such field and says the first half only.
+            </li>
+          </ul>
+        </li>
         <li>
           A dry run fetches nothing and keeps nothing: it gives the <code>sample</code>, or an empty description of a
           file.
@@ -3653,8 +3716,15 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               <code>skipped</code> with the reason; the others are kept.
             </li>
             <li>
-              An archive that cannot be unpacked at all (not a zip, the password, the limits) fails the step and keeps
-              nothing, the archive included: the step can be tried again. A dry run downloads and unpacks nothing.
+              An archive that cannot be unpacked at all (not a zip, the password, the limits) is evidence all the same.
+              <strong>The archive is kept as it came</strong>, in the incident, as <code>answer: file</code> alone would
+              have kept it; nothing inside it is kept; and the step <strong>fails</strong>, with the sentence that says
+              why and then where the archive is: "The password does not open the archive: nothing was unpacked. The
+              archive was kept as file-…". The step fails rather than going on with no files, so that a playbook does
+              not act as if it had them; what the step records also names the artifact (<code>kept</code>), for whoever
+              reads the run and for a node on its error line. <a href="#unpack-an-archive">Unpack an archive</a> opens
+              that artifact later with the right password. Tried again, the command keeps no second copy: the same bytes
+              are the same artifact. A dry run downloads and unpacks nothing.
             </li>
           </ul>
         </li>
