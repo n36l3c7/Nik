@@ -1124,7 +1124,82 @@
             </tr>
             <tr>
               <td><code>GET/POST /api/backup/{export,import}</code></td>
-              <td>Full platform backup (<strong>admin</strong>).</td>
+              <td>
+                The export of incidents, accounts, the audit log and the detection settings as one JSON file, and its
+                import (<strong>admin</strong>). The import adds what is not on the server and changes or deletes
+                nothing: it answers <code>{ users, incidents, audit, skipped, settingsRestored }</code>. Before 6.7 it
+                replaced everything. Not a backup of the server.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/backups</code></td>
+              <td>
+                The backups the server takes by itself (<strong>admin</strong>): <code>settings</code> (schedule,
+                retention, <code>warnAfterHours</code>, <code>includeKey</code>, <code>destination</code>;
+                <code>passphraseSet</code> and <code>destination.secretSet</code> say whether a secret is there, no
+                route returns one), <code>state</code> (<code>lastGood</code>, <code>nextRun</code>,
+                <code>running</code>, the directory and its free room, where copies go, <code>problems</code>) and
+                <code>backups</code>, the latest first: <code>id</code> (the name of the file), <code>kind</code> (<code
+                  >full</code
+                >
+                | <code>upgrade</code>), <code>state</code> (<code>queued</code> | <code>running</code> |
+                <code>done</code> | <code>failed</code>), <code>verifyState</code> (<code>queued</code> |
+                <code>running</code> | <code>passed</code> | <code>failed</code>) with <code>verify.checks</code> or
+                <code>verify.error</code>, <code>offsiteState</code> (<code>pending</code> | <code>copied</code> |
+                <code>failed</code>), <code>size</code>, <code>nikVersion</code>, <code>restoreCommand</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/backups/settings</code></td>
+              <td>
+                Change any of <code>schedule</code> (<code>enabled</code>, <code>every</code>: <code>day</code> |
+                <code>week</code> | <code>hours</code>, <code>hours</code>, <code>at</code> <code>HH:MM</code>,
+                <code>weekday</code> 0 = Monday, <code>timezone</code>), <code>retention</code> (<code>last</code>,
+                <code>weeks</code>, <code>upgrades</code>), <code>warnAfterHours</code>, <code>includeKey</code>,
+                <code>destination</code> (<code>kind</code>: <code>sftp</code> or empty, <code>host</code>,
+                <code>port</code>, <code>user</code>, <code>auth</code>: <code>key</code> | <code>password</code>,
+                <code>secret</code>, <code>hostKey</code>, <code>path</code>). Only the keys sent change; answers as
+                <code>GET /api/backups</code> (<strong>admin</strong>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/backups/passphrase</code></td>
+              <td>
+                <code>{ passphrase }</code>: set or change the backup passphrase, 12 characters at least
+                (<strong>admin</strong>). It is never returned.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/backups/run</code></td>
+              <td>
+                Ask for a backup now (<strong>admin</strong>). <code>202</code> with its row, <code>queued</code>: the
+                server takes it within seconds and tests it; read <code>GET /api/backups</code> until it is
+                <code>done</code> and <code>passed</code>. <code>409</code> while no passphrase is set or one is already
+                being taken.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/backups/{id}/verify</code></td>
+              <td>Ask for the restore test of a backup again (<strong>admin</strong>); <code>202</code>.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/backups/{id}/download</code></td>
+              <td>The file of a backup, encrypted as it is on the disk (<strong>admin</strong>; audited).</td>
+            </tr>
+            <tr>
+              <td><code>DELETE /api/backups/{id}?confirm={id}</code></td>
+              <td>
+                Delete a backup and, at the next pass, its copy off the server (<strong>admin</strong>).
+                <code>confirm</code> must be its name; the last good backup also needs <code>lastGood=true</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/backups/destination/test</code></td>
+              <td>
+                Try the saved destination (<strong>admin</strong>): <code>{ ok, message, hostKey, fingerprint }</code>.
+                The automation worker does it, so the answer can take some seconds. There is no route that restores a
+                backup: that is done on the server (<code>deploy/restore.sh</code>).
+              </td>
             </tr>
             <tr>
               <td><code>GET /api/audit</code></td>

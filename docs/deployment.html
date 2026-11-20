@@ -42,7 +42,13 @@
         <ol>
           <li><a href="#quick-start-with-docker-podman">Quick start with Docker / Podman</a></li>
           <li><a href="#production-deployment">Production deployment</a></li>
-          <li><a href="#docker-podman-in-production">Docker / Podman in production: TLS, start on boot, backups</a></li>
+          <li><a href="#docker-podman-in-production">Docker / Podman in production: TLS, start on boot</a></li>
+          <li><a href="#backups">Backups: what they hold, where they go, how they are tested</a></li>
+          <li><a href="#backup-second-host">The copy off the server: SFTP to a second host</a></li>
+          <li><a href="#restore-a-backup">Restoring</a></li>
+          <li><a href="#first-host-gone">The first host is gone: bring Nik up on the second</a></li>
+          <li><a href="#upgrades">Updates, and the snapshot before each</a></li>
+          <li><a href="#upgrade-went-wrong">An upgrade went wrong</a></li>
           <li><a href="#upgrading-to-43">Upgrading to 4.3</a></li>
           <li><a href="#upgrading-to-44">Upgrading to 4.4</a></li>
           <li><a href="#upgrading-to-42">Upgrading to 4.2</a></li>
@@ -52,7 +58,7 @@
           <li><a href="#upgrading-to-30">Upgrading to 3.0</a></li>
           <li><a href="#upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18</a></li>
           <li><a href="#manual-deployment-on-rhel">Manual deployment on RHEL</a></li>
-          <li><a href="#full-platform-backup">The in-app full backup</a></li>
+          <li><a href="#full-platform-backup">The export of content as one file</a></li>
         </ol>
       </nav>
       <h2 id="quick-start-with-docker-podman">Quick start with Docker / Podman</h2>
@@ -151,94 +157,373 @@ podman-compose up -d --build  # or: podman compose up -d --build
           mount, add <code>:Z</code> to that mount.
         </li>
       </ul>
-      <p><strong>Start on boot and nightly backups (systemd).</strong> From the repository root, as root:</p>
+      <p><strong>Start on boot (systemd).</strong> From the repository root, as root:</p>
       <pre><code class="language-bash">sudo deploy/install-systemd.sh
 </code></pre>
       <p>
-        It installs and enables three units, with the repository path and the compose command (<code
+        It installs and enables <code>nik.service</code>, with the repository path and the compose command (<code
           >podman compose</code
-        >, or <code>docker compose</code> where Podman is absent) filled in:
+        >, or <code>docker compose</code> where Podman is absent) filled in: <code>compose up -d</code> at boot,
+        <code>compose down</code> at shutdown. Options: <code>--dir</code>, <code>--compose</code>,
+        <code>--uninstall</code>. Before 6.7 it also installed a nightly <code>nik-backup.timer</code>; the server takes
+        its backups itself now, and the script removes that timer where an earlier run left it.
       </p>
+      <h3 id="backups">Backups</h3>
+      <p>
+        <strong
+          >A backup can only be read with its passphrase. Whoever restores types it; if it is lost, every backup made
+          under it is lost, and nobody can recover it.</strong
+        >
+        Write it down when you set it, and keep it away from the server.
+      </p>
+      <p>
+        Nik takes its own backups. Nothing has to be installed for it: the API container writes them, on a schedule,
+        into the backup directory; it tests each one by restoring it; the automation container sends a copy to another
+        machine; and every administrator is told when any of this goes wrong. It is set and watched in
+        <strong>Settings → System → Backup</strong> (<a href="guide.html#backup">the screen</a>).
+      </p>
+      <h4 id="backup-contents">What a backup holds, and what it does not</h4>
+      <p>One file, <code>nik-YYYYMMDD-HHMMSS.nikbak</code>, encrypted from its first byte of content to its last:</p>
       <ul>
-        <li><code>nik.service</code> — <code>compose up -d</code> at boot, <code>compose down</code> at shutdown;</li>
         <li>
-          <code>nik-backup.timer</code> + <code>nik-backup.service</code> — <code>deploy/backup.sh</code> every night at
-          02:30 (a run missed while the server was off happens at the next boot).
+          <strong>the database</strong>, as it was at one moment: incidents, accounts, settings, the audit log, the
+          analyses, playbooks, connectors and their instances (whose secrets are in it as they are in the database:
+          encrypted under <code>SECRET_KEY</code>);
+        </li>
+        <li>
+          <strong>the store of files</strong>, whole: samples (<strong>live malware</strong>), e-mails, captures,
+          mailboxes, screenshots, added rule files;
+        </li>
+        <li>
+          <strong>a manifest</strong>: the version of Nik, the revision of the database, when it was taken, the number
+          of rows of every table, the number and size of the files, and the size and SHA-256 of every part.
         </li>
       </ul>
+      <p>Beside it, <code>nik-….json</code> says in clear what the file is and how its restore test went. No secret.</p>
+      <p><strong>Not in a backup</strong>, to keep somewhere else:</p>
+      <ul>
+        <li>
+          <code>.env</code>, and in it <code>SECRET_KEY</code>. Without the <code>SECRET_KEY</code> the backup was made
+          under, a restored server works, but the stored secrets (keys of instances, credentials, TLS key logs) cannot
+          be read and have to be entered again. The screen can put the key <em>inside</em> the encrypted backup (<strong
+            >Include SECRET_KEY</strong
+          >, off by default): then a backup and its passphrase are enough to bring everything back, and are also enough,
+          for whoever holds both, to read every stored secret. It is never written anywhere in clear;
+        </li>
+        <li>the TLS certificate and its key (the <code>web-certs</code> volume, or the files you mounted);</li>
+        <li>your Compose overrides and anything else you added to the deployment.</li>
+      </ul>
+      <h4 id="backup-directory">Where backups go</h4>
       <p>
-        Options: <code>--backup-dir /srv/nik-backups</code> (default <code>/var/backups/nik</code>),
-        <code>--keep-days 30</code> (default 14), <code>--backup-time 03:15</code>, <code>--no-backup</code>,
-        <code>--uninstall</code>. Check with <code>systemctl status nik.service nik-backup.timer</code> and
-        <code>journalctl -u nik-backup</code>; run a backup now with <code>systemctl start nik-backup.service</code>.
+        By default into the volume <code>backups</code> of the stack. A backup on the disk it protects is of little use
+        when that disk fails: point the stack at another disk, or at a mount of another machine, in <code>.env</code>:
+      </p>
+      <pre><code class="language-bash">NIK_BACKUP_DIR=/srv/nik-backups     # a directory of the host, in place of the volume
+</code></pre>
+      <p>
+        The API container hands the directory to its unprivileged user (uid 10001 inside the container) at its first
+        start; with rootless Podman create it as the user that runs the stack. Where SELinux is enforcing, label a
+        directory of the host for the containers once: <code>chcon -Rt container_file_t /srv/nik-backups</code> (the
+        volume needs nothing). The automation container mounts the same place read-only. The room a backup needs is
+        about the size of the database plus the size of the store (rows compress, samples mostly do not), and Nik
+        refuses to start one the directory has no room for.
+      </p>
+      <h4 id="backup-schedule">When, how many, and the restore test</h4>
+      <p>
+        The schedule is set on the screen: every day at a time (02:30 UTC until you change it), every week, or every few
+        hours, in the time zone you name. It runs once a passphrase is set. <strong>Back up now</strong> and
+        <code>deploy/backup.sh</code> ask for one more, the same way. Never two at once, and none while a release is
+        migrating the database.
       </p>
       <p>
-        <strong>Backups &amp; restore.</strong> Each backup is a directory <code>nik-YYYYMMDD-HHMMSS/</code>, readable
-        by root only, with:
+        A file is written under <code>….nikbak.partial</code> and renamed when its last byte is on the disk: a file with
+        the name of a backup is always a whole one, and what a run that died left is removed by the next.
       </p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>File</th>
-              <th>Content</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>db.dump</code></td>
-              <td>
-                PostgreSQL dump (<code>pg_dump -Fc</code>): incidents, users, settings, audit log, sample analyses, the
-                index of every mailbox, and everything automation is made of: playbooks, scripts, connectors and
-                <strong>connections</strong>, whose credentials are in it encrypted with a key derived from
-                <code>SECRET_KEY</code>. Restore the dump with the <code>env</code> file of the same backup, or the
-                connections cannot be read
-              </td>
-            </tr>
-            <tr>
-              <td><code>samples.tar</code></td>
-              <td>
-                the sample store, whole: samples, e-mails, captures, the mailboxes (<code>_mailboxes</code>) and the
-                screenshots. <strong>Live malware</strong>: keep the backups private
-              </td>
-            </tr>
-            <tr>
-              <td><code>env</code></td>
-              <td>the <code>.env</code> file (secrets, database password)</td>
-            </tr>
-            <tr>
-              <td><code>SHA256SUMS</code></td>
-              <td>checksums: <code>sha256sum -c SHA256SUMS</code> before restoring</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
       <p>
-        <code>deploy/backup.sh</code> also runs by hand (<code>ENGINE</code>, <code>BACKUP_DIR</code>,
-        <code>KEEP_DAYS</code> in the environment). It reaches the <code>db</code> and <code>api</code> containers with
-        <code>podman exec</code> / <code>docker exec</code>, found by their Compose labels, never through
-        <code>compose exec</code>: <code>podman-compose</code> prints diagnostics on stdout, which would corrupt the
-        dump. To restore on a running stack (<code>B</code> = the backup directory; take the container names from
-        <code>podman ps</code> or <code>docker ps</code>: podman-compose calls them <code>nik_db_1</code>, Docker
-        Compose <code>nik-db-1</code>):
+        <strong>Each backup is tested at once.</strong> The file is read back from the directory; every chunk is
+        decrypted; the size and checksum of every part are compared; the database is restored into a scratch database
+        (<code>nik_scratch_…</code>, owned by a role made for it that owns nothing else, dropped whatever happens),
+        where its schema, its revision and the number of rows of every table are compared with what was written, and a
+        few questions are asked of it; every file of the store is compared with its checksum. The test reads the whole
+        backup whatever its size. A backup that fails it is marked, is not counted by the retention, and the
+        administrators are told.
+      </p>
+      <p>
+        <strong>What is kept:</strong> the latest N good backups (7), and the latest good one of each of the last M
+        weeks (4). The last good backup is never removed, however many newer ones failed. Snapshots taken before
+        upgrades have a count of their own (3).
+      </p>
+      <p>
+        <strong>How long it takes.</strong> A backup reads the database and the store once, and its test reads the file
+        once: both grow with the amount of data, and with little else. On the machine the release was tested on (a
+        laptop with an NVMe disk), a store of 800 MB was written in 4 seconds and tested in 2; a database of 1.3 GB
+        (three million rows) was written in 9 seconds, into a file of 118 MB, and tested in 16. Tens of gigabytes are a
+        matter of minutes there, and of the speed of the disks on a server. Each backup says how long it and its test
+        took (<code>summary.seconds</code> and <code>verify.seconds</code> in <code>GET /api/backups</code>).
+      </p>
+      <h4 id="backup-notices">What the administrators are told</h4>
+      <p>
+        One notice inside Nik when a problem appears, one when it is solved, nothing in between: a backup failed; a
+        backup failed its restore test; the schedule passed and none started; the last good backup is older than the age
+        set on the screen (36 hours); the backup directory is nearly full; the copy off the server failed or has waited
+        six hours; no passphrase is set a day after the server was installed. The API container and the automation
+        container both watch, so the notice comes even when one of the two is the thing that stopped. Every run, test,
+        copy, download, deletion and change of settings is in the audit log (<code>backup.*</code>).
+      </p>
+      <h4 id="backup-second-host">The copy off the server: SFTP to a second host</h4>
+      <p>
+        The backend has no route outside its networks, and backups do not give it one: the copy is sent by the
+        <code>automation</code> container, the one that already has a way out, straight to the host you name (SFTP does
+        not go through an HTTP proxy: the second host must be reachable from the first). On the second host:
+      </p>
+      <ol>
+        <li>
+          Create an account that can do nothing else, and the directory:
+          <pre><code class="language-bash">sudo useradd --system --create-home --shell /usr/sbin/nologin nikbackup
+sudo mkdir -p /srv/nik-backups/incoming
+sudo chown root:root /srv/nik-backups &amp;&amp; sudo chmod 755 /srv/nik-backups
+sudo chown nikbackup: /srv/nik-backups/incoming &amp;&amp; sudo chmod 700 /srv/nik-backups/incoming
+</code></pre>
+        </li>
+        <li>
+          On any machine, make a key for this alone, with no passphrase of its own (Nik keeps it encrypted):
+          <pre><code class="language-bash">ssh-keygen -t ed25519 -N "" -C nik-backups -f nik-backups-key
+</code></pre>
+          Put <code>nik-backups-key.pub</code> in <code>/home/nikbackup/.ssh/authorized_keys</code> on the second host.
+        </li>
+        <li>
+          Limit the account to SFTP inside that directory, in <code>/etc/ssh/sshd_config</code>, then reload sshd:
+          <pre><code>Match User nikbackup
+    ChrootDirectory /srv/nik-backups
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+    X11Forwarding no
+    PasswordAuthentication no
+</code></pre>
+        </li>
+        <li>
+          Read the host key of the second host <em>on the second host</em>:
+          <code>cat /etc/ssh/ssh_host_ed25519_key.pub</code> (the two first words), or its fingerprint with
+          <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>.
+        </li>
+        <li>
+          In <strong>Settings → Backup</strong>, turn on the copy: host, port, account <code>nikbackup</code>, directory
+          <code>/incoming</code> (the path as the account sees it inside its chroot), the private key pasted (or the
+          name of a stored credential), and the host key from step 4. Save, then <strong>Test the destination</strong>:
+          it signs in, writes a small file, reads it back and removes it, and shows the key the server presented.
+        </li>
+      </ol>
+      <p>
+        Nik never trusts a host key on first sight: a destination with no pinned key receives nothing, and one that
+        presents another key receives nothing and the administrators are told. A backup is sent once it has passed its
+        restore test, as <code>&lt;name&gt;.nikbak.partial</code> renamed at the end; a transfer that is cut is resumed
+        where it stopped (three times in a pass, then again an hour later); what arrived is read back and its size and
+        SHA-256 are compared with the local file before the copy is counted. The <code>.json</code> of the backup goes
+        beside it. What the retention removes on the first host is removed on the second. Snapshots taken before
+        upgrades are not copied.
+      </p>
+      <p>
+        The directory of the second host then holds, flat: <code>nik-YYYYMMDD-HHMMSS.nikbak</code> and
+        <code>nik-YYYYMMDD-HHMMSS.json</code> for each backup kept.
+      </p>
+      <h4 id="restore-a-backup">Restoring</h4>
+      <p>
+        Restoring is done on the server, from the command line, with the stack stopped: never by a button on a running
+        server. <code>deploy/restore.sh</code> does all of it, with Docker and with Podman, rootless too:
+      </p>
+      <pre><code class="language-bash">deploy/restore.sh nik-20261120-023000                      # a backup of this stack's backup directory
+deploy/restore.sh /mnt/copy/nik-20261120-023000.nikbak     # a file brought from elsewhere
+deploy/restore.sh --inspect nik-20261120-023000            # only read it and say what it holds
+</code></pre>
+      <p>
+        It asks for the passphrase (or reads it from <code>NIK_BACKUP_PASSPHRASE</code> or the file named by
+        <code>NIK_BACKUP_PASSPHRASE_FILE</code>, for a restore nobody attends; never from the command line), stops the
+        stack and starts the database alone, then reads the whole file and compares every checksum.
+        <strong>Nothing is changed before that has passed.</strong> It refuses a database or a store that is not empty
+        unless you add <code>--replace</code>, which replaces both with what the backup holds. The database arrives in
+        one transaction. Then it starts the stack, checks that the server answers, and says what to look at.
+        <code>--database-only</code> leaves the files alone; <code>--no-start</code> leaves the stack stopped;
+        <code>--secret-key</code> first writes the <code>SECRET_KEY</code> a backup holds into
+        <code>.env</code> (keeping the file as it was in <code>.env.before-restore</code>).
+      </p>
+      <p>
+        <strong>Versions.</strong> A backup made by the version that is installed, or by an earlier one, is restored as
+        it was; an older one is migrated by the server at its next start, after a snapshot and a rehearsal, like any
+        upgrade. A backup made by a <em>later</em> version is refused with the version to check out: this code does not
+        know what it holds.
+      </p>
+      <h4 id="first-host-gone">The first host is gone: bring Nik up on the second</h4>
+      <p>
+        What you need: the second host with Docker or Podman and git, the backups it received
+        (<code>/srv/nik-backups/incoming</code>), the backup passphrase, and the <code>SECRET_KEY</code> of the first
+        host (from wherever you keep its <code>.env</code>; or inside the backups, if you chose to include it).
+      </p>
+      <ol>
+        <li>
+          Get the code, at the version that took the backup or a later one (the <code>.json</code> beside each backup
+          names it, in clear):
+          <pre><code class="language-bash">git clone https://github.com/n36l3c7/Nik.git /opt/Nik &amp;&amp; cd /opt/Nik
+grep '"nik"' /srv/nik-backups/incoming/nik-20261120-023000.json
+git checkout v6.7.0
+</code></pre>
+        </li>
+        <li>
+          Make the <code>.env</code> of this host, then put the old <code>SECRET_KEY</code> in it (skip the edit if the
+          backup holds the key: step 3 writes it):
+          <pre><code class="language-bash">deploy/init-env.sh
+$EDITOR .env        # SECRET_KEY=&lt;the one of the first host&gt;; TLS_HOSTNAME, ports
+</code></pre>
+        </li>
+        <li>
+          Restore the latest backup that is marked verified (<code>"passed": true</code> in its <code>.json</code>):
+          <pre><code class="language-bash">sudo install -d -m 755 /srv/nik-restore
+sudo ln /srv/nik-backups/incoming/nik-20261120-023000.nikbak /srv/nik-restore/    # a link, not a copy
+sudo chmod 644 /srv/nik-restore/nik-20261120-023000.nikbak
+deploy/restore.sh /srv/nik-restore/nik-20261120-023000.nikbak
+# with the key inside the backup:  deploy/restore.sh --secret-key /srv/nik-restore/nik-….nikbak
+</code></pre>
+          The directory of the backup account is closed to every other user, and the restore runs in a container as a
+          user that is nobody on the host: so the file is first given a second name in a folder that is open (it is
+          encrypted). The script says so if it cannot read the file. It builds the images at its first run, asks for the
+          passphrase, restores and starts the stack.
+        </li>
+        <li>
+          Sign in with an account of the first host. Check the list of incidents, open a file of the store, look at
+          <strong>Settings → System → Workers</strong> and at an instance of a connector (its key is readable only with
+          the right <code>SECRET_KEY</code>).
+        </li>
+        <li>
+          Put the TLS certificate in place, point the name of the service at this host, and set up
+          <strong>Settings → Backup</strong> again for where this host should now send its own copies: the destination
+          that was restored is this very machine. Set the passphrase again if <code>SECRET_KEY</code> changed.
+        </li>
+      </ol>
+      <p>
+        <strong>How long.</strong> A restore reads the file twice, once to verify it and once to write. On the machine
+        the release was tested on, the backup of an 800 MB store was restored in 14 seconds and a database of 1.3 GB in
+        12; the stack then starts in under a minute once its images are built. Building all the images on a host that
+        never ran Nik took two minutes there and depends on the network: that, with installing the engine and getting
+        the code, is where the time of a recovery goes, so do it once on the second host before it is needed. What is
+        lost is what was written after the last backup that reached the second host: with a backup every N hours, at
+        most N hours and the time of a backup.
+      </p>
+      <h4 id="reading-a-backup-without-nik">The file format, and reading a backup without Nik</h4>
+      <p>
+        The format is versioned (format 1) and described in full at the top of
+        <code>backend/app/backups/container.py</code>, which is also a program that needs only Python and the
+        <code>cryptography</code> package, and can be copied out and run alone:
+      </p>
+      <pre><code class="language-bash">python container.py list nik-20261120-023000.nikbak            # the parts, their sizes and checksums
+python container.py extract nik-20261120-023000.nikbak out/    # every part as a file, and manifest.json
+</code></pre>
+      <p>
+        In short: a clear header (format, cipher, how the key is derived, nothing secret), then the content in chunks of
+        one megabyte, each encrypted and authenticated with AES-256-GCM under a key derived from the passphrase with
+        scrypt and a salt of the file. The number of a chunk and whether it is the last are part of what is
+        authenticated, so a file that was changed, reordered or cut short is refused. Inside: the description of the
+        database schema (<code>db/schema.json</code>), one part for each table in the text format of PostgreSQL's
+        <code>COPY</code> (<code>db/&lt;table&gt;.copy</code>, loadable with <code>\copy</code>), the store as a tar
+        (<code>store.tar</code>) and its index. A later Nik reads the backups of an earlier one.
+      </p>
+      <p>
+        The database part is not a <code>pg_dump</code>: the image holds no PostgreSQL client. It carries tables,
+        columns, defaults, constraints, indexes, sequences, enumerated types and extensions, which is all Nik makes, and
+        a backup stops with a sentence if the database holds anything else (a view, a trigger, a function of your own, a
+        table in another schema) instead of leaving it out. Owners and privileges are not carried: everything belongs to
+        the role that restores.
+      </p>
+      <h4 id="backup-before-67">A backup taken before 6.7</h4>
+      <p>
+        The directories <code>deploy/backup.sh</code> wrote before 6.7 (<code>db.dump</code>, <code>samples.tar</code>,
+        <code>env</code>, <code>SHA256SUMS</code>) stay where they are, unencrypted, and are restored as before, with
+        the version that wrote them (<code>B</code> = the backup directory):
       </p>
       <pre><code class="language-bash">cd &quot;$B&quot; &amp;&amp; sha256sum -c SHA256SUMS
 podman exec -i nik_db_1 pg_restore -U nik -d nik --clean --if-exists &lt; &quot;$B/db.dump&quot;
 podman exec -i nik_api_1 tar -C /app/samples -xf - &lt; &quot;$B/samples.tar&quot;
-podman restart nik_api_1    # also gives the restored samples their permissions
+podman restart nik_api_1
 </code></pre>
       <p>
-        On a new server, put <code>env</code> back as <code>.env</code> before the first <code>compose up</code>, so the
-        database password matches the dump. The in-app <strong>Full backup</strong> (<a
-          href="deployment.html#full-platform-backup"
-          >full platform backup</a
-        >) remains the way to move data across database engines; it does not include the sample files.
+        Once the server has taken and verified backups of its own, remove them: they hold the samples and the
+        <code>.env</code> in clear.
       </p>
-      <p><strong>Updates:</strong></p>
+      <h4 id="upgrades">Updates, and the snapshot before each</h4>
       <pre><code class="language-bash">git pull
 podman compose up -d --build    # rebuild images, recreate containers, keep data
 </code></pre>
-      <p>Release notes say when an update needs more than this, as 4.1, 3.0 and the move to PostgreSQL 18 below do.</p>
+      <p>
+        Release notes say when an update needs more than this. When a release changes the database, the API container
+        does this before it serves, and says each step in its log (<code>compose logs api</code>):
+      </p>
+      <ol>
+        <li>
+          it takes a lock, so that a second instance waits and no backup starts; it checks that the database is at a
+          revision it knows, that the server is a PostgreSQL it runs on, and that the backup directory has room;
+        </li>
+        <li>
+          it takes a <strong>snapshot</strong> of the database into the backup directory
+          (<code>nik-upgrade-….nikbak</code>, marked <em>Before the upgrade from X to Y</em>), in the format of every
+          backup, encrypted with the backup passphrase, or with a key derived from <code>SECRET_KEY</code> while no
+          passphrase is set (the first upgrade from 6.6): never in clear. The files are not in it: no migration touches
+          them;
+        </li>
+        <li>
+          it <strong>rehearses</strong>: the snapshot is restored into a scratch database (<code>nik_rehearsal_…</code>)
+          and the migrations are run there;
+        </li>
+        <li>only then it migrates the database itself.</li>
+      </ol>
+      <p>
+        The snapshot and the rehearsal add to that start the time of a backup of the database alone and of its restore,
+        and the migrations run twice: about two seconds in all for a small database on the machine the release was
+        tested on; for a database of 1.3 GB, 9 seconds for the snapshot and, measured as the restore test of a backup of
+        that database, about 16 for the restore of the rehearsal. On a database too large to copy at every upgrade,
+        <code>NIK_UPGRADE_REHEARSAL=false</code> in <code>.env</code> skips step 3, never the snapshot. If the role Nik
+        uses may not create a database (an external PostgreSQL), the rehearsal is skipped with a warning in the log;
+        <code>ALTER ROLE nik CREATEDB</code> gives it back.
+      </p>
+      <p>
+        While a long upgrade runs the API container does not answer its health check yet, and Compose may call it
+        <em>unhealthy</em> after a few minutes: it is not restarted, and its log says where it is. The automation
+        container waits until the database is at the revision of its code before it runs anything.
+      </p>
+      <h4 id="upgrade-went-wrong">An upgrade went wrong</h4>
+      <p>
+        When the rehearsal or the migrations fail, the API container does not exit and restart for ever: it stays up,
+        says what happened in its log under <code>NIK DID NOT START: THE UPGRADE WAS STOPPED</code>, and answers every
+        request with a sentence, which the web page shows in place of the sign-in.
+      </p>
+      <ol>
+        <li>Read the reason: <code>podman compose logs api</code>. It says which of the two cases this is.</li>
+        <li>
+          <strong>The rehearsal failed</strong> (<em>the migrations fail on a copy of this database</em>): the database
+          was never touched and there is nothing to put back. Go back to the version that worked and start it:
+          <pre><code class="language-bash">git checkout v6.6.0 &amp;&amp; podman compose up -d --build
+</code></pre>
+          Then report the lines of the log.
+        </li>
+        <li>
+          <strong>The migrations failed on the database itself</strong>, or the new version started and you want the old
+          one back: list the snapshots, and put back the one taken before the upgrade:
+          <pre><code class="language-bash">deploy/rollback.sh                                   # lists them, with the version each goes with
+deploy/rollback.sh nik-upgrade-20261120-101500
+</code></pre>
+          It stops the stack, verifies the snapshot and replaces the database with it (one transaction), checks out the
+          tag the snapshot names when the folder is a git clone with nothing uncommitted (otherwise it tells you exactly
+          which version to put there, and leaves the stack stopped), starts the stack and checks that the server
+          answers. <code>--no-checkout</code> never touches the code. Running it twice does no harm.
+        </li>
+        <li>
+          Sign in and look at the latest incidents.
+          <strong>What was written after the upgrade is not in the snapshot</strong>: it is lost. The files of the store
+          are untouched; no release so far changes a file that is there, and a rollback refuses a snapshot whose upgrade
+          did.
+        </li>
+        <li>
+          A snapshot taken while no passphrase was set is read with the <code>SECRET_KEY</code> of <code>.env</code>;
+          otherwise the rollback asks for the backup passphrase.
+        </li>
+      </ol>
       <h4 id="upgrading-to-43">Upgrading to 4.3</h4>
       <p>
         Release 4.3 needs nothing more than the two commands above. The migrations <code>0028_fields_types</code> and
@@ -803,7 +1088,7 @@ podman compose up -d
       </ol>
       <p><code>sudo deploy/upgrade-postgres.sh</code></p>
       <p>
-        It takes a full backup with <code>deploy/backup.sh</code> (under <code>/var/backups/nik</code>, or
+        It dumps the database with <code>pg_dump</code> (under <code>/var/backups/nik</code>, or
         <code>BACKUP_DIR</code>), counts the rows of every table, stops the stack, starts PostgreSQL 18 on the new
         volume, restores the dump, compares the row counts and starts the whole stack again. It stops at the first error
         and deletes nothing. Running it again is always safe: it carries on from where a previous run stopped, or says
@@ -830,8 +1115,8 @@ podman compose up -d
       <p>
         <strong>Rollback</strong> (within those 14 days): go back to the previous release and start it; it runs
         PostgreSQL 16 on the untouched <code>db-data</code> volume. Anything recorded after the upgrade is not in it:
-        export the incidents you need first (incident JSON export, or the in-app <strong>Full backup</strong>, which
-        restores across database versions).
+        export the incidents you need first (incident JSON export, or the
+        <a href="#full-platform-backup">export of content as one file</a>, which loads across database versions).
       </p>
       <pre><code class="language-bash">podman compose down
 git checkout v2.12.1
@@ -854,10 +1139,10 @@ podman compose up -d --build
       </div>
       <p>
         Because incidents, users and the audit log live in <strong>PostgreSQL on the server</strong>, back up the
-        <strong>database</strong> (<code>pg_dump</code>) or use the in-app <strong>Full backup</strong> (<a
-          href="deployment.html#full-platform-backup"
-          >full platform backup</a
-        >) — the per-incident JSON export (<a href="developer.html#incident-export-import-json"
+        <strong>database</strong> and the sample store with the
+        <a href="#backups">backups Nik takes by itself</a> (Settings → System → Backup, with
+        <code>BACKUP_DIR</code> set) — the per-incident JSON export (<a
+          href="developer.html#incident-export-import-json"
           >incident export format</a
         >) is an exchange/archival format, not the primary backup.
       </p>
@@ -1124,31 +1409,37 @@ sudo systemctl restart nik-api.service
 </code></pre>
       <p>
         Upgrades do <strong>not</strong> wipe data: everything persists in PostgreSQL and in the sample store, and the
-        service upgrades the database schema when it starts (<code>alembic upgrade head</code>, in the unit). Take a
-        <code>pg_dump</code> and a copy of <code>/var/lib/nik/samples</code> before upgrading: that is the rollback
-        point.
+        service upgrades the database schema when it starts (<code>alembic upgrade head</code>, in the unit). Put
+        <code>python -m app.backups.upgrade</code> in its place in the unit, with <code>BACKUP_DIR</code> set to a
+        directory the <code>nik</code> user can write, to get what the container does: a
+        <a href="#upgrades">snapshot of the database and a rehearsal of the migrations</a> before each upgrade. The
+        backups of <a href="#backups">Settings → Backup</a> work the same without containers (the copy off the server
+        then leaves from the API process, with <code>AUTOMATION_WORKER=inline</code>);
+        <code>deploy/restore.sh</code> and <code>deploy/rollback.sh</code> are written for the Compose stack: here, run
+        <code>python -m app.backups.restore restore &lt;file&gt;</code> from <code>/opt/nik/backend</code> as the
+        <code>nik</code> user, with the service stopped.
       </p>
       <hr />
-      <h2 id="full-platform-backup">Full platform backup</h2>
+      <h2 id="full-platform-backup">The export of content as one file</h2>
       <p>
-        Admins can export and restore the <strong>entire platform</strong> — every incident (imported artifacts, flags
-        and notes included), every user account, the audit log and the shared detection settings — from the sidebar's
-        <strong>Full backup</strong> button. Typical uses: a safety copy before an upgrade, or moving a deployment to
-        another machine (including SQLite dev → PostgreSQL production, since the backup is database-agnostic).
+        At the foot of <strong>Settings → System → Backup</strong>, under <em>Export as one file</em>, admins can write
+        every incident (imported artifacts, flags and notes included), every user account, the audit log and the shared
+        detection settings to one JSON file, and add the content of such a file to another server. It was called
+        <strong>Full backup</strong>
+        before 6.7 and works as it did. Its use is moving content to another Nik (including SQLite dev → PostgreSQL
+        production, since the file is database-agnostic).
       </p>
       <blockquote>
         <p>
-          Routine upgrades do <strong>not</strong> require this: data persists in PostgreSQL across frontend/backend
-          updates and container rebuilds. The full backup is insurance and a migration vehicle, complementary to
-          <code>pg_dump</code>.
+          <strong>It is not a backup of the server.</strong> The <a href="#backups">backups Nik takes by itself</a> hold
+          the whole database and every file, are encrypted, and are tested. This file is neither.
         </p>
         <p>
           <strong>What it does not contain.</strong> The envelope holds the incident documents, the users, the audit log
           and the settings. It does not hold the files of the sample store (samples, e-mails, captures), their analyses,
           the registry of artifacts, the rule sets, the API keys, the webhooks or the threat-intelligence keys. An
           incident restored from it on another server shows its evidence tabs, flags and notes, and references to
-          samples, e-mails and captures that are not there. For a backup of a server, use
-          <code>deploy/backup.sh</code> (the database, the sample store and <code>.env</code>).
+          samples, e-mails and captures that are not there.
         </p>
       </blockquote>
       <h3 id="export">Export</h3>
@@ -1172,26 +1463,31 @@ sudo systemctl restart nik-api.service
         ⚠️ The file contains <strong>bcrypt password hashes</strong>: treat it like a database dump (store it encrypted
         / access-controlled).
       </p>
-      <h3 id="restore">Restore</h3>
+      <h3 id="restore">Import</h3>
       <p>
-        <code>POST /api/backup/import</code> (admin only, logged as <code>backup.import</code>)
-        <strong>replaces all current data</strong> with the file's content, in a single all-or-nothing transaction. The
-        UI asks for explicit confirmation and shows what the file contains before sending anything.
+        <code>POST /api/backup/import</code> (admin only, logged as <code>backup.import</code>) <strong>adds</strong>
+        what the file holds to the server, in a single all-or-nothing transaction. The screen shows what the file
+        contains and asks before sending anything.
       </p>
-      <p>Guarantees:</p>
       <ul>
-        <li><strong>Atomic</strong> — on any validation or database error, nothing is changed.</li>
+        <li>An incident whose id is not on the server is added, with its number when that number is free.</li>
         <li>
-          <strong>No lockout</strong> — the importing admin stays signed in: if their username exists in the backup, the
-          session re-attaches to that account (whose password becomes the one from the backup); otherwise their current
-          account is re-inserted unchanged alongside the imported users.
+          An account whose name is not on the server is added, with the roles and the password hash of the file: it
+          signs in with the password it had on the other server.
         </li>
+        <li>An audit entry that is not on the server is added.</li>
+        <li>The detection settings of the file are taken only by a server that has none.</li>
         <li>
-          <strong>Sessions are reset</strong> — every other analyst must sign in again (with the credentials from the
-          backup).
+          <strong>Nothing that is on the server is changed or deleted</strong>: an incident or an account that exists
+          stays as it is, and so do sessions, second factors, settings, credentials and everything else the file knows
+          nothing of. The answer says how many of each were added and how many were skipped.
         </li>
       </ul>
-      <p>After a successful restore the app reloads and every context refetches the restored data.</p>
+      <p>
+        <strong>Before 6.7 this import replaced the server</strong>: it deleted every account, every incident and every
+        row of settings and made them again from the file, so whatever the file did not carry was lost. It no longer
+        does. To put a server back as it was, restore a <a href="#restore-a-backup">backup</a>.
+      </p>
     </main>
 
     <footer class="site-footer">

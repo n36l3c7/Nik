@@ -189,7 +189,8 @@ def test_a_backup_carries_the_roles_and_an_older_one_is_read(admin: TestClient):
     assert by_name["vera"]["roles"] == ["viewer", "audit"] and "role" not in by_name["vera"]
     assert by_name["admin"]["roles"] == ["admin"]
 
-    # A backup of a release before 4.0 has the single role only, and is still restored.
+    # A file of a release before 4.0 has the single role only, and is still read. The import adds the
+    # accounts that are not here; one that is here keeps its roles, whatever the file says of it.
     for user in backup["users"]:
         del user["roles"]
     by_name["admin"]["role"] = "admin"
@@ -197,13 +198,16 @@ def test_a_backup_carries_the_roles_and_an_older_one_is_read(admin: TestClient):
     backup["users"].append(
         {"id": "u9", "username": "paul", "passwordHash": by_name["vera"]["passwordHash"], "role": "analyst"}
     )
+    backup["users"].append(
+        {"id": "u10", "username": "rita", "passwordHash": by_name["vera"]["passwordHash"], "role": "admin"}
+    )
     assert admin.post("/api/backup/import", json=backup).status_code == 200
     users = {u["username"]: u["roles"] for u in admin.get("/api/users").json()["users"]}
-    assert users == {"admin": ["admin"], "vera": ["admin"], "paul": ["analyst"]}
+    assert users == {"admin": ["admin"], "vera": ["viewer", "audit"], "paul": ["analyst"], "rita": ["admin"]}
 
 
-def test_the_admin_who_restores_a_backup_keeps_the_admin_role(admin: TestClient):
+def test_the_admin_who_imports_a_file_is_not_changed_by_it(admin: TestClient):
     backup = admin.get("/api/backup/export").json()
     backup["users"][0]["roles"] = ["viewer"]
     assert admin.post("/api/backup/import", json=backup).status_code == 200
-    assert admin.get("/api/auth/me").json()["user"]["roles"] == ["viewer", "admin"]
+    assert admin.get("/api/auth/me").json()["user"]["roles"] == ["admin"]

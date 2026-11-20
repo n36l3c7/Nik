@@ -216,8 +216,8 @@
 │   └── sandbox/                    # scripts of playbooks: Dockerfile (Python and nothing else),
 │                                   #   harness.py (the child a script runs in), runner.py (the limits),
 │                                   #   server.py, tests/
-├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, upgrade-postgres.sh,
-│                                   #   install-systemd.sh + systemd/, check-images.sh
+├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
+│                                   #   upgrade-postgres.sh, install-systemd.sh + systemd/, check-images.sh
 ├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
 ├── docker-compose.yml              # db + api + automation + sandbox + analyzer + capa + docview +
@@ -227,8 +227,8 @@
 </code></pre>
       <p>The backend package, <code>backend/app/</code>:</p>
       <pre><code>app/
-├── main.py                         # FastAPI app and its /api routers (the schema is Alembic's:
-│                                   #   the image runs `alembic upgrade head` at every start)
+├── main.py                         # FastAPI app and its /api routers (the schema is Alembic's: the
+│                                   #   image runs the migrations at every start, backups/upgrade.py)
 ├── core/                           # Infrastructure shared by every feature
 │   ├── config.py                   # Env-based settings (DATABASE_URL, SECRET_KEY, …)
 │   ├── db.py                       # SQLAlchemy engine / session factory
@@ -327,6 +327,14 @@
 ├── artifact_convert.py             # A file artifact analysed as the e-mail or the capture it is
 ├── unpack.py                       # The files of a zip archive, in memory: bounded, a name never a path
 ├── worker_watch.py                 # Workers that stop answering: the check, and the notices to the admins
+├── backups/                        # Backups Nik takes by itself, and upgrades one can come back from
+│   ├── container.py                #   the file format (encrypted, streamed); also runs alone, without Nik
+│   ├── database.py · store.py      #   the database and the store inside a backup; scratch databases
+│   ├── runner.py · policy.py       #   taking one, its restore test; the schedule and the retention
+│   ├── scheduler.py · watch.py     #   the loops; the notices to the admins
+│   ├── offsite.py                  #   the copy off the server (SFTP), sent by the automation worker
+│   ├── upgrade.py                  #   before migrating: snapshot, rehearsal (the entrypoint runs it)
+│   └── restore.py · now.py         #   the command line behind deploy/restore.sh, rollback.sh, backup.sh
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
 ├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&amp;CK) and PDF (WeasyPrint)
@@ -1005,11 +1013,10 @@
         </table>
       </div>
       <p>
-        A backup is therefore two things: a dump of the database and a copy of the sample store (<code
-          >deploy/backup.sh</code
-        >
-        takes both, with <code>.env</code>). The in-app full backup covers the first four tables' worth of work only;
-        see <a href="deployment.html#full-platform-backup">Full platform backup</a>.
+        A backup is therefore two things: the database and the sample store. The server takes both by itself, in one
+        encrypted file, and tests it (<code>backend/app/backups/</code>; see
+        <a href="deployment.html#backups">Backups</a>). The export of content as one file covers the first four tables'
+        worth of work only; see <a href="deployment.html#full-platform-backup">The export of content as one file</a>.
       </p>
       <h2 id="authentication-sessions-and-the-audit-log">Authentication, sessions and the audit log</h2>
       <h3 id="authentication">Authentication</h3>

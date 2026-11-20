@@ -457,6 +457,47 @@ class Lease(Base):
     expires_at: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+class Backup(Base):
+    """A backup Nik took, or is taking (app/backups).
+
+    ``id`` is the name of its file in the backup directory, without the
+    suffix. ``kind`` is ``full`` (the database and the store of files) or
+    ``upgrade`` (the database alone, taken before a release migrated it).
+    The file is the backup; this row is what Nik knows about it: how its
+    restore test went, and where its copy off the server stands. The API
+    process writes every column but ``offsite``, which belongs to the process
+    that sends the copies, so the two never overwrite each other.
+    """
+
+    __tablename__ = "backups"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="full")
+    # queued | running | done | failed
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    nik_version: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    revision: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    # What it is, in words: "Before the upgrade from 6.6.0 to 6.7.0".
+    label: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    requested_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # What it holds, from its manifest: rows, files, bytes, how its key is derived.
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # "" | queued | running | passed | failed
+    verify_state: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    verified_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # What the restore test checked, or why it failed.
+    verify: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # Whether its file is in the backup directory.
+    local: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    # "" (no copy asked for) | pending | copied | failed | delete (the copy is to be removed)
+    offsite_state: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    offsite: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 class SampleCode(Base):
     """Disassembly of a sample by the analyzer worker (rizin): one row per sample.
 
@@ -1739,3 +1780,6 @@ AUTOMATION_TABLES = (
     "approvals",
     "automation_schedules",
 )
+
+# Created by migration 0048_backups where missing.
+BACKUP_TABLES = ("backups",)

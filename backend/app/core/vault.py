@@ -92,6 +92,39 @@ def _rotate_automation(db) -> int:
         settings_row.doc = {**settings_row.doc, "smtp": {**smtp, "password": token}}
         flag_modified(settings_row, "doc")
         moved += 1
+    return moved + _rotate_backups(db)
+
+
+def _rotate_backups(db) -> int:
+    """The secrets of the backups (backups/config.py): the passphrase, the earlier ones, the key of the destination."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from .models import Setting
+
+    row = db.get(Setting, 20)
+    doc = dict((row.doc if row else None) or {})
+    moved = 0
+    token = _rotated(doc.get("passphrase"))
+    if token:
+        doc["passphrase"] = token
+        moved += 1
+    previous = list(doc.get("previous") or [])
+    for index, kept in enumerate(previous):
+        token = _rotated(kept)
+        if token:
+            previous[index] = token
+            moved += 1
+    if previous:
+        doc["previous"] = previous
+    destination = dict(doc.get("destination") or {})
+    secret = str(destination.get("secret") or "")
+    token = _rotated(secret[len("vault:") :]) if secret.startswith("vault:") else None
+    if token:
+        doc["destination"] = {**destination, "secret": "vault:" + token}
+        moved += 1
+    if moved:
+        row.doc = doc
+        flag_modified(row, "doc")
     return moved
 
 

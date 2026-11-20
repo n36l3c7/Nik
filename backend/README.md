@@ -66,15 +66,22 @@ There are no users initially. `GET /api/auth/bootstrap` returns
 created user is forced to the `admin` role. After that, creating/deleting users
 requires an admin session.
 
-## Full backup
+## Backups, and the export of content
+
+The server takes its own backups (`app/backups/`, routes under `/api/backups`):
+the database and the store of files in one encrypted file, on a schedule, each
+tested by restoring it into a scratch database, with a copy sent over SFTP.
+Restoring is done from the command line (`deploy/restore.sh`). See "Backups" in
+the deployment guide (`docs/deployment.html`).
 
 `GET /api/backup/export` (admin only) returns a single JSON envelope with every
 user (password hashes included), incident, audit entry and the shared settings.
-`POST /api/backup/import` (admin only) restores such an envelope, atomically
-replacing all current data; the importing admin's session survives the restore
-and their account is preserved even when absent from the backup. The envelope
-holds no files (samples, e-mails, captures) nor their analyses: see "The in-app
-full backup" in the deployment guide (`docs/deployment.html`).
+`POST /api/backup/import` (admin only) adds the content of such an envelope to
+the server, atomically: the incidents, accounts and audit entries that are not
+there. It changes and deletes nothing (before 6.7 it replaced everything). The
+envelope holds no files (samples, e-mails, captures) nor their analyses: it
+moves content between two servers and is not a backup (see "The export of
+content as one file" in the deployment guide).
 
 ## Configuration
 
@@ -104,8 +111,18 @@ over HTTPS). See `docs/deployment.html` for the full RHEL deployment guide
 
 - **Migrations (Alembic).** `cd backend && alembic upgrade head` applies the
   schema; `alembic revision -m "msg"` (add `--autogenerate`) creates a new one.
-  The Docker image runs `alembic upgrade head` on start (entrypoint) with
-  `RUN_CREATE_ALL=false`; the dev flow keeps `create_all` for zero setup.
+  The Docker image runs `python -m app.backups.upgrade` on start (entrypoint)
+  with `RUN_CREATE_ALL=false`: when there are migrations to run it takes a
+  snapshot of the database into the backup directory, tries the migrations on
+  a copy, and only then runs them. The dev flow keeps `create_all` for zero
+  setup. A migration does not touch the files of the store (the snapshot holds
+  the database alone); the rule and what to do if one must is in
+  `docs/developer.html`.
+- **Backups.** `app/backups/`: the file format (`container.py`, which also
+  runs alone), the database and the store inside it, the runner and its
+  restore test, the schedule and retention (`policy.py`), the notices
+  (`watch.py`), the copy off the server (`offsite.py`), the upgrade
+  (`upgrade.py`) and the command line (`restore.py`, `now.py`).
 - **Tests.** `pip install -r requirements-dev.txt && pytest` (fresh SQLite per
   test). CI runs them on every push (`.github/workflows/ci.yml`).
 - **Observability.** Every response carries `X-Request-ID`; `/api/metrics`

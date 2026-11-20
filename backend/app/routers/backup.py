@@ -1,44 +1,48 @@
-"""Full-platform backup routes (admin only).
+"""Moving content from one Nik to another, as one file (admin only).
 
-``GET /backup/export`` returns a single JSON envelope with EVERYTHING the
-platform stores — users (including their bcrypt password hashes), incidents
-(full documents, imported artifacts included), the audit log and the shared
-settings. ``POST /backup/import`` restores such an envelope, replacing the
-current database content wholesale.
+``GET /backup/export`` returns a single JSON envelope with the incidents (full
+documents, imported artifacts included), the accounts (with their bcrypt
+password hashes), the audit log and the detection settings.
+``POST /backup/import`` **adds** what such a file holds to this server.
 
-Restore semantics (single transaction — all-or-nothing):
+This was the "Full backup" of releases before 6.7, and its import then
+replaced everything: it deleted every account, every incident and every row
+of ``settings`` and made them again from the file. A file that carries four
+things cannot stand for a server that holds many more (second factors,
+sessions, stored credentials, instances, the backup passphrase, whatever a
+later release adds): whatever it did not carry was lost without a word. So
+the import no longer deletes or changes anything:
 
-- All existing rows are deleted (sessions, audit log, incidents, settings,
-  users) and replaced by the imported ones.
-- The importing admin is never locked out: if their username exists in the
-  backup, their session is re-attached to that account (whose password becomes
-  the one from the backup); otherwise their current account is re-inserted
-  unchanged alongside the imported users.
-- The session cookie keeps working across the restore (same token, fresh
-  expiry), so the client only needs to reload its data.
+- an **incident** whose id is not here is added, with the number it had when
+  that number is free; one that is here already is left as it is;
+- an **account** whose name is not here is added, with the roles and the
+  password hash of the file; one that is here is left as it is, password,
+  roles and everything else;
+- an **audit entry** whose id is not here is added;
+- the **detection settings** are taken only by a server that has none yet;
+- nothing else is read from the file, and no table is emptied.
+
+Bringing a server back is the job of the backups Nik takes by itself
+(``app/backups``): they hold the whole database and every file.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Body, Cookie, Depends, HTTPException
-from sqlalchemy import delete as sa_delete
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 
 from ..browser_profiles import normalize_browser_data
-from ..core.config import settings as app_settings
 from ..core.db import get_db
-from ..core.models import AuditEntry, Incident, IocEntry, Setting, User
-from ..core.models import Session as SessionModel
+from ..core.models import AuditEntry, Incident, Setting, User
 from ..core.permissions import RoleError, clean_roles, stored_roles
 from ..core.security import Principal, admin_principal, now_iso
-from ..iocs import reindex_all
+from ..iocs import reindex_incident
 from .incidents import _sync_columns
 from .settings import SETTINGS_ID
 
@@ -77,10 +81,11 @@ def _backup_roles(user: dict) -> list[str]:
 
 @router.get("/export")
 def export_backup(caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
-    """Return a full backup envelope of the platform (admin session or admin key).
+    """Return the incidents, the accounts, the audit log and the detection settings as one
+    envelope (admin session or admin key), to add them to another Nik.
 
     The envelope contains password hashes: treat the downloaded file as a
-    secret, like any database dump.
+    secret. It is not a backup of the server: see the module docstring.
     """
     # The system account of the automation engine is made again where it is needed.
     users = [
@@ -90,7 +95,7 @@ def export_backup(caller: Principal = Depends(admin_principal), db: OrmSession =
     audit = db.scalars(select(AuditEntry).order_by(AuditEntry.at.desc())).all()
     setting_row = db.get(Setting, SETTINGS_ID)
 
-    _log(db, caller.actor, "backup.export", "Exported a full platform backup")
+    _log(db, caller.actor, "backup.export", "Exported incidents, accounts, the audit log and the detection settings")
     db.commit()
 
     return {
@@ -135,7 +140,7 @@ def _validate_envelope(body: dict[str, Any]) -> tuple[list, list, list, dict | N
         return HTTPException(status_code=400, detail=message)
 
     if not isinstance(body, dict) or body.get("type") != BACKUP_TYPE:
-        raise bad("Not a Nik backup file: a full-backup export is expected.")
+        raise bad("Not a file exported by Nik: the export of Settings → Backup is expected.")
 
     users = body.get("users")
     incidents = body.get("incidents", [])
@@ -174,105 +179,46 @@ def import_backup(
     body: dict[str, Any] = Body(...),
     caller: Principal = Depends(admin_principal),
     db: OrmSession = Depends(get_db),
-    nik_session: str | None = Cookie(default=None),
 ) -> dict:
-    """Restore a full backup, replacing ALL current data (admin session or key).
+    """Add the content of an exported file to this server (admin session or key).
 
-    A signed-in admin is preserved and kept logged in across the restore. An
-    admin **API key** has no user account to preserve — the restore simply
-    replaces the users from the backup; the key itself (in a separate table) is
-    untouched, so it keeps working afterwards.
+    Nothing that is here is changed or deleted: what the file holds and the
+    server does not is added, the rest is counted as skipped. All or nothing.
     """
     users, incidents, audit, settings_doc = _validate_envelope(body)
-
-    # Snapshot the importing admin (session callers only) before wiping.
-    session_admin = caller.user
-    keep_admin = (
-        {
-            "id": session_admin.id,
-            "username": session_admin.username,
-            "password_hash": session_admin.password_hash,
-            "created_at": session_admin.created_at,
-            "created_by": session_admin.created_by,
-        }
-        if session_admin is not None
-        else None
-    )
-
+    added = {"users": 0, "incidents": 0, "audit": 0}
     try:
-        # 1. Wipe everything. Sessions first (FK on users). The Core deletes
-        #    bypass the ORM identity map, so detach every tracked object (e.g.
-        #    the `admin` row loaded by require_admin) or re-inserting the same
-        #    primary keys would conflict at flush time.
-        db.execute(sa_delete(SessionModel))
-        db.execute(sa_delete(AuditEntry))
-        db.execute(sa_delete(IocEntry))
-        db.execute(sa_delete(Incident))
-        db.execute(sa_delete(Setting))
-        db.execute(sa_delete(User))
-        db.expunge_all()
-
-        # 2. Insert the imported users.
-        imported_by_name: dict[str, User] = {}
+        names = {str(name).lower() for name in db.scalars(select(User.username))}
+        ids = set(db.scalars(select(User.id)))
         for u in users:
-            row = User(
-                id=str(u["id"]),
-                username=str(u["username"]),
-                password_hash=str(u["passwordHash"]),
-                roles=_backup_roles(u),
-                created_at=str(u.get("createdAt") or now_iso()),
-                created_by=u.get("createdBy"),
+            if str(u["username"]).lower() in names:
+                continue
+            names.add(str(u["username"]).lower())
+            user_id = str(u["id"]) if str(u["id"]) not in ids else str(uuid.uuid4())
+            ids.add(user_id)
+            db.add(
+                User(
+                    id=user_id,
+                    username=str(u["username"]),
+                    password_hash=str(u["passwordHash"]),
+                    roles=_backup_roles(u),
+                    created_at=str(u.get("createdAt") or now_iso()),
+                    created_by=u.get("createdBy"),
+                )
             )
-            db.add(row)
-            imported_by_name[row.username.lower()] = row
+            added["users"] += 1
 
-        # 3. Keep the importing admin signed in and never locked out — but only
-        #    for a session caller. An admin API key has no account to preserve;
-        #    the key itself lives in a separate table and survives the wipe.
-        if keep_admin is not None:
-            session_user = imported_by_name.get(keep_admin["username"].lower())
-            if session_user is None:
-                # Their account is not in the backup: re-insert it unchanged
-                # (with a fresh id if an imported user already took theirs).
-                admin_id = keep_admin["id"]
-                if any(str(u["id"]) == admin_id for u in users):
-                    admin_id = str(uuid.uuid4())
-                session_user = User(
-                    id=admin_id,
-                    username=keep_admin["username"],
-                    password_hash=keep_admin["password_hash"],
-                    roles=["admin"],
-                    created_at=keep_admin["created_at"],
-                    created_by=keep_admin["created_by"],
-                )
-                db.add(session_user)
-            elif "admin" not in stored_roles(session_user.roles):
-                # The backup holds their account without the admin role: they keep it.
-                session_user.roles = clean_roles([*stored_roles(session_user.roles), "admin"])
-
-            # 4. Re-attach the current session token to the surviving account so
-            #    the cookie keeps working after the restore (fresh expiry). Flush
-            #    the users first: sessions.user_id has a FK on users.id.
-            db.flush()
-            if nik_session:
-                created = datetime.now(timezone.utc)
-                expires = created + timedelta(hours=app_settings.SESSION_TTL_HOURS)
-                db.add(
-                    SessionModel(
-                        token=nik_session,
-                        user_id=session_user.id,
-                        created_at=created.isoformat(),
-                        expires_at=expires.isoformat(),
-                    )
-                )
-
-        # 5. Incidents (mirror the scalar columns used for listing/sorting).
-        numbered: set[int] = set()
+        here = set(db.scalars(select(Incident.id)))
+        numbered = {number for number in db.scalars(select(Incident.number)) if number is not None}
+        fresh: list[Incident] = []
         # The ones with a number first, so that those without get numbers after them.
-        incidents = sorted(incidents, key=lambda doc: not isinstance(doc.get("number"), int))
-        for doc in incidents:
-            normalize_browser_data(doc)  # backups taken before 2.0.0
-            # The number it had, when the backup holds one that is still free; a new one otherwise.
+        for doc in sorted(incidents, key=lambda doc: not isinstance(doc.get("number"), int)):
+            if str(doc["id"]) in here:
+                continue
+            here.add(str(doc["id"]))
+            doc = dict(doc)
+            normalize_browser_data(doc)  # files written before 2.0.0
+            # The number it had, when the file holds one that is still free; a new one otherwise.
             number = doc.pop("number", None)
             doc.pop("uuid", None)
             if not isinstance(number, int) or isinstance(number, bool) or number <= 0 or number in numbered:
@@ -282,16 +228,17 @@ def import_backup(
             row = Incident(id=str(doc["id"]), doc=doc, number=number)
             _sync_columns(row)
             db.add(row)
+            fresh.append(row)
+            added["incidents"] += 1
 
-        # 6. Audit log (dedupe ids defensively so one bad file can't 500 us).
-        seen_audit: set[str] = set()
+        seen = set(db.scalars(select(AuditEntry.id)))
         for e in audit:
             if not isinstance(e, dict):
                 continue
             entry_id = str(e.get("id") or uuid.uuid4())
-            if entry_id in seen_audit:
+            if entry_id in seen:
                 continue
-            seen_audit.add(entry_id)
+            seen.add(entry_id)
             db.add(
                 AuditEntry(
                     id=entry_id,
@@ -304,35 +251,45 @@ def import_backup(
                     incident_name=e.get("incidentName"),
                 )
             )
+            added["audit"] += 1
 
-        # The indicator index is derived from the incidents: rebuild it.
+        # The indicators of the incidents that arrived.
         db.flush()
-        reindex_all(db)
+        for row in fresh:
+            reindex_incident(db, row, alerts=False)
 
-        # 7. Shared settings.
-        if settings_doc is not None:
+        settings_taken = False
+        if settings_doc is not None and db.get(Setting, SETTINGS_ID) is None:
             db.add(Setting(id=SETTINGS_ID, doc=settings_doc))
+            settings_taken = True
 
-        # 8. Record the restore itself in the (restored) audit log.
         _log(
             db,
             caller.actor,
             "backup.import",
-            f"Restored a full backup: {len(users)} users, {len(incidents)} incidents, {len(seen_audit)} audit entries",
+            f"Imported a file of content: added {added['users']} of {len(users)} accounts, "
+            f"{added['incidents']} of {len(incidents)} incidents, {added['audit']} of {len(audit)} audit entries; "
+            "nothing that was here was changed",
         )
-
         db.commit()
     except HTTPException:
         db.rollback()
         raise
     except SQLAlchemyError as exc:
         db.rollback()
-        logger.exception("Backup restore failed")
-        raise HTTPException(status_code=400, detail="Restore failed: the backup file is inconsistent.") from exc
+        logger.exception("The import of a file of content failed")
+        raise HTTPException(
+            status_code=400, detail="Import failed: the file is inconsistent. Nothing was changed."
+        ) from exc
 
     return {
-        "users": len(users),
-        "incidents": len(incidents),
-        "audit": len(seen_audit),
-        "settingsRestored": settings_doc is not None,
+        "users": added["users"],
+        "incidents": added["incidents"],
+        "audit": added["audit"],
+        "skipped": {
+            "users": len(users) - added["users"],
+            "incidents": len(incidents) - added["incidents"],
+            "audit": len(audit) - added["audit"],
+        },
+        "settingsRestored": settings_taken,
     }

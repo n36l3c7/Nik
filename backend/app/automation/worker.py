@@ -356,6 +356,25 @@ def start_inline() -> None:
     threading.Thread(target=loop, name="nik-automation", daemon=True).start()
 
 
+def _wait_for_the_schema() -> None:
+    """The backend applies the migrations; this process waits for them. A backend that stopped an
+    upgrade (backups/upgrade.py) still answers its health check, so that the web page can say what
+    happened: the database is then not the one this code expects, and nothing must run on it."""
+    from ..backups import database
+
+    said = False
+    while not _stopping.is_set():
+        try:
+            if database.about()["revision"] == database.head_revision():
+                return
+        except Exception:  # noqa: BLE001 - the database is not there yet: wait as for a migration
+            pass
+        if not said:
+            logger.warning("The database is not at the revision of this version: waiting for the backend to migrate it")
+            said = True
+        _stopping.wait(5)
+
+
 def main() -> None:
     from ..core.observability import setup_logging
 
@@ -364,6 +383,11 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: _stopping.set())
     signal.signal(signal.SIGINT, lambda *_: _stopping.set())
     logger.info("Automation worker started")
+    _wait_for_the_schema()
+    # The copies of the backups off the server leave from here: this container has the way out.
+    from ..backups import scheduler as backup_scheduler
+
+    backup_scheduler.start_shipper()
     loop()
     logger.info("Automation worker stopped")
 

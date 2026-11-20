@@ -1547,13 +1547,15 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           2.1, MISP or text out; the same formats in, by dropping the file anywhere.
         </li>
         <li>
-          <strong>Full backup</strong> (admins, Settings → System → Backup): incidents, users, settings and the audit
-          log in one file, restored from the same section. It does <strong>not</strong> contain the files: samples,
-          e-mails, captures, mailboxes and their analyses stay on the server, and so do the Indicators page's own
-          indicators and lists, and what automation is made of (playbooks, scripts and connectors travel as files, or as
-          a <a href="automation.html#packs">content pack</a>; instances hold secrets and are never exported). Restoring
-          replaces everything else. The backup of a server is <code>deploy/backup.sh</code> (see
-          <a href="deployment.html#docker-podman-in-production">Deployment</a>).
+          <strong>Export as one file</strong> (admins, at the foot of Settings → System → Backup; it was called
+          <em>Full backup</em> before 6.7): incidents, users, settings and the audit log in one file, loaded back from
+          the same place. It does <strong>not</strong> contain the files: samples, e-mails, captures, mailboxes and
+          their analyses stay on the server, and so do the Indicators page's own indicators and lists, and what
+          automation is made of (playbooks, scripts and connectors travel as files, or as a
+          <a href="automation.html#packs">content pack</a>; instances hold secrets and are never exported). Importing
+          one adds the incidents and the accounts that are not here, and changes or deletes nothing that is. It moves
+          content between two servers; the backup of a server is what <a href="#backup">Settings → Backup</a> takes by
+          itself.
         </li>
         <li>
           <strong>Audit log</strong> (Settings → System → Audit log): who did what, when, on which incident. It is
@@ -1906,8 +1908,9 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             <tr>
               <td>Backup <em>(admins)</em></td>
               <td>
-                The full backup: export everything the database holds in one file, or restore from one (see
-                <a href="#share">Export, import and backup</a>).
+                The backups the server takes by itself: their schedule, what is kept, the passphrase, the copy sent to
+                another server, and the list of the backups with the state of each (see <a href="#backup">Backup</a>).
+                At its foot, the export of content as one file.
               </td>
             </tr>
             <tr>
@@ -1921,6 +1924,66 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         <img src="img/settings.png" alt="The Settings page" width="1600" height="1000" loading="lazy" />
         <figcaption>Settings: detection rules.</figcaption>
       </figure>
+      <h3 id="backup">Backup</h3>
+      <p>
+        <em>Settings → System → Backup</em> (admins). Nik takes its own backups: the database and every file of the
+        store in one encrypted file, on a schedule. Each one is tested as soon as it is written, by restoring it into a
+        scratch database and comparing everything it holds. What a backup contains and how the server is set up for them
+        is in the <a href="deployment.html#backups">deployment guide</a>; this is the screen.
+      </p>
+      <ul>
+        <li>
+          <strong>At the top</strong>: the last good backup and when it was verified, the next run, where backups are on
+          this server and how much room is left, and where the copies go. Anything that is wrong is said there in red,
+          in the words of the notice the administrators received.
+        </li>
+        <li>
+          <strong>The passphrase</strong> comes first: no backup is taken until one is set, because none is written in
+          clear. <strong>Set the passphrase…</strong> asks for it twice. Write it down and keep it away from the server:
+          a restore asks for it again, it is never shown, and nobody can recover it. Changing it later applies to the
+          backups taken from then on; the earlier ones keep theirs.
+        </li>
+        <li>
+          <strong>Schedule</strong>: on or off; every day, every week on a day, or every few hours; at a time, in a time
+          zone (<code>UTC</code>, <code>Europe/Rome</code>). And the age of the last good backup beyond which the
+          administrators are told.
+        </li>
+        <li>
+          <strong>What is kept</strong>: the latest good backups (a number), one a week for a number of weeks, and how
+          many snapshots from before upgrades. A backup counts once it has passed its test; the last good one is never
+          removed by the retention. <strong>Include SECRET_KEY inside the encrypted backup</strong> is off by default;
+          the text under it says what each choice costs.
+        </li>
+        <li>
+          <strong>The copy off the server</strong>: another server reached over SFTP. Host, port, account, directory,
+          the private key of the account (or a password; or the name of a
+          <a href="automation.html#credentials">stored credential</a>, written <code>{{ credentials.name }}</code>), and
+          the host key of that server, which must be written here before anything is sent.
+          <strong>Test the destination</strong> tries what is saved: it signs in, writes a small file, reads it back and
+          removes it, and shows the key the server presented.
+        </li>
+        <li>
+          <strong>Save the settings</strong> saves the three parts together. Leaving the page with something changed
+          asks first, as everywhere.
+        </li>
+        <li>
+          <strong>Back up now</strong> asks the server for a backup at once. The page waits with it: the new row says
+          <em>being written</em>, then <em>being tested</em>, then <em>verified</em>.
+        </li>
+        <li>
+          <strong>The list</strong>: each backup with when it was taken and by whom, its size, where it is (this server,
+          the other one, both), its state and the version of Nik that took it. A snapshot taken before an upgrade is in
+          the list too, named for the upgrade. On a row, or by right-click: <strong>Verify now</strong> runs its restore
+          test again; <strong>How to restore…</strong> shows the command to type on the server; the arrow downloads the
+          encrypted file; <strong>Delete…</strong> asks for its name to be typed, and once more when it is the last good
+          one.
+        </li>
+      </ul>
+      <p>
+        A backup is never put back from this page. It is done on the server, with the stack stopped
+        (<code>deploy/restore.sh</code>; <code>deploy/rollback.sh</code> for a snapshot taken before an upgrade): see
+        <a href="deployment.html#restore-a-backup">Restoring</a>.
+      </p>
       <h3 id="accounts">Accounts</h3>
       <p>An admin adds an account under <strong>Accounts</strong> and changes it with the pencil on its row:</p>
       <ul>
