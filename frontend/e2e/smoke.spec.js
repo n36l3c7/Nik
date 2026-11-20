@@ -2860,6 +2860,9 @@ test('a connector is added from its file, a connection is made, and its commands
   await expect(installed).toContainText('1 instance · off')
   await row.getByRole('switch', { name: 'Acme test is off' }).click()
   await expect(installed).toContainText('1 instance · on')
+  // The row changes at once and the server answers after: its "is on" takes away whatever alert is
+  // shown, so it is waited for before the test of the instance puts one there.
+  await expect(settings.getByRole('status').filter({ hasText: 'Acme test is on.' })).toBeVisible()
   // The test reaches the host of the instance: this one does not exist, and the row says so.
   await row.getByRole('button', { name: 'Test the instance Acme test' }).click()
   await expect(settings.getByRole('alert')).toContainText('Acme test: ', { timeout: 30_000 })
@@ -2896,7 +2899,7 @@ test('a credential is stored once, named by an instance, kept from a typed secre
   test.setTimeout(240_000)
   const before = page.url()
   const get = async (path) => (await page.request.get(path)).json()
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
 
@@ -6129,6 +6132,28 @@ test('nothing unsaved is lost without asking: Stay, Leave without saving, Save a
   await renamed.locator('#instance-name').fill(instance.name)
   await renamed.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(settings.getByRole('status').filter({ hasText: `${instance.name} is saved.` })).toBeVisible()
+
+  // ---- A credential: its value is typed once, so its dialog asks before it goes ----
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  const credential = page.getByRole('dialog', { name: 'New credential' })
+  await settings.getByRole('button', { name: 'New credential…' }).click()
+  await expect(credential).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(credential).toHaveCount(0)
+  await expect(ask).toHaveCount(0)
+  await settings.getByRole('button', { name: 'New credential…' }).click()
+  await credential.locator('#credential-name').fill('guarded_key')
+  expect(await unloadAsks()).toBe(true)
+  // Without a value it cannot be saved from the question.
+  await page.keyboard.press('Escape')
+  await asked('The new credential', { save: false })
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await credential.locator('#credential-value').fill('typed-once')
+  await credential.getByRole('button', { name: 'Close', exact: true }).click()
+  await asked('The new credential')
+  await ask.getByRole('button', { name: 'Leave without saving' }).click()
+  await expect(credential).toHaveCount(0)
+  expect((await (await page.request.get('/api/automation/credentials')).json()).credentials).toEqual([])
   await page.getByRole('button', { name: 'Close settings' }).click()
 
   // ---- The editor of a playbook: its settings wait for Save, its canvas saves itself ----

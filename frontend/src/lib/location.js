@@ -37,10 +37,36 @@ let own = null // 'undo' | 'redo'
 const isBrowser = typeof window !== 'undefined'
 const positionOf = (state) => (state && typeof state.nik === 'number' ? state.nik : null)
 
+// The position is kept for the browser's tab too. An address typed, a link from outside or a reload by
+// hand loads the application again on a new entry, which follows the one that was on screen: without
+// this it would be numbered from nothing, and Back from it would be undone by the wrong distance.
+const POSITION_KEY = 'nik.position'
+function keep(next) {
+  position = next
+  try {
+    window.sessionStorage.setItem(POSITION_KEY, String(next))
+  } catch {
+    // No storage for this tab: the entries made from now on are numbered all the same.
+  }
+}
+function lastPosition() {
+  try {
+    const stored = Number.parseInt(window.sessionStorage.getItem(POSITION_KEY) ?? '', 10)
+    return Number.isInteger(stored) ? stored : null
+  } catch {
+    return null
+  }
+}
+
 if (isBrowser) {
   const here = positionOf(window.history.state)
-  if (here === null) window.history.replaceState({ ...window.history.state, nik: 0 }, '')
-  else position = here
+  if (here === null) {
+    const last = lastPosition()
+    keep(last === null ? 0 : last + 1)
+    window.history.replaceState({ ...window.history.state, nik: position }, '')
+  } else {
+    keep(here)
+  }
   window.addEventListener('popstate', () => {
     const to = positionOf(window.history.state)
     if (own === 'undo') {
@@ -67,7 +93,7 @@ if (isBrowser) {
       // hand): it takes the position of the one before it, so a move across it is never undone wrongly.
       window.history.replaceState({ ...window.history.state, nik: position }, '')
     } else {
-      position = to
+      keep(to)
     }
     window.dispatchEvent(new Event(LOCATION_EVENT))
   })
@@ -106,7 +132,7 @@ export function setPath(path, { replace = false, state = {} } = {}) {
   if (replace) {
     window.history.replaceState({ ...state, nik: position }, '', path)
   } else {
-    position += 1
+    keep(position + 1)
     window.history.pushState({ ...state, nik: position }, '', path)
   }
   window.dispatchEvent(new Event(LOCATION_EVENT))

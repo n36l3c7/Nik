@@ -29,7 +29,7 @@ import { useIncidents } from './IncidentContext.jsx'
 import { useNavigation } from './NavigationContext.jsx'
 import { useSettings } from './SettingsContext.jsx'
 import { useToast } from './ToastContext.jsx'
-import { useUnsavedChanges } from '../lib/unsaved.js'
+import { leave, useUnsavedChanges } from '../lib/unsaved.js'
 
 /*
  * Indicators anywhere in the app:
@@ -104,8 +104,14 @@ function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist
         onOpenArtifact={onOpenArtifact}
         onOpenSettings={() => {
           // Where an administrator opens a class of data for the look-ups: the window gives way to it.
-          onClose({ keepUrl: true })
-          setPath(settingsPath('intel'))
+          // Asked about first, when something that is not saved would be lost: the window stays if not.
+          leave(
+            () => {
+              onClose({ keepUrl: true })
+              setPath(settingsPath('intel'))
+            },
+            { path: settingsPath('intel') },
+          )
         }}
         onNotice={(message) => showToast({ message })}
       />

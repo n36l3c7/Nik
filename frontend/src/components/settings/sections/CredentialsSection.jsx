@@ -13,6 +13,7 @@ import {
 } from '../../../domain/automation/credentials.js'
 import { credentialFromPath, credentialPath, instancePath, settingsPath } from '../../../domain/settingsNav.js'
 import { onLocationChange, setPath } from '../../../lib/location.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 import { formatRelative } from '../../../lib/time.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
@@ -47,9 +48,10 @@ function CredentialDialog({ existing, taken, onClose, onSaved }) {
   const pair = form.kind === 'pair'
   const set = (patch) => setForm({ ...form, ...patch })
 
+  // Resolves true once it is saved: the question asked before leaving waits on it.
   const save = async (event) => {
-    event.preventDefault()
-    if (problem) return
+    event?.preventDefault()
+    if (problem) return false
     setBusy(true)
     setError(null)
     try {
@@ -57,16 +59,26 @@ function CredentialDialog({ existing, taken, onClose, onSaved }) {
         ? await api.put(`/automation/credentials/${encodeURIComponent(existing.id)}`, updateBody(form, existing))
         : await api.post('/automation/credentials', createBody(form))
       onSaved(saved, Boolean(existing))
+      return true
     } catch (failure) {
       setError(failure.message)
       setBusy(false)
+      return false
     }
   }
+  // What was typed and is not saved is asked about before the dialog closes by its x, Escape or a
+  // click outside (lib/unsaved.js). The value among it: it is typed once and never shown again.
+  const [opened] = useState(() => JSON.stringify(credentialForm(existing)))
+  const unsaved = useUnsavedChanges(JSON.stringify(form) !== opened, {
+    what: existing ? 'The credential' : 'The new credential',
+    name: existing?.name ?? '',
+    save: problem ? undefined : () => save(),
+  })
 
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={existing ? `Credential ${existing.name}` : 'New credential'}
       footer={
         <>

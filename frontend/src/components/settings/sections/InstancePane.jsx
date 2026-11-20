@@ -159,7 +159,6 @@ export default function InstancePane({
     (keyed ? keysProblem(connector, keys, policy) : null) ??
     (fetches ? fetchProblem(fetching, { minInterval: fetchStatus?.minIntervalSeconds, byTime }) : null)
 
-  // Resolves true once everything is saved: the question asked before leaving waits on it.
   /** Ask under which name the stored secret of a field (of the first key, or of another) is kept. */
   const askKeep = (key, field) =>
     setKeeping({
@@ -169,6 +168,7 @@ export default function InstancePane({
       label: field.label,
       kind: keptKind(field.name, secretNames, key.secrets, key.credentials),
       name: suggestedName(`${instance.name}${key.id === 'main' ? '' : ` ${key.name}`}`),
+      suggested: suggestedName(`${instance.name}${key.id === 'main' ? '' : ` ${key.name}`}`),
       title: '',
       error: null,
       busy: false,
@@ -197,6 +197,11 @@ export default function InstancePane({
       setKeeping((current) => ({ ...current, busy: false, error: failure.message }))
     }
   }
+  // The name proposed is not the person's writing; one they changed, or a description, is.
+  const keepUnsaved = useUnsavedChanges(
+    keeping !== null && (keeping.name !== keeping.suggested || keeping.title.trim() !== ''),
+    { what: 'The credential to keep' },
+  )
   const keepProblem = keeping
     ? nameProblem(
         keeping.name,
@@ -204,6 +209,7 @@ export default function InstancePane({
       )
     : null
 
+  // Resolves true once everything is saved: the question asked before leaving waits on it.
   const submit = async (event) => {
     event?.preventDefault()
     if (problem) return false
@@ -544,7 +550,7 @@ export default function InstancePane({
 
       <Modal
         open={keeping !== null}
-        onClose={() => setKeeping(null)}
+        onClose={() => keepUnsaved.leave(() => setKeeping(null))}
         title="Keep as a credential"
         footer={
           <>
