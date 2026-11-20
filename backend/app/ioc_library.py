@@ -462,6 +462,7 @@ def library(db: OrmSession, shared: dict[str, Any], only: set[Pair] | None = Non
         ):
             checked[(kind, value)] = at
     red = red_pairs(db)
+    judged = service.judge(shared)
     for pair, item in rows.items():
         summary = reputation.get(pair)
         item["reputation"] = summary
@@ -470,6 +471,9 @@ def library(db: OrmSession, shared: dict[str, Any], only: set[Pair] | None = Non
         item["checkedAt"] = checked.get(pair)
         item["allowlisted"] = allowlist.matches(*pair)
         item["neverSent"] = never_sent(pair[0], pair[1], allowlist, pair in red)
+        # Held by the data guard for the look-ups made outside playbooks: the sentence that says by what.
+        kept_in = None if item["neverSent"] else service.held(pair[0], pair[1], judged)
+        item["held"] = kept_in["reason"] if kept_in else None
         # What Nik saw when it analysed the value itself, if it did.
         found = analysed.get(pair) or []
         item["analysis"] = analysis_links.brief(found[0]) if found else None

@@ -308,6 +308,79 @@ test('threat intelligence is set in Settings, and a source is a connector with a
   expect((await page.request.delete('/api/automation/connectors/rdap')).status()).toBe(204)
 })
 
+test('a look-up the data guard holds says why, and is made once an administrator opens the class', async () => {
+  const before = new URL(page.url()).pathname
+  // A source made for the tests: its instance points at the test server, which answers the look-up.
+  const source = readFileSync(new URL('./fixtures/stub-source.yml', import.meta.url), 'utf8')
+  expect((await page.request.post('/api/automation/connectors', { data: { source } })).status()).toBe(201)
+  const instance = { name: 'Stub source', config: { url: 'http://127.0.0.1:8765' }, secrets: {}, enabled: true }
+  expect(
+    (await page.request.post('/api/automation/connectors/stubsource/instances', { data: instance })).status(),
+  ).toBe(201)
+  // A link that carries the address of the person it was sent to.
+  const link = 'https://portal.example-corp.it/reset?user=mario.rossi@example-corp.it'
+  const address = `/ioc/url?v=${encodeURIComponent(link)}`
+  await page.goto(address)
+  const dialog = page.getByRole('dialog', { name: 'Indicator' })
+  const sources = dialog.getByRole('region', { name: 'Sources' })
+  await expect(sources).toContainText('Stub source', { timeout: 20_000 })
+  // "Check now" is held: the page says by which class, where the verdict would be, and no source is asked.
+  await dialog.getByRole('button', { name: 'Check now' }).click()
+  const notice = dialog.getByRole('status', { name: 'Held by the data guard' })
+  await expect(notice).toContainText('Held by the data guard: this value carries e-mail addresses.')
+  await expect(notice).toContainText('No source is asked until this class is opened for the look-ups')
+  await expect(dialog).toContainText('held')
+  await expect(sources).toContainText('not asked')
+  await expect(dialog.getByRole('button', { name: 'Check now' })).toBeEnabled()
+  expect(
+    (await (await page.request.get(`/api/enrichment?type=url&value=${encodeURIComponent(link)}`)).json()).results,
+  ).toEqual([])
+  // An administrator is shown the way to the setting, where every class starts closed.
+  await notice.getByRole('button', { name: 'Open Threat intelligence' }).click()
+  await expect(page).toHaveURL(/\/settings\/indicators\/threat-intelligence$/)
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const guard = settings.getByRole('region', { name: 'What the look-ups may send' })
+  const classes = guard.getByRole('list', { name: 'Classes of data the look-ups may send' }).getByRole('listitem')
+  await expect(classes).toHaveCount(3)
+  await expect(classes.filter({ hasText: 'may leave' })).toHaveCount(0)
+  const emails = classes.filter({ hasText: 'E-mail addresses' })
+  await expect(emails).toContainText('a link that carries the address of the person it was sent to')
+  // Opening asks twice: the box, and the name of the class typed as it is written.
+  await emails.getByRole('button', { name: 'Open: E-mail addresses' }).click()
+  const check = page.getByRole('dialog', { name: 'Let e-mail addresses leave Nik in the look-ups?' })
+  await expect(check).toContainText('It could be sent to every source that is on: Stub source.')
+  const allow = check.getByRole('button', { name: 'Allow e-mail addresses' })
+  await expect(allow).toBeDisabled()
+  await check.getByRole('checkbox').check()
+  await check.locator('#lookup-guard-name').fill('e-mail addresses')
+  await expect(allow).toBeDisabled()
+  await check.locator('#lookup-guard-name').fill('E-mail addresses')
+  await allow.click()
+  await expect(check).toHaveCount(0)
+  await expect(emails).toContainText('may leave')
+  await expect(emails.getByRole('button', { name: 'Close: E-mail addresses' })).toBeVisible()
+  // The same button now looks the value up: the source answers, and the page has a verdict.
+  await page.goto(address)
+  await expect(sources).toContainText('Stub source', { timeout: 20_000 })
+  await expect(dialog.getByRole('status', { name: 'Held by the data guard' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Check now' }).click()
+  await expect(sources.getByRole('button', { name: /Stub source/ })).toContainText('harmless')
+  await expect(dialog).toContainText('The stub answered: ok')
+  // Closed again, it is held again, and the answer it has stays.
+  expect(
+    (await page.request.put('/api/enrichment/guard', { data: { class: 'email_address', allow: false } })).status(),
+  ).toBe(200)
+  await page.goto(address)
+  await expect(dialog.getByRole('status', { name: 'Held by the data guard' })).toBeVisible({ timeout: 20_000 })
+  await expect(sources.getByRole('button', { name: /Stub source/ })).toContainText('harmless')
+  await expect(dialog).toContainText('Held now: these answers were given before')
+  // The connector goes, with its instance: the tests that follow start where this one did.
+  expect((await page.request.delete('/api/automation/connectors/stubsource')).status()).toBe(204)
+  await page.goto(before)
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
+  await expect(page.getByRole('button', { name: '185.220.101.47', exact: true })).toBeVisible({ timeout: 20_000 })
+})
+
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
   const value = page.getByRole('button', { name: '185.220.101.47', exact: true })

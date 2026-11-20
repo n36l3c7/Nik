@@ -164,6 +164,11 @@ export function durationLabel(seconds) {
   return `${(seconds / 3600).toFixed(1)} h`
 }
 
+/** "3 indicators are held by the data guard.": what a bulk check will not ask about (`held` of its plan). */
+export function heldLine(count) {
+  return count === 1 ? '1 indicator is held by the data guard.' : `${count} indicators are held by the data guard.`
+}
+
 /** What a source will do in a bulk check, in a line. */
 export function sourceLine(source) {
   if (source.leftToday === null || source.leftToday === undefined) return `${source.needed} · no daily limit`

@@ -16,6 +16,7 @@ import { Button, Modal } from '../components/ui/index.js'
 import IocDetail from '../components/ioc/IocDetail.jsx'
 import { onLocationChange, setPath } from '../lib/location.js'
 import { ANALYSABLE, analysisActions, iocFromLocation, iocPath } from '../domain/enrichment.js'
+import { settingsPath } from '../domain/settingsNav.js'
 import { api } from '../services/api.js'
 import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable } from '../domain/iocs.js'
 import { flagItems } from '../components/menu/flagItems.js'
@@ -100,6 +101,11 @@ function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist
         onAllowlist={() => onAllowlist(lookup.type, lookup.value)}
         onAnalysis={(action) => onAnalysis(action, lookup.type, lookup.value)}
         onOpenArtifact={onOpenArtifact}
+        onOpenSettings={() => {
+          // Where an administrator opens a class of data for the look-ups: the window gives way to it.
+          onClose({ keepUrl: true })
+          setPath(settingsPath('intel'))
+        }}
         onNotice={(message) => showToast({ message })}
       />
     </Modal>

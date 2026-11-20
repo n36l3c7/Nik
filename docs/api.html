@@ -580,10 +580,13 @@
               <td><code>POST /api/iocs/check</code> · <code>GET /api/iocs/checks[/{id}]</code></td>
               <td>
                 Bulk reputation check of a scope. <code>dryRun</code> returns the plan only (indicators to ask, answers
-                reused, never sent, and per source the requests against today's quota); otherwise the check is queued
-                and worked through in the background: poll its <code>status</code> (<code>running</code>,
-                <code>waiting</code> for a quota, <code>done</code>, <code>stopped</code>), <code>done</code> and
-                <code>total</code>. <code>POST …/checks/{id}/stop</code> ends it.
+                reused, never sent, <code>held</code> by the data guard, and per source the requests against today's
+                quota); otherwise the check is queued and worked through in the background: poll its
+                <code>status</code> (<code>running</code>, <code>waiting</code> for a quota, <code>done</code>,
+                <code>stopped</code>), <code>done</code> and <code>total</code>; its <code>message</code> says how many
+                indicators the data guard held. <code>POST …/checks/{id}/stop</code> ends it. In
+                <code>GET /api/iocs</code> a row the guard holds has <code>held</code>, the sentence that says by which
+                classes.
               </td>
             </tr>
             <tr>
@@ -1008,8 +1011,24 @@
                 (<code>/api/automation/instances</code>). <code>oldKeys</code> lists the API keys kept from before 6.5
                 that no instance holds yet (last four characters, <code>state</code>: <code>waiting</code> /
                 <code>rejected</code> / <code>unreadable</code>, and the connectors each waits for; never the key);
-                <code>DELETE</code> removes one (<strong>admin</strong>, audited). The routes
+                <code>DELETE</code> removes one (<strong>admin</strong>, audited). <code>guard</code> lists the classes
+                of data the data guard can let the look-ups made outside playbooks send (<code>id</code>,
+                <code>label</code>, <code>warning</code>, <code>example</code>, <code>open</code>). The routes
                 <code>/api/enrichment/providers…</code> of before 6.5 are gone.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/enrichment/guard</code></td>
+              <td>
+                Open or close a class of data for the look-ups made outside playbooks (<em>Check now</em>, the checks in
+                bulk, the automatic look-ups): <code>{ class, allow, acknowledged, confirmName }</code>, with
+                <code>class</code> one of <code>email_address</code>, <code>private_value</code>,
+                <code>allowlisted</code> (<code>400</code> for any other). Opening needs the double check:
+                <code>acknowledged: true</code> and <code>confirmName</code> equal to the label of the class as
+                <code>guard</code> gives it (<code>400</code> otherwise); closing needs neither. Returns
+                <code>guard</code>. <strong>Admin</strong>, audited. Nothing is open until this route opens it, and
+                <code>PUT /api/settings</code> does not change it. A look-up a playbook makes follows
+                <code>PUT /api/automation/playbooks/{id}/data-allow</code> instead.
               </td>
             </tr>
             <tr>
@@ -1026,12 +1045,15 @@
                 counts among the sources with <code>weight</code> 3, and <code>canAnalyse</code> for an address that can
                 be visited), <code>providers</code> (the sources that are on for the type), <code>notAsked</code>,
                 <code>off</code> (the sources whose connector has no instance that is on), <code>retentionDays</code>,
-                <code>refresh</code> (sources whose answer has expired and should be asked again) and why the value is
-                never sent, if so. <code>POST</code> asks every source that is on now (<code
+                <code>refresh</code> (sources whose answer has expired and should be asked again), why the value is
+                never sent, if so (<code>blocked</code>), and <code>held</code>: null, or what the data guard holds of
+                it for the look-ups made outside playbooks (<code>classes</code>, each <code>{ id, label }</code>, and
+                <code>reason</code>). <code>POST</code> asks every source that is on now (<code
                   >{ type, value, force }</code
                 >; <code>force</code> also goes past the answers an instance keeps; <code>422</code> for a private,
                 internal, allowlisted or TLP:RED value, audited); <code>skipped</code> names the sources whose keys were
-                all used up.
+                all used up. A held value is not an error: the answer is <code>200</code> with <code>held</code> set,
+                the stored answers as they were and no source asked, <code>force</code> or not.
               </td>
             </tr>
             <tr>
@@ -1047,11 +1069,12 @@
               <td>
                 Read the shared detection rules, business hours, IOC allowlist, report header and Mail Analysis settings
                 (<code>mail: { orgDomains, trustedAuthServers }</code>) and threat-intelligence options (<code
-                  >enrichment: { auto, retentionDays: { ip, url, hash }, refreshExpired }</code
-                >; <code>virustotal</code> and <code>providers</code>, of before 6.5, are ignored when sent); any
-                signed-in caller reads them. <code>PUT</code> replaces them (<code>write</code>): the report header, the
-                mail settings and the threat-intelligence options change only for an <strong>admin</strong>, and are
-                left as they are for anyone else.
+                  >enrichment: { auto, retentionDays: { ip, url, hash }, refreshExpired, guardOpen }</code
+                >; <code>guardOpen</code>, the classes the data guard lets the look-ups send, is read here and changed
+                only by <code>PUT /api/enrichment/guard</code>; <code>virustotal</code> and <code>providers</code>, of
+                before 6.5, are ignored when sent); any signed-in caller reads them. <code>PUT</code> replaces them
+                (<code>write</code>): the report header, the mail settings and the threat-intelligence options change
+                only for an <strong>admin</strong>, and are left as they are for anyone else.
               </td>
             </tr>
             <tr>

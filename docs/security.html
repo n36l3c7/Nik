@@ -295,7 +295,10 @@
                 key of the instance, by the one command of its file marked for that kind of indicator: never a command
                 that changes something at the vendor or that needs a paid plan. For a domain a registry is sent the
                 registered domain only. Never a private or internal value, one on the allowlist, or one of an incident
-                marked TLP:RED: no setting and no playbook opens that
+                marked TLP:RED: no setting and no playbook opens that. A value that passes this rule is then read by the
+                data guard, whoever asks: one that carries an e-mail address, a name under the organisation's own
+                domains or a private address, or an allowlisted name is <strong>held</strong>, and no source is asked at
+                all, until an admin opens that class (<a href="#held-look-ups">below</a>)
               </td>
             </tr>
             <tr>
@@ -340,6 +343,47 @@
         </table>
       </div>
       <p>The app's own pages load nothing from outside: no CDN, no fonts, no telemetry.</p>
+      <h3 id="held-look-ups">What stops a look-up</h3>
+      <ul>
+        <li>
+          <strong>The rule of the look-ups</strong>, first and for everyone: a private, loopback or reserved address, an
+          internal name, a value on the IOC allowlist, a value of an incident marked TLP:RED and anything classified
+          TLP:RED are refused before a source is chosen. No setting, no playbook and no role loosens it.
+        </li>
+        <li>
+          <strong>The data guard</strong>, on what passed the rule. A value is read as any text that leaves is read: an
+          e-mail address in it, a name under the organisation's own domains (<em>Settings → Mail analysis</em>), a
+          private address or a name of the allowlist inside a longer value each give it a class, and a class that is not
+          open holds the look-up whole. Held, no source is asked: not some of them.
+        </li>
+        <li>
+          <strong>Which classes are open depends on who asks.</strong> A look-up a playbook makes is judged against the
+          classes opened for that playbook, as before. Every other look-up (<em>Check now</em>, a check in bulk, the
+          automatic look-ups of the worker, a list checked again) is judged against one setting of its own,
+          <em>Settings → Threat intelligence → What the look-ups may send</em>: three classes an indicator can carry
+          (e-mail addresses, internal names and addresses, allowlisted indicators), <strong>all closed</strong> on a new
+          server and after an upgrade to 6.6. The two do not mix: what is opened there opens nothing in a playbook, and
+          what a playbook has opened opens nothing there.
+        </li>
+        <li>
+          <strong>Opening a class</strong> is an admin's, behind the same double check as on a playbook (a box, and the
+          name of the class typed as it is written); it cannot be done by saving the other settings, and the classes
+          that are whole messages or files, and TLP:RED data, are not offered at all. Opening and closing are in the
+          audit log, opening with the sources that are on, and so is each <em>Check now</em> that was held. An opened
+          class goes to every source that is on, and to any turned on later.
+        </li>
+        <li>
+          <strong>Being held is not stored.</strong> The guard is asked again at each look-up, at each pass of the
+          worker and as a check in bulk goes on, so closing a class stops what was queued, and a held value is asked
+          about only once its class is open. The answers stored before a value was held stay, and are not refreshed
+          while it is held.
+        </li>
+        <li>
+          <strong>What the guard cannot see.</strong> It reads addresses, names and e-mail addresses. A person's name, a
+          token or a customer number written in the path of a link has no class and leaves with the link: do not turn on
+          the automatic look-ups of URLs where such links must not reach a vendor.
+        </li>
+      </ul>
 
       <h2 id="automation">Playbooks and scripts</h2>
       <p>

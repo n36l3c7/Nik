@@ -608,6 +608,7 @@ def test_retention_per_type_and_refresh_of_expired_answers(admin: TestClient, ou
         "auto": {"ip": False, "url": False, "hash": False},
         "retentionDays": {"ip": 30, "url": 30, "hash": 180},
         "refreshExpired": True,
+        "guardOpen": [],
     }
     cfg = service.config(shared)
     assert service.retention(cfg, "domain").days == 30 and service.retention(cfg, "sha1").days == 180
@@ -634,7 +635,12 @@ def test_retention_per_type_and_refresh_of_expired_answers(admin: TestClient, ou
     shared["enrichment"]["providers"] = {"virustotal": False}
     shared["enrichment"]["virustotal"] = {"engines": "all", "relations": True, "comments": True}
     saved = admin.put("/api/settings", json=shared)
-    assert saved.status_code == 200 and set(saved.json()["enrichment"]) == {"auto", "retentionDays", "refreshExpired"}
+    assert saved.status_code == 200 and set(saved.json()["enrichment"]) == {
+        "auto",
+        "retentionDays",
+        "refreshExpired",
+        "guardOpen",
+    }
     detail = admin.get(f"/api/enrichment?type=ip&value={PUBLIC_IP}", headers=key).json()
     assert detail["retentionDays"] == 365 and detail["refresh"] == []
     assert all(r["expired"] for r in detail["results"])
