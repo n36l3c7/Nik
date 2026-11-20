@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
-  Search,
   Settings,
   UserCircle,
   UserCog,
@@ -17,6 +16,7 @@ import NikMark from '../ui/NikMark.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { describeRoles, rolesOf } from '../../domain/permissions.js'
+import { RAIL_SECTIONS } from '../../domain/sections.js'
 
 /*
  * ============================================================================
@@ -24,13 +24,16 @@ import { describeRoles, rolesOf } from '../../domain/permissions.js'
  * ============================================================================
  *
  * Always visible; an entry is shown to the accounts whose roles let them use
- * it. The entries are in the order of a working day: what there is to work on
- * (incidents, one's tasks, the dashboards), what the work is done with
- * (indicators, artifacts, the search, the playground for a command outside
- * any incident), then what is built (automations). The incidents are a page
- * (the list, from which one is opened); the indicators and the artifacts open
- * the side panel, and clicking their entry again closes it, so the rail is
- * also how the side panel collapses.
+ * it. From the top: the dashboards (how things stand), the incidents, one's
+ * tasks, then what the work is done with (the artifacts, the indicators), the
+ * automations and, last, the playground for a command outside any incident
+ * (domain/sections.js holds the order). The search is not here: it is the bar
+ * in the middle of every page's header (SearchBar.jsx).
+ *
+ * An entry always shows the first screen of its section, from wherever it is
+ * pressed; pressed there, it does nothing. It is not a switch: the side panel
+ * of the artifacts and of the indicators is hidden with the button in its own
+ * header, a page with its own close button.
  *
  * At the foot: the notifications, Settings, and the account. Nothing here
  * opens a single section of Settings: those are reached from Settings.
@@ -63,49 +66,58 @@ function RailButton({ icon: Icon, label, active = false, onClick, count = null, 
   )
 }
 
+const ICONS = {
+  dashboards: LayoutDashboard,
+  incidents: FolderClosed,
+  tasks: ListChecks,
+  artifacts: Boxes,
+  iocs: Fingerprint,
+  automation: Workflow,
+  playground: FlaskConical,
+}
+
+/** What an entry says of what waits in its section, after its name. */
+function labelOf(section, counts) {
+  if (section.id === 'tasks' && counts.tasks) {
+    const overdue = counts.tasksOverdue ? `, ${counts.tasksOverdue} overdue` : ''
+    return `My tasks (${counts.tasks} ${counts.tasks === 1 ? 'waits' : 'wait'}${overdue})`
+  }
+  if (section.id === 'iocs' && counts.alerts) return `Indicators (${counts.alerts} new alerts)`
+  if (section.id === 'automation' && counts.approvals) {
+    return `Automations (${counts.approvals} ${counts.approvals === 1 ? 'approval waits' : 'approvals wait'})`
+  }
+  return section.label
+}
+
+const countOf = (id, counts) =>
+  ({
+    incidents: counts.incidents,
+    tasks: counts.tasks,
+    artifacts: counts.artifacts,
+    iocs: counts.iocs,
+    automation: counts.approvals,
+  })[id] ?? null
+
+const alertOf = (id, counts) =>
+  (id === 'tasks' && counts.tasksOverdue > 0) ||
+  (id === 'iocs' && counts.alerts > 0) ||
+  (id === 'automation' && counts.approvals > 0)
+
 /**
  * @param {{
- *   panel: 'artifacts' | 'iocs' | null,   // the open side panel
- *   onPanel: (panel: string | null) => void,
- *   onIncidents: () => void,                       // the list of incidents, a page of its own
- *   incidentsOpen?: boolean,                       // that page is what the main area shows, alone
- *   incidentsLeave?: boolean,                      // …and its entry goes back to what was open before it
+ *   active: string | null,                        // the section shown: an id of domain/sections.js, or 'settings'
+ *   onSection: (id: string) => void,              // go to the first screen of a section
  *   counts: { incidents: number, artifacts: number, iocs: number, alerts: number, approvals: number,
  *             tasks: number, tasksOverdue: number, unread: number },
  *   can: (...permissions: string[]) => boolean,   // what the signed-in account may do
- *   onSearch: () => void, onSettings: () => void, onAccount: () => void,
- *   settingsOpen?: boolean,                        // the Settings page is shown
- *   onAutomation: () => void,
- *   automationOpen?: boolean,                      // the Automations area is shown
+ *   onAccount: () => void,
+ *   onNotifications: () => void,
+ *   onSignOut: () => void,
  * }} props
  */
-export default function Rail({
-  panel,
-  onPanel,
-  onIncidents,
-  incidentsOpen = false,
-  incidentsLeave = false,
-  counts,
-  can,
-  onSearch,
-  onSettings,
-  onAccount,
-  settingsOpen = false,
-  onAutomation,
-  automationOpen = false,
-  onTasks,
-  tasksOpen = false,
-  onDashboards,
-  dashboardsOpen = false,
-  onPlayground,
-  playgroundOpen = false,
-  onNotifications,
-}) {
-  const { currentUser, logout } = useAuth()
+export default function Rail({ active, onSection, counts, can, onAccount, onNotifications, onSignOut }) {
+  const { currentUser } = useAuth()
   const { openMenu } = useContextMenu()
-  // With Settings or Automations open no panel is shown, and an entry leaves the page for its panel.
-  const open = settingsOpen || automationOpen || tasksOpen || dashboardsOpen || playgroundOpen ? null : panel
-  const toggle = (name) => onPanel(open === name ? null : name)
   const canRead = can('read')
   const roles = currentUser ? describeRoles(rolesOf(currentUser)) : ''
   const account = (event) =>
@@ -114,7 +126,7 @@ export default function Rail({
       items: [
         { label: 'My account', icon: UserCog, onSelect: onAccount },
         'separator',
-        { label: 'Sign out', icon: LogOut, onSelect: logout },
+        { label: 'Sign out', icon: LogOut, onSelect: onSignOut },
       ],
     })
   return (
@@ -123,89 +135,17 @@ export default function Rail({
       className="flex h-full w-14 shrink-0 flex-col items-stretch border-r border-line bg-sunken py-3"
     >
       <NikMark className="mx-auto mb-3 h-7 w-7 shrink-0" />
-      {canRead && (
+      {RAIL_SECTIONS.filter((section) => can(section.permission)).map((section) => (
         <RailButton
-          icon={FolderClosed}
-          label={incidentsOpen && incidentsLeave ? 'Hide the incidents' : 'Incidents'}
-          active={incidentsOpen}
-          count={counts.incidents}
-          onClick={onIncidents}
+          key={section.id}
+          icon={ICONS[section.id]}
+          label={labelOf(section, counts)}
+          active={active === section.id}
+          count={countOf(section.id, counts)}
+          alert={alertOf(section.id, counts)}
+          onClick={() => onSection(section.id)}
         />
-      )}
-      {canRead && (
-        <RailButton
-          icon={ListChecks}
-          label={
-            tasksOpen
-              ? 'Close my tasks'
-              : counts.tasks
-                ? `My tasks (${counts.tasks} ${counts.tasks === 1 ? 'waits' : 'wait'}${counts.tasksOverdue ? `, ${counts.tasksOverdue} overdue` : ''})`
-                : 'My tasks'
-          }
-          active={tasksOpen}
-          count={counts.tasks}
-          alert={counts.tasksOverdue > 0}
-          onClick={onTasks}
-        />
-      )}
-      {canRead && (
-        <RailButton
-          icon={LayoutDashboard}
-          label={dashboardsOpen ? 'Close dashboards' : 'Dashboards'}
-          active={dashboardsOpen}
-          onClick={onDashboards}
-        />
-      )}
-      {canRead && (
-        <>
-          <RailButton
-            icon={Fingerprint}
-            label={
-              open === 'iocs'
-                ? 'Hide the Indicators page'
-                : counts.alerts
-                  ? `Indicators (${counts.alerts} new alerts)`
-                  : 'Indicators'
-            }
-            active={open === 'iocs'}
-            count={counts.iocs}
-            alert={counts.alerts > 0}
-            onClick={() => toggle('iocs')}
-          />
-          <RailButton
-            icon={Boxes}
-            label={open === 'artifacts' ? 'Hide the artifacts' : 'Artifacts'}
-            active={open === 'artifacts'}
-            count={counts.artifacts}
-            onClick={() => toggle('artifacts')}
-          />
-          <RailButton icon={Search} label="Search (Ctrl+K)" onClick={onSearch} />
-        </>
-      )}
-      {can('automation.run') && (
-        <RailButton
-          icon={FlaskConical}
-          label={playgroundOpen ? 'Close the playground' : 'Playground'}
-          active={playgroundOpen}
-          onClick={onPlayground}
-        />
-      )}
-      {can('automation.run') && (
-        <RailButton
-          icon={Workflow}
-          label={
-            automationOpen
-              ? 'Close automations'
-              : counts.approvals
-                ? `Automations (${counts.approvals} ${counts.approvals === 1 ? 'approval waits' : 'approvals wait'})`
-                : 'Automations'
-          }
-          active={automationOpen}
-          count={counts.approvals}
-          alert={counts.approvals > 0}
-          onClick={onAutomation}
-        />
-      )}
+      ))}
       <span className="flex-1" />
       {canRead && (
         <RailButton
@@ -218,9 +158,9 @@ export default function Rail({
       )}
       <RailButton
         icon={Settings}
-        label={settingsOpen ? 'Close platform settings' : 'Open platform settings'}
-        active={settingsOpen}
-        onClick={onSettings}
+        label="Platform settings"
+        active={active === 'settings'}
+        onClick={() => onSection('settings')}
       />
       {currentUser && (
         <RailButton icon={UserCircle} label={`Account: ${currentUser.username} (${roles})`} onClick={account} />

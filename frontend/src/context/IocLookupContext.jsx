@@ -16,6 +16,7 @@ import { Button, Modal } from '../components/ui/index.js'
 import IocDetail from '../components/ioc/IocDetail.jsx'
 import { onLocationChange, setPath } from '../lib/location.js'
 import { ANALYSABLE, analysisActions, iocFromLocation, iocPath } from '../domain/enrichment.js'
+import { settingsPath } from '../domain/settingsNav.js'
 import { api } from '../services/api.js'
 import { IOC_TYPES, allowlistOptions, defang, indicatorFlaggable } from '../domain/iocs.js'
 import { flagItems } from '../components/menu/flagItems.js'
@@ -28,6 +29,7 @@ import { useIncidents } from './IncidentContext.jsx'
 import { useNavigation } from './NavigationContext.jsx'
 import { useSettings } from './SettingsContext.jsx'
 import { useToast } from './ToastContext.jsx'
+import { useUnsavedChanges } from '../lib/unsaved.js'
 
 /*
  * Indicators anywhere in the app:
@@ -100,6 +102,11 @@ function IocWindow({ lookup, underPath, onClose, onExpand, onShrink, onAllowlist
         onAllowlist={() => onAllowlist(lookup.type, lookup.value)}
         onAnalysis={(action) => onAnalysis(action, lookup.type, lookup.value)}
         onOpenArtifact={onOpenArtifact}
+        onOpenSettings={() => {
+          // Where an administrator opens a class of data for the look-ups: the window gives way to it.
+          onClose({ keepUrl: true })
+          setPath(settingsPath('intel'))
+        }}
         onNotice={(message) => showToast({ message })}
       />
     </Modal>
@@ -113,6 +120,9 @@ function AllowlistDialog({ target, onClose }) {
   const options = useMemo(() => (target ? allowlistOptions(target.type, target.value) : []), [target])
   const [choice, setChoice] = useState(0)
   const [note, setNote] = useState('')
+  const unsaved = useUnsavedChanges(Boolean(target) && Boolean(note.trim()), {
+    what: 'The note of the allowlist entry',
+  })
 
   useEffect(() => {
     setChoice(options.length > 1 && target?.type !== 'ip' ? 1 : 0)
@@ -143,7 +153,7 @@ function AllowlistDialog({ target, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Add to the allowlist"
       footer={
         <>

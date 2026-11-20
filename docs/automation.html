@@ -2393,7 +2393,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <strong>Instances</strong> are listed under their connector. <em>Add instance</em> opens a form built from
           what the connector asks for. <em>Test</em> sends the connector's test request with the credentials and says
           what came back. Credentials are stored encrypted with the vault key and are never shown again, in the screen
-          or in the API: to change one, type it again. The form has a tab for each of its parts: <em>Connection</em>,
+          or in the API: to change one, type it again. A secret can also be kept once and named by several instances:
+          see <a href="#credentials">Credentials</a>. The form has a tab for each of its parts: <em>Connection</em>,
           <em>Keys</em> for a connector that signs in and, for one that brings alerts in,
           <a href="#fetch-status"><em>Fetch</em></a
           >, <a href="#mappers"><em>Classifier</em> and <em>Mappers</em></a> (the last two once the instance is made).
@@ -2458,6 +2459,94 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <a href="#network">network</a> rule (the host of the node's instance is one the playbook may reach, without
         being listed) and the <a href="#data-guard">data guard</a>.
       </p>
+
+      <h3 id="credentials">Credentials</h3>
+      <p>
+        A <strong>credential</strong> is a secret kept once under a name, for the instances to use: an instance names it
+        where it would hold the value. One value then serves several instances, is changed in one place, and is still
+        there when an instance is made again. They are on <em>Settings → Automation → Credentials</em>, for the role
+        <em>Connectors</em>: the people who could type the same value into an instance.
+      </p>
+      <ul>
+        <li>
+          <strong>Two kinds.</strong> A <em>secret</em> is one value: an API key, a token. A <em>pair</em> is a user
+          name and a password kept together; the user name is not secret and is shown, the password is. A client id and
+          a client secret are a pair too. The <strong>name</strong> is how instances call it: a lower-case letter, then
+          lower-case letters, digits, <code>_</code> or <code>-</code>.
+        </li>
+        <li>
+          <strong>The value is never shown.</strong> It is stored encrypted, as the secrets of an instance are, and
+          neither the page nor the API gives it back. <em>Edit</em> replaces it with what you type; left empty, it
+          stays. The list says what each credential is, its user name, when it was changed and by whom, and
+          <strong>where it is used</strong>: each instance is a link to its form.
+        </li>
+        <li>
+          <strong>One that is used stays.</strong> A credential an instance names is not deleted (the dialog, and the
+          API with <code>409</code>, say which instances) and keeps its name. Give those instances another credential,
+          or a typed value, first.
+        </li>
+        <li>
+          <strong>In the form of an instance</strong>, every field that holds a secret (the credentials of the
+          <em>Connection</em> tab, and each part of each key of the <em>Keys</em> tab) is given in one of two ways:
+          <em>Typed here</em>, as always, or <em>From a credential</em>, with a list of those that fit. A pair chosen
+          for a user name or a password fills both; a field that is one value takes a secret, or the password of a pair.
+          The form then shows the name of the credential where the value would be, with a link to it, never the value.
+          The choice appears once there is a credential to choose, and comes first in the form of a new instance.
+        </li>
+        <li>
+          <strong>As a variable.</strong> What the instance stores is the name, written
+          <code>{{ credentials.vt_key }}</code> (a pair: <code>{{ credentials.proxy.username }}</code>,
+          <code>{{ credentials.proxy.password }}</code>), and the same text can be typed into the field by hand. It
+          stands alone there: it is not an expression, and a credential that does not exist is refused when the instance
+          is saved.
+        </li>
+        <li>
+          <strong>Read when a request is built.</strong> Nothing of the value is copied into the instance. Each request
+          reads the credential as it is at that moment, so a value changed here is what every instance that names it
+          sends next; the answers those instances kept, a token they had and the result of their last test are forgotten
+          with the old value. A connector file is not concerned: it reads <code>secret.&lt;name&gt;</code> as before,
+          and nothing in a pack knows that credentials exist.
+        </li>
+        <li>
+          <strong>Only an instance reads one.</strong> <code>credentials</code> is not a name of the
+          <a href="#expressions">expression language</a>: a node of a playbook, a script, a line of the War Room or the
+          Playground and the templates of a connector file cannot read a credential, and say so (<em
+            >A stored credential is read only in a field of an instance of a connector</em
+          >). Otherwise whoever writes a playbook could send a secret to any host the playbook may reach. A playbook
+          uses a credential the only way it uses any secret: by running a command of a connector on an instance.
+        </li>
+        <li>
+          <strong>Keep as a credential…</strong>, beside a secret that was typed into an instance and saved, moves it to
+          Credentials under the name you give and leaves the instance naming it: nobody types it again, and it is not
+          shown. A user name and a password the instance holds together become one pair.
+        </li>
+        <li>
+          <strong>What a step shows.</strong> The value of a credential is blanked wherever the secret of an instance
+          is: in a run, a dry run, a debug session, an error. The audit log says that a credential was made, changed
+          (which part, and which instances use it) or deleted, never what it holds.
+        </li>
+        <li>
+          <strong>Several keys.</strong> A key of an instance may be a credential like its first one, and the keys take
+          turns as before. Two instances that name the same credential each count their own requests against their own
+          limits: the limits are set in an instance, and one never waits for what another sent.
+        </li>
+        <li>
+          <strong>A credential that is gone.</strong> The page does not let one that is used be deleted, but a database
+          put back from an earlier day can name one that is not there. The instance then fails its step with a sentence
+          that names the credential; nothing is tried in its place.
+        </li>
+        <li>
+          <strong>Reinstalling.</strong> Credentials belong to the server, not to a pack: uninstalling a pack, or
+          removing a connector, never removes one. An instance has to be deleted before its connector can go (<a
+            href="#pack-uninstall"
+            >Uninstalling</a
+          >), so after the pack is installed again the instance is made again: with its credential chosen from the list,
+          not typed. For another server, credentials travel as the secrets of instances do: in a backup of the database
+          (<code>deploy/backup.sh</code>), encrypted under <code>SECRET_KEY</code>, which is copied with it. The file of
+          <em>Settings → System → Backup</em> holds incidents, accounts, settings and the audit log: neither instances
+          nor credentials.
+        </li>
+      </ul>
 
       <h3 id="mappers">Classifiers and mappers</h3>
       <p>
@@ -3212,6 +3301,21 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <code>header</code> and <code>query</code> credentials the request goes without the header or the parameter, so
         a connector for an API that also answers without a key (more slowly, or less) works on an instance that has
         none.
+      </p>
+      <p>
+        Credentials of one value are added by Nik to every request to the instance, and a command says nothing of them.
+        Where Nik adds nothing, a request to another host the file lists (<code>more_hosts</code>) that the same key
+        opens, the file may write the value itself (since 6.6): <code>secret.token</code> for <code>bearer</code>,
+        <code>secret.value</code> for <code>header</code> and <code>query</code>, as
+        <code>query: { key: "{{ secret.value | default('') }}" }</code>. Whether the value was typed into the instance
+        or comes from a <a href="#credentials">stored credential</a> makes no difference to a file, which cannot name a
+        credential itself.
+      </p>
+      <p>
+        When a new version of a connector asks for the same single key under credentials of one value where it had a
+        <code>secret</code> entry of its own (and no credentials), the key every instance holds is kept under the new
+        name when the connector is installed: nobody types it again. Any other change of what an instance is asked for
+        leaves what is stored as it is.
       </p>
 
       <h4 id="connector-command">A command</h4>
@@ -4391,7 +4495,10 @@ commands:
           <tbody>
             <tr>
               <td>An <strong>instance</strong> of its connector, turned on or off (the dialog says which)</td>
-              <td>Delete the instance. It holds credentials that are yours: uninstalling never deletes one for you.</td>
+              <td>
+                Delete the instance. It holds credentials that are yours: uninstalling never deletes one for you. A
+                <a href="#credentials">stored credential</a> it names stays, for the instance made again later.
+              </td>
             </tr>
             <tr>
               <td>A playbook of the pack that is <strong>turned on</strong>, or has a run in progress</td>

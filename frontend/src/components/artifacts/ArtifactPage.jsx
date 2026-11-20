@@ -33,6 +33,7 @@ import { exportRequest } from '../../domain/artifactExpiry.js'
 import MailboxPage from './MailboxPage.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import ArtifactRuns from '../automation/ArtifactRuns.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -92,6 +93,10 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
     setReference(null)
     setTagsDraft(null)
   }, [currentId])
+  useUnsavedChanges(tagsDraft !== null && tagsDraft.trim() !== (current?.tags ?? []).join(' '), {
+    what: 'The tags of the artifact',
+    name: current?.name,
+  })
 
   const artifact = current?.id === currentId ? current : null
   const incident = useMemo(() => (artifact ? standaloneIncident(artifact, reference) : null), [artifact, reference])

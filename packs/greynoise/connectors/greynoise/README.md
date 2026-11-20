@@ -20,7 +20,8 @@ The API key of a GreyNoise account, sent in the `key` header. Sign up at
 The key is optional. Without one, only `get-community-ip`,
 `get-public-rss-feed` and `ping` are of use: GreyNoise answers the Community
 API to anyone, a few addresses a day. An instance that has no key sends no
-`key` header at all.
+`key` header at all; one that has a key sends it with every request to
+`api.greynoise.io`, the public RSS feed included.
 
 ## The free plan
 

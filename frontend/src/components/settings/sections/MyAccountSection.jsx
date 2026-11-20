@@ -4,6 +4,7 @@ import { useAuth } from '../../../context/AuthContext.jsx'
 import { rolesOf } from '../../../domain/permissions.js'
 import { Button } from '../../ui/index.js'
 import { RoleChips } from '../RolePicker.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * "My account" settings section, for every user: who is signed in, and a
@@ -25,6 +26,8 @@ export default function MyAccountSection() {
   const [error, setError] = useState(null)
   const [done, setDone] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  useUnsavedChanges(Boolean(current || next || confirm), { what: 'The change of your password' })
 
   const submit = async (event) => {
     event.preventDefault()

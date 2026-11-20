@@ -165,9 +165,9 @@ test('artifacts on their own', async () => {
   await expect(page.getByText(/^phishing · \d+$/).first()).toBeVisible({ timeout: 30_000 })
   await shot('artifact')
   await artifact.getByRole('button', { name: '[INC-2041] Invoice phishing, finance', exact: true }).click()
-  // The list of incidents, and back: the side panel of the artifacts is left without being closed for good.
+  // The list of incidents, and Back: the side panel of the artifacts is left without being hidden for good.
   await page.getByRole('button', { name: 'Incidents', exact: true }).click()
-  await page.getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.goBack()
 })
 
 test('an address scanned by the isolated browser', async () => {
@@ -270,7 +270,7 @@ test('search, report and settings', async () => {
   await shot('report')
   await page.keyboard.press('Escape')
 
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   await expect(page.getByRole('region', { name: 'Settings' })).toBeVisible()
   await shot('settings')
   await page.keyboard.press('Escape')

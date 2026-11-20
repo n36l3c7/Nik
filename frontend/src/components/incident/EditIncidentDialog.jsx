@@ -6,6 +6,7 @@ import { useIncidents, deriveIncidentName } from '../../context/IncidentContext.
 import { normalizeOs } from '../../config/os.js'
 import { SEVERITIES, STATUSES } from '../../domain/incidentName.js'
 import { formatDateTime } from '../../lib/time.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -68,13 +69,21 @@ export default function EditIncidentDialog({ incident, onClose }) {
   const [start, setStart] = useState(msToLocalInput(incident.suspiciousStart))
   const [end, setEnd] = useState(msToLocalInput(incident.suspiciousEnd))
 
+  const now = JSON.stringify([ticketId, title, severity, status, assignee, host, username, os, start, end])
+  const [opened] = useState(now)
+  const unsaved = useUnsavedChanges(now !== opened, {
+    what: 'The incident',
+    name: incident.name,
+    save: async () => save(),
+  })
+
   const startMs = localInputToMs(start)
   const endMs = localInputToMs(end)
   // Said, not refused: a window written backwards is still saved.
   const inverted = startMs !== null && endMs !== null && endMs < startMs
 
   const save = (event) => {
-    event.preventDefault()
+    event?.preventDefault()
     const closing = status === 'closed' && (incident.status ?? 'open') !== 'closed'
     updateIncidentMeta(incident.id, {
       ticketId,
@@ -95,7 +104,7 @@ export default function EditIncidentDialog({ incident, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Edit the incident"
       maxWidth="max-w-2xl"
       footer={

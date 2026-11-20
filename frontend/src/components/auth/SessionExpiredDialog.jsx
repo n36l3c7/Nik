@@ -2,20 +2,27 @@ import { useState } from 'react'
 import { AlertCircle, LogIn } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { Button, Modal } from '../ui/index.js'
+import { sentenceText } from '../../domain/unsaved.js'
 
 /*
  * Shown over the app when the session ended while it was open (the server
  * answered 401). The app stays as it is underneath, with whatever was not
  * saved yet: signing in again as the same user sends it. Signing out instead
  * gives the changes up, and says so.
+ *
+ * Nothing is asked here about what is being edited (lib/unsaved.js): signing
+ * in again must not wait on a question, and the forms that were open are
+ * still open under this dialog, as they were. `unsaved` is their list, named
+ * so that whoever signs out instead knows what goes with it.
  */
-export default function SessionExpiredDialog({ unsavedChanges = false }) {
+export default function SessionExpiredDialog({ unsavedChanges: pending = false, unsaved = [] }) {
   const { sessionExpired, currentUser, login, logout } = useAuth()
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   if (!sessionExpired || !currentUser) return null
+  const unsavedChanges = pending || unsaved.length > 0
 
   const submit = async (event) => {
     event.preventDefault()
@@ -51,6 +58,13 @@ export default function SessionExpiredDialog({ unsavedChanges = false }) {
             ? 'Your session ended and the last changes are not saved yet. Sign in again to save them: nothing on screen is lost.'
             : 'Your session ended. Sign in again to keep working where you were.'}
         </p>
+        {unsaved.length > 0 && (
+          <ul aria-label="Not saved yet" className="list-disc space-y-1 pl-5 text-fg-muted">
+            {unsaved.map((entry) => (
+              <li key={entry.id}>{sentenceText(entry)}</li>
+            ))}
+          </ul>
+        )}
         <label htmlFor="session-expired-password" className="block text-xs font-medium text-fg-muted">
           Password of {currentUser.username}
         </label>

@@ -6,7 +6,7 @@ nor reach the analysis workers, so its nodes write what they want in a table
 and the API process does it. The table is added only where it is missing.
 
 Revision ID: 0047_playbook_files
-Revises: 0045_lookups_through_connectors
+Revises: 0046_credentials
 Create Date: 2026-11-20
 """
 
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0047_playbook_files"
-down_revision = "0045_lookups_through_connectors"
+down_revision = "0046_credentials"
 branch_labels = None
 depends_on = None
 

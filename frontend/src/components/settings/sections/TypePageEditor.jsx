@@ -19,6 +19,7 @@ import { Button, Modal } from '../../ui/index.js'
 import Grid from '../../dashboards/Grid.jsx'
 import { WidgetPreview } from '../../tabs/summary/LayoutWidgets.jsx'
 import { ButtonsSettings, ChartSettings, buttonsProblem } from './WidgetSettings.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -60,6 +61,11 @@ export default function TypePageEditor({ layout, onLayout, pageId = null, fields
   const [adding, setAdding] = useState('')
   const [editing, setEditing] = useState(null) // the widget in the form
   const [problem, setProblem] = useState(null)
+  const [opened, setOpened] = useState(null) // the widget as the form was opened on it
+  const unsaved = useUnsavedChanges(editing !== null && JSON.stringify(editing) !== opened, {
+    what: 'The widget of the page',
+    name: editing?.title,
+  })
   const [said, setSaid] = useState('')
   const [boards, setBoards] = useState(null) // the dashboards, to name the chart a widget shows
   const [deleting, setDeleting] = useState(false)
@@ -118,6 +124,7 @@ export default function TypePageEditor({ layout, onLayout, pageId = null, fields
   const edit = (widget) => {
     setProblem(null)
     setEditing(widget)
+    setOpened(JSON.stringify(widget))
   }
 
   if (pageId && !page) return null
@@ -224,7 +231,7 @@ export default function TypePageEditor({ layout, onLayout, pageId = null, fields
 
       <Modal
         open={editing !== null}
-        onClose={() => setEditing(null)}
+        onClose={() => unsaved.leave(() => setEditing(null))}
         title={editing ? `Widget: ${kindOf(editing.kind)?.label}` : 'Widget'}
         maxWidth={editing?.kind === 'buttons' ? 'max-w-2xl' : 'max-w-lg'}
         footer={

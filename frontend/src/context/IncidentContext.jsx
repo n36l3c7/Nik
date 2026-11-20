@@ -23,7 +23,8 @@ import { normalizeOs } from '../config/os.js'
 import { generateId } from '../lib/id.js'
 import { deriveIncidentName, hasIdentity, normalizeSeverity, normalizeStatus } from '../domain/incidentName.js'
 import { useAuth } from './AuthContext.jsx'
-import { onLocationChange, setPath } from '../lib/location.js'
+import { freely, onLocationChange, setPath } from '../lib/location.js'
+import { leave } from '../lib/unsaved.js'
 import { useAudit } from './AuditContext.jsx'
 
 /*
@@ -266,8 +267,14 @@ function syncUrl(incidentId, { replace = false } = {}) {
   const path = incidentId ? `/incident/${encodeURIComponent(incidentId)}` : '/'
   if (window.location.pathname === path) return
   // Announced, so an artifact or the Indicators page open in the main area leaves it.
-  setPath(path, { replace, state: { incidentId: incidentId ?? null } })
+  // Rewriting the entry only follows what is shown (an incident deleted, one found by its number): the
+  // person is going nowhere, and is asked nothing about what is not saved.
+  const go = () => setPath(path, { replace, state: { incidentId: incidentId ?? null } })
+  if (replace) freely(go)
+  else go()
 }
+
+const incidentAddress = (incidentId) => (incidentId ? `/incident/${encodeURIComponent(incidentId)}` : '/')
 
 /** The tags of an incident as a row holds them: its field `labels`, a list of texts. */
 const tagList = (value) => (Array.isArray(value) ? value.filter((tag) => typeof tag === 'string' && tag) : [])
@@ -762,7 +769,8 @@ export function IncidentProvider({ children }) {
       }
       storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
-      syncUrl(incident.id)
+      // Whoever asked for the new incident asked about what is not saved before (see App).
+      freely(() => syncUrl(incident.id))
       // Persist the full document; the server stamps its own createdBy.
       saveNew(incident, 'Unable to create the incident on the server.')
       return incident
@@ -861,8 +869,14 @@ export function IncidentProvider({ children }) {
   )
 
   const selectIncident = useCallback((incidentId) => {
-    setActiveIncidentId(incidentId)
-    syncUrl(incidentId)
+    // Another incident takes the place of what is open: what is not saved there is asked about first.
+    leave(
+      () => {
+        setActiveIncidentId(incidentId)
+        syncUrl(incidentId)
+      },
+      { path: incidentAddress(incidentId) },
+    )
   }, [])
 
   /* ---- generic tab data ---- */
@@ -1521,7 +1535,8 @@ export function IncidentProvider({ children }) {
       })
       storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
-      syncUrl(incident.id)
+      // Whoever asked for the new incident asked about what is not saved before (see App).
+      freely(() => syncUrl(incident.id))
       // Persist the imported incident as a new document on the server.
       saveNew(incident, 'Unable to save the imported incident.')
       return incident

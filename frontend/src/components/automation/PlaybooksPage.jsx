@@ -11,6 +11,7 @@ import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { usePageMenu } from '../menu/usePageMenu.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { setPath } from '../../lib/location.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * The playbooks: what starts each, whether it is on, the version that runs,
@@ -57,6 +58,9 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
     }
   }
 
+  const creating = useUnsavedChanges(createOpen && Boolean(name.trim() || description.trim()), {
+    what: 'The new playbook',
+  })
   const create = async (event) => {
     event.preventDefault()
     setBusy(true)
@@ -285,7 +289,7 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
 
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => creating.leave(() => setCreateOpen(false))}
         title="New playbook"
         footer={
           <>

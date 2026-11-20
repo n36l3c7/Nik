@@ -37,6 +37,8 @@ export default function WarRoomTab({ incident, boxed = false }) {
       canWrite,
       canRun,
       canMark: canWrite,
+      // A note left in the line is asked about before the incident, or the tab, is left.
+      unsaved: 'The note being written in the War Room',
       placeholder: 'Write a note, or ! for a command, / for /note /assign /close',
       empty: 'Nothing here yet. What is written below, and what playbooks do on this incident, appears here.',
       onLine: (line, answer) => {

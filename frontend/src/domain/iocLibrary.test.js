@@ -103,3 +103,9 @@ test('the history of a list in words, and tags as they are typed', async () => {
   assert.deepEqual(parseTags('ok, not/ok'), { tags: ['ok'], wrong: ['not/ok'] })
   assert.deepEqual(parseTags(''), { tags: [], wrong: [] })
 })
+
+test('a bulk check says how many indicators the data guard holds', async () => {
+  const { heldLine } = await import('./iocLibrary.js')
+  assert.equal(heldLine(1), '1 indicator is held by the data guard.')
+  assert.equal(heldLine(12), '12 indicators are held by the data guard.')
+})

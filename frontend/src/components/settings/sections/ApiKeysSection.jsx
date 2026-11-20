@@ -5,6 +5,7 @@ import { formatRelative } from '../../../lib/time.js'
 import { rolesOf } from '../../../domain/permissions.js'
 import { Badge, Button, MicroSkull } from '../../ui/index.js'
 import RolePicker, { RoleChips } from '../RolePicker.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * API keys settings section (admin only): create and revoke keys that let
@@ -69,6 +70,8 @@ export default function ApiKeysSection() {
   useEffect(() => {
     reload()
   }, [reload])
+
+  useUnsavedChanges(Boolean(label.trim() || String(expiresDays).trim()), { what: 'The new API key' })
 
   const handleCreate = async (event) => {
     event.preventDefault()

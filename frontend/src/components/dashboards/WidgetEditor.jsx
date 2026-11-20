@@ -17,6 +17,7 @@ import { useQuerySchema } from '../../services/querySchema.js'
 import { Button, Modal } from '../ui/index.js'
 import QueryInput from '../ui/QueryInput.jsx'
 import Widget from './Widget.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -124,6 +125,12 @@ export default function WidgetEditor({ widget, board, range, onSave, onClose }) 
 
   const meta = typeOf(draft.type)
   const asking = asks(draft)
+  // "Done" puts the widget on the dashboard being edited; closing any other way gives the changes up.
+  const unsaved = useUnsavedChanges(JSON.stringify(draft) !== JSON.stringify(widget), {
+    what: 'The widget',
+    name: draft.title,
+  })
+  const close = () => unsaved.leave(onClose)
   const schema = useQuerySchema(draft.entity ?? 'incidents')
   const fields = schema?.fields ?? []
   const dates = fields.filter((field) => field.kind === 'date')
@@ -184,13 +191,13 @@ export default function WidgetEditor({ widget, board, range, onSave, onClose }) 
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={close}
       title={widget.title ? `Edit "${widget.title}"` : 'Edit the widget'}
       maxWidth="max-w-5xl"
       tall
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={close}>
             Cancel
           </Button>
           <Button onClick={() => onSave(draft)}>Done</Button>

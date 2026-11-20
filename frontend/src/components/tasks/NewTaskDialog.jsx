@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import { api } from '../../services/api.js'
 import { Button, Modal } from '../ui/index.js'
 import Assign from './Assign.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * A task added to an incident by hand: what to do, for whom, by when.
@@ -26,6 +27,7 @@ export default function NewTaskDialog({ incidentId, onClose, onAdded }) {
   const [due, setDue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const unsaved = useUnsavedChanges(Boolean(title.trim() || instructions.trim() || due), { what: 'The new task' })
 
   const add = async (event) => {
     event.preventDefault()
@@ -48,7 +50,7 @@ export default function NewTaskDialog({ incidentId, onClose, onAdded }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Add a task"
       footer={
         <>

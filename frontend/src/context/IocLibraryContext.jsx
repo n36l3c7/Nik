@@ -6,6 +6,7 @@ import BulkCheckDialog from '../components/iocs/BulkCheckDialog.jsx'
 import ExportIocsDialog from '../components/iocs/ExportIocsDialog.jsx'
 import ListDialog from '../components/iocs/ListDialog.jsx'
 import { isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
+import { leave } from '../lib/unsaved.js'
 import { useAuth } from './AuthContext.jsx'
 import { useToast } from './ToastContext.jsx'
 
@@ -119,8 +120,14 @@ export function IocLibraryProvider({ children }) {
   }, [])
 
   const openView = useCallback((next) => {
-    setView(next)
-    setPath(libraryPath(next), { state: { iocs: true } })
+    // It takes the place of what is open: what is not saved there is asked about first.
+    leave(
+      () => {
+        setView(next)
+        setPath(libraryPath(next), { state: { iocs: true } })
+      },
+      { path: libraryPath(next) },
+    )
   }, [])
   /** Leave the library (the caller restores the incident's or the artifact's URL). */
   const closeView = useCallback(() => setView(null), [])

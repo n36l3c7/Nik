@@ -634,3 +634,52 @@ def test_a_connector_says_unpack_only_of_an_answer_that_is_a_file():
     )
     with pytest.raises(ca.ConnectorError):
         ca.load(COLLECTOR.replace("format: zip", "format: rar"))
+
+
+def test_the_password_of_an_archive_may_be_a_stored_credential_of_the_instance(collector):
+    """A secret of the instance that names a stored credential is read when the archive is opened,
+    and is redacted as every secret of the instance is."""
+    admin = collector.admin
+    made = admin.post("/api/automation/credentials", json={"name": "fetch_archives", "kind": "secret", "value": SECRET})
+    assert made.status_code == 201, made.text
+    stored = COLLECTOR.replace(
+        "  - { name: credentials, type: header, header: x-apikey }\n",
+        "  - { name: credentials, type: header, header: x-apikey }\n  - { name: archive_password, type: secret }\n",
+    ).replace('password: "{{ args.password }}"', 'password: "{{ secret.archive_password }}"')
+    stored = stored.replace("id: fetchdesk", "id: fetchvault").replace("name: Fetch Desk", "name: Fetch Vault")
+    stored = stored.replace("      - { name: password, type: text }\n", "")
+    stored += '    outputs: { count: "{{ response.count }}", names: "{{ response.files | pluck(\'name\') }}" }\n'
+    assert "secret.archive_password" in stored and "args.password" not in stored
+    with SessionLocal() as db:
+        ca.install(db, stored, "admin")
+        connection = Connection(
+            id="e" * 32,
+            name="Vault of files",
+            connector_id="fetchvault",
+            config={"url": f"https://{DESK}/api"},
+            created_at=now_iso(),
+            updated_at=now_iso(),
+        )
+        # The instance holds the name of the credential, not its value.
+        ca.store_secrets(
+            connection, {"value": "desk-key-123456", "archive_password": "{{ credentials.fetch_archives }}"}
+        )
+        db.add(connection)
+        db.commit()
+        call = actions.Call(
+            db=db,
+            args={"id": "7"},
+            classes=frozenset(),
+            arg_classes={},
+            dry_run=False,
+            run=SimpleNamespace(id="run-1", incident_id=None, trigger={"playbook": "Vault desk"}),
+            playbook=db.get(Playbook, collector.playbook),
+            connection="Vault of files",
+        )
+        result = ca.run_command("fetchvault", "fetched-files", call)
+        db.commit()
+    # The archive opened with the value the credential has now, which is in nothing the step gave.
+    assert result.output == {"count": 2, "names": list(COLLECTED)}
+    assert SECRET not in str(result.output) and SECRET not in str(result.request)
+    shown = admin.get(f"/api/artifacts/file-{collector.sha}").json()
+    assert sorted(child["name"] for child in shown["children"]) == ["notes.txt", "run.log"]

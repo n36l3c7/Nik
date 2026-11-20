@@ -147,6 +147,42 @@ export function verdictChanges(history = []) {
   return out
 }
 
+// ---- the data guard on the look-ups made outside playbooks ------------------
+
+/** "e-mail addresses, internal names and addresses": the classes a held value carries. */
+export function heldClasses(held) {
+  return (held?.classes ?? []).map((item) => String(item.label).toLowerCase()).join(', ')
+}
+
+/**
+ * What the page of an indicator says when the data guard holds its look-up
+ * (`held` of GET /api/enrichment): `{ line, advice }`, or null when nothing is
+ * held. Only an administrator can open a class, so only one is told to.
+ */
+export function heldNotice(held, isAdmin = false) {
+  if (!held?.classes?.length) return null
+  const one = held.classes.length === 1
+  return {
+    line: `Held by the data guard: this value carries ${heldClasses(held)}.`,
+    advice: isAdmin
+      ? `No source is asked until ${one ? 'this class is' : 'these classes are'} opened for the look-ups in Settings, Threat intelligence.`
+      : `No source is asked. An administrator can open ${one ? 'this class' : 'these classes'} for the look-ups in Settings, Threat intelligence.`,
+  }
+}
+
+/** The double check before a class is opened for the look-ups: the box ticked, its name typed as it is written. */
+export function guardConfirmed(item, ticked, typed) {
+  return Boolean(item) && ticked === true && typed === item.label
+}
+
+/** Where an opened class could go: the sources that are on, by name. */
+export function guardDestinations(sources = []) {
+  const on = sources.filter((source) => source.on).map((source) => source.label)
+  return on.length
+    ? `It could be sent to every source that is on: ${on.join(', ')}. A source turned on later receives it too.`
+    : 'No source is on yet: it could be sent to every source that is turned on later.'
+}
+
 // ---- an indicator and the artifact that is its analysis ---------------------
 
 /** Types Nik can analyse itself: an address it can visit, a file it may hold. */

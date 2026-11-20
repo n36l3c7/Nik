@@ -33,7 +33,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import artifact_jobs
-from ..core import vault
+from ..core import audit, vault
 from ..core.models import Connection, Connector
 from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
@@ -41,6 +41,7 @@ from . import (
     actions,
     connector_files,
     connector_logo,
+    credentials,
     egress,
     instance_keys,
     mail_evidence,
@@ -100,6 +101,7 @@ def install(
         except connector_logo.LogoError as error:
             raise ConnectorError([Problem(0, f"The logo: {error.message}")]) from None
     row = db.get(Connector, connector.id)
+    before = parsed(row) if row is not None else None
     now = now_iso()
     if row is None:
         row = Connector(id=connector.id, created_at=now, created_by=actor)
@@ -123,12 +125,59 @@ def install(
     row.updated_at = now
     row.updated_by = actor
     db.flush()
+    if before is not None:
+        carry_key(db, before, connector, actor)
     if connector.native is None and any(command.reputation for command in connector.commands):
         # A source of threat intelligence: a key kept for it before 6.5 becomes the key of an instance.
         from ..enrichment import old_keys
 
         old_keys.adopt(db)
     return row, connector
+
+
+def renamed_key(before: ConnectorFile, after: ConnectorFile) -> tuple[str, str] | None:
+    """``(old name, new name)`` when a new version of a connector asks for the same one key under another
+    name: it had one ``secret`` of its own and no credentials (``api_key``, written into each request by
+    hand), and now has credentials of one value (``header``, ``query``, ``bearer``) and that secret no
+    more. None in every other case: nothing else can be told to be the same secret."""
+    old, new = secret_names(before), secret_names(after)
+    gone = [name for name in old if name not in new]
+    came = [name for name in new if name not in old]
+    one_value = after.auth is not None and len(AUTH_FIELDS.get(after.auth.type, ())) == 1
+    if before.auth is None and one_value and len(gone) == 1 and len(came) == 1:
+        return gone[0], came[0]
+    return None
+
+
+def carry_key(db: OrmSession, before: ConnectorFile, after: ConnectorFile, actor: str) -> int:
+    """Keep the keys of the instances when a new version of their connector calls the key otherwise
+    (``renamed_key``): what each key of each instance holds under the old name is held under the new one,
+    a typed value and the name of a stored credential alike. Nobody types a key again because a file
+    was tidied. Returns how many instances were changed (the caller commits)."""
+    names = renamed_key(before, after)
+    if names is None:
+        return 0
+    old, new = names
+    changed = 0
+    for connection in connections_of(db, after.id):
+        moved = False
+        for key in instance_keys.keys_of(connection):
+            if key.secrets.get(old) and not key.secrets.get(new):
+                held = dict(key.secrets)
+                held[new] = held.pop(old)
+                instance_keys.set_key_secrets(connection, key.id, held)
+                moved = True
+        if moved:
+            changed += 1
+            audit.record(
+                db,
+                actor,
+                "connection.update",
+                f'Kept the key of the instance "{connection.name}" under the name version {after.version} of '
+                f"{after.name} asks for it ({old} is {new} now)",
+                target=connection.name,
+            )
+    return changed
 
 
 def package_of(folder: Path) -> tuple[str, dict[str, Any]]:
@@ -203,6 +252,17 @@ def store_secrets(connection: Connection, secrets: dict[str, Any]) -> None:
     kept = {key: str(value) for key, value in secrets.items() if value not in (None, "")}
     connection.secrets = vault.encrypt(json.dumps(kept)) if kept else ""
     forget_tokens(connection.id)
+
+
+def usable_secrets(db: OrmSession, connection: Connection, key: instance_keys.Key | None = None) -> dict[str, Any]:
+    """The secrets a request of the instance goes with (those of ``key``, or of its first key): what was
+    typed as it is, and in place of each stored credential the instance names, the value it has now
+    (credentials.py). A credential that is missing fails the command, by its name: nothing stands in."""
+    held = secrets_of(connection) if key is None or key.id == instance_keys.MAIN else key.secrets
+    try:
+        return credentials.resolved(db, held, connection.name)
+    except credentials.CredentialError as error:
+        raise CommandError(error.message, retry=False) from None
 
 
 def connections_of(db: OrmSession, connector_id: str) -> list[Connection]:
@@ -344,14 +404,24 @@ def runtime_for(
         # A recipient is judged by the playbook's own policy: the host of the mailbox is not one.
         if playbook is not None:
             policy = outbound.policy_for(db, playbook)
-        return MailRuntime(connector, connection.config or {}, secrets_of(connection), policy)
+        return MailRuntime(connector, connection.config or {}, usable_secrets(db, connection), policy)
     if key is None or key.id == instance_keys.MAIN:
         return Runtime(
-            connector, connection.config or {}, secrets_of(connection), policy, token_key=connection.id, clock=clock
+            connector,
+            connection.config or {},
+            usable_secrets(db, connection),
+            policy,
+            token_key=connection.id,
+            clock=clock,
         )
     # Another key signs in on its own: its token is not the first key's.
     return Runtime(
-        connector, connection.config or {}, key.secrets, policy, token_key=f"{connection.id}:{key.id}", clock=clock
+        connector,
+        connection.config or {},
+        usable_secrets(db, connection, key),
+        policy,
+        token_key=f"{connection.id}:{key.id}",
+        clock=clock,
     )
 
 

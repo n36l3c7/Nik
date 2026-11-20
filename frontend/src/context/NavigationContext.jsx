@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { leave } from '../lib/unsaved.js'
 
 /*
  * Requests to move around the app, made by components that do not own the
@@ -18,8 +19,11 @@ export function NavigationProvider({ children }) {
   const [requests, setRequests] = useState({}) // { [tab]: { search?, file?, params? } }
 
   const goTo = useCallback((tab, request = {}) => {
-    setRequests((prev) => ({ ...prev, [tab]: request }))
-    setFocus({ tab, at: Date.now() })
+    // Another tab takes the place of the one shown: what is not saved there is asked about first.
+    leave(() => {
+      setRequests((prev) => ({ ...prev, [tab]: request }))
+      setFocus({ tab, at: Date.now() })
+    })
   }, [])
   const importInto = useCallback((tab, file, params = {}) => goTo(tab, { file, params }), [goTo])
   const openSearch = useCallback((query = '') => setSearch({ query, at: Date.now() }), [])

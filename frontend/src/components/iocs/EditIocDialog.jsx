@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../services/api.js'
 import { TLP_OPTIONS } from '../../domain/iocLibrary.js'
 import { Button, Modal, Select } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /* What an analyst writes about one indicator: tags, a note, its TLP and the
  * day after which it is no longer current. */
@@ -27,6 +28,14 @@ export default function EditIocDialog({ row, onClose, onSaved }) {
     setError(null)
   }, [row])
 
+  const unsaved = useUnsavedChanges(
+    Boolean(row) &&
+      (tags !== row.tags.join(' ') ||
+        note !== row.note ||
+        tlp !== (row.tlp ?? 'amber') ||
+        expires !== (row.expires ?? '')),
+    { what: 'The indicator', name: row?.value },
+  )
   if (!row) return null
   const save = async (event) => {
     event.preventDefault()
@@ -51,7 +60,7 @@ export default function EditIocDialog({ row, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Edit the indicator"
       footer={
         <>

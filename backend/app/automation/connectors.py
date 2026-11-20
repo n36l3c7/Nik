@@ -837,7 +837,11 @@ def _check_templates(value: Any, allowed: frozenset, loc: tuple, lines: dict, pr
             problems.append(Problem(_line_of(lines, loc), f"{error.message} (in {value[:80]!r})", _where(loc)))
             return
         for name, _position in found:
-            if name not in allowed:
+            if name == "credentials" and name not in allowed:
+                # A stored credential is named in a field of an instance; a file reads what the instance
+                # holds as {{ secret.<name> }} and never knows where the value came from.
+                problems.append(Problem(_line_of(lines, loc), ex.CREDENTIALS_ELSEWHERE, _where(loc)))
+            elif name not in allowed:
                 where = (
                     "what is sent"
                     if "secret" in allowed
@@ -997,6 +1001,10 @@ def load(text: str | bytes) -> ConnectorFile:
     return connector
 
 
+# The credentials that are one value, and what that value is called among the secrets of an instance.
+_ONE_VALUE = {"bearer": "token", "header": "value", "query": "value"}
+
+
 def _paths(value: Any, root: str) -> set[str]:
     """The first names read under ``root`` by the templates of a value: ``config.url`` → ``url``."""
     return ex.first_names(value, root)
@@ -1010,6 +1018,11 @@ def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Probl
     if auth is not None and auth.type in ("session", "zscaler", "basic"):
         # What a session logs in with: the parts of the credentials.
         secret |= {"username", "password", "api_key"}
+    elif auth is not None and auth.type in _ONE_VALUE:
+        # Credentials of one value are added to every request to the instance by the runtime, and a file
+        # says nothing of them. It may still write the value by hand where the runtime adds nothing: a
+        # request to another host the file lists (``more_hosts``), which the same key opens (6.6).
+        secret |= {_ONE_VALUE[auth.type]}
     for name in sorted(_paths(raw, "config") - plain):
         if name in secret:
             problems.append(Problem(0, f'"{name}" is a secret: read it as {{{{ secret.{name} }}}}', "config"))

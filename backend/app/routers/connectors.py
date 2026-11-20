@@ -7,7 +7,10 @@ runs playbooks reads the list of connections, names only, to choose one on a
 node.
 
 Credentials are write-only: they are stored encrypted and no route returns
-them; a connection says only which of its secrets are set.
+them; a connection says only which of its secrets are set. A secret of an
+instance may name a stored credential instead of holding a value
+(``automation/credentials.py``): the name is given back, never what it stands
+for.
 """
 
 from __future__ import annotations
@@ -25,11 +28,11 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .. import fetch as fetching
 from ..automation import connector_actions as store
-from ..automation import connector_logo, engine, graph, instance_keys
+from ..automation import connector_logo, credentials, engine, graph, instance_keys
 from ..automation import connectors as files
-from ..core import audit
+from ..core import audit, vault
 from ..core.db import get_db
-from ..core.models import Connection, Connector, Playbook, PlaybookVersion
+from ..core.models import Connection, Connector, Credential, Playbook, PlaybookVersion
 from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_RUN, CONNECTORS_MANAGE
 from ..core.security import Principal, now_iso, reader_principal, require
 
@@ -161,6 +164,8 @@ def _connection_out(db: OrmSession, row: Connection, *, full: bool) -> dict[str,
         config=row.config or {},
         # Which secrets are set: never what they are.
         secrets={name: bool(stored.get(name)) for name in names},
+        # Which of them name a stored credential, and which one: {field: {name, part, missing}}.
+        credentials=credentials.named(db, stored),
         host=store.host_of(connector, row.config or {}) if connector is not None else None,
         lastTest=row.last_test,
         updatedAt=row.updated_at,
@@ -211,13 +216,30 @@ def _clean_config(connector: files.ConnectorFile, given: dict[str, Any]) -> dict
                 )
         elif not isinstance(value, str) or len(value) > 20_000:
             raise HTTPException(status_code=400, detail=f"{_label(param)} is a text")
+        if credentials.mentions(value):
+            # A plain value is shown and sent as it is: a credential named there would never be read.
+            raise HTTPException(
+                status_code=400,
+                detail=f"{_label(param)} is not a secret: a credential is named in a field that holds one",
+            )
         out[param.name] = value
     if store.host_of(connector, {**{p.name: p.default for p in plain if p.default is not None}, **out}) is None:
         raise HTTPException(status_code=400, detail="The instance has no address to send to")
     return out
 
 
-def _merge_secrets(connector: files.ConnectorFile, row: Connection, given: dict[str, str | None]) -> None:
+def _secret(db: OrmSession, value: str) -> str:
+    """A secret as an instance is given it: what was typed, or the name of a stored credential, which
+    must exist and be of a kind that has the part asked for."""
+    try:
+        return credentials.checked(db, value)
+    except credentials.CredentialError as error:
+        raise HTTPException(status_code=error.status, detail=error.message) from None
+
+
+def _merge_secrets(
+    db: OrmSession, connector: files.ConnectorFile, row: Connection, given: dict[str, str | None]
+) -> None:
     known = set(store.secret_names(connector))
     stored = store.secrets_of(row)
     for name, value in given.items():
@@ -230,7 +252,7 @@ def _merge_secrets(connector: files.ConnectorFile, row: Connection, given: dict[
         if value == "":
             stored.pop(name, None)
         else:
-            stored[name] = value
+            stored[name] = _secret(db, value)
     store.store_secrets(row, stored)
 
 
@@ -458,7 +480,7 @@ def create_connection(
         updated_at=now,
         updated_by=caller.actor,
     )
-    _merge_secrets(connector, row, body.secrets)
+    _merge_secrets(db, connector, row, body.secrets)
     db.add(row)
     host = store.host_of(connector, row.config)
     audit.record(
@@ -501,7 +523,7 @@ def update_connection(
         changes.append(f"address {before} → {after}" if before != after else "settings")
         row.last_test = None
     if body.secrets is not None and any(value is not None for value in body.secrets.values()):
-        _merge_secrets(connector, row, body.secrets)
+        _merge_secrets(db, connector, row, body.secrets)
         changes.append("credentials")
         row.last_test = None
     try:
@@ -511,7 +533,13 @@ def update_connection(
             auth = connector.auth
             required = list(store.AUTH_FIELDS.get(auth.type, ())) if auth is not None else []
             before = len(instance_keys.extra_keys(row))
-            instance_keys.set_extra_keys(row, body.keys, store.secret_names(connector), required)
+            given = [
+                {**entry, "secrets": {field: _secret(db, value) for field, value in entry["secrets"].items()}}
+                if isinstance(entry, dict) and isinstance(entry.get("secrets"), dict)
+                else entry
+                for entry in body.keys
+            ]
+            instance_keys.set_extra_keys(row, given, store.secret_names(connector), required)
             after = instance_keys.extra_keys(row)
             instance_keys.forget(db, row.id, keep={instance_keys.MAIN, *(entry["id"] for entry in after)})
             for entry in after:
@@ -632,6 +660,86 @@ def test_keys(
             result = {"ok": False, "status": 0, "message": error.message}
         found.append({"id": key.id, "name": key.name, **result})
     return {"keys": found}
+
+
+class KeepIn(BaseModel):
+    """A secret that was typed into an instance, to be kept as a stored credential under ``name``."""
+
+    key: str = Field(default=instance_keys.MAIN, max_length=16)  # which key of the instance holds it
+    field: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=40)
+    title: str = Field(default="", max_length=200)
+
+
+@router.post("/instances/{connection_id}/credentials", status_code=status.HTTP_201_CREATED)
+def keep_as_credential(
+    connection_id: str,
+    body: KeepIn,
+    caller: Principal = Depends(manager_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Turn a secret typed into the instance into a stored credential: the value moves there, and the
+    instance names the credential where it held the value. Nobody types it again, and it is not shown.
+
+    A user name and a password that the instance holds together become one credential of the kind
+    ``pair``; anything else becomes a ``secret``. Returns the instance, as it is now."""
+    row = _connection(db, connection_id)
+    _connector_row, connector = _connector(db, row.connector_id)
+    names = store.secret_names(connector)
+    key = next((held for held in instance_keys.keys_of(row) if held.id == body.key), None)
+    if key is None:
+        raise HTTPException(status_code=404, detail="This key is not of this instance any more")
+    if body.field not in names:
+        raise HTTPException(status_code=400, detail=f'"{body.field}" is not a secret of this connector')
+    held = dict(key.secrets)
+
+    def typed(field: str) -> bool:
+        return bool(held.get(field)) and credentials.reference(held[field]) is None
+
+    if credentials.reference(held.get(body.field)) is not None:
+        raise HTTPException(status_code=400, detail="This is a stored credential already")
+    if not typed(body.field):
+        raise HTTPException(status_code=400, detail="There is no value stored there to keep")
+    pair = credentials.pair_fields(names)
+    together = pair is not None and body.field in pair and typed(pair[0]) and typed(pair[1])
+    now = now_iso()
+    try:
+        name = credentials.clean_name(db, body.name)
+        made = Credential(
+            id=engine.new_id(),
+            name=name,
+            title=body.title.strip(),
+            kind="pair" if together else "secret",
+            username=held[pair[0]][:500] if together else "",
+            secret=vault.encrypt(credentials.clean_value(held[pair[1]] if together else held[body.field])),
+            created_at=now,
+            created_by=caller.actor,
+            updated_at=now,
+            updated_by=caller.actor,
+        )
+        db.add(made)
+        db.flush()
+        if together:
+            held[pair[0]] = credentials.Reference(name, "username").text
+            held[pair[1]] = credentials.Reference(name, "password").text
+        else:
+            held[body.field] = credentials.Reference(name).text
+        instance_keys.set_key_secrets(row, key.id, held)
+    except (credentials.CredentialError, instance_keys.KeyError_) as error:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=error.message) from None
+    row.updated_at, row.updated_by = now, caller.actor
+    which = "" if key.id == instance_keys.MAIN else f', key "{key.name}"'
+    audit.record(
+        db,
+        caller.actor,
+        "credential.create",
+        f'Kept what the instance "{row.name}"{which} held as the credential "{name}" ({credentials.what(made)}): '
+        "the instance names it now",
+        target=name,
+    )
+    db.commit()
+    return _connection_out(db, row, full=True)
 
 
 @router.delete("/instances/{connection_id}/answers")

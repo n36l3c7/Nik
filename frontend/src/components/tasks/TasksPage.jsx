@@ -7,6 +7,7 @@ import { AsciiSkull, Badge, EmptyState } from '../ui/index.js'
 import TaskCard from './TaskCard.jsx'
 import { numberedName } from '../../domain/incidentName.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
+import SearchBar from '../layout/SearchBar.jsx'
 
 /*
  * ============================================================================
@@ -31,9 +32,10 @@ const VIEWS = [
  *   onSelect: (id: string | null, options?: { replace?: boolean }) => void,
  *   onClose: () => void,
  *   onOpenIncident: (id: string) => void,
+ *   onFirstScreen?: (first: boolean) => void,  // told whether the page shows what a fresh visit shows
  * }} props
  */
-export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident }) {
+export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident, onFirstScreen }) {
   const { version, count } = useTasks()
   const menu = useObjectMenu()
   const ref = useRef(null)
@@ -66,6 +68,14 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident })
     if (!taskId && tasks?.length) onSelect(tasks[0].id, { replace: true })
   }, [taskId, tasks, onSelect])
 
+  // What a fresh visit shows: the tasks that wait for the person, on the first of them. The entry of
+  // the rail does nothing then, and comes back here from anything else.
+  const first = view === 'mine' && tasks !== null && (taskId ?? null) === (tasks[0]?.id ?? null)
+  useEffect(() => {
+    onFirstScreen?.(first)
+    return () => onFirstScreen?.(false)
+  }, [first, onFirstScreen])
+
   return (
     <section
       ref={ref}
@@ -73,8 +83,8 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident })
       tabIndex={-1}
       className="flex min-w-0 flex-1 flex-col bg-canvas outline-none"
     >
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
-        <div className="flex min-w-0 items-center gap-4">
+      <header className="@container flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
+        <div className="flex flex-1 basis-0 items-center gap-4">
           <h1 className="text-sm font-semibold text-fg">My tasks</h1>
           <nav aria-label="Which tasks" className="flex gap-1">
             {VIEWS.map((item) => (
@@ -96,15 +106,18 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident })
             ))}
           </nav>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close my tasks"
-          title="Close my tasks"
-          className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <SearchBar />
+        <div className="flex flex-1 basis-0 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close my tasks"
+            title="Close my tasks"
+            className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col min-[900px]:flex-row">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../services/api.js'
 import { TLP_OPTIONS } from '../../domain/iocLibrary.js'
 import { Button, Modal, Select } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * Make a list (optionally from a scope: a selection, an incident's
@@ -37,6 +38,14 @@ export default function ListDialog({ request, onClose, onSaved }) {
     setError(null)
   }, [request, editing])
 
+  const unsaved = useUnsavedChanges(
+    Boolean(request) &&
+      (name !== (editing?.name ?? request.name ?? '') ||
+        description !== (editing?.description ?? '') ||
+        tlp !== (editing?.tlp ?? 'amber') ||
+        watch !== (editing?.watch ?? false)),
+    { what: editing ? 'The list of indicators' : 'The new list of indicators', name: editing?.name ?? '' },
+  )
   if (!request) return null
   const save = async (event) => {
     event.preventDefault()
@@ -57,7 +66,7 @@ export default function ListDialog({ request, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={editing ? 'Edit the list' : 'Save as a list'}
       footer={
         <>

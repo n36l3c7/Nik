@@ -24,6 +24,12 @@ or TLP:RED values to the sources) is separate and unchanged: it lives in
 (``nik.reputation``) passes both: that rule first, then this guard, once for
 all the sources. A reputation command a playbook runs as a node of its own is
 judged by this guard alone, like any other command.
+
+A look-up nobody's playbook makes ("Check now", a check in bulk, the automatic
+look-ups) is judged by this guard too, on the value alone, against the classes
+an admin opened for **all** such look-ups (``enrichment/service.py``): there is
+no playbook to open them for. What is opened there opens nothing in a playbook,
+and what a playbook has opened opens nothing there.
 """
 
 from __future__ import annotations
@@ -225,13 +231,18 @@ def drop(payload: Any, context: Context, opened: frozenset | set | list) -> Any:
     return cleaned if ok else None
 
 
-def context_from(db) -> Context:
-    """The organisation's own domains and allowlist, from the shared settings."""
+def context_of(shared: dict) -> Context:
+    """The organisation's own domains and allowlist, from shared settings that were read already."""
     from ..iocs import Allowlist
-    from ..routers.settings import read_settings
 
-    shared = read_settings(db)
     mail = shared.get("mail") or {}
     domains = frozenset(str(d).lower().strip(".") for d in (mail.get("orgDomains") or []) if str(d).strip("."))
     allowlist = Allowlist(shared.get("iocAllowlist") or [])
     return Context(internal_domains=domains, allowlisted=allowlist.matches)
+
+
+def context_from(db) -> Context:
+    """The organisation's own domains and allowlist, from the shared settings."""
+    from ..routers.settings import read_settings
+
+    return context_of(read_settings(db))

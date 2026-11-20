@@ -6,6 +6,7 @@ import { formatRelative } from '../../../lib/time.js'
 import { rolesOf, sameRoles } from '../../../domain/permissions.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
 import RolePicker, { RoleChips } from '../RolePicker.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Accounts settings section (admin only): the local accounts. An admin adds
@@ -50,6 +51,7 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
   if (password) changes.password = password
   if (disabled !== Boolean(user.disabled)) changes.disabled = disabled
   const dirty = Object.keys(changes).length > 0 && roles.length > 0
+  const unsaved = useUnsavedChanges(Object.keys(changes).length > 0, { what: 'The account', name: user.username })
 
   const save = async (event) => {
     event.preventDefault()
@@ -69,7 +71,7 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={`Account: ${user.username}`}
       maxWidth="max-w-lg"
       footer={
@@ -164,6 +166,8 @@ export default function AccountsSection() {
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState(null)
   const [listError, setListError] = useState(null)
+
+  useUnsavedChanges(Boolean(newUsername.trim() || newPassword), { what: 'The new account' })
 
   const handleAdd = async (event) => {
     event.preventDefault()

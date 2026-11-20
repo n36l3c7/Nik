@@ -42,6 +42,33 @@ test('the form of a connection: plain values, then the parts of its credentials'
     [['value', 'secret']],
   )
   assert.deepEqual(fieldsOf(null), [])
+  // Credentials of one value are one field: it is called, and explained, as the connector says.
+  const said = {
+    configuration: [
+      { name: 'api_key', label: 'API key', type: 'header', help: 'Optional: left empty, less is answered' },
+    ],
+    secrets: ['value'],
+  }
+  assert.deepEqual(
+    fieldsOf(said).map((field) => [field.name, field.label, field.help, field.masked]),
+    [['value', 'API key', 'Optional: left empty, less is answered', true]],
+  )
+  // One the connector did not name (the server then gives the name of the entry as its label) is a key.
+  const unnamed = { configuration: [{ name: 'credentials', label: 'Credentials', type: 'bearer' }], secrets: ['token'] }
+  assert.deepEqual(
+    fieldsOf(unnamed).map((field) => [field.label, field.help]),
+    [['Token', '']],
+  )
+  assert.equal(fieldsOf(keyed)[0].label, 'Key')
+  // The parts of other credentials keep their own names, whatever the entry is called.
+  const basic = {
+    configuration: [{ name: 'credentials', label: 'Service account', type: 'basic' }],
+    secrets: ['username', 'password'],
+  }
+  assert.deepEqual(
+    fieldsOf(basic).map((field) => field.label),
+    ['User name', 'Password'],
+  )
 })
 
 test('a form starts from the plain values, and never from a secret', () => {

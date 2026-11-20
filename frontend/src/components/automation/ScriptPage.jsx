@@ -19,6 +19,7 @@ import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import CodeEditor from './CodeEditor.jsx'
 import { SandboxBox } from './ScriptsPage.jsx'
 import { INPUT, SectionTitle } from './fields.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -359,6 +360,29 @@ export default function ScriptPage({ id, onBack, onOpenPlaybooks }) {
   const change = useCallback((patch) => setDraft((before) => (before ? { ...before, ...patch } : before)), [])
   const parsedArgs = parseJson(argsText, {})
   const parsedExpect = parseJson(expectText)
+
+  // Nothing unsaved is lost without asking (lib/unsaved.js). The draft saves itself and is sent on the
+  // way out, so only the browser's tab closing could lose it; a save the server refused, and a test
+  // whose JSON cannot be read (it never reaches the draft), are what leaving would lose.
+  useUnsavedChanges(saveState === 'pending' || saveState === 'saving', {
+    what: 'The script',
+    name: script?.name,
+    sent: true,
+  })
+  useUnsavedChanges(saveState === 'error', {
+    what: 'The draft of the script',
+    name: script?.name,
+    save: () =>
+      api.put(base, { draft: latestDraft.current }).then((found) => {
+        savedDraft.current = latestDraft.current
+        setScript(found)
+        setSaveState('saved')
+      }),
+  })
+  useUnsavedChanges(Boolean(draft) && Boolean(parsedArgs.error || parsedExpect.error), {
+    what: 'The test of the script',
+    name: script?.name,
+  })
   const onArgs = (text) => {
     setArgsText(text)
     const parsed = parseJson(text, {})

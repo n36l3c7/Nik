@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileText, ImagePlus, Save, Trash2 } from 'lucide-react'
 import { Button } from '../../ui/index.js'
 import { useSettings } from '../../../context/SettingsContext.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Report header: the organisation name and logo printed at the top of every
@@ -30,6 +31,11 @@ export default function ReportBrandingSection() {
   useEffect(() => {
     setOrgName(reportBranding?.orgName ?? '')
   }, [reportBranding?.orgName])
+
+  useUnsavedChanges(loaded && orgName.trim() !== (reportBranding?.orgName ?? ''), {
+    what: 'The name of the organisation on the report',
+    save: async () => setReportBranding({ orgName: orgName.trim() }),
+  })
 
   const handleLogo = async (file) => {
     setError(null)

@@ -3,6 +3,7 @@ import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../lib/time.js'
 import { Button } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * An approval that waits: the question, what it is about, and the two
@@ -44,6 +45,7 @@ export default function ApprovalBanner({ approval, onOpenRun, onAnswered }) {
   const { showToast } = useToast()
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
+  useUnsavedChanges(Boolean(comment.trim()), { what: 'The comment on the approval' })
 
   const answer = async (verdict) => {
     setBusy(true)

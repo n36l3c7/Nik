@@ -67,8 +67,8 @@ async function openIncidentList() {
   const entry = page
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('button', { name: 'Incidents', exact: true })
-  // Its entry says "Hide the incidents" while the list is shown and there is something to go back to.
-  if (await entry.count()) await entry.click()
+  // Pressed while the list is what is shown, the entry does nothing.
+  await entry.click()
   await expect(page.getByRole('table', { name: 'Incidents' })).toBeVisible()
 }
 
@@ -86,13 +86,13 @@ async function openIncidentFromList(text = null) {
 }
 
 /**
- * Leave the side panel of the artifacts or of the indicators for the incident that is open, as the
- * rail does it: the list of incidents, and back. (Closing the panel from its own entry would keep it
- * closed for what is opened next.)
+ * Leave the side panel of the artifacts or of the indicators for the incident that is open: the list
+ * of incidents from the rail (it takes the panel away), and Back. (Hiding the panel with its own
+ * button would keep it hidden for what is opened next.)
  */
 async function leaveSidePanel() {
   await openIncidentList()
-  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.goBack()
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 }
 
@@ -255,7 +255,7 @@ test('the IOCs tab gathers the indicators and shows where they were seen', async
 })
 
 test('threat intelligence is set in Settings, and a source is a connector with an instance', async () => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Threat intelligence').click()
@@ -289,7 +289,7 @@ test('threat intelligence is set in Settings, and a source is a connector with a
   await settings.getByLabel('IP addresses: days an answer stands').fill('45')
   await ips.uncheck()
   await settings.getByRole('button', { name: 'Close settings' }).click()
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   await sections.getByText('Threat intelligence').click()
   await expect(settings.getByLabel('IP addresses: days an answer stands')).toHaveValue('45')
   await settings.getByRole('button', { name: 'Close settings' }).click()
@@ -306,6 +306,79 @@ test('threat intelligence is set in Settings, and a source is a connector with a
   await expect(dialog).toHaveCount(0)
   // The connector goes, with its instance: the tests that follow start without a source, as this one did.
   expect((await page.request.delete('/api/automation/connectors/rdap')).status()).toBe(204)
+})
+
+test('a look-up the data guard holds says why, and is made once an administrator opens the class', async () => {
+  const before = new URL(page.url()).pathname
+  // A source made for the tests: its instance points at the test server, which answers the look-up.
+  const source = readFileSync(new URL('./fixtures/stub-source.yml', import.meta.url), 'utf8')
+  expect((await page.request.post('/api/automation/connectors', { data: { source } })).status()).toBe(201)
+  const instance = { name: 'Stub source', config: { url: 'http://127.0.0.1:8765' }, secrets: {}, enabled: true }
+  expect(
+    (await page.request.post('/api/automation/connectors/stubsource/instances', { data: instance })).status(),
+  ).toBe(201)
+  // A link that carries the address of the person it was sent to.
+  const link = 'https://portal.example-corp.it/reset?user=mario.rossi@example-corp.it'
+  const address = `/ioc/url?v=${encodeURIComponent(link)}`
+  await page.goto(address)
+  const dialog = page.getByRole('dialog', { name: 'Indicator' })
+  const sources = dialog.getByRole('region', { name: 'Sources' })
+  await expect(sources).toContainText('Stub source', { timeout: 20_000 })
+  // "Check now" is held: the page says by which class, where the verdict would be, and no source is asked.
+  await dialog.getByRole('button', { name: 'Check now' }).click()
+  const notice = dialog.getByRole('status', { name: 'Held by the data guard' })
+  await expect(notice).toContainText('Held by the data guard: this value carries e-mail addresses.')
+  await expect(notice).toContainText('No source is asked until this class is opened for the look-ups')
+  await expect(dialog).toContainText('held')
+  await expect(sources).toContainText('not asked')
+  await expect(dialog.getByRole('button', { name: 'Check now' })).toBeEnabled()
+  expect(
+    (await (await page.request.get(`/api/enrichment?type=url&value=${encodeURIComponent(link)}`)).json()).results,
+  ).toEqual([])
+  // An administrator is shown the way to the setting, where every class starts closed.
+  await notice.getByRole('button', { name: 'Open Threat intelligence' }).click()
+  await expect(page).toHaveURL(/\/settings\/indicators\/threat-intelligence$/)
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const guard = settings.getByRole('region', { name: 'What the look-ups may send' })
+  const classes = guard.getByRole('list', { name: 'Classes of data the look-ups may send' }).getByRole('listitem')
+  await expect(classes).toHaveCount(3)
+  await expect(classes.filter({ hasText: 'may leave' })).toHaveCount(0)
+  const emails = classes.filter({ hasText: 'E-mail addresses' })
+  await expect(emails).toContainText('a link that carries the address of the person it was sent to')
+  // Opening asks twice: the box, and the name of the class typed as it is written.
+  await emails.getByRole('button', { name: 'Open: E-mail addresses' }).click()
+  const check = page.getByRole('dialog', { name: 'Let e-mail addresses leave Nik in the look-ups?' })
+  await expect(check).toContainText('It could be sent to every source that is on: Stub source.')
+  const allow = check.getByRole('button', { name: 'Allow e-mail addresses' })
+  await expect(allow).toBeDisabled()
+  await check.getByRole('checkbox').check()
+  await check.locator('#lookup-guard-name').fill('e-mail addresses')
+  await expect(allow).toBeDisabled()
+  await check.locator('#lookup-guard-name').fill('E-mail addresses')
+  await allow.click()
+  await expect(check).toHaveCount(0)
+  await expect(emails).toContainText('may leave')
+  await expect(emails.getByRole('button', { name: 'Close: E-mail addresses' })).toBeVisible()
+  // The same button now looks the value up: the source answers, and the page has a verdict.
+  await page.goto(address)
+  await expect(sources).toContainText('Stub source', { timeout: 20_000 })
+  await expect(dialog.getByRole('status', { name: 'Held by the data guard' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Check now' }).click()
+  await expect(sources.getByRole('button', { name: /Stub source/ })).toContainText('harmless')
+  await expect(dialog).toContainText('The stub answered: ok')
+  // Closed again, it is held again, and the answer it has stays.
+  expect(
+    (await page.request.put('/api/enrichment/guard', { data: { class: 'email_address', allow: false } })).status(),
+  ).toBe(200)
+  await page.goto(address)
+  await expect(dialog.getByRole('status', { name: 'Held by the data guard' })).toBeVisible({ timeout: 20_000 })
+  await expect(sources.getByRole('button', { name: /Stub source/ })).toContainText('harmless')
+  await expect(dialog).toContainText('Held now: these answers were given before')
+  // The connector goes, with its instance: the tests that follow start where this one did.
+  expect((await page.request.delete('/api/automation/connectors/stubsource')).status()).toBe(204)
+  await page.goto(before)
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
+  await expect(page.getByRole('button', { name: '185.220.101.47', exact: true })).toBeVisible({ timeout: 20_000 })
 })
 
 test('right-click on an indicator adds it to the allowlist, with undo', async () => {
@@ -479,7 +552,7 @@ test('a sample is stored, analysed and shown with its indicators', async () => {
     await expect(page.getByText('capa found no capabilities in this sample.')).toBeVisible({ timeout: 120_000 })
     await expect(page.getByText('capa 10.0.0')).toBeVisible()
     // An admin capa rule: checked by the worker, matched after Re-analyse, marked custom.
-    await page.getByRole('button', { name: 'Open platform settings' }).click()
+    await page.getByRole('button', { name: 'Platform settings' }).click()
     const settings = page.getByRole('region', { name: 'Settings' })
     await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('capa rules').click()
     await settings.getByRole('button', { name: 'Add rule' }).click()
@@ -524,10 +597,10 @@ test('a reported e-mail is triaged: verdict, sandboxed body, attachment sent to 
   })
   await expect(page.getByText('the sender domain paypai.example imitates paypal')).toBeVisible()
   await expect(page.getByText(/^phishing · \d+$/)).toBeVisible()
-  // The list of incidents marks the one that holds e-mails; its entry of the rail goes back to the incident.
+  // The list of incidents marks the one that holds e-mails; Back returns to the incident.
   await openIncidentList()
   await expect(incidentRow('WKS-FINANCE-01').getByLabel('Holds e-mails')).toBeVisible()
-  await page.getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.goBack()
   await expect(page.getByRole('list', { name: 'Messages' })).toBeVisible()
   // The body is drawn in a frame that runs nothing and follows no link.
   await page.getByRole('tab', { name: 'Body' }).click()
@@ -1041,17 +1114,22 @@ test('the page always follows the address: incident, artifact, library, indicato
   await expect(indicator).toHaveCount(0)
   await expectIncident()
 
-  // Library, then an artifact, then Back and Forward: each address shows its own page.
+  // Library, then the artifacts and one of them, then Back and Forward: each address shows its own page.
   await openLibrary()
   await rail.getByRole('button', { name: 'Artifacts', exact: true }).click()
   await page.getByRole('navigation', { name: 'Artifacts' }).getByRole('button').first().click()
   await expect(page).toHaveURL(/\/artifact\//)
   await expect(artifact).toBeVisible()
   await expect(library).toHaveCount(0)
+  // The entry of the artifacts showed their panel beside the incident: that is where Back goes first.
+  await page.goBack()
+  await expectIncident()
   await page.goBack()
   await expect(page).toHaveURL(/\/iocs$/)
   await expect(library).toBeVisible()
   await expect(artifact).toHaveCount(0)
+  await page.goForward()
+  await expectIncident()
   await page.goForward()
   await expect(page).toHaveURL(/\/artifact\//)
   await expect(artifact).toBeVisible()
@@ -1221,7 +1299,7 @@ test('a mailbox is indexed, its messages imported, and its conversations drawn a
 })
 
 test('Storage shows how full the disk is and what fills it', async () => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Storage').click()
   await expect(settings.getByRole('img', { name: /% of the disk is used/ })).toBeVisible()
@@ -1235,7 +1313,7 @@ test('Storage shows how full the disk is and what fills it', async () => {
 })
 
 test('Workers lists every worker of the server and says which are not configured', async () => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Workers').click()
   await expect(page).toHaveURL(/\/settings\/system\/workers$/)
@@ -1253,7 +1331,7 @@ test('Workers lists every worker of the server and says which are not configured
 
 test('Settings is a page: every section has an address, Back leaves it, a link opens it', async () => {
   const before = new URL(page.url()).pathname
-  const gear = page.getByRole('button', { name: 'Open platform settings' })
+  const gear = page.getByRole('button', { name: 'Platform settings' })
   await gear.click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
@@ -1268,7 +1346,7 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   ])
   await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveAttribute('aria-current', 'page')
   // The rail shows the page is open; what was open under it is not shown.
-  await expect(page.getByRole('button', { name: 'Close platform settings' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Platform settings' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
 
   // The box narrows the sections by name and by keyword.
@@ -1977,7 +2055,12 @@ test('keyboard shortcuts: F flags the row under the pointer, C comments, ? lists
   // Typing in a field is typing: no shortcut runs.
   await comment.getByRole('textbox').fill('fc?')
   await expect(comment.getByRole('textbox')).toHaveValue('fc?')
+  // Escape with something written asks before it throws it away.
   await page.keyboard.press('Escape')
+  await page
+    .getByRole('dialog', { name: 'Leave without saving?' })
+    .getByRole('button', { name: 'Leave without saving' })
+    .click()
   await expect(comment).toHaveCount(0)
   await expect(flag).toHaveCount(before)
 
@@ -2071,7 +2154,7 @@ test("saves are retried, merged with a colleague's, resumed after the session ex
 })
 
 test('an admin manages accounts; the audit log is written by the server', async ({ browser }) => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Accounts').click()
@@ -2100,7 +2183,7 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await other.fill('#login-username', 'anna.b')
   await other.fill('#login-password', 'second-secret')
   await other.click('button[type=submit]')
-  await other.getByRole('button', { name: 'Open platform settings' }).click()
+  await other.getByRole('button', { name: 'Platform settings' }).click()
   const theirs = other.getByRole('region', { name: 'Settings' })
   await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('My account').click()
   await theirs.locator('#own-current-password').fill('second-secret')
@@ -2147,7 +2230,7 @@ test('an admin manages accounts; the audit log is written by the server', async 
 })
 
 test('roles are tags: an account sees and does what its roles grant together', async ({ browser }) => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Accounts').click()
@@ -2179,7 +2262,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
     await other.fill('#login-username', name)
     await other.fill('#login-password', 'role-secret')
     await other.click('button[type=submit]')
-    await expect(other.getByRole('button', { name: 'Open platform settings' })).toBeVisible()
+    await expect(other.getByRole('button', { name: 'Platform settings' })).toBeVisible()
     return other
   }
 
@@ -2194,7 +2277,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await expect(rita.getByText('read-only', { exact: true })).toBeVisible()
   await expect(rita.getByRole('button', { name: 'New incident' })).toHaveCount(0)
   expect((await rita.request.post('/api/incidents', { data: { id: 'by-rita', data: {} } })).status()).toBe(403)
-  await rita.getByRole('button', { name: 'Open platform settings' }).click()
+  await rita.getByRole('button', { name: 'Platform settings' }).click()
   const ritaSections = rita.getByRole('navigation', { name: 'Settings sections' })
   await expect(ritaSections.getByText('YARA rules')).toBeVisible()
   await expect(ritaSections.getByText('Detection rules')).toBeVisible()
@@ -2214,7 +2297,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await expect(otto.getByText('Nothing to open here')).toBeVisible()
   const ottoRail = otto.getByRole('navigation', { name: 'Sections' })
   await expect(ottoRail.getByRole('button')).toHaveCount(2) // the settings and the account
-  await ottoRail.getByRole('button', { name: 'Open platform settings' }).click()
+  await ottoRail.getByRole('button', { name: 'Platform settings' }).click()
   const ottoSettings = otto.getByRole('region', { name: 'Settings' })
   await ottoSettings
     .getByRole('navigation', { name: 'Settings sections' })
@@ -2230,7 +2313,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await otto.close()
 
   // Leave the accounts as they were.
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   await sections.getByText('Accounts').click()
   for (const name of ['rita', 'otto']) {
     await accounts
@@ -2385,7 +2468,7 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await area.getByRole('button', { name: 'Close automations' }).click()
   await expect(area).toBeHidden()
 
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Stop all').click()
   await expect(page).toHaveURL(/\/settings\/automation\/stop-all$/)
@@ -2656,7 +2739,7 @@ test('a connector is added from its file, a connection is made, and its commands
   const source = readFileSync(new URL('./fixtures/acme-connector.yml', import.meta.url), 'utf8')
   const file = (text) => ({ name: 'acme.yml', mimeType: 'text/yaml', buffer: Buffer.from(text) })
 
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Connectors').click()
@@ -2762,7 +2845,7 @@ test('a connector is added from its file, a connection is made, and its commands
   await row.getByRole('button', { name: 'Edit Acme test' }).click()
   await edit.getByRole('tab', { name: 'Keys' }).click()
   await expect(held).toHaveCount(2)
-  await expect(held.nth(1).getByLabel('Password')).toHaveValue('')
+  await expect(held.nth(1).getByLabel(/^Password/)).toHaveValue('')
   await expect(held.nth(1)).toContainText('stored')
   await expect(keys.getByRole('button', { name: 'Forget the kept answers' })).toBeVisible()
   const kept = (await (await page.request.get('/api/automation/instances')).json()).instances.find(
@@ -2805,6 +2888,199 @@ test('a connector is added from its file, a connection is made, and its commands
   await expect(area.getByTestId('playbook-canvas').locator('.react-flow__node')).toHaveCount(4)
   await expect(area.getByText('draft saved')).toBeVisible()
 
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a credential is stored once, named by an instance, kept from a typed secret, and not deleted while it is used', async () => {
+  test.setTimeout(240_000)
+  const before = page.url()
+  const get = async (path) => (await page.request.get(path)).json()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+
+  // Credentials is a section of its own, beside the connectors; the search box finds it by what it holds.
+  await settings.getByLabel('Find a setting').fill('stored secrets')
+  await expect(sections.getByRole('button')).toHaveText(['Credentials'])
+  await settings.getByLabel('Find a setting').fill('')
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/automation\/credentials$/)
+  const table = settings.getByRole('table', { name: 'Credentials' })
+  await expect(table).toContainText('Nothing here yet.')
+
+  // A pair: a user name, which is shown, and a password, which is never shown again.
+  await settings.getByRole('button', { name: 'New credential…' }).click()
+  const fresh = page.getByRole('dialog', { name: 'New credential' })
+  await fresh.locator('#credential-name').fill('Acme Account')
+  await expect(fresh.getByRole('button', { name: 'Create' })).toBeDisabled() // not a name an instance can write
+  await expect(fresh).toContainText('A name is a lower-case letter')
+  await fresh.locator('#credential-name').fill('acme_account')
+  await fresh.locator('#credential-title').fill('The service account of the desk')
+  await fresh.getByRole('radio', { name: /^User name and password/ }).check()
+  await fresh.locator('#credential-username').fill('svc-store')
+  await fresh.locator('#credential-value').fill('stored-pass-1')
+  await fresh.getByRole('button', { name: 'Create' }).click()
+  await expect(settings.getByRole('status')).toContainText('acme_account is stored.')
+  const stored = table.getByRole('row').filter({ hasText: 'acme_account' })
+  await expect(stored).toContainText('The service account of the desk')
+  await expect(stored).toContainText('User name and password')
+  await expect(stored).toContainText('svc-store')
+  await expect(stored).toContainText('not used')
+  expect(JSON.stringify(await get('/api/automation/credentials'))).not.toContain('stored-pass-1')
+
+  // An instance made with it: the picker comes first when a credential fits, and a pair fills the user
+  // name and the password together.
+  await sections.getByRole('button', { name: 'Connectors', exact: true }).click()
+  const installed = settings
+    .getByRole('list', { name: 'Connectors', exact: true })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme Desk' })
+    .first()
+  await installed.getByRole('button', { name: 'Add an instance of Acme Desk' }).click()
+  const form = settings.getByRole('complementary', { name: 'New instance of Acme Desk' })
+  await form.locator('#instance-name').fill('Acme vault')
+  await form.getByLabel('Instance address').fill('https://vault.example.invalid/api')
+  await expect(form.getByLabel('How the password is given')).toHaveValue('credential')
+  await form.getByLabel('Credential for the password').selectOption({ label: 'acme_account (svc-store)' })
+  await expect(form.getByLabel('Credential for the user name')).toHaveValue('{{ credentials.acme_account.username }}')
+  await form.getByRole('button', { name: 'Create' }).click()
+  const row = installed
+    .getByRole('list', { name: 'Instances of Acme Desk' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme vault' })
+  await expect(row).toContainText('vault.example.invalid')
+  const instance = async () =>
+    (await get('/api/automation/instances')).instances.find((item) => item.name === 'Acme vault')
+  // What the instance holds is the name of the credential, not a copy of its value.
+  expect((await instance()).credentials).toEqual({
+    username: { name: 'acme_account', part: 'username', missing: false },
+    password: { name: 'acme_account', part: 'password', missing: false },
+  })
+  expect(JSON.stringify(await instance())).not.toContain('stored-pass-1')
+
+  // The form shows the name where the value would be, with a link to it; the credential says where it is used.
+  await row.getByRole('button', { name: 'Edit Acme vault' }).click()
+  const edit = settings.getByRole('complementary', { name: 'Instance Acme vault' })
+  await expect(edit.getByLabel('Credential for the password')).toHaveValue('{{ credentials.acme_account.password }}')
+  await expect(edit.locator('label[for="instance-field-password"]')).toContainText('from a credential')
+  await edit.getByRole('link', { name: 'Open the credential acme_account' }).first().click()
+  await expect(page).toHaveURL(/\/settings\/automation\/credentials\/acme_account$/)
+  await expect(stored).toContainText('Acme vault')
+  await expect(stored).toContainText('Acme Desk')
+  await stored.getByRole('link', { name: 'Acme vault' }).click()
+  await expect(page).toHaveURL(/\/settings\/automation\/connectors\/[^/]+$/)
+  await expect(edit).toBeVisible()
+
+  // A command runs through it: the credential is read, and the request goes as far as the host (which
+  // does not exist here). Nothing that is kept of the run says the password.
+  const ran = await page.request.post('/api/playground/command', {
+    data: { line: '!acme-get-ticket number=T-1 using="Acme vault"' },
+  })
+  expect(ran.status()).toBe(201)
+  await expect
+    .poll(async () => JSON.stringify((await get('/api/playground')).entries), { timeout: 30_000 })
+    .toContain('vault.example.invalid could not be resolved')
+  const said = JSON.stringify((await get('/api/playground')).entries)
+  expect(said).not.toContain('stored-pass-1')
+  expect(said).not.toContain('does not exist: make it again')
+  expect((await page.request.delete('/api/playground')).ok()).toBe(true)
+
+  // Written by hand, as a variable: one that names no credential is refused; then the secrets are typed again.
+  await edit.getByLabel('How the password is given').selectOption('typed')
+  const password = edit.locator('#instance-field-password')
+  await expect(password).toHaveAttribute('placeholder', 'from acme_account: type to replace it')
+  await password.fill('{{ credentials.nope.password }}')
+  await expect(password).toHaveAttribute('type', 'text') // a name, not a secret: shown as it is typed
+  await edit.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(edit.getByRole('alert')).toContainText('There is no credential called "nope"')
+  await password.fill('typed-pass-2')
+  await expect(password).toHaveAttribute('type', 'password')
+  await edit.getByLabel('How the user name is given').selectOption('typed')
+  await edit.locator('#instance-field-username').fill('svc2')
+  await edit.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(edit).toHaveCount(0)
+  expect((await instance()).credentials).toEqual({})
+
+  // Keep as a credential: what was typed is moved under a name, and nobody types it again.
+  await row.getByRole('button', { name: 'Edit Acme vault' }).click()
+  await edit.getByRole('button', { name: 'Keep the password as a credential' }).click()
+  const keeping = page.getByRole('dialog', { name: 'Keep as a credential' })
+  await expect(keeping).toContainText('The user name and the password stored in this instance are moved')
+  const kept = keeping.locator('#keep-credential-name')
+  await expect(kept).toHaveValue('acme_vault') // suggested from the name of the instance
+  await kept.fill('acme_account')
+  await expect(keeping).toContainText('A credential called "acme_account" exists already')
+  await expect(keeping.getByRole('button', { name: 'Keep', exact: true })).toBeDisabled()
+  await kept.fill('acme_vault')
+  await keeping.getByRole('button', { name: 'Keep', exact: true }).click()
+  await expect(keeping).toBeHidden()
+  // The form stays open, and names the credential where it held the value.
+  await expect(edit.getByLabel('Credential for the password')).toHaveValue('{{ credentials.acme_vault.password }}')
+  await expect(edit.getByLabel('Credential for the user name')).toHaveValue('{{ credentials.acme_vault.username }}')
+  const all = (await get('/api/automation/credentials')).credentials
+  const moved = all.find((item) => item.name === 'acme_vault')
+  expect([moved.kind, moved.username, moved.usedBy.map((use) => use.name)]).toEqual(['pair', 'svc2', ['Acme vault']])
+  expect(all.find((item) => item.name === 'acme_account').usedBy).toEqual([])
+  expect(JSON.stringify([all, await instance()])).not.toContain('typed-pass-2')
+  await edit.getByRole('button', { name: 'Close the instance' }).click()
+
+  // One that is used is not deleted, and keeps its name: the dialog says where it is used.
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  const used = table.getByRole('row').filter({ hasText: 'acme_vault' })
+  await expect(used.getByRole('link', { name: 'Acme vault' })).toBeVisible()
+  await used.getByRole('button', { name: 'Delete acme_vault' }).click()
+  const refusal = page.getByRole('dialog', { name: 'Delete acme_vault?' })
+  await expect(refusal).toContainText('It is used, and is not deleted while it is.')
+  await expect(refusal.getByRole('link', { name: 'Acme vault' })).toBeVisible()
+  await expect(refusal.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
+  await refusal.getByRole('button', { name: 'Close', exact: true }).last().click()
+  expect((await page.request.delete(`/api/automation/credentials/${moved.id}`)).status()).toBe(409)
+  // Its row has the menu of an object: edit, copy its name and the variable, delete.
+  await used.click({ button: 'right' })
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Edit…',
+    'Copy link',
+    'Copy the name',
+    'Copy the variable',
+    'Delete…',
+    'New credential…',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: 'Edit…' }).click()
+  const editing = page.getByRole('dialog', { name: 'Credential acme_vault' })
+  await expect(editing.locator('#credential-name')).toBeDisabled()
+  await expect(editing).toContainText('a credential that is used keeps its name')
+  // The value is replaced without being shown: every instance that names it sends the new one next.
+  await expect(editing.locator('#credential-value')).toHaveValue('')
+  await editing.locator('#credential-value').fill('rotated-pass-3')
+  await editing.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(settings.getByRole('status')).toContainText('acme_vault is saved.')
+  const audit = (await get('/api/audit?q=action:credential.update')).entries[0]
+  expect(audit.details).toBe('Changed the credential "acme_vault": its password; used by Acme vault')
+  expect(JSON.stringify(await get('/api/audit'))).not.toMatch(/stored-pass-1|typed-pass-2|rotated-pass-3/)
+
+  // The instance is deleted: its credential stays, used by nothing, and can go. Nothing is left for the
+  // tests that follow: without a credential the form of an instance is the one it always was.
+  expect((await page.request.delete(`/api/automation/instances/${(await instance()).id}`)).status()).toBe(204)
+  await sections.getByRole('button', { name: 'Connectors', exact: true }).click()
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  await expect(used).toContainText('not used')
+  await used.getByRole('button', { name: 'Delete acme_vault' }).click()
+  await page
+    .getByRole('dialog', { name: 'Delete acme_vault?' })
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click()
+  await expect(settings.getByRole('status')).toContainText('acme_vault was deleted.')
+  await stored.getByRole('button', { name: 'Delete acme_account' }).click()
+  await page
+    .getByRole('dialog', { name: 'Delete acme_account?' })
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click()
+  await expect(table).toContainText('Nothing here yet.')
+  expect((await get('/api/automation/credentials')).credentials).toEqual([])
+  await settings.getByRole('button', { name: 'Close settings' }).click()
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })
@@ -3086,7 +3362,7 @@ test('a type of incident is built with a field of its own, and closing asks for 
   const incidentId = decodeURIComponent(new URL(before).pathname.split('/')[2])
   const was = (await (await page.request.get(`/api/incidents/${incidentId}/fields`)).json()).fields.status
 
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Types', { exact: true }).click()
@@ -3975,7 +4251,7 @@ test('a type times its incidents: the SLA in Settings, the timers on the inciden
   const typeId = incident.type || 'unclassified'
 
   // Settings → Incidents → SLA: one hour and a half to contain, for the type of the open incident.
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('SLA', { exact: true }).click()
   await expect(page).toHaveURL(/\/settings\/incidents\/sla$/)
@@ -3993,7 +4269,7 @@ test('a type times its incidents: the SLA in Settings, the timers on the inciden
   await contain.getByLabel('Time to contain: minutes allowed if critical').fill('15')
   await save.click()
   await expect(settings.getByRole('status')).toContainText('Saved.')
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
 
   // The incident shows its timer beside the tabs; it is paused and started again by hand.
   const timers = page.getByRole('region', { name: 'SLA timers' })
@@ -4022,7 +4298,7 @@ test('a type times its incidents: the SLA in Settings, the timers on the inciden
 test('lists: one is made and filled in Settings, and a feature is pointed at it', async () => {
   // What a list holds, how it is exported and what refuses to delete it are the server's (tests/test_lists.py):
   // here, only what a person does on the page.
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   const openLists = () => sections.getByText('Lists', { exact: true }).last().click()
@@ -4063,12 +4339,12 @@ test('lists: one is made and filled in Settings, and a feature is pointed at it'
   await point('ioc_allowlist', false)
   await strict.getByRole('button', { name: 'Delete the list' }).click()
   await expect(table.getByRole('row').filter({ hasText: 'strict_allowlist' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('the mappers and the classifier are set in the instance, tried on a sample, and saved by its one Save', async () => {
   const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   // Their page left the menu: the address it had opens the connectors, where the instances are.
@@ -4181,11 +4457,11 @@ test('the mappers and the classifier are set in the instance, tried on a sample,
   await expect(classifier.getByLabel('Rule 1: with what')).toHaveValue('Emotet')
   await expect(classifier.getByText('saved', { exact: true })).toBeVisible()
   await pane.getByRole('button', { name: 'Close the instance' }).click()
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('pre-processing rules say what becomes of a fetched item before it is an incident', async () => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings
     .getByRole('navigation', { name: 'Settings sections' })
@@ -4223,11 +4499,11 @@ test('pre-processing rules say what becomes of a fetched item before it is an in
   await rules.getByRole('button', { name: 'Delete Same host, same case' }).click()
   await rules.getByRole('button', { name: 'Delete Port scans are noise' }).click()
   await expect(settings.getByText('No rule yet: every new item becomes an incident.')).toBeVisible()
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('fetching is set in the instance: how often, the look-back, why it fails, Resume and Reset last run', async () => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   // Its page left the menu: the address it had opens the connectors, and typing its name finds them.
@@ -4312,7 +4588,7 @@ test('fetching is set in the instance: how often, the look-back, why it fails, R
   await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
   await expect(row.getByRole('button', { name: /^Fetching of Acme test/ })).toHaveCount(0)
   // Who is told when a connection fails: the bell holds it, and it leads to the instance.
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: /^Notifications/ }).click()
   const told = page.getByRole('dialog', { name: 'Notifications' })
   // At least once: let go on, it may have failed a second time before it was turned off.
@@ -4467,7 +4743,7 @@ test('content packs are found, selected, inspected, installed whole, and uninsta
     ],
   }
   await page.route('**/api/packs/catalogue', (route) => route.fulfill({ json: listed }))
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings
     .getByRole('navigation', { name: 'Settings sections' })
@@ -4789,7 +5065,7 @@ test('content packs are found, selected, inspected, installed whole, and uninsta
   const still = (await (await page.request.get('/api/packs')).json()).packs
   expect(still.some((pack) => pack.id === 'e2e-desk')).toBe(false)
   await page.unroute('**/api/packs/catalogue')
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('a draft is debugged: the run stops before a node, takes what is typed, and skips the next', async () => {
@@ -4867,7 +5143,7 @@ test('a draft is debugged: the run stops before a node, takes what is typed, and
 })
 
 test('script signatures: one Nik ships is turned off and put back, one of your own is added and deleted', async () => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings
     .getByRole('navigation', { name: 'Settings sections' })
@@ -4910,7 +5186,7 @@ test('script signatures: one Nik ships is turned off and put back, one of your o
   await expect(table.getByRole('row', { name: /e2e\.gate/ })).toContainText('A gate of ours')
   await table.getByRole('button', { name: 'Delete e2e.gate' }).click()
   await expect(table.getByRole('row', { name: /e2e\.gate/ })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
   await expect(settings).toHaveCount(0)
 })
 
@@ -5621,40 +5897,66 @@ test('a branch is compared with main before it is pushed, and runs only in the d
   await area.getByRole('button', { name: 'Close automations' }).click()
 })
 
-test('the rail: the order of a working day, and the account at its foot', async () => {
+test('the rail: its order, the search bar in the header, and the account at its foot', async () => {
   const rail = page.getByRole('navigation', { name: 'Sections' })
   // Every incident of the list has its number, opened in this visit or not.
   await openIncidentList()
   const listed = page.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
   await expect(listed.first()).toBeVisible()
   for (const text of await listed.allTextContents()) expect(text).toMatch(/#\d{5}/)
-  // The entry of the list shows it is open, and goes back to the incident that was.
-  const hide = rail.getByRole('button', { name: 'Hide the incidents' })
-  await expect(hide).toHaveAttribute('aria-pressed', 'true')
-  await hide.click()
+  // The entry of the list shows it is open; pressed again it does nothing, and Back returns to the incident.
+  const entry = rail.getByRole('button', { name: 'Incidents', exact: true })
+  await expect(entry).toHaveAttribute('aria-pressed', 'true')
+  await entry.click()
+  await expect(page.getByRole('table', { name: 'Incidents' })).toBeVisible()
+  await page.goBack()
   await expect(page.getByRole('banner').getByText(/^#\d{5}$/)).toBeVisible()
   const labels = await rail
     .getByRole('button')
     .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label').replace(/ \(.*$/, '')))
-  const order = [
-    'incidents',
-    'My tasks',
+  // From the top, then the foot: notifications, Settings, the account. No shortcut to a section of Settings.
+  expect(labels.map((label) => label.split(':')[0])).toEqual([
     'Dashboards',
-    'Indicators',
+    'Incidents',
+    'My tasks',
     'Artifacts',
-    'Search',
-    'Playground',
+    'Indicators',
     'Automations',
-  ]
-  const found = order.map((name) => labels.findIndex((label) => label.toLowerCase().includes(name.toLowerCase())))
-  expect(found.every((index) => index >= 0)).toBe(true)
-  expect([...found].sort((a, b) => a - b)).toEqual(found)
-  // The foot: notifications, Settings, the account. No shortcut to a section of Settings.
-  expect(labels.slice(-3).map((label) => label.split(':')[0])).toEqual([
+    'Playground',
     'Notifications',
-    'Open platform settings',
+    'Platform settings',
     'Account',
   ])
+  // No entry says it closes or hides anything, and the search is not on the rail.
+  for (const label of labels) expect(label).not.toMatch(/^(Close|Hide|Search)/)
+  // The search is a bar in the middle of the header, on the incident and on every page of the rail.
+  const centred = async (where) => {
+    const bar = where.getByRole('button', { name: 'Search', exact: true })
+    await expect(bar).toBeVisible()
+    await expect(bar).toContainText('Search')
+    const [box, header] = [await bar.boundingBox(), await where.boundingBox()]
+    expect(Math.abs(box.x + box.width / 2 - (header.x + header.width / 2))).toBeLessThan(header.width * 0.08)
+    await bar.click()
+    await expect(page.getByRole('dialog', { name: 'Search' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Search' })).toHaveCount(0)
+  }
+  await centred(page.getByRole('banner'))
+  for (const [open, region, close] of [
+    ['Dashboards', 'Dashboards', 'Close dashboards'],
+    [/^My tasks/, 'My tasks', 'Close my tasks'],
+    [/^Automations/, 'Automations', 'Close automations'],
+    ['Playground', 'Playground', 'Close the playground'],
+    ['Platform settings', 'Settings', 'Close settings'],
+  ]) {
+    await rail.getByRole('button', { name: open }).click()
+    await centred(page.getByRole('region', { name: region, exact: true }).locator('header').first())
+    await page.getByRole('button', { name: close }).click()
+  }
+  // Ctrl+K opens the same search.
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('dialog', { name: 'Search' })).toBeVisible()
+  await page.keyboard.press('Escape')
   for (const gone of ['Audit log', 'Users', 'Full backup']) {
     await expect(rail.getByRole('button', { name: gone, exact: true })).toHaveCount(0)
   }
@@ -5665,11 +5967,460 @@ test('the rail: the order of a working day, and the account at its foot', async 
   await expect(menu.getByRole('menuitem')).toHaveText(['My account', 'Sign out'])
   await menu.getByRole('menuitem', { name: 'My account' }).click()
   await expect(page).toHaveURL(/\/settings\/.*my-account$/)
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
+})
+
+test('an entry of the rail always shows the first screen of its section, and does nothing there', async () => {
+  const rail = page.getByRole('navigation', { name: 'Sections' })
+  const entry = (name) => rail.getByRole('button', { name })
+  const number = (
+    await page
+      .getByRole('banner')
+      .getByText(/^#\d{5}$/)
+      .textContent()
+  ).trim()
+  const incidentUrl = page.url()
+
+  // ---- Automations: the playbooks, from the editor, a tab of a playbook, the runs and the scripts ----
+  const made = await (await page.request.post('/api/automation/playbooks', { data: { name: 'Home again' } })).json()
+  await entry(/^Automations/).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  await expect(entry(/^Automations/)).toHaveAttribute('aria-pressed', 'true')
+  // On its first screen the entry does nothing: the page is not closed.
+  await entry(/^Automations/).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  await expect(area).toBeVisible()
+  await area.getByRole('row').filter({ hasText: 'Home again' }).getByRole('button').first().click()
+  await expect(page).toHaveURL(new RegExp(`/automation/playbooks/${made.id}$`))
+  await entry(/^Automations/).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  await expect(area.getByRole('row').filter({ hasText: 'Home again' })).toBeVisible()
+  // Going home is a move like any other: Back returns to the editor.
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`/automation/playbooks/${made.id}$`))
+  await area.getByRole('radio', { name: 'Versions' }).click()
+  await expect(page).toHaveURL(/\/versions$/)
+  await entry(/^Automations/).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  for (const tab of ['Runs', 'Scripts', 'Approvals']) {
+    await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: tab }).click()
+    await expect(page).toHaveURL(new RegExp(`/automation/${tab.toLowerCase()}$`))
+    await entry(/^Automations/).click()
+    await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  }
+  expect((await page.request.delete(`/api/automation/playbooks/${made.id}`)).status()).toBe(204)
+
+  // ---- Settings: its first section, from another one ----
+  await entry('Platform settings').click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await settings
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByRole('button', { name: 'Audit log' })
+    .click()
+  await expect(page).toHaveURL(/audit-log$/)
+  await entry('Platform settings').click()
+  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await entry('Platform settings').click()
+  await expect(settings).toBeVisible()
+  await expect(entry('Platform settings')).toHaveAttribute('aria-pressed', 'true')
+
+  // ---- Dashboards: the one a fresh visit shows, from another one and from one being edited ----
+  await entry('Dashboards').click()
+  const boards = page.getByRole('region', { name: 'Dashboards' })
+  await expect(page).toHaveURL(/\/dashboards\/[^/]+$/)
+  const firstBoard = page.url()
+  await entry('Dashboards').click()
+  await expect(page).toHaveURL(firstBoard)
+  await expect(boards).toBeVisible()
+  const others = page.getByRole('navigation', { name: 'Your dashboards' }).getByRole('button')
+  await others.nth(1).click()
+  await expect(page).not.toHaveURL(firstBoard)
+  await entry('Dashboards').click()
+  await expect(page).toHaveURL(firstBoard)
+  // A dashboard opened for editing and not changed is left without a question.
+  await boards.getByRole('button', { name: 'New', exact: true }).click()
+  await expect(boards.getByRole('textbox', { name: 'The name of the dashboard' })).toBeVisible()
+  const newBoard = page.url().split('/').pop()
+  await entry('Dashboards').click()
+  await expect(page).toHaveURL(firstBoard)
+  await expect(boards.getByRole('textbox', { name: 'The name of the dashboard' })).toHaveCount(0)
+  expect((await page.request.delete(`/api/dashboards/${newBoard}`)).status()).toBeLessThan(300)
+
+  // ---- My tasks and the Playground ----
+  await entry(/^My tasks/).click()
+  await expect(page).toHaveURL(/\/tasks/)
+  const tasks = page.getByRole('region', { name: 'My tasks' })
+  await tasks.getByRole('navigation', { name: 'Which tasks' }).getByRole('button', { name: 'Closed' }).click()
+  await expect(tasks.getByRole('button', { name: 'Closed' })).toHaveAttribute('aria-current', 'page')
+  await entry(/^My tasks/).click()
+  await expect(tasks.getByRole('navigation', { name: 'Which tasks' }).getByRole('button').first()).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await entry(/^My tasks/).click()
+  await expect(tasks).toBeVisible()
+  await entry('Playground').click()
+  await expect(page).toHaveURL(/\/playground$/)
+  await entry('Playground').click()
+  await expect(page.getByRole('region', { name: 'Playground' })).toBeVisible()
+
+  // ---- Incidents: the list, from an open incident; the incident is there again with Back ----
+  await entry('Incidents').click()
+  await expect(page.getByRole('table', { name: 'Incidents' })).toBeVisible()
+  await incidentRow(number).dblclick()
+  await expect(page).toHaveURL(incidentUrl)
+  await entry('Incidents').click()
+  await expect(page).toHaveURL(/\/incidents$/)
+  await expect(page.getByRole('table', { name: 'Incidents' })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(incidentUrl)
+
+  // ---- Indicators: the page on every indicator with its panel; the panel has its own button to hide it ----
+  await entry(/^Indicators/).click()
+  await expect(page).toHaveURL(/\/iocs$/)
+  const iocs = page.getByRole('complementary', { name: 'IoCs panel' })
+  await expect(iocs).toBeVisible()
+  await iocs.getByRole('button', { name: /^Alerts/ }).click()
+  await expect(page).toHaveURL(/\/iocs\/alerts$/)
+  await entry(/^Indicators/).click()
+  await expect(page).toHaveURL(/\/iocs$/)
+  await expect(iocs.getByRole('button', { name: /^All indicators/ })).toHaveAttribute('aria-current', 'true')
+  await entry(/^Indicators/).click()
+  await expect(iocs).toBeVisible()
+  const hide = page.getByRole('button', { name: 'Hide the indicators panel' })
+  await hide.focus()
+  await page.keyboard.press('Enter')
+  await expect(iocs).toHaveCount(0)
+  await expect(page).toHaveURL(/\/iocs$/)
+  await entry(/^Indicators/).click()
+  await expect(iocs).toBeVisible()
+
+  // ---- Artifacts: the panel with no artifact open and nothing filtered, beside the incident ----
+  await entry('Artifacts').click()
+  const artifacts = page.getByRole('complementary', { name: 'Artifacts panel' })
+  await expect(artifacts).toBeVisible()
+  await expect(page).not.toHaveURL(/\/iocs/)
+  const filter = artifacts.getByRole('combobox', { name: 'Filter artifacts' })
+  await filter.fill('verdict:phishing')
+  await expect(filter).toHaveValue('verdict:phishing')
+  await entry('Artifacts').click()
+  await expect(filter).toHaveValue('')
+  await artifacts.getByRole('navigation', { name: 'Artifacts' }).locator('li button').first().click()
+  await expect(page).toHaveURL(/\/artifact\//)
+  await entry('Artifacts').click()
+  await expect(page).not.toHaveURL(/\/artifact\//)
+  await expect(artifacts).toBeVisible()
+  await expect(artifacts.locator('[aria-current="true"]')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Hide the artifacts panel' }).click()
+  await expect(artifacts).toHaveCount(0)
+
+  // Left as it was: the incident open, and the side panel shown again by what is opened next.
+  await entry('Artifacts').click()
+  await openIncidentFromList(number)
+  await expect(page).toHaveURL(incidentUrl)
+})
+
+test('nothing unsaved is lost without asking: Stay, Leave without saving, Save and leave', async () => {
+  test.setTimeout(180_000)
+  const rail = page.getByRole('navigation', { name: 'Sections' })
+  const ask = page.getByRole('dialog', { name: 'Leave without saving?' })
+  const incidentUrl = page.url()
+  const number = (
+    await page
+      .getByRole('banner')
+      .getByText(/^#\d{5}$/)
+      .textContent()
+  ).trim()
+  // What the browser is told when its tab closes: asked only while something is not saved.
+  const unloadAsks = () =>
+    page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    })
+  /** The question is on screen, names `what`, and offers the three answers (or two where nothing can be saved). */
+  const asked = async (what, { save = true } = {}) => {
+    await expect(ask).toBeVisible()
+    await expect(ask).toContainText(what)
+    await expect(ask).toContainText('has changes that are not saved.')
+    await expect(ask.getByRole('button', { name: 'Stay', exact: true })).toBeFocused()
+    await expect(ask.getByRole('button', { name: 'Leave without saving' })).toBeVisible()
+    await expect(ask.getByRole('button', { name: 'Save and leave' })).toHaveCount(save ? 1 : 0)
+  }
+  expect(await unloadAsks()).toBe(false)
+
+  // ---- A dialog closed with Escape: the form of the incident ----
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+  const tabBefore = (await tabs.locator('[aria-current="page"]').first().textContent())
+    .replace(/^[^A-Za-z]+/, '')
+    .trim()
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  const details = page.getByRole('article', { name: 'Incident details' })
+  const editing = page.getByRole('dialog', { name: 'Edit the incident' })
+  // Opened and not touched, it closes at once.
+  await details.getByRole('button', { name: 'Edit the incident' }).click()
+  await expect(editing).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(editing).toHaveCount(0)
+  await expect(ask).toHaveCount(0)
+  await details.getByRole('button', { name: 'Edit the incident' }).click()
+  const ticket = editing.locator('#incident-ticket')
+  const ticketBefore = await ticket.inputValue()
+  await ticket.fill('INC-GUARD-1')
+  expect(await unloadAsks()).toBe(true)
+  await page.keyboard.press('Escape')
+  await asked('The incident')
+  // Escape answers "Stay": the form is still there, with what was typed.
+  await page.keyboard.press('Escape')
+  await expect(ask).toHaveCount(0)
+  await expect(ticket).toHaveValue('INC-GUARD-1')
+  // Typed, then put back: nothing to ask about.
+  await ticket.fill(ticketBefore)
+  expect(await unloadAsks()).toBe(false)
+  await ticket.fill('INC-GUARD-1')
+  // Its close button asks too; leaving throws the change away.
+  await editing.getByRole('button', { name: 'Close', exact: true }).click()
+  await asked('The incident')
+  await ask.getByRole('button', { name: 'Leave without saving' }).click()
+  await expect(editing).toHaveCount(0)
+  expect(await unloadAsks()).toBe(false)
+  await details.getByRole('button', { name: 'Edit the incident' }).click()
+  await expect(ticket).toHaveValue(ticketBefore)
+  // A click outside the dialog, and "Save and leave": the change is kept.
+  await ticket.fill('INC-GUARD-2')
+  await editing.click({ position: { x: 5, y: 5 } })
+  await asked('The incident')
+  await ask.getByRole('button', { name: 'Save and leave' }).click()
+  await expect(editing).toHaveCount(0)
+  await expect(page.getByRole('banner')).toContainText('INC-GUARD-2')
+  await details.getByRole('button', { name: 'Edit the incident' }).click()
+  await ticket.fill(ticketBefore)
+  await editing.getByRole('button', { name: /^Save/ }).click()
+  await expect(editing).toHaveCount(0)
+  await expect(page.getByRole('banner')).not.toContainText('INC-GUARD-2')
+  if (tabBefore !== 'Summary') await tabs.getByRole('button', { name: tabBefore, exact: true }).click()
+
+  // ---- A section of Settings: the name on the report ----
+  await rail.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByRole('button', { name: 'Report header' }).click()
+  const org = settings.getByLabel('Organisation')
+  const orgBefore = await org.inputValue()
+  // Not touched: another section opens at once.
+  await sections.getByRole('button', { name: 'Business hours' }).click()
+  await expect(page).toHaveURL(/business-hours$/)
+  await expect(ask).toHaveCount(0)
+  await sections.getByRole('button', { name: 'Report header' }).click()
+  await org.fill('Guarded SOC')
+  expect(await unloadAsks()).toBe(true)
+  // Another section of Settings.
+  await sections.getByRole('button', { name: 'Business hours' }).click()
+  await asked('The name of the organisation on the report')
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(page).toHaveURL(/report-header$/)
+  await expect(org).toHaveValue('Guarded SOC')
+  // The browser's Back.
+  await page.goBack()
+  await asked('The name of the organisation on the report')
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(page).toHaveURL(/report-header$/)
+  await expect(org).toHaveValue('Guarded SOC')
+  // An entry of the rail; leaving throws the name away.
+  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await asked('The name of the organisation on the report')
+  await ask.getByRole('button', { name: 'Leave without saving' }).click()
+  await expect(page.getByRole('table', { name: 'Incidents' })).toBeVisible()
+  expect(await unloadAsks()).toBe(false)
+  await page.goBack()
+  await expect(page).toHaveURL(/report-header$/)
+  await expect(org).toHaveValue(orgBefore)
+  // The close button of the page, and "Save and leave".
+  await org.fill('Guarded SOC')
+  await page.getByRole('button', { name: 'Close settings' }).click()
+  await asked('The name of the organisation on the report')
+  await ask.getByRole('button', { name: 'Save and leave' }).click()
+  await expect(settings).toHaveCount(0)
+  await rail.getByRole('button', { name: 'Platform settings' }).click()
+  await sections.getByRole('button', { name: 'Report header' }).click()
+  await expect(org).toHaveValue('Guarded SOC')
+  await org.fill(orgBefore)
+  await settings.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(settings.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+
+  // ---- The form of an instance: its parts keep what was typed, another place asks ----
+  const instances = (await (await page.request.get('/api/automation/instances')).json()).instances
+  expect(instances.length).toBeGreaterThan(0)
+  const instance = instances[0]
+  await sections.getByRole('button', { name: 'Connectors' }).click()
+  const edit = settings.getByRole('button', { name: `Edit ${instance.name}`, exact: true })
+  await edit.click()
+  const pane = settings.getByRole('complementary', { name: `Instance ${instance.name}` })
+  const close = pane.getByRole('button', { name: 'Close the instance' })
+  // Not touched: it closes at once.
+  await close.click()
+  await expect(pane).toHaveCount(0)
+  await expect(ask).toHaveCount(0)
+  await edit.click()
+  const name = pane.locator('#instance-name')
+  await name.fill(`${instance.name} guarded`)
+  expect(await unloadAsks()).toBe(true)
+  // Another part of the same form keeps everything, and asks nothing.
+  const parts = pane.getByRole('tablist', { name: 'Parts of the instance' }).getByRole('tab')
+  if ((await parts.count()) > 1) {
+    await parts.nth(1).click()
+    await expect(ask).toHaveCount(0)
+    await parts.first().click()
+    await expect(name).toHaveValue(`${instance.name} guarded`)
+  }
+  await close.click()
+  await asked(instance.name)
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(name).toHaveValue(`${instance.name} guarded`)
+  await sections.getByRole('button', { name: 'Business hours' }).click()
+  await asked(instance.name)
+  await ask.getByRole('button', { name: 'Leave without saving' }).click()
+  await expect(page).toHaveURL(/business-hours$/)
+  await sections.getByRole('button', { name: 'Connectors' }).click()
+  await edit.click()
+  await expect(name).toHaveValue(instance.name)
+  await name.fill(`${instance.name} guarded`)
+  await close.click()
+  await asked(instance.name)
+  await ask.getByRole('button', { name: 'Save and leave' }).click()
+  await expect(ask).toHaveCount(0)
+  await expect(settings.getByRole('status').filter({ hasText: `${instance.name} guarded is saved.` })).toBeVisible()
+  // Put back as it was.
+  await settings.getByRole('button', { name: `Edit ${instance.name} guarded`, exact: true }).click()
+  const renamed = settings.getByRole('complementary', { name: `Instance ${instance.name} guarded` })
+  await renamed.locator('#instance-name').fill(instance.name)
+  await renamed.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(settings.getByRole('status').filter({ hasText: `${instance.name} is saved.` })).toBeVisible()
+  await page.getByRole('button', { name: 'Close settings' }).click()
+
+  // ---- The editor of a playbook: its settings wait for Save, its canvas saves itself ----
+  const made = await (await page.request.post('/api/automation/playbooks', { data: { name: 'Guarded' } })).json()
+  await rail.getByRole('button', { name: /^Automations/ }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('row').filter({ hasText: 'Guarded' }).getByRole('button').first().click()
+  await expect(area.getByTestId('playbook-canvas')).toBeVisible()
+  // The canvas, untouched, asks nothing.
+  await area.getByRole('radio', { name: 'Settings' }).click()
+  await expect(page).toHaveURL(/\/settings$/)
+  await expect(ask).toHaveCount(0)
+  const description = area.getByLabel('Description')
+  await description.fill('Asked about before it is left')
+  expect(await unloadAsks()).toBe(true)
+  // Another tab of the playbook.
+  await area.getByRole('radio', { name: 'Canvas' }).click()
+  await asked('Guarded')
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(description).toHaveValue('Asked about before it is left')
+  // The entry of the rail, which goes to the playbooks.
+  await rail.getByRole('button', { name: /^Automations/ }).click()
+  await asked('Guarded')
+  await ask.getByRole('button', { name: 'Leave without saving' }).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  expect((await (await page.request.get(`/api/automation/playbooks/${made.id}`)).json()).description).toBe('')
+  await area.getByRole('row').filter({ hasText: 'Guarded' }).getByRole('button').first().click()
+  await area.getByRole('radio', { name: 'Settings' }).click()
+  await description.fill('Kept by Save and leave')
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  await asked('Guarded')
+  await ask.getByRole('button', { name: 'Save and leave' }).click()
+  await expect(page).toHaveURL(/\/automation\/playbooks$/)
+  expect((await (await page.request.get(`/api/automation/playbooks/${made.id}`)).json()).description).toBe(
+    'Kept by Save and leave',
+  )
+  expect((await page.request.delete(`/api/automation/playbooks/${made.id}`)).status()).toBe(204)
+  await page.getByRole('button', { name: 'Close automations' }).click()
+
+  // ---- A dashboard in edit mode, and the dialog of a widget ----
+  await rail.getByRole('button', { name: 'Dashboards', exact: true }).click()
+  const boards = page.getByRole('region', { name: 'Dashboards' })
+  await boards.getByRole('button', { name: 'New', exact: true }).click()
+  const title = boards.getByRole('textbox', { name: 'The name of the dashboard' })
+  await expect(title).toHaveValue('New dashboard')
+  const boardUrl = page.url()
+  const boardId = boardUrl.split('/').pop()
+  // Not changed yet: Cancel leaves edit mode at once.
+  await boards.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(title).toHaveCount(0)
+  await expect(ask).toHaveCount(0)
+  await boards.getByRole('button', { name: 'Edit', exact: true }).click()
+  await title.fill('Guarded board')
+  expect(await unloadAsks()).toBe(true)
+  // The dialog of a widget: what was typed in it is asked about by itself, above the dialog.
+  await boards.getByRole('button', { name: 'Add a widget' }).click()
+  await page
+    .getByRole('dialog', { name: 'Add a widget' })
+    .getByRole('button', { name: /^Number/ })
+    .click()
+  const widget = page.getByRole('dialog', { name: 'Edit the widget' })
+  await widget.getByLabel('Title').fill('Counted')
+  await page.keyboard.press('Escape')
+  await asked('The widget', { save: false })
+  await expect(ask).not.toContainText('Guarded board')
+  await ask.getByRole('button', { name: 'Leave without saving' }).click()
+  await expect(widget).toHaveCount(0)
+  // Cancel of the dashboard, and an entry of the rail.
+  await boards.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await asked('Guarded board')
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(title).toHaveValue('Guarded board')
+  await rail.getByRole('button', { name: 'Incidents', exact: true }).click()
+  await asked('Guarded board')
+  await ask.getByRole('button', { name: 'Leave without saving' }).click()
+  await expect(page.getByRole('table', { name: 'Incidents' })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(boardUrl)
+  await expect(boards.getByRole('heading', { name: 'New dashboard' })).toBeVisible()
+  await boards.getByRole('button', { name: 'Edit', exact: true }).click()
+  await title.fill('Guarded board')
+  await rail.getByRole('button', { name: 'Dashboards', exact: true }).click()
+  await asked('Guarded board')
+  await ask.getByRole('button', { name: 'Save and leave' }).click()
+  await expect(ask).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'Your dashboards' })).toContainText('Guarded board')
+  expect((await page.request.delete(`/api/dashboards/${boardId}`)).status()).toBeLessThan(300)
+  await page.getByRole('button', { name: 'Close dashboards' }).first().click()
+
+  // ---- A note being written on the incident: another tab, and signing out ----
+  await openIncidentFromList(number)
+  await expect(page).toHaveURL(incidentUrl)
+  await tabs.getByRole('button', { name: 'War Room', exact: true }).click()
+  const line = page.locator('#war-room-line')
+  // A command is not work to lose.
+  await line.fill('!ip 203.0.113.7')
+  expect(await unloadAsks()).toBe(false)
+  await line.fill('The laptop was reimaged on Tuesday')
+  expect(await unloadAsks()).toBe(true)
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await asked('The note being written in the War Room', { save: false })
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(line).toHaveValue('The laptop was reimaged on Tuesday')
+  // A page drawn over the incident keeps the note where it is: nothing to ask.
+  await rail.getByRole('button', { name: /^My tasks/ }).click()
+  await expect(page.getByRole('region', { name: 'My tasks' })).toBeVisible()
+  await expect(ask).toHaveCount(0)
+  await page.getByRole('button', { name: 'Close my tasks' }).click()
+  await expect(line).toHaveValue('The laptop was reimaged on Tuesday')
+  // Signing out would lose it.
+  await rail.getByRole('button', { name: /^Account: admin/ }).click()
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Sign out' }).click()
+  await asked('The note being written in the War Room', { save: false })
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(line).toHaveValue('The laptop was reimaged on Tuesday')
+  await line.fill('')
+  expect(await unloadAsks()).toBe(false)
+  if (tabBefore !== 'War Room') await tabs.getByRole('button', { name: tabBefore, exact: true }).click()
+  await expect(ask).toHaveCount(0)
 })
 
 test('a side panel is made wider and narrower with its handle, and remembers its width', async () => {
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const handle = settings.getByRole('separator', { name: 'Resize the sections of Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
@@ -5689,8 +6440,8 @@ test('a side panel is made wider and narrower with its handle, and remembers its
   await page.mouse.up()
   await expect(handle).toHaveAttribute('aria-valuenow', '360')
   // It is remembered: leaving Settings and coming back finds it.
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
-  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
+  await page.getByRole('button', { name: 'Platform settings' }).click()
   await expect(handle).toHaveAttribute('aria-valuenow', '360')
   // The limits hold, and Enter puts the width back.
   await handle.focus()
@@ -5698,7 +6449,7 @@ test('a side panel is made wider and narrower with its handle, and remembers its
   await expect(handle).toHaveAttribute('aria-valuenow', '420')
   await page.keyboard.press('Enter')
   await expect(handle).toHaveAttribute('aria-valuenow', '240')
-  await page.getByRole('button', { name: 'Close platform settings' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
   // The side panel of the artifacts has the same handle, and so has the quick view of the incident list.
   const artifacts = page.getByRole('button', { name: 'Artifacts', exact: true })
   if (await artifacts.count()) await artifacts.click()
@@ -5707,11 +6458,11 @@ test('a side panel is made wider and narrower with its handle, and remembers its
   await incidentRow().click()
   await expect(page.getByRole('separator', { name: 'Resize the quick view' })).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.goBack()
 })
 
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
-  const gear = page.getByRole('button', { name: 'Open platform settings' })
+  const gear = page.getByRole('button', { name: 'Platform settings' })
   await gear.click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Accounts').click()
@@ -5898,7 +6649,7 @@ test("right-click opens Nik's menu on every screen: the incident and its tabs, t
     await nativeMenuNeverOpens(page, `evidence ${index}`)
   }
   // The tab bar and the rail are not rows of anything: the general section alone.
-  await opensNikMenu(sections.getByRole('button', { name: 'Open platform settings' }), 'the rail')
+  await opensNikMenu(sections.getByRole('button', { name: 'Platform settings' }), 'the rail')
   await openEvidence('Malware Analysis')
   // An object keeps its own menu, with Shift held down too.
   const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
@@ -5913,7 +6664,7 @@ test("right-click opens Nik's menu on every screen: the incident and its tabs, t
   const rowMenu = await opensNikMenu(incidentRow(), 'a row of the incident list', ['Open', 'Quick view'])
   expect(rowMenu.slice(-GENERAL_MENU.length - 2, -GENERAL_MENU.length)).toEqual(['New incident…', 'Columns…'])
   await nativeMenuNeverOpens(page, 'the incident list')
-  await sections.getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.goBack()
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 
   // ---- The pages of the rail ----
@@ -5923,20 +6674,23 @@ test("right-click opens Nik's menu on every screen: the incident and its tabs, t
     ['Playground', 'Close the playground'],
   ]) {
     await sections.getByRole('button', { name: open }).click()
-    await expect(sections.getByRole('button', { name: close })).toBeVisible()
-    await opensNikMenu(sections.getByRole('button', { name: close }), `the page ${close}`)
+    await expect(sections.getByRole('button', { name: open })).toHaveAttribute('aria-pressed', 'true')
+    await opensNikMenu(sections.getByRole('button', { name: open }), `the page ${close}`)
     await nativeMenuNeverOpens(page, `the page ${close}`)
-    await sections.getByRole('button', { name: close }).click()
+    // The page's own button closes it: the entry of the rail only ever opens.
+    await page.getByRole('button', { name: close }).click()
   }
-  for (const [open, close] of [
-    [/^Indicators/, 'Hide the Indicators page'],
-    ['Artifacts', 'Hide the artifacts'],
-  ]) {
-    await sections.getByRole('button', { name: open }).click()
-    await expect(sections.getByRole('button', { name: close })).toBeVisible()
-    await nativeMenuNeverOpens(page, `the panel ${close}`)
-    await leaveSidePanel()
-  }
+  // The Indicators are a page with its panel: Back returns to the incident, with the panel still beside it.
+  await sections.getByRole('button', { name: /^Indicators/ }).click()
+  await expect(page.getByRole('button', { name: 'Hide the indicators panel' })).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the panel of the indicators')
+  await page.goBack()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  // The artifacts are a panel beside the incident.
+  await sections.getByRole('button', { name: 'Artifacts' }).click()
+  await expect(page.getByRole('button', { name: 'Hide the artifacts panel' })).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the panel of the artifacts')
+  await leaveSidePanel()
 
   // ---- Automations: the lists, the canvas, the editor of a script ----
   await sections.getByRole('button', { name: /^Automations/ }).click()
@@ -5983,10 +6737,10 @@ test("right-click opens Nik's menu on every screen: the incident and its tabs, t
   await expect(menu.getByRole('menuitem', { name: /^Copy\s*ctrl c$/ })).not.toHaveAttribute('aria-disabled', 'true')
   await page.keyboard.press('Escape')
   await nativeMenuNeverOpens(page, 'the editor of a script')
-  await sections.getByRole('button', { name: 'Close automations' }).click()
+  await page.getByRole('button', { name: 'Close automations' }).click()
 
   // ---- Settings: every section ----
-  await sections.getByRole('button', { name: 'Open platform settings' }).click()
+  await sections.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const entries = settings.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')
   const entryCount = await entries.count()
@@ -6082,7 +6836,7 @@ test('the menu in a dialog, on selected text, in the query box, on a link, and f
   // The arrows and Enter run an entry, as in every menu.
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
-  const settingsButton = page.getByRole('button', { name: 'Open platform settings' })
+  const settingsButton = page.getByRole('button', { name: 'Platform settings' })
   await settingsButton.focus()
   await page.keyboard.press('Shift+F10')
   await expect(menu.getByRole('menuitem')).toHaveText(GENERAL_MENU)
@@ -6105,7 +6859,7 @@ test('the menu in a dialog, on selected text, in the query box, on a link, and f
   await expect(palette).toHaveCount(0)
 
   // ---- A link: open, open in a new tab, copy the address ----
-  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.goBack()
   await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
   const link = page.locator('main a[title^="Download the indicators"]').first()
   await expect(link).toBeVisible()

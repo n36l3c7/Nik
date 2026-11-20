@@ -452,6 +452,22 @@
         up automatically: their SHA-256 is.
       </p>
       <p>
+        <strong>What is held</strong> (<code>service.held</code>). A value that passes that rule is given to the data
+        guard of the playbooks (<code>automation/guard.py</code>), which scans it as it scans anything that leaves: an
+        e-mail address, a private address, a name under the organisation's own domains (<code>mail.orgDomains</code>) or
+        an allowlisted name found in it are classes, and a class that is not open holds the look-up for every source at
+        once. A look-up a playbook makes (<code>nik.reputation</code>) is judged against the playbook's
+        <code>data_allow</code>, in the action; every other goes through <code>service.check_now</code>,
+        <code>run_cycle</code> or <code>plan_check</code> / <code>run_checks</code>, which judge it against
+        <code>enrichment.guardOpen</code> of the shared settings: empty by default, changed only by
+        <code>PUT /api/enrichment/guard</code> (the route of the other settings keeps what is stored), and limited to
+        the three classes a value can carry (<code>service.GUARD_CLASSES</code>). Nothing is stored for a held value:
+        there is no row, no error and no retry, the judgement is made again whenever the value comes up, and it costs no
+        request. <code>GET /api/enrichment</code> gives it as <code>held</code>, the rows of the Indicators page as
+        <code>held</code> too, the plan of a bulk check counts it, and a check that is running drops what became held
+        since it was planned and says how many in its <code>message</code>.
+      </p>
+      <p>
         <strong>Automatic lookups</strong> are off until an analyst turns them on in
         <strong>Settings → Threat intelligence</strong>, per type: IP addresses, URLs and domains, file hashes. Every
         API process starts a worker thread (<code>worker.py</code>); a lease row (<code>leases</code>) lets only one of

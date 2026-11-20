@@ -5,6 +5,7 @@ import { useFields } from '../../../context/FieldsContext.jsx'
 import { FIELD_TYPES } from '../../../domain/fields.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import NewFieldDialog from '../../fields/NewFieldDialog.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Incidents → All fields (who configures incidents).
@@ -41,6 +42,13 @@ function EditField({ field, onClose, onSaved }) {
     }
   }, [field.name])
 
+  const unsaved = useUnsavedChanges(
+    label !== field.label ||
+      description !== (field.description ?? '') ||
+      (withChoices && choices !== (field.options?.choices ?? []).join('\n')) ||
+      (!field.system && everywhere !== Boolean(field.allTypes)),
+    { what: 'The field', name: field.label },
+  )
   const submit = async (event) => {
     event.preventDefault()
     setBusy(true)
@@ -67,7 +75,7 @@ function EditField({ field, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={`Field ${field.name}`}
       footer={
         <>
