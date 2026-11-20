@@ -153,3 +153,35 @@ test('a key kept from before 6.5 says what it waits for', async () => {
     ),
   )
 })
+
+test('a held look-up says what the value carries, and who can open the class', async () => {
+  const { guardConfirmed, guardDestinations, heldClasses, heldNotice } = await import('./enrichment.js')
+  const emails = { id: 'email_address', label: 'E-mail addresses' }
+  const ours = { id: 'private_value', label: 'Internal names and addresses' }
+  assert.equal(heldNotice(null), null)
+  assert.equal(heldNotice({ classes: [] }), null)
+  assert.equal(heldClasses({ classes: [emails, ours] }), 'e-mail addresses, internal names and addresses')
+  const one = heldNotice({ classes: [emails] })
+  assert.equal(one.line, 'Held by the data guard: this value carries e-mail addresses.')
+  assert.equal(
+    one.advice,
+    'No source is asked. An administrator can open this class for the look-ups in Settings, Threat intelligence.',
+  )
+  const two = heldNotice({ classes: [emails, ours] }, true)
+  assert.equal(
+    two.advice,
+    'No source is asked until these classes are opened for the look-ups in Settings, Threat intelligence.',
+  )
+  // The double check: the box, and the name of the class exactly.
+  assert.equal(guardConfirmed(emails, true, 'E-mail addresses'), true)
+  assert.equal(guardConfirmed(emails, true, 'e-mail addresses'), false)
+  assert.equal(guardConfirmed(emails, false, 'E-mail addresses'), false)
+  assert.equal(guardConfirmed(null, true, ''), false)
+  assert.ok(
+    guardDestinations([
+      { label: 'urlscan.io', on: true },
+      { label: 'RDAP', on: false },
+    ]).startsWith('It could be sent to every source that is on: urlscan.io.'),
+  )
+  assert.ok(guardDestinations([{ label: 'RDAP', on: false }]).startsWith('No source is on yet'))
+})

@@ -363,6 +363,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/urls/{scan_id}/scripts/{index}"): ("read",),
     ("GET", "/api/urls/{scan_id}/scripts/{index}/download"): ("read",),
     ("GET", "/api/enrichment/sources"): ("read",),
+    ("PUT", "/api/enrichment/guard"): ("admin",),
     ("DELETE", "/api/enrichment/old-keys/{key_id}"): ("admin",),
     ("GET", "/api/enrichment"): ("read",),
     ("GET", "/api/enrichment/raw"): ("read",),

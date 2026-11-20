@@ -693,6 +693,11 @@ export default function IocLibraryPage({ onOpenIncident }) {
                         <Badge color={meta.color}>{meta.label}</Badge>
                       ) : row.neverSent ? (
                         <Badge title={row.neverSent}>never sent out</Badge>
+                      ) : row.held ? (
+                        // The data guard holds its look-up until an administrator opens the class.
+                        <Badge color="amber" title={row.held}>
+                          held
+                        </Badge>
                       ) : (
                         <Badge>not checked</Badge>
                       )}

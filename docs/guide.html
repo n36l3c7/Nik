@@ -516,7 +516,11 @@
         <strong>Check</strong> first shows what it costs: how many indicators are asked, how many answers are still
         fresh, how many are never sent out, and per source how many requests against what is left of today's quota. The
         check then runs in the background, with its progress at the top of the library. When a source's quota is used up
-        Nik says so and goes on by itself when it resets; <em>Stop</em> ends it.
+        Nik says so and goes on by itself when it resets; <em>Stop</em> ends it. Indicators the data guard holds (<a
+          href="#held-look-ups"
+          >below</a
+        >) are counted apart before the check starts and are not asked about; the check says how many when it ends, and
+        in the table their verdict reads <em>held</em>.
       </p>
       <p>
         <strong>Export</strong> asks for the format (CSV, JSON, STIX 2.1, MISP, or one value per line) and the fields.
@@ -789,6 +793,51 @@
         when the indicator is malicious and amber when it is suspicious; being seen in other incidents is a number, not
         a colour. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
         <strong>allowlist</strong> (right-click → Add to the allowlist).
+      </p>
+      <h4 id="held-look-ups">When a look-up is held</h4>
+      <p>
+        Two things decide whether a value is sent to the sources. The first never changes: a private address, an
+        internal name, an allowlisted value and a value of a TLP:RED incident are <em>never sent outside</em>, and
+        nothing opens that. The second is the <strong>data guard</strong>, the same that judges what a playbook sends
+        (<a href="automation.html#data-guard">Automation → Data</a>): it reads the value, and holds it when it carries
+      </p>
+      <ul>
+        <li>
+          an <strong>e-mail address</strong>: a link such as
+          <code>https://portal.example.org/reset?user=anna.bianchi@example.org</code>, which tells whoever receives it
+          who was written to;
+        </li>
+        <li>
+          an <strong>internal name or address</strong>: a domain under your organisation's own domains, a link on one,
+          or a link with a private address in it;
+        </li>
+        <li>
+          an <strong>allowlisted name</strong>: a link that names a domain or an address of the allowlist, a redirect to
+          your own site for example.
+        </li>
+      </ul>
+      <p>
+        A held indicator says so where its verdict would be: <em>held</em>, the classes it carries, and that an
+        administrator can open them. It is not an error and not a silent "unknown": no source was asked. This applies to
+        <strong>Check now</strong>, to the checks in bulk and to the automatic look-ups, which leave a held value alone
+        instead of trying it again. Nothing is remembered about being held: the value is read again each time, so it is
+        looked up as soon as its class is opened, or when the allowlist or your own domains change what it is. The
+        answers the sources gave before it was held stay on its page and keep counting in its verdict.
+      </p>
+      <p>
+        An administrator opens a class in <em>Settings → Threat intelligence</em>, under
+        <em>What the look-ups may send</em>: each of the three is closed until it is opened, behind a box to tick and
+        the name of the class to type, and opening and closing are written in the audit log. An opened class goes to
+        every source that is on. This setting is for the look-ups made outside playbooks only: a look-up a playbook
+        makes (the node <em>Reputation of an indicator</em>, a <code>!url</code> typed in a War Room) keeps to the
+        classes opened for that playbook, and neither opens anything for the other.
+      </p>
+      <p>
+        <strong>Making a domain yours.</strong> The guard knows your organisation's domains from
+        <em>Settings → Mail analysis → Your organisation's domains</em>, a list (edited under <em>Settings → Lists</em>)
+        that covers the subdomains of each entry. A name under one of them is an internal name: it is held in a look-up
+        and in what a playbook sends. The <em>IOC allowlist</em> is the other list the guard reads: an indicator that is
+        itself on it is never sent, and a longer value that names an entry of it is held as an allowlisted name.
       </p>
       <figure class="shot">
         <img src="img/iocs.png" alt="The Indicators tab" width="1600" height="1000" loading="lazy" />
@@ -1626,8 +1675,8 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             <tr>
               <td>Mail analysis</td>
               <td>
-                Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
-                results are trusted (admins).
+                Your organisation's domains (look-alike senders are flagged, and a name under them is an internal name
+                to the data guard) and the mail servers whose authentication results are trusted (admins).
               </td>
             </tr>
             <tr>
@@ -1653,7 +1702,10 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
                 <em>Connectors</em>, not here. A source that needs no key (RDAP, Shodan's InternetDB, urlscan.io and
                 GreyNoise without an account) has a <em>Turn on</em> button that makes its instance. The API keys
                 entered on this page before 6.5 are listed until an instance has them: each moves by itself when the
-                pack of its source is installed (admins).
+                pack of its source is installed (admins). <em>What the look-ups may send</em> lists the classes of data
+                the data guard holds in an indicator (e-mail addresses, internal names and addresses, allowlisted
+                names), each closed until an administrator opens it: see
+                <a href="#held-look-ups">When a look-up is held</a>.
               </td>
             </tr>
             <tr>

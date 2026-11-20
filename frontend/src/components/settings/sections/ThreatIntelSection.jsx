@@ -4,7 +4,8 @@ import { Badge, Button } from '../../ui/index.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
-import { oldKeyLine, sourceState, typeGroups } from '../../../domain/enrichment.js'
+import { guardDestinations, oldKeyLine, sourceState, typeGroups } from '../../../domain/enrichment.js'
+import LookupGuardDialog from './LookupGuardDialog.jsx'
 import { settingsPath } from '../../../domain/settingsNav.js'
 import { setPath } from '../../../lib/location.js'
 
@@ -19,6 +20,11 @@ import { setPath } from '../../../lib/location.js'
  *     instance: it is on when one of its instances is. Keys are entered on the
  *     instance (Connectors), never here.
  *   - The API keys this page kept before 6.5, until an instance has them.
+ *   - What the look-ups may send: the classes of the data guard an indicator
+ *     can carry (an e-mail address in a link, a name under your own domains,
+ *     an allowlisted name), each closed until an administrator opens it
+ *     behind the double check. It is for the look-ups made outside playbooks;
+ *     a playbook keeps to what was opened for it.
  * Never sent: private addresses and internal names, allowlisted values,
  * values of TLP:RED incidents, e-mail addresses.
  */
@@ -127,9 +133,84 @@ function OldKeys({ keys, canManage, onChanged }) {
   )
 }
 
+/*
+ * What the data guard lets the look-ups made outside playbooks send. Each
+ * class says what it is in the words of the playbook's screen, and what it is
+ * in an indicator. Opening asks twice (LookupGuardDialog); closing does not.
+ */
+function LookupGuard({ classes, sources, canManage, actor, onChanged }) {
+  const [asking, setAsking] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const close = async (item) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.put('/enrichment/guard', { class: item.id, allow: false })
+      onChanged()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div role="region" aria-label="What the look-ups may send" className="space-y-2">
+      <h4 className="font-mono text-xs uppercase tracking-wider text-fg-muted">What the look-ups may send</h4>
+      <p className="text-xs text-fg-muted">
+        Before a source is asked, the data guard reads the value as it reads what a playbook sends. A value that carries
+        one of these classes is held: its indicator says so where the verdict would be, and no source is asked until the
+        class is opened here. This is for “Check now”, the checks in bulk and the automatic look-ups; a look-up a
+        playbook makes keeps to what was opened for that playbook. Your own domains are the ones of Mail analysis.
+      </p>
+      <ul aria-label="Classes of data the look-ups may send" className="divide-y divide-line-soft border border-line">
+        {classes.map((item) => (
+          <li key={item.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+            <span className="min-w-0 text-fg">
+              {item.label}
+              <span className="block text-xs text-fg-muted">{item.warning}</span>
+              <span className="block text-xs text-fg-muted">{item.example}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              {item.open ? <Badge color="amber">may leave</Badge> : <Badge>closed</Badge>}
+              {canManage && (
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  disabled={busy}
+                  aria-label={item.open ? `Close: ${item.label}` : `Open: ${item.label}`}
+                  onClick={() => (item.open ? close(item) : setAsking(item))}
+                >
+                  {item.open ? 'Close' : 'Open…'}
+                </Button>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {error && (
+        <p role="alert" className="text-xs text-high">
+          {error}
+        </p>
+      )}
+      <LookupGuardDialog
+        item={asking}
+        destinations={guardDestinations(sources)}
+        actor={actor}
+        onClose={() => setAsking(null)}
+        onConfirm={async (check) => {
+          await api.put('/enrichment/guard', { class: asking.id, allow: true, ...check })
+          setAsking(null)
+          onChanged()
+        }}
+      />
+    </div>
+  )
+}
+
 export default function ThreatIntelSection() {
   const { enrichmentSettings, setEnrichment } = useSettings()
-  const { can } = useAuth()
+  const { can, currentUser } = useAuth()
   const isAdmin = can('admin')
   const canConnect = can('connectors.manage')
   const [found, setFound] = useState(null)
@@ -140,7 +221,7 @@ export default function ThreatIntelSection() {
   const reload = useCallback(() => {
     api
       .get('/enrichment/sources')
-      .then((res) => setFound({ sources: res.sources ?? [], oldKeys: res.oldKeys ?? [] }))
+      .then((res) => setFound({ sources: res.sources ?? [], oldKeys: res.oldKeys ?? [], guard: res.guard ?? [] }))
       .catch((err) => setError(err.message))
   }, [])
   useEffect(() => reload(), [reload])
@@ -175,7 +256,8 @@ export default function ThreatIntelSection() {
         <p className="mt-1 text-xs text-fg-muted">
           The reputation of indicators, asked of the sources below and shown in the Indicators tab and on each
           indicator’s page. Never sent: private addresses and internal names, allowlisted values, values of incidents
-          whose report is TLP:RED, e-mail addresses.
+          whose report is TLP:RED, e-mail addresses. Held until its class is opened below: a value that carries an
+          e-mail address, a name under your own domains or an allowlisted name.
         </p>
       </div>
 
@@ -236,6 +318,16 @@ export default function ThreatIntelSection() {
           hint="When an indicator is opened, and in the automatic lookups. Off: the old answer is kept and marked as expired until someone presses Check again."
         />
       </div>
+
+      {found && found.guard.length > 0 && (
+        <LookupGuard
+          classes={found.guard}
+          sources={found.sources}
+          canManage={isAdmin}
+          actor={currentUser?.username ?? ''}
+          onChanged={reload}
+        />
+      )}
 
       {found && <OldKeys keys={found.oldKeys} canManage={isAdmin} onChanged={reload} />}
 

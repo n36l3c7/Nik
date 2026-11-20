@@ -1,0 +1,18 @@
+name: Stub source
+id: stubsource
+version: 1
+description: A source of threat intelligence made for the tests. Its instance points at the test server itself, so a look-up is answered without reaching another machine.
+lookups: { weight: 1 }
+configuration:
+  - { name: url, label: Instance address, type: url, required: true }
+base_url: "{{ config.url }}"
+commands:
+  - name: check-url
+    description: What the stub says of a URL.
+    reputation: url
+    arguments:
+      - { name: url, type: text, required: true }
+    request: { method: GET, path: /api/health, query: { about: "{{ args.url }}" } }
+    outputs:
+      verdict: harmless
+      summary: "The stub answered: {{ response.status }}"
