@@ -1,0 +1,48 @@
+{
+  "args": {
+    "tag_id": "7777777777777777001",
+    "value": "INC-2026-0418"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/tag-manager/7777777777777777001",
+        "json": {
+          "data": {
+            "value": "INC-2026-0418"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "7777777777777777001",
+            "key": "incident",
+            "value": "INC-2026-0418",
+            "description": "Hosts of an open incident",
+            "scopeLevel": "site",
+            "scopeId": "2222222222222222222",
+            "type": "agents"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tag_id": "7777777777777777001",
+    "tag": {
+      "id": "7777777777777777001",
+      "key": "incident",
+      "value": "INC-2026-0418",
+      "description": "Hosts of an open incident",
+      "scopeLevel": "site",
+      "scopeId": "2222222222222222222",
+      "type": "agents"
+    }
+  }
+}

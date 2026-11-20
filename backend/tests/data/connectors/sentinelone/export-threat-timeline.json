@@ -1,0 +1,37 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/export/threats/5555555555555555555/timeline",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "Time,Description\n2026-11-16T08:30:07Z,The agent WKS-FINANCE-01 successfully quarantined the threat: dropper.exe.\n",
+        "headers": {
+          "content-disposition": "attachment; filename=\"threat-timeline.csv\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "threat-timeline.csv",
+      "type": "text/plain",
+      "text": "Time,Description\n2026-11-16T08:30:07Z,The agent WKS-FINANCE-01 successfully quarantined the threat: dropper.exe.\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:threat-timeline.csv",
+    "name": "threat-timeline.csv",
+    "sha256": "sha256:threat-timeline.csv",
+    "size": 113,
+    "type": "text/plain"
+  }
+}

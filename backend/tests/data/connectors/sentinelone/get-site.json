@@ -1,0 +1,50 @@
+{
+  "args": {
+    "site_id": "2222222222222222222"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/sites/2222222222222222222",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "2222222222222222222",
+            "name": "Milan",
+            "state": "active",
+            "accountId": "1111111111111111111",
+            "accountName": "ACME",
+            "activeLicenses": 180,
+            "totalLicenses": 200,
+            "sku": "Complete",
+            "siteType": "Paid",
+            "createdAt": "2024-02-01T09:05:00.000000Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "site": {
+      "id": "2222222222222222222",
+      "name": "Milan",
+      "state": "active",
+      "accountId": "1111111111111111111",
+      "accountName": "ACME",
+      "activeLicenses": 180,
+      "totalLicenses": 200,
+      "sku": "Complete",
+      "siteType": "Paid",
+      "createdAt": "2024-02-01T09:05:00.000000Z"
+    },
+    "name": "Milan",
+    "state": "active",
+    "account_id": "1111111111111111111"
+  }
+}

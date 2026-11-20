@@ -1,0 +1,58 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/5555555555555555555/notes",
+        "query": {
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "6600000000000000001",
+              "text": "Contained by the playbook; the file was sent for analysis.",
+              "creator": "nik-service",
+              "creatorId": "4400000000000000001",
+              "edited": false,
+              "createdAt": "2026-11-16T08:40:00.000000Z",
+              "updatedAt": "2026-11-16T08:40:00.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "notes": [
+      {
+        "id": "6600000000000000001",
+        "text": "Contained by the playbook; the file was sent for analysis.",
+        "creator": "nik-service",
+        "creatorId": "4400000000000000001",
+        "edited": false,
+        "createdAt": "2026-11-16T08:40:00.000000Z",
+        "updatedAt": "2026-11-16T08:40:00.000000Z"
+      }
+    ],
+    "ids": [
+      "6600000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

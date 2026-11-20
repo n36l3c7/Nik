@@ -1,0 +1,35 @@
+{
+  "args": {
+    "group_id": "3333333333333333333",
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/groups/3333333333333333333/move-agents",
+        "json": {
+          "filter": {
+            "ids": [
+              "1234567890123456789"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "agentsMoved": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "moved": 1
+  }
+}

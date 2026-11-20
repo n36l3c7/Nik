@@ -1,0 +1,32 @@
+{
+  "args": {
+    "download_token": "dvtok-7f3a9c"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/dv/fetch-file",
+        "query": {
+          "downloadToken": "dvtok-7f3a9c"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "downloadUrl": "https://acme.sentinelone.net/web/api/v2.1/dv/files/0a1b2c3d4e5f",
+            "fileName": "powershell.exe.zip"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "download_url": "https://acme.sentinelone.net/web/api/v2.1/dv/files/0a1b2c3d4e5f",
+    "file_name": "powershell.exe.zip"
+  }
+}

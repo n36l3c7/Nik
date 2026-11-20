@@ -1,0 +1,76 @@
+{
+  "args": {
+    "scope_level": "site",
+    "scope_id": "2222222222222222222"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/detection-library/platform-rules",
+        "query": {
+          "scopeLevel": "site",
+          "scopeId": "2222222222222222222",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "6300000000000000001",
+              "name": "Credential dumping from LSASS",
+              "severity": "High",
+              "status": "Disabled",
+              "scopeLevel": "site",
+              "queryType": "events",
+              "description": "Access to the memory of LSASS by an unusual process",
+              "mitre": [
+                {
+                  "tactic": "Credential Access"
+                }
+              ],
+              "activeResponse": false
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "rules": [
+      {
+        "id": "6300000000000000001",
+        "name": "Credential dumping from LSASS",
+        "severity": "High",
+        "status": "Disabled",
+        "scopeLevel": "site",
+        "queryType": "events",
+        "description": "Access to the memory of LSASS by an unusual process",
+        "mitre": [
+          {
+            "tactic": "Credential Access"
+          }
+        ],
+        "activeResponse": false
+      }
+    ],
+    "ids": [
+      "6300000000000000001"
+    ],
+    "rule_id": "6300000000000000001",
+    "name": "Credential dumping from LSASS",
+    "status": "Disabled",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

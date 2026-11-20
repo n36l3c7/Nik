@@ -1,0 +1,47 @@
+{
+  "args": {
+    "script_id": "7200000000000000001",
+    "task_description": "Browser history for INC-2026-0417",
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/remote-scripts/execute",
+        "json": {
+          "filter": {
+            "ids": [
+              "1234567890123456789"
+            ]
+          },
+          "data": {
+            "scriptId": "7200000000000000001",
+            "taskDescription": "Browser history for INC-2026-0417",
+            "outputDestination": "SentinelCloud"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1,
+            "parentTaskId": "7300000000000000001",
+            "pending": false,
+            "pendingExecutionId": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "parent_task_id": "7300000000000000001",
+    "affected": 1,
+    "pending": false,
+    "pending_execution_id": null
+  }
+}

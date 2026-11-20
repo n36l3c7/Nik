@@ -1,0 +1,35 @@
+{
+  "args": {
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/agents/actions/fetch-firewall-rules",
+        "json": {
+          "filter": {
+            "ids": [
+              "1234567890123456789"
+            ]
+          },
+          "data": {}
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

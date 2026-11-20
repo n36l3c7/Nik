@@ -1,0 +1,71 @@
+{
+  "args": {
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/rogues/table-view",
+        "query": {
+          "siteIds": "2222222222222222222",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8300000000000000001",
+              "localIp": "10.20.4.91",
+              "macAddress": "3c:52:82:aa:10:0e",
+              "hostnames": [
+                "LAPTOP-GUEST7"
+              ],
+              "deviceType": "Workstation",
+              "osType": "windows",
+              "osName": "Windows 10",
+              "manufacturer": "Dell",
+              "firstSeen": "2026-11-19T15:00:00Z",
+              "lastSeen": "2026-11-20T09:40:00Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "devices": [
+      {
+        "id": "8300000000000000001",
+        "localIp": "10.20.4.91",
+        "macAddress": "3c:52:82:aa:10:0e",
+        "hostnames": [
+          "LAPTOP-GUEST7"
+        ],
+        "deviceType": "Workstation",
+        "osType": "windows",
+        "osName": "Windows 10",
+        "manufacturer": "Dell",
+        "firstSeen": "2026-11-19T15:00:00Z",
+        "lastSeen": "2026-11-20T09:40:00Z"
+      }
+    ],
+    "ids": [
+      "8300000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

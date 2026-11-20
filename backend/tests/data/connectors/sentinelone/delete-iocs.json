@@ -1,0 +1,40 @@
+{
+  "args": {
+    "uuids": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    "account_ids": [
+      "1111111111111111111"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/web/api/v2.1/threat-intelligence/iocs",
+        "json": {
+          "filter": {
+            "uuids": [
+              "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+            ],
+            "accountIds": [
+              "1111111111111111111"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

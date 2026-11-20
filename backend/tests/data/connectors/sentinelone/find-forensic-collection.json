@@ -1,0 +1,40 @@
+{
+  "args": {
+    "agent_id": "1234567890123456789",
+    "storyline": "A1B2C3D4E5F60718"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-ops/forensics/is-collection-file",
+        "query": {
+          "agentId": "1234567890123456789",
+          "storyline": "A1B2C3D4E5F60718"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "agentId": "1234567890123456789",
+            "siteId": "2222222222222222222",
+            "signature": "c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+            "signatureType": "SHA256",
+            "uploadedTimestamp": "2026-11-20T10:31:12.000000Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "agent_id": "1234567890123456789",
+    "site_id": "2222222222222222222",
+    "signature": "c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+    "signature_type": "SHA256",
+    "uploaded_at": "2026-11-20T10:31:12.000000Z"
+  }
+}

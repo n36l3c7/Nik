@@ -1,0 +1,40 @@
+{
+  "args": {
+    "hash": "3395856ce81f2b7382dee72602f798b642f14140",
+    "agent_id": "1234567890123456789",
+    "target_scope": "site"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/dv-add-to-blacklist",
+        "json": {
+          "data": {
+            "targetScope": "site",
+            "hashes": [
+              {
+                "hash": "3395856ce81f2b7382dee72602f798b642f14140",
+                "agentId": "1234567890123456789"
+              }
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "args": {
+    "task_id": "7300000000000000002"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/remote-scripts/fetch-files",
+        "json": {
+          "data": {
+            "taskIds": [
+              "7300000000000000002"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "downloadLinks": [
+              {
+                "taskId": "7300000000000000002",
+                "fileName": "WKS-FINANCE-01_browser-history.zip",
+                "downloadUrl": "https://acme.sentinelone.net/web/api/v2.1/remote-scripts/results/7300000000000000002"
+              }
+            ],
+            "errors": []
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "links": [
+      {
+        "taskId": "7300000000000000002",
+        "fileName": "WKS-FINANCE-01_browser-history.zip",
+        "downloadUrl": "https://acme.sentinelone.net/web/api/v2.1/remote-scripts/results/7300000000000000002"
+      }
+    ],
+    "urls": [
+      "https://acme.sentinelone.net/web/api/v2.1/remote-scripts/results/7300000000000000002"
+    ],
+    "download_url": "https://acme.sentinelone.net/web/api/v2.1/remote-scripts/results/7300000000000000002",
+    "file_name": "WKS-FINANCE-01_browser-history.zip",
+    "errors": []
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "args": {
+    "group_id": "3333333333333333333"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/groups/3333333333333333333",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "3333333333333333333",
+            "name": "Workstations",
+            "type": "static",
+            "siteId": "2222222222222222222",
+            "isDefault": false,
+            "rank": 2,
+            "totalAgents": 96,
+            "inherits": true,
+            "createdAt": "2024-02-01T09:10:00.000000Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "group": {
+      "id": "3333333333333333333",
+      "name": "Workstations",
+      "type": "static",
+      "siteId": "2222222222222222222",
+      "isDefault": false,
+      "rank": 2,
+      "totalAgents": 96,
+      "inherits": true,
+      "createdAt": "2024-02-01T09:10:00.000000Z"
+    },
+    "name": "Workstations",
+    "site_id": "2222222222222222222",
+    "type": "static"
+  }
+}

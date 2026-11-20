@@ -1,0 +1,35 @@
+{
+  "args": {
+    "item_id": "4100000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/web/api/v2.1/restrictions",
+        "json": {
+          "data": {
+            "ids": [
+              "4100000000000000001"
+            ],
+            "type": "black_hash"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

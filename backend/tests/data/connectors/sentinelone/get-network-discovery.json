@@ -1,0 +1,73 @@
+{
+  "args": {
+    "local_ip": "10.20.4."
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/ranger/table-view",
+        "query": {
+          "localIp__contains": "10.20.4.",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8200000000000000001",
+              "localIp": "10.20.4.37",
+              "macAddress": "00:1b:44:11:3a:b7",
+              "hostnames": [
+                "printer-3f"
+              ],
+              "deviceType": "Printer",
+              "osType": "unknown",
+              "managedState": "unsupported",
+              "manufacturer": "Kyocera",
+              "networkName": "MILAN-OFFICE",
+              "siteName": "Milan",
+              "firstSeen": "2026-03-01T08:00:00Z",
+              "lastSeen": "2026-11-20T09:55:00Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "devices": [
+      {
+        "id": "8200000000000000001",
+        "localIp": "10.20.4.37",
+        "macAddress": "00:1b:44:11:3a:b7",
+        "hostnames": [
+          "printer-3f"
+        ],
+        "deviceType": "Printer",
+        "osType": "unknown",
+        "managedState": "unsupported",
+        "manufacturer": "Kyocera",
+        "networkName": "MILAN-OFFICE",
+        "siteName": "Milan",
+        "firstSeen": "2026-03-01T08:00:00Z",
+        "lastSeen": "2026-11-20T09:55:00Z"
+      }
+    ],
+    "ids": [
+      "8200000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

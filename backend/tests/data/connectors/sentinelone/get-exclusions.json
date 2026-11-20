@@ -1,0 +1,79 @@
+{
+  "args": {
+    "type": "path",
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/exclusions",
+        "query": {
+          "type": "path",
+          "siteIds": "2222222222222222222",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "4200000000000000001",
+              "type": "path",
+              "value": "C:\\ERP\\bin\\",
+              "osType": "windows",
+              "mode": "suppress",
+              "pathExclusionType": "subfolders",
+              "description": "ERP, checked with the vendor",
+              "source": "user",
+              "scopeName": "Milan",
+              "scope": {
+                "siteIds": [
+                  "2222222222222222222"
+                ]
+              },
+              "createdAt": "2026-10-02T09:00:00.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "exclusions": [
+      {
+        "id": "4200000000000000001",
+        "type": "path",
+        "value": "C:\\ERP\\bin\\",
+        "osType": "windows",
+        "mode": "suppress",
+        "pathExclusionType": "subfolders",
+        "description": "ERP, checked with the vendor",
+        "source": "user",
+        "scopeName": "Milan",
+        "scope": {
+          "siteIds": [
+            "2222222222222222222"
+          ]
+        },
+        "createdAt": "2026-10-02T09:00:00.000000Z"
+      }
+    ],
+    "ids": [
+      "4200000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

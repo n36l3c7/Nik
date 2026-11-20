@@ -1,0 +1,38 @@
+{
+  "args": {
+    "scheduled_task_id": "7500000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/web/api/v2.1/remote-ops/scheduled-tasks",
+        "json": {
+          "filter": {
+            "ids": [
+              "7500000000000000001"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": [
+              "7500000000000000001"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "deleted": [
+      "7500000000000000001"
+    ]
+  }
+}

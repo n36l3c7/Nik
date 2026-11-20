@@ -1,0 +1,52 @@
+{
+  "args": {
+    "name": "AnyDesk"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/application-management/inventory",
+        "query": {
+          "name__contains": "AnyDesk",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "applicationName": "AnyDesk",
+              "applicationVendor": "AnyDesk Software GmbH",
+              "applicationVersionsCount": 2,
+              "endpointsCount": 3,
+              "estimate": false
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "applications": [
+      {
+        "applicationName": "AnyDesk",
+        "applicationVendor": "AnyDesk Software GmbH",
+        "applicationVersionsCount": 2,
+        "endpointsCount": 3,
+        "estimate": false
+      }
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

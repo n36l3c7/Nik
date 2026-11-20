@@ -1,0 +1,45 @@
+{
+  "args": {
+    "incident_statuses": [
+      "unresolved",
+      "in_progress"
+    ],
+    "created_after": "2026-11-01T00:00:00Z"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/export",
+        "query": {
+          "incidentStatuses": "unresolved,in_progress",
+          "createdAt__gte": "2026-11-01T00:00:00Z"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "Threat Name,Endpoint,Classification,Incident Status\ndropper.exe,WKS-FINANCE-01,Trojan,unresolved\n",
+        "headers": {
+          "content-disposition": "attachment; filename=\"threats.csv\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "threats.csv",
+      "type": "text/plain",
+      "text": "Threat Name,Endpoint,Classification,Incident Status\ndropper.exe,WKS-FINANCE-01,Trojan,unresolved\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:threats.csv",
+    "name": "threats.csv",
+    "sha256": "sha256:threats.csv",
+    "size": 97,
+    "type": "text/plain"
+  }
+}

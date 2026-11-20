@@ -1,0 +1,63 @@
+{
+  "args": {
+    "endpoint_name": "FINANCE"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/application-management/risks",
+        "query": {
+          "endpointName__contains": "FINANCE",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "7900000000000000001",
+              "cveId": "CVE-2024-11477",
+              "severity": "HIGH",
+              "applicationName": "7-Zip",
+              "applicationVersion": "23.01",
+              "endpointId": "1234567890123456789",
+              "endpointName": "WKS-FINANCE-01",
+              "riskScore": "7.8",
+              "detectionDate": "2026-08-03T00:00:00Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "risks": [
+      {
+        "id": "7900000000000000001",
+        "cveId": "CVE-2024-11477",
+        "severity": "HIGH",
+        "applicationName": "7-Zip",
+        "applicationVersion": "23.01",
+        "endpointId": "1234567890123456789",
+        "endpointName": "WKS-FINANCE-01",
+        "riskScore": "7.8",
+        "detectionDate": "2026-08-03T00:00:00Z"
+      }
+    ],
+    "ids": [
+      "7900000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

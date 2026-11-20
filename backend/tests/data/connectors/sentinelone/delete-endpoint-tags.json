@@ -1,0 +1,34 @@
+{
+  "args": {
+    "tag_id": "7777777777777777001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/web/api/v2.1/tag-manager",
+        "json": {
+          "filter": {
+            "tagIds": [
+              "7777777777777777001"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

@@ -2429,15 +2429,16 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               <td>SentinelOne EDR</td>
               <td>an API token</td>
               <td>
-                agents found, isolated and reconnected; threats read and resolved; hashes added to the blocklist; a Deep
-                Visibility query run and waited for
+                agents found, isolated, scanned, tagged and restarted; threats read, mitigated and resolved; files and
+                logs fetched from endpoints and kept as artifacts; the blocklist and exclusions; alerts and custom
+                detection rules; remote scripts; forensic collections; indicators of compromise; vulnerable applications
               </td>
               <td>the threats created since the last cycle · —</td>
             </tr>
             <tr>
               <td>SentinelOne SIEM (Singularity Data Lake)</td>
               <td>an API token</td>
-              <td>a PowerQuery run; alerts read and their status set</td>
+              <td>a PowerQuery or an event search run; alerts read and their status set</td>
               <td>the alerts detected since the last cycle, 100 a cycle · —</td>
             </tr>
             <tr>

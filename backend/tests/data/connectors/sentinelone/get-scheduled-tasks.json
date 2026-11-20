@@ -1,0 +1,72 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-ops/scheduled-tasks",
+        "query": {
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "7500000000000000001",
+              "name": "Collect browser history",
+              "description": "Browser history for INC-2026-0417",
+              "status": "scheduled",
+              "type": "remoteScript",
+              "outputDestination": "SentinelCloud",
+              "creator": "nik-service",
+              "scheduledTime": {
+                "utc": "2026-11-21T02:00:00Z",
+                "tz": "UTC"
+              },
+              "endpointsCount": 1,
+              "createdAt": "2026-11-20T10:20:00.000000Z",
+              "updatedAt": "2026-11-20T10:20:00.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tasks": [
+      {
+        "id": "7500000000000000001",
+        "name": "Collect browser history",
+        "description": "Browser history for INC-2026-0417",
+        "status": "scheduled",
+        "type": "remoteScript",
+        "outputDestination": "SentinelCloud",
+        "creator": "nik-service",
+        "scheduledTime": {
+          "utc": "2026-11-21T02:00:00Z",
+          "tz": "UTC"
+        },
+        "endpointsCount": 1,
+        "createdAt": "2026-11-20T10:20:00.000000Z",
+        "updatedAt": "2026-11-20T10:20:00.000000Z"
+      }
+    ],
+    "ids": [
+      "7500000000000000001"
+    ],
+    "scheduled_task_id": "7500000000000000001",
+    "status": "scheduled",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

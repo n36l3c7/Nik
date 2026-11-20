@@ -1,0 +1,57 @@
+{
+  "args": {
+    "type": "SHARED"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/sdl/v2/api/saved-searches",
+        "query": {
+          "type": "SHARED"
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "index": 0,
+            "name": "Encoded PowerShell",
+            "type": "SHARED",
+            "url": "/events?filter=src.process.cmdline+contains+%27-enc%27"
+          },
+          {
+            "index": 1,
+            "name": "New services",
+            "type": "SHARED",
+            "url": "/events?filter=event.type+%3D+%27Service+Created%27"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "searches": [
+      {
+        "index": 0,
+        "name": "Encoded PowerShell",
+        "type": "SHARED",
+        "url": "/events?filter=src.process.cmdline+contains+%27-enc%27"
+      },
+      {
+        "index": 1,
+        "name": "New services",
+        "type": "SHARED",
+        "url": "/events?filter=event.type+%3D+%27Service+Created%27"
+      }
+    ],
+    "names": [
+      "Encoded PowerShell",
+      "New services"
+    ],
+    "count": 2
+  }
+}

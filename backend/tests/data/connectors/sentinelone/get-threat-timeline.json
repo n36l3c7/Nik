@@ -1,0 +1,66 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/5555555555555555555/timeline",
+        "query": {
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8800000000000000010",
+              "activityType": 2004,
+              "threatId": "5555555555555555555",
+              "agentId": "1234567890123456789",
+              "siteId": "2222222222222222222",
+              "primaryDescription": "The agent WKS-FINANCE-01 successfully quarantined the threat: dropper.exe.",
+              "secondaryDescription": "3395856ce81f2b7382dee72602f798b642f14140",
+              "createdAt": "2026-11-16T08:30:07.000000Z",
+              "data": {
+                "computerName": "WKS-FINANCE-01"
+              }
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "entries": [
+      {
+        "id": "8800000000000000010",
+        "activityType": 2004,
+        "threatId": "5555555555555555555",
+        "agentId": "1234567890123456789",
+        "siteId": "2222222222222222222",
+        "primaryDescription": "The agent WKS-FINANCE-01 successfully quarantined the threat: dropper.exe.",
+        "secondaryDescription": "3395856ce81f2b7382dee72602f798b642f14140",
+        "createdAt": "2026-11-16T08:30:07.000000Z",
+        "data": {
+          "computerName": "WKS-FINANCE-01"
+        }
+      }
+    ],
+    "ids": [
+      "8800000000000000010"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

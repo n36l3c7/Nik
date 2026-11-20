@@ -1,0 +1,36 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities/types",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": 80,
+              "action": "Agent Uploaded Fetched Files",
+              "descriptionTemplate": "The agent uploaded the files that were asked for."
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "types": [
+      {
+        "id": 80,
+        "action": "Agent Uploaded Fetched Files",
+        "descriptionTemplate": "The agent uploaded the files that were asked for."
+      }
+    ],
+    "count": 1
+  }
+}

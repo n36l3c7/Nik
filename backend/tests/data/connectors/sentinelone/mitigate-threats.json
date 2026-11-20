@@ -1,0 +1,45 @@
+{
+  "args": {
+    "action": "kill",
+    "filter": {
+      "contentHashes": [
+        "3395856ce81f2b7382dee72602f798b642f14140"
+      ],
+      "incidentStatuses": [
+        "unresolved"
+      ]
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/mitigate/kill",
+        "json": {
+          "filter": {
+            "contentHashes": [
+              "3395856ce81f2b7382dee72602f798b642f14140"
+            ],
+            "incidentStatuses": [
+              "unresolved"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 4
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 4
+  }
+}

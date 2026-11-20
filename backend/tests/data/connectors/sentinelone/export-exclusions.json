@@ -1,0 +1,42 @@
+{
+  "args": {
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/export/exclusions",
+        "query": {
+          "siteIds": "2222222222222222222"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "Type,Value,OS,Mode,Scope\npath,C:\\ERP\\bin\\,windows,suppress,Milan\n",
+        "headers": {
+          "content-disposition": "attachment; filename=\"exclusions.csv\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "exclusions.csv",
+      "type": "text/plain",
+      "text": "Type,Value,OS,Mode,Scope\npath,C:\\ERP\\bin\\,windows,suppress,Milan\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:exclusions.csv",
+    "name": "exclusions.csv",
+    "sha256": "sha256:exclusions.csv",
+    "size": 65,
+    "type": "text/plain"
+  }
+}

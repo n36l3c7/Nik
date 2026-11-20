@@ -1,0 +1,36 @@
+{
+  "args": {
+    "engines": [
+      "pup"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/engines/disable",
+        "json": {
+          "data": {
+            "engines": [
+              "pup"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "success": true
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

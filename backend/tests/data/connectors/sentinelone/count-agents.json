@@ -1,0 +1,34 @@
+{
+  "args": {
+    "infected": true,
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/agents/count",
+        "query": {
+          "infected": true,
+          "siteIds": "2222222222222222222"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "total": 42
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "total": 42
+  }
+}
