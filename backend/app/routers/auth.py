@@ -26,7 +26,7 @@ from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import Session as SessionModel
 from ..core.models import SigninTicket, User
-from ..core.permissions import ROLES, SYSTEM_USER, stored_roles
+from ..core.permissions import SYSTEM_USER, stored_roles
 from ..core.ratelimit import limiter
 from ..core.schemas import BootstrapOut, CodeIn, IdentityIn, LoginIn, LoginOut, SessionState, SignedIn
 from ..core.security import (
@@ -382,13 +382,37 @@ def second_factor(user: User = Depends(current_user), db: OrmSession = Depends(g
     return _factor_state(db, user)
 
 
+# A session this young was opened by a password a moment ago: the set-up of a second factor that
+# follows a sign-in at once (an account that is led to it) does not ask for the password again.
+FRESH_SIGN_IN_SECONDS = 120
+
+
 @router.post("/second-factor/totp")
-def begin_totp(user: User = Depends(current_user), db: OrmSession = Depends(get_db)) -> dict:
+def begin_totp(
+    request: Request,
+    body: IdentityIn | None = None,
+    user: User = Depends(current_user),
+    db: OrmSession = Depends(get_db),
+) -> dict:
     """Start setting an authenticator app up: the secret, as text and as the
     address a QR code carries. It counts only once ``/second-factor/totp/confirm``
-    got a code made from it, and is never given again."""
+    got a code made from it, and is never given again.
+
+    The ``password`` is asked first (``400`` with the code ``password_required``
+    without it), so that a session somebody else got hold of cannot put its own
+    second factor on the account; a wrong one is counted like a failed sign-in.
+    It is not asked of a session that signed in less than two minutes ago.
+    """
     if signin.factors(db, user.id):
         raise HTTPException(status_code=409, detail="The account already has a second factor: turn it off first")
+    session = current_session(request)
+    age = (security.utcnow() - security.parse_iso(session.created_at)).total_seconds()
+    if not 0 <= age <= FRESH_SIGN_IN_SECONDS:
+        if body is None or not body.password:
+            raise Refused(
+                "password_required", "Type your password to set a second factor up", status.HTTP_400_BAD_REQUEST
+            )
+        signin.confirm_identity(db, request, user, body.password)
     started = signin.begin_totp(db, user)
     db.commit()
     return started
@@ -471,9 +495,7 @@ def _policy_out(db: OrmSession, request: Request, policy: dict[str, Any]) -> dic
     return {
         "policy": policy,
         "defaults": signin_policy.defaults(),
-        "recommended": signin_policy.RECOMMENDED,
         "limits": {name: {"min": least, "max": most} for name, (least, most) in signin_policy.LIMITS.items()},
-        "roles": list(ROLES),
         "address": client_address.describe(request),
     }
 
@@ -489,6 +511,8 @@ def read_policy(
 
 
 def _shown(value: Any) -> str:
+    if isinstance(value, bool):
+        return "on" if value else "off"
     return (", ".join(value) or "none") if isinstance(value, list) else str(value)
 
 
@@ -538,6 +562,6 @@ def write_policy(
         audit.record(db, admin.actor, "auth.policy", "Changed the sign-in policy: " + "; ".join(changes))
         db.commit()
     out = _policy_out(db, request, after)
-    # Whether the administrator who made the change is now asked to set a second factor up.
+    # Whether the administrator who made the change is now asked to set their own second factor up.
     out["mustEnrol"] = bool(admin.user is not None and must_enrol(db, admin.user, after))
     return out

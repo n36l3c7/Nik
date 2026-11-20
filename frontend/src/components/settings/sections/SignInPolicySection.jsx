@@ -2,17 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, RotateCcw, Save, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { api } from '../../../services/api.js'
-import { ROLES, roleLabel } from '../../../domain/permissions.js'
-import { accountsToEnrol, minutesWords, policyChanges, policyForm } from '../../../domain/signin.js'
+import { adminsToEnrol, minutesWords, policyChanges, policyForm } from '../../../domain/signin.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
-import { Badge, Button, Modal, Wait } from '../../ui/index.js'
+import { Button, Modal, Wait } from '../../ui/index.js'
+import Switch from './Switch.jsx'
 import { ErrorNote } from '../../auth/SecondFactorParts.jsx'
 
 /*
  * Access → Sign-in and sessions (admins): the sign-in policy of the server.
  *
- *  - which roles must have a second factor;
+ *  - whether administrators must have a second factor (nobody else can be
+ *    required to; everybody may set one up for themselves);
  *  - how long a session lives, unused and at most;
  *  - the waits after failed sign-ins;
  *  - the networks administrators are accepted from, with what the server sees
@@ -104,7 +105,7 @@ function AddressSeen({ address }) {
 
 export default function SignInPolicySection() {
   const { users, currentUser, refreshMe, refreshUsers, checkSession } = useAuth()
-  const [found, setFound] = useState(null) // { policy, defaults, recommended, limits, address }
+  const [found, setFound] = useState(null) // { policy, defaults, limits, address }
   const [form, setForm] = useState(null)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -123,7 +124,9 @@ export default function SignInPolicySection() {
   }, [])
   useEffect(() => {
     load()
-  }, [load])
+    // Who would be asked for a second factor is said from the accounts as they are now.
+    refreshUsers()
+  }, [load, refreshUsers])
 
   const { body, problems } = useMemo(
     () => (found && form ? policyChanges(form, found.policy, found.limits) : { body: {}, problems: {} }),
@@ -179,9 +182,7 @@ export default function SignInPolicySection() {
     setSaved(false)
     setForm((old) => ({ ...old, [name]: value }))
   }
-  const toggleRole = (role, on) =>
-    set('requiredRoles')(on ? [...form.requiredRoles, role] : form.requiredRoles.filter((id) => id !== role))
-  const toEnrol = accountsToEnrol(users, form.requiredRoles)
+  const toEnrol = adminsToEnrol(users)
   const meToo = toEnrol.some((user) => user.id === currentUser?.id)
   const number = (name, label, unit, hint) => (
     <NumberField
@@ -194,7 +195,7 @@ export default function SignInPolicySection() {
       problem={problems[name]}
     />
   )
-  const { defaults, recommended } = found
+  const { defaults } = found
 
   return (
     <section className="max-w-3xl space-y-8" onContextMenu={pageMenu}>
@@ -202,31 +203,24 @@ export default function SignInPolicySection() {
 
       <div>
         <h3 className={HEADING_CLASS}>Second factor</h3>
-        <fieldset>
-          <legend className="mb-2 text-sm text-fg-muted">
-            The accounts of these roles must have a second factor (a code from an authenticator app, asked after the
-            password). One that has none is led to set it up at its next request, and can do nothing else before. API
-            keys are not asked: a key is a credential of its own.
-          </legend>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {ROLES.filter((role) => role.shown).map((role) => (
-              <label key={role.id} className="flex items-center gap-2 text-sm text-fg">
-                <input
-                  type="checkbox"
-                  checked={form.requiredRoles.includes(role.id)}
-                  onChange={(event) => toggleRole(role.id, event.target.checked)}
-                  className="accent-[var(--color-accent)]"
-                />
-                <span>{roleLabel(role.id)}</span>
-                {recommended.requiredRoles.includes(role.id) && <Badge color="cyan">Recommended</Badge>}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        {form.requiredRoles.length > 0 && (
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={form.adminSecondFactor}
+            onChange={set('adminSecondFactor')}
+            label="Administrators must have a second factor"
+          />
+          <span className="text-sm font-medium text-fg">Administrators must have a second factor</span>
+        </div>
+        <p className="mt-2 text-sm text-fg-muted">
+          Every account that holds the Admin role then needs a code from an authenticator app after its password. One
+          that has none is led to set it up at its next request, and can do nothing else before. Nobody else is required
+          to; everybody can set a second factor up for themselves under My account. API keys are not asked: a key is a
+          credential of its own.
+        </p>
+        {form.adminSecondFactor && (
           <p role="status" className="mt-3 text-sm text-fg-muted">
             {toEnrol.length === 0
-              ? 'Every account of these roles has a second factor already.'
+              ? 'Every administrator has a second factor already.'
               : `${toEnrol.length} account${toEnrol.length === 1 ? ' has' : 's have'} none and will be asked to set one up: ${toEnrol
                   .slice(0, 8)
                   .map((user) => user.username)
@@ -254,7 +248,7 @@ export default function SignInPolicySection() {
             'idleMinutesAdmin',
             'Unused for, administrators',
             'minutes',
-            `Recommended: ${recommended.idleMinutesAdmin}. ${minutesWords(defaults.idleMinutesAdmin)} at first.`,
+            `Whoever holds the Admin role. ${minutesWords(defaults.idleMinutesAdmin)} at first.`,
           )}
           {number(
             'lifetimeHours',
@@ -387,7 +381,7 @@ function Header() {
       </div>
       <p className="mt-1 max-w-prose text-sm text-fg-muted">
         Who must have a second factor, how long a session lives, what failed sign-ins cost, and where administrators may
-        sign in from. No role is asked for a second factor and no network is listed until it is set here.
+        sign in from. No second factor is required and no network is listed until it is set here.
       </p>
     </div>
   )

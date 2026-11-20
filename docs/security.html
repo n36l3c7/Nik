@@ -651,8 +651,8 @@
       <ul>
         <li>
           Passwords are hashed with bcrypt; sessions are random tokens kept on the server. A session ends after eight
-          hours without use and twelve hours at most, unless an admin sets other times; what follows says how sign-in is
-          protected beyond the password.
+          hours without use (thirty minutes for an administrator) and twelve hours at most, unless an admin sets other
+          times; what follows says how sign-in is protected beyond the password.
         </li>
         <li>
           There is always one admin that can sign in. API keys are stored as digests, carry roles and an optional
@@ -678,9 +678,9 @@
       <h3 id="second-factor">A second factor at sign-in</h3>
       <p>
         An account can have a second factor: a time-based code (TOTP, RFC 6238: SHA-1, six digits, thirty seconds, as
-        every authenticator app makes them). An admin can make it a must for chosen roles (<em
+        every authenticator app makes them). An admin can make it a must for administrators (<em
           >Settings → Sign-in and sessions</em
-        >).
+        >); every other account decides for itself.
       </p>
       <ul>
         <li>
@@ -703,13 +703,17 @@
           ends the old ones.
         </li>
         <li>
-          <strong>Required by role</strong>: an account of such a role without a second factor is let through to the
-          routes of the set-up and to nothing else (the API answers <code>403</code> with the code
-          <code>second_factor_required</code>), from the moment the rule is saved. There is no period of grace.
+          <strong>Required of administrators</strong>, when the switch is on: an account that holds the Admin role and
+          has no second factor is let through to the routes of the set-up and to nothing else (the API answers
+          <code>403</code> with the code <code>second_factor_required</code>), from the moment the rule is saved. There
+          is no period of grace.
         </li>
         <li>
           <strong>Asked again</strong> before the second factor is turned off, new recovery codes are made or the
-          password is changed: the password and a current code. Wrong values there are counted like failed sign-ins.
+          password is changed: the password and a current code. Setting a second factor up asks for the password first,
+          so that a session somebody else got hold of cannot put its own factor on the account; only a session that
+          signed in less than two minutes ago is spared the question. Wrong values there are counted like failed
+          sign-ins.
         </li>
         <li>
           <strong>What it covers</strong>: every interactive sign-in, the dialog of a session that ended included. There
@@ -837,9 +841,8 @@
         </li>
         <li>Give each person an account; disable, do not delete, the account of someone who leaves.</li>
         <li>
-          Under <em>Settings → Sign-in and sessions</em>, require a second factor for the Admin role (and for the others
-          when you can), and set the idle time of administrators to thirty minutes. Set up your own second factor first,
-          and keep its recovery codes.
+          Under <em>Settings → Sign-in and sessions</em>, turn on <em>Administrators must have a second factor</em>, and
+          ask everybody else to set one up under My account. Set up your own first, and keep its recovery codes.
         </li>
         <li>
           If administrators always work from the same networks, list them there. Check first what the page says of the

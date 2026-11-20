@@ -5,7 +5,11 @@ values a server starts with, no role needs a second factor and
 administrators sign in from anywhere. What is always there are the times a
 session lives and the waits after failed sign-ins, whose defaults are below.
 
-- ``requiredRoles``: the roles whose accounts must have a second factor.
+- ``adminSecondFactor``: whether the accounts that hold the administrator's
+  permission must have a second factor. Nobody else can be required to; any
+  account may set one up for itself. (One switch today: who is required is
+  decided in ``must_have_factor`` alone, so that widening it later is one
+  more value in this document, not a change of the database.)
 - ``idleMinutes`` / ``idleMinutesAdmin``: a session ends after this long
   without the person doing anything (0: never), for everybody and for the
   accounts that hold the administrator's permission.
@@ -28,7 +32,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .config import settings
 from .models import Setting
-from .permissions import ADMIN, ROLES, permissions_of
+from .permissions import ADMIN, permissions_of
 
 SETTINGS_ID = 5  # 1 the analysts' settings, 2 automation, 3 the catalogue of packs, 4 the workers' state
 
@@ -43,8 +47,6 @@ LIMITS: dict[str, tuple[int, int]] = {
     "notifyAfter": (3, 1000),
 }
 MAX_NETWORKS = 200
-# What the screen recommends where the default is looser, so that an upgrade changes nothing by itself.
-RECOMMENDED = {"requiredRoles": ["admin"], "idleMinutesAdmin": 30}
 
 
 class PolicyError(ValueError):
@@ -53,10 +55,10 @@ class PolicyError(ValueError):
 
 def defaults() -> dict[str, Any]:
     return {
-        "requiredRoles": [],
-        # A working day: with the lifetime below, a session left alone ends a little sooner than before 6.7.
+        "adminSecondFactor": False,
+        # A working day for everybody; half an hour for the accounts that can change everything.
         "idleMinutes": 480,
-        "idleMinutesAdmin": 480,
+        "idleMinutesAdmin": 30,
         # What SESSION_TTL_HOURS says (12 unless the operator changed it), as before 6.7.
         "lifetimeHours": max(1, min(LIMITS["lifetimeHours"][1], settings.SESSION_TTL_HOURS)),
         "attemptsBeforeWait": 5,
@@ -83,11 +85,10 @@ def clean(doc: object, base: dict[str, Any] | None = None) -> dict[str, Any]:
     policy = dict(base or defaults())
     if not isinstance(doc, dict):
         raise PolicyError("The policy must be an object")
-    if "requiredRoles" in doc:
-        wanted = doc["requiredRoles"]
-        if not isinstance(wanted, list) or any(role not in ROLES for role in wanted):
-            raise PolicyError("Unknown role: the roles are " + ", ".join(ROLES))
-        policy["requiredRoles"] = [role for role in ROLES if role in wanted]
+    if "adminSecondFactor" in doc:
+        if not isinstance(doc["adminSecondFactor"], bool):
+            raise PolicyError("adminSecondFactor must be true or false")
+        policy["adminSecondFactor"] = doc["adminSecondFactor"]
     for name, (least, most) in LIMITS.items():
         if name not in doc:
             continue
@@ -149,7 +150,8 @@ def lifetime_seconds(policy: dict[str, Any]) -> int:
 
 
 def must_have_factor(policy: dict[str, Any], roles: list[str]) -> bool:
-    return bool(set(policy["requiredRoles"]) & set(roles))
+    """Whether an account with these roles must have a second factor: administrators, when the switch is on."""
+    return bool(policy["adminSecondFactor"]) and is_admin(roles)
 
 
 def admin_networks(policy: dict[str, Any]) -> list:

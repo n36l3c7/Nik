@@ -89,8 +89,13 @@ def code_now(secret: str, clock: Clock | None = None, shift: int = 0) -> str:
 
 
 def enrol(client: TestClient, clock: Clock | None = None) -> tuple[str, list[str]]:
-    """Turn a second factor on for the signed-in client: its secret and its recovery codes."""
+    """Turn a second factor on for the signed-in client: its secret and its recovery codes.
+    The password is given when the server asks for it (the sign-in is not of a moment ago)."""
     started = client.post("/api/auth/second-factor/totp")
+    if started.status_code == 400 and started.json().get("code") == "password_required":
+        name = client.get("/api/auth/me").json()["user"]["username"]
+        password = ADMIN["password"] if name == ADMIN["username"] else "password1"
+        started = client.post("/api/auth/second-factor/totp", json={"password": password})
     assert started.status_code == 200, started.text
     secret = started.json()["secret"]
     done = client.post("/api/auth/second-factor/totp/confirm", json={"code": code_now(secret, clock)})
@@ -409,14 +414,53 @@ def test_changing_the_secret_key_keeps_the_second_factors(admin: TestClient, clo
 # --------------------------------------------------------------------------- #
 # Required by role                                                            #
 # --------------------------------------------------------------------------- #
-def test_an_account_of_a_required_role_can_only_set_its_factor_up(admin: TestClient, clock: Clock):
-    make_user(admin, "anna", ("analyst", "rules"))
+def test_setting_a_factor_up_asks_for_the_password_unless_the_sign_in_is_of_a_moment_ago(
+    admin: TestClient, clock: Clock
+):
+    make_user(admin)
+    anna = signed_in()
+    url = "/api/auth/second-factor/totp"
+    # Right after the sign-in the password was just given: it is not asked twice.
+    clock.advance(seconds=119)
+    assert anna.post(url).status_code == 200
+    # Later, a session is not proof of who is at the keyboard.
+    clock.advance(seconds=2)
+    asked = anna.post(url)
+    assert asked.status_code == 400 and asked.json()["code"] == "password_required"
+    assert anna.post(url, json={}).json()["code"] == "password_required"
+    assert anna.post(url, json={"password": ""}).json()["code"] == "password_required"
+    wrong = anna.post(url, json={"password": "nope"})
+    assert wrong.status_code == 400 and "password is not correct" in wrong.json()["detail"]
+    assert anna.get("/api/auth/second-factor").json()["factors"] == []
+    started = anna.post(url, json={"password": "password1"})
+    assert started.status_code == 200
+    done = anna.post("/api/auth/second-factor/totp/confirm", json={"code": code_now(started.json()["secret"], clock)})
+    assert done.status_code == 200
+    # Wrong passwords there are counted like failed sign-ins, and make the next attempt wait.
     make_user(admin, "vera", ("viewer",))
+    vera = signed_in("vera")
+    clock.advance(minutes=5)
+    for _ in range(5):
+        assert vera.post(url, json={"password": "guess"}).status_code == 400
+    waits = vera.post(url, json={"password": "password1"})
+    assert waits.status_code == 429 and waits.headers["retry-after"] == "30"
+    clock.advance(seconds=31)
+    assert vera.post(url, json={"password": "password1"}).status_code == 200
+    assert any('the account "vera"' in line for line in details(signed_in("admin", ADMIN["password"]), "auth.failed"))
+
+
+# --------------------------------------------------------------------------- #
+# Required of administrators                                                  #
+# --------------------------------------------------------------------------- #
+def test_an_administrator_without_a_factor_can_only_set_one_up_once_it_is_required(admin: TestClient, clock: Clock):
+    enrol(admin, clock)  # the administrator who turns it on has theirs: they go on
+    make_user(admin, "anna", ("analyst", "admin"))
+    make_user(admin, "vera", ("analyst", "rules", "audit"))
     anna = signed_in("anna")
     assert anna.get("/api/incidents").status_code == 200
-    key = make_key(admin, label="robot", roles=["analyst"])
-    said = set_policy(admin, requiredRoles=["analyst"])
-    assert said["policy"]["requiredRoles"] == ["analyst"] and said["mustEnrol"] is False
+    key = make_key(admin, label="robot", roles=["admin"])
+    said = set_policy(admin, adminSecondFactor=True)
+    assert said["policy"]["adminSecondFactor"] is True and said["mustEnrol"] is False
 
     # At once, on the session that was open: nothing but the enrolment answers.
     refused = anna.get("/api/incidents")
@@ -433,9 +477,14 @@ def test_an_account_of_a_required_role_can_only_set_its_factor_up(admin: TestCli
     # A new sign-in is let in, to the same place.
     fresh = signed_in("anna")
     assert fresh.get("/api/incidents").json()["code"] == "second_factor_required"
-    # Other roles and API keys are not concerned.
-    assert signed_in("vera").get("/api/incidents").status_code == 200
-    assert TestClient(fastapi_app).get("/api/incidents", headers=key).status_code == 200
+    # Nobody but administrators is concerned, whatever their roles; nor is an API key, an administrator's included.
+    vera = signed_in("vera")
+    assert vera.get("/api/incidents").status_code == 200
+    assert vera.get("/api/auth/me").json()["user"]["secondFactorRequired"] is False
+    assert vera.get("/api/auth/second-factor").json()["required"] is False
+    assert TestClient(fastapi_app).get("/api/users", headers=key).status_code == 200
+    # They can still set one up for themselves.
+    enrol(vera, clock)
 
     secret, _codes = enrol(anna, clock)
     assert anna.get("/api/incidents").status_code == 200
@@ -444,17 +493,21 @@ def test_an_account_of_a_required_role_can_only_set_its_factor_up(admin: TestCli
     off = anna.post("/api/auth/second-factor/off", json={"password": "password1", "code": code_now(secret, clock)})
     assert off.status_code == 200
     assert anna.get("/api/incidents").json()["code"] == "second_factor_required"
-    assert "auth.policy" in actions(admin)
-    assert "requiredRoles: none → analyst" in details(admin, "auth.policy")[0]
+    assert "adminSecondFactor: off → on" in details(admin, "auth.policy")[0]
+    # An account that stops being an administrator is no longer asked.
+    anna_id = anna.get("/api/auth/me").json()["user"]["id"]
+    assert admin.patch(f"/api/users/{anna_id}", json={"roles": ["analyst"]}).status_code == 200
+    assert signed_in("anna").get("/api/incidents").status_code == 200
 
 
-def test_every_route_but_the_enrolment_refuses_an_account_that_must_enrol(admin: TestClient):
+def test_every_route_but_the_enrolment_refuses_an_account_that_must_enrol(admin: TestClient, clock: Clock):
     from tests.test_permissions_matrix import EXPECTED, _url
 
     # Anna may do everything, so nothing else than the missing factor can be what refuses her.
+    enrol(admin, clock)
     make_user(admin, "anna", ("analyst", "admin"))
     anna = signed_in("anna")
-    set_policy(admin, requiredRoles=["analyst"])
+    set_policy(admin, adminSecondFactor=True)
     assert admin.get("/api/incidents").status_code == 200
     wrong = []
     for (method, path), expected in EXPECTED.items():
@@ -468,8 +521,8 @@ def test_every_route_but_the_enrolment_refuses_an_account_that_must_enrol(admin:
     assert not wrong, wrong
 
 
-def test_requiring_it_for_admins_starts_the_enrolment_of_the_admin_who_asked(admin: TestClient, clock: Clock):
-    said = set_policy(admin, requiredRoles=["admin"])
+def test_requiring_it_starts_the_enrolment_of_the_admin_who_asked(admin: TestClient, clock: Clock):
+    said = set_policy(admin, adminSecondFactor=True)
     assert said["mustEnrol"] is True
     assert admin.get("/api/users").json()["code"] == "second_factor_required"
     # Not locked out: the enrolment answers, and then everything does.
@@ -477,18 +530,40 @@ def test_requiring_it_for_admins_starts_the_enrolment_of_the_admin_who_asked(adm
     assert admin.get("/api/users").status_code == 200
     users = admin.get("/api/users").json()["users"]
     assert users[0]["secondFactor"] is True and users[0]["secondFactorRequired"] is True
+    # Turned off again, nobody is asked.
+    assert set_policy(admin, adminSecondFactor=False)["policy"]["adminSecondFactor"] is False
+    assert admin.get("/api/users").json()["users"][0]["secondFactorRequired"] is False
+
+
+def test_only_the_switch_is_taken_no_list_of_roles(admin: TestClient, clock: Clock):
+    make_user(admin, "anna")
+    anna = signed_in()
+    # What 6.7 was first built with is not an entry any more: it changes nothing, for anybody.
+    after = set_policy(admin, requiredRoles=["analyst", "admin"])
+    assert "requiredRoles" not in after["policy"] and after["policy"]["adminSecondFactor"] is False
+    assert "roles" not in after and "recommended" not in after
+    assert anna.get("/api/incidents").status_code == 200 and admin.get("/api/users").status_code == 200
+    with SessionLocal() as db:  # nor does a list somebody stored by hand
+        signin_policy.store(db, {"requiredRoles": ["analyst"], "idleMinutes": 45})
+        db.commit()
+        assert signin_policy.load(db)["adminSecondFactor"] is False
+    assert anna.get("/api/incidents").status_code == 200
+    for wrong in ("yes", 1, ["admin"], None):
+        assert admin.put("/api/auth/policy", json={"adminSecondFactor": wrong}).status_code == 400, wrong
 
 
 def test_the_accounts_list_says_who_has_a_factor_and_who_must(admin: TestClient, clock: Clock):
-    make_user(admin, "anna")
+    enrol(admin, clock)
+    make_user(admin, "anna", ("admin",))
     make_user(admin, "vera", ("viewer",))
+    make_user(admin, "otto", ("analyst",))
     enrol(signed_in("vera"), clock)
-    set_policy(admin, requiredRoles=["analyst"])
+    set_policy(admin, adminSecondFactor=True)
     shown = {
         user["username"]: (user["secondFactor"], user["secondFactorRequired"])
         for user in admin.get("/api/users").json()["users"]
     }
-    assert shown == {"admin": (False, False), "anna": (False, True), "vera": (True, False)}
+    assert shown == {"admin": (True, True), "anna": (False, True), "vera": (True, False), "otto": (False, False)}
 
 
 # --------------------------------------------------------------------------- #
@@ -530,7 +605,7 @@ def test_an_admin_resets_the_factor_of_somebody_else_never_their_own_never_with_
 
 def test_the_server_console_resets_a_factor_and_clears_the_networks(admin: TestClient, clock: Clock, capsys):
     secret, _codes = enrol(admin, clock)
-    set_policy(admin, requiredRoles=["admin"])
+    set_policy(admin, adminSecondFactor=True)
     assert account.main(["reset-second-factor", "nobody"]) == 1
     assert account.main(["what"]) == 2 and "reset-second-factor <username>" in capsys.readouterr().err
     assert account.main(["reset-second-factor", "ADMIN"]) == 0
@@ -547,7 +622,9 @@ def test_the_server_console_resets_a_factor_and_clears_the_networks(admin: TestC
     assert secret
 
     with SessionLocal() as db:
-        signin_policy.store(db, {**signin_policy.load(db), "adminNetworks": ["192.0.2.0/24"], "requiredRoles": []})
+        signin_policy.store(
+            db, {**signin_policy.load(db), "adminNetworks": ["192.0.2.0/24"], "adminSecondFactor": False}
+        )
         db.commit()
     locked = browser(ELSEWHERE)
     assert sign_in(locked, **ADMIN).json()["code"] == "admin_network"
@@ -616,6 +693,29 @@ def test_a_session_ended_while_one_of_its_requests_is_under_way_is_no_error(admi
     assert anna.get("/api/auth/me").status_code == 401
 
 
+def test_with_the_times_a_server_starts_with_an_admin_has_half_an_hour_and_the_others_eight(
+    admin: TestClient, clock: Clock
+):
+    make_user(admin)
+    anna = signed_in()
+    assert admin.get("/api/auth/session").json()["idleSeconds"] == 30 * 60
+    assert anna.get("/api/auth/session").json() == {
+        "idleSeconds": 8 * 3600,
+        "idleLeft": 8 * 3600,
+        "lifetimeLeft": 12 * 3600,
+        "warnSeconds": 60,
+    }
+    clock.advance(minutes=29)
+    assert admin.get("/api/auth/session").json()["idleLeft"] in (59, 60)  # the warning comes a minute before
+    assert admin.get("/api/users").status_code == 200
+    clock.advance(minutes=31)
+    assert admin.get("/api/users").status_code == 401
+    clock.advance(hours=6, minutes=59)
+    assert anna.get("/api/incidents").status_code == 200
+    clock.advance(hours=8, minutes=1)
+    assert anna.get("/api/incidents").status_code == 401
+
+
 def test_a_session_ends_after_its_lifetime_however_much_it_is_used(admin: TestClient, clock: Clock):
     make_user(admin)
     anna = signed_in()
@@ -645,6 +745,7 @@ def test_a_shorter_lifetime_applies_to_the_sessions_that_are_open(admin: TestCli
     anna = signed_in()
     clock.advance(hours=3)
     assert anna.get("/api/incidents").status_code == 200
+    assert sign_in(admin, **ADMIN).status_code == 200  # three hours unused: an administrator's session is over
     set_policy(admin, lifetimeHours=2)
     assert anna.get("/api/incidents").status_code == 401
 
@@ -1291,9 +1392,9 @@ def test_the_policy_starts_with_nothing_turned_on_and_refuses_what_makes_no_sens
         shown["policy"]
         == shown["defaults"]
         == {
-            "requiredRoles": [],
+            "adminSecondFactor": False,
             "idleMinutes": 480,
-            "idleMinutesAdmin": 480,
+            "idleMinutesAdmin": 30,
             "lifetimeHours": 12,
             "attemptsBeforeWait": 5,
             "firstWaitSeconds": 30,
@@ -1302,11 +1403,9 @@ def test_the_policy_starts_with_nothing_turned_on_and_refuses_what_makes_no_sens
             "adminNetworks": [],
         }
     )
-    assert shown["recommended"] == {"requiredRoles": ["admin"], "idleMinutesAdmin": 30}
     assert shown["limits"]["lifetimeHours"] == {"min": 1, "max": 720}
     for body in (
-        {"requiredRoles": ["root"]},
-        {"requiredRoles": "admin"},
+        {"adminSecondFactor": "on"},
         {"idleMinutes": -1},
         {"idleMinutes": 1.5},
         {"idleMinutes": True},
@@ -1321,8 +1420,8 @@ def test_the_policy_starts_with_nothing_turned_on_and_refuses_what_makes_no_sens
         assert res.status_code == 400, body
     assert admin.get("/api/auth/policy").json()["policy"] == shown["defaults"]
     # Only what is sent changes; an unknown name is ignored.
-    after = set_policy(admin, idleMinutesAdmin=30, somethingElse=1)["policy"]
-    assert after == {**shown["defaults"], "idleMinutesAdmin": 30}
+    after = set_policy(admin, idleMinutesAdmin=45, somethingElse=1)["policy"]
+    assert after == {**shown["defaults"], "idleMinutesAdmin": 45}
     # A value stored by hand that no longer fits falls back to its default, the others stand.
     with SessionLocal() as db:
         signin_policy.store(db, {"idleMinutes": "soon", "lifetimeHours": 3})
@@ -1342,5 +1441,5 @@ def test_only_an_admin_reads_and_writes_the_policy(admin: TestClient):
     make_user(admin)
     anna = signed_in()
     assert anna.get("/api/auth/policy").status_code == 403
-    assert anna.put("/api/auth/policy", json={"requiredRoles": []}).status_code == 403
+    assert anna.put("/api/auth/policy", json={"adminSecondFactor": False}).status_code == 403
     assert browser().get("/api/auth/policy").status_code == 401

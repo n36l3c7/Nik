@@ -132,8 +132,8 @@ function RequiredEnrolmentDialog() {
     <Modal open onClose={() => {}} title="Set up your second factor" maxWidth="max-w-2xl">
       <div className="space-y-4">
         <p className="text-sm text-fg-muted">
-          An administrator now requires a second factor for your role. Nothing else answers until yours is set up; what
-          was on screen is still there underneath.
+          Administrators must now have a second factor. Nothing else answers until yours is set up; what was on screen
+          is still there underneath.
         </p>
         <SecondFactorSetup
           username={currentUser.username}
@@ -254,8 +254,8 @@ export function RequiredEnrolmentScreen() {
         {!on && (
           <p className="text-sm text-fg-muted">
             {signInNote?.notice === 'second_factor_reset'
-              ? 'Your second factor was reset, and your role requires one. Set it up again to go on.'
-              : 'Your role requires a second factor: a code from an authenticator app, asked after your password. Set it up to go on.'}
+              ? 'Your second factor was reset, and administrators must have one. Set it up again to go on.'
+              : 'Administrators must have a second factor: a code from an authenticator app, asked after your password. Set it up to go on.'}
           </p>
         )}
         <SecondFactorSetup

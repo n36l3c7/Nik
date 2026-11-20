@@ -296,6 +296,9 @@ export function SecondFactorSetup({ username, onEnrolled, onDone, onCancel = nul
   const [busy, setBusy] = useState(false)
   const [codes, setCodes] = useState(null)
   const [copied, setCopied] = useState(false)
+  // The server asks for the password first, unless the sign-in is of a moment ago.
+  const [passwordAsked, setPasswordAsked] = useState(false)
+  const [password, setPassword] = useState('')
 
   // Asked once, however often the effect runs: each asking makes a new secret and ends the one before.
   const asked = useRef(null)
@@ -304,11 +307,30 @@ export function SecondFactorSetup({ username, onEnrolled, onDone, onCancel = nul
     asked.current ??= api.post('/auth/second-factor/totp')
     asked.current
       .then((answer) => !cancelled && setStarted(answer))
-      .catch((failure) => !cancelled && setError(failure.message))
+      .catch((failure) => {
+        if (cancelled) return
+        if (failure.code === 'password_required') setPasswordAsked(true)
+        else setError(failure.message)
+      })
     return () => {
       cancelled = true
     }
   }, [])
+
+  const start = async (event) => {
+    event.preventDefault()
+    if (busy || !password) return
+    setBusy(true)
+    setError(null)
+    try {
+      setStarted(await api.post('/auth/second-factor/totp', { password }))
+      setPasswordAsked(false)
+    } catch (failure) {
+      setError(failure.message)
+    }
+    setPassword('')
+    setBusy(false)
+  }
 
   const confirm = async (event) => {
     event.preventDefault()
@@ -340,6 +362,42 @@ export function SecondFactorSetup({ username, onEnrolled, onDone, onCancel = nul
           </Button>
         </div>
       </div>
+    )
+  }
+
+  if (!started && passwordAsked) {
+    return (
+      <form onSubmit={start} className="space-y-3">
+        <p className="text-sm text-fg-muted">
+          First, your password: a second factor is set up by the person the account belongs to, not by whoever finds it
+          signed in.
+        </p>
+        <div className="max-w-xs">
+          <label htmlFor="second-factor-password" className={LABEL_CLASS}>
+            Your password
+          </label>
+          <input
+            id="second-factor-password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            autoFocus
+            className={INPUT_CLASS}
+          />
+        </div>
+        {error && <ErrorNote>{error}</ErrorNote>}
+        <div className="flex justify-end gap-2">
+          {onCancel && (
+            <Button variant="ghost" onClick={onCancel} disabled={busy}>
+              Cancel
+            </Button>
+          )}
+          <Button waiting={busy} type="submit" disabled={busy || !password}>
+            {busy ? 'Checking…' : 'Continue'}
+          </Button>
+        </div>
+      </form>
     )
   }
 

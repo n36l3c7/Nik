@@ -31,8 +31,8 @@ import { useUnsavedChanges } from '../../../lib/unsaved.js'
  * would lock everybody out (the last admin, one's own admin role) and records
  * each change in the audit log.
  *
- * Each account says whether it has a second factor, and whether its roles ask
- * for one it has not set up yet. An admin sees the open sessions of an account
+ * Each account says whether it has a second factor, and whether it is an
+ * administrator who must have one and has not set it up yet. An admin sees the open sessions of an account
  * and ends them, and resets the second factor of somebody who lost theirs
  * (not their own: recovery codes are for that).
  */
@@ -61,7 +61,7 @@ const FACTOR_BADGES = {
   off: { color: 'slate', icon: null },
 }
 
-/** Whether the account has a second factor, or lacks the one its roles ask for. */
+/** Whether the account has a second factor, or lacks the one an administrator must have. */
 function FactorBadge({ user }) {
   const state = factorState(user)
   const { color, icon: Icon } = FACTOR_BADGES[state]
@@ -70,7 +70,7 @@ function FactorBadge({ user }) {
       color={color}
       title={
         state === 'missing'
-          ? 'Its roles require a second factor: it is asked to set one up at its next sign-in, and can do nothing else before'
+          ? 'Administrators must have a second factor: it is asked to set one up at its next sign-in, and can do nothing else before'
           : undefined
       }
     >
@@ -342,7 +342,7 @@ export default function AccountsSection() {
         <p className="mt-1 text-sm text-fg-muted">
           The local accounts. Each holds one or more roles and may do what they grant together. Change a name, the roles
           or a password, or disable an account, with the pencil. There is always at least one admin that can sign in.
-          Which roles must have a second factor is set under Sign-in and sessions.
+          Whether administrators must have a second factor is set under Sign-in and sessions.
         </p>
       </div>
 

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ACTIVE_MS,
-  accountsToEnrol,
+  adminsToEnrol,
   browserName,
   cleanCode,
   clockAfterUse,
@@ -114,16 +114,17 @@ test('an account has a second factor, lacks one its roles ask for, or has none',
   assert.equal(mustEnrol({ secondFactorRequired: true }), true)
   assert.equal(mustEnrol({ secondFactorRequired: true, secondFactor: true }), false)
   const users = [
-    { username: 'a', roles: ['admin'], secondFactor: false },
-    { username: 'b', roles: ['admin', 'audit'], secondFactor: true },
-    { username: 'c', roles: ['analyst'], secondFactor: false },
-    { username: 'd', roles: ['admin'], secondFactor: false, disabled: true },
+    { username: 'a', permissions: ['admin', 'read'], secondFactor: false },
+    { username: 'b', permissions: ['admin', 'audit.read'], secondFactor: true },
+    { username: 'c', permissions: ['read', 'write'], secondFactor: false },
+    { username: 'd', permissions: ['admin'], secondFactor: false, disabled: true },
   ]
+  // Only who holds the administrator's permission, can sign in, and has none.
   assert.deepEqual(
-    accountsToEnrol(users, ['admin']).map((user) => user.username),
+    adminsToEnrol(users).map((user) => user.username),
     ['a'],
   )
-  assert.deepEqual(accountsToEnrol(users, []), [])
+  assert.deepEqual(adminsToEnrol(null), [])
 })
 
 test('a browser is named as a person would', () => {
@@ -186,7 +187,7 @@ test('a network is an address or a prefix, IPv4 or IPv6', () => {
 
 test('the policy form sends only what changed, and says what cannot be sent', () => {
   const policy = {
-    requiredRoles: [],
+    adminSecondFactor: false,
     idleMinutes: 480,
     idleMinutesAdmin: 480,
     lifetimeHours: 12,
@@ -204,12 +205,12 @@ test('the policy form sends only what changed, and says what cannot be sent', ()
   // A single address typed without its /32 is what is stored.
   assert.deepEqual(policyChanges({ ...form, adminNetworks: '203.0.113.7' }, policy, limits).body, {})
   const changed = policyChanges(
-    { ...form, requiredRoles: ['admin'], idleMinutesAdmin: '30', adminNetworks: '203.0.113.7\n10.0.0.0/8' },
+    { ...form, adminSecondFactor: true, idleMinutesAdmin: '30', adminNetworks: '203.0.113.7\n10.0.0.0/8' },
     policy,
     limits,
   )
   assert.deepEqual(changed, {
-    body: { requiredRoles: ['admin'], idleMinutesAdmin: 30, adminNetworks: ['203.0.113.7', '10.0.0.0/8'] },
+    body: { adminSecondFactor: true, idleMinutesAdmin: 30, adminNetworks: ['203.0.113.7', '10.0.0.0/8'] },
     problems: {},
   })
   const wrong = policyChanges(

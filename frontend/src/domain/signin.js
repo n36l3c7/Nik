@@ -254,7 +254,7 @@ export const NUMBER_FIELDS = [
 /** The form of the policy screen from the policy the server gave. */
 export function policyForm(policy) {
   const form = {
-    requiredRoles: [...(policy?.requiredRoles ?? [])],
+    adminSecondFactor: Boolean(policy?.adminSecondFactor),
     adminNetworks: (policy?.adminNetworks ?? []).join('\n'),
   }
   for (const name of NUMBER_FIELDS) form[name] = String(policy?.[name] ?? '')
@@ -283,8 +283,9 @@ export function policyChanges(form, policy, limits = {}) {
       problems.firstWaitSeconds = 'The first wait cannot be longer than the longest one'
     }
   }
-  const roles = [...form.requiredRoles].sort()
-  if (roles.join() !== [...(policy.requiredRoles ?? [])].sort().join()) body.requiredRoles = form.requiredRoles
+  if (Boolean(form.adminSecondFactor) !== Boolean(policy.adminSecondFactor)) {
+    body.adminSecondFactor = Boolean(form.adminSecondFactor)
+  }
   const { networks, wrong } = parseNetworks(form.adminNetworks)
   if (wrong.length) {
     problems.adminNetworks = `Not a network: ${wrong.slice(0, 3).join(', ')}. Write 10.1.0.0/16, 2001:db8::/32 or a single address`
@@ -302,10 +303,12 @@ const sameNetworks = (typed, stored) => {
   return a.join('\n') === b.join('\n')
 }
 
-/** The accounts a list of required roles would send to set a second factor up: those with one of the roles and none. */
-export function accountsToEnrol(users, requiredRoles) {
-  const required = new Set(requiredRoles)
+/**
+ * The accounts that requiring a second factor of administrators would send to set one up: those that
+ * hold the administrator's permission and have none.
+ */
+export function adminsToEnrol(users) {
   return (users ?? []).filter(
-    (user) => !user.disabled && !user.secondFactor && (user.roles ?? []).some((role) => required.has(role)),
+    (user) => !user.disabled && !user.secondFactor && (user.permissions ?? []).includes('admin'),
   )
 }

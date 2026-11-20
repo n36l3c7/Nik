@@ -136,7 +136,7 @@ function SecondFactor({ state, onChanged }) {
           <p className="max-w-2xl text-sm text-fg-muted">
             With a second factor, signing in asks for a code from an authenticator app on your phone after your
             password: a password that leaked is not enough any more.
-            {state.required && ' Your role requires one.'}
+            {state.required && ' Administrators must have one.'}
           </p>
           <Button icon={ShieldCheck} onClick={() => setDialog('setup')}>
             Set up a second factor…
@@ -191,7 +191,7 @@ function SecondFactor({ state, onChanged }) {
               </p>
               {state.required && (
                 <p className="text-med-fg">
-                  Your role requires a second factor: you will be asked to set one up again at once.
+                  Administrators must have a second factor: you will be asked to set one up again at once.
                 </p>
               )}
             </>

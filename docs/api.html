@@ -174,12 +174,12 @@
       </p>
       <p>
         Two refusals carry a <code>code</code> beside <code>detail</code>, both <code>403</code>:
-        <code>second_factor_required</code> (the roles of the account must have a second factor and it has none: only
-        <code>/api/auth/me</code>, <code>/api/auth/session</code> and the set-up routes answer) and
-        <code>admin_network</code> (the caller holds the Admin role and is not on one of the administrators' networks).
-        The second one concerns API keys too; a key is never asked for a second factor. A request that changes something
-        and that the browser marks as sent by another site (<code>Sec-Fetch-Site</code>) is refused with
-        <code>403</code> and the code <code>cross_site</code>.
+        <code>second_factor_required</code> (the account is an administrator's, administrators must have a second factor
+        and it has none: only <code>/api/auth/me</code>, <code>/api/auth/session</code> and the set-up routes answer)
+        and <code>admin_network</code> (the caller holds the Admin role and is not on one of the administrators'
+        networks). The second one concerns API keys too; a key is never asked for a second factor. A request that
+        changes something and that the browser marks as sent by another site (<code>Sec-Fetch-Site</code>) is refused
+        with <code>403</code> and the code <code>cross_site</code>.
       </p>
       <p>
         The interface marks the requests it sends by itself (lists that refresh) with the header
@@ -1174,23 +1174,27 @@
                 The second factor of the caller's account (session only):
                 <code>{ factors, recoveryCodesLeft, required, kinds }</code>.
                 <code>POST /api/auth/second-factor/totp</code> starts the set-up and answers the secret and its
-                <code>otpauth://</code> address, once; <code>POST …/totp/confirm</code> (<code>{ code }</code>) turns it
-                on and answers the ten <code>recoveryCodes</code>, once. <code>POST …/recovery-codes</code> makes new
-                ones and <code>POST …/off</code> turns it off: both take <code>{ password, code }</code> (or
+                <code>otpauth://</code> address, once. It takes <code>{ password }</code>: without it the answer is
+                <code>400</code> with the code <code>password_required</code>, unless the session signed in less than
+                two minutes ago; a wrong password is counted like a failed sign-in.
+                <code>POST …/totp/confirm</code> (<code>{ code }</code>) turns it on and answers the ten
+                <code>recoveryCodes</code>, once. <code>POST …/recovery-codes</code> makes new ones and
+                <code>POST …/off</code> turns it off: both take <code>{ password, code }</code> (or
                 <code>recoveryCode</code>).
               </td>
             </tr>
             <tr>
               <td><code>GET/PUT /api/auth/policy</code></td>
               <td>
-                The sign-in policy (<strong>admin</strong>): <code>requiredRoles</code>, <code>idleMinutes</code>,
-                <code>idleMinutesAdmin</code>, <code>lifetimeHours</code>, <code>attemptsBeforeWait</code>,
-                <code>firstWaitSeconds</code>, <code>maxWaitMinutes</code>, <code>notifyAfter</code>,
-                <code>adminNetworks</code>. <code>PUT</code> takes any of them. The answer also holds the defaults, the
-                limits of each number and <code>address</code>: what the server sees of the caller, and whether it can
-                know where its clients are. A list of networks that would refuse the caller is answered
-                <code>409</code> with the code <code>locks_you_out</code> or <code>address_unknown</code>, unless
-                <code>confirm: true</code> is sent with it.
+                The sign-in policy (<strong>admin</strong>): <code>adminSecondFactor</code> (true or false: whether the
+                accounts that hold the administrator's permission must have a second factor; nobody else can be required
+                to), <code>idleMinutes</code>, <code>idleMinutesAdmin</code>, <code>lifetimeHours</code>,
+                <code>attemptsBeforeWait</code>, <code>firstWaitSeconds</code>, <code>maxWaitMinutes</code>,
+                <code>notifyAfter</code>, <code>adminNetworks</code>. <code>PUT</code> takes any of them. The answer
+                also holds the defaults, the limits of each number and <code>address</code>: what the server sees of the
+                caller, and whether it can know where its clients are. A list of networks that would refuse the caller
+                is answered <code>409</code> with the code <code>locks_you_out</code> or <code>address_unknown</code>,
+                unless <code>confirm: true</code> is sent with it.
               </td>
             </tr>
             <tr>

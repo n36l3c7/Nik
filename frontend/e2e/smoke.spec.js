@@ -2468,14 +2468,15 @@ test('a session that is not used warns before it ends, and goes on when asked', 
   await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Sign-in and sessions').click()
-  // Nothing is asked of anybody until it is set here.
-  for (const role of ['Analyst', 'Admin']) {
-    await expect(settings.getByRole('checkbox', { name: new RegExp(`^${role}`) })).not.toBeChecked()
-  }
+  // Nothing is required of anybody until it is set here, and only administrators can be.
+  await expect(settings.getByRole('switch', { name: 'Administrators must have a second factor' })).not.toBeChecked()
+  await expect(settings.getByRole('checkbox')).toHaveCount(0)
   await expect(settings.locator('#policy-adminNetworks')).toHaveValue('')
   await expect(settings.getByLabel('Your address as the server sees it')).toHaveText('127.0.0.1')
   const idle = settings.locator('#policy-idleMinutesAdmin')
-  await expect(idle).toHaveValue('480')
+  // Half an hour for administrators, eight hours for the others.
+  await expect(idle).toHaveValue('30')
+  await expect(settings.locator('#policy-idleMinutes')).toHaveValue('480')
   const save = settings.getByRole('button', { name: 'Save', exact: true })
   await expect(save).toBeDisabled()
   // A value the server would refuse is said in the form, and cannot be saved.
@@ -2499,48 +2500,100 @@ test('a session that is not used warns before it ends, and goes on when asked', 
   await expect(warning).toHaveCount(0)
 
   // Back to what it was, and the session is as good as new.
-  await idle.fill('480')
+  await idle.fill('30')
   await save.click()
   await expect(settings.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
   const state = await (await page.request.get('/api/auth/session')).json()
-  expect(state.idleSeconds).toBe(480 * 60)
-  expect(state.idleLeft).toBeGreaterThan(470 * 60)
+  expect(state.idleSeconds).toBe(30 * 60)
+  expect(state.idleLeft).toBeGreaterThan(29 * 60)
   await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
-test('a role must have a second factor: its account is led to set one up; an admin sees its sessions, ends one, resets the factor', async ({
+test('administrators must have a second factor: the one who turns it on sets theirs up at once, another is led to it at the sign-in; sessions are seen and ended, a factor is reset', async ({
   browser,
 }) => {
-  test.setTimeout(150_000)
+  test.setTimeout(180_000)
+  // Tess becomes an administrator; an analyst is there to show that nobody else is concerned.
+  const users = (await (await page.request.get('/api/users')).json()).users
+  const tessId = users.find((user) => user.username === 'tess').id
+  expect((await page.request.patch(`/api/users/${tessId}`, { data: { roles: ['admin'] } })).status()).toBe(200)
+  expect(
+    (
+      await page.request.post('/api/users', {
+        data: { username: 'ugo', password: 'ugo-secret', roles: ['analyst', 'rules'] },
+      })
+    ).status(),
+  ).toBe(201)
+
   await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
   await sections.getByText('Sign-in and sessions').click()
-  const analysts = settings.getByRole('checkbox', { name: /^Analyst/ })
+  const required = settings.getByRole('switch', { name: 'Administrators must have a second factor' })
   const save = settings.getByRole('button', { name: 'Save', exact: true })
-  await analysts.check()
-  // Who will be asked is said before it is saved.
-  await expect(settings.getByRole('status').filter({ hasText: 'will be asked to set one up' })).toContainText('tess')
+  await required.click()
+  await expect(required).toBeChecked()
+  // Who will be asked is said before it is saved: the two administrators, not the analyst.
+  const asked = settings.getByRole('status').filter({ hasText: 'will be asked to set one up' })
+  await expect(asked).toContainText('2 accounts have none')
+  await expect(asked).toContainText('tess')
+  await expect(asked).not.toContainText('ugo')
+  await expect(asked).toContainText('You are one of them')
   await save.click()
-  await expect(settings.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+
+  // The administrator who turned it on is not locked out: their own set-up opens at once, over the page.
+  const mine = page.getByRole('dialog', { name: 'Set up your second factor' })
+  await expect(mine).toBeVisible()
+  expect((await (await page.request.get('/api/users')).json()).code).toBe('second_factor_required')
+  // The password is asked first unless the sign-in is of a moment ago (an earlier test signed in again:
+  // it may be either here; a test near the end of the suite looks at the question itself).
+  const password = mine.locator('#second-factor-password')
+  await expect(password.or(mine.getByLabel('Secret', { exact: true }))).toBeVisible()
+  if (await password.isVisible()) {
+    await password.fill(ADMIN.password)
+    await mine.getByRole('button', { name: 'Continue' }).click()
+  }
+  const adminSecret = (await mine.getByLabel('Secret', { exact: true }).innerText()).replace(/\s/g, '')
+  await mine.locator('#second-factor-first-code').fill(await nextCode(adminSecret))
+  await mine.getByRole('button', { name: 'Turn it on' }).click()
+  await expect(mine.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem')).toHaveCount(10)
+  const adminCodes = await mine.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem').allTextContents()
+  await Promise.all([page.waitForEvent('download'), mine.getByRole('button', { name: 'Download' }).click()])
+  await mine.getByRole('button', { name: 'Go on' }).click()
+  await expect(mine).toHaveCount(0)
+  expect((await page.request.get('/api/users')).status()).toBe(200)
+
   await sections.getByText('Accounts').click()
   const accounts = settings.getByRole('list', { name: 'Accounts' })
   const tess = accounts.getByRole('listitem').filter({ hasText: 'tess' })
   await expect(tess).toContainText('Second factor required')
-  await expect(accounts.getByRole('listitem').filter({ hasText: 'You' })).toContainText('No second factor')
+  await expect(accounts.getByRole('listitem').filter({ hasText: 'You' })).not.toContainText('required')
+  await expect(accounts.getByRole('listitem').filter({ hasText: 'ugo' })).toContainText('No second factor')
 
-  // The account signs in and lands on the set-up, not on the app: nothing else answers.
+  // An analyst signs in as before: nobody but administrators is required.
+  const analyst = await (await browser.newContext()).newPage()
+  await analyst.goto('/')
+  await analyst.fill('#login-username', 'ugo')
+  await analyst.fill('#login-password', 'ugo-secret')
+  await analyst.click('button[type=submit]')
+  await expect(analyst.getByRole('button', { name: 'Platform settings' })).toBeVisible()
+  expect((await analyst.request.get('/api/incidents')).status()).toBe(200)
+  await analyst.context().close()
+
+  // The other administrator signs in and lands on the set-up, not on the app: nothing else answers.
   const other = await (await browser.newContext({ acceptDownloads: true })).newPage()
   await other.goto('/')
   await other.fill('#login-username', 'tess')
   await other.fill('#login-password', 'tess-secret')
   await other.click('button[type=submit]')
   await expect(other.getByRole('heading', { name: 'second factor' })).toBeVisible()
-  await expect(other.getByText('Your role requires a second factor')).toBeVisible()
+  await expect(other.getByText('Administrators must have a second factor')).toBeVisible()
   await expect(other.getByRole('button', { name: 'Platform settings' })).toHaveCount(0)
   const refused = await other.request.get('/api/incidents')
   expect(refused.status()).toBe(403)
   expect((await refused.json()).code).toBe('second_factor_required')
+  // The password was given a moment ago: it is not asked twice.
+  await expect(other.locator('#second-factor-password')).toHaveCount(0)
   const secret = (await other.getByLabel('Secret', { exact: true }).innerText()).replace(/\s/g, '')
   await other.locator('#second-factor-first-code').fill(await nextCode(secret))
   await other.getByRole('button', { name: 'Turn it on' }).click()
@@ -2594,17 +2647,31 @@ test('a role must have a second factor: its account is led to set one up; an adm
   await other.fill('#login-username', 'tess')
   await other.fill('#login-password', 'tess-secret')
   await other.click('button[type=submit]')
-  await expect(other.getByText('Your second factor was reset, and your role requires one.')).toBeVisible()
+  await expect(other.getByText('Your second factor was reset, and administrators must have one.')).toBeVisible()
   await other.context().close()
 
-  // Leave things as they were: no role is asked for a second factor, and the account is gone.
+  // Leave things as they were: nothing is required, the two accounts are gone, the admin has no second factor.
   await sections.getByText('Sign-in and sessions').click()
-  await analysts.uncheck()
+  await required.click()
+  await expect(required).not.toBeChecked()
   await save.click()
   await expect(settings.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
   await sections.getByText('Accounts').click()
-  await tess.getByRole('button', { name: 'Delete user tess' }).click()
-  await expect(tess).toHaveCount(0)
+  for (const name of ['tess', 'ugo']) {
+    const row = accounts.getByRole('listitem').filter({ hasText: name })
+    await row.getByRole('button', { name: `Delete user ${name}` }).click()
+    await expect(row).toHaveCount(0)
+  }
+  await sections.getByText('My account').click()
+  await settings.getByRole('button', { name: 'Turn it off…' }).click()
+  const off = page.getByRole('dialog', { name: 'Turn the second factor off' })
+  await off.locator('#confirm-identity-password').fill(ADMIN.password)
+  await off.getByRole('button', { name: 'Use a recovery code instead' }).click()
+  await off.locator('#confirm-identity-recovery').fill(adminCodes[0])
+  await off.getByRole('button', { name: 'Turn it off' }).click()
+  await expect(off).toHaveCount(0)
+  await expect(settings.getByRole('button', { name: 'Set up a second factor…' })).toBeVisible()
+  expect((await (await page.request.get('/api/auth/me')).json()).user.secondFactor).toBe(false)
   const said = (await (await page.request.get('/api/audit?q=tess')).json()).entries.map((entry) => entry.action)
   expect(said).toContain('auth.factor.reset')
   expect(said).toContain('auth.session.end')
@@ -7279,6 +7346,32 @@ test('an address from the evidence is opened only after asking', async () => {
   await ask.getByRole('button', { name: 'Cancel' }).click()
   await expect(ask).toHaveCount(0)
   expect(popups).toEqual([])
+})
+
+test('setting a second factor up asks for the password first, when the sign-in is not of a moment ago', async () => {
+  // The admin signed in many tests ago: an open session is not proof of who is at the keyboard.
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('My account').click()
+  await settings.getByRole('button', { name: 'Set up a second factor…' }).click()
+  const setup = page.getByRole('dialog', { name: 'Set up a second factor' })
+  const password = setup.locator('#second-factor-password')
+  await expect(password).toBeVisible()
+  await expect(setup.getByLabel('Secret', { exact: true })).toHaveCount(0)
+  await expect(setup.getByRole('button', { name: 'Continue' })).toBeDisabled()
+  // A wrong password shows no secret; the right one does.
+  await password.fill('not-the-password')
+  await setup.getByRole('button', { name: 'Continue' }).click()
+  await expect(setup.getByRole('alert')).toContainText('password is not correct')
+  await expect(setup.getByLabel('Secret', { exact: true })).toHaveCount(0)
+  await password.fill(ADMIN.password)
+  await setup.getByRole('button', { name: 'Continue' }).click()
+  await expect(setup.getByLabel('Secret', { exact: true })).toBeVisible()
+  // Left there: without a first code nothing is on.
+  await setup.getByRole('button', { name: 'Cancel' }).click()
+  await expect(setup).toHaveCount(0)
+  expect((await (await page.request.get('/api/auth/me')).json()).user.secondFactor).toBe(false)
+  await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
 test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {

@@ -82,8 +82,8 @@
         An account that has a <a href="#second-factor">second factor</a> signs in in two steps: the password, then the
         six-digit code its authenticator app shows at that moment. The link
         <strong>Use a recovery code instead</strong> takes one of the recovery codes in its place, for the day the phone
-        is not there. An account whose role must have a second factor and has none yet is taken to the set-up right
-        after its password, before the app opens.
+        is not there. An administrator who must have a second factor (an admin can require it of administrators) and has
+        none yet is taken to the set-up right after the password, before the app opens.
       </p>
       <p>
         Wrong passwords and wrong codes cost time: after five in a row the next attempt waits thirty seconds, then twice
@@ -1904,8 +1904,8 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             <tr>
               <td>Sign-in and sessions <em>(admins)</em></td>
               <td>
-                The <a href="#sign-in-policy">sign-in policy</a>: which roles must have a second factor, how long a
-                session lives, what failed sign-ins cost, where administrators may sign in from.
+                The <a href="#sign-in-policy">sign-in policy</a>: whether administrators must have a second factor, how
+                long a session lives, what failed sign-ins cost, where administrators may sign in from.
               </td>
             </tr>
             <tr>
@@ -1976,9 +1976,8 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       </p>
       <p>
         Each row says what the account has as a second factor: <em>Second factor</em>, <em>No second factor</em>, or
-        <em>Second factor required</em> for an account whose role must have one and has not set it up yet (it is asked
-        to at its next sign-in, and can do nothing else before). Two more buttons on the row, also in its right-click
-        menu:
+        <em>Second factor required</em> for an administrator who must have one and has not set it up yet (it is asked to
+        at its next sign-in, and can do nothing else before). Two more buttons on the row, also in its right-click menu:
       </p>
       <ul>
         <li>
@@ -1998,7 +1997,8 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <p>
         Under <strong>My account</strong>, <strong>Set up a second factor…</strong> protects your account with a code
         from an authenticator app (any app that makes six-digit codes that change every thirty seconds), asked after
-        your password at every sign-in.
+        your password at every sign-in. Anybody can set one up; only administrators can be required to. Unless you
+        signed in a moment ago, you are asked for your password first.
       </p>
       <ol>
         <li>
@@ -2016,8 +2016,8 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         <strong>New recovery codes…</strong> makes ten new ones and ends the old ones.
         <strong>Turn it off…</strong> takes the second factor away. Both, and a change of your password, ask again who
         you are: your password and a current code (or a recovery code). Turning the second factor on or off signs your
-        account out everywhere else. If your role must have a second factor, turning it off leads straight back to
-        setting one up.
+        account out everywhere else. If you are an administrator and administrators must have one, turning it off leads
+        straight back to setting one up.
       </p>
       <p>
         If you lost the phone and the codes, an admin resets your second factor from <strong>Accounts</strong>. Nik does
@@ -2034,20 +2034,22 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <h3 id="sign-in-policy">Sign-in and sessions (admins)</h3>
       <p>
         <strong>Settings → Sign-in and sessions</strong> holds the rules of signing in, in one form with one
-        <strong>Save</strong>. No role is asked for a second factor and no network is listed until it is set here.
+        <strong>Save</strong>. No second factor is required and no network is listed until it is set here.
       </p>
       <ul>
         <li>
-          <strong>Second factor</strong>: the roles whose accounts must have one (Admin is the one recommended). The
-          form says which accounts have none and will be asked. It takes effect at once: such an account, signed in or
-          not, can do nothing but set its second factor up, and what it had on screen stays underneath. If you are one
-          of them, your own set-up opens as soon as you save. API keys are never asked for a code.
+          <strong>Second factor</strong>: one switch, off at first, <em>Administrators must have a second factor</em>.
+          It concerns every account that holds the Admin role and nobody else: other accounts set one up when they
+          choose to. The form says which administrators have none and will be asked. It takes effect at once: such an
+          account, signed in or not, can do nothing but set its second factor up, and what it had on screen stays
+          underneath. If you are one of them, your own set-up opens as soon as you save. API keys are never asked for a
+          code.
         </li>
         <li>
-          <strong>Sessions</strong>: after how long without use a session ends, for everybody and for administrators
-          (eight hours for both at first; thirty minutes is recommended for administrators), and how long it lasts at
-          most (twelve hours). What the page asks by itself, such as lists that refresh, does not count as use; somebody
-          typing a long note does. A shorter time applies to the sessions that are open.
+          <strong>Sessions</strong>: after how long without use a session ends, for everybody (eight hours at first) and
+          for administrators (thirty minutes at first), and how long it lasts at most (twelve hours). What the page asks
+          by itself, such as lists that refresh, does not count as use; somebody typing a long note does. A shorter time
+          applies to the sessions that are open.
         </li>
         <li>
           <strong>Failed sign-ins</strong>: after how many failures in a row an attempt waits, how long the first wait
