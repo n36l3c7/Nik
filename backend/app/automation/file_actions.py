@@ -3,9 +3,11 @@
 Whatever an analyst does with a file on the screens, a node does here: add a
 file to an incident, link and unlink an artifact, list the artifacts of an
 incident, read one, start its analysis again and read what the analysis
-found, tag it, give it a day to expire on, and put host evidence (an event
-log, a browser history, a shell history, an endpoint collection) in an
-incident.
+found, analyse a file as the e-mail or the capture it is, tag it, give it a
+day to expire on, and put host evidence (an event log, a browser history, a
+shell history, an endpoint collection) in an incident. Two do what the
+screens do not: download a file from an address the playbook may reach, and
+take the files out of an archive Nik holds.
 
 Three things hold for all of them:
 
@@ -42,7 +44,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import artifact_expiry, artifact_jobs, artifacts
+from .. import artifact_expiry, artifact_jobs, artifacts, unpack
 from ..core import audit
 from ..core.config import settings
 from ..core.models import (
@@ -59,7 +61,7 @@ from ..core.models import (
     UrlScan,
 )
 from ..malware.samples import is_sha256
-from . import guard, payloads, triggers
+from . import egress, guard, outbound, payloads, triggers
 from .actions import ActionError, Call, Result, action
 from .nik_actions import ACTOR, INCIDENT_ARG, _incident, _scan_output, _truthy, _wanted, signature
 
@@ -453,6 +455,277 @@ def add_file(call: Call) -> Result:
         state={"job": job.id, "until": call.now + STORE_WAIT, "incident": wanted},
         log=f"Keeping {name} ({len(data)} bytes)",
     )
+
+
+# --------------------------------------------------------------------------- #
+# What the screens do not do: a file from an address, the files of an archive #
+# --------------------------------------------------------------------------- #
+def _keeper(call: Call) -> artifact_jobs.Keeper:
+    return artifact_jobs.Keeper.of(call, ACTOR)
+
+
+def _are_kept(call: Call, state: dict) -> bool:
+    """Whether the files a step handed to the API process are kept; a file that could not be fails it."""
+    try:
+        return artifact_jobs.kept(call.db, state["kept"], ACTOR, call.now)
+    except artifact_jobs.JobError as error:
+        raise ActionError(str(error), retry=False, request=state.get("request")) from None
+
+
+def _still_keeping(call: Call, state: dict) -> Result:
+    return Result(
+        again_at=call.now + artifact_jobs.WAIT_EVERY,
+        state=state,
+        request=state.get("request"),
+        log="Waiting for the server to keep the file",
+    )
+
+
+DOWNLOAD_SECONDS = 120
+
+
+def _downloaded(call: Call, state: dict) -> Result:
+    row = call.db.get(Artifact, str(state.get("artifact") or ""))
+    if row is None:
+        raise ActionError("The file was kept and deleted before the step read it", retry=False)
+    output = {
+        **_described(call.db, row),
+        "linked": bool(state.get("linked")),
+        "status": int(state.get("status") or 0),
+        "content_type": str(state.get("content_type") or ""),
+    }
+    # The name is the one the other side gave, or the one the node gave: a file name either way.
+    classes = {**_classes(sorted({"attachment_name", *_held(call, "name")})), "status": ["verdict"]}
+    return Result(output=output, classes=classes, request=state.get("request"), log=f"{output['name']}: {row.id}")
+
+
+@action(
+    "nik.download-file",
+    group=GROUP,
+    name="Download a file",
+    description=(
+        "Fetch a file from an address and keep it as a file artifact, in the incident when there is one. "
+        "The request is a GET with no credentials, to a host this playbook may reach; a redirect is "
+        "followed only to such a host, never to a private or internal address; the data guard judges the "
+        "address as it does for an HTTP request. The file is as large as an upload at most, read within "
+        "the time given, stored as it came and analysed as an upload is: never run, never opened."
+    ),
+    arguments=[
+        {"name": "url", "type": "text", "required": True, "description": "The address of the file, https://…"},
+        INCIDENT_ARG,
+        {"name": "name", "type": "text", "description": "The file name; the one the answer gives when left empty"},
+        {
+            "name": "timeout",
+            "type": "number",
+            "default": DOWNLOAD_SECONDS,
+            "description": "Seconds the download may take (300 at most)",
+        },
+    ],
+    outputs=[
+        *ARTIFACT_OUT,
+        {"name": "linked", "type": "bool", "description": "It is in an incident"},
+        {"name": "status", "type": "number", "description": "The HTTP status of the answer"},
+        {"name": "content_type", "type": "text", "description": "What the answer said the file is"},
+    ],
+    timeout=330,
+)
+def download_file(call: Call) -> Result:
+    from .connector_runtime import _file_name, clean_name
+
+    state = call.state or {}
+    if state.get("kept"):
+        return _downloaded(call, state) if _are_kept(call, state) else _still_keeping(call, state)
+    db = call.db
+    limit_mb = settings.SAMPLE_MAX_MB
+    payload, decided = outbound.guarded(call, {"url": str(call.args.get("url") or "").strip()})
+    url = str(payload.get("url") or "")
+    if not url:
+        raise ActionError("The address was held back with the data it carried", retry=False, request={"held": decided})
+    policy = outbound.policy_for(db, call.playbook)
+    wanted = _target(call)
+    try:
+        if call.dry_run:
+            _scheme, host, _port, path, _address = egress.destination(policy, url)
+            would = {"would": "download the file", "method": "GET", "host": host, "path": path.split("?")[0][:300]}
+            empty = {**_nothing(), "linked": False, "status": 0, "content_type": ""}
+            return Result(output=empty, request={**would, "held": decided, "dry_run": True})
+        answer = egress.request(
+            policy,
+            "GET",
+            url,
+            headers={"Accept": "*/*"},
+            timeout=float(call.args.get("timeout") or DOWNLOAD_SECONDS),
+            max_body=limit_mb * 1024 * 1024,
+        )
+    except egress.EgressError as error:
+        if getattr(error, "too_large", False):
+            said = f"The file is larger than the {limit_mb} MB limit of an upload: it was not kept"
+            raise ActionError(said, retry=False, request=error.record) from None
+        raise ActionError(error.message, retry=not error.refused, request=error.record) from None
+    except (TypeError, ValueError):
+        raise ActionError("The time the download may take is a number of seconds", retry=False) from None
+    record = {**answer.record, "held": decided}
+    if answer.status >= 400:
+        said = f"The other side answered {answer.status}: nothing was kept"
+        raise ActionError(said, retry=answer.status >= 500, request=record)
+    data = bytes(answer.body)
+    if not data:
+        raise ActionError("The other side answered with an empty file: nothing was kept", retry=False, request=record)
+    host = str(record.get("host") or "")
+    name = clean_name(call.args.get("name")) or clean_name(_file_name(answer.headers, url))
+    keeper = _keeper(call)
+    try:
+        said = keeper.file(data, name, wanted, f'{host} (playbook "{_playbook(call)}")')
+    except artifact_jobs.JobError as error:
+        raise ActionError(f"The file was not kept: {error}", retry=False, request=record) from None
+    keeper.audit(
+        "artifact.download",
+        f"Downloaded the file {name or said['sha256']} ({said['sha256'][:12]}…) from {host}" + signature(call),
+        wanted,
+    )
+    state = {
+        "artifact": said["artifact"],
+        "linked": said["linked"],
+        "status": answer.status,
+        "content_type": str(answer.headers.get("content-type") or "").split(";")[0].strip()[:200],
+        "request": record,
+    }
+    waiting = keeper.waiting()
+    if waiting is not None:
+        return _still_keeping(call, {**state, "kept": waiting})
+    if wanted:
+        triggers.incident_changed(db, db.get(Incident, wanted), "incident.updated", ["data"])
+    return _downloaded(call, state)
+
+
+_UNPACKED = (
+    ("name", "text", "The name of the file, as the archive says it"),
+    ("type", "text", "What it is, as Nik detected it"),
+    ("size", "number", "Its size in bytes"),
+    ("sha256", "text", "Its SHA-256"),
+    ("artifact", "text", "The artifact it was kept as (file-…)"),
+)
+_UNPACK_CLASSES = {
+    "artifact": ["nik_id"],
+    "files.name": ["attachment_name"],
+    "files.sha256": ["hash"],
+    "files.artifact": ["nik_id"],
+    "files.type": ["verdict"],
+    "files.size": ["verdict"],
+    "skipped.name": ["attachment_name"],
+    "count": ["verdict"],
+}
+
+
+@action(
+    "nik.unpack-artifact",
+    group=GROUP,
+    name="Unpack an archive",
+    description=(
+        "Take the files out of a zip archive Nik holds and keep each as a file artifact of its own, taken "
+        "out of the archive, in the incident when there is one. The archive stays as it is. It is unpacking "
+        "and nothing else: a file inside is read in memory and stored, never run, never opened, and its "
+        "name is only a name. An archive inside the archive is kept as a file. An archive holds 200 files "
+        "at most, together no larger than an upload; a file packed more than 200 times over is left."
+    ),
+    arguments=[
+        ARTIFACT_ARG,
+        {
+            "name": "password",
+            "type": "text",
+            "secret": True,
+            "description": "The password of the archive, when it has one (ZipCrypto or AES); not shown in the run",
+        },
+        INCIDENT_ARG,
+    ],
+    outputs=[
+        {"name": "artifact", "type": "text", "description": "The archive"},
+        {
+            "name": "files",
+            "type": "list",
+            "description": "The files that were inside it: {name, type, size, sha256, artifact}",
+            "shape": _shape(_UNPACKED, "[0]."),
+        },
+        {"name": "count", "type": "number", "description": "How many files were taken out"},
+        {
+            "name": "skipped",
+            "type": "list",
+            "description": "What was in the archive and was not taken out, and why: {name, reason}",
+            "shape": [
+                {"name": "[0].name", "type": "text", "description": "The name of the first that was left"},
+                {"name": "[0].reason", "type": "text", "description": "Why"},
+            ],
+        },
+    ],
+    timeout=300,
+)
+def unpack_artifact(call: Call) -> Result:
+    from ..malware.samples import read_sample
+    from ..parsing.malware import detect_type
+
+    state = call.state or {}
+    if state.get("kept"):
+        if not _are_kept(call, state):
+            return _still_keeping(call, state)
+        return Result(output=state["output"], classes=dict(_UNPACK_CLASSES), log=f"{state['output']['count']} file(s)")
+    db = call.db
+    given = _artifact_id(call.args.get("artifact"))
+    row = db.get(Artifact, given) if artifacts.is_artifact_id(given) else None
+    if row is None and call.dry_run and given.startswith("file-") and artifacts.is_artifact_id(given):
+        # What a dry run did not keep is not there to unpack: the step says what it would do.
+        would = {"would": "unpack the archive", "artifact": given}
+        return Result(output={"artifact": given, "files": [], "count": 0, "skipped": []}, request=would)
+    if row is None:
+        raise ActionError("The artifact does not exist" if given else "No artifact was given", retry=False)
+    if row.kind != "file":
+        raise ActionError("Only a file is unpacked: this is not one", retry=False)
+    limit = settings.SAMPLE_MAX_MB * 1024 * 1024
+    wanted = _target(call)
+    try:
+        data = read_sample(row.ref)
+    except (OSError, ValueError):
+        raise ActionError("The file could not be read from the store", retry=False) from None
+    try:
+        found = unpack.members(data, str(call.args.get("password") or ""), limit=limit)
+    except unpack.UnpackError as error:
+        raise ActionError(error.message, retry=False) from None
+    if call.dry_run:
+        files = [
+            {
+                "name": member.name,
+                "type": detect_type(member.data)["label"],
+                "size": len(member.data),
+                "sha256": hashlib.sha256(member.data).hexdigest(),
+                "artifact": "file-" + hashlib.sha256(member.data).hexdigest(),
+            }
+            for member in found.members
+        ]
+        would = {"would": "unpack the archive", "artifact": row.id, "files": len(files), "incident": wanted}
+        output = {"artifact": row.id, "files": files, "count": len(files), "skipped": found.skipped}
+        return Result(output=output, classes=dict(_UNPACK_CLASSES), request=would)
+    keeper = _keeper(call)
+    origin = f'{row.name or row.ref[:12]} (playbook "{_playbook(call)}")'
+    files = []
+    try:
+        for member in found.members:
+            inside = keeper.file(
+                member.data, unpack.file_name(member.name), wanted, origin, parent=(row.id, "unpacked")
+            )
+            files.append({"name": member.name, **{key: inside[key] for key in ("type", "size", "sha256", "artifact")}})
+    except artifact_jobs.JobError as error:
+        raise ActionError(f"The files were not kept: {error}", retry=False) from None
+    keeper.audit(
+        "artifact.unpack",
+        f"Took {len(files)} file(s) out of the archive {row.name or row.ref[:12]} ({row.ref[:12]}…)" + signature(call),
+        wanted,
+    )
+    output = {"artifact": row.id, "files": files, "count": len(files), "skipped": found.skipped}
+    waiting = keeper.waiting()
+    if waiting is not None:
+        return _still_keeping(call, {"kept": waiting, "output": output})
+    if wanted and files:
+        triggers.incident_changed(db, db.get(Incident, wanted), "incident.updated", ["data"])
+    return Result(output=output, classes=dict(_UNPACK_CLASSES), log=f"{len(files)} file(s) out of {row.name or row.id}")
 
 
 # --------------------------------------------------------------------------- #
@@ -914,6 +1187,11 @@ _SKIPPED = [
 ANALYSE_OUT = [
     {"name": "artifact", "type": "text", "description": "The artifact"},
     {"name": "kind", "type": "text", "description": "file, mail or pcap"},
+    {
+        "name": "made",
+        "type": "text",
+        "description": "With as: the e-mail or the capture the file was analysed as (mail-…, pcap-…); empty otherwise",
+    },
     {"name": "asked", "type": "bool", "description": "The analysis was asked for (false in a dry run)"},
     {"name": "finished", "type": "bool", "description": "Everything that was started has ended"},
     {"name": "started", "type": "list", "description": "What was started: static, code, capabilities, mail, capture"},
@@ -929,6 +1207,7 @@ ANALYSE_OUT = [
 ]
 _ANALYSE_CLASSES = {
     "artifact": ["nik_id"],
+    "made": ["nik_id"],
     "page": ["nik_id"],
     "kind": ["verdict"],
     "asked": ["verdict"],
@@ -940,16 +1219,27 @@ _ANALYSE_CLASSES = {
 }
 
 
-def _analysed(row: Artifact, *, asked: bool, finished: bool, started: list, skipped: list, summary: str) -> Result:
+def _analysed(
+    row: Artifact,
+    *,
+    asked: bool,
+    finished: bool,
+    started: list,
+    skipped: list,
+    summary: str,
+    made: Artifact | None = None,
+) -> Result:
+    shown = made or row  # what was made of a file is what has the verdict and the page to look at
     output = {
         "artifact": row.id,
         "kind": row.kind,
+        "made": made.id if made is not None else "",
         "asked": asked,
         "finished": finished,
         "started": started,
         "skipped": skipped,
-        "verdict": row.verdict or "",
-        "page": f"/artifact/{row.id}",
+        "verdict": shown.verdict or "",
+        "page": f"/artifact/{shown.id}",
         "summary": summary[:TEXT_MAX],
     }
     return Result(output=output, classes=dict(_ANALYSE_CLASSES), log=summary[:TEXT_MAX])
@@ -1007,7 +1297,14 @@ def _wait_for_analysis(call: Call, state: dict) -> Result:
         )
     started = list((job.result or {}).get("started") or [])
     skipped = list((job.result or {}).get("skipped") or [])
-    running, failed = _progress(db, row, started)
+    # A file analysed as an e-mail or a capture: what is waited for is the analysis of what was made.
+    made = db.get(Artifact, str((job.result or {}).get("made") or "")) if (job.result or {}).get("made") else None
+    if (job.result or {}).get("made") and made is None:
+        raise ActionError("What the file was analysed as was deleted before its analysis ended", retry=False)
+    if state.get("go_on"):
+        said = f"Analysed as {'an e-mail' if made.kind == 'mail' else 'a capture'}: the run goes on without waiting"
+        return _analysed(row, asked=True, finished=False, started=started, skipped=skipped, summary=said, made=made)
+    running, failed = _progress(db, made or row, started)
     if failed:
         name, error = failed[0]
         what, worker = _ON_WORKER[name]
@@ -1024,9 +1321,11 @@ def _wait_for_analysis(call: Call, state: dict) -> Result:
             retry=False,
         )
     summary = f"Analysed again: {', '.join(started) or 'nothing'}"
+    if made is not None:
+        summary = f"Analysed as {'an e-mail' if made.kind == 'mail' else 'a capture'}: {made.id}"
     if skipped:
         summary += "; left out: " + ", ".join(item["analysis"] for item in skipped)
-    return _analysed(row, asked=True, finished=True, started=started, skipped=skipped, summary=summary)
+    return _analysed(row, asked=True, finished=True, started=started, skipped=skipped, summary=summary, made=made)
 
 
 @action(
@@ -1039,10 +1338,24 @@ def _wait_for_analysis(call: Call, state: dict) -> Result:
         "analysis with the DNS checks; of a capture the packet capture worker. Or one analysis of a file "
         "alone: static, code (Disassemble) or capabilities (Run capa). Nothing is run or opened: these "
         "are the analyses Nik makes of an upload. The node waits for the result, or starts and goes on. "
-        "An address is visited again with Scan an address."
+        "An address is visited again with Scan an address. With as, a file Nik holds is analysed as what "
+        "it is, an e-mail (.eml, .msg) or a packet capture (.pcap, .pcapng), as Analyse as an e-mail and "
+        "Analyse as a capture do: the e-mail or the capture is made from the file, and the file stays."
     ),
     arguments=[
         ARTIFACT_ARG,
+        {
+            "name": "as",
+            "type": "choice",
+            "choices": ["", "mail", "capture"],
+            "default": "",
+            "description": "Analyse a file as an e-mail or as a capture; empty to analyse the artifact as what it is",
+        },
+        {
+            "name": "incident",
+            "type": "text",
+            "description": "With as: the incident what is made goes to; the one of the run, or those the file is in",
+        },
         {
             "name": "analysis",
             "type": "choice",
@@ -1074,6 +1387,11 @@ def analyse_artifact(call: Call) -> Result:
     which = str(call.args.get("analysis") or "")
     if which not in ("", *artifact_jobs.ANALYSES):
         raise ActionError("The analysis is static, code or capabilities, or empty", retry=False)
+    made_as = str(call.args.get("as") or "")
+    if made_as not in ("", "mail", "capture"):
+        raise ActionError("as is mail or capture, or empty", retry=False)
+    if made_as and which:
+        raise ActionError("Give as or analysis, not both: what is made of the file gets its own analysis", retry=False)
     row = db.get(Artifact, wanted) if artifacts.is_artifact_id(wanted) else None
     if row is None:
         if call.dry_run and artifacts.is_artifact_id(wanted):
@@ -1091,26 +1409,38 @@ def analyse_artifact(call: Call) -> Result:
         raise ActionError("Only a file, an e-mail or a capture is analysed again", retry=False)
     if which and row.kind != "file":
         raise ActionError(f"{which} is an analysis of files: leave the analysis empty for this artifact", retry=False)
+    if made_as and row.kind != "file":
+        raise ActionError("Only a file is analysed as an e-mail or as a capture", retry=False)
+    target = _target(call) if made_as else ""
     if call.dry_run:
         result = _analysed(
             row, asked=False, finished=False, started=[], skipped=[], summary="Dry run: nothing was started"
         )
         result.request = {"would": "analyse the artifact", "artifact": row.id, "analysis": which or "all"}
+        if made_as:
+            result.request = {"would": f"analyse the file as {made_as}", "artifact": row.id, "incident": target}
         return result
     try:
         minutes = max(1, min(int(float(call.args.get("wait_minutes") or WAIT_MINUTES)), 120))
     except (TypeError, ValueError):
         minutes = WAIT_MINUTES
-    params = {"artifact": row.id, "analysis": which, "by": signature(call)}
-    job = artifact_jobs.ask(db, "analyse", params, ACTOR, call.run.id, _depth(), call.now)
     wait = call.args.get("wait")
-    if wait is not None and wait != "" and not _truthy(wait):
-        summary = "Asked for: the run goes on without waiting"
-        return _analysed(row, asked=True, finished=False, started=[], skipped=[], summary=summary)
+    go_on = wait is not None and wait != "" and not _truthy(wait)
+    if made_as:
+        # The e-mail or the capture has to be made before the run reads it: that much is always waited for.
+        params = {"artifact": row.id, "as": made_as, "incident": target, "by": signature(call)}
+        job = artifact_jobs.ask(db, "convert", params, ACTOR, call.run.id, _depth(), call.now)
+    else:
+        params = {"artifact": row.id, "analysis": which, "by": signature(call)}
+        job = artifact_jobs.ask(db, "analyse", params, ACTOR, call.run.id, _depth(), call.now)
+        if go_on:
+            summary = "Asked for: the run goes on without waiting"
+            return _analysed(row, asked=True, finished=False, started=[], skipped=[], summary=summary)
+    waiting = {"job": job.id, "artifact": row.id, "until": call.now + minutes * 60, "minutes": minutes}
     return Result(
         again_at=call.now + JOB_EVERY,
-        state={"job": job.id, "artifact": row.id, "until": call.now + minutes * 60, "minutes": minutes},
-        log=f"Analysing {row.name or row.id}",
+        state={**waiting, **({"go_on": True} if go_on else {})},
+        log=f"Analysing {row.name or row.id}" + (f" as {made_as}" if made_as else ""),
     )
 
 

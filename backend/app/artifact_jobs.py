@@ -10,16 +10,30 @@ process looks for such rows every few seconds, takes one at a time with an
 update that only one of them wins, and does what the interface would have
 done:
 
-- ``store``       keep the bytes the row carries as a file or an e-mail
+- ``store``       keep the bytes the job carries as a file or an e-mail
                   artifact, analysed as an upload is;
 - ``attachment``  take an attachment out of an e-mail Nik holds and keep it
                   as a file artifact, as "Send to Malware Analysis" does;
 - ``analyse``     analyse an artifact again, as "Re-analyse", "Disassemble"
-                  and "Run capa" do.
+                  and "Run capa" do;
+- ``convert``     analyse a file artifact as an e-mail or as a capture, as
+                  "Analyse as an e-mail" and "Analyse as a capture" do.
 
 The node meanwhile gives its step back and asks again later: nothing waits
 holding a worker. A job says which run asked for it, so that what it sets off
 (``file.analysed``, ``mail.analysed``) starts no playbook on its own doing.
+
+The bytes of a file to keep cross the database, the one thing both
+processes reach: in parts of a few megabytes (``artifact_job_parts``), put
+together here and deleted once the file is in the store. A file is as large
+as an upload at most.
+
+The same holds for what is kept inside a step without being a node of its
+own: the file a command of a connector gives, the attachments of a message,
+the message a fetch made an incident from. They go through ``Keeper``: it
+writes to the store when this process can (the API process, a server whose
+playbooks run in it) and asks for a ``store`` job when it cannot, and says
+which jobs the step has to wait for.
 
 Nothing here runs or opens a file. A file is written under its SHA-256 and
 read as bytes by the analyses the product already has.
@@ -40,7 +54,17 @@ from sqlalchemy.orm import Session as OrmSession
 from . import artifacts
 from .core import audit
 from .core.locking import lock_incident
-from .core.models import Artifact, ArtifactJob, Mail, NetworkCapture, Sample, SampleCapa, SampleCode
+from .core.models import (
+    Artifact,
+    ArtifactJob,
+    ArtifactJobPart,
+    Incident,
+    Mail,
+    NetworkCapture,
+    Sample,
+    SampleCapa,
+    SampleCode,
+)
 
 logger = logging.getLogger("nik.artifacts")
 
@@ -48,6 +72,7 @@ LOOK_EVERY = 2
 # A job nobody took in this long is not done any more: the node that asked gave up before.
 TAKE_WITHIN = 600
 KEPT_SECONDS = 86400
+PART_BYTES = 4 * 1024 * 1024  # the bytes of a file cross the database in parts of this size
 ANALYSES = ("static", "code", "capabilities")
 _started = False
 
@@ -60,18 +85,32 @@ class _Later:
     """What a route is given as its background tasks: the calls are collected, and started once the
     job is committed, each in a thread of its own (the disassembly of a sample takes minutes)."""
 
-    def __init__(self) -> None:
+    def __init__(self, cause: tuple[str, int] | None = None) -> None:
         self.tasks: list[tuple[Any, tuple]] = []
+        # The run that asked: what an analysis says when it ends (code.analysed, capture.analysed…)
+        # is caused by it, so the playbook that asked does not start again on its own doing.
+        self.cause = cause
 
     def add_task(self, work: Any, *args: Any) -> None:
         self.tasks.append((work, args))
 
+    def _caused(self, work: Any, args: tuple) -> None:
+        from .automation import triggers
+
+        token = triggers.current_run.set(self.cause)
+        try:
+            work(*args)
+        finally:
+            triggers.current_run.reset(token)
+
     def start(self, threads: bool) -> None:
         for work, args in self.tasks:
             if threads:
-                threading.Thread(target=work, args=args, name="nik-artifact-analysis", daemon=True).start()
+                threading.Thread(
+                    target=self._caused, args=(work, args), name="nik-artifact-analysis", daemon=True
+                ).start()
             else:
-                work(*args)
+                self._caused(work, args)
 
 
 def ask(
@@ -90,7 +129,6 @@ def ask(
         kind=kind,
         status="queued",
         params=params,
-        data=data,
         result={},
         actor=actor,
         run_id=run_id,
@@ -99,7 +137,22 @@ def ask(
     )
     db.add(row)
     db.flush()
+    for seq, start in enumerate(range(0, len(data or b""), PART_BYTES)):
+        db.add(ArtifactJobPart(job_id=row.id, seq=seq, data=data[start : start + PART_BYTES]))
+        db.flush()  # one part at a time: the whole file is not sent to the database in one statement
     return row
+
+
+def carried(db: OrmSession, job_id: str) -> bytes:
+    """The bytes a job carries, put together."""
+    parts = db.scalars(
+        select(ArtifactJobPart.data).where(ArtifactJobPart.job_id == job_id).order_by(ArtifactJobPart.seq)
+    )
+    return b"".join(bytes(part) for part in parts)
+
+
+def _drop_parts(db: OrmSession, job_id: str) -> None:
+    db.execute(delete(ArtifactJobPart).where(ArtifactJobPart.job_id == job_id))
 
 
 def take(db: OrmSession, now: float | None = None) -> str | None:
@@ -108,17 +161,19 @@ def take(db: OrmSession, now: float | None = None) -> str | None:
     waiting = db.execute(
         select(ArtifactJob.id, ArtifactJob.created_epoch)
         .where(ArtifactJob.status == "queued")
-        .order_by(ArtifactJob.created_epoch)
+        .order_by(ArtifactJob.created_epoch, ArtifactJob.id)
     ).all()
     for job_id, created in waiting:
         late = now - float(created or 0) > TAKE_WITHIN
         # Several API processes look at once: the one whose update changes the row has it.
         values: dict[str, Any] = {"status": "running"}
         if late:
-            values = {"status": "error", "error": "It was not taken in time", "data": None, "finished_epoch": now}
+            values = {"status": "error", "error": "It was not taken in time", "finished_epoch": now}
         won = db.execute(
             update(ArtifactJob).where(ArtifactJob.id == job_id, ArtifactJob.status == "queued").values(**values)
         ).rowcount
+        if won and late:
+            _drop_parts(db, job_id)
         db.commit()
         if won and not late:
             return job_id
@@ -170,10 +225,14 @@ def _store(db: OrmSession, job: ArtifactJob, later: _Later) -> dict[str, Any]:
     from .mail.parse import MailError
     from .routers import mails as mail_routes
 
-    params, data = job.params, bytes(job.data or b"")
+    params, data = job.params, carried(db, job.id)
     name, origin = str(params.get("name") or ""), str(params.get("origin") or "")
     if params.get("as") != "mail":
-        return _keep_file(db, job, data, name, origin, None, later)
+        # Taken out of another artifact (an attachment, a file of an archive): said so when that one is there.
+        parent = params.get("parent")
+        if not (isinstance(parent, list) and len(parent) == 2 and db.get(Artifact, str(parent[0])) is not None):
+            parent = None
+        return _keep_file(db, job, data, name, origin, (str(parent[0]), str(parent[1])) if parent else None, later)
     incident = _incident(db, params)
     known = db.get(Mail, _sha256(data)) is not None
     try:
@@ -313,7 +372,28 @@ def _analyse(db: OrmSession, job: ArtifactJob, later: _Later) -> dict[str, Any]:
     raise JobError("Only a file, an e-mail or a capture is analysed again this way")
 
 
-_WORK = {"store": _store, "attachment": _attachment, "analyse": _analyse}
+def _convert(db: OrmSession, job: ArtifactJob, later: _Later) -> dict[str, Any]:
+    from . import artifact_convert
+
+    row = db.get(Artifact, str(job.params.get("artifact") or ""))
+    if row is None:
+        raise JobError("The artifact does not exist")
+    wanted, incident = str(job.params.get("as") or ""), str(job.params.get("incident") or "")
+    try:
+        if wanted == "mail":
+            made = artifact_convert.as_mail(db, row, job.actor, incident)
+        else:
+            made = artifact_convert.as_capture(db, row, job.actor, later, incident)
+    except artifact_convert.ConvertError as error:
+        raise JobError(error.message) from None
+    what = "an e-mail" if wanted == "mail" else "a capture"
+    said = f"Analysed the file {row.name or row.ref[:12]} as {what}" + str(job.params.get("by") or "")
+    audit.record(db, job.actor, "artifact.analyse_as", said)
+    # A capture is analysed by its worker from here on; an e-mail was analysed as it was made.
+    return {"made": made.id, "started": ["capture" if wanted == "capture" else "mail"], "skipped": []}
+
+
+_WORK = {"store": _store, "attachment": _attachment, "analyse": _analyse, "convert": _convert}
 
 
 def _run(job_id: str, threads: bool) -> None:
@@ -325,6 +405,7 @@ def _run(job_id: str, threads: bool) -> None:
         job = db.get(ArtifactJob, job_id)
         if job is None:
             return
+        later.cause = (job.run_id, int(job.depth or 0)) if job.run_id else None
         # What the job sets off is caused by the run that asked: no loop starts from it.
         token = triggers.current_run.set((job.run_id, int(job.depth or 0)) if job.run_id else None)
         try:
@@ -342,7 +423,12 @@ def _run(job_id: str, threads: bool) -> None:
         job = db.get(ArtifactJob, job_id)
         if job is not None:
             job.status, job.error, job.result = ("error" if error else "done"), error, result
-            job.data, job.finished_epoch = None, time.time()
+            job.finished_epoch = time.time()
+            _drop_parts(db, job_id)
+            if error and job.params.get("report"):
+                # Nobody waits for this one (a fetch went on): what went wrong is written where it is read.
+                incident = db.get(Incident, str(job.params.get("incident") or ""))
+                audit.record(db, job.actor, "evidence.keep", f"{job.params['report']}: {error}", incident)
         db.commit()
     if not error:
         later.start(threads)
@@ -370,9 +456,122 @@ def prune(now: float | None = None) -> int:
 
     now = time.time() if now is None else now
     with SessionLocal() as db:
+        old = select(ArtifactJob.id).where(ArtifactJob.created_epoch < now - KEPT_SECONDS)
+        db.execute(delete(ArtifactJobPart).where(ArtifactJobPart.job_id.in_(old)))
         gone = db.execute(delete(ArtifactJob).where(ArtifactJob.created_epoch < now - KEPT_SECONDS)).rowcount
         db.commit()
     return gone
+
+
+# --------------------------------------------------------------------------- #
+# Keeping a file from inside a step                                           #
+# --------------------------------------------------------------------------- #
+WAIT_EVERY = 2  # seconds between two looks at the jobs a step waits for
+WAIT_FOR = 600  # how long they may take before the step fails
+
+
+class Keeper:
+    """Keeps files for one step of a run, or for a fetch: in the store when this process can write
+    to it, through the API process when it cannot. Either way what describes the file is known at
+    once (its hash is its name in the store), and ``pending`` says what the step waits for."""
+
+    def __init__(self, db: OrmSession, actor: str, run_id: str = "", depth: int = 0, now: float | None = None):
+        from .malware.samples import store_writable
+
+        self.db, self.actor, self.run_id, self.depth = db, actor, run_id, depth
+        self.now = time.time() if now is None else now
+        self.direct = store_writable()
+        self.pending: list[str] = []
+        self.audits: list[dict[str, str]] = []  # written when the files are kept: {action, details, incident}
+
+    @classmethod
+    def of(cls, call: Any, actor: str) -> Keeper:
+        """The keeper of a step: what it asks for says which run asked, and how deep that run is."""
+        from .automation import triggers
+
+        cause = triggers.current_run.get()
+        run_id = str(getattr(call.run, "id", "") or "")
+        return cls(call.db, actor, run_id, cause[1] if cause else 0, call.now or None)
+
+    def _ask(self, params: dict[str, Any], data: bytes) -> None:
+        # Asked in order: a file taken out of another is kept after that one.
+        stamp = self.now + len(self.pending) * 1e-4
+        self.pending.append(ask(self.db, "store", params, self.actor, self.run_id, self.depth, stamp, data).id)
+
+    def file(
+        self,
+        data: bytes,
+        name: str,
+        incident_id: str = "",
+        origin: str = "",
+        parent: tuple[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Keep bytes as a file artifact: ``{artifact, sha256, size, type, linked}``. Raises
+        ``JobError`` when it cannot be kept (the caller checked the size)."""
+        from .parsing.malware import detect_type
+        from .routers import samples as sample_routes
+
+        sha256 = _sha256(data)
+        said = {"artifact": artifacts.artifact_id("file", sha256), "sha256": sha256, "size": len(data)}
+        if not self.direct:
+            params = {"name": name, "incident": incident_id, "origin": origin, "parent": list(parent or ())}
+            self._ask(params, data)
+            return {**said, "type": detect_type(data)["label"], "linked": bool(incident_id)}
+        incident = lock_incident(self.db, incident_id) if incident_id else None
+        if incident_id and incident is None:
+            raise JobError("The incident does not exist")
+        try:
+            row, _ref = sample_routes.keep_sample(self.db, incident, data, name, self.actor, origin, parent=parent)
+        except HTTPException as error:
+            raise JobError(str(error.detail)) from None
+        return {**said, "type": row.type_label or "", "linked": incident is not None}
+
+    def mail(self, data: bytes, name: str, incident_id: str, report: str = "") -> None:
+        """Keep a message as an e-mail artifact of an incident. Raises ``MailError`` for what is not
+        a message when it is kept here; handed over, nobody waits, and ``report`` is what is written
+        on the incident if it could not be kept."""
+        from .routers import mails as mail_routes
+
+        if not self.direct:
+            self._ask({"as": "mail", "name": name, "incident": incident_id, "report": report}, data)
+            return
+        mail_routes.keep_mail(self.db, lock_incident(self.db, incident_id), data, name, self.actor)
+
+    def audit(self, action: str, details: str, incident_id: str = "") -> None:
+        """A line of the audit log for what was kept: now when it was, with the files when it is asked for."""
+        if self.direct:
+            audit.record(
+                self.db, self.actor, action, details, self.db.get(Incident, incident_id) if incident_id else None
+            )
+        else:
+            self.audits.append({"action": action, "details": details, "incident": incident_id})
+
+    def waiting(self) -> dict[str, Any] | None:
+        """What a step keeps to wait for the files that were asked for (None when none was)."""
+        if not self.pending:
+            return None
+        return {"jobs": list(self.pending), "until": self.now + WAIT_FOR, "audits": self.audits}
+
+
+def kept(db: OrmSession, waiting: dict[str, Any], actor: str, now: float) -> bool:
+    """Whether the files a step asked for are kept. False while they are not; raises ``JobError``
+    when one could not be, or when they took too long. Kept, their lines go to the audit log."""
+    jobs = [db.get(ArtifactJob, str(job_id)) for job_id in waiting.get("jobs") or []]
+    failed = next((job for job in jobs if job is None or job.status == "error"), "none")
+    if failed != "none":
+        why = failed.error if failed is not None else "what was asked of the server is no longer there"
+        raise JobError(f"The file was not kept: {why}")
+    if any(job.status != "done" for job in jobs):
+        if now < float(waiting.get("until") or 0):
+            return False
+        raise JobError(
+            f"The file was not kept in {WAIT_FOR // 60} minutes: see whether the server answers "
+            "(Settings → System → Workers)"
+        )
+    for line in waiting.get("audits") or []:
+        incident = db.get(Incident, str(line.get("incident") or "")) if line.get("incident") else None
+        audit.record(db, actor, str(line.get("action")), str(line.get("details")), incident)
+    return True
 
 
 def _loop() -> None:

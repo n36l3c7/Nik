@@ -314,6 +314,14 @@ test('each event says what its trigger holds, what it is about and a filter to s
   assert.equal(objectName('mail'), 'an e-mail')
   assert.equal(objectName(''), 'nothing')
   assert.equal(eventLabel('file.analysed'), 'A file is analysed · file.analysed')
+  // The analyses the workers make say when they end: a playbook reads what they found, and their status.
+  assert.ok(names({ event: 'code.analysed' }).includes('code.status'))
+  assert.ok(names({ event: 'code.analysed' }).includes('file.sha256'))
+  assert.ok(names({ event: 'capabilities.analysed' }).includes('capabilities.attack'))
+  assert.ok(names({ event: 'capture.analysed' }).includes('capture.packets'))
+  assert.equal(runsOn({ event: 'capabilities.analysed' }), 'file')
+  assert.equal(runsOn({ event: 'capture.analysed' }), 'pcap')
+  assert.equal(objectName('pcap'), 'a capture')
   assert.equal(eventLabel('later.event'), 'later.event')
   assert.deepEqual(sampleFilter('mail.analysed'), {
     all: [{ left: '{{ trigger.mail.verdict }}', op: 'eq', right: 'phishing' }],

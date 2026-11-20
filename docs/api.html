@@ -2227,14 +2227,14 @@ labels:vip due:&lt;today sender_domain:""</code></pre>
           <strong id="webhooks">Webhooks</strong>: <code>incident.created/updated/deleted</code>,
           <code>note.added</code>, <code>upload.completed</code>, <code>ioc.watch_hit</code> (an incident holds an
           indicator of a watched list), <code>mail.analysed</code>, <code>file.analysed</code>,
-          <code>url.analysed</code>, <code>ioc.verdict_changed</code>, <code>storage.low</code>,
-          <code>sla.breached</code> (a timer of an incident passed its time), <code>artifact.expiring</code> and
-          <code>artifact.expired</code> (an artifact with a date is a week from being deleted, or was); the last eight
-          carry what a playbook's trigger reads for the same event (<a href="automation.html#trigger"
-            >Automation → Trigger</a
-          >). Each delivery is HMAC-SHA256 signed (<code>X-Nik-Signature</code>). A webhook sends what the event holds
-          to the address an admin gave, without the checks a playbook's nodes go through: subscribe an address you trust
-          with senders, subjects and file names.
+          <code>code.analysed</code>, <code>capabilities.analysed</code>, <code>capture.analysed</code> (the
+          disassembly, capa and the analysis of a capture ended, done or failed), <code>url.analysed</code>,
+          <code>ioc.verdict_changed</code>, <code>storage.low</code>, <code>sla.breached</code> (a timer of an incident
+          passed its time), <code>artifact.expiring</code> and <code>artifact.expired</code> (an artifact with a date is
+          a week from being deleted, or was); the last eleven carry what a playbook's trigger reads for the same event
+          (<a href="automation.html#trigger">Automation → Trigger</a>). Each delivery is HMAC-SHA256 signed
+          (<code>X-Nik-Signature</code>). A webhook sends what the event holds to the address an admin gave, without the
+          checks a playbook's nodes go through: subscribe an address you trust with senders, subjects and file names.
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered

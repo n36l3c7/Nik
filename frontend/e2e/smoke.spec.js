@@ -3018,6 +3018,68 @@ test('a playbook adds a file from a content and analyses it: the nodes are in th
   await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' }).click()
 })
 
+test('a file that is a message is analysed as an e-mail from its page; the new nodes and events are offered', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  // A message held as a file, as a connector or an archive leaves it.
+  const message = [
+    'From: "Anna" <anna@partner.example>',
+    'To: soc@acme.example',
+    'Subject: Kept as a file first',
+    'Date: Tue, 10 Nov 2026 09:00:00 +0100',
+    'Message-ID: <e2e-as-mail@partner.example>',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    'Please see the attached notes.',
+    '',
+  ].join('\r\n')
+  const uploaded = await page.request.post('/api/artifacts/files', {
+    multipart: {
+      file: { name: 'kept-as-a-file.eml', mimeType: 'application/octet-stream', buffer: Buffer.from(message) },
+    },
+  })
+  expect(uploaded.status(), await uploaded.text()).toBe(201)
+  const file = await uploaded.json()
+  expect(file.kind).toBe('file')
+  expect(file.analyseAs).toEqual(['mail'])
+
+  // Its page offers what it can be analysed as, and nothing it cannot.
+  await page.goto(`/artifact/${file.id}`)
+  await expect(page.getByRole('button', { name: 'Analyse as a capture' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Analyse as an e-mail' }).click()
+  await expect(page).toHaveURL(new RegExp(`/artifact/mail-${file.ref}$`))
+  await expect(page.getByText('analysis of file “kept-as-a-file.eml”')).toBeVisible()
+  const made = await (await page.request.get(`/api/artifacts/mail-${file.ref}`)).json()
+  expect(made.kind).toBe('mail')
+  expect(made.name).toBe('Kept as a file first')
+  expect(made.parents.map((parent) => [parent.id, parent.relation])).toEqual([[file.id, 'analysed']])
+  // The file stays what it was, and shows what was made of it.
+  await page.goto(`/artifact/${file.id}`)
+  await expect(page.getByText('analysis: Kept as a file first')).toBeVisible()
+
+  // The library and the trigger offer what 6.6 added.
+  const nodes = (await (await page.request.get('/api/automation/catalog')).json()).nodes
+  const files = nodes.filter((entry) => entry.group === 'Files').map((entry) => entry.name)
+  expect(files).toEqual(expect.arrayContaining(['Download a file', 'Unpack an archive', 'Analyse an artifact']))
+  const playbook = await page.request.post('/api/automation/playbooks', { data: { name: 'Waits for a capture' } })
+  const playbookId = (await playbook.json()).id
+  await page.goto(`/automation/playbooks/${playbookId}`)
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByTestId('playbook-canvas').locator('.react-flow__node').first().click()
+  const events = area.getByRole('complementary', { name: 'Inspector' }).getByLabel('On an event')
+  for (const event of ['code.analysed', 'capabilities.analysed', 'capture.analysed']) {
+    await expect(events.locator(`option[value="${event}"]`)).toHaveCount(1)
+  }
+
+  expect((await page.request.delete(`/api/automation/playbooks/${playbookId}`)).status()).toBe(204)
+  for (const id of [`mail-${file.ref}`, file.id]) {
+    expect((await page.request.delete(`/api/artifacts/${id}`)).status()).toBe(204)
+  }
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
 test('a type of incident is built with a field of its own, and closing asks for what it wants', async () => {
   test.setTimeout(120_000)
   const before = page.url()

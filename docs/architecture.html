@@ -324,6 +324,8 @@
 ├── urlscan.py                      # URL scans: the isolated browser's visit, the findings and the verdict
 ├── urlscan_queue.py                # The scans a playbook asked for, taken and run by the API process
 ├── artifact_jobs.py                # What a playbook asked about a file (keep it, analyse it), done by the API process
+├── artifact_convert.py             # A file artifact analysed as the e-mail or the capture it is
+├── unpack.py                       # The files of a zip archive, in memory: bounded, a name never a path
 ├── worker_watch.py                 # Workers that stop answering: the check, and the notices to the admins
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
@@ -955,7 +957,7 @@
               <td>the analysis of each e-mail, capture (and isolated browser session) and scanned address</td>
             </tr>
             <tr>
-              <td><code>artifact_jobs</code></td>
+              <td><code>artifact_jobs</code>, <code>artifact_job_parts</code></td>
               <td>
                 what a playbook asked the backend to do with a file (keep it, analyse it again), with the bytes of a
                 file only until it is kept; a row is dropped after a day

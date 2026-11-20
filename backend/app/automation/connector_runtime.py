@@ -55,8 +55,18 @@ TOKEN_SKEW = 60
 RETRY_AFTER_MAX = 600  # the longest a poll waits because the other side asked it to
 # What describes a file, and the classes of data those are: what a command that keeps one gives.
 FILE_FIELDS = ("name", "type", "size", "sha256", "artifact", "linked")
+# What is added to them when the file is an archive that was unpacked.
+UNPACKED_FIELDS = ("files", "count", "skipped")
 FILE_CLASSES = {"name": ["attachment_name"], "sha256": ["hash"], "artifact": ["nik_id"]}
+UNPACKED_CLASSES = {
+    **FILE_CLASSES,
+    "files.name": ["attachment_name"],
+    "files.sha256": ["hash"],
+    "files.artifact": ["nik_id"],
+    "skipped.name": ["attachment_name"],
+}
 FILE_SAMPLE = {"name": "", "type": "", "size": 0, "sha256": "", "artifact": "", "linked": False}
+UNPACKED_SAMPLE = {"files": [], "count": 0, "skipped": []}
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 # What each kind of credentials is made of (the fields a connection asks for, all secret).
@@ -326,13 +336,13 @@ class Runtime:
         if answer is not None:
             values.update(response=answer["response"], status=answer["status"], headers=answer["headers"])
             if answer.get("kept"):
-                classes["response"] = FILE_CLASSES
+                classes["response"] = UNPACKED_CLASSES if answer.get("unpacked") else FILE_CLASSES
         # A step that kept a file is read by the outputs as steps.<name>.response: its classes go with it.
         kept = {
             f"{name}.response.{key}": held
             for name, step in steps.items()
             if step.get("kept")
-            for key, held in FILE_CLASSES.items()
+            for key, held in (UNPACKED_CLASSES if step.get("unpacked") else FILE_CLASSES).items()
         }
         if kept:
             classes["steps"] = kept
@@ -514,8 +524,21 @@ class Runtime:
         kind = ex._text(ex.render_text(saved.type, scope).data) if saved is not None and saved.type else ""
         name = clean_name(name) or clean_name(_file_name(answer["headers"], url))
         kind = kind.strip() or str(answer["headers"].get("content-type") or "").split(";")[0].strip()
-        kept = self.store.keep(data, name, kind)
-        answer["response"] = {key: kept.get(key) for key in FILE_FIELDS}
+        wanted = part.request.unpack
+        if wanted is None:
+            kept = self.store.keep(data, name, kind)
+            fields = FILE_FIELDS
+        else:
+            password = ""
+            if wanted.password:
+                sent = self._scope(args, steps, sent=True)
+                password = ex._text(ex.render_text(wanted.password, sent).data)
+                if len(password) >= 4:
+                    self._hidden.add(password)  # it opens the archive: shown nowhere, as a secret is not
+            kept = self.store.keep(data, name, kind, {"format": wanted.format, "password": password})
+            fields = (*FILE_FIELDS, *UNPACKED_FIELDS)
+            answer["unpacked"] = True
+        answer["response"] = {key: kept.get(key) for key in fields}
         answer["kept"] = True
 
     def _judge(self, answer: dict, success: Success | None, error, scope: ex.Scope) -> None:
@@ -930,7 +953,7 @@ class Runtime:
             if answer.get("kept"):
                 # A command that keeps a file and says nothing more gives what describes the file.
                 out = dict(answer["response"])
-                self._output_classes = dict(FILE_CLASSES)
+                self._output_classes = dict(UNPACKED_CLASSES if answer.get("unpacked") else FILE_CLASSES)
             else:
                 out = {"response": answer["response"]}
         return _redact(out, self._hidden)
@@ -958,6 +981,8 @@ class Runtime:
             would["files"] = [{key: item[key] for key in ("field", "name", "type", "size", "sha256")} for item in files]
         if command.gives_file:
             would["keeps"] = "a file, as an artifact"
+        if command.unpacks:
+            would["unpacks"] = "the archive: each file inside it, as an artifact"
         return would
 
     def test(self) -> dict[str, Any]:

@@ -391,6 +391,42 @@
               </td>
             </tr>
             <tr>
+              <td><code>code.analysed</code></td>
+              <td>
+                The disassembly of a file ends, done or failed: after an upload, <em>Disassemble</em>,
+                <em>Re-analyse</em> or a node, once for each run of it.
+              </td>
+              <td>
+                The <code>file.…</code> fields of <code>file.analysed</code>;
+                <code>code.status</code> (<code>done</code>, or <code>error</code>), <code>.error</code> (what the
+                worker said), <code>.functions</code>, <code>.imports</code> (how many).
+              </td>
+            </tr>
+            <tr>
+              <td><code>capabilities.analysed</code></td>
+              <td>capa ends on a file, done or failed. A file capa does not read starts no run of it, and no event.</td>
+              <td>
+                The <code>file.…</code> fields; <code>capabilities.status</code> (<code>done</code>,
+                <code>error</code>), <code>.error</code>, <code>.count</code>, <code>.names</code>,
+                <code>.attack</code> (the ATT&amp;CK techniques).
+              </td>
+            </tr>
+            <tr>
+              <td><code>capture.analysed</code></td>
+              <td>
+                The analysis of a packet capture ends, ready or failed: an upload, <em>Re-analyse</em>, new TLS keys, a
+                file analysed as a capture, the log of an isolated browser session that was closed.
+              </td>
+              <td>
+                <code>capture.id</code>, <code>.name</code>, <code>.kind</code> (<code>pcap</code>,
+                <code>browser</code>), <code>.status</code> (<code>ready</code>, or <code>error</code>),
+                <code>.error</code>, <code>.size</code>, <code>.sha256</code>, <code>.packets</code>,
+                <code>.hosts</code>, <code>.domains</code>, <code>.posts</code>, <code>.beacons</code>,
+                <code>.objects</code> (how many of each), <code>.artifact_id</code>, <code>.url</code>; the
+                <code>incident.…</code> fields when the capture is in one.
+              </td>
+            </tr>
+            <tr>
               <td><code>url.analysed</code></td>
               <td>The scan of an address ends.</td>
               <td>
@@ -919,6 +955,29 @@ Content-Type: application/json
               </td>
             </tr>
             <tr>
+              <td>Download a file</td>
+              <td>
+                <code>url</code>, <code>incident</code>, <code>name</code> (the one the answer gives when empty),
+                <code>timeout</code> (120 seconds; 300 at most)
+              </td>
+              <td>
+                The artifact as above, <code>linked</code>, <code>status</code> (of the answer),
+                <code>content_type</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Unpack an archive</td>
+              <td>
+                <code>artifact</code> (a zip Nik holds), <code>password</code> (not shown in the run),
+                <code>incident</code>
+              </td>
+              <td>
+                <code>artifact</code> (the archive), <code>files</code> (each
+                <code>{name, type, size, sha256, artifact}</code>), <code>count</code>, <code>skipped</code> (each
+                <code>{name, reason}</code>)
+              </td>
+            </tr>
+            <tr>
               <td>Add host evidence</td>
               <td>
                 <code>incident</code>, <code>kind</code> (eventlogs, browser, commands, endpoint),
@@ -958,14 +1017,16 @@ Content-Type: application/json
             <tr>
               <td>Analyse an artifact</td>
               <td>
-                <code>artifact</code>, <code>analysis</code> (of a file: static, code, capabilities; what
+                <code>artifact</code>, <code>as</code> (mail, capture: analyse a file as what it is) with
+                <code>incident</code>, <code>analysis</code> (of a file: static, code, capabilities; what
                 <em>Re-analyse</em> does when empty), <code>wait</code> (on by default), <code>wait_minutes</code> (15;
                 1 to 120)
               </td>
               <td>
                 <code>asked</code>, <code>finished</code>, <code>started</code> (static, code, capabilities, mail,
                 capture), <code>skipped</code> (each <code>{analysis, reason}</code>), <code>verdict</code>,
-                <code>artifact</code>, <code>kind</code>, <code>page</code>, <code>summary</code>
+                <code>artifact</code>, <code>kind</code>, <code>made</code> (with <code>as</code>: the e-mail or the
+                capture), <code>page</code>, <code>summary</code>
               </td>
             </tr>
             <tr>
@@ -1028,9 +1089,59 @@ Content-Type: application/json
         The file goes to the incident the node names, to the one the run works on when it names none, and stays on its
         own when there is none. The limit of an upload applies (<code>SAMPLE_MAX_MB</code>): a larger content or
         attachment fails the step and nothing is kept. So does an empty one, a content that is not base64 when it says
-        it is, and a "mail" that is not a message. A file the backend has not kept in five minutes fails the step. There
-        is no node that fetches a file from an address: the screens have none either, and a file that comes from outside
-        comes through a command of a connector, under the hosts the playbook may reach.
+        it is, and a "mail" that is not a message. A file the backend has not kept in five minutes fails the step. A
+        file that comes from an address comes through <a href="#download-a-file">Download a file</a>, or through a
+        command of a connector when it needs credentials.
+      </p>
+      <p id="download-a-file">
+        <strong>Download a file</strong> does what no screen does: it fetches a file from an address and keeps it as a
+        file artifact. It is a request of the playbook like any other, under the same rules as
+        <a href="#http-node">HTTP request</a>:
+      </p>
+      <ul>
+        <li>
+          the host must be among those the playbook may reach, and so must every host a redirect leads to (three
+          redirects at most); an address inside the network is reached only when an admin listed that very host;
+        </li>
+        <li>it is a <code>GET</code> with no credentials: no header of the node, no key of an instance, no cookie;</li>
+        <li>
+          the data guard judges the address as it judges the address of an HTTP request: one that carries an e-mail
+          address, an internal name or an allowlisted value is held unless that class was opened;
+        </li>
+        <li>
+          the file is as large as an upload at most (<code>SAMPLE_MAX_MB</code>): reading stops there and nothing is
+          kept; an answer of 400 or more, and an empty one, keep nothing either;
+        </li>
+        <li>
+          it is stored as it came and analysed as an upload is, never run and never opened; the audit log says where it
+          came from; a dry run asks nobody and shows the host it would ask.
+        </li>
+      </ul>
+      <p id="unpack-an-archive">
+        <strong>Unpack an archive</strong> takes the files out of a zip Nik holds (what a connector gave, an attachment,
+        an upload) and keeps each as a file artifact of its own, shown as taken out of the archive. The archive stays as
+        it is. It is the same unpacking a connector's command asks for with
+        <a href="#connector-unpack"><code>unpack</code></a
+        >, with the same rules and limits: nothing is run or opened, a name is only a name, an archive inside the
+        archive is kept as a file, 200 files at most, together no larger than an upload. Plain zips and protected ones
+        (ZipCrypto, AES) are read; the <code>password</code> is replaced by a mark in what the run keeps of the step,
+        and a wrong one fails the step with a sentence that does not repeat it. (A password typed in the node is part of
+        the playbook, like everything typed there: take it from where the archive came from.)
+      </p>
+      <p id="analyse-as">
+        <strong>A file analysed as what it is.</strong> A file reaches the store in ways that do not say what it is: a
+        connector downloaded it, it came out of an archive, it was attached to a message. With <code>as</code>,
+        <em>Analyse an artifact</em> does what <em>Analyse as an e-mail</em> and <em>Analyse as a capture</em> do on the
+        page of a file: <code>as: mail</code> analyses an <code>.eml</code> or <code>.msg</code> as an uploaded message
+        is, <code>as: capture</code> copies a <code>.pcap</code> or <code>.pcapng</code> to the store of captures, under
+        the limit of a capture (<code>PCAP_MAX_MB</code>), for the packet capture worker. The file stays;
+        <code>made</code> is the e-mail or the capture, recorded as made from the file, and <code>verdict</code> and
+        <code>page</code> are its own. It goes to the incident the node names, to the one the run works on, or to those
+        the file is in (a capture to one incident at most). The step always waits for the artifact to be made; with
+        <code>wait</code> on it also waits for the analysis of a capture. A file that is not what <code>as</code> says
+        fails the step ("It is not an e-mail Nik can read", "Not a pcap or pcapng file."). Asked twice, nothing is made
+        twice. A capture from a content is these two steps: <em>Add a file</em>, then <em>Analyse an artifact</em> with
+        <code>as: capture</code>, for a capture small enough to be the content of a step.
       </p>
       <p id="add-host-evidence">
         <strong>Add host evidence</strong> is <em>Add a file…</em> for the four kinds that are not artifacts: a Windows
@@ -1148,6 +1259,13 @@ Content-Type: application/json
         <strong>What stays a person's act.</strong> Deleting an artifact, downloading a sample or exporting artifacts,
         the TLS keys of a capture, the isolated browser, the import of the messages of a mailbox, and the names and
         comments of the functions of a disassembly have no node.
+      </p>
+      <p id="analyses-as-events">
+        <strong>Waiting without a node.</strong> The analyses made by workers say when they end:
+        <code>code.analysed</code>, <code>capabilities.analysed</code> and <code>capture.analysed</code> are
+        <a href="#trigger">events a trigger waits for</a>, written once for each analysis whoever started it, with a
+        <code>status</code> a condition can test when it failed. One a playbook started says which run asked, so that
+        playbook does not start again on its own doing.
       </p>
 
       <h3 id="http-node">HTTP request</h3>
@@ -3291,7 +3409,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
                 <code>auto</code> (the default): the answer is read as JSON when it says it is JSON, as text otherwise
                 (<code>response.text</code>). <code>text</code>: always as text, for a file whose content may itself be
                 JSON. <code>file</code>: not read at all, kept as an artifact (<a href="#connector-files">Files</a>),
-                with <code>save_as</code> to say its name and type.
+                with <code>save_as</code> to say its name and type and <code>unpack</code> when it is an archive whose
+                files are wanted (<a href="#connector-unpack">An archive to unpack</a>).
               </td>
             </tr>
           </tbody>
@@ -3390,6 +3509,56 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <li>
           A dry run fetches nothing and keeps nothing: it gives the <code>sample</code>, or an empty description of a
           file.
+        </li>
+        <li id="connector-unpack">
+          <strong>An archive to unpack.</strong> A product that hands over files it collected hands them over as one
+          archive, usually protected by a password. <code>unpack</code>, beside <code>answer: file</code>, says so:
+          <pre><code>request:
+  method: GET
+  path: "/activities/{{ args.activity_id }}/download"
+  answer: file
+  save_as: { name: "fetched-{{ args.activity_id }}.zip", type: application/zip }
+  unpack: { format: zip, password: "{{ args.password }}" }</code></pre>
+          The archive is kept as it came, as any file is, and each file inside it is kept as a file artifact of its own,
+          in the same incident, shown as taken out of the archive and analysed as an upload is.
+          <code>response</code> then also holds <code>files</code> (each with <code>name</code>, the name inside the
+          archive, <code>type</code>, <code>size</code>, <code>sha256</code>, <code>artifact</code>),
+          <code>count</code> and <code>skipped</code> (each <code>name</code> and <code>reason</code>); a command with
+          no <code>outputs</code> gives all of them, and the editor lists what is inside <code>files</code>.
+          <ul>
+            <li>
+              <code>format</code> is <code>zip</code>, plain or protected with ZipCrypto or WinZip AES.
+              <code>password</code> is optional and is a template over what is sent (<code>args</code>,
+              <code>config</code>, <code>secret</code>). It is treated as a secret: an argument it reads is replaced by
+              a mark in what a run keeps of the step, and it is in no record of a request, no output and no dry run. A
+              wrong password, or none for a protected archive, fails the step with a sentence that does not repeat it.
+            </li>
+            <li>
+              It is unpacking and nothing else. A file inside is read in memory and written to the store under its
+              SHA-256: it is never run, never opened by a viewer, never written anywhere else. Its name is data: no path
+              is built from it, so <code>../../etc/passwd</code>, an absolute path and a device name are names like any
+              other. A directory is passed over, a symbolic link is skipped, and an archive inside the archive is kept
+              as a file, not unpacked.
+            </li>
+            <li>
+              Against an archive made to exhaust the server: 200 files at most, together no larger than an upload
+              (<code>SAMPLE_MAX_MB</code>), and what a member says of its own size is not believed. Over the number or
+              the total, the step fails and nothing is unpacked. A single file larger than an upload, an empty one, one
+              packed more than 200 times over, a link or one that cannot be read is left out and listed in
+              <code>skipped</code> with the reason; the others are kept.
+            </li>
+            <li>
+              An archive that cannot be unpacked at all (not a zip, the password, the limits) fails the step and keeps
+              nothing, the archive included: the step can be tried again. A dry run downloads and unpacks nothing.
+            </li>
+          </ul>
+        </li>
+        <li>
+          <strong>Where the file is written.</strong> The automation worker reads the store read-only. What a command
+          keeps there (the file, the files of an archive, the attachments <code>get-attachments</code> keeps) is handed
+          to the backend through the database, in parts of a few megabytes that are deleted once the file is in the
+          store, and the step waits for it without holding a worker: it fails if the backend has not kept the file in
+          ten minutes. A server whose playbooks run inside the backend writes at once.
         </li>
         <li>
           The answer of such a command is never among the <strong>kept answers</strong> of the instance: asked again,
@@ -4356,10 +4525,12 @@ nik: "&gt;=6.0"                # the oldest Nik it is for</code></pre>
       <h2 id="later">What this release does not do yet</h2>
       <ul>
         <li>
-          The <a href="#file-nodes">nodes for files</a> keep a file from a content, from an attachment or from what a
-          connector gave: a packet capture cannot be added from a content, a file artifact cannot be analysed as an
-          e-mail or as a capture, and no node fetches a file from an address. No event says that a disassembly, a capa
-          run or the analysis of a capture ended: a playbook waits for them with <em>Analyse an artifact</em>.
+          Only zip archives are unpacked (plain, ZipCrypto, AES): not 7-Zip, RAR, tar or gzip. A file by address is a
+          node of playbooks only: <em>Add a file…</em> on the screens has no "from an address". A file is analysed as an
+          e-mail or as a capture, not as a mailbox or as host evidence (<a href="#add-host-evidence"
+            >Add host evidence</a
+          >
+          reads a file artifact as that).
         </li>
         <li>
           Fetching and mirroring are written for ServiceNow, Jira and SentinelOne; the other shipped connectors send

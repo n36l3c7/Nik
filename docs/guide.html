@@ -306,6 +306,15 @@
         </li>
         <li><strong>New incident from this</strong>: create the incident and link the artifact in one step.</li>
         <li>
+          <strong>Analyse as an e-mail</strong>, <strong>Analyse as a capture</strong>: on a file that is a message
+          (<code>.eml</code>, <code>.msg</code>) or a packet capture (<code>.pcap</code>, <code>.pcapng</code>), as a
+          connector downloaded it, an archive held it or a message carried it. The e-mail or the capture an upload of
+          the same file would have made is made from it and opens, with the analysis of its kind; it goes to the
+          incidents the file is in (a capture to the one incident, when there is just one). The file stays as it is, and
+          each shows the other under <em>Related</em>. The button is there only when the first bytes of the file say it
+          fits; the menu of a file in the Artifacts panel offers the same by its name.
+        </li>
+        <li>
           <strong>Tags</strong>: free labels (a campaign, a malware family, a customer) that the panel's filter and the
           list show.
         </li>

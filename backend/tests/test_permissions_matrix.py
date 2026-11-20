@@ -350,6 +350,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/artifacts/{artifact_id}/attachments/{path}/sample"): ("write",),
     ("POST", "/api/artifacts/{artifact_id}/objects/sample"): ("write",),
     ("POST", "/api/artifacts/{artifact_id}/links"): ("write",),
+    ("POST", "/api/artifacts/{artifact_id}/analyse-as"): ("write",),
     ("DELETE", "/api/artifacts/{artifact_id}/links/{incident_id}"): ("write",),
     ("PUT", "/api/artifacts/{artifact_id}/expiry"): ("write",),
     ("PUT", "/api/artifacts/{artifact_id}/tags"): ("write",),

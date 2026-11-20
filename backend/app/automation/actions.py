@@ -193,6 +193,18 @@ def unregister(action_id: str) -> None:
     _REGISTRY.pop(action_id, None)
 
 
+HIDDEN = "•••"
+
+
+def shown_arguments(spec: Spec | None, args: Any) -> Any:
+    """The arguments of a step as a run keeps and shows them: one the action marks ``secret`` (the
+    password of an archive) is replaced, whatever it was given."""
+    secret = {arg["name"] for arg in spec.arguments if arg.get("secret")} if spec is not None else set()
+    if not secret or not isinstance(args, dict):
+        return args
+    return {key: (HIDDEN if key in secret and value not in (None, "") else value) for key, value in args.items()}
+
+
 def argument_values(spec: Spec, rendered: Value) -> dict[str, Any]:
     """The rendered arguments with the defaults of those left out."""
     given = rendered.data if isinstance(rendered.data, dict) else {}

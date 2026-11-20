@@ -1126,7 +1126,9 @@ def test_migration_0047_adds_what_a_playbook_asks_about_a_file(tmp_path, monkeyp
     with engine.connect() as conn:
         assert set(PLAYBOOK_FILE_TABLES) <= set(sa.inspect(conn).get_table_names())
         columns = {column["name"] for column in sa.inspect(conn).get_columns("artifact_jobs")}
-        assert {"id", "kind", "status", "params", "data", "result", "error", "run_id", "depth"} <= columns
+        assert {"id", "kind", "status", "params", "result", "error", "run_id", "depth"} <= columns
+        parts = {column["name"] for column in sa.inspect(conn).get_columns("artifact_job_parts")}
+        assert parts == {"job_id", "seq", "data"}
         assert conn.execute(sa.text("SELECT count(*) FROM samples")).scalar() == 1
     command.stamp(cfg, "0045_lookups_through_connectors")
     command.upgrade(cfg, "0047_playbook_files")  # again: the table is there, nothing to do

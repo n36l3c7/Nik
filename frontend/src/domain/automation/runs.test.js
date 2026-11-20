@@ -103,7 +103,8 @@ test('a playbook is offered on what its event is about, or on anything when it h
     label: 'Invoice',
   })
   assert.equal(artifactTarget({ id: 'url-1', kind: 'url', name: '' }).label, 'url-1')
-  assert.equal(artifactTarget({ id: 'pcap-1', kind: 'pcap', name: 'x' }), null)
+  assert.equal(artifactTarget({ id: 'pcap-1', kind: 'pcap', name: 'x' }).what, 'pcap')
+  assert.equal(artifactTarget({ id: 'mailbox-1', kind: 'mailbox', name: 'x' }), null)
   assert.equal(artifactTarget(undefined), null)
   assert.deepEqual(indicatorTarget('domain', 'evil.example'), {
     kind: 'indicator',

@@ -158,6 +158,16 @@ export function ArtifactProvider({ children }) {
     [refresh],
   )
 
+  /** Analyse a file as an e-mail or as a capture: resolves with the artifact that was made of it. */
+  const analyseAs = useCallback(
+    async (id, kind) => {
+      const artifact = await api.post(`/artifacts/${id}/analyse-as`, { as: kind })
+      refresh()
+      return artifact
+    },
+    [refresh],
+  )
+
   const unlink = useCallback(
     async (id, incidentId) => {
       await api.del(`/artifacts/${id}/links/${encodeURIComponent(incidentId)}`)
@@ -212,6 +222,7 @@ export function ArtifactProvider({ children }) {
       scanUrl,
       lookup,
       link,
+      analyseAs,
       unlink,
       setTags,
       setExpiry,
@@ -234,6 +245,7 @@ export function ArtifactProvider({ children }) {
       scanUrl,
       lookup,
       link,
+      analyseAs,
       unlink,
       setTags,
       setExpiry,

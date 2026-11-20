@@ -834,7 +834,7 @@ def _perform(
         if isinstance(waiting.get("override"), dict):
             args = {**args, **waiting["override"]}  # typed by who debugs the run
         arg_classes = ex.render_classes(config.get("args") or {}, scope)
-        shown = {"action": spec.id, "args": _cut(args)}
+        shown = {"action": spec.id, "args": _cut(actions.shown_arguments(spec, args))}
         approved_by = waiting.get("approved_by")
         # A debug run holds what goes outside, as a dry run does, unless this one node was let through.
         dry = bool(run.dry_run) and not waiting.get("real")

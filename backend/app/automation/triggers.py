@@ -34,10 +34,13 @@ from ..core.models import (
     AutomationSchedule,
     Incident,
     Mail,
+    NetworkCapture,
     Playbook,
     PlaybookVersion,
     Run,
     Sample,
+    SampleCapa,
+    SampleCode,
     UrlScan,
 )
 from . import engine, graph, payloads, schedules
@@ -99,6 +102,34 @@ def file_analysed(db: OrmSession, sample: Sample, artifact: Artifact | None, inc
     data, classes = payloads.file_event(sample, artifact, incident)
     publish(db, "file.analysed", "artifact", data["file"]["artifact_id"], data, classes)
     _announce(db, "file.analysed", data)
+
+
+def code_analysed(db: OrmSession, row: SampleCode) -> None:
+    """The disassembly of a file ended, done or failed: once for each, whoever asked for it."""
+    sample = db.get(Sample, row.sha256)
+    if sample is None:
+        return
+    data, classes = payloads.code_event(sample, db.get(Artifact, f"file-{row.sha256}"), row)
+    publish(db, "code.analysed", "artifact", data["file"]["artifact_id"], data, classes)
+    _announce(db, "code.analysed", data)
+
+
+def capabilities_analysed(db: OrmSession, row: SampleCapa) -> None:
+    """capa ended on a file, done or failed: once for each run of it."""
+    sample = db.get(Sample, row.sha256)
+    if sample is None:
+        return
+    data, classes = payloads.capabilities_event(sample, db.get(Artifact, f"file-{row.sha256}"), row)
+    publish(db, "capabilities.analysed", "artifact", data["file"]["artifact_id"], data, classes)
+    _announce(db, "capabilities.analysed", data)
+
+
+def capture_analysed(db: OrmSession, capture: NetworkCapture) -> None:
+    """The analysis of a capture ended, ready or failed."""
+    incident = db.get(Incident, capture.incident_id) if capture.incident_id else None
+    data, classes = payloads.capture_event(capture, incident)
+    publish(db, "capture.analysed", "artifact", data["capture"]["artifact_id"], data, classes)
+    _announce(db, "capture.analysed", data)
 
 
 def url_analysed(db: OrmSession, scan: UrlScan) -> None:
@@ -363,6 +394,9 @@ _ABOUT = {
     "ioc.watch_hit": "incident",
     "mail.analysed": "mail",
     "file.analysed": "file",
+    "code.analysed": "file",
+    "capabilities.analysed": "file",
+    "capture.analysed": "pcap",
     "url.analysed": "url",
     "ioc.verdict_changed": "indicator",
 }
@@ -370,6 +404,7 @@ _NAMES = {
     "incident": "an incident",
     "mail": "an e-mail",
     "file": "a file",
+    "pcap": "a capture",
     "url": "an address",
     "indicator": "an indicator",
 }

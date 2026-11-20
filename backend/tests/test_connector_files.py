@@ -7,10 +7,13 @@ came; the file that leaves was judged by the data guard as an attachment is,
 and never leaves when the guard holds it or the store does not have it.
 """
 
+# ruff: noqa: F811 (fixtures are imported)
+
 from __future__ import annotations
 
 import hashlib
 import textwrap
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +26,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.models import AuditEntry, CommandAnswer, Connection, Playbook
 from app.core.security import now_iso
+from tests.stores import read_only  # noqa: F401 - a fixture
 from tests.test_automation_engine import edge, go, incident, node, playbook, steps
 
 VAULT = textwrap.dedent(
@@ -65,6 +69,7 @@ VAULT = textwrap.dedent(
     """
 )
 HOST = "api.vault.example"
+NOW = time.time()  # the jobs a step asks for are taken by the real clock
 MALWARE = b"MZ\x90\x00\x03\x00\xff\xfe this is not text \x00\x01\x02 and it stays as it is"
 SHA = hashlib.sha256(MALWARE).hexdigest()
 
@@ -334,3 +339,298 @@ def test_a_file_that_is_not_in_the_store_or_over_the_limit_never_leaves(vault, m
     with pytest.raises(actions.ActionError, match="larger than the 0 MB limit of a sample: it is not sent"):
         step(vault, "submit", opened=everything, args={"sample": SHA})
     assert outside.requests == []
+
+
+# --------------------------------------------------------------------------- #
+# A store the worker cannot write to                                          #
+# --------------------------------------------------------------------------- #
+def test_a_file_is_kept_through_the_api_process_when_the_worker_cannot_write_to_the_store(vault, read_only):
+    from app import artifact_jobs
+    from app.core.models import Sample
+
+    admin, outside = vault.admin, vault.outside
+    incident(admin, "inc-ro")
+    outside.answer(
+        HOST,
+        200,
+        body=MALWARE,
+        headers={"content-type": "application/x-dosexec", "content-disposition": 'attachment; filename="invoice.exe"'},
+        path="/api/files/abc/download",
+    )
+    # The worker downloads, cannot write, and hands the bytes over: the step gives itself back.
+    first = step(vault, "download", incident_id="inc-ro", args={"hash": "abc"}, now=NOW)
+    assert first.output is None and first.again_at == NOW + artifact_jobs.WAIT_EVERY
+    assert first.log == "Waiting for the server to keep the file"
+    with SessionLocal() as db:
+        assert db.scalars(select(Sample)).all() == []
+        (job,) = db.scalars(select(artifact_jobs.ArtifactJob)).all()
+        assert (job.kind, job.status, job.run_id) == ("store", "queued", "run-1")
+        assert artifact_jobs.carried(db, job.id) == MALWARE
+    assert audited("connector.file.keep") == []
+    # Looked at again before the API process took it: it still waits, and nothing was downloaded twice.
+    again = step(vault, "download", incident_id="inc-ro", args={"hash": "abc"}, now=NOW + 2, state=first.state)
+    assert again.again_at == NOW + 4 and len(outside.requests) == 1
+
+    assert read_only() == 1
+    done = step(vault, "download", incident_id="inc-ro", args={"hash": "abc"}, now=NOW + 4, state=again.state)
+    assert done.output == {
+        "name": "invoice.exe",
+        "type": "application/x-dosexec",
+        "size": len(MALWARE),
+        "sha256": SHA,
+        "artifact": f"file-{SHA}",
+        "linked": True,
+    }
+    assert done.classes == {"name": ["attachment_name"], "sha256": ["hash"], "artifact": ["nik_id"]}
+    assert done.request["status"] == 200 and len(outside.requests) == 1
+    from app.malware.samples import read_sample
+
+    assert read_sample(SHA) == MALWARE
+    refs = admin.get("/api/incidents/inc-ro").json()["data"]["malware"]["samples"]
+    assert [(ref["sha256"], ref["origin"]) for ref in refs] == [(SHA, "Vault Intel (download)")]
+    assert audited("connector.file.keep") == [
+        f'Kept the file invoice.exe ({SHA[:12]}…) that Vault Intel (download) gave (playbook "Vault desk", run run-1)'
+    ]
+    with SessionLocal() as db:
+        assert db.scalars(select(artifact_jobs.ArtifactJobPart)).all() == []
+        # A file is never among the kept answers, handed over or not.
+        assert db.scalars(select(CommandAnswer)).all() == []
+
+    # A file the API process does not keep in time fails the step, and says where to look.
+    outside.answer(HOST, 200, body=b"another file", path="/api/files/def/download")
+    waiting = step(vault, "download", args={"hash": "def"}, now=NOW + 100)
+    with pytest.raises(actions.ActionError) as late:
+        step(vault, "download", args={"hash": "def"}, now=NOW + 100 + artifact_jobs.WAIT_FOR + 1, state=waiting.state)
+    assert late.value.message.startswith("The file was not kept in 10 minutes: see whether the server answers")
+
+
+def test_a_large_file_crosses_the_database_in_parts(vault, read_only, monkeypatch):
+    from app import artifact_jobs
+
+    monkeypatch.setattr(artifact_jobs, "PART_BYTES", 16)
+    large = bytes(range(256)) * 3
+    vault.outside.answer(HOST, 200, body=large, path="/api/files/big/download")
+    waiting = step(vault, "download", args={"hash": "big"}, now=NOW)
+    with SessionLocal() as db:
+        parts = db.scalars(select(artifact_jobs.ArtifactJobPart).order_by(artifact_jobs.ArtifactJobPart.seq)).all()
+        assert len(parts) == 48 and all(len(part.data) == 16 for part in parts)
+    assert read_only() == 1
+    done = step(vault, "download", args={"hash": "big"}, now=NOW + 2, state=waiting.state)
+    from app.malware.samples import read_sample
+
+    assert done.output["sha256"] == hashlib.sha256(large).hexdigest() and read_sample(done.output["sha256"]) == large
+
+
+# --------------------------------------------------------------------------- #
+# An archive to unpack                                                        #
+# --------------------------------------------------------------------------- #
+COLLECTOR = textwrap.dedent(
+    """\
+    name: Fetch Desk
+    id: fetchdesk
+    version: 1
+    description: Files an agent collected, handed over as an archive.
+    configuration:
+      - { name: url, type: url, required: true }
+      - { name: credentials, type: header, header: x-apikey }
+    base_url: "{{ config.url }}"
+    commands:
+      - name: fetched-files
+        description: Download the files an agent collected, in an archive protected by a password.
+        arguments:
+          - { name: id, type: text, required: true }
+          - { name: password, type: text }
+        request:
+          method: GET
+          path: "/fetched/{{ args.id }}"
+          answer: file
+          save_as: { name: "fetched-{{ args.id }}.zip" }
+          unpack: { format: zip, password: "{{ args.password }}" }
+    """
+)
+DESK = "desk.example"
+COLLECTED = {"C/Users/anna/notes.txt": b"what anna wrote\n", "C/Windows/Temp/run.log": b"10:00 started\n10:01 done\n"}
+SECRET = "Fetch-2026-secret"
+
+
+@pytest.fixture()
+def collector(vault):
+    from tests.stores import zip_of
+
+    vault.outside.host(DESK, "93.184.215.31")
+    with SessionLocal() as db:
+        ca.install(db, COLLECTOR, "admin")
+        connection = Connection(
+            id="f" * 32,
+            name="Desk",
+            connector_id="fetchdesk",
+            config={"url": f"https://{DESK}/api"},
+            created_at=now_iso(),
+            updated_at=now_iso(),
+        )
+        ca.store_secrets(connection, {"value": "desk-key-123456"})
+        db.add(connection)
+        db.commit()
+    archive = zip_of(COLLECTED, SECRET)
+    vault.outside.answer(DESK, 200, body=archive, headers={"content-type": "application/zip"}, path="/api/fetched/7")
+    return SimpleNamespace(**vars(vault), archive=archive, sha=hashlib.sha256(archive).hexdigest())
+
+
+def fetched(collector, password=SECRET, **more) -> actions.Result:
+    """The command run as a step, on the instance of the collector."""
+    args = {"id": "7", **({"password": password} if password is not None else {})}
+    with SessionLocal() as db:
+        call = actions.Call(
+            db=db,
+            args=args,
+            classes=frozenset(),
+            arg_classes={},
+            dry_run=more.pop("dry_run", False),
+            run=SimpleNamespace(
+                id="run-1", incident_id=more.pop("incident_id", None), trigger={"playbook": "Vault desk"}
+            ),
+            playbook=db.get(Playbook, collector.playbook),
+            connection="Desk",
+            **more,
+        )
+        result = ca.run_command("fetchdesk", "fetched-files", call)
+        db.commit()
+        return result
+
+
+def expected_files() -> list[dict]:
+    return [
+        {
+            "name": name,
+            "type": "ASCII text",
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "artifact": f"file-{hashlib.sha256(data).hexdigest()}",
+        }
+        for name, data in COLLECTED.items()
+    ]
+
+
+def test_an_archive_is_kept_as_it_came_and_each_file_inside_it_is_an_artifact_of_its_own(collector):
+    admin = collector.admin
+    incident(admin, "inc-zip")
+    result = fetched(collector, incident_id="inc-zip")
+    out = result.output
+    assert (out["name"], out["type"], out["artifact"]) == ("fetched-7.zip", "application/zip", f"file-{collector.sha}")
+    assert out["files"] == expected_files() and out["count"] == 2 and out["skipped"] == []
+    assert result.classes["files.name"] == ["attachment_name"] and result.classes["files.artifact"] == ["nik_id"]
+    # The archive is in the store byte for byte, still protected; the files inside it are files of the incident.
+    from app.malware.samples import read_sample
+
+    assert read_sample(collector.sha) == collector.archive
+    for item, data in zip(out["files"], COLLECTED.values(), strict=True):
+        assert read_sample(item["sha256"]) == data
+    refs = admin.get("/api/incidents/inc-zip").json()["data"]["malware"]["samples"]
+    assert [ref["fileName"] for ref in refs] == ["fetched-7.zip", "notes.txt", "run.log"]
+    assert refs[1]["origin"] == "fetched-7.zip (Fetch Desk (fetched-files))"
+    # Each is shown as taken out of the archive, and the archive shows them.
+    shown = admin.get(f"/api/artifacts/file-{collector.sha}").json()
+    assert sorted((child["name"], child["relation"]) for child in shown["children"]) == [
+        ("notes.txt", "unpacked"),
+        ("run.log", "unpacked"),
+    ]
+    assert audited("connector.file.keep") == [
+        f"Kept the file fetched-7.zip ({collector.sha[:12]}…) and the 2 file(s) inside it that Fetch Desk "
+        '(fetched-files) gave (playbook "Vault desk", run run-1)'
+    ]
+    # The password is nowhere in what the step gave or recorded.
+    assert SECRET not in str(result.output) and SECRET not in str(result.request)
+
+
+def test_an_archive_that_does_not_open_fails_the_step_and_nothing_is_kept(collector):
+    from app.core.models import Sample
+
+    for password, said in (
+        ("guessed-wrong", "The password does not open the archive: nothing was unpacked"),
+        (None, "The archive is protected by a password and none was given: nothing was unpacked"),
+    ):
+        with pytest.raises(actions.ActionError) as failed:
+            fetched(collector, password)
+        assert failed.value.message == said and failed.value.retry is False
+        assert "guessed-wrong" not in failed.value.message and "guessed-wrong" not in str(failed.value.request)
+    collector.outside.answer(DESK, 200, body=b"<html>not an archive</html>", path="/api/fetched/7")
+    with pytest.raises(actions.ActionError) as failed:
+        fetched(collector)
+    assert failed.value.message == "The file is not a zip archive Nik can read: nothing was unpacked"
+    with SessionLocal() as db:
+        db.rollback()
+        assert db.scalars(select(Sample)).all() == []
+
+
+def test_the_password_of_an_archive_is_not_shown_in_a_run_and_a_dry_run_unpacks_nothing(collector):
+    from app.core.models import Sample
+
+    with SessionLocal() as db:
+        spec = actions.lookup(db, "fetchdesk.fetched-files")
+    by_name = {argument["name"]: argument for argument in spec.arguments}
+    # The argument the password is read from is marked, and a run keeps a mark in its place.
+    assert by_name["password"]["secret"] is True and "secret" not in by_name["id"]
+    assert actions.shown_arguments(spec, {"id": "7", "password": SECRET}) == {"id": "7", "password": "•••"}
+    assert actions.shown_arguments(spec, {"id": "7", "password": None}) == {"id": "7", "password": None}
+    # With no outputs of its own the command says what it gives: the file, and the files inside it.
+    outputs = [output["name"] for output in spec.outputs]
+    assert outputs == ["name", "type", "size", "sha256", "artifact", "linked", "files", "count", "skipped"]
+    assert [item["name"] for item in spec.outputs[6]["shape"]] == [
+        "[0].name",
+        "[0].type",
+        "[0].size",
+        "[0].sha256",
+        "[0].artifact",
+    ]
+
+    dry = fetched(collector, dry_run=True)
+    assert dry.output == {
+        "name": "",
+        "type": "",
+        "size": 0,
+        "sha256": "",
+        "artifact": "",
+        "linked": False,
+        "files": [],
+        "count": 0,
+        "skipped": [],
+    }
+    assert dry.request["keeps"] == "a file, as an artifact"
+    assert dry.request["unpacks"] == "the archive: each file inside it, as an artifact"
+    assert SECRET not in str(dry.request) and collector.outside.requests == []
+    with SessionLocal() as db:
+        assert db.scalars(select(Sample)).all() == []
+
+
+def test_an_archive_is_unpacked_by_the_worker_in_memory_and_kept_by_the_api_process(collector, read_only):
+    from app import artifact_jobs
+
+    admin = collector.admin
+    incident(admin, "inc-zip")
+    waiting = fetched(collector, incident_id="inc-zip", now=NOW)
+    assert waiting.again_at is not None
+    with SessionLocal() as db:
+        jobs = db.scalars(select(artifact_jobs.ArtifactJob).order_by(artifact_jobs.ArtifactJob.created_epoch)).all()
+        # The archive first, then what was inside it: no password travels, the files do.
+        assert [job.params["name"] for job in jobs] == ["fetched-7.zip", "notes.txt", "run.log"]
+        assert jobs[1].params["parent"] == [f"file-{collector.sha}", "unpacked"]
+        assert SECRET not in str([job.params for job in jobs]) and SECRET not in str(waiting.state)
+    assert read_only() == 3
+    done = fetched(collector, incident_id="inc-zip", now=NOW + 2, state=waiting.state)
+    assert done.output["files"] == expected_files() and done.output["linked"] is True
+    shown = admin.get(f"/api/artifacts/file-{collector.sha}").json()
+    assert sorted(child["name"] for child in shown["children"]) == ["notes.txt", "run.log"]
+    assert [item["id"] for item in shown["incidents"]] == ["inc-zip"]
+    assert len(audited("connector.file.keep")) == 1
+
+
+def test_a_connector_says_unpack_only_of_an_answer_that_is_a_file():
+    kept = [line for line in COLLECTOR.splitlines() if "answer: file" not in line and "save_as" not in line]
+    bad = "\n".join(kept)
+    with pytest.raises(ca.ConnectorError) as refused:
+        ca.load(bad)
+    assert any(
+        '"unpack" belongs to a request whose answer is a file' in problem.message for problem in refused.value.problems
+    )
+    with pytest.raises(ca.ConnectorError):
+        ca.load(COLLECTOR.replace("format: zip", "format: rar"))

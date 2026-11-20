@@ -84,6 +84,11 @@ def jobs() -> list[ArtifactJob]:
         return list(db.scalars(select(ArtifactJob).order_by(ArtifactJob.created_epoch)))
 
 
+def carried(job_id: str) -> bytes:
+    with SessionLocal() as db:
+        return artifact_jobs.carried(db, job_id)
+
+
 @pytest.fixture()
 def code_worker(monkeypatch):
     calls = []
@@ -126,7 +131,7 @@ def test_a_playbook_adds_a_file_from_a_content_and_the_api_process_keeps_it(admi
     assert waiting["status"] == "running" and steps(waiting)["add"]["status"] == "waiting"
     assert steps(waiting)["add"]["log"] == f"Keeping report.csv ({len(REPORT)} bytes)"
     (job,) = jobs()
-    assert (job.kind, job.status, job.run_id, bytes(job.data)) == ("store", "queued", run_id, REPORT.encode())
+    assert (job.kind, job.status, job.run_id, carried(job.id)) == ("store", "queued", run_id, REPORT.encode())
     with SessionLocal() as db:
         assert db.scalars(select(Sample)).all() == []
     worker.drain(T0 + 2)
@@ -135,7 +140,7 @@ def test_a_playbook_adds_a_file_from_a_content_and_the_api_process_keeps_it(admi
     # The API process keeps it, as it keeps an upload; the bytes leave the row.
     assert artifact_jobs.run_due(threads=False) == 1 and artifact_jobs.run_due(threads=False) == 0
     (job,) = jobs()
-    assert job.status == "done" and job.data is None and job.result["ref"] == REPORT_SHA
+    assert job.status == "done" and carried(job.id) == b"" and job.result["ref"] == REPORT_SHA
     # What keeping it set off says which run caused it: a playbook that waits for files does not start on its own.
     with SessionLocal() as db:
         events = db.scalars(select(AutomationEvent).where(AutomationEvent.kind == "file.analysed")).all()
@@ -263,7 +268,7 @@ def test_a_file_the_server_does_not_keep_fails_the_step_and_says_why(admin: Test
     with SessionLocal() as db:
         assert artifact_jobs.take(db, T0 + artifact_jobs.TAKE_WITHIN + 1) is None
     (job,) = jobs()
-    assert job.status == "error" and job.data is None
+    assert job.status == "error" and carried(job.id) == b""
     with SessionLocal() as db:
         assert db.scalars(select(Sample)).all() == []
 
@@ -379,6 +384,7 @@ def test_a_playbook_analyses_a_file_again_and_waits_for_the_workers(admin: TestC
     assert output == {
         "artifact": sample,
         "kind": "file",
+        "made": "",
         "asked": True,
         "finished": True,
         "started": ["static", "code", "capabilities"],
@@ -748,6 +754,8 @@ FILES = {
     "nik.set-artifact-expiry",
     "nik.analyse-artifact",
     "nik.get-analysis",
+    "nik.download-file",
+    "nik.unpack-artifact",
 }
 
 
@@ -758,11 +766,14 @@ def test_the_nodes_are_in_the_library_under_a_group_of_their_own(admin: TestClie
     assert all(nodes[name]["changesOutside"] is False and nodes[name]["description"] for name in FILES)
     assert [argument["name"] for argument in nodes["nik.analyse-artifact"]["arguments"]] == [
         "artifact",
+        "as",
+        "incident",
         "analysis",
         "wait",
         "wait_minutes",
     ]
-    assert nodes["nik.analyse-artifact"]["arguments"][1]["choices"] == ["", "static", "code", "capabilities"]
+    assert nodes["nik.analyse-artifact"]["arguments"][3]["choices"] == ["", "static", "code", "capabilities"]
+    assert nodes["nik.analyse-artifact"]["arguments"][1]["choices"] == ["", "mail", "capture"]
     # No browser to upload from: the description of the node says what "a file" can be.
     assert "A playbook has no browser to upload from" in nodes["nik.add-file"]["description"]
     assert "nothing is run or opened" in nodes["nik.add-file"]["description"]
@@ -778,8 +789,15 @@ def paths_of(entry: dict, node_id: str) -> list[str]:
     return found
 
 
-def test_every_path_the_editor_offers_under_a_file_node_is_there_when_a_playbook_runs(admin: TestClient, no_dns):
+def test_every_path_the_editor_offers_under_a_file_node_is_there_when_a_playbook_runs(
+    admin: TestClient, no_dns, outside
+):
+    from tests.stores import zip_of
+
     incident(admin, "i1")
+    outside.host("files.example.org")
+    outside.answer("files.example.org", 200, body=b"a tool, as text", path="/tool.txt")
+    archive = upload(admin, "collected.zip", zip_of({"a.txt": b"one", "empty.txt": b""}))
     mail = upload(admin, "reported.eml", phishing_message(), "mails", "i1")
     tool = upload(admin, "tool.exe", minimal_pe(b"\x90\xc3"), incident_id="i1")
     entries = {entry["id"]: entry for entry in admin.get("/api/automation/catalog").json()["nodes"]}
@@ -795,6 +813,8 @@ def test_every_path_the_editor_offers_under_a_file_node_is_there_when_a_playbook
         act("analyse", "nik.analyse-artifact", artifact=tool),
         act("read", "nik.get-analysis", artifact=mail),
         act("out", "nik.unlink-artifact", artifact=tool),
+        act("fetched", "nik.download-file", url="https://files.example.org/tool.txt"),
+        act("unpacked", "nik.unpack-artifact", artifact=archive),
     ]
     assert {item["config"]["action"] for item in nodes} == FILES
     wanted = [path for item in nodes for path in paths_of(entries[item["config"]["action"]], item["id"])]
@@ -803,7 +823,10 @@ def test_every_path_the_editor_offers_under_a_file_node_is_there_when_a_playbook
     reading = node(
         "reads", "action", action="nik.add-note", args={"text": " ".join(f"{{{{ {path} | json }}}}" for path in wanted)}
     )
-    run = done(admin, chain(admin, "Reads it all", *nodes, reading), objectKind="incident", objectId="i1")
+    pb = chain(admin, "Reads it all", *nodes, reading)
+    hosts = {"mode": "listed", "hosts": ["files.example.org"]}
+    assert admin.put(f"/api/automation/playbooks/{pb}/egress", json=hosts).status_code == 200
+    run = done(admin, pb, objectKind="incident", objectId="i1")
     assert run["status"] == "done", run["error"] or steps(run)
 
     # In a dry run too; what a dry run does not start has nothing in its list of what was left out.
@@ -811,7 +834,9 @@ def test_every_path_the_editor_offers_under_a_file_node_is_there_when_a_playbook
     reading = node(
         "reads", "action", action="nik.add-note", args={"text": " ".join(f"{{{{ {path} | json }}}}" for path in kept)}
     )
-    dry = go(admin, chain(admin, "Reads it dry", *nodes, reading), objectKind="incident", objectId="i1", dryRun=True)
+    pb = chain(admin, "Reads it dry", *nodes, reading)
+    assert admin.put(f"/api/automation/playbooks/{pb}/egress", json=hosts).status_code == 200
+    dry = go(admin, pb, objectKind="incident", objectId="i1", dryRun=True)
     assert dry["status"] == "done", dry["error"] or steps(dry)
 
     for spec in actions.all_specs():

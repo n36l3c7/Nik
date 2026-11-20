@@ -67,6 +67,39 @@ const FILE_FIELDS = fieldsOf('file', [
   ['url', 'text', 'Its address in Nik'],
 ])
 
+const CODE_FIELDS = fieldsOf('code', [
+  ['status', 'text', 'done, or error when the disassembly failed'],
+  ['error', 'text', 'What the worker said, when it failed'],
+  ['functions', 'number', 'How many functions it found'],
+  ['imports', 'number', 'How many imported functions'],
+])
+
+const CAPABILITIES_FIELDS = fieldsOf('capabilities', [
+  ['status', 'text', 'done, or error when capa failed'],
+  ['error', 'text', 'What the worker said, when it failed'],
+  ['count', 'number', 'How many capabilities it found'],
+  ['names', 'list', 'Their names'],
+  ['attack', 'list', 'Their ATT&CK techniques (T1055…)'],
+])
+
+const CAPTURE_FIELDS = fieldsOf('capture', [
+  ['id', 'text', 'The id of the capture'],
+  ['name', 'text', 'Its file name'],
+  ['kind', 'text', 'pcap, or browser for the log of an isolated browser session'],
+  ['status', 'text', 'ready, or error when the analysis failed'],
+  ['error', 'text', 'What the worker said, when it failed'],
+  ['size', 'number', 'Its size in bytes'],
+  ['sha256', 'text', 'Its SHA-256'],
+  ['packets', 'number', 'How many packets'],
+  ['hosts', 'list', 'The public addresses it talks to'],
+  ['domains', 'list', 'The names it asks for or connects to'],
+  ['posts', 'number', 'How many POST requests'],
+  ['beacons', 'number', 'How many regular connections that look like a beacon'],
+  ['objects', 'number', 'How many files could be taken out of it'],
+  ['artifact_id', 'text', 'Its id as an artifact'],
+  ['url', 'text', 'Its address in Nik'],
+])
+
 const SCAN_FIELDS = fieldsOf('scan', [
   ['id', 'text', 'The id of the scan'],
   ['url', 'text', 'The address that was scanned'],
@@ -104,6 +137,17 @@ export const EVENTS = {
   'incident.updated': { label: 'An incident changes', about: 'incident', sample: ['incident.status', 'closed'] },
   'mail.analysed': { label: 'An e-mail is analysed', about: 'mail', sample: ['mail.verdict', 'phishing'] },
   'file.analysed': { label: 'A file is analysed', about: 'file', sample: ['file.verdict', 'high'] },
+  'code.analysed': { label: 'The disassembly of a file ends', about: 'file', sample: ['code.status', 'done'] },
+  'capabilities.analysed': {
+    label: 'capa ends on a file',
+    about: 'file',
+    sample: ['capabilities.status', 'done'],
+  },
+  'capture.analysed': {
+    label: 'The analysis of a capture ends',
+    about: 'pcap',
+    sample: ['capture.status', 'ready'],
+  },
   'url.analysed': { label: 'An address is scanned', about: 'url', sample: ['scan.verdict', 'phishing'] },
   'ioc.verdict_changed': {
     label: "An indicator's verdict changes",
@@ -142,13 +186,14 @@ export function sampleFilter(event) {
   return { all: [{ left: `{{ trigger.${field} }}`, op: typeof value === 'number' ? 'lt' : 'eq', right: value }] }
 }
 
-/** What a trigger's event is about: incident, mail, file, url, indicator, or nothing. */
+/** What a trigger's event is about: incident, mail, file, pcap, url, indicator, or nothing. */
 export const runsOn = (config = {}) => EVENTS[config.event]?.about ?? ''
 
 const NAMES = {
   incident: 'an incident',
   mail: 'an e-mail',
   file: 'a file',
+  pcap: 'a capture',
   url: 'a scanned address',
   indicator: 'an indicator',
 }
@@ -171,6 +216,12 @@ function eventFields(event, shapes) {
       ]
     case 'file.analysed':
       return [...FILE_FIELDS, ...INCIDENT_OPTIONAL]
+    case 'code.analysed':
+      return [...FILE_FIELDS, ...CODE_FIELDS]
+    case 'capabilities.analysed':
+      return [...FILE_FIELDS, ...CAPABILITIES_FIELDS]
+    case 'capture.analysed':
+      return [...CAPTURE_FIELDS, ...INCIDENT_OPTIONAL]
     case 'url.analysed':
       return SCAN_FIELDS
     case 'ioc.verdict_changed':
