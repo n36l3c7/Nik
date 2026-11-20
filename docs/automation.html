@@ -2542,10 +2542,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
             href="#pack-uninstall"
             >Uninstalling</a
           >), so after the pack is installed again the instance is made again: with its credential chosen from the list,
-          not typed. For another server, credentials travel as the secrets of instances do: in a backup of the database
-          (<code>deploy/backup.sh</code>), encrypted under <code>SECRET_KEY</code>, which is copied with it. The file of
-          <em>Settings → System → Backup</em> holds incidents, accounts, settings and the audit log: neither instances
-          nor credentials.
+          not typed. For another server, credentials travel as the secrets of instances do: in a
+          <a href="deployment.html#backups">backup</a>, encrypted under <code>SECRET_KEY</code>, which has to be the
+          same on the server the backup is restored on. The file of <em>Export as one file</em> holds incidents,
+          accounts, settings and the audit log: neither instances nor credentials.
         </li>
       </ul>
 

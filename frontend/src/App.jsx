@@ -146,17 +146,27 @@ function ConnectingScreen() {
 
 /** Full-screen error card shown when the backend cannot be reached. */
 function UnreachableScreen({ error, onRetry }) {
+  // The server is there and says why it does not serve: an upgrade it stopped (backend/app/backups/upgrade.py).
+  const stopped = /^The upgrade of Nik /.test(error ?? '')
   return (
     <div className="flex h-screen items-center justify-center bg-canvas p-4">
       <div className="w-full max-w-sm border border-line bg-panel p-6 text-center">
         <div className="mb-4 flex justify-center">
           <MicroSkull mood="x" className="text-2xl text-high-fg" />
         </div>
-        <h1 className="text-base font-semibold text-fg">Cannot reach the server</h1>
-        <p className="mt-1.5 text-sm text-fg-muted">
-          The application could not contact the backend API. Check that the service is running, then try again.
-        </p>
-        {error && <p className="mt-3 break-words bg-canvas px-3 py-2 font-mono text-xs text-fg-muted">{error}</p>}
+        <h1 className="text-base font-semibold text-fg">
+          {stopped ? 'Nik is not running' : 'Cannot reach the server'}
+        </h1>
+        {stopped ? (
+          <p className="mt-1.5 text-sm text-fg-muted">{error}</p>
+        ) : (
+          <>
+            <p className="mt-1.5 text-sm text-fg-muted">
+              The application could not contact the backend API. Check that the service is running, then try again.
+            </p>
+            {error && <p className="mt-3 break-words bg-canvas px-3 py-2 font-mono text-xs text-fg-muted">{error}</p>}
+          </>
+        )}
         <Button icon={RefreshCw} onClick={onRetry} className="mt-5 w-full justify-center">
           Retry
         </Button>

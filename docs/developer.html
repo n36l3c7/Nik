@@ -195,6 +195,20 @@ docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
         moves into a "Default" profile); on large databases the first start takes longer — take a backup first.
       </p>
       <p>
+        <strong>Writing a migration.</strong> In the container the migrations run through
+        <code>python -m app.backups.upgrade</code>: a snapshot of the database is taken first, the migrations are tried
+        on a copy restored from it, and only then on the database (see <a href="deployment.html#upgrades">Updates</a>).
+        Three rules follow. A migration adds only what is missing, so that it can run twice. A column added to a table
+        that has rows is nullable or has a server default. And a migration
+        <strong>does not touch the files of the store</strong>: the snapshot holds the database alone. One that ever has
+        to (renaming files, changing how they are laid out) must say so in its docstring and in the release notes, and
+        the snapshot must then hold what it touches: set <code>touchesStore</code> in the facts the upgrade records
+        (<code>_snapshot</code> in <code>backend/app/backups/upgrade.py</code>) and take the snapshot as a full backup,
+        or <code>deploy/rollback.sh</code> refuses to put the database back alone. A migration that adds a view, a
+        trigger or a function also has to teach the backups to carry it (<code>backend/app/backups/database.py</code>):
+        until then a backup refuses such a database.
+      </p>
+      <p>
         Tailwind v4 is wired in through the Vite plugin (<code>@tailwindcss/vite</code>), so there is no
         <code>tailwind.config.js</code> and no extra setup step.
       </p>

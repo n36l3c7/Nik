@@ -255,6 +255,24 @@
               </td>
             </tr>
             <tr>
+              <td><code>NIK_BACKUP_DIR</code></td>
+              <td><em>the volume</em> <code>backups</code></td>
+              <td>
+                A directory of the host where the server writes its <a href="deployment.html#backups">backups</a>, in
+                place of the volume of the stack: another disk than the data. Inside the containers it is
+                <code>/app/backups</code> (<code>BACKUP_DIR</code>, for an installation without containers).
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_UPGRADE_REHEARSAL</code></td>
+              <td><code>true</code></td>
+              <td>
+                Before a release migrates the database, its migrations are tried on a copy made from the snapshot.
+                <code>false</code> skips that rehearsal, never the snapshot, on a database too large to copy at every
+                <a href="deployment.html#upgrades">upgrade</a>.
+              </td>
+            </tr>
+            <tr>
               <td><code>AUTOMATION_WORKER</code></td>
               <td><code>container</code></td>
               <td>
@@ -656,9 +674,9 @@
         <div class="card">
           <h3>My account, audit log</h3>
           <p>
-            Everyone changes their own password under My account and reads the audit log, which the server writes. The
-            full backup is not a setting: it is a section of Settings (System → Backup), for admins, and holds
-            incidents, users, the audit log and the settings, not the files.
+            Everyone changes their own password under My account and reads the audit log, which the server writes.
+            Backups are set in Settings → System → Backup, by admins: their schedule, what is kept, the passphrase and
+            the copy off the server (<a href="deployment.html#backups">Backups</a>).
           </p>
         </div>
       </div>
@@ -666,9 +684,11 @@
       <h2 id="upgrades">Upgrades</h2>
       <p>
         Pull the new release and rebuild (<code>docker compose up -d --build</code>). Data persists in PostgreSQL and in
-        the sample store; the image runs <code>alembic upgrade head</code> at every start, which brings the schema up to
-        date. Upgrading to <strong>2.0.0</strong> rewrites every incident once (browser data moves into a "Default"
-        profile): on large databases the first start takes longer, so take a backup first.
+        the sample store; the image brings the schema up to date at every start. When a release has migrations to run,
+        it first takes a snapshot of the database into the backup directory and tries the migrations on a copy (<a
+          href="deployment.html#upgrades"
+          >Updates, and the snapshot before each</a
+        >), and <code>deploy/rollback.sh</code> puts the snapshot back if the upgrade went wrong.
       </p>
     </main>
 

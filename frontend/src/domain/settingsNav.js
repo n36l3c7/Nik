@@ -240,7 +240,7 @@ export const SETTINGS_GROUPS = [
         slug: 'backup',
         label: 'Backup',
         permission: 'admin',
-        keywords: 'export restore full platform',
+        keywords: 'export restore full platform schedule retention passphrase snapshot upgrade verify sftp copy',
       },
       {
         id: 'audit',

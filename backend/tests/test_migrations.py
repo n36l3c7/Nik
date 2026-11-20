@@ -1177,3 +1177,30 @@ def test_migration_0047_adds_what_a_playbook_asks_about_a_file(tmp_path, monkeyp
     with engine.connect() as conn:
         assert not set(PLAYBOOK_FILE_TABLES) & set(sa.inspect(conn).get_table_names())
         assert conn.execute(sa.text("SELECT count(*) FROM samples")).scalar() == 1
+
+
+def test_migration_0048_adds_the_table_of_the_backups_and_touches_nothing_else(tmp_path, monkeypatch):
+    from app.core.models import BACKUP_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE settings (id INTEGER PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO settings (id, doc) VALUES (1, '{}')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0047_playbook_files")
+    command.upgrade(cfg, "0048_backups")
+    with engine.connect() as conn:
+        assert set(BACKUP_TABLES) <= set(sa.inspect(conn).get_table_names())
+        columns = {column["name"] for column in sa.inspect(conn).get_columns("backups")}
+        assert {"id", "kind", "state", "size", "verify_state", "verify", "local", "offsite_state", "offsite"} <= columns
+        assert conn.execute(sa.text("SELECT count(*) FROM settings")).scalar() == 1
+    command.stamp(cfg, "0047_playbook_files")
+    command.upgrade(cfg, "0048_backups")  # again: the table is there, nothing to do
+    command.downgrade(cfg, "0047_playbook_files")
+    with engine.connect() as conn:
+        assert not set(BACKUP_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert conn.execute(sa.text("SELECT count(*) FROM settings")).scalar() == 1

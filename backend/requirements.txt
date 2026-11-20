@@ -63,3 +63,6 @@ regex>=2026.1.1
 # The built-in scripts of the automation engine (and, from 4.2, connector files) are
 # YAML, read with safe_load only.
 PyYAML>=6.0.2,<7.0
+# The copy of the backups off the server (app/backups/offsite.py) goes over SFTP:
+# an SSH client in Python, on the cryptography package already here.
+paramiko>=5.1.0,<6.0

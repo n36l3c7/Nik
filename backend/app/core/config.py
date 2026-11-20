@@ -187,6 +187,12 @@ class Settings:
         self.PCAP_URL: str = os.getenv("PCAP_URL", "").rstrip("/")
         self.PCAP_TOKEN: str = os.getenv("PCAP_TOKEN", "")
         self.PCAP_MAX_MB: int = _get_int("PCAP_MAX_MB", 500)
+        # Backups (app/backups): the directory they are written to. In the Compose stack it is a
+        # volume of its own (NIK_BACKUP_DIR chooses a path of the host instead).
+        self.BACKUP_DIR: str = os.getenv("BACKUP_DIR", "./backups")
+        # Before a release changes the database its migrations are tried on a copy; false skips
+        # that rehearsal (never the snapshot) on a database too large to copy at every upgrade.
+        self.UPGRADE_REHEARSAL: bool = _get_bool("NIK_UPGRADE_REHEARSAL", True)
 
     @property
     def is_sqlite(self) -> bool:

@@ -103,6 +103,26 @@ tested=$(get -b "$jar" -X POST "$base/api/automation/scripts/$script_id/test" -H
 grep -q '"passed":true' <<<"$tested" || fail "the script's test did not pass in the sandbox ($tested)"
 get -b "$jar" -X POST "$base/api/automation/scripts/$script_id/versions" -H 'Content-Type: application/json' -d '{}' |
   grep -q '"version":1' || fail "the script's version was not saved"
+echo "== a backup is taken, encrypted, passes its restore test, and leaves no scratch database"
+[ "$(get -o /dev/null -w '%{http_code}' -b "$jar" -X PUT "$base/api/backups/passphrase" -H 'Content-Type: application/json' \
+  -d '{"passphrase":"smoke-test-passphrase"}')" = 200 ] || fail "the backup passphrase was not set"
+get -b "$jar" -X POST "$base/api/backups/run" | grep -q '"state":"queued"' || fail "the backup was not asked for"
+backups=""
+for _ in $(seq 1 40); do
+  backups=$(get -b "$jar" "$base/api/backups")
+  grep -Eq '"verifyState":"(passed|failed)"|"state":"failed"' <<<"$backups" && break
+  sleep 3
+done
+grep -q '"verifyState":"passed"' <<<"$backups" || fail "the backup did not pass its restore test ($backups)"
+backup_api=$("${COMPOSE[@]}" ps -q api)
+docker exec "$backup_api" sh -c 'head -c 7 /app/backups/nik-*.nikbak' | grep -q NIKBAK || fail "no backup in the backup directory"
+docker exec "$backup_api" sh -c 'grep -c SmokeTest /app/backups/nik-*.nikbak || true' | grep -qx 0 ||
+  fail "the backup is readable without its passphrase"
+[ "$("${COMPOSE[@]}" exec -T db psql -U nik -d nik -Atc "SELECT count(*) FROM pg_database WHERE datname LIKE 'nik\_scratch%'")" = 0 ] ||
+  fail "the restore test left a scratch database"
+# The copies off the server leave from the automation worker: it reads the backups, and cannot write one.
+docker exec "$("${COMPOSE[@]}" ps -q automation)" sh -c 'ls /app/backups/*.nikbak >/dev/null && ! touch /app/backups/probe 2>/dev/null' ||
+  fail "the automation worker does not see the backup directory read-only"
 rm -f "$jar"
 sandbox_container=$("${COMPOSE[@]}" ps -q sandbox)
 sandbox_status=$(docker exec "$sandbox_container" cat /proc/1/status)
@@ -116,7 +136,7 @@ worker_container=$("${COMPOSE[@]}" ps -q automation)
 worker_status=$(docker exec "$worker_container" cat /proc/1/status)
 grep -q '^Uid:[[:space:]]*10001' <<<"$worker_status" || fail "the automation worker is not the unprivileged user"
 grep -q '^CapEff:[[:space:]]*0000000000000000' <<<"$worker_status" || fail "the automation worker holds capabilities"
-"${COMPOSE[@]}" logs automation 2>&1 | grep -q "alembic upgrade head" && fail "the automation worker applied migrations"
+"${COMPOSE[@]}" logs automation 2>&1 | grep -q "bringing the database to this version" && fail "the automation worker applied migrations"
 
 codes=""
 # The limit (10 a minute) is counted by each backend process, and there are two:

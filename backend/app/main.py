@@ -48,6 +48,7 @@ from .routers import (
     auth,
     automation,
     backup,
+    backups,
     capa_rules,
     connectors,
     context,
@@ -146,7 +147,10 @@ TAGS_METADATA = [
     {"name": "auth", "description": "Session login/logout (browser)."},
     {"name": "users", "description": "User management (admin session or admin key)."},
     {"name": "audit", "description": "Global audit log (the audit.read permission)."},
-    {"name": "backup", "description": "Full platform export/restore (admin session or admin key)."},
+    {
+        "name": "backup",
+        "description": "The backups Nik takes by itself, and the export of content as one file (admins).",
+    },
     {"name": "health", "description": "Liveness probe."},
 ]
 
@@ -211,6 +215,13 @@ def on_startup() -> None:
     # The administrators are told when a worker stops answering (one process at a time, see worker_watch.py).
     if app_settings.API_BACKGROUND:
         worker_watch.start()
+        # Backups are taken and tested here (one process at a time, see backups/scheduler.py).
+        from .backups import scheduler as backup_scheduler
+
+        backup_scheduler.start()
+        # Their copies off the server leave from the process that runs playbooks: this one only when it does.
+        if app_settings.AUTOMATION_WORKER == "inline":
+            backup_scheduler.start_shipper()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
@@ -352,5 +363,6 @@ app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
+app.include_router(backups.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")
 app.include_router(worker_status.router, prefix="/api")
