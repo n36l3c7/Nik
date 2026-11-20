@@ -16,6 +16,7 @@ import {
 import { instancePath } from '../../../domain/settingsNav.js'
 import { setPath } from '../../../lib/location.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Incidents → Pre-processing rules (who configures incidents).
@@ -33,6 +34,11 @@ const LABEL = 'text-xs font-medium text-fg-muted'
 
 function RuleDialog({ rule, same, onClose, onSaved }) {
   const [form, setForm] = useState(() => ruleForm(rule))
+  const [opened] = useState(() => JSON.stringify(ruleForm(rule)))
+  const unsaved = useUnsavedChanges(JSON.stringify(form) !== opened, {
+    what: rule?.id ? 'The preprocess rule' : 'The new preprocess rule',
+    name: rule?.id ? rule.name : '',
+  })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const problem = ruleProblem(form)
@@ -59,7 +65,7 @@ function RuleDialog({ rule, same, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={form.id ? `Rule: ${rule.name}` : 'New rule'}
       maxWidth="max-w-2xl"
       footer={

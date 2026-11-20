@@ -58,6 +58,7 @@ import WorkersSection from './sections/WorkersSection.jsx'
 import ThreatIntelSection from './sections/ThreatIntelSection.jsx'
 import YaraRulesSection from './sections/YaraRulesSection.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
+import SearchBar from '../layout/SearchBar.jsx'
 
 /*
  * ============================================================================
@@ -135,20 +136,23 @@ export default function SettingsPage({ section, onSection, onClose, onOpenArtifa
       tabIndex={-1}
       className="flex min-w-0 flex-1 flex-col bg-canvas outline-none"
     >
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
-        <h1 className="text-sm font-semibold text-fg">
+      <header className="@container flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
+        <h1 className="flex-1 basis-0 whitespace-nowrap text-sm font-semibold text-fg">
           Settings
           {active && <span className="font-normal text-fg-muted"> · {active.label}</span>}
         </h1>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close settings"
-          title="Close settings (Esc)"
-          className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <SearchBar />
+        <div className="flex flex-1 basis-0 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close settings"
+            title="Close settings (Esc)"
+            className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">

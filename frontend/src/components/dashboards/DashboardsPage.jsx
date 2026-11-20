@@ -40,6 +40,8 @@ import Widget from './Widget.jsx'
 import WidgetEditor from './WidgetEditor.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
+import SearchBar from '../layout/SearchBar.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -149,6 +151,13 @@ function ShareDialog({ board, onSaved, onClose }) {
   const [roles, setRoles] = useState(board.sharedWith?.roles ?? [])
   const [users, setUsers] = useState((board.sharedWith?.users ?? []).join(', '))
   const [error, setError] = useState(null)
+  const shared = board.sharedWith ?? {}
+  const unsaved = useUnsavedChanges(
+    everyone !== Boolean(shared.everyone) ||
+      JSON.stringify(roles) !== JSON.stringify(shared.roles ?? []) ||
+      users !== (shared.users ?? []).join(', '),
+    { what: 'The sharing of the dashboard', name: board.name },
+  )
   const save = () => {
     const body = {
       everyone,
@@ -160,7 +169,7 @@ function ShareDialog({ board, onSaved, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={`Share "${board.name}"`}
       footer={
         <>
@@ -225,9 +234,10 @@ function ShareDialog({ board, onSaved, onClose }) {
  *   onSelect: (id: string | null, options?: { replace?: boolean }) => void,
  *   onClose: () => void,
  *   onOpenIncident: (id: string) => void,
+ *   onFirstScreen?: (first: boolean) => void,  // told whether the page shows what a fresh visit shows
  * }} props
  */
-export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenIncident }) {
+export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenIncident, onFirstScreen }) {
   const { can } = useAuth()
   const ref = useRef(null)
   const fileRef = useRef(null)
@@ -305,6 +315,15 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
 
   const shown = draft ?? board
   const editing = Boolean(draft)
+
+  // What a fresh visit shows: the dashboard chosen for sign-in, or the first, and nothing being edited.
+  // The entry of the rail does nothing then, and comes back here from anything else.
+  const homeId = boards === null ? undefined : ((boards.find((item) => item.id === landing) ?? boards[0])?.id ?? null)
+  const first = !editing && (dashboardId ?? null) === homeId
+  useEffect(() => {
+    onFirstScreen?.(first)
+    return () => onFirstScreen?.(false)
+  }, [first, onFirstScreen])
   const setWidgets = (widgets) => setDraft((old) => ({ ...old, widgets }))
 
   const create = () =>
@@ -327,7 +346,8 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
       filter: draft.filter ?? '',
       filterEntity: draft.filterEntity ?? 'incidents',
     }
-    api
+    // Resolves true once it is saved: the question asked before leaving waits on it.
+    return api
       .put(`/dashboards/${draft.id}`, body)
       .then(
         (saved) => {
@@ -336,11 +356,21 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
           setDraft(null)
           setError(null)
           reload()
+          return true
         },
-        (failure) => setError(failure.message),
+        (failure) => {
+          setError(failure.message)
+          return false
+        },
       )
       .finally(() => setSaving(false))
   }
+  // Edit mode holds the whole dashboard until Save: leaving it, Cancel included, asks when it changed.
+  const unsaved = useUnsavedChanges(editing && JSON.stringify(draft) !== JSON.stringify(board), {
+    what: 'The dashboard',
+    name: draft?.name,
+    save,
+  })
   const duplicate = () =>
     api.post(`/dashboards/${board.id}/duplicate`).then(
       (copy) => {
@@ -416,16 +446,19 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
       tabIndex={-1}
       className="flex min-w-0 flex-1 flex-col bg-canvas outline-none"
     >
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
-        <h1 className="text-sm font-semibold text-fg">Dashboards</h1>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close dashboards"
-          className="p-1.5 text-fg-muted hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+      <header className="@container flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
+        <h1 className="flex-1 basis-0 whitespace-nowrap text-sm font-semibold text-fg">Dashboards</h1>
+        <SearchBar />
+        <div className="flex flex-1 basis-0 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close dashboards"
+            className="p-1.5 text-fg-muted hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -539,7 +572,12 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                     <Button size="sm" variant="secondary" icon={Plus} onClick={() => setAdding(true)}>
                       Add a widget
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => setDraft(null)} disabled={saving}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => unsaved.leave(() => setDraft(null))}
+                      disabled={saving}
+                    >
                       Cancel
                     </Button>
                     <Button size="sm" onClick={save} disabled={saving || !draft.name.trim()}>

@@ -50,6 +50,7 @@ import {
 } from '../../../domain/packs.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Automation → Content packs (who manages content).
@@ -95,6 +96,11 @@ function Diff({ text }) {
 /** The plan of an import: each item with what would be done, kept or left out. */
 function Plan({ plan, onDone, onCancel }) {
   const [skipped, setSkipped] = useState(() => initialSkips(plan))
+  // What was chosen to keep or leave out, where it differs from what the plan proposed.
+  const [proposed] = useState(() => JSON.stringify(choicesOf(skipped)))
+  const unsaved = useUnsavedChanges(JSON.stringify(choicesOf(skipped)) !== proposed, {
+    what: 'The plan of the pack',
+  })
   const [open, setOpen] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -194,7 +200,7 @@ function Plan({ plan, onDone, onCancel }) {
               ? `Install (${can.changes} ${can.changes === 1 ? 'change' : 'changes'})`
               : 'Install'}
         </Button>
-        <Button variant="secondary" onClick={onCancel} disabled={busy}>
+        <Button variant="secondary" onClick={() => unsaved.leave(onCancel)} disabled={busy}>
           Cancel
         </Button>
         <p className="text-xs text-fg-muted">
@@ -249,6 +255,11 @@ function ExportForm({ onClose, onError }) {
   }, [asked])
   const problem = packProblem(form, chosen.size)
   const set = (patch) => setForm((old) => ({ ...old, ...patch }))
+  // A pack being described and filled: leaving the form, Cancel included, asks first.
+  const unsaved = useUnsavedChanges(
+    chosen.size > 0 || Boolean(form.id.trim() || form.name.trim() || form.description.trim() || form.author.trim()),
+    { what: 'The pack being made', name: form.name },
+  )
   const make = () => {
     setBusy(true)
     postForBlob('/packs/export', { ...form, items })
@@ -380,7 +391,7 @@ function ExportForm({ onClose, onError }) {
         <Button icon={Download} onClick={make} disabled={Boolean(problem) || busy}>
           {busy ? 'Exporting…' : 'Export'}
         </Button>
-        <Button variant="secondary" onClick={onClose}>
+        <Button variant="secondary" onClick={() => unsaved.leave(onClose)}>
           Cancel
         </Button>
         <p className="text-xs text-fg-muted">
@@ -896,6 +907,10 @@ function AddressDialog({ catalogue, onClose, onSaved }) {
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const unsaved = useUnsavedChanges(
+    address.trim() !== (catalogue.custom ? catalogue.address : '') || Boolean(key.trim()),
+    { what: 'The address of the catalogue' },
+  )
   const save = (body) => {
     setBusy(true)
     setError(null)
@@ -907,7 +922,7 @@ function AddressDialog({ catalogue, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Catalogue address"
       footer={
         <>

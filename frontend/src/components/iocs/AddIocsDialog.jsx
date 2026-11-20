@@ -3,6 +3,7 @@ import { FileUp } from 'lucide-react'
 import { api } from '../../services/api.js'
 import { INDICATOR_FILE_MAX_BYTES, TLP_OPTIONS } from '../../domain/iocLibrary.js'
 import { Badge, Button, Modal, Select } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * Add indicators: one or many, typed, pasted, or read from a file (text, CSV,
@@ -53,6 +54,12 @@ export default function AddIocsDialog({ request, lists, onClose, onSaved }) {
   const [error, setError] = useState(null)
   const fileInput = useRef(null)
   const requestRef = useRef(0)
+  // What was typed here; a text or a file the dialog was opened with is not the person's writing.
+  const unsaved = useUnsavedChanges(
+    Boolean(request) &&
+      (text.trim() !== String(request?.text ?? '').trim() || Boolean(listName.trim() || tags.trim() || note.trim())),
+    { what: 'The indicators being added' },
+  )
 
   useEffect(() => {
     if (!request) return
@@ -134,7 +141,7 @@ export default function AddIocsDialog({ request, lists, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Add indicators"
       maxWidth="max-w-4xl"
       footer={

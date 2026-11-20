@@ -12,6 +12,7 @@ import { writeValue } from '../../domain/query/complete.js'
 import { conditionOn, withCondition } from '../../domain/query/builder.js'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import { exportRequest } from '../../domain/artifactExpiry.js'
+import HidePanel from '../layout/HidePanel.jsx'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
@@ -39,9 +40,9 @@ function Chip({ active, onClick, children }) {
 }
 
 /**
- * @param {{ width: number, onNewAnalysis: () => void }} props
+ * @param {{ width: number, onNewAnalysis: () => void, onHide?: () => void }} props
  */
-export default function ArtifactsPanel({ width, onNewAnalysis }) {
+export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
   const { artifacts, counts, filters, setFilters, loading, error, queryError, currentId, openArtifact, refresh } =
     useArtifacts()
   const { can, currentUser } = useAuth()
@@ -85,15 +86,15 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
       style={{ width }}
       className="flex h-full shrink-0 flex-col border-r border-line bg-sunken"
     >
-      <div className="flex items-center gap-2 border-b border-line px-3 py-3">
-        <p className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-wider text-fg-muted">
-          ARTIFACTS · {total}
-        </p>
+      {/* Three things share the width of the panel: the title is set tight so its count is not cut. */}
+      <div className="flex items-center gap-1.5 border-b border-line px-3 py-3">
+        <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-fg-muted">ARTIFACTS · {total}</p>
         {can('write') && (
           <Button size="sm" icon={Plus} onClick={onNewAnalysis}>
             New analysis
           </Button>
         )}
+        {onHide && <HidePanel label="Hide the artifacts panel" onClick={onHide} />}
       </div>
 
       <div className="space-y-2 border-b border-line px-3 py-2.5">

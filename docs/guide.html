@@ -137,14 +137,15 @@
       </p>
       <h3 id="incident-list">The list of incidents</h3>
       <p>
-        The first entry of the rail opens the list: a table that takes the whole area next to the rail, with the number,
-        the title, the <a href="#incident-tags">tags</a>, the type, the severity, the status, the owner and the dates of
-        each incident (a cell shows the tags it has room for, then <em>+2</em> for the others). A click on the heading
-        of a column orders the list by it, a second click turns the order round. The number at the top says how many
-        incidents are listed, and of how many when a filter is on. <strong>New incident</strong> and
+        The <strong>Incidents</strong> entry of the rail opens the list: a table that takes the whole area next to the
+        rail, with the number, the title, the <a href="#incident-tags">tags</a>, the type, the severity, the status, the
+        owner and the dates of each incident (a cell shows the tags it has room for, then <em>+2</em> for the others). A
+        click on the heading of a column orders the list by it, a second click turns the order round. The number at the
+        top says how many incidents are listed, and of how many when a filter is on. <strong>New incident</strong> and
         <strong>Import incident</strong> are at the top; a right-click on a row has what is done to an incident without
         opening it (its report, its export, its link, a playbook to run on it, <strong>Add a tag…</strong>, its status
-        and its owner, deleting it). The entry of the rail, clicked again, goes back to the incident you came from.
+        and its owner, deleting it). The entry of the rail always leads here, also from an open incident; the browser's
+        Back returns to the incident you came from.
       </p>
       <ul>
         <li>
@@ -218,16 +219,50 @@
 
       <h2 id="layout">The screen</h2>
       <p>
-        The narrow column of icons on the left edge is the <strong>rail</strong>, in the order of a working day: the
-        <strong>incidents</strong>, <strong>your tasks</strong>, the <strong>dashboards</strong>, the
-        <strong>Indicators</strong>, the <strong>artifacts</strong> (the files, e-mails and captures analysed so far),
-        the search, the <strong>playground</strong> (a command outside any incident), then the
-        <strong>automations</strong>. The incidents are a page, <a href="#incident-list">their list</a>, from which one
-        is opened. The Indicators page and the artifacts open a list in the side panel: click the active icon again to
-        close the panel and give the whole width to the analysis. At the foot of the rail are the notifications, the
-        settings and <strong>your account</strong>, which says who is signed in, opens <em>My account</em> and signs
-        out. The audit log, the accounts and the backup are sections of Settings. An entry is there for the accounts
-        whose roles let them use it.
+        The narrow column of icons on the left edge is the <strong>rail</strong>. From the top: the
+        <strong>dashboards</strong>, the <strong>incidents</strong>, <strong>your tasks</strong>, the
+        <strong>artifacts</strong> (the files, e-mails and captures analysed so far), the <strong>Indicators</strong>,
+        the <strong>automations</strong> and the <strong>playground</strong> (a command outside any incident). At the
+        foot of the rail are the notifications, the settings and <strong>your account</strong>, which says who is signed
+        in, opens <em>My account</em> and signs out. The audit log, the accounts and the backup are sections of
+        Settings. An entry is there for the accounts whose roles let them use it.
+      </p>
+      <p id="rail-home">
+        <strong>An entry of the rail always shows the first screen of its section</strong>, from wherever you press it:
+        Dashboards shows the dashboard you chose for sign-in (or the first), also from another dashboard or from one you
+        are editing; Incidents shows <a href="#incident-list">their list</a>, also from an open incident; My tasks shows
+        the tasks that wait for you; Automations shows the playbooks, also from the editor, a run or a script; Settings
+        shows its first section. Pressed on that first screen, an entry does nothing: it never closes what it opened.
+        Going there is a move like any other, so the browser's Back returns to where you were. A page that takes the
+        whole area (Dashboards, My tasks, Automations, the Playground, Settings) has a close button of its own at its
+        top right, which goes back to what was open before it.
+      </p>
+      <p>
+        The artifacts and the Indicators come with a list in a <strong>side panel</strong>. Their entry shows the panel
+        as a fresh visit does: for the artifacts no artifact open and no filter, beside the incident or the list of
+        incidents; for the Indicators the page on every indicator. The small button at the top right of the panel (<em
+          >Hide the artifacts panel</em
+        >, <em>Hide the indicators panel</em>) hides it and gives the whole width to the analysis; it stays hidden until
+        you press its entry of the rail again.
+      </p>
+      <p id="search-bar">
+        The <strong>search bar</strong> is in the middle of the header, on every screen: press it, or
+        <kbd>Ctrl</kbd>+<kbd>K</kbd>, and <a href="#search">the search</a> opens. On a narrow window the bar shrinks to
+        its magnifier before anything else in the header gives way.
+      </p>
+      <p id="unsaved">
+        <strong>Nothing you have not saved is lost without asking.</strong> While a form, an editor or a dialog holds
+        changes that are not saved (a section of Settings, the form of an instance, a dashboard being edited, the
+        settings of a playbook, a rule, a list, a note or a comment being written, a dialog you typed in), whatever
+        would take you away from it asks first: an entry of the rail, another tab, another incident, a link, the
+        browser's Back and Forward, the close button of a dialog, <kbd>Esc</kbd>, a click outside it, another item of
+        the same list, signing out. The question names what is not saved and offers <em>Stay</em> (also <kbd>Esc</kbd>),
+        <em>Leave without saving</em>, and <em>Save and leave</em> where what you were editing can be saved from there;
+        if saving fails you stay, and the reason is shown. A form you opened and did not touch never asks, and neither
+        does one you put back as it was. What saves itself as you go (the canvas of a playbook, the code of a script,
+        the options of the report, the tags) is never asked about. Closing or reloading the browser's tab while
+        something is not saved makes the browser ask. If your session ends, sign in again in the dialog that appears:
+        the forms stay open under it as you left them.
       </p>
       <p>
         <strong>Every side panel can be resized</strong>: the lists of the rail, the quick view of the incident list,
@@ -424,10 +459,11 @@
 
       <h2 id="ioc-library">The Indicators page</h2>
       <p>
-        The third icon of the rail opens the library: one table of every indicator Nik knows, whether an incident holds
-        it, an analyst added it or it came from a file. The side panel has quick filters (added by hand, malicious,
-        never checked, expired), the alerts and the lists; the table filters by text, type, verdict and origin, and
-        sorts by any column. A row is tinted by its verdict only. Click a value for the indicator's page.
+        The <strong>Indicators</strong> entry of the rail opens the library: one table of every indicator Nik knows,
+        whether an incident holds it, an analyst added it or it came from a file. The side panel has quick filters
+        (added by hand, malicious, never checked, expired), the alerts and the lists; the table filters by text, type,
+        verdict and origin, and sorts by any column. A row is tinted by its verdict only. Click a value for the
+        indicator's page.
       </p>
       <h3>Add one or many</h3>
       <p>

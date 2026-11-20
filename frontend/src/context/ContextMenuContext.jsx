@@ -6,6 +6,7 @@ import { joinSections } from '../domain/menus.js'
 import { useLayer } from '../lib/layers.js'
 import { behindDialog, depthOf, underPointer } from '../lib/underPointer.js'
 import { useToast } from './ToastContext.jsx'
+import { useUnsavedChanges } from '../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -158,6 +159,7 @@ function Menu({ menu, onClose, onResult }) {
 
 function TextPrompt({ prompt, onDone }) {
   const [text, setText] = useState('')
+  const unsaved = useUnsavedChanges(Boolean(text.trim()), { what: prompt.title || 'The text' })
   const submit = (event) => {
     event.preventDefault()
     onDone(text.trim() || null)
@@ -165,7 +167,7 @@ function TextPrompt({ prompt, onDone }) {
   return (
     <Modal
       open
-      onClose={() => onDone(null)}
+      onClose={() => unsaved.leave(() => onDone(null))}
       title={prompt.title}
       footer={
         <>

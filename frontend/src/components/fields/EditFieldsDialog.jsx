@@ -4,6 +4,7 @@ import { api } from '../../services/api.js'
 import { changesOf, isRequired, toInput } from '../../domain/fields.js'
 import { Button, Modal } from '../ui/index.js'
 import FieldInput from './FieldInput.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * A form for some fields of an incident: those of a section of its page, or
@@ -28,6 +29,11 @@ export default function EditFieldsDialog({ incident, type, title, fields, values
   const [typed, setTyped] = useState(() =>
     Object.fromEntries(editable.map((field) => [field.name, toInput(field, values[field.name])])),
   )
+  const [opened] = useState(() => JSON.stringify(typed))
+  const unsaved = useUnsavedChanges(JSON.stringify(typed) !== opened, {
+    what: 'The fields of the incident',
+    name: incident?.name,
+  })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -62,7 +68,7 @@ export default function EditFieldsDialog({ incident, type, title, fields, values
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={title}
       footer={
         <>

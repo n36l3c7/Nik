@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api } from '../../services/api.js'
 import { FIELD_TYPES, nameFromLabel, nameProblem } from '../../domain/fields.js'
 import { Button, Modal } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * "New field": a label, the machine name made from it, a type and what the
@@ -34,6 +35,10 @@ export default function NewFieldDialog({ fields, allTypes = false, onClose, onCr
   const [everywhere, setEverywhere] = useState(allTypes)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const unsaved = useUnsavedChanges(
+    Boolean(label.trim() || (named && name.trim()) || description.trim() || choices.trim()),
+    { what: 'The new field' },
+  )
 
   const machine = named ? name : nameFromLabel(label)
   const wrongName = machine ? nameProblem(machine, fields) : null
@@ -91,7 +96,7 @@ export default function NewFieldDialog({ fields, allTypes = false, onClose, onCr
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="New field"
       footer={
         <>

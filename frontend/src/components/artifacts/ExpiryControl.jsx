@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CalendarClock } from 'lucide-react'
 import { EXPIRY_CHOICES, expiryDate, expiryText } from '../../domain/artifactExpiry.js'
 import { Button } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * When an artifact is deleted by itself: never, unless someone gives it a
@@ -25,6 +26,7 @@ export default function ExpiryControl({ artifact, onSet }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const tomorrow = expiryDate(1)
+  useUnsavedChanges(open && Boolean(day), { what: 'The day the artifact expires', name: artifact?.name })
 
   const set = async (value) => {
     setBusy(true)

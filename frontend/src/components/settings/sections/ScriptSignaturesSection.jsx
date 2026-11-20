@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, FileCode2, Pencil, Plus, Power, RotateCcw, Trash2, X } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { Badge, Button } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Rule sets → Script signatures (who manages rules).
@@ -51,13 +52,26 @@ export default function ScriptSignaturesSection() {
     load()
   }, [load])
 
-  const edit = (row) => {
-    setEditing(row ? row.id : 'new')
-    setForm(row ? { ...BLANK, ...row } : BLANK)
-    setProblem(null)
-    setTried(null)
-    setMessage(null)
-  }
+  // The signature in the form as it was opened: what it is compared with before it is left.
+  const openedRow = editing === null || editing === 'new' ? null : (rows ?? []).find((row) => row.id === editing)
+  const opened = editing === 'new' ? BLANK : openedRow ? { ...BLANK, ...openedRow } : null
+  const unsaved = useUnsavedChanges(
+    editing !== null && opened !== null && JSON.stringify(form) !== JSON.stringify(opened),
+    {
+      what: editing === 'new' ? 'The new script signature' : 'The script signature',
+      name: editing === 'new' ? '' : openedRow?.key,
+      save: () => save(),
+    },
+  )
+  /** Open a signature in the form (null: a new one), after asking about the one that is being written. */
+  const edit = (row) =>
+    unsaved.leave(() => {
+      setEditing(row ? row.id : 'new')
+      setForm(row ? { ...BLANK, ...row } : BLANK)
+      setProblem(null)
+      setTried(null)
+      setMessage(null)
+    })
   const set = (patch) => {
     setForm((old) => ({ ...old, ...patch }))
     setProblem(null)
@@ -94,8 +108,10 @@ export default function ScriptSignaturesSection() {
       setEditing(null)
       setMessage(`${saved.key} is saved. It applies to the scans made from now on.`)
       await load()
+      return true
     } catch (failure) {
       setProblem(detailOf(failure))
+      return false
     } finally {
       setBusy(false)
     }
@@ -279,7 +295,7 @@ export default function ScriptSignaturesSection() {
             <Button variant="secondary" onClick={check} disabled={busy}>
               {code ? 'Check and try' : 'Check'}
             </Button>
-            <Button variant="ghost" icon={X} onClick={() => setEditing(null)}>
+            <Button variant="ghost" icon={X} onClick={() => unsaved.leave(() => setEditing(null))}>
               Cancel
             </Button>
             {current?.builtin && (

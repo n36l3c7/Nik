@@ -12,6 +12,7 @@ import ApprovalsPage from './ApprovalsPage.jsx'
 import RunPage from './RunPage.jsx'
 import RunsPage from './RunsPage.jsx'
 import ScriptsPage from './ScriptsPage.jsx'
+import SearchBar from '../layout/SearchBar.jsx'
 
 // The script editor brings CodeMirror with it: loaded when a script is opened.
 const ScriptPage = lazy(() => import('./ScriptPage.jsx'))
@@ -73,8 +74,8 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
       tabIndex={-1}
       className="flex min-w-0 flex-1 flex-col bg-canvas outline-none"
     >
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
-        <div className="flex min-w-0 items-center gap-4">
+      <header className="@container flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
+        <div className="flex flex-1 basis-0 items-center gap-4">
           <h1 className="text-sm font-semibold text-fg">Automations</h1>
           {areas.length > 1 && (
             <nav aria-label="Automations" className="flex gap-1">
@@ -101,15 +102,18 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
             </nav>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close automations"
-          title="Close automations"
-          className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <SearchBar />
+        <div className="flex flex-1 basis-0 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close automations"
+            title="Close automations"
+            className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       {state && (!state.enabled || !state.workerAlive) && (

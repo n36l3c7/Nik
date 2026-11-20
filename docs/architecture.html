@@ -397,6 +397,8 @@
 │   ├── rebase.js                   # rebase(base, local, remote): three-way merge of documents (+ .test.js)
 │   ├── location.js                 # setPath() / onLocationChange(): the address is the one source of truth
 │                                   #   for what the main area shows; every context announces and follows it
+│   ├── unsaved.js                  # useUnsavedChanges(), leave(): the one list of what is edited and not
+│   │                               #   saved; every change of address asks it first (ui/UnsavedDialog.jsx)
 │   ├── layers.js                   # useLayer(): the stack of open dialogs and menus. Escape closes the
 │   │                               #   top one, Tab stays inside, focus returns on close (+ .test.js)
 │   ├── asciiSkull.js               # renderSkull(): the loading/error/empty skull (+ .test.js)
@@ -408,6 +410,8 @@
 │   ├── query/                      # The query language in the browser: parse (the twin of the server's
 │   │                               #   parser, same test vectors), tokenize (colours), complete, builder
 │   ├── permissions.js              # Roles and can(permission); settingsNav.js: the Settings page's addresses
+│   ├── sections.js                 # The entries of the rail and the first screen of each: homeMove()
+│   ├── unsaved.js                  # What a move would lose of what is not saved, and how the question names it
 │   ├── automation/                 # Playbooks in the browser: graph (edits, undo), expressions (the twin
 │   │                               #   of the server's parser), catalog, layout, runs, scripts, hosts;
 │   │                               #   automationNav.js beside it: the area's addresses
@@ -467,7 +471,7 @@
     ├── incidents/                  # IncidentsPage (the list as a page: table, saved filters, chips, columns),
     │                               #   QuickView (the panel a click on a row opens)
     ├── layout/                     # Rail (icons), Sidebar (artifacts or indicators), Header, TabBar (grouped tabs
-    │                               #   that shorten to fit),
+    │                               #   that shorten to fit), SearchBar (in the middle of every page's header),
     │                               #   OsPicker, IncidentLoadingState
     ├── iocs/                       # IocsPanel (filters, alerts, lists), IocLibraryPage (table, selection),
     │                               #   AddIocsDialog, ExportIocsDialog, BulkCheckDialog, ListDialog

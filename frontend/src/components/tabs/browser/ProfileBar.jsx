@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Pencil, Plus, Trash2, UserRound } from 'lucide-react'
 import { Button, Modal } from '../../ui/index.js'
 import { profileNameError, profileRowCount, sortedProfiles } from '../../../domain/browserProfiles.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -31,6 +32,11 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
   const active = slot.profiles[activeProfileId] ?? profiles[0]
   const nameError = dialog ? profileNameError(slot, dialog.name, dialog.mode === 'rename' ? active.id : null) : null
   const canDelete = profiles.length > 1
+
+  const naming = useUnsavedChanges(
+    dialog !== null && dialog.name.trim() !== (dialog.mode === 'rename' ? active.name : ''),
+    { what: 'The name of the profile' },
+  )
 
   const submitName = (event) => {
     event.preventDefault()
@@ -97,7 +103,7 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
       {/* Add / rename dialog */}
       <Modal
         open={dialog !== null}
-        onClose={() => setDialog(null)}
+        onClose={() => naming.leave(() => setDialog(null))}
         title={dialog?.mode === 'rename' ? `Rename profile "${active.name}"` : `New ${browser.label} profile`}
         footer={
           <>

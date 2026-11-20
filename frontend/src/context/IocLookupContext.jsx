@@ -28,6 +28,7 @@ import { useIncidents } from './IncidentContext.jsx'
 import { useNavigation } from './NavigationContext.jsx'
 import { useSettings } from './SettingsContext.jsx'
 import { useToast } from './ToastContext.jsx'
+import { useUnsavedChanges } from '../lib/unsaved.js'
 
 /*
  * Indicators anywhere in the app:
@@ -113,6 +114,9 @@ function AllowlistDialog({ target, onClose }) {
   const options = useMemo(() => (target ? allowlistOptions(target.type, target.value) : []), [target])
   const [choice, setChoice] = useState(0)
   const [note, setNote] = useState('')
+  const unsaved = useUnsavedChanges(Boolean(target) && Boolean(note.trim()), {
+    what: 'The note of the allowlist entry',
+  })
 
   useEffect(() => {
     setChoice(options.length > 1 && target?.type !== 'ip' ? 1 : 0)
@@ -143,7 +147,7 @@ function AllowlistDialog({ target, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Add to the allowlist"
       footer={
         <>

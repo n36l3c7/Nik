@@ -1,4 +1,4 @@
-import { FileText, Keyboard, Search } from 'lucide-react'
+import { FileText, Keyboard } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
@@ -7,28 +7,25 @@ import { SeverityTag, StatusTag } from '../ui/index.js'
 import IncidentTags from '../incident/IncidentTags.jsx'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
 import ConnectorLogo from '../ui/ConnectorLogo.jsx'
+import SearchBar from './SearchBar.jsx'
 
 /*
  * ============================================================================
- * HEADER — what the main area shows, search, current user chip, sign out
+ * HEADER — what the main area shows, the search bar, the shortcuts and the report
  * ============================================================================
- * Settings, audit log, users and backup are on the rail (Rail.jsx).
+ * Settings, audit log, users and backup are on the rail (Rail.jsx). The search
+ * bar is in the middle, as in the header of every page (SearchBar.jsx): the
+ * name of what is open is cut short, and the bar shrinks, before the controls
+ * on the right are pushed out.
  *
  * @param {{
- *   onOpenSearch: () => void,
  *   onOpenShortcuts: () => void,
  *   onOpenReport: (() => void) | null,
  *   artifactView?: boolean,   // the main area shows an artifact, not the active incident
  *   libraryView?: boolean,    // the main area shows the Indicators page
  * }} props
  */
-export default function Header({
-  onOpenSearch,
-  onOpenShortcuts,
-  onOpenReport,
-  artifactView = false,
-  libraryView = false,
-}) {
+export default function Header({ onOpenShortcuts, onOpenReport, artifactView = false, libraryView = false }) {
   const { activeIncident: loadedIncident, activeSummary } = useIncidents()
   // The light summary row is enough for the header while the document loads.
   const activeIncident = loadedIncident ?? activeSummary
@@ -43,9 +40,11 @@ export default function Header({
     'hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
   return (
-    <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-canvas px-6 py-3">
+    <header className="@container flex shrink-0 items-center justify-between gap-4 border-b border-line bg-canvas px-6 py-3">
       {/* Active incident (or an empty-state message) */}
-      <div className="min-w-0">
+      {/* On a narrow header the name keeps its room and the bar sits beside it; on a wide one both sides
+          grow alike and the bar is in the middle. */}
+      <div className="min-w-[40%] flex-1 basis-0 @5xl:min-w-0">
         {libraryView ? (
           <>
             <h1 className="truncate font-mono text-lg font-semibold leading-tight text-fg">indicators</h1>
@@ -89,19 +88,10 @@ export default function Header({
         )}
       </div>
 
-      {/* Search + current user chip + sign out + settings */}
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={onOpenSearch}
-          aria-label="Search"
-          title="Search incidents, indicators, samples and events (Ctrl/Cmd+K or /)"
-          className="hidden h-9 items-center gap-2 border border-line px-2.5 font-mono text-xs text-fg-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:inline-flex"
-        >
-          <Search className="h-3.5 w-3.5" />
-          <span>search…</span>
-          <kbd className="border border-line px-1 text-[10px] text-fg-subtle">ctrl k</kbd>
-        </button>
+      <SearchBar />
+
+      {/* Shortcuts, the report, what the account may do */}
+      <div className="flex flex-1 basis-0 items-center justify-end gap-2">
         <button
           type="button"
           onClick={onOpenShortcuts}

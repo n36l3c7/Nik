@@ -6,6 +6,7 @@ import { tagCondition, tagsInQuery, toggleTag, withoutTags } from '../../domain/
 import { emptyRow, isComplete, opLabel, opsFor } from '../../domain/query/builder.js'
 import { fieldCaption, fieldOf } from '../../domain/query/complete.js'
 import { Button, Modal } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * The chips under the query of the incident list: "Add: Type, Severity,
@@ -34,6 +35,8 @@ const CONTROL =
 function ConditionDialog({ schema, onAdd, onClose }) {
   const fields = otherFields(schema)
   const [row, setRow] = useState(() => emptyRow(fields[0]?.name ?? ''))
+  const [opened] = useState(() => JSON.stringify(row))
+  const unsaved = useUnsavedChanges(JSON.stringify(row) !== opened, { what: 'The condition being added' })
   const spec = fieldOf(schema, row.field)
   const kind = spec?.kind ?? 'text'
   const ops = opsFor(kind)
@@ -79,7 +82,7 @@ function ConditionDialog({ schema, onAdd, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Add a condition on a field"
       footer={
         <>

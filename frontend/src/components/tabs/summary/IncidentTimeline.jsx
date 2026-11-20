@@ -8,6 +8,7 @@ import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { formatDateTime, formatRelative } from '../../../lib/time.js'
 import { truncate } from '../../../lib/url.js'
 import { flagProfile } from '../../../domain/browserProfiles.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -64,6 +65,11 @@ export default function IncidentTimeline({ incident }) {
     addNote(incident.id, text)
     setNoteDraft('')
   }
+  useUnsavedChanges(Boolean(noteDraft.trim()), {
+    what: 'The note being written on the incident',
+    name: incident.name,
+    save: async () => handleAddNote(),
+  })
 
   return (
     <div className="space-y-5">
@@ -188,6 +194,10 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment, onMenu
     onAddComment(text)
     setComment('')
   }
+  useUnsavedChanges(Boolean(comment.trim()), {
+    what: 'The comment being written on a flag',
+    save: async () => submit(),
+  })
 
   return (
     <TimelineRow icon={Flag} tone="flag" onMenu={onMenu}>

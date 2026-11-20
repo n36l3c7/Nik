@@ -3,6 +3,7 @@ import { useIocLibrary } from '../../context/IocLibraryContext.jsx'
 import { QUICK_FILTERS, libraryPath } from '../../domain/iocLibrary.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { Button } from '../ui/index.js'
+import HidePanel from '../layout/HidePanel.jsx'
 
 /*
  * The IoC panel of the sidebar: quick filters over the whole library, the
@@ -30,8 +31,8 @@ function Entry({ active, onClick, label, count, icon: Icon = null, tone = '', on
   )
 }
 
-/** @param {{ width: number }} props */
-export default function IocsPanel({ width }) {
+/** @param {{ width: number, onHide?: () => void }} props */
+export default function IocsPanel({ width, onHide }) {
   const { view, openView, quick, setQuick, counts, lists, alerts, openAdd } = useIocLibrary()
   const menu = useObjectMenu()
   return (
@@ -47,6 +48,7 @@ export default function IocsPanel({ width }) {
         <Button size="sm" icon={Plus} onClick={() => openAdd()}>
           Add
         </Button>
+        {onHide && <HidePanel label="Hide the indicators panel" onClick={onHide} />}
       </div>
       <nav aria-label="IoC views" className="flex-1 overflow-y-auto py-2">
         <ul>

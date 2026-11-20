@@ -4,6 +4,7 @@ import { api, upload } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
 import { formatRelative } from '../../../lib/time.js'
 import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * FLIRT signatures settings section (admin only). The analyzer worker applies
@@ -40,6 +41,8 @@ export default function FlirtSignaturesSection() {
   useEffect(() => {
     load()
   }, [load])
+
+  useUnsavedChanges(Boolean(name.trim() || file), { what: 'The FLIRT signature to upload' })
 
   const submit = async (event) => {
     event.preventDefault()

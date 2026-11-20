@@ -18,6 +18,7 @@ import {
 import { isFinished } from '../../domain/automation/runs.js'
 import { Badge, Button } from '../ui/index.js'
 import { SectionTitle } from './fields.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -85,6 +86,9 @@ export default function DebugPanel({ run, graph, onChanged }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [at?.id])
   const typed = parseObject(args)
+  useUnsavedChanges(Boolean(at) && args !== argsText(at), {
+    what: 'The arguments changed for the node the run is stopped before',
+  })
 
   const go = (action) => {
     const body = at ? { stepId: at.id } : {}
@@ -230,6 +234,11 @@ export function DebugStepTools({ run, graph, step, onChanged }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.id, step.status])
   const patched = parseValue(output)
+  const heldOutput = run.debug?.context?.[step.node]
+  useUnsavedChanges(output !== (heldOutput === undefined ? '' : JSON.stringify(heldOutput, null, 2)), {
+    what: 'The output written for the node',
+    name: node?.name,
+  })
 
   if (!node || isFinished(run.status) || (!canBreak(node) && !canRerun(step, node))) return null
   return (

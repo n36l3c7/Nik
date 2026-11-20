@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { groupFilters, nameProblem } from '../../domain/savedFilters.js'
 import { Badge, Button, Modal } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { leaveHere } from '../../lib/unsaved.js'
 
 /*
  * The two dialogs of the saved filters of the incident list: the one that
@@ -28,6 +30,7 @@ export function SaveFilterDialog({ query, chosen, filters, onSave, onClose }) {
   const [name, setName] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const unsaved = useUnsavedChanges(Boolean(name.trim()), { what: 'The filter to save' })
 
   const submit = async (event) => {
     event.preventDefault()
@@ -51,7 +54,7 @@ export function SaveFilterDialog({ query, chosen, filters, onSave, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Save the filter"
       footer={
         <>
@@ -121,6 +124,7 @@ function OwnRow({ filter, filters, isDefault, canShare, onRename, onShare, onDel
   const [name, setName] = useState(filter.name)
   const [asking, setAsking] = useState(false)
   const changed = name.trim() !== filter.name
+  useUnsavedChanges(changed, { what: 'The new name of the filter', name: filter.name })
 
   const rename = async (event) => {
     event.preventDefault()
@@ -216,7 +220,8 @@ export function ManageFiltersDialog({ filters, defaultId, canShare, onRename, on
   return (
     <Modal
       open
-      onClose={onClose}
+      // A name being changed in a row is asked about before the dialog goes.
+      onClose={() => leaveHere(onClose)}
       title="Manage the filters"
       maxWidth="max-w-2xl"
       footer={<Button onClick={onClose}>Done</Button>}

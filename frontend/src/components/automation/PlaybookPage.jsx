@@ -43,6 +43,7 @@ import PlaybookVersionsTab from './PlaybookVersionsTab.jsx'
 import RunsPage from './RunsPage.jsx'
 import { useEditorMenu } from './useEditorMenu.js'
 import { Field, Seg, Switch, TextInput } from './fields.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -318,6 +319,22 @@ export default function PlaybookPage({
     },
     [target, branchId, canDraw],
   )
+
+  // Nothing unsaved is lost without asking (lib/unsaved.js). Between two saves the canvas is ahead of
+  // the server and leaving sends it (above): only the browser's tab closing could lose it. A save the
+  // server refused is another matter: it is not sent again by itself, and leaving asks.
+  useUnsavedChanges(saveState === 'pending' || saveState === 'saving', {
+    what: 'The playbook',
+    name: detail?.name,
+    sent: true,
+  })
+  useUnsavedChanges(saveState === 'error', {
+    what: `The ${what} of the playbook`,
+    name: detail?.name,
+    save: () => flush(),
+  })
+  const namingBranch = useUnsavedChanges(Boolean((naming ?? '').trim()), { what: 'The new branch' })
+  const pushingBranch = useUnsavedChanges(Boolean(pushing?.note?.trim()), { what: 'The note of the push to main' })
 
   // ---- Edits ------------------------------------------------------------------
   const apply = useCallback((next) => setHistory((before) => (before ? record(before, next) : before)), [])
@@ -714,7 +731,7 @@ export default function PlaybookPage({
   const pushDialog = (
     <Modal
       open={pushing !== null}
-      onClose={() => setPushing(null)}
+      onClose={() => pushingBranch.leave(() => setPushing(null))}
       title={pushing?.moved ? 'The playbook moved on' : `Push “${branch?.name ?? ''}” to main?`}
       footer={
         <>
@@ -1128,7 +1145,7 @@ export default function PlaybookPage({
       </Modal>
       <Modal
         open={naming !== null}
-        onClose={() => setNaming(null)}
+        onClose={() => namingBranch.leave(() => setNaming(null))}
         title="New branch"
         footer={
           <>

@@ -23,6 +23,8 @@ import InstanceClassifier from './InstanceClassifier.jsx'
 import InstanceFetch from './InstanceFetch.jsx'
 import InstanceKeys from './InstanceKeys.jsx'
 import InstanceMappers from './InstanceMappers.jsx'
+import { instanceFromPath, settingsFromPath } from '../../../domain/settingsNav.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * An instance of a connector, beside the list of connectors: its name, its
@@ -96,14 +98,28 @@ export default function InstancePane({
   const [mapperDrafts, setMapperDrafts] = useState({})
   const [pasted, setPasted] = useState('')
   const unsaved = unsavedText(classifierDraft, mapperDrafts)
+  // Nothing unsaved is lost without asking (lib/unsaved.js): the form as it was opened is what it is
+  // compared with. Its parts each have an address, and it stays on screen at all of them.
+  const snapshot = JSON.stringify({ name, values, removed, keys, policy, fetching })
+  const [opened] = useState(snapshot)
+  useUnsavedChanges(snapshot !== opened || Boolean(unsaved), {
+    what: instance ? 'The instance' : `The new instance of ${connector.name}`,
+    name: instance?.name ?? '',
+    save: () => submit(),
+    stays: (path) => {
+      if (settingsFromPath(path)?.id !== 'connectors') return false
+      return (instanceFromPath(path)?.instanceId ?? null) === (instance?.id ?? null)
+    },
+  })
   const problem =
     formProblem(connector, name, values) ??
     (keyed ? keysProblem(connector, keys, policy) : null) ??
     (fetches ? fetchProblem(fetching, { minInterval: fetchStatus?.minIntervalSeconds, byTime }) : null)
 
+  // Resolves true once everything is saved: the question asked before leaving waits on it.
   const submit = async (event) => {
-    event.preventDefault()
-    if (problem) return
+    event?.preventDefault()
+    if (problem) return false
     setBusy(true)
     setError(null)
     try {
@@ -142,11 +158,13 @@ export default function InstancePane({
         }
       } catch (failure) {
         setError(`The instance is saved; ${part} is not: ${failure.message}`)
-        return
+        return false
       }
       onSaved(saved)
+      return true
     } catch (failure) {
       setError(failure.message)
+      return false
     } finally {
       setBusy(false)
     }

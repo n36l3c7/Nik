@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, upload } from '../services/api.js'
 import { artifactIdFromPath, artifactKind, artifactPath } from '../domain/artifactRegistry.js'
 import { isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
+import { leave } from '../lib/unsaved.js'
 import { useAuth } from './AuthContext.jsx'
 
 /*
@@ -105,8 +106,14 @@ export function ArtifactProvider({ children }) {
   }, [])
 
   const openArtifact = useCallback((id) => {
-    setCurrentId(id)
-    setPath(artifactPath(id), { state: { artifactId: id } })
+    // It takes the place of what is open: what is not saved there is asked about first.
+    leave(
+      () => {
+        setCurrentId(id)
+        setPath(artifactPath(id), { state: { artifactId: id } })
+      },
+      { path: artifactPath(id) },
+    )
   }, [])
 
   /** Leave the artifact view (the caller restores the incident's URL). */

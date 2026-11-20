@@ -16,7 +16,15 @@ import { useArtifacts } from './context/ArtifactContext.jsx'
 import { useIncidents } from './context/IncidentContext.jsx'
 import { useToast } from './context/ToastContext.jsx'
 import { ANALYSIS_TABS, getTabById, visibleTabs } from './config/tabs.js'
-import { AsciiSkull, Button, EmptyState, ErrorBoundary, MicroSkull, Modal } from './components/ui/index.js'
+import {
+  AsciiSkull,
+  Button,
+  EmptyState,
+  ErrorBoundary,
+  MicroSkull,
+  Modal,
+  UnsavedDialog,
+} from './components/ui/index.js'
 import Rail from './components/layout/Rail.jsx'
 import Sidebar from './components/layout/Sidebar.jsx'
 import Header from './components/layout/Header.jsx'
@@ -31,11 +39,12 @@ import AddFileDialog from './components/incident/AddFileDialog.jsx'
 import ArtifactPage from './components/artifacts/ArtifactPage.jsx'
 import IocLibraryPage from './components/iocs/IocLibraryPage.jsx'
 import IncidentsPage from './components/incidents/IncidentsPage.jsx'
-import { INCIDENTS_ROOT, isIncidentsPath } from './domain/incidentList.js'
 import { useIocLibrary } from './context/IocLibraryContext.jsx'
 import { isIndicatorList, isLibraryPath, isSeveralValues, mayHoldIndicators } from './domain/iocLibrary.js'
 import { api } from './services/api.js'
-import { currentPath, onLocationChange, setPath } from './lib/location.js'
+import { currentPath, freely, onLocationChange, setPath } from './lib/location.js'
+import { leave, leaveHere, useUnsavedChanges, useUnsavedList } from './lib/unsaved.js'
+import { SETTINGS_HOME, homeMove } from './domain/sections.js'
 import { settingsFromPath, settingsPath } from './domain/settingsNav.js'
 import { automationFromPath, automationPath } from './domain/automationNav.js'
 import { tasksFromPath, tasksPath } from './domain/tasks.js'
@@ -90,13 +99,18 @@ const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage
  *   - signed in            → the main app
  *
  * Layout: the rail (icons), the side panel it opens (artifacts or
- * indicators, collapsible) and the main column: header, then either the
- * active incident (analysis tab bar + tab) or the artifact opened on its own.
+ * indicators, hidden with the button in its header) and the main column:
+ * header, then either the active incident (analysis tab bar + tab) or the
+ * artifact opened on its own.
  * The Settings page (/settings/…) and the Automations area (/automation/…)
  * take the whole area next to the rail; what was open under them is there
  * again when they are left. The list of incidents (/incidents) takes the
  * whole area too: it is what is shown while no incident, artifact or page of
  * the indicators is open.
+ *
+ * Moving around: an entry of the rail goes to the first screen of its section
+ * (goHome below, domain/sections.js), and whatever takes the person away from
+ * something that is not saved asks first (lib/unsaved.js).
  */
 
 // Sidebar width bounds. The maximum is a quarter of the viewport (computed at
@@ -104,7 +118,7 @@ const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_DEFAULT_WIDTH = 288
 const SIDEBAR_WIDTH_KEY = 'nik.sidebarWidth'
-// The side panel the rail last opened: 'artifacts' or 'iocs'; '' when the person closed it, and it
+// The side panel the rail last opened: 'artifacts' or 'iocs'; '' when the person hid it, and it
 // then stays closed until they open one; anything else when none is shown and one comes with what
 // is opened (an artifact, the Indicators page). Until 6.2 the list of incidents was a side panel
 // too ('incidents'): it is a page now, and that value reads as "none shown".
@@ -186,13 +200,14 @@ export default function App() {
   // "New incident" modal: ticket ID, short title, severity, host, user, OS.
   const [createOpen, setCreateOpen] = useState(false)
   const [newFields, setNewFields] = useState(EMPTY_INCIDENT_FIELDS)
+  const [createStart, setCreateStart] = useState(EMPTY_INCIDENT_FIELDS) // the form as it was opened
 
   // Side panel chosen on the rail (null = none shown), remembered across sessions.
   const [panel, setPanelState] = useState(() => {
     const stored = localStorage.getItem(PANEL_KEY)
     return ['artifacts', 'iocs'].includes(stored) ? stored : null
   })
-  // The person closed the side panel from the rail: what is opened no longer brings its panel.
+  // The person hid the side panel (the button in its header): what is opened no longer brings its panel.
   const panelClosed = useRef(localStorage.getItem(PANEL_KEY) === '')
   const setPanel = useCallback((next, { closed = false } = {}) => {
     setPanelState(next)
@@ -218,14 +233,15 @@ export default function App() {
   useEffect(() => {
     if (libraryOpen || artifactOpen || !isLibraryPath(window.location.pathname)) return
     const path = activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'
-    setPath(path, { replace: true })
+    // The address follows what is shown: nobody is going anywhere, nothing is asked.
+    freely(() => setPath(path, { replace: true }))
   }, [libraryOpen, artifactOpen, activeIncidentId])
 
   // Leaving an artifact without opening an incident: the URL follows.
   useEffect(() => {
     if (artifactOpen || !window.location.pathname.startsWith('/artifact/')) return
     const path = activeIncidentId ? `/incident/${encodeURIComponent(activeIncidentId)}` : '/'
-    setPath(path, { replace: true })
+    freely(() => setPath(path, { replace: true }))
   }, [artifactOpen, activeIncidentId])
 
   const [analysisOpen, setAnalysisOpen] = useState(false)
@@ -251,9 +267,15 @@ export default function App() {
   const { closeArtifact } = artifacts
   const openIncident = useCallback(
     (incidentId) => {
-      closeArtifact()
-      closeLibrary()
-      selectIncident(incidentId)
+      // It takes the place of what is open: what is not saved there is asked about first.
+      leave(
+        () => {
+          closeArtifact()
+          closeLibrary()
+          selectIncident(incidentId)
+        },
+        { path: `/incident/${encodeURIComponent(incidentId)}` },
+      )
     },
     [closeArtifact, closeLibrary, selectIncident],
   )
@@ -407,7 +429,7 @@ export default function App() {
   useEffect(() => onLocationChange(() => setSettings(settingsFromPath(window.location.pathname))), [])
   // Where the page was opened from, to go back there when it is closed.
   const settingsReturn = useRef(null)
-  const openSettings = useCallback((section = 'detection') => {
+  const openSettings = useCallback((section = SETTINGS_HOME) => {
     if (!settingsFromPath(window.location.pathname)) settingsReturn.current = currentPath()
     setPath(settingsPath(section))
   }, [])
@@ -517,20 +539,17 @@ export default function App() {
   // (each follows the address), so the list is simply what is shown when none of them is.
   const pageOverMain = Boolean(settings) || automationShown || tasksShown || dashboardsShown || playgroundShown
   const incidentsShown = canRead && !pageOverMain && !activeIncidentId && !artifactOpen && !libraryOpen
-  // What was open when the list was asked for from the rail: the entry of the rail goes back to it.
-  const [incidentsReturn, setIncidentsReturn] = useState(null)
-  const openIncidents = useCallback(() => {
-    const from = currentPath()
-    setIncidentsReturn(isIncidentsPath(from) || from === '/' ? null : from)
-    setPath(INCIDENTS_ROOT)
+  // What the dashboards and the tasks say of themselves: whether they show what a fresh visit shows
+  // (each goes to its first item by itself, so the address alone cannot tell).
+  const firstScreen = useRef({ dashboards: false, tasks: false })
+  const onFirstDashboards = useCallback((first) => {
+    firstScreen.current.dashboards = first
   }, [])
-  const closeIncidents = useCallback(() => {
-    if (incidentsReturn) setPath(incidentsReturn)
-    setIncidentsReturn(null)
-  }, [incidentsReturn])
-  useEffect(() => {
-    if (!incidentsShown) setIncidentsReturn(null)
-  }, [incidentsShown])
+  const onFirstTasks = useCallback((first) => {
+    firstScreen.current.tasks = first
+  }, [])
+  // How many times each section was asked for again from the rail: its page then starts as first opened.
+  const [fresh, setFresh] = useState({})
   // Whoever chose a dashboard to open at sign-in lands on it, when the address asks for nothing else.
   const landed = useRef(false)
   useEffect(() => {
@@ -630,12 +649,22 @@ export default function App() {
   }, [typeKey])
   const chooseTab = useCallback(
     (tabId) => {
-      setActiveTabId(tabId)
-      if (typeKey) localStorage.setItem(`${TAB_KEY}.${typeKey}`, tabId)
-      else chosenEarly.current = tabId
+      // Another tab takes the place of the one shown: what is being written there is asked about first.
+      leave(() => {
+        setActiveTabId(tabId)
+        if (typeKey) localStorage.setItem(`${TAB_KEY}.${typeKey}`, tabId)
+        else chosenEarly.current = tabId
+      })
     },
     [typeKey],
   )
+
+  // The "New incident" form, once something is written in it.
+  const newIncident = useUnsavedChanges(createOpen && JSON.stringify(newFields) !== JSON.stringify(createStart), {
+    what: 'The new incident',
+  })
+  // Everything that is not saved, for the dialog of a session that ended.
+  const unsavedList = useUnsavedList()
 
   // ---- Boot gate (session probe / server reachability) ----
   if (!authReady) return <ConnectingScreen />
@@ -647,6 +676,7 @@ export default function App() {
 
   const openCreateModal = () => {
     setSeedArtifact(null)
+    setCreateStart(EMPTY_INCIDENT_FIELDS)
     setNewFields(EMPTY_INCIDENT_FIELDS)
     setCreateOpen(true)
   }
@@ -654,30 +684,35 @@ export default function App() {
   /** "New incident from this" on an artifact: the usual modal, then the link. */
   const openCreateFromArtifact = (artifact) => {
     setSeedArtifact(artifact)
-    setNewFields({ ...EMPTY_INCIDENT_FIELDS, title: artifact.name.slice(0, 80) })
+    const start = { ...EMPTY_INCIDENT_FIELDS, title: artifact.name.slice(0, 80) }
+    setCreateStart(start)
+    setNewFields(start)
     setCreateOpen(true)
   }
 
   const handleCreateSubmit = (event) => {
     event.preventDefault()
     if (!canCreateIncident(newFields)) return
-    const incident = createIncident(newFields)
-    setCreateOpen(false)
-    if (!seedArtifact) {
-      showIncident()
-      return
-    }
-    // The incident must exist on the server before the artifact is linked to it.
-    const artifact = seedArtifact
-    setSeedArtifact(null)
-    whenSaved(incident.id)
-      .then((saved) => (saved ? artifacts.link(artifact.id, incident.id) : Promise.reject(new Error('not saved'))))
-      .then(() => {
-        closeArtifact()
-        reloadActiveIncident()
-        showToast({ message: `${artifact.name} is in the new incident.` })
-      })
-      .catch((err) => showToast({ message: `The artifact was not linked: ${err.message}` }))
+    // The new incident takes the place of what is open: what is not saved there is asked about first.
+    newIncident.leaveOthers(() => {
+      const incident = createIncident(newFields)
+      setCreateOpen(false)
+      if (!seedArtifact) {
+        showIncident()
+        return
+      }
+      // The incident must exist on the server before the artifact is linked to it.
+      const artifact = seedArtifact
+      setSeedArtifact(null)
+      whenSaved(incident.id)
+        .then((saved) => (saved ? artifacts.link(artifact.id, incident.id) : Promise.reject(new Error('not saved'))))
+        .then(() => {
+          closeArtifact()
+          reloadActiveIncident()
+          showToast({ message: `${artifact.name} is in the new incident.` })
+        })
+        .catch((err) => showToast({ message: `The artifact was not linked: ${err.message}` }))
+    })
   }
 
   const handleDropConfirm = async ({ target, fields, tab, params }) => {
@@ -694,13 +729,16 @@ export default function App() {
       }
       return
     }
-    closeArtifact()
-    if (target === 'new') {
-      const incident = createIncident(fields)
-      // Samples and .evtx files go to the server: the incident must exist there first.
-      if (!(await whenSaved(incident.id))) return
-    }
-    importInto(tab, file, params)
+    // The incident, on the tab of the file, takes the place of what is open.
+    leave(async () => {
+      closeArtifact()
+      if (target === 'new') {
+        const incident = createIncident(fields)
+        // Samples and .evtx files go to the server: the incident must exist there first.
+        if (!(await whenSaved(incident.id))) return
+      }
+      importInto(tab, file, params)
+    })
   }
 
   // Palette actions (typed after ">").
@@ -723,10 +761,11 @@ export default function App() {
           label: `Go to ${tab.label}`,
           icon: tab.icon,
           hint: 'tab',
-          run: () => {
-            showIncident()
-            setActiveTabId(tab.id)
-          },
+          run: () =>
+            leave(() => {
+              showIncident()
+              setActiveTabId(tab.id)
+            }),
         }))
       : []),
     ...(activeIncident
@@ -763,8 +802,70 @@ export default function App() {
           },
         ]
       : []),
-    { id: 'logout', label: 'Sign out', icon: LogOut, run: logout },
+    { id: 'logout', label: 'Sign out', icon: LogOut, run: () => leave(logout) },
   ]
+
+  // What the rail marks as the section shown.
+  const activeSection = settings
+    ? 'settings'
+    : automationShown
+      ? 'automation'
+      : tasksShown
+        ? 'tasks'
+        : dashboardsShown
+          ? 'dashboards'
+          : playgroundShown
+            ? 'playground'
+            : panel === 'artifacts' || panel === 'iocs'
+              ? panel
+              : libraryOpen
+                ? 'iocs'
+                : artifactOpen
+                  ? 'artifacts'
+                  : incidentsShown
+                    ? 'incidents'
+                    : null
+
+  /**
+   * An entry of the rail: the first screen of its section, from wherever it is pressed, and nothing at
+   * all when that is what is shown (domain/sections.js decides). Going there is a move like any other:
+   * Back returns to where the person was, and what is not saved is asked about first.
+   */
+  const goHome = (section) => {
+    const move = homeMove(section, {
+      path: currentPath(),
+      // Under a page that takes the whole area no side panel is shown.
+      panel: pageOverMain ? null : panel,
+      incidentId: activeIncidentId,
+      first: firstScreen.current,
+      filtered: Boolean(artifacts.filters.kind || artifacts.filters.q),
+      quick: library.quick,
+    })
+    if (!move) return
+    const go = () => {
+      if (move.panel !== undefined) setPanel(move.panel)
+      if (section === 'artifacts') artifacts.setFilters({ kind: '', q: '' })
+      if (section === 'iocs') library.setQuick('all')
+      if (move.path !== null) {
+        // The pages drawn over the rest remember where they were opened from, for their close button.
+        if (section === 'settings') openSettings(SETTINGS_HOME)
+        else if (section === 'automation') openAutomation()
+        else if (section === 'tasks') openTasks()
+        else if (section === 'dashboards') openDashboards()
+        else if (section === 'playground') openPlayground()
+        else setPath(move.path)
+      }
+      // Its page starts as first opened: nothing chosen, nothing being edited.
+      if (move.path !== null || move.panel === undefined) {
+        setFresh((counts) => ({ ...counts, [section]: (counts[section] ?? 0) + 1 }))
+      }
+    }
+    // A side panel shown or hidden loses nothing. A page that starts again where it is loses what is
+    // being edited on it; a move to another address, what does not stay on screen there.
+    if (move.path === null && move.panel !== undefined) go()
+    else if (move.path === null) leaveHere(go)
+    else leave(go, { path: move.path })
+  }
 
   // ---- Initial async load of incidents from the API ----
   if (loading && canRead) {
@@ -783,27 +884,8 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Rail
-        panel={panel}
-        onPanel={(next) => {
-          if (settings) closeSettings()
-          else if (automationShown) closeAutomation()
-          else if (tasksShown) closeTasks()
-          else if (dashboardsShown) closeDashboards()
-          else if (playgroundShown) closePlayground()
-          // The entry of the open panel, clicked again, closes it: it stays closed until one is asked for.
-          setPanel(next, { closed: next === null })
-        }}
-        // The list alone: its entry hides the side panel, and goes back to what was open when it can.
-        incidentsOpen={incidentsShown && !panel}
-        incidentsLeave={Boolean(incidentsReturn)}
-        onIncidents={() => {
-          if (incidentsShown && !panel) {
-            closeIncidents()
-            return
-          }
-          setPanel(null)
-          if (!incidentsShown) openIncidents()
-        }}
+        active={activeSection}
+        onSection={goHome}
         counts={{
           incidents: incidents.length,
           artifacts: Object.values(artifacts.counts).reduce((sum, n) => sum + n, 0),
@@ -815,23 +897,14 @@ export default function App() {
           unread: unreadNotifications,
         }}
         can={can}
-        onSearch={() => setPaletteOpen(true)}
         onAccount={() => openSettings('account')}
-        onSettings={() => (settings ? closeSettings() : openSettings('detection'))}
-        settingsOpen={Boolean(settings)}
-        onAutomation={() => (automationShown ? closeAutomation() : openAutomation())}
-        automationOpen={automationShown}
-        onTasks={() => (tasksShown ? closeTasks() : openTasks())}
-        tasksOpen={tasksShown}
-        onDashboards={() => (dashboardsShown ? closeDashboards() : openDashboards())}
-        dashboardsOpen={dashboardsShown}
-        onPlayground={() => (playgroundShown ? closePlayground() : openPlayground())}
-        playgroundOpen={playgroundShown}
         onNotifications={() => setNotificationsOpen(true)}
+        onSignOut={() => leave(logout)}
       />
       {notificationsOpen && <NotificationsDialog onClose={() => setNotificationsOpen(false)} />}
       {settings && (
         <SettingsPage
+          key={fresh.settings ?? 0}
           section={settings.id}
           onSection={showSettingsSection}
           onClose={closeSettings}
@@ -850,6 +923,7 @@ export default function App() {
           }
         >
           <AutomationPage
+            key={fresh.automation ?? 0}
             route={automation}
             onNavigate={openAutomation}
             onClose={closeAutomation}
@@ -866,7 +940,14 @@ export default function App() {
             </p>
           }
         >
-          <TasksPage taskId={tasksRoute.id} onSelect={openTasks} onClose={closeTasks} onOpenIncident={openIncident} />
+          <TasksPage
+            key={fresh.tasks ?? 0}
+            taskId={tasksRoute.id}
+            onSelect={openTasks}
+            onClose={closeTasks}
+            onOpenIncident={openIncident}
+            onFirstScreen={onFirstTasks}
+          />
         </Suspense>
       )}
       {dashboardsShown && (
@@ -878,10 +959,12 @@ export default function App() {
           }
         >
           <DashboardsPage
+            key={fresh.dashboards ?? 0}
             dashboardId={dashboardsRoute.id}
             onSelect={openDashboards}
             onClose={closeDashboards}
             onOpenIncident={openIncident}
+            onFirstScreen={onFirstDashboards}
           />
         </Suspense>
       )}
@@ -893,17 +976,24 @@ export default function App() {
             </p>
           }
         >
-          <PlaygroundPage onClose={closePlayground} />
+          <PlaygroundPage key={fresh.playground ?? 0} onClose={closePlayground} />
         </Suspense>
       )}
       {!pageOverMain && panel && canRead && (
         <>
-          <Sidebar panel={panel} width={sidebarPane.width} onNewAnalysis={() => setAnalysisOpen(true)} />
+          <Sidebar
+            panel={panel}
+            width={sidebarPane.width}
+            onNewAnalysis={() => setAnalysisOpen(true)}
+            // Hidden from its own header: it stays hidden until its entry of the rail is pressed.
+            onHide={() => setPanel(null, { closed: true })}
+          />
           <ResizeHandle {...sidebarPane.handle} label="Resize the side panel" />
         </>
       )}
       {incidentsShown && (
         <IncidentsPage
+          key={fresh.incidents ?? 0}
           onCreateIncident={openCreateModal}
           onNewAnalysis={() => setAnalysisOpen(true)}
           onOpenIncident={openIncident}
@@ -918,7 +1008,6 @@ export default function App() {
         {/* The list of incidents has a header of its own: this one names what is open, and nothing is. */}
         {!incidentsShown && (
           <Header
-            onOpenSearch={() => setPaletteOpen(true)}
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenReport={activeIncident && !artifactOpen && !libraryOpen ? () => setReportOpen(true) : null}
             artifactView={artifactOpen}
@@ -976,7 +1065,7 @@ export default function App() {
                     />
                   </div>
                 ) : libraryOpen ? (
-                  <IocLibraryPage onOpenIncident={openIncident} />
+                  <IocLibraryPage key={fresh.iocs ?? 0} onOpenIncident={openIncident} />
                 ) : artifactOpen ? (
                   <ArtifactPage onOpenIncident={openIncident} onNewIncident={openCreateFromArtifact} />
                 ) : activeIncident ? (
@@ -1053,7 +1142,7 @@ export default function App() {
       {/* New incident modal */}
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => newIncident.leave(() => setCreateOpen(false))}
         title={seedArtifact ? 'New incident from this artifact' : 'New incident'}
         maxWidth="max-w-xl"
         footer={
@@ -1108,7 +1197,7 @@ export default function App() {
       <CloseIncidentDialog />
 
       <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-      <SessionExpiredDialog unsavedChanges={unsavedChanges} />
+      <SessionExpiredDialog unsavedChanges={unsavedChanges} unsaved={unsavedList} />
       <PastePrompt
         pasted={pasted}
         busy={pastedBusy}
@@ -1171,11 +1260,14 @@ export default function App() {
           setPaletteQuery('')
         }}
         actions={paletteActions}
-        onOpenTab={(tab) => {
-          showIncident()
-          setActiveTabId(tab)
-        }}
+        onOpenTab={(tab) =>
+          leave(() => {
+            showIncident()
+            setActiveTabId(tab)
+          })
+        }
       />
+      <UnsavedDialog />
     </div>
   )
 }

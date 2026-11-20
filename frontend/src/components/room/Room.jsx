@@ -25,6 +25,7 @@ import { Badge, Button, Modal } from '../ui/index.js'
 import IocText from '../ioc/IocText.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -290,6 +291,12 @@ export default function Room({ source }) {
   const menu = useObjectMenu()
   const [text, setText] = useState(source.firstLine ?? '')
   const [busy, setBusy] = useState(false)
+  // A note being written is work that leaving would lose, where the source says so (the War Room). A
+  // command is typed again in a moment, and a line the page was opened with is not the person's writing.
+  useUnsavedChanges(
+    Boolean(source.unsaved) && text.trim() !== '' && text !== (source.firstLine ?? '') && lineKind(text) !== 'command',
+    { what: source.unsaved },
+  )
   const end = useRef(null)
   const count = useRef(0)
 

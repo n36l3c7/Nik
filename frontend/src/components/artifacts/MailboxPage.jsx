@@ -18,6 +18,7 @@ import {
 import { verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatDateTime } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, EmptyState, MicroSkull, Modal, StatCard } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * A mailbox (mbox, Maildir archive, Outlook PST) as an artifact: what the file
@@ -56,6 +57,13 @@ function ImportDialog({ box, open, onClose, onStarted }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const set = (patch) => setForm((current) => ({ ...current, ...patch }))
+  const unsaved = useUnsavedChanges(
+    open && Boolean(form.from || form.to || form.sender.trim() || form.subject.trim()),
+    {
+      what: 'The import from the mailbox',
+      name: box.fileName,
+    },
+  )
 
   // What the filter would import, asked a moment after the last change.
   useEffect(() => {
@@ -90,7 +98,7 @@ function ImportDialog({ box, open, onClose, onStarted }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={`Import from ${box.fileName}`}
       maxWidth="max-w-3xl"
       footer={

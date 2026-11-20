@@ -12,6 +12,7 @@ import {
   tookText,
 } from '../../../domain/scriptButtons.js'
 import { Button, Modal } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -114,6 +115,10 @@ export function RunButtonDialog({ incident, button, onClose }) {
   const [busy, setBusy] = useState(false)
   const [warned, setWarned] = useState(false)
   const [runs, setRuns] = useState(null) // null until the press started
+  const unsaved = useUnsavedChanges(
+    runs === null && Object.values(typed).some((value) => String(value ?? '').trim() !== ''),
+    { what: 'The arguments of the button', name: button?.label },
+  )
   const base = `/incidents/${encodeURIComponent(incident.id)}/script-buttons`
   const press = { script: button.script, label: button.label, args: button.args ?? {} }
   const alive = useRef(true)
@@ -209,7 +214,7 @@ export function RunButtonDialog({ incident, button, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={title}
       footer={
         runs ? (

@@ -10,6 +10,7 @@ import { Field, TextInput } from './fields.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { usePageMenu } from '../menu/usePageMenu.js'
 import { automationPath } from '../../domain/automationNav.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * The scripts: a library of Python blocks with named arguments and outputs,
@@ -85,6 +86,9 @@ export default function ScriptsPage({ onOpen }) {
   }
 
   const wrongName = name ? nameProblem(name) : null
+  const creating = useUnsavedChanges(createOpen && Boolean(name.trim() || description.trim()), {
+    what: 'The new script',
+  })
   const create = async (event) => {
     event.preventDefault()
     if (nameProblem(name)) return
@@ -237,7 +241,7 @@ export default function ScriptsPage({ onOpen }) {
 
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => creating.leave(() => setCreateOpen(false))}
         title="New script"
         footer={
           <>

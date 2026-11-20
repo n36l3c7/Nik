@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
 import { Button } from '../../ui/index.js'
 import { formatDateTime } from '../../../lib/time.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * NoteBlock — a small, self-contained editable note card.
@@ -43,6 +44,10 @@ export default function NoteBlock({ note, onSave, onRemove }) {
     setDraft(note.text)
     setEditing(false)
   }
+  useUnsavedChanges(editing && draft.trim() !== String(note.text ?? '').trim(), {
+    what: 'The note being edited',
+    save: draft.trim() ? async () => save() : undefined,
+  })
 
   // The note was modified after creation (small "edited" hint in the footer).
   const wasEdited = note.updatedAt && note.updatedAt !== note.createdAt

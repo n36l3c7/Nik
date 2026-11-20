@@ -7,6 +7,7 @@ import { PLAYGROUND_FILTERS, PLAYGROUND_SLASH, takeLine } from '../../domain/pla
 import { useLayer } from '../../lib/layers.js'
 import { Button, Modal } from '../ui/index.js'
 import Room from '../room/Room.jsx'
+import SearchBar from '../layout/SearchBar.jsx'
 
 /*
  * ============================================================================
@@ -81,22 +82,25 @@ export default function PlaygroundPage({ onClose }) {
       tabIndex={-1}
       className="flex min-w-0 flex-1 flex-col bg-canvas outline-none"
     >
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
-        <div className="flex min-w-0 items-baseline gap-3">
+      <header className="@container flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-6">
+        <div className="flex min-w-[8rem] flex-1 basis-0 items-baseline gap-3">
           <h1 className="text-sm font-semibold text-fg">Playground</h1>
           <p className="truncate text-xs text-fg-muted">
             Commands outside any incident. The history is yours alone, until you clear it.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close the playground"
-          title="Close the playground"
-          className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <SearchBar />
+        <div className="flex flex-1 basis-0 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close the playground"
+            title="Close the playground"
+            className="p-1.5 text-fg-muted transition-colors hover:bg-canvas hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </header>
       <Room source={source} />
       <Modal
