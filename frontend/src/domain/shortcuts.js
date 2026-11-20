@@ -14,8 +14,11 @@ export const SHORTCUTS = [
   { keys: ['C'], does: 'Comment on the row under the pointer (it is flagged too)' },
   { keys: ['Ctrl K', '/'], does: 'Search incidents, indicators, samples and events' },
   { keys: ['Ctrl V'], does: 'Paste a file, an address or an indicator to analyse it' },
-  { keys: ['Right-click'], does: 'Every action of a row or an item' },
-  { keys: ['Shift + right-click'], does: "The browser's own menu" },
+  {
+    keys: ['Right-click'],
+    does: "Nik's menu, on every page: the actions of what is under the pointer, cut, copy and paste in a text field, then what the page offers",
+  },
+  { keys: ['Menu key', 'Shift F10'], does: 'The same menu, for what has the focus' },
   { keys: ['↑', '↓', 'Enter'], does: 'Move in a menu and run the action' },
   { keys: ['Esc'], does: 'Close a menu or a dialog' },
   {

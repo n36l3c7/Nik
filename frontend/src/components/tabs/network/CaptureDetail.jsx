@@ -5,6 +5,7 @@ import PacketView from './PacketView.jsx'
 import RequestLog from './RequestLog.jsx'
 import SortHeader from './SortHeader.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { api, apiUrl } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
 import { sortRows } from '../../../domain/network.js'
@@ -136,6 +137,7 @@ function Summary({ capture }) {
 
 function Objects({ capture, onDownload, onSend, sending }) {
   const [sort, setSort] = useState(null) // null: the order of the packets
+  const menu = useObjectMenu()
   const all = capture.summary?.objects
   const objects = useMemo(
     () =>
@@ -172,7 +174,30 @@ function Objects({ capture, onDownload, onSend, sending }) {
       </thead>
       <tbody>
         {objects.map((o) => (
-          <tr key={o.token} className="border-b border-line-soft align-top">
+          <tr
+            key={o.token}
+            className="border-b border-line-soft align-top"
+            onContextMenu={(event) =>
+              menu(event, {
+                title: o.name || '(no name)',
+                actions: [
+                  { label: 'Download as a protected zip', icon: Download, onSelect: () => onDownload(o) },
+                  {
+                    label: 'Send to Malware Analysis',
+                    icon: Bug,
+                    disabled: sending === o.token,
+                    title: sending === o.token ? 'It is being sent' : undefined,
+                    onSelect: () => onSend(o),
+                  },
+                ],
+                copy: [
+                  { label: 'Copy the name', text: o.name },
+                  { label: 'Copy the host', text: o.host },
+                  { label: 'Copy the SHA-256', text: o.sha256 },
+                ],
+              })
+            }
+          >
             <td className="py-1.5">{o.frame}</td>
             <td className="py-1.5 uppercase text-fg-muted">{o.tap.replace('eo:', '')}</td>
             <td className="break-all py-1.5">

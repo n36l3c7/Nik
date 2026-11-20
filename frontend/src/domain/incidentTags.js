@@ -81,7 +81,12 @@ export function tagsInUse(rows) {
  * have, the ones that start with what was typed first, then those that hold it.
  */
 export function suggestTags(inUse, held, typed, max = 8) {
-  const wanted = cleanTag(typed).tag || String(typed ?? '').trim().toLowerCase().replace(/^#+/, '')
+  const wanted =
+    cleanTag(typed).tag ||
+    String(typed ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/^#+/, '')
   const free = list(inUse)
     .map((item) => item.tag)
     .filter((tag) => !list(held).some((item) => same(item, tag)))
@@ -168,5 +173,8 @@ export function toggleTag(query, tag, schema = null) {
 
 /** The query without any of its conditions on a tag. */
 export function withoutTags(query, schema = null) {
-  return list(tagsInQuery(query, schema)).reduce((text, tag) => withoutTag(text, tag, schema), String(query ?? '').trim())
+  return list(tagsInQuery(query, schema)).reduce(
+    (text, tag) => withoutTag(text, tag, schema),
+    String(query ?? '').trim(),
+  )
 }

@@ -208,9 +208,10 @@ def on_startup() -> None:
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
     # The administrators are told when a worker stops answering (one process at a time, see worker_watch.py).
-    worker_watch.start()
+    if app_settings.API_BACKGROUND:
+        worker_watch.start()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
-    if app_settings.AUTOMATION_WORKER != "off":
+    if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
     # The scripts and the connectors Nik ships are there (a release may bring new versions),
     # and the playbooks it ships were added once.

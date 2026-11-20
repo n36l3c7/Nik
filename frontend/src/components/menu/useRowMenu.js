@@ -34,7 +34,7 @@ import { flagItems } from './flagItems.js'
  *   timeline   "Show in the Timeline"
  *   danger     last, after a rule (Remove, Delete)
  *
- * Nothing to offer means no menu: the browser's own opens. useRowMenu() is the
+ * Nothing to offer means the row adds nothing to the menu of the page. useRowMenu() is the
  * shorthand of the event tables (flag, comment, copy, timeline).
  */
 

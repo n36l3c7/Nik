@@ -3,6 +3,7 @@ import { Binary, Bug, Download, Eye, FileCode, Globe, Mail, Paperclip } from 'lu
 import { Badge, Button } from '../../ui/index.js'
 import HexView from './HexView.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { formatBytes } from '../../../domain/events.js'
 import { previewKind, verdictMeta } from '../../../domain/mail.js'
 
@@ -36,8 +37,49 @@ function Attachment({ item, sha256, onDownload, onSend, sending, onOpen, preview
   const hasBytes = item.size > 0
   const preview = previewKind(item)
   const nested = item.message
+  const menu = useObjectMenu()
+  // What the buttons of the attachment do, where the pointer is.
+  const onMenu = (event) =>
+    menu(event, {
+      title: item.name,
+      actions: hasBytes
+        ? [
+            preview === 'document' && {
+              label: 'Preview',
+              icon: Eye,
+              disabled: !previews?.documents,
+              title: previews?.documents ? undefined : 'The document viewer is not configured',
+              onSelect: () => onOpen(item, 'document'),
+            },
+            preview === 'html' && {
+              label: 'Open in isolated browser',
+              icon: Globe,
+              disabled: !previews?.browser,
+              title: previews?.browser ? undefined : 'The isolated browser is not configured',
+              onSelect: () => onOpen(item, 'html'),
+            },
+            {
+              label: hex ? 'Hide the bytes in hex' : 'Show the bytes in hex',
+              icon: Binary,
+              onSelect: () => setHex((v) => !v),
+            },
+            { label: 'Download as a protected zip', icon: Download, onSelect: () => onDownload(item) },
+            {
+              label: 'Send to Malware Analysis',
+              icon: Bug,
+              disabled: sending === item.path,
+              title: sending === item.path ? 'It is being sent' : undefined,
+              onSelect: () => onSend(item),
+            },
+          ]
+        : [],
+      copy: [
+        { label: 'Copy the name', text: item.name },
+        { label: 'Copy the SHA-256', text: item.hashes?.sha256 },
+      ],
+    })
   return (
-    <li className="space-y-2 border border-line p-3">
+    <li className="space-y-2 border border-line p-3" onContextMenu={onMenu}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <p className="flex items-center gap-2 font-mono text-sm font-semibold text-fg">

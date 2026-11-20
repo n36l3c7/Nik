@@ -180,11 +180,12 @@
                 List incidents. Query: <code>q</code> (<a href="#query">the query language</a>:
                 <code>status:open severity:&gt;=high</code>; plain words match name, host, user and ticket),
                 <code>limit</code> / <code>offset</code>, <code>view=summary</code> (light rows without the document
-                body). The older <code>host</code>, <code>username</code>, <code>status</code> and
-                <code>assignee</code> parameters still work and add to <code>q</code>. Total in the
-                <code>X-Total-Count</code> header. With <code>view=summary</code>, <code>fields=a,b</code> (names of
-                fields of the registry, 30 at most) adds to each row <code>fields</code>, the values it holds for those
-                names: what the columns of the incident list are read from.
+                body; each carries <code>tags</code>, the tags of the incident). The older <code>host</code>,
+                <code>username</code>, <code>status</code> and <code>assignee</code> parameters still work and add to
+                <code>q</code>. Total in the <code>X-Total-Count</code> header. With <code>view=summary</code>,
+                <code>fields=a,b</code> (names of fields of the registry, 30 at most) adds to each row
+                <code>fields</code>, the values it holds for those names: what the columns of the incident list are read
+                from.
               </td>
             </tr>
             <tr>
@@ -395,7 +396,9 @@
                 <code>409</code> when <code>ifRev</code> is not the current <code>rev</code>. Answers the fields as they
                 are now, with <code>changed</code>. Setting <code>status</code> to <code>closed</code> is refused while
                 a field the incident's type wants filled before closing is empty, or when <code>close_reason</code> is
-                not one of the type's.
+                not one of the type's. The tags of an incident are its field <code>labels</code> (a list): what is added
+                is kept lower case and held to the rules of a tag (a letter or a digit, then letters, digits and
+                <code>. _ : -</code>, 40 characters; 12 tags at most), what the incident already held is kept as it is.
               </td>
             </tr>
             <tr>
@@ -2042,7 +2045,10 @@ labels:vip due:&lt;today sender_domain:""</code></pre>
           field is also written <code>field.&lt;name&gt;</code>, always, and that is how one whose name was taken is
           asked; the schema lists it under that name. System fields answer to the name the registry gives them as well
           (<code>close_reason</code> is <code>closeReason</code>, <code>sla_breached</code> is <code>slaBreached</code>,
-          <code>time_to_close</code> is <code>timeToClose</code>).
+          <code>time_to_close</code> is <code>timeToClose</code>). The tags of an incident, the field
+          <code>labels</code>, are asked as <code>tag:</code> and <code>tags:</code> too, like the tags of an artifact
+          or of an indicator; a custom field that was called <code>tag</code> or <code>tags</code> before 6.4 keeps that
+          name, and the schema says which names <code>labels</code> answers to.
         </li>
         <li>
           <strong>Counting.</strong> <code>groupBy</code> and <code>measure</code> of

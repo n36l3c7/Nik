@@ -114,35 +114,61 @@
         The list shows the status and the owner in columns of their own, and is filtered by status, by owner, or by any
         <a href="#queries">query</a>. Both are stated in the report.
       </p>
+      <h3 id="incident-tags">Tags</h3>
+      <p>
+        An incident carries <strong>tags</strong>: short words that say what it belongs to (a campaign, a customer, a
+        kind of case) and that the list is filtered by. They are chips under the name of the incident, at the top of its
+        page, and in the <a href="#incident-list">list</a> and its quick view. Whoever may change incidents changes them
+        where they are read: <strong>+</strong> opens an input that offers the tags the other incidents carry;
+        <kbd>Enter</kbd> adds what is typed, or the tag chosen with the arrows; <kbd>Backspace</kbd> in the empty input
+        takes the last tag off, the × of a chip takes that one off, <kbd>Esc</kbd> closes the input. Each change is
+        saved at once and is written to the audit log like any change of a field. A read-only account sees the chips and
+        nothing else.
+      </p>
+      <p>
+        A tag is the same thing on an incident, on an <a href="#ioc-library">indicator</a> and on an
+        <a href="#artifacts">artifact</a>: lower case (<code>Phish</code> is kept as <code>phish</code>, and found by
+        either), a letter or a digit, then letters, digits and <code>. _ : -</code>, 40 characters at most. A
+        <code>#</code> in front is dropped and the spaces inside become <code>-</code> (<code>data leak</code> is
+        <code>data-leak</code>). A tag is once on an incident, and an incident holds twelve at most. The tags are the
+        field that was called <em>Labels</em> until 6.4: it is still named <code>labels</code> in the types, the
+        mappers, the playbooks and the API, and what an incident held there stays as it was written until somebody takes
+        it off.
+      </p>
       <h3 id="incident-list">The list of incidents</h3>
       <p>
         The first entry of the rail opens the list: a table that takes the whole area next to the rail, with the number,
-        the title, the type, the severity, the status, the owner and the dates of each incident. A click on the heading
+        the title, the <a href="#incident-tags">tags</a>, the type, the severity, the status, the owner and the dates of
+        each incident (a cell shows the tags it has room for, then <em>+2</em> for the others). A click on the heading
         of a column orders the list by it, a second click turns the order round. The number at the top says how many
         incidents are listed, and of how many when a filter is on. <strong>New incident</strong> and
         <strong>Import incident</strong> are at the top; a right-click on a row has what is done to an incident without
-        opening it (its report, its export, its link, a playbook to run on it, its status and its owner, deleting it).
-        The entry of the rail, clicked again, goes back to the incident you came from.
+        opening it (its report, its export, its link, a playbook to run on it, <strong>Add a tag…</strong>, its status
+        and its owner, deleting it). The entry of the rail, clicked again, goes back to the incident you came from.
       </p>
       <ul>
         <li>
           <strong>The quick view.</strong> One click on a row opens a panel over the right side of the page, without
           moving the table: the number, the type and the title of the incident, its severity, its status and the SLA
-          timer nearest to its time, then what the type of the incident chose to show there (see
-          <a href="#settings">Settings → Types</a>). A type that chose nothing shows the details of the incident, its
-          first section of fields, the numbers of its evidence and the last three lines of its War Room. With the panel
-          open, <kbd>↑</kbd> and <kbd>↓</kbd> go to the row above and below and the panel follows; <kbd>Esc</kbd> or its
-          × closes it. At its foot: <strong>Open the incident</strong>, <strong>Assign to me</strong> and
-          <strong>Close…</strong>, each for who may do it. A double click on a row, or <kbd>Enter</kbd> on it, opens the
-          incident at once. The panel is resized like every side panel.
+          timer nearest to its time, its tags (changed there as on the page of the incident), then what the type of the
+          incident chose to show there (see <a href="#settings">Settings → Types</a>). A type that chose nothing shows
+          the details of the incident, its first section of fields, the numbers of its evidence and the last three lines
+          of its War Room. With the panel open, <kbd>↑</kbd> and <kbd>↓</kbd> go to the row above and below and the
+          panel follows; <kbd>Esc</kbd> or its × closes it. At its foot: <strong>Open the incident</strong>,
+          <strong>Assign to me</strong> and <strong>Close…</strong>, each for who may do it. A double click on a row, or
+          <kbd>Enter</kbd> on it, opens the incident at once. The panel is resized like every side panel.
         </li>
         <li>
           <strong>The query, and the chips that write it.</strong> The box above the table takes a
           <a href="#queries">query</a>; the list follows as you type. Under it, <em>Add:</em> <strong>Type</strong>,
           <strong>Severity</strong>, <strong>Status</strong>, <strong>Owner</strong> and <strong>Opened</strong> each
           open a short menu and write their condition into the query, in place of the one it had on that field; a chip
-          whose field the query has a condition on shows it, and its menu takes it out again.
-          <strong>Field…</strong> does the same for any other field, with an operator and a value.
+          whose field the query has a condition on shows it, and its menu takes it out again. <strong>Tag</strong> lists
+          the tags the incidents carry, the most used first, with how many incidents carry each, and writes
+          <code>tag:&lt;value&gt;</code>. It holds one condition for each tag chosen, not one in all: several tags keep
+          the incidents that carry <em>all</em> of them, as every condition of a query narrows it (write
+          <code>tag:a or tag:b</code> for either). A click on a tag, in a row or in the quick view, adds it the same
+          way. <strong>Field…</strong> does the same for any other field, with an operator and a value.
         </li>
         <li>
           <strong>Saved filters.</strong> <strong>Save the filter…</strong> keeps the query on screen under a name, with
@@ -777,10 +803,11 @@
           <strong>Packets</strong>: the packet list with Wireshark's colours, the protocol tree and the bytes. Click a
           column header to sort the packets loaded so far (again for the reverse, a third time for the capture's order);
           the Requests and Objects lists sort the same way. Type a <strong>display filter</strong> in Wireshark's
-          syntax; right-click a field to filter on it; <strong>Follow</strong> a TCP, UDP, HTTP or TLS stream;
-          <strong>Flag packet</strong> adds it to the incident's flagged events. Public addresses, host names, URLs and
-          hashes in the list, in the protocol tree and in a request's details are indicators: click one for its window,
-          right-click for its menu. Private addresses stay plain text.
+          syntax; right-click a field of the protocol tree and choose <em>Apply as filter</em> to filter on it;
+          <strong>Follow</strong> a TCP, UDP, HTTP or TLS stream; <strong>Flag packet</strong> adds it to the incident's
+          flagged events. Public addresses, host names, URLs and hashes in the list, in the protocol tree and in a
+          request's details are indicators: click one for its window, right-click for its menu. Private addresses stay
+          plain text.
         </li>
         <li>
           <strong>Objects</strong>: files carried by HTTP, SMB, FTP and others, with their SHA-256, to download in a
@@ -943,8 +970,9 @@
       </p>
       <h2 id="flags">Flags, comments and the right-click menu</h2>
       <p>
-        Right-click works on every row and item of the app, and the menu is always built the same way, with the parts
-        that apply:
+        A right-click opens Nik's menu on every page, and never the browser's own: on a row or an item, in a text field,
+        on selected text, on a link, and where nothing is under the pointer. On a row or an item the menu is always
+        built the same way, with the parts that apply:
       </p>
       <p>
         What is not evidence has a menu too: a playbook, a script, a run, a task, a dashboard, an entry of the War Room.
@@ -1009,8 +1037,49 @@
       </div>
       <p>
         A flagged sample, e-mail, capture or address shows a small flag in its list. Everything flagged is listed on the
-        Summary tab, where the same menu removes the flag or adds a comment, and goes into the report. The browser's own
-        menu still opens on text fields, on selected text and with <kbd>Shift</kbd> + right-click.
+        Summary tab, where the same menu removes the flag or adds a comment, and goes into the report.
+      </p>
+      <p>
+        Around what belongs to the row, the menu holds what else is under the pointer, from the innermost thing outward,
+        and it ends the same way on every page:
+      </p>
+      <ul>
+        <li>
+          <strong>Selected text</strong>: <em>Copy</em>; when the text is an address or an indicator, also
+          <em>Where else was this seen?</em>, <em>Search for it</em> and <em>Add to the Indicators…</em>, as for text
+          that is pasted.
+        </li>
+        <li>
+          <strong>A text field</strong> (a field of a form, the query box, the editor of a script): <em>Cut</em>,
+          <em>Copy</em>, <em>Paste</em> and <em>Select all</em>, each greyed with its reason when it does not apply (a
+          read-only field copies and selects; a password is not copied). The editor of a script adds <em>Undo</em> and
+          <em>Redo</em>; the query box adds its own helpers, the suggestions and the builder. The first time you choose
+          <em>Paste</em> the browser may ask whether Nik may read the clipboard; if it refuses, Nik says so, and
+          <kbd>Ctrl</kbd> + <kbd>V</kbd> still pastes.
+        </li>
+        <li>
+          <strong>A link</strong>: <em>Open</em>, <em>Open in a new tab</em>, <em>Copy the address</em>. A link to
+          another site opens in a new tab only. An address found in evidence is not a link in Nik and does not become
+          one here: it keeps its own menu (analyse, copy defanged).
+        </li>
+        <li>
+          <strong>A cell of a table or a line of text</strong> that nothing else claims: <em>Copy this cell</em>,
+          <em>Copy this row</em> or <em>Copy this text</em>, and the entries of an indicator when that is what the cell
+          holds.
+        </li>
+        <li>
+          <strong>What the page offers</strong>: <em>New incident…</em> and <em>Columns…</em> on the list of incidents,
+          <em>New playbook…</em>, <em>New script…</em>, <em>Refresh</em> on the lists that have it.
+        </li>
+        <li>
+          <strong>Always last</strong>: <em>Search…</em>, <em>Keyboard shortcuts</em>, <em>Back</em> and
+          <em>Copy the address of this page</em>.
+        </li>
+      </ul>
+      <p>
+        <kbd>Shift</kbd> + right-click is a right-click like any other. One place is not Nik's to answer: the body of an
+        e-mail, a response and the report are previewed in a frame that runs nothing and that the page around it cannot
+        listen to, so a right-click inside the frame is answered by the browser.
       </p>
       <figure class="shot">
         <img
@@ -1031,10 +1100,11 @@
       </p>
       <p>
         Everything is reachable without a mouse: <kbd>Tab</kbd> stops on every row that has a menu, and
-        <kbd>Shift</kbd> + <kbd>F10</kbd> (or the menu key) opens it. A dialog takes the focus when it opens, keeps
-        <kbd>Tab</kbd> inside, and gives the focus back when it closes; <kbd>Esc</kbd> closes the dialog on top and
-        leaves the one under it open. If single keys get in your way (dictation, the keys of an assistive tool), turn
-        them off at the bottom of the shortcut list: the choice is kept in your browser.
+        <kbd>Shift</kbd> + <kbd>F10</kbd> (or the menu key) opens the menu of whatever has the focus, a text field
+        included. A dialog takes the focus when it opens, keeps <kbd>Tab</kbd> inside, and gives the focus back when it
+        closes; <kbd>Esc</kbd> closes the dialog on top and leaves the one under it open. If single keys get in your way
+        (dictation, the keys of an assistive tool), turn them off at the bottom of the shortcut list: the choice is kept
+        in your browser.
       </p>
       <div class="table-wrap">
         <table>
@@ -1080,6 +1150,7 @@
       </p>
       <pre><code>status:open severity:&gt;=high owner:""           open, high or critical, nobody has them
 host:wks-* -status:closed created:&gt;=now-7d      this week's incidents on the workstations
+tag:phish -tag:test status:open                  the open incidents tagged phish, the tests left out
 kind:mail verdict:phishing tag:campaign           the phishing e-mails of a campaign
 verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domains</code></pre>
       <div class="table-wrap">
@@ -1163,8 +1234,9 @@ verdict:&gt;=suspicious (type:ip or type:domain)    flagged addresses and domain
         </li>
         <li>
           <strong>The filters write the query.</strong> The <a href="#incident-list">chips</a> of the list of incidents
-          (type, severity, status, owner, opened, any field), <em>mine</em> of the artifacts panel, the type, verdict
-          and origin pickers of the Indicators page add their condition to the box, where you can see it and change it.
+          (type, severity, status, owner, opened, tag, any field), <em>mine</em> of the artifacts panel, the type,
+          verdict and origin pickers of the Indicators page add their condition to the box, where you can see it and
+          change it.
         </li>
       </ul>
       <p>
@@ -1189,15 +1261,17 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         The fields of incidents Nik always had: <code>name</code>, <code>ticket</code>, <code>host</code>,
         <code>user</code>, <code>os</code>, <code>severity</code>, <code>status</code>, <code>owner</code>,
         <code>type</code>, <code>hasMail</code>, <code>created</code>, <code>modified</code>, <code>occurred</code>,
-        <code>closed</code>, and those of the registry under the names Settings shows (<code>labels</code>,
-        <code>phase</code>, <code>due</code>, <code>tlp</code>, <code>category</code>, <code>close_reason</code>…). Of
-        artifacts: <code>kind</code>, <code>name</code>, <code>hash</code>, <code>verdict</code>, <code>score</code>,
-        <code>detail</code>, <code>size</code>, <code>tags</code>, <code>created</code>, <code>createdBy</code>,
-        <code>linked</code>, <code>incident</code>. Of indicators: <code>type</code>, <code>value</code>,
-        <code>verdict</code>, <code>score</code>, <code>origin</code>, <code>incidents</code>, <code>tags</code>,
-        <code>note</code>, <code>tlp</code>, <code>list</code>, <code>expired</code>, <code>expires</code>,
-        <code>firstSeen</code>, <code>checked</code>, <code>allowlisted</code>, <code>analysed</code>,
-        <code>addedBy</code>. The same language is in the <a href="api.html#query">API</a>.
+        <code>closed</code>, <code>tag</code> (its <a href="#incident-tags">tags</a>: <code>tags</code> and
+        <code>labels</code> are the same field; a tag is matched whole, and <code>tag:</code> offers the ones in use),
+        and those of the registry under the names Settings shows (<code>phase</code>, <code>due</code>,
+        <code>tlp</code>, <code>category</code>, <code>close_reason</code>…). Of artifacts: <code>kind</code>,
+        <code>name</code>, <code>hash</code>, <code>verdict</code>, <code>score</code>, <code>detail</code>,
+        <code>size</code>, <code>tags</code>, <code>created</code>, <code>createdBy</code>, <code>linked</code>,
+        <code>incident</code>. Of indicators: <code>type</code>, <code>value</code>, <code>verdict</code>,
+        <code>score</code>, <code>origin</code>, <code>incidents</code>, <code>tags</code>, <code>note</code>,
+        <code>tlp</code>, <code>list</code>, <code>expired</code>, <code>expires</code>, <code>firstSeen</code>,
+        <code>checked</code>, <code>allowlisted</code>, <code>analysed</code>, <code>addedBy</code>. The same language
+        is in the <a href="api.html#query">API</a>.
       </p>
 
       <h2 id="search">Search</h2>

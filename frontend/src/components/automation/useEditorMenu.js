@@ -61,7 +61,8 @@ export function useEditorMenu(stateOf, actions) {
           ? item
           : { ...item, icon: ICONS[item.id], onSelect: () => now.actions[item.id]?.(target, view) },
       )
-      return openMenu(event, { title: menu.title, items })
+      // Asked for by the menu key, the canvas opens it itself: the general section ends it all the same.
+      return openMenu(event, { title: menu.title, items, general: true })
     },
     [openMenu],
   )

@@ -45,9 +45,10 @@ export default function Modal({
         full ? 'p-0' : tall ? 'p-2' : 'p-4',
       ].join(' ')}
       // Close only if the mousedown happens directly on the backdrop
-      // (avoids accidental closes when dragging from the content outward)
+      // (avoids accidental closes when dragging from the content outward),
+      // and with the left button: a right-click there asks for the menu.
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose?.()
+        if (event.target === event.currentTarget && event.button === 0) onClose?.()
       }}
     >
       <div

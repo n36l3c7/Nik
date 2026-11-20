@@ -227,8 +227,9 @@
       <p>
         An entry that cannot be done stays in the menu, greyed, and says why when the pointer is on it: the trigger is
         never copied or deleted, there is nothing to paste yet, the branch is somebody else's. On a canvas you may only
-        read, the menu still opens with what changes nothing (open, copy, select all, fit the view).
-        <kbd>Shift</kbd> + right-click gives the browser's own menu, as everywhere in Nik.
+        read, the menu still opens with what changes nothing (open, copy, select all, fit the view). The menu ends, as
+        every menu of Nik, with what is true on every page (search, the shortcuts, back, the address of the page); the
+        browser's own menu never opens, with <kbd>Shift</kbd> held down either.
       </p>
       <p>
         <strong>Without a pointer.</strong> <kbd>Tab</kbd> moves through the nodes, <kbd>Enter</kbd> selects one, the
@@ -703,6 +704,19 @@ Content-Type: application/json
                 assignee), <code>value</code>
               </td>
               <td><code>incident</code></td>
+            </tr>
+            <tr>
+              <td>Tag the incident · Take tags off the incident</td>
+              <td>
+                <code>incident</code> (the run's incident when empty), <code>tags</code> (a list, or words separated by
+                commas)
+              </td>
+              <td>
+                <code>tags</code>: the tags of the incident afterwards; <code>changed</code>: whether they are not what
+                they were. Done twice, it changes nothing the second time: a tag the incident has is not added again,
+                one it does not have is not missed. A tag is held to the
+                <a href="guide.html#incident-tags">rules of a tag</a>; one that is not a tag fails the step.
+              </td>
             </tr>
             <tr>
               <td>Create an incident</td>
@@ -1432,9 +1446,9 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         <li>
           <code>{{ incident.… }}</code>: the fields of the incident by the names of the
           <a href="guide.html#settings">registry</a>: <code>incident.severity</code>, <code>incident.owner</code>,
-          <code>incident.ticket</code>, a field of your own as <code>incident.business_unit</code>. (<code
-            >{{ trigger.incident.… }}</code
-          >
+          <code>incident.ticket</code>, a field of your own as <code>incident.business_unit</code>. Its tags are
+          <code>incident.tags</code>, a list (the field is named <code>labels</code>, and
+          <code>incident.labels</code> reads the same list). (<code>{{ trigger.incident.… }}</code>
           is the incident as it was when the run started.)
         </li>
         <li>

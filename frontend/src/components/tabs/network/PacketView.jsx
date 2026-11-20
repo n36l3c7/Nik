@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Flag, Filter, MessagesSquare, X } from 'lucide-react'
 import { Button } from '../../ui/index.js'
-import { isShortcutProbe } from '../../../context/ContextMenuContext.jsx'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import FollowStream from './FollowStream.jsx'
 import SortHeader from './SortHeader.jsx'
 import IocText from '../../ioc/IocText.jsx'
@@ -106,6 +106,7 @@ function fieldHint(filter) {
 function TreeNode({ node, depth, open, toggle, selected, onSelect, onFilter }) {
   const expanded = open.has(node.path)
   const hasChildren = node.children.length > 0
+  const menu = useObjectMenu()
   return (
     <li>
       <div
@@ -115,13 +116,18 @@ function TreeNode({ node, depth, open, toggle, selected, onSelect, onFilter }) {
         tabIndex={-1}
         onClick={() => onSelect(node)}
         onDoubleClick={() => hasChildren && toggle(node.path)}
-        onContextMenu={(event) => {
-          // F and C look for a menu here; this is not one.
-          if (!node.filter || isShortcutProbe(event)) return
-          event.preventDefault()
-          onFilter(node.filter)
-        }}
-        title={node.filter ? `${node.filter} (right-click: apply as filter)` : undefined}
+        // The first entry is the filter: a right-click then Enter applies it.
+        onContextMenu={(event) =>
+          menu(event, {
+            title: node.label,
+            actions: [node.filter && { label: 'Apply as filter', icon: Filter, onSelect: () => onFilter(node.filter) }],
+            copy: [
+              { label: 'Copy the field', text: node.label },
+              node.filter && { label: 'Copy the filter', text: node.filter },
+            ],
+          })
+        }
+        title={node.filter ? `${node.filter} (right-click: apply as filter, copy)` : undefined}
         className={[
           'flex cursor-default items-start gap-1 whitespace-pre-wrap break-all px-1 py-px',
           selected === node.path ? 'bg-accent-soft text-fg' : 'hover:bg-raised',

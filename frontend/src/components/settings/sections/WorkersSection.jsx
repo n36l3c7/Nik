@@ -3,6 +3,7 @@ import { RefreshCw, ServerCog } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
 import { notAnswering, workerName, workerStatus } from '../../../domain/workers.js'
+import { usePageMenu } from '../../menu/usePageMenu.js'
 import { Badge, Button } from '../../ui/index.js'
 
 /*
@@ -39,8 +40,18 @@ export default function WorkersSection() {
   const silent = notAnswering(workers)
   const minutes = Math.round((found?.downAfterSeconds ?? 120) / 60)
 
+  const pageMenu = usePageMenu(() => [
+    {
+      label: 'Refresh',
+      icon: RefreshCw,
+      disabled: loading,
+      title: loading ? 'The workers are being read' : undefined,
+      onSelect: load,
+    },
+  ])
+
   return (
-    <section className="space-y-6">
+    <section className="space-y-6" onContextMenu={pageMenu}>
       <div>
         <div className="flex items-center gap-2">
           <ServerCog className="h-5 w-5 text-accent" aria-hidden="true" />

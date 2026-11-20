@@ -1,6 +1,7 @@
 import { BellRing, Eye, FileUp, Plus } from 'lucide-react'
 import { useIocLibrary } from '../../context/IocLibraryContext.jsx'
-import { QUICK_FILTERS } from '../../domain/iocLibrary.js'
+import { QUICK_FILTERS, libraryPath } from '../../domain/iocLibrary.js'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { Button } from '../ui/index.js'
 
 /*
@@ -8,9 +9,9 @@ import { Button } from '../ui/index.js'
  * alerts of the watched lists, and the lists. The table is in the main area.
  */
 
-function Entry({ active, onClick, label, count, icon: Icon = null, tone = '' }) {
+function Entry({ active, onClick, label, count, icon: Icon = null, tone = '', onMenu = undefined }) {
   return (
-    <li>
+    <li onContextMenu={onMenu}>
       <button
         type="button"
         onClick={onClick}
@@ -32,6 +33,7 @@ function Entry({ active, onClick, label, count, icon: Icon = null, tone = '' }) 
 /** @param {{ width: number }} props */
 export default function IocsPanel({ width }) {
   const { view, openView, quick, setQuick, counts, lists, alerts, openAdd } = useIocLibrary()
+  const menu = useObjectMenu()
   return (
     <aside
       aria-label="IoCs panel"
@@ -86,6 +88,17 @@ export default function IocsPanel({ width }) {
                 count={list.count}
                 active={view?.kind === 'list' && view.id === list.id}
                 onClick={() => openView({ kind: 'list', id: list.id })}
+                onMenu={(event) =>
+                  menu(event, {
+                    title: list.name,
+                    actions: [
+                      { label: 'Open', onSelect: () => openView({ kind: 'list', id: list.id }) },
+                      { label: 'Add indicators to it…', onSelect: () => openAdd({ list: list.id }) },
+                    ],
+                    link: libraryPath({ kind: 'list', id: list.id }),
+                    copy: [{ label: 'Copy the name', text: list.name }],
+                  })
+                }
               />
             ))}
           </ul>

@@ -12,6 +12,7 @@ import {
   Play,
   Plus,
   Save,
+  Tag,
   Trash2,
   Upload,
   UserCheck,
@@ -25,6 +26,7 @@ import { useFields } from '../../context/FieldsContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { typeOf } from '../../domain/fields.js'
+import { usePageMenu } from '../menu/usePageMenu.js'
 import {
   DEFAULT_SORT,
   PAGE_ROWS,
@@ -37,7 +39,8 @@ import {
   sortIncidents,
   writeColumns,
 } from '../../domain/incidentList.js'
-import { STATUSES } from '../../domain/incidentName.js'
+import { STATUSES, numberedName } from '../../domain/incidentName.js'
+import { tagsInUse, withTag } from '../../domain/incidentTags.js'
 import { tryParse } from '../../domain/query/parse.js'
 import { filterPayload, filterView, isChanged } from '../../domain/savedFilters.js'
 import { isTypingTarget } from '../../domain/search.js'
@@ -50,6 +53,7 @@ import ColumnsDialog from './ColumnsDialog.jsx'
 import { ManageFiltersDialog, SaveFilterDialog } from './FilterDialogs.jsx'
 import FilterMenu from './FilterMenu.jsx'
 import IncidentTable from './IncidentTable.jsx'
+import IncidentTags from '../incident/IncidentTags.jsx'
 import QuickChips from './QuickChips.jsx'
 import QuickView from './QuickView.jsx'
 import { useSavedFilters } from './useSavedFilters.js'
@@ -63,7 +67,8 @@ import { useSavedFilters } from './useSavedFilters.js'
  * query that filters it (the server reads it), the saved filters, the chips
  * that write a condition, and the choice of the columns. A click on a row
  * opens the quick view over the right side of the page; a double click opens
- * the incident.
+ * the incident. A click on a tag, in a row or in the quick view, adds it to
+ * the query.
  *
  * The rows are the light list the incident context holds; the query is asked
  * of the server, which answers with the incidents it keeps, and with the
@@ -132,6 +137,10 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
     [chosenKeys, columns],
   )
   const chosen = saved.filters.find((filter) => filter.id === view.filterId) ?? null
+  // The tags the incidents carry, the most used first: what the Tag chip lists and tag: completes.
+  const inUse = useMemo(() => tagsInUse(incidents), [incidents])
+  const offered = useMemo(() => ({ labels: inUse.map((item) => item.tag) }), [inUse])
+  const filterByTag = (tag) => setView((current) => ({ query: withTag(current.query, tag, schema) }))
   const changed = isChanged(chosen, { query: view.query, sort: view.sort, columns: chosenKeys })
 
   // The list opens with the person's default filter: once for each account, when the filters are read.
@@ -239,6 +248,9 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef(null)
   const [dialog, setDialog] = useState(null) // 'save' | 'manage' | 'columns'
+  // The incident whose tags are changed from the menu of its row (its id: the row is read as it is now).
+  const [taggingId, setTaggingId] = useState(null)
+  const tagging = taggingId ? (incidents.find((row) => row.id === taggingId) ?? null) : null
 
   const exportRow = async (row) => {
     setExportingId(row.id)
@@ -296,6 +308,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
         ...(canWrite
           ? [
               'separator',
+              { label: 'Add a tag…', icon: Tag, onSelect: () => setTaggingId(row.id) },
               ...STATUSES.filter((status) => status.value !== row.status).map((status) => ({
                 label: `Mark as ${status.label}`,
                 icon: CircleDot,
@@ -328,6 +341,12 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
       ],
     })
 
+  // What the page itself offers, in every right-click menu opened on it.
+  const pageMenu = usePageMenu(() => [
+    canWrite && { label: 'New incident…', icon: Plus, onSelect: onCreateIncident },
+    { label: 'Columns…', icon: Columns3, onSelect: () => setDialog('columns') },
+  ])
+
   const saveFilter = async ({ id, name }) => {
     const body = filterPayload({ name, query: view.query, sort: view.sort, columns: chosenKeys })
     const kept = id ? await saved.update(id, body) : await saved.create(body)
@@ -340,6 +359,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
       ref={pageRef}
       aria-label="Incidents"
       className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas"
+      onContextMenu={pageMenu}
     >
       {/* ----- Title, count, what is made here ----- */}
       <header className="flex shrink-0 flex-wrap items-center gap-3 px-6 pb-2 pt-4">
@@ -397,6 +417,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
             value={view.query}
             onChange={(query) => setView({ query })}
             error={match.error}
+            values={offered}
             className="min-w-0 flex-1"
           />
           <Button variant="secondary" size="sm" icon={Save} onClick={() => setDialog('save')}>
@@ -410,6 +431,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
           types={types}
           assignees={assignees}
           me={me}
+          tags={inUse}
         >
           {changed && (
             <>
@@ -481,6 +503,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
               onOpen={onOpenIncident}
               onMove={(id) => shown && setShownId(id)}
               onMenu={rowMenu}
+              onTag={filterByTag}
               canWrite={canWrite}
               exportingId={exportingId}
               onExport={exportRow}
@@ -500,7 +523,31 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
       </div>
 
       {shown && (
-        <QuickView row={shown} type={typeOf(types, shown)} onClose={() => setShownId(null)} onOpen={onOpenIncident} />
+        <QuickView
+          row={shown}
+          type={typeOf(types, shown)}
+          onClose={() => setShownId(null)}
+          onOpen={onOpenIncident}
+          onTag={filterByTag}
+        />
+      )}
+
+      {/* ----- The tags of a row, from its menu ----- */}
+      {tagging && (
+        <Modal
+          open
+          onClose={() => setTaggingId(null)}
+          title={`Tags of ${numberedName(tagging)}`}
+          footer={<Button onClick={() => setTaggingId(null)}>Done</Button>}
+        >
+          <div className="flex min-h-48 flex-col gap-3">
+            <IncidentTags incidentId={tagging.id} tags={tagging.tags} startOpen />
+            <p className="text-xs text-fg-muted">
+              Enter adds what is typed, Backspace in the empty input takes the last tag off. Each change is saved at
+              once.
+            </p>
+          </div>
+        </Modal>
       )}
 
       {dialog === 'columns' && (

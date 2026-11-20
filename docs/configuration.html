@@ -225,6 +225,17 @@
               </td>
             </tr>
             <tr>
+              <td><code>API_BACKGROUND</code></td>
+              <td><code>true</code></td>
+              <td>
+                What the backend does by itself in threads of its own: the check of the workers (it tells the
+                administrators when one is down, see
+                <a href="deployment.html#worker-watch">When a worker is down</a>) and the scans of addresses that
+                playbooks ask for. <code>false</code> turns both off: no notice about a worker, and a
+                <em>Scan an address</em> node waits five minutes and fails.
+              </td>
+            </tr>
+            <tr>
               <td><code>NIK_PACKS_CATALOGUE</code></td>
               <td>the release <code>packs</code> of Nik's repository</td>
               <td>

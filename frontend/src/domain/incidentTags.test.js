@@ -17,6 +17,8 @@ import {
   withoutTag,
   withoutTags,
 } from './incidentTags.js'
+import { DEFAULT_COLUMNS, allColumns, cellText, sortIncidents } from './incidentList.js'
+import { completions, withValues } from './query/complete.js'
 
 const SCHEMA = {
   entity: 'incidents',
@@ -156,4 +158,36 @@ test('several tags narrow the list: each one chosen is one more condition', () =
 
   assert.equal(withoutTags('tag:phish status:open labels:vip !tag:test', SCHEMA), 'status:open !tag:test')
   assert.equal(withoutTags('status:open', SCHEMA), 'status:open')
+})
+
+test('the list has a Tags column of its own, after the title, read from the tags of the row', () => {
+  assert.deepEqual(DEFAULT_COLUMNS.slice(0, 3), ['number', 'name', 'labels'])
+  // The field of the registry is that column: it is not listed a second time.
+  const columns = allColumns([{ name: 'labels', label: 'Tags', type: 'tags', appliesTo: 'incident', system: true }])
+  const found = columns.filter((column) => column.key === 'labels')
+  assert.deepEqual(found, [{ key: 'labels', label: 'Tags', kind: 'text' }])
+  assert.equal(cellText({ tags: ['phish', 'vip'] }, found[0]), 'phish, vip')
+  assert.equal(cellText({}, found[0]), '')
+  // Ordered by their text; a row without tags comes last.
+  const rows = [
+    { id: 'a', tags: ['vip'], updatedAt: '1' },
+    { id: 'b', tags: [], updatedAt: '2' },
+    { id: 'c', tags: ['acme', 'vip'], updatedAt: '3' },
+  ]
+  const order = sortIncidents(rows, { key: 'labels', dir: 'asc' }, columns).map((row) => row.id)
+  assert.deepEqual(order, ['c', 'a', 'b'])
+})
+
+test('tag: completes with the tags in use, by every name of the field', () => {
+  const schema = withValues(SCHEMA, { labels: ['phish', 'spear-phish', 'vip'] })
+  const offered = (text) => completions(text, text.length, schema)?.items.map((item) => item.label) ?? null
+  assert.deepEqual(offered('tag:'), ['phish', 'spear-phish', 'vip'])
+  assert.deepEqual(offered('status:open tags:ph'), ['phish', 'spear-phish'])
+  assert.deepEqual(offered('labels:v'), ['vip'])
+  assert.equal(offered('tag:vip'), null) // already a tag in use: nothing more to say
+  // A field that lists its values keeps them; nothing to offer changes nothing.
+  assert.deepEqual(offered('status:'), ['open', 'in_progress', 'closed'])
+  assert.equal(withValues(SCHEMA, null), SCHEMA)
+  assert.equal(withValues(null, { labels: ['x'] }), null)
+  assert.equal(completions('tag:', 4, SCHEMA), null)
 })

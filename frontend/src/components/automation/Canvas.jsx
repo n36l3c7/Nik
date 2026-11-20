@@ -47,8 +47,7 @@ import CanvasEdge from './CanvasEdge.jsx'
  * empty canvas, is told to the page (`onMenu`), which opens the menu; so are
  * the menu key and Shift+F10 on what has the focus. A node that is
  * right-clicked becomes the selection, unless it is one of several selected:
- * then the menu is about all of them. Shift + right-click is left to the
- * browser, as everywhere in Nik.
+ * then the menu is about all of them.
  *
  * `readOnly` with `statuses` draws a run: the same nodes, coloured by what
  * happened to each. `readOnly` with `marks` draws one side of a comparison:
@@ -435,7 +434,7 @@ function Flow({
       if (!(event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) return
       const element = event.target.closest?.('.react-flow__node, .react-flow__edge') ?? event.currentTarget
       const box = element.getBoundingClientRect()
-      // What a right-click in the middle of it would have said (and never "the browser's own menu").
+      // What a right-click in the middle of it would have said.
       const asked = {
         clientX: box.left + box.width / 2,
         clientY: box.top + box.height / 2,
@@ -455,12 +454,11 @@ function Flow({
   )
   const menus = onMenu
     ? {
-        // Shift + right-click: the browser's own menu, and the selection stays as it is.
-        onNodeContextMenu: (event, node) => event.shiftKey || menuOfNode(event, node.id),
-        onEdgeContextMenu: (event, edge) => event.shiftKey || menuOfEdge(event, edge.id),
-        onPaneContextMenu: (event) => event.shiftKey || menuOfPane(event),
+        onNodeContextMenu: (event, node) => menuOfNode(event, node.id),
+        onEdgeContextMenu: (event, edge) => menuOfEdge(event, edge.id),
+        onPaneContextMenu: (event) => menuOfPane(event),
         onSelectionContextMenu: (event, picked) =>
-          event.shiftKey || onMenu(event, { kind: 'selection', ids: picked.map((node) => node.id) }, view),
+          onMenu(event, { kind: 'selection', ids: picked.map((node) => node.id) }, view),
       }
     : null
 

@@ -285,6 +285,8 @@
 ├── fields.py                       # The field registry: system and custom fields, the one writer of an
 │                                   #   incident's fields (checks, coerces, audits, tells the playbooks)
 ├── incident_types.py               # Types of incident: their fields, layout, close reasons; the shipped ones
+├── incident_tags.py                # The tags of an incident (its field labels): the rules of a tag, adding and
+│                                   #   taking off, the name tags in an expression
 ├── context.py                      # The context of an incident: the common schema, context paths, the merge
 │                                   #   by key, provenance (who set each item last)
 ├── war_room.py                     # The War Room: entries, the read adapter over an incident's notes
@@ -453,7 +455,8 @@
     │                               #   hours, IOC allowlist, report header, accounts, API keys, YARA rules,
     │                               #   FLIRT signatures, capa rules, automation network and switch, storage, backup, audit log)
     ├── search/                     # CommandPalette (Ctrl/Cmd+K: nik&gt; search and &gt; actions)
-    ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog
+    ├── incident/                   # IncidentFields (ticket, title, severity…), AddFileDialog, IncidentTags (the
+    │                               #   tags as chips, changed where they are read)
     ├── menu/                       # useItemMenu (the right-click menu of any item, built from the parts
     │                               #   that apply), useRowMenu (event rows), flagItems
     ├── keyboard/                   # KeyboardShortcuts (F flag, C comment on the row under the pointer,
@@ -510,11 +513,17 @@
         <em>Add to the allowlist…</em>; on an event row (Browser, Commands, Endpoint, Event Logs, Timeline)
         <em>Flag</em> or <em>Remove the flag</em>, <em>Add a comment…</em>, <em>Copy as text</em>,
         <em>Copy as JSON</em> and <em>Show in the Timeline</em>; on an incident in the sidebar <em>Open</em>,
-        <em>Incident report…</em>, <em>Export (JSON)</em>, <em>Copy link</em> and <em>Delete…</em>. Text fields and
-        selected text keep the browser's menu, and so does Shift + right-click.
-        <strong>Add to the allowlist</strong> (also the shield button on each IOC row) proposes the value or a wider
-        entry — its domain or a parent domain, its /24 network — and writes it to the shared allowlist with a comment
-        line saying who added it and when; <em>Undo</em> stays available for a few seconds. Any analyst can do it.
+        <em>Incident report…</em>, <em>Export (JSON)</em>, <em>Copy link</em> and <em>Delete…</em>. The browser's own
+        menu never opens: the provider stops every <code>contextmenu</code> event at the window, lets the elements it
+        passes through say what they offer (<code>openMenu</code>; a page adds its entries with
+        <code>usePageMenu</code>), reads what else is under the pointer (<code>lib/underPointer.js</code>: selected
+        text, a text field, a link, a cell or a line of text) and joins the sections in the order
+        <code>domain/contextMenu.js</code> gives, the general section last. The menu key and Shift + F10 ask for the
+        same menu on what has the focus; a code editor says how it is cut, pasted and undone with
+        <code>registerEditor</code> (<code>lib/textField.js</code>). <strong>Add to the allowlist</strong> (also the
+        shield button on each IOC row) proposes the value or a wider entry — its domain or a parent domain, its /24
+        network — and writes it to the shared allowlist with a comment line saying who added it and when;
+        <em>Undo</em> stays available for a few seconds. Any analyst can do it.
       </p>
       <p>
         <strong>Drag-and-drop anywhere.</strong> Drop a file on any part of the app (outside the tabs' own drop zones)

@@ -48,6 +48,7 @@ import {
   toggled,
   uninstallCounts,
 } from '../../../domain/packs.js'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
 
 /*
@@ -428,10 +429,35 @@ const STATE_BADGE = {
 /** One pack: what it is, what it holds, and what can be done with it here. */
 function PackCard({ card, busy, selected, onSelect, onInstall, onOpen, onUninstall }) {
   const badge = STATE_BADGE[card.state]
+  const menu = useObjectMenu()
+  const takes = card.state === 'available' || card.state === 'update'
   return (
     <li
       aria-label={card.name}
       className={`flex flex-col gap-2 border bg-panel p-3 ${selected ? 'border-accent' : 'border-line'}`}
+      onContextMenu={(event) =>
+        menu(event, {
+          title: card.name,
+          actions: [
+            { label: 'Open', onSelect: () => onOpen(card) },
+            takes && {
+              label: card.state === 'update' ? 'See what changes…' : 'Install…',
+              disabled: busy,
+              title: busy ? 'It is being installed' : undefined,
+              onSelect: () => onInstall(card),
+            },
+            selectable(card) && {
+              label: selected ? 'Take it out of the selection' : 'Select',
+              onSelect: () => onSelect(card),
+            },
+          ],
+          copy: [
+            { label: 'Copy the name', text: card.name },
+            { label: 'Copy the version', text: card.installed || card.version },
+          ],
+          danger: card.installed && !card.builtin ? [{ label: 'Uninstall…', onSelect: () => onUninstall(card) }] : [],
+        })
+      }
     >
       <div className="flex items-start gap-2.5">
         {selectable(card) && (

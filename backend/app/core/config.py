@@ -151,6 +151,10 @@ class Settings:
         # Automatic threat-intelligence lookups (Settings -> Threat
         # intelligence turns them on per type). false = no background thread.
         self.ENRICHMENT_WORKER: bool = _get_bool("ENRICHMENT_WORKER", True)
+        # What the API process does by itself in threads of its own: the check of the workers
+        # (worker_watch.py) and the scans of addresses playbooks ask for (urlscan_queue.py).
+        # false = neither starts (the tests, which own the database they run on).
+        self.API_BACKGROUND: bool = _get_bool("API_BACKGROUND", True)
         # Content packs. A folder of packs (each a folder with a pack.yml, or a .nikpack file) installed
         # at start when they are not here or are older: for a Nik that cannot reach the catalogue.
         self.PACKS_DIR: str = os.getenv("NIK_PACKS_DIR", "").strip()

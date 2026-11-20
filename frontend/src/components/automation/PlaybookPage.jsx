@@ -92,7 +92,7 @@ const saveText = (state, what) =>
   })[state] ?? ''
 
 /** The same playbook as a table: every node, where it goes, what is to fix. */
-function NodeList({ graph, catalog, problems, selected, onSelect }) {
+function NodeList({ graph, catalog, problems, selected, onSelect, onMenu }) {
   const outgoing = edgesFrom(graph)
   return (
     <div className="max-h-56 shrink-0 overflow-auto border-t border-line bg-panel">
@@ -119,7 +119,12 @@ function NodeList({ graph, catalog, problems, selected, onSelect }) {
             const mine = problems.filter((problem) => problem.node === node.id)
             const on = selected.includes(node.id)
             return (
-              <tr key={node.id} className={on ? 'bg-accent-soft/50' : undefined}>
+              <tr
+                key={node.id}
+                className={on ? 'bg-accent-soft/50' : undefined}
+                // The menu the node has on the canvas (nothing of it needs the view).
+                onContextMenu={(event) => onMenu(event, { kind: 'node', id: node.id }, { fit: () => {} })}
+              >
                 <th scope="row" className="border-b border-line-soft px-3 py-1.5 font-normal">
                   <button
                     type="button"
@@ -1049,6 +1054,7 @@ export default function PlaybookPage({
                 problems={problems}
                 selected={selected}
                 onSelect={(nodeId) => select([nodeId])}
+                onMenu={onMenu}
               />
             )}
           </div>

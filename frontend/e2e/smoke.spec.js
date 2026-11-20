@@ -16,6 +16,9 @@ const ADMIN = { username: 'admin', password: 'supersecret' }
 // first step can only fail ("first run" is over) and hide the real error.
 test.describe.configure({ mode: 'serial', retries: 0 })
 
+// The general section that ends every right-click menu once signed in (each entry with its key).
+const GENERAL_MENU = ['Search…ctrl k', 'Keyboard shortcuts?', 'Backalt ←', 'Copy the address of this page']
+
 let page
 // What the Content-Security-Policy blocked, if anything: the suite ends by checking it is empty.
 const blocked = []
@@ -136,9 +139,9 @@ test('the tab bar fits the window and every tab keeps its name', async () => {
     await expect(nav.getByRole('button', { name: 'Evidence', exact: true })).toBeVisible()
   }
   await page.setViewportSize(original)
-  // Controls side by side share one height.
+  // Controls side by side share one height (the tags of the incident are chips under its name, not one of them).
   const heights = await page
-    .locator('header button, header div.border')
+    .locator('header button:not([role="group"] *), header div.border')
     .evaluateAll((elements) => [...new Set(elements.filter((e) => e.offsetHeight).map((e) => e.offsetHeight))])
   expect(heights).toEqual([36])
 })
@@ -1585,7 +1588,7 @@ test('the incident list: a filter is saved, opens the list as the default, and t
   const filter = list.getByRole('combobox', { name: 'Filter incidents' })
   const menu = page.getByRole('menu', { name: 'Saved filters' })
   const headings = table.locator('thead th')
-  const usual = ['#', 'Title', 'Type', 'Severity', 'Status', 'Owner', 'Opened', 'Updated', 'Actions']
+  const usual = ['#', 'Title', 'Tags', 'Type', 'Severity', 'Status', 'Owner', 'Opened', 'Updated', 'Actions']
   const tagged = await page.request.patch('/api/incidents/e2e-list/fields', {
     data: { changes: { category: 'e2e-cat' } },
   })
@@ -1634,6 +1637,7 @@ test('the incident list: a filter is saved, opens the list as the default, and t
   await expect(headings).toHaveText([
     '#',
     'Title',
+    'Tags',
     'Type',
     'Severity',
     'Status',
@@ -1675,6 +1679,129 @@ test('the incident list: a filter is saved, opens the list as the default, and t
   expect((await page.request.delete('/api/incidents/e2e-list')).status()).toBe(204)
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('incidents have tags: put on from the incident, a column of the list, asked by the Tag chip and by tag:, taken off in the quick view', async () => {
+  const before = page.url()
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const table = list.getByRole('table', { name: 'Incidents' })
+  const rows = table.locator('tbody tr')
+  const filter = list.getByRole('combobox', { name: 'Filter incidents' })
+  const menu = page.getByRole('menu')
+  const found = await (await page.request.get('/api/incidents?view=summary&q=host:WKS-FINANCE-01')).json()
+  const incidentId = found.incidents[0].id
+  const tagsOf = async (id) => (await (await page.request.get(`/api/incidents/${id}/fields`)).json()).fields.labels
+  // A second incident that carries one of the two tags: the counts of the chip differ.
+  const made = await page.request.post('/api/incidents', { data: { id: 'e2e-tags', host: 'E2E-TAGS', data: {} } })
+  expect(made.status()).toBe(201)
+
+  // On the page of the incident: "+" opens an input, Enter adds; capitals and spaces are made a tag.
+  await page.goto(`/incident/${incidentId}`)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  const own = page.getByRole('banner').getByRole('group', { name: 'Tags' })
+  await own.getByRole('button', { name: 'Add a tag' }).click()
+  const typing = own.getByRole('combobox', { name: 'New tag' })
+  await expect(typing).toBeFocused()
+  await typing.fill('E2E Phish')
+  await typing.press('Enter')
+  await expect(own).toContainText('#e2e-phish')
+  // What is not a tag is refused where it was typed, with the rule.
+  await typing.fill('no/slash')
+  await typing.press('Enter')
+  await expect(own.getByRole('alert')).toContainText('A tag is a letter or a digit')
+  await typing.fill('e2e-vip')
+  await typing.press('Enter')
+  await expect(own).toContainText('#e2e-vip')
+  await expect(own.getByRole('alert')).toHaveCount(0)
+  await typing.press('Escape')
+  await expect(typing).toHaveCount(0)
+  await expect.poll(() => tagsOf(incidentId)).toEqual(['e2e-phish', 'e2e-vip'])
+  // Each change left the trace a field change leaves.
+  const trace = await (await page.request.get('/api/audit?q=action:incident.field details:Tags')).json()
+  expect(trace.entries[0].details).toBe('Set Tags: ["e2e-phish"] → ["e2e-phish", "e2e-vip"]')
+
+  // The list: a column of chips. The menu of a row tags another incident, offering the tags in use.
+  await openIncidentList()
+  const row = incidentRow('WKS-FINANCE-01')
+  const other = rows.filter({ hasText: 'E2E-TAGS' })
+  await expect(table.locator('thead th').nth(2)).toHaveText('Tags')
+  await expect(row.getByRole('button', { name: 'Filter by the tag e2e-phish' })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Filter by the tag e2e-vip' })).toBeVisible()
+  await other.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Add a tag…' }).click()
+  const tagging = page.getByRole('dialog', { name: /^Tags of #\d+/ })
+  const adding = tagging.getByRole('combobox', { name: 'New tag' })
+  await adding.fill('e2e-p')
+  await expect(tagging.getByRole('option')).toHaveText(['#e2e-phish'])
+  await adding.press('ArrowDown')
+  await adding.press('Enter')
+  await expect(tagging.getByRole('group', { name: 'Tags' })).toContainText('#e2e-phish')
+  // Backspace in the empty input takes the last one off; it is put back for what follows.
+  await adding.fill('e2e-other')
+  await adding.press('Enter')
+  await expect(tagging.getByRole('button', { name: 'Remove the tag e2e-other' })).toBeVisible()
+  await adding.press('Backspace')
+  await expect(tagging.getByRole('button', { name: 'Remove the tag e2e-other' })).toHaveCount(0)
+  await tagging.getByRole('button', { name: 'Done' }).click()
+  await expect(tagging).toHaveCount(0)
+  await expect(other.getByRole('button', { name: 'Filter by the tag e2e-phish' })).toBeVisible()
+  await expect.poll(() => tagsOf('e2e-tags')).toEqual(['e2e-phish'])
+
+  // The Tag chip lists the tags in use with how many incidents carry each, and writes tag:<value>.
+  await list.getByRole('button', { name: 'Tag', exact: true }).click()
+  await expect(menu.getByRole('menuitem', { name: /#e2e-phish/ })).toHaveText(/#e2e-phish\s*2$/)
+  await expect(menu.getByRole('menuitem', { name: /#e2e-vip/ })).toHaveText(/#e2e-vip\s*1$/)
+  await menu.getByRole('menuitem', { name: /#e2e-phish/ }).click()
+  await expect(filter).toHaveValue('tag:e2e-phish')
+  await expect(rows).toHaveCount(2)
+  // A click on a tag of a row adds it: several tags keep the incidents that carry all of them.
+  await row.getByRole('button', { name: 'Filter by the tag e2e-vip' }).click()
+  await expect(filter).toHaveValue('tag:e2e-phish tag:e2e-vip')
+  await expect(rows).toHaveCount(1)
+  await list.getByRole('button', { name: 'Tag: tag:e2e-phish tag:e2e-vip' }).click()
+  await expect(menu.getByRole('menuitem', { name: /#e2e-vip/ })).toContainText('in the query')
+  await menu.getByRole('menuitem', { name: 'Take the tags out of the query' }).click()
+  await expect(filter).toHaveValue('')
+  // Typed: tag: completes with the tags in use; labels: is the same field.
+  await filter.pressSequentially('tag:e2e-v')
+  const suggestions = list.getByRole('listbox', { name: 'Suggestions' })
+  await expect(suggestions.getByRole('option')).toHaveText(['e2e-vip'])
+  await page.keyboard.press('Enter')
+  await expect(filter).toHaveValue('tag:e2e-vip ')
+  await expect(rows).toHaveCount(1)
+  await expect(row).toBeVisible()
+  await filter.fill('labels:E2E-PHISH -tags:e2e-vip')
+  await expect(rows).toHaveCount(1)
+  await expect(other).toBeVisible()
+  await filter.fill('')
+  await expect(rows.nth(1)).toBeVisible()
+
+  // The quick view shows them, and takes one off; the row follows.
+  await row.locator('td').nth(3).click()
+  const quick = page.getByRole('complementary', { name: /^Quick view of incident/ })
+  const quickTags = quick.getByRole('group', { name: 'Tags' })
+  await expect(quickTags).toContainText('#e2e-phish')
+  await quickTags.getByRole('button', { name: 'Remove the tag e2e-vip' }).click()
+  await expect(quickTags).not.toContainText('#e2e-vip')
+  await expect(row.getByRole('button', { name: 'Filter by the tag e2e-vip' })).toHaveCount(0)
+  await expect.poll(() => tagsOf(incidentId)).toEqual(['e2e-phish'])
+  // Escape in the input of a tag closes the input, not the quick view.
+  await quickTags.getByRole('button', { name: 'Add a tag' }).click()
+  await quickTags.getByRole('combobox', { name: 'New tag' }).press('Escape')
+  await expect(quickTags.getByRole('combobox', { name: 'New tag' })).toHaveCount(0)
+  await expect(quick).toBeVisible()
+  await quick.getByRole('button', { name: 'Close the quick view' }).click()
+  await expect(quick).toHaveCount(0)
+
+  // Put back: the incident with no tag, the other one deleted.
+  const cleared = await page.request.patch(`/api/incidents/${incidentId}/fields`, {
+    data: { changes: { labels: null } },
+  })
+  expect(cleared.status()).toBe(200)
+  expect((await page.request.delete('/api/incidents/e2e-tags')).status()).toBe(204)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  await expect(page.getByRole('banner').getByRole('group', { name: 'Tags' })).not.toContainText('#e2e-phish')
 })
 
 test('a custom field is asked like any other: the query box, "Field…", a saved filter, a chart of a page', async () => {
@@ -4617,6 +4744,9 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
     'Copy link',
     'Copy the name',
     'Delete…',
+    // What the page makes, then what every page has.
+    'New playbook…',
+    ...GENERAL_MENU,
   ])
   // Open does what a click on the name does.
   await menu.getByRole('menuitem', { name: 'Open', exact: true }).click()
@@ -4628,6 +4758,8 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
     'Copy link',
     'Copy the name',
     'Delete…',
+    'New script…',
+    ...GENERAL_MENU,
   ])
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toHaveCount(0)
@@ -4636,7 +4768,12 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
   await page.getByRole('button', { name: 'Dashboards', exact: true }).click()
   const boards = page.getByRole('navigation', { name: 'Your dashboards' })
   await boards.getByRole('listitem').first().click({ button: 'right' })
-  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Open', 'Copy link', 'Copy the name'])
+  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText([
+    'Open',
+    'Copy link',
+    'Copy the name',
+    ...GENERAL_MENU,
+  ])
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Close dashboards' }).first().click()
 })
@@ -4719,6 +4856,7 @@ test('right-click in the playbook editor: a node is duplicated and deleted, one 
     'Cutctrl x',
     'Disconnect its lines',
     'Deletedel',
+    ...GENERAL_MENU,
   ])
   await menu.getByRole('menuitem', { name: 'Duplicate' }).click()
   await expect(nodes).toHaveCount(3)
@@ -4754,6 +4892,7 @@ test('right-click in the playbook editor: a node is duplicated and deleted, one 
     'Tidy up',
     'Undoctrl z',
     'Redoctrl shift z',
+    ...GENERAL_MENU,
   ])
   await menu.getByRole('menuitem', { name: 'Add a node here…' }).click()
   const add = page.getByRole('dialog', { name: 'Add a node' })
@@ -4768,7 +4907,7 @@ test('right-click in the playbook editor: a node is duplicated and deleted, one 
 
   // What was copied is pasted where the next click is.
   await nodes.filter({ hasText: 'Write it down' }).click({ button: 'right' })
-  await menu.getByRole('menuitem', { name: 'Copy' }).click()
+  await menu.getByRole('menuitem', { name: /^Copy\s*ctrl c$/ }).click()
   await canvas.click({ button: 'right', position: { x: 70, y: 150 } })
   await menu.getByRole('menuitem', { name: 'Paste here' }).click()
   await expect(nodes).toHaveCount(4)
@@ -4776,7 +4915,7 @@ test('right-click in the playbook editor: a node is duplicated and deleted, one 
   // The line that has the focus gives its menu to the keyboard too.
   await edges.first().focus()
   await page.keyboard.press('Shift+F10')
-  await expect(menu.getByRole('menuitem')).toHaveText(['Delete this connectiondel'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['Delete this connectiondel', ...GENERAL_MENU])
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
 
@@ -4790,7 +4929,7 @@ test('right-click in the playbook editor: a node is duplicated and deleted, one 
       return { x: point.x, y: point.y }
     })
   await page.mouse.click(middle.x, middle.y, { button: 'right' })
-  await expect(menu.getByRole('menuitem')).toHaveText(['Delete this connectiondel'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['Delete this connectiondel', ...GENERAL_MENU])
   await expect(menu).toContainText('Trigger → Write it down')
   await menu.getByRole('menuitem', { name: 'Delete this connection' }).click()
   await expect(edges).toHaveCount(0)
@@ -5439,6 +5578,359 @@ test('single-key shortcuts can be turned off and on again', async () => {
   await expect(flag).toHaveCount(before ? 0 : 1)
   await page.keyboard.press('f')
   await expect(flag).toHaveCount(before)
+})
+
+/**
+ * The browser's own menu can open nowhere on what `target` shows: a `contextmenu` event sent to every
+ * element comes back refused. Each one asks for Nik's menu; the one left open is closed here.
+ */
+async function nativeMenuNeverOpens(target, where) {
+  const swept = await target.evaluate(() => {
+    const missed = []
+    const all = [...document.querySelectorAll('*')].filter((element) => !element.closest('[data-nik-menu]'))
+    for (const element of all) {
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
+      element.dispatchEvent(event)
+      if (!event.defaultPrevented) missed.push(`${element.tagName} ${element.className}`)
+    }
+    return { count: all.length, missed }
+  })
+  expect(swept.missed, where).toEqual([])
+  expect(swept.count, where).toBeGreaterThan(30)
+  await expect(target.getByRole('menu'), where).toBeVisible()
+  await target.keyboard.press('Escape')
+  await expect(target.getByRole('menu'), where).toHaveCount(0)
+}
+
+/**
+ * A right-click on `target` opens Nik's menu: it holds `expected`, and ends with the general section.
+ * The menu is closed again with Escape, which closes nothing else.
+ */
+async function opensNikMenu(target, where, expected = []) {
+  await target.click({ button: 'right' })
+  const entries = page.getByRole('menu').getByRole('menuitem')
+  await expect(entries.first(), where).toBeVisible()
+  const texts = await entries.allTextContents()
+  expect(texts.slice(-GENERAL_MENU.length), where).toEqual(GENERAL_MENU)
+  for (const text of expected) expect(texts, where).toContain(text)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu'), where).toHaveCount(0)
+  return texts
+}
+
+test("right-click opens Nik's menu on the sign-in page, and the browser's own menu nowhere on it", async ({
+  browser,
+}) => {
+  const visitor = await browser.newPage()
+  await visitor.goto('/')
+  await expect(visitor.locator('#login-username')).toBeVisible()
+  const menu = visitor.getByRole('menu')
+
+  // Nobody is signed in: the menu holds what needs nobody.
+  await visitor.mouse.click(3, 3, { button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Backalt ←', 'Copy the address of this page'])
+  await visitor.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // A text field: cut, copy, paste, select all, each enabled as it applies.
+  await visitor.locator('#login-username').click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Cutctrl x',
+    'Copyctrl c',
+    'Pastectrl v',
+    'Select allctrl a',
+    'Backalt ←',
+    'Copy the address of this page',
+  ])
+  const cut = menu.getByRole('menuitem', { name: /^Cut/ })
+  await expect(cut).toHaveAttribute('aria-disabled', 'true')
+  await expect(cut).toHaveAttribute('title', 'Nothing is selected')
+  await expect(menu.getByRole('menuitem', { name: /^Select all/ })).toHaveAttribute('title', 'The field is empty')
+  await visitor.keyboard.press('Escape')
+  await visitor.fill('#login-username', 'somebody')
+  await visitor.locator('#login-username').click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Select all/ }).click()
+  await expect(menu).toHaveCount(0)
+  expect(
+    await visitor
+      .locator('#login-username')
+      .evaluate((input) => input.value.slice(input.selectionStart, input.selectionEnd)),
+  ).toBe('somebody')
+  // On what is selected, Cut can be done.
+  await visitor.locator('#login-username').click({ button: 'right', position: { x: 24, y: 10 } })
+  await expect(menu.getByRole('menuitem', { name: /^Cut/ })).not.toHaveAttribute('aria-disabled', 'true')
+  await visitor.keyboard.press('Escape')
+
+  // A password is not copied.
+  await visitor.fill('#login-password', 'not-a-password')
+  await visitor.locator('#login-password').press('Control+a')
+  await visitor.locator('#login-password').click({ button: 'right' })
+  const copy = menu.getByRole('menuitem', { name: /^Copy\s*ctrl c$/ })
+  await expect(copy).toHaveAttribute('aria-disabled', 'true')
+  await expect(copy).toHaveAttribute('title', 'A password is not copied')
+  await visitor.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // Shift + right-click is a right-click: no key brings the browser's menu back.
+  await visitor.locator('#login-username').click({ button: 'right', modifiers: ['Shift'] })
+  await expect(menu.getByRole('menuitem', { name: /^Paste/ })).toBeVisible()
+  await visitor.keyboard.press('Escape')
+
+  await nativeMenuNeverOpens(visitor, 'the sign-in page')
+  await visitor.close()
+})
+
+test("right-click opens Nik's menu on every screen: the incident and its tabs, the pages of the rail, Settings", async () => {
+  test.setTimeout(240_000)
+  const menu = page.getByRole('menu')
+  const sections = page.getByRole('navigation', { name: 'Sections' })
+  const main = page.locator('main')
+  /** The edge of the main area, above what it shows. */
+  const emptyArea = async (where) => {
+    await main.click({ button: 'right', position: { x: 160, y: 4 } })
+    const texts = await menu.getByRole('menuitem').allTextContents()
+    expect(texts.slice(-GENERAL_MENU.length), where).toEqual(GENERAL_MENU)
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+  }
+
+  // ---- The incident: every tab, and every kind of evidence ----
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]').getByRole('button')
+  const tabCount = await tabs.count()
+  expect(tabCount).toBeGreaterThan(5)
+  for (let index = 0; index < tabCount; index += 1) {
+    const name = (await tabs.nth(index).getAttribute('aria-label')) ?? (await tabs.nth(index).textContent())
+    await tabs.nth(index).click()
+    await emptyArea(`the tab ${name}`)
+    await nativeMenuNeverOpens(page, `the tab ${name}`)
+  }
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  const kinds = page.getByRole('navigation', { name: 'Evidence' }).getByRole('button')
+  const kindCount = Math.min(await kinds.count(), 14)
+  for (let index = 0; index < kindCount; index += 1) {
+    await kinds.nth(index).click()
+    await nativeMenuNeverOpens(page, `evidence ${index}`)
+  }
+  // The tab bar and the rail are not rows of anything: the general section alone.
+  await opensNikMenu(sections.getByRole('button', { name: 'Open platform settings' }), 'the rail')
+  await openEvidence('Malware Analysis')
+  // An object keeps its own menu, with Shift held down too.
+  const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
+  await sample.click({ button: 'right', modifiers: ['Shift'] })
+  await expect(menu).toContainText('dropper.bin')
+  await expect(menu.getByRole('menuitem').last()).toHaveText('Copy the address of this page')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // ---- The list of incidents: a row, and what the page adds for itself ----
+  await openIncidentList()
+  const rowMenu = await opensNikMenu(incidentRow(), 'a row of the incident list', ['Open', 'Quick view'])
+  expect(rowMenu.slice(-GENERAL_MENU.length - 2, -GENERAL_MENU.length)).toEqual(['New incident…', 'Columns…'])
+  await nativeMenuNeverOpens(page, 'the incident list')
+  await sections.getByRole('button', { name: 'Hide the incidents' }).click()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+
+  // ---- The pages of the rail ----
+  for (const [open, close] of [
+    [/^My tasks/, 'Close my tasks'],
+    ['Dashboards', 'Close dashboards'],
+    ['Playground', 'Close the playground'],
+  ]) {
+    await sections.getByRole('button', { name: open }).click()
+    await expect(sections.getByRole('button', { name: close })).toBeVisible()
+    await opensNikMenu(sections.getByRole('button', { name: close }), `the page ${close}`)
+    await nativeMenuNeverOpens(page, `the page ${close}`)
+    await sections.getByRole('button', { name: close }).click()
+  }
+  for (const [open, close] of [
+    [/^Indicators/, 'Hide the Indicators page'],
+    ['Artifacts', 'Hide the artifacts'],
+  ]) {
+    await sections.getByRole('button', { name: open }).click()
+    await expect(sections.getByRole('button', { name: close })).toBeVisible()
+    await nativeMenuNeverOpens(page, `the panel ${close}`)
+    await leaveSidePanel()
+  }
+
+  // ---- Automations: the lists, the canvas, the editor of a script ----
+  await sections.getByRole('button', { name: /^Automations/ }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  const nav = area.getByRole('navigation', { name: 'Automations' })
+  await expect(area.getByRole('table').first()).toBeVisible()
+  // The page adds what it makes, under the row's own entries.
+  const playbookMenu = await opensNikMenu(area.getByRole('table').first().getByRole('row').nth(1), 'a playbook', [
+    'Open',
+    'New playbook…',
+  ])
+  expect(playbookMenu.indexOf('New playbook…')).toBeGreaterThan(playbookMenu.indexOf('Open'))
+  await nativeMenuNeverOpens(page, 'the playbooks')
+  await area.getByRole('table').first().getByRole('row').nth(1).getByRole('button').first().click()
+  const canvas = area.getByTestId('playbook-canvas')
+  await expect(canvas.locator('.react-flow__node').first()).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the playbook editor')
+  await canvas.locator('.react-flow__pane').click({ button: 'right', position: { x: 6, y: 6 } })
+  await expect(menu.getByRole('menuitem', { name: 'Fit the view' })).toBeVisible()
+  await expect(menu.getByRole('menuitem').last()).toHaveText('Copy the address of this page')
+  await page.keyboard.press('Escape')
+  await nav.getByRole('button', { name: 'Runs' }).click()
+  await nativeMenuNeverOpens(page, 'the runs')
+  await nav.getByRole('button', { name: 'Scripts' }).click()
+  await expect(area.getByRole('table').first()).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the scripts')
+  await area.getByRole('table').first().getByRole('row').nth(1).getByRole('button').first().click()
+  // A code editor is a text field: its own undo, then cut, copy, paste, select all.
+  const code = area.locator('.cm-content').first()
+  await expect(code).toBeVisible()
+  await code.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Undoctrl z',
+    'Redoctrl shift z',
+    'Cutctrl x',
+    'Copyctrl c',
+    'Pastectrl v',
+    'Select allctrl a',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: /^Select all/ }).click()
+  // On what is selected (the first line of the script), Copy can be done.
+  await code.click({ button: 'right', position: { x: 30, y: 14 } })
+  await expect(menu.getByRole('menuitem', { name: /^Copy\s*ctrl c$/ })).not.toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+  await nativeMenuNeverOpens(page, 'the editor of a script')
+  await sections.getByRole('button', { name: 'Close automations' }).click()
+
+  // ---- Settings: every section ----
+  await sections.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const entries = settings.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')
+  const entryCount = await entries.count()
+  expect(entryCount).toBeGreaterThan(15)
+  for (let index = 0; index < entryCount; index += 1) {
+    await entries.nth(index).click()
+    await nativeMenuNeverOpens(page, `Settings, section ${index}`)
+  }
+  await expect(settings).toBeVisible()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  await expect(settings).toHaveCount(0)
+})
+
+test('the menu in a dialog, on selected text, in the query box, on a link, and from the keyboard', async () => {
+  const menu = page.getByRole('menu')
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText())
+
+  // ---- A dialog: the menu opens over it, and Escape closes the menu first ----
+  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+  // The list says the rule, and no longer how to get the browser's menu.
+  await expect(help).toContainText("Nik's menu, on every page")
+  await expect(help).not.toContainText('Shift + right-click')
+  const line = help.getByText('This list', { exact: true })
+  await line.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Copy this text', ...GENERAL_MENU])
+  await menu.getByRole('menuitem', { name: 'Copy this text' }).click()
+  expect(await clipboard()).toBe('This list')
+  await line.click({ button: 'right' })
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(help).toBeVisible()
+
+  // ---- Selected text: the right-click keeps the selection, and Copy takes it ----
+  await line.selectText()
+  await line.click({ button: 'right', position: { x: 12, y: 8 } })
+  await expect(menu.getByRole('menuitem').first()).toHaveText('Copyctrl c')
+  expect(await page.evaluate(() => window.getSelection().toString())).toBe('This list')
+  await page.evaluate(() => navigator.clipboard.writeText(''))
+  await menu.getByRole('menuitem').first().click()
+  expect(await clipboard()).toBe('This list')
+  await nativeMenuNeverOpens(page, 'a dialog')
+  await page.keyboard.press('Escape')
+  await expect(help).toHaveCount(0)
+
+  // ---- The query box: cut, copy, paste, select all, then its own helpers ----
+  await openIncidentList()
+  const panel = page.getByRole('region', { name: 'Incidents' })
+  const filter = panel.getByRole('combobox', { name: 'Filter incidents' })
+  await filter.fill('')
+  await page.evaluate(() => navigator.clipboard.writeText('host:wks-*'))
+  await filter.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Cutctrl x',
+    'Copyctrl c',
+    'Pastectrl v',
+    'Select allctrl a',
+    'Suggest what can be written herectrl space',
+    'Build the query from rows',
+    'New incident…',
+    'Columns…',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: /^Paste/ }).click()
+  // The page hears the paste as typing: the list is filtered.
+  await expect(filter).toHaveValue('host:wks-*')
+  await expect(panel.getByRole('table', { name: 'Incidents' })).toContainText('WKS-FINANCE-01')
+  await expect(filter).toBeFocused()
+  await filter.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Select all/ }).click()
+  await page.evaluate(() => navigator.clipboard.writeText(''))
+  await filter.click({ button: 'right', position: { x: 24, y: 10 } })
+  await menu.getByRole('menuitem', { name: /^Cut/ }).click()
+  await expect(filter).toHaveValue('')
+  expect(await clipboard()).toBe('host:wks-*')
+  await filter.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Suggest/ }).click()
+  await expect(panel.getByRole('listbox', { name: 'Suggestions' }).getByRole('option').first()).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // ---- The keyboard: the menu key and Shift + F10 on what has the focus ----
+  await filter.focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(menu.getByRole('menuitem', { name: /^Paste/ })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(filter).toBeFocused()
+  await incidentRow().focus()
+  await page.keyboard.press('ContextMenu')
+  await expect(menu.getByRole('menuitem', { name: 'Quick view' })).toBeVisible()
+  // The arrows and Enter run an entry, as in every menu.
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  const settingsButton = page.getByRole('button', { name: 'Open platform settings' })
+  await settingsButton.focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(menu.getByRole('menuitem')).toHaveText(GENERAL_MENU)
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0)
+
+  // ---- The general section does what it says ----
+  await settingsButton.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Copy the address of this page' }).click()
+  expect(await clipboard()).toBe(page.url())
+  await settingsButton.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Search…/ }).click()
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  await expect(palette).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the search')
+  await page.keyboard.press('Escape')
+  await expect(palette).toHaveCount(0)
+
+  // ---- A link: open, open in a new tab, copy the address ----
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
+  const link = page.locator('main a[title^="Download the indicators"]').first()
+  await expect(link).toBeVisible()
+  await link.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem', { name: 'Open in a new tab' })).toBeVisible()
+  const linkMenu = await menu.getByRole('menuitem').allTextContents()
+  expect(linkMenu.slice(0, 3)).toEqual(['Open', 'Open in a new tab', 'Copy the address'])
+  expect(linkMenu.slice(-GENERAL_MENU.length)).toEqual(GENERAL_MENU)
+  await menu.getByRole('menuitem', { name: 'Copy the address', exact: true }).click()
+  expect(await clipboard()).toContain('/api/')
+  await openEvidence('Malware Analysis')
 })
 
 test('an address from the evidence is opened only after asking', async () => {
