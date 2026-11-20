@@ -11,6 +11,7 @@ import pyzipper
 from fastapi.testclient import TestClient
 
 from app import artifact_transfer
+from app.core import store as sealed_store
 from app.malware.samples import sample_path
 from tests.conftest import make_key
 from tests.test_mail import no_dns, phishing_message  # noqa: F401 - no_dns is a fixture
@@ -76,7 +77,7 @@ def test_files_travel_in_an_encrypted_zip_and_are_checked_on_the_way_in(admin: T
     _forget(admin, artifact_id)
     result = admin.post("/api/artifacts/import", files={"file": ("a.zip", full.content)}).json()
     assert result["added"] == 1
-    assert sample_path(sha).read_bytes() == data
+    assert sealed_store.read_bytes(sample_path(sha)) == data and data not in sample_path(sha).read_bytes()
 
     # A file that is not the one the artifact is named by is refused.
     _forget(admin, artifact_id)
@@ -205,7 +206,7 @@ def test_a_mailbox_travels_with_its_file_and_its_index(admin: TestClient, no_dns
     assert [(m["seq"], m["subject"], m["sender"]) for m in after] == [
         (m["seq"], m["subject"], m["sender"]) for m in before
     ]
-    assert mailboxes.mbox_path(box["id"]).read_bytes() == mbox()
+    assert sealed_store.read_bytes(mailboxes.mbox_path(box["id"])) == mbox()
     shown = admin.get(f"/api/artifacts/{artifact_id}").json()
     assert shown["tags"] == ["finance"] and shown["detail"] == f"0 of {box['total']} messages imported"
     # A message can be read from it again.

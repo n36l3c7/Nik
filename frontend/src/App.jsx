@@ -147,8 +147,9 @@ function ConnectingScreen() {
 
 /** Full-screen error card shown when the backend cannot be reached. */
 function UnreachableScreen({ error, onRetry }) {
-  // The server is there and says why it does not serve: an upgrade it stopped (backend/app/backups/upgrade.py).
-  const stopped = /^The upgrade of Nik /.test(error ?? '')
+  // The server is there and says why it does not serve: an upgrade it stopped (backend/app/backups/upgrade.py),
+  // or a key that is missing or is not the right one (backend/app/stopped.py).
+  const stopped = /^(The upgrade of Nik |Nik did not start: )/.test(error ?? '')
   return (
     <div className="flex h-screen items-center justify-center bg-canvas p-4">
       <div className="w-full max-w-sm border border-line bg-panel p-6 text-center">

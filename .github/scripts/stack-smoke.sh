@@ -24,7 +24,8 @@ cleanup() {
     "${COMPOSE[@]}" logs --tail 60 db api web automation sandbox || true
   fi
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -f "$ENV_FILE"
+  docker rm -f "$PROJECT-stopped" >/dev/null 2>&1 || true
+  rm -rf "$ENV_FILE" "$ENV_FILE.secrets"
   exit "$status"
 }
 trap cleanup EXIT
@@ -34,11 +35,16 @@ fail() {
   exit 1
 }
 
-# The env file an operator gets: the example, with every secret generated.
+# The env file an operator gets: the example, and every secret generated into a file of its own
+# (a new install keeps no secret in the env file).
 rm -f "$ENV_FILE"
 NIK_EXISTING_INSTALL=0 deploy/init-env.sh "$ENV_FILE"
-grep -Eq '^(SECRET_KEY|DB_PASSWORD|[A-Z]+_TOKEN)=(please-change|change-this)' "$ENV_FILE" &&
-  fail "init-env.sh left a placeholder secret"
+grep -Eq '^(SECRET_KEY|STORE_KEY|DB_PASSWORD|[A-Z]+_TOKEN)=.' "$ENV_FILE" &&
+  fail "init-env.sh left a secret, or a placeholder, in the env file of a new install"
+SECRETS_DIR="$ENV_FILE.secrets"
+for name in db_password secret_key store_key analyzer_token capa_token docview_token browser_token pcap_token sandbox_token; do
+  [ "$(wc -c <"$SECRETS_DIR/$name")" -eq 65 ] || fail "init-env.sh did not write the secret $name as a 64-character value"
+done
 {
   echo "WEB_PORT=$HTTP_PORT"
   echo "WEB_TLS_PORT=$TLS_PORT"
@@ -148,6 +154,29 @@ for attempt in $(seq 1 30); do
 done
 grep -q 429 <<<"$codes" || fail "the sign-in limit can be dodged with X-Forwarded-For ($codes)"
 
+echo "== no secret is in the environment of a container; each container is given only its own"
+for service in db api automation sandbox web; do
+  described=$(docker inspect "$("${COMPOSE[@]}" ps -q "$service")")
+  for name in db_password secret_key store_key sandbox_token; do
+    grep -qF "$(cat "$SECRETS_DIR/$name")" <<<"$described" && fail "the $name is in what inspect shows of $service"
+  done
+done
+api_container=$("${COMPOSE[@]}" ps -q api)
+# (Reading the environment of another process takes privileges the container itself does not have.)
+docker exec --privileged -u 0 "$api_container" sh -c 'cat /proc/[0-9]*/environ | tr "\0" "\n"' >"$ENV_FILE.environ"
+grep -q "^SECRET_KEY_FILE=" "$ENV_FILE.environ" || fail "the environment of the server processes could not be read"
+for name in db_password secret_key store_key; do
+  grep -qF "$(cat "$SECRETS_DIR/$name")" "$ENV_FILE.environ" && fail "the $name is in the environment of a server process"
+done
+rm -f "$ENV_FILE.environ"
+docker exec "$api_container" sh -c 'test -s /run/secrets/store_key && test -s /run/secrets/secret_key' ||
+  fail "the backend is not given its keys as files"
+# The automation worker has a way out: it holds neither the store nor its key.
+docker exec "$worker_container" sh -c 'test ! -e /run/secrets/store_key && ! grep -q " /app/samples " /proc/mounts' ||
+  fail "the automation worker is given the store of files or its key"
+docker exec "$sandbox_container" sh -c 'test ! -e /run/secrets/secret_key && test ! -e /run/secrets/db_password' ||
+  fail "the sandbox is given a key it has no use for"
+
 echo "== the backend is unprivileged, on a read-only filesystem"
 api_container=$("${COMPOSE[@]}" ps -q api)
 status=$(docker exec "$api_container" cat /proc/1/status)
@@ -156,10 +185,27 @@ grep -q '^CapEff:[[:space:]]*0000000000000000' <<<"$status" || fail "the server 
 grep -q '^NoNewPrivs:[[:space:]]*1' <<<"$status" || fail "no-new-privileges is off"
 docker exec "$api_container" sh -c 'touch /app/probe 2>/dev/null' && fail "the backend's filesystem is writable"
 
-echo "== the image refuses the example secrets"
+echo "== the image refuses the example secrets, and a server without its store key says so instead of starting"
 image=$(docker inspect --format '{{.Image}}' "$api_container")
-if docker run --rm -e SECRET_KEY=please-change-this-secret "$image" true >/dev/null 2>&1; then
+# A container that serves nothing (the automation worker) exits.
+if docker run --rm -e NIK_SKIP_MIGRATIONS=1 -e SECRET_KEY=please-change-this-secret "$image" true >/dev/null 2>&1; then
   fail "the backend image starts with the example SECRET_KEY"
 fi
+# The server stays up and answers every request with what is missing.
+docker run -d --name "$PROJECT-stopped" -e SECRET_KEY="$(cat "$SECRETS_DIR/secret_key")" "$image" >/dev/null
+said=""
+for _ in $(seq 1 20); do
+  said=$(docker exec "$PROJECT-stopped" python -c "
+import urllib.request, urllib.error
+try:
+    urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=3)
+except urllib.error.HTTPError as error:
+    print(error.code, error.read().decode())" 2>/dev/null || true)
+  [ -n "$said" ] && break
+  sleep 1
+done
+grep -q "^503 .*Nik did not start: STORE_KEY is not set" <<<"$said" ||
+  fail "a server without its store key does not say so ($said)"
+docker rm -f "$PROJECT-stopped" >/dev/null
 
 echo "stack smoke test passed"

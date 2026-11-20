@@ -102,6 +102,16 @@ def _shape(fields: tuple, prefix: str = "") -> list[dict[str, str]]:
     return [{"name": f"{prefix}{name}", "type": kind, "description": said} for name, kind, said in fields]
 
 
+def _unreadable(error: Exception) -> str:
+    """Why a file of the store was not read: a damaged file says so itself, in its own words."""
+    from ..core import store
+    from ..store_handover import NotServed
+
+    if isinstance(error, (store.SealError, NotServed)):
+        return str(error)
+    return "The file could not be read from the store"
+
+
 def _artifact_id(given: Any) -> str:
     """The id an argument names: an id, the SHA-256 of a file, or the artifact another node gave
     (its ``artifact`` is read, so ``{{ add_file }}`` works as well as ``{{ add_file.artifact }}``)."""
@@ -683,8 +693,8 @@ def unpack_artifact(call: Call) -> Result:
     wanted = _target(call)
     try:
         data = read_sample(row.ref)
-    except (OSError, ValueError):
-        raise ActionError("The file could not be read from the store", retry=False) from None
+    except (OSError, ValueError) as error:
+        raise ActionError(_unreadable(error), retry=False) from None
     try:
         found = unpack.members(data, str(call.args.get("password") or ""), limit=limit)
     except unpack.UnpackError as error:
@@ -814,8 +824,8 @@ def add_evidence(call: Call) -> Result:
             )
         try:
             data = read_sample(row.ref)
-        except (OSError, ValueError):
-            raise ActionError("The file could not be read from the store", retry=False) from None
+        except (OSError, ValueError) as error:
+            raise ActionError(_unreadable(error), retry=False) from None
         name = name or row.name or row.ref
     else:
         data = _content(call, settings.ARTIFACT_MAX_MB)

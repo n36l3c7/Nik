@@ -54,7 +54,8 @@ SYSTEM = "system"
 # Room asked for beyond what the database and the store measure.
 MARGIN = 64 * 1024 * 1024
 NOT_INCLUDED = [
-    "the .env file with SECRET_KEY (unless the administrator chose to include the key)",
+    "the .env file and the secrets directory, with SECRET_KEY (unless the administrator chose to include the key)",
+    "the store key (STORE_KEY): the files are in the backup themselves, and a restore seals them under its own",
     "the TLS certificate and its key",
     "the Compose overrides and the other files of the deployment",
 ]

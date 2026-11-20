@@ -37,6 +37,9 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/health"): "public",
     ("GET", "/api/ready"): "public",
     ("GET", "/api/metrics"): "public",
+    # A file of the store for the automation worker: the request proves it comes from a process of
+    # this server (store_handover.py), and nginx does not publish /api/internal/.
+    ("GET", "/api/internal/store/{kind}/{ref}"): "public",
     ("GET", "/api/auth/bootstrap"): "public",
     ("POST", "/api/auth/login"): "public",
     ("POST", "/api/auth/login/code"): "public",
@@ -423,6 +426,12 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/backups"): ("admin",),
     ("PUT", "/api/backups/settings"): "admin-session",
     ("PUT", "/api/backups/passphrase"): "admin-session",
+    ("GET", "/api/system/keys"): ("admin",),
+    ("GET", "/api/system/keys/{name}/rotation"): ("admin",),
+    ("POST", "/api/system/keys/{name}/rotation"): "admin-session",
+    ("DELETE", "/api/system/keys/{name}/rotation"): "admin-session",
+    ("GET", "/api/storage/encryption"): ("admin",),
+    ("POST", "/api/storage/encryption"): ("admin",),
     ("POST", "/api/backups/run"): ("admin",),
     ("POST", "/api/backups/destination/test"): ("admin",),
     ("POST", "/api/backups/{backup_id}/verify"): ("admin",),

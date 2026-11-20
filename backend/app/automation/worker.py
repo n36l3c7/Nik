@@ -215,16 +215,33 @@ def housekeeping(db, now: float) -> None:
     db.commit()
 
 
+def _store_disk(db, now: float, usage):
+    """The room of the disk of the evidence: measured here when this process sees the store, else as
+    the API process last measured it (the automation container is given neither the store nor its
+    key). None when it is not known."""
+    from types import SimpleNamespace
+
+    from .. import store_seal
+    from ..core import store
+
+    if store.local() or usage is not shutil.disk_usage:
+        try:
+            return usage(Path(settings.SAMPLE_STORE))
+        except OSError:
+            return None
+    seen = store_seal.disk_seen(db)
+    if not seen or now - float(seen.get("at") or 0) > 3600:
+        return None
+    return SimpleNamespace(total=int(seen.get("total") or 0), free=int(seen.get("free") or 0))
+
+
 def storage_low(db, now: float, usage=shutil.disk_usage) -> bool:
     """Write ``storage.low`` when the disk of the evidence has less than a tenth
     free, once a day for as long as it stays so. Says whether it did."""
     if now - float(state.read(db).get("storageLowAt") or 0) < STORAGE_LOW_EVERY:
         return False
-    try:
-        disk = usage(Path(settings.SAMPLE_STORE))
-    except OSError:
-        return False
-    if not disk.total or disk.free * 100 >= disk.total * STORAGE_LOW_PERCENT:
+    disk = _store_disk(db, now, usage)
+    if disk is None or not disk.total or disk.free * 100 >= disk.total * STORAGE_LOW_PERCENT:
         return False
     triggers.storage_low(db, disk.total, disk.free)
     state.write(db, storageLowAt=now)

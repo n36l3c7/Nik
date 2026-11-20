@@ -27,7 +27,27 @@ from urllib.parse import parse_qs, urlsplit
 
 from nik_browser import Browser, BrowserError
 
-TOKEN = os.environ.get("BROWSER_TOKEN", "")
+
+def secret(name: str) -> str:
+    """The secret called ``name``: the content of the file ``<name>_FILE`` names when it holds
+    something (a mounted secret), else the variable itself. Never both."""
+    value = os.environ.get(name, "")
+    path = os.environ.get(f"{name}_FILE", "").strip()
+    if not path:
+        return value
+    try:
+        with open(path, encoding="utf-8") as handle:
+            held = handle.read(65536).strip("\r\n")
+    except OSError as error:
+        raise SystemExit(
+            f"{name}_FILE names {path}, which cannot be read ({error.strerror}): refusing to start."
+        ) from None
+    if held and value:
+        raise SystemExit(f"{name} is given twice, in the file named by {name}_FILE and in the environment: keep one.")
+    return held or value
+
+
+TOKEN = secret("BROWSER_TOKEN")
 PORT = int(os.environ.get("BROWSER_PORT", "8730"))
 MAX_HTML = 10 * 1024 * 1024
 _SESSION_PATH = re.compile(r"^/sessions/([0-9a-f]{32})(/action|/network)?$")

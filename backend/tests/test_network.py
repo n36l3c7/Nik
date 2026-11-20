@@ -15,6 +15,7 @@ import pytest
 import pyzipper
 from fastapi.testclient import TestClient
 
+from app.core import store as sealed_store
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.models import NetworkCapture
@@ -314,8 +315,7 @@ def test_isolated_browser_session_becomes_a_capture(admin: TestClient, workers):
     assert admin.delete(f"/api/browser/sessions/{session}", headers=key).status_code == 204
     detail = admin.get(f"/api/captures/{session}", headers=key).json()
     assert detail["status"] == "ready" and detail["meta"]["held"][0]["url"].endswith("/post.php")
-    with open(store.find_capture(session), "rb") as handle:
-        assert b"HELD by Nik" in handle.read()
+    assert b"HELD by Nik" in sealed_store.read_bytes(store.find_capture(session))
     document = json.loads(admin.get(f"/api/captures/{session}/har", headers=key).content)
     assert [e["_nikState"] for e in document["log"]["entries"]] == ["done", "held"]
     report = admin.post(

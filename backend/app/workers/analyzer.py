@@ -1,9 +1,10 @@
 """Client of the analyzer worker (rizin + rz-ghidra) and the background job.
 
 The backend never runs rizin itself: it asks the worker (``ANALYZER_URL``,
-see workers/analyzer/) to disassemble and decompile a sample that is already in the
-shared store, waits for the JSON result and saves it in ``sample_code``. The
-worker sees the store read-only and is reachable only from the backend.
+see workers/analyzer/) to disassemble and decompile a sample, waits for the JSON
+result and saves it in ``sample_code``. The worker is reachable only from the
+backend and does not see the store: it is given the sample and the signatures
+it lacks (``handover.py``).
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from ..core.db import SessionLocal
 from ..core.models import SampleCode, SampleFunction
 from ..core.security import now_iso
 from ..malware import flirt
+from ..malware.samples import sample_path
+from . import handover
 
 
 class AnalyzerError(Exception):
@@ -29,6 +32,14 @@ class AnalyzerError(Exception):
 
 class WorkerBusy(AnalyzerError):
     """The worker is running as many jobs as it allows (HTTP 503)."""
+
+
+class FilesMissing(AnalyzerError):
+    """The worker does not hold files the request names (HTTP 409): ``missing`` are their names."""
+
+    def __init__(self, message: str, missing: list[str]) -> None:
+        super().__init__(message)
+        self.missing = missing
 
 
 def configured() -> bool:
@@ -49,9 +60,26 @@ def request_decompile(sha256: str, addr: int, signatures: list[str]) -> dict[str
 
 
 def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """POST JSON to the rizin worker; the parsed JSON result or AnalyzerError."""
-    return post_worker(
-        settings.ANALYZER_URL, settings.ANALYZER_TOKEN, path, payload, timeout=settings.ANALYZER_TIMEOUT + 30
+    """POST JSON to the rizin worker, giving it the sample and the signatures it lacks; the parsed
+    JSON result or AnalyzerError."""
+    files = {f"{payload['sha256']}.bin": sample_path(payload["sha256"])}
+    files.update({name: flirt.path_of(name) for name in payload.get("signatures") or []})
+    return post_with_files(
+        settings.ANALYZER_URL, settings.ANALYZER_TOKEN, path, payload, settings.ANALYZER_TIMEOUT + 30, files
+    )
+
+
+def post_with_files(
+    base_url: str, token: str, path: str, payload: dict[str, Any], timeout: float, files: dict[str, Any]
+) -> dict[str, Any]:
+    """``post_worker``, sending the worker the files of the store it says it does not hold."""
+    return handover.with_files(
+        lambda: post_worker(base_url, token, path, payload, timeout),
+        files,
+        base_url,
+        "X-Analyzer-Token",
+        token,
+        AnalyzerError,
     )
 
 
@@ -68,9 +96,13 @@ def post_worker(base_url: str, token: str, path: str, payload: dict[str, Any], t
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         try:
-            detail = json.loads(exc.read()).get("detail")
+            body = json.loads(exc.read())
+            detail = body.get("detail")
         except Exception:
-            detail = None
+            body, detail = None, None
+        missing = handover.missing_of(exc, body)
+        if missing:
+            raise FilesMissing(detail or "The worker does not hold the files", missing) from exc
         error = WorkerBusy if exc.code == 503 else AnalyzerError
         raise error(detail or f"The worker answered {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:

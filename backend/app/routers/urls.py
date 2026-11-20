@@ -14,14 +14,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts, urlscan
+from ..core import store
 from ..core.db import get_db
-from ..core.files import attachment_headers, safe_name
+from ..core.files import attachment_headers, safe_name, stored_response
 from ..core.models import AuditEntry, Incident, UrlScan
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..malware.samples import zip_sample
@@ -159,7 +159,7 @@ def screenshot(scan_id: str, _caller: Principal = Depends(reader_principal), db:
     path = urlscan.screenshot_path(row.id)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="No screenshot for this scan")
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    return stored_response(path, "image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 def _script(row: UrlScan, index: int) -> tuple[dict[str, Any], str]:
@@ -168,7 +168,7 @@ def _script(row: UrlScan, index: int) -> tuple[dict[str, Any], str]:
         raise HTTPException(status_code=404, detail="No such script in this scan")
     path = urlscan.scripts_path(row.id)
     try:
-        code = json.loads(path.read_text(encoding="utf-8"))[index] if path.is_file() else ""
+        code = json.loads(store.read_text(path))[index] if path.is_file() else ""
     except (ValueError, IndexError):
         code = ""
     return scripts[index], str(code)

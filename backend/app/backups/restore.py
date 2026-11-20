@@ -16,6 +16,13 @@ the database, whether the database and the store are empty). Only when all
 of that holds does the second pass write. The database arrives in one
 transaction, so a restore that fails half-way leaves it as it was.
 
+**The store key.** A backup holds the files of the store themselves, under
+its passphrase and nothing else. Each is sealed as it is written here, under
+the ``STORE_KEY`` of *this* server: a restore on a new host needs the
+passphrase of the backup and a store key of its own (``deploy/init-env.sh``
+makes one), never the store key of the host that was lost. A backup taken
+before 6.8, whose files were in clear on the disk, comes back sealed too.
+
 **Versions.** A backup made by this version or an earlier one is restored as
 it was; when it is older, the server migrates it at its next start, with a
 snapshot and a rehearsal first, like any upgrade. A backup made by a later
@@ -37,6 +44,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..core import store as sealed_store
 from ..core.config import settings
 from . import database, runner, store
 from .container import PASSPHRASE, SUFFIX, BackupError, Reader, Secrets, peek, walk
@@ -86,7 +94,8 @@ def describe(manifest: dict[str, Any]) -> list[str]:
         f"  store      {held['files']} files, {_size(held['bytes'])}"
         if held
         else "  store      not in this backup (a snapshot taken before an upgrade holds the database alone)",
-        "  SECRET_KEY " + ("included" if manifest.get("includesSecretKey") else "not included: it is in your .env"),
+        "  SECRET_KEY "
+        + ("included" if manifest.get("includesSecretKey") else "not included: it is where the keys of the server are"),
     ]
     return lines
 
@@ -176,6 +185,9 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
         root.mkdir(parents=True, exist_ok=True)
         if replace:
             _empty_store(root)
+    # While the files are written nothing asks the database whether files in clear are still allowed:
+    # it is being replaced, in a transaction that is open until the end.
+    asked_before, sealed_store.clear_allowed = sealed_store.clear_allowed, lambda: True
     loader = database.Loader(url, replace=replace)
     unpacker = store.Unpacker(root) if with_store else None
     try:
@@ -192,7 +204,15 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
             checks = loader.finish(reader.manifest)
     finally:
         loader.close()
+        sealed_store.clear_allowed = asked_before
     ended = database.after_restore(url)
+    if with_store:
+        # The row that came with the database speaks of the store it was taken from: this one was
+        # just written, sealed under the store key of this server.
+        from .. import store_seal
+
+        store_seal.after_restore()
+        checks.append("every file of the store was sealed under the store key of this server as it was written")
     _say(f"Done in {time.monotonic() - clock:.0f} s. Checked:")
     for check in checks:
         _say(f"  - {check}")
@@ -202,12 +222,12 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
         _say(
             "The backup holds the SECRET_KEY it was made under. If the SECRET_KEY of this server is another, the "
             "stored secrets (keys of instances, credentials) cannot be read: deploy/restore.sh --secret-key puts "
-            "the one of the backup into .env."
+            "the one of the backup where the keys of this server are (.env, or the secrets directory)."
         )
     else:
         _say(
             "The stored secrets (keys of instances, credentials) are readable only with the SECRET_KEY the backup "
-            "was made under: it must be the one in .env. If it is lost, they have to be entered again."
+            "was made under: it must be the one of this server. If it is lost, they have to be entered again."
         )
     _say(
         f"Nobody is signed in on the restored server: the {ended.get('sessions', 0)} session(s) that were open when "

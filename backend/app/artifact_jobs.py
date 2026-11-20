@@ -17,7 +17,9 @@ done:
 - ``analyse``     analyse an artifact again, as "Re-analyse", "Disassemble"
                   and "Run capa" do;
 - ``convert``     analyse a file artifact as an e-mail or as a capture, as
-                  "Analyse as an e-mail" and "Analyse as a capture" do.
+                  "Analyse as an e-mail" and "Analyse as a capture" do;
+- ``remove``      delete files of the store whose artifact the worker deleted
+                  (one whose day came): it holds neither the store nor its key.
 
 The node meanwhile gives its step back and asks again later: nothing waits
 holding a worker. A job says which run asked for it, so that what it sets off
@@ -26,7 +28,10 @@ holding a worker. A job says which run asked for it, so that what it sets off
 The bytes of a file to keep cross the database, the one thing both
 processes reach: in parts of a few megabytes (``artifact_job_parts``), put
 together here and deleted once the file is in the store. A file is as large
-as an upload at most.
+as an upload at most. Each part is encrypted under a key derived from
+``SECRET_KEY``, which both processes hold (``vault.seal_bytes``): the rows, the
+write-ahead log of the database and a backup taken at that moment hold no
+file in clear.
 
 The same holds for what is kept inside a step without being a node of its
 own: the file a command of a connector gives, the attachments of a message,
@@ -52,7 +57,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session as OrmSession
 
 from . import artifacts
-from .core import audit
+from .core import audit, vault
 from .core.locking import lock_incident
 from .core.models import (
     Artifact,
@@ -73,6 +78,7 @@ LOOK_EVERY = 2
 TAKE_WITHIN = 600
 KEPT_SECONDS = 86400
 PART_BYTES = 4 * 1024 * 1024  # the bytes of a file cross the database in parts of this size
+PARTS = b"artifact job parts"  # what the key that encrypts those parts is derived for (core/vault.py)
 ANALYSES = ("static", "code", "capabilities")
 _started = False
 
@@ -138,17 +144,23 @@ def ask(
     db.add(row)
     db.flush()
     for seq, start in enumerate(range(0, len(data or b""), PART_BYTES)):
-        db.add(ArtifactJobPart(job_id=row.id, seq=seq, data=data[start : start + PART_BYTES]))
+        part = vault.seal_bytes(data[start : start + PART_BYTES], PARTS, f"{row.id}:{seq}".encode())
+        db.add(ArtifactJobPart(job_id=row.id, seq=seq, data=part))
         db.flush()  # one part at a time: the whole file is not sent to the database in one statement
     return row
 
 
 def carried(db: OrmSession, job_id: str) -> bytes:
     """The bytes a job carries, put together."""
-    parts = db.scalars(
-        select(ArtifactJobPart.data).where(ArtifactJobPart.job_id == job_id).order_by(ArtifactJobPart.seq)
+    parts = db.execute(
+        select(ArtifactJobPart.seq, ArtifactJobPart.data)
+        .where(ArtifactJobPart.job_id == job_id)
+        .order_by(ArtifactJobPart.seq)
     )
-    return b"".join(bytes(part) for part in parts)
+    try:
+        return b"".join(vault.open_bytes(part, PARTS, f"{job_id}:{seq}".encode()) for seq, part in parts)
+    except ValueError as error:
+        raise JobError(str(error)) from None
 
 
 def _drop_parts(db: OrmSession, job_id: str) -> None:
@@ -159,12 +171,13 @@ def take(db: OrmSession, now: float | None = None) -> str | None:
     """Take one job that waits: its id. None when there is none."""
     now = time.time() if now is None else now
     waiting = db.execute(
-        select(ArtifactJob.id, ArtifactJob.created_epoch)
+        select(ArtifactJob.id, ArtifactJob.created_epoch, ArtifactJob.kind)
         .where(ArtifactJob.status == "queued")
         .order_by(ArtifactJob.created_epoch, ArtifactJob.id)
     ).all()
-    for job_id, created in waiting:
-        late = now - float(created or 0) > TAKE_WITHIN
+    for job_id, created, kind in waiting:
+        # A file to delete is deleted however late: no step waits for it, and it must not stay.
+        late = kind != "remove" and now - float(created or 0) > TAKE_WITHIN
         # Several API processes look at once: the one whose update changes the row has it.
         values: dict[str, Any] = {"status": "running"}
         if late:
@@ -281,8 +294,11 @@ def _attachment(db: OrmSession, job: ArtifactJob, later: _Later) -> dict[str, An
         raise JobError("The e-mail does not exist")
     try:
         parsed = parse_mail(read_mail(sha256))
-    except (OSError, ValueError, MailError):
-        raise JobError("The stored message cannot be read") from None
+    except (OSError, ValueError, MailError) as error:
+        from .core import store
+
+        said = str(error) if isinstance(error, store.SealError) else "The stored message cannot be read"
+        raise JobError(said) from None
     found = find_attachment(parsed.get("attachments") or [], str(job.params.get("attachment") or ""))
     if found is None:
         raise JobError("The e-mail has no attachment with this name")
@@ -393,7 +409,27 @@ def _convert(db: OrmSession, job: ArtifactJob, later: _Later) -> dict[str, Any]:
     return {"made": made.id, "started": ["capture" if wanted == "capture" else "mail"], "skipped": []}
 
 
-_WORK = {"store": _store, "attachment": _attachment, "analyse": _analyse, "convert": _convert}
+def _remove(db: OrmSession, job: ArtifactJob, later: _Later) -> dict[str, Any]:
+    """Delete the files and folders of the store the job names. A name that would leave the store
+    is not followed."""
+    from .core import store
+
+    root = store.root().resolve()
+    removed = 0
+    for name in job.params.get("names") or []:
+        path = (root / str(name)).resolve()
+        if root not in path.parents:
+            raise JobError("The file to delete is not a file of the store")
+        if path.is_dir():
+            store.remove_tree(path)
+            removed += 1
+        elif path.exists():
+            store.remove(path)
+            removed += 1
+    return {"removed": removed}
+
+
+_WORK = {"store": _store, "attachment": _attachment, "analyse": _analyse, "convert": _convert, "remove": _remove}
 
 
 def _run(job_id: str, threads: bool) -> None:

@@ -1922,7 +1922,25 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
                 packet captures, files, e-mails, previews, screenshots, the database, and everything else on the disk.
                 The ten largest objects are listed and open their page, where they can be deleted. A warning shows when
                 less than a tenth of the disk is free. <em>With a date</em> lists the artifacts that will be deleted by
-                themselves, the soonest first, and says how many have no date and how much they take.
+                themselves, the soonest first, and says how many have no date and how much they take. At the top,
+                <em>Encryption of the store</em>: <em>Encrypted</em> and since when, once every file is sealed on the
+                disk. On a server that came from a version before 6.8 it shows the files being encrypted in the
+                background (how many and how much are done, how long is left), with <em>Pause</em> and <em>Go on</em>,
+                the files that could not be encrypted and why, and <em>Check again</em> afterwards. A file found damaged
+                is listed there: it is not served, and comes back from a backup.
+              </td>
+            </tr>
+            <tr>
+              <td>Keys <em>(admins)</em></td>
+              <td>
+                Every secret of the server: whether it comes from a file or from the environment, what it protects,
+                which containers hold it. For the secret key and the store key, the fingerprint (a few characters that
+                are not a part of the key, to check that two people speak of the same one), since when it is in use, and
+                <em>Rotate…</em>: the dialog counts what will be put under the new key, asks for the password again (and
+                a code, with a second factor), then shows the command the operator runs on the server; the row then
+                follows the change until it is <em>verified</em>. The backup passphrase is set and changed here too. A
+                value is never shown. When the keys are in the environment the page says so and gives the command that
+                moves them into files.
               </td>
             </tr>
             <tr>

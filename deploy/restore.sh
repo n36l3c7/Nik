@@ -19,8 +19,10 @@
 # Options:
 #   --replace          replace a database and a store that are not empty
 #   --database-only    leave the store of files as it is
-#   --secret-key       first write the SECRET_KEY the backup holds into .env (a backup taken with
-#                      "Include SECRET_KEY"); the .env as it was is kept as .env.before-restore
+#   --secret-key       first write the SECRET_KEY the backup holds where the keys of this stack are
+#                      kept (a backup taken with "Include SECRET_KEY"): into .env, the file as it was
+#                      being kept as .env.before-restore; or into the secrets directory, the key as it
+#                      was being kept beside it as secret_key.before-restore
 #   --inspect          only read the file and say what it holds
 #   --no-start         leave the stack stopped at the end
 #   --yes              do not ask before stopping the stack and before replacing
@@ -33,9 +35,11 @@
 #   NIK_BACKUP_PASSPHRASE_FILE   or a file that holds it
 #
 # On a new host: clone the repository at the version that took the backup (or a
-# later one), run deploy/init-env.sh, put the SECRET_KEY of the old server in
-# .env (or use --secret-key), then run this. The deployment guide has the whole
-# procedure ("The first host is gone").
+# later one), run deploy/init-env.sh, put the SECRET_KEY of the old server where
+# the keys are kept (or use --secret-key), then run this. The store key of the
+# old server is not needed: a backup holds the files themselves, under its
+# passphrase, and each is sealed here under the store key init-env.sh just made.
+# The deployment guide has the whole procedure ("The first host is gone").
 set -euo pipefail
 
 NIK_DIR=${NIK_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -66,7 +70,7 @@ while [ $# -gt 0 ]; do
     --no-start) START=0 ;;
     --yes) YES=1 ;;
     -h | --help)
-      sed -n '2,38p' "$0"
+      sed -n '2,42p' "$0"
       exit 0
       ;;
     -*) die "unknown option: $1 (see --help)" ;;
@@ -81,7 +85,14 @@ done
 
 cd "$NIK_DIR"
 [ -f docker-compose.yml ] || die "no docker-compose.yml in $NIK_DIR"
-[ -f .env ] || die "no .env in $NIK_DIR: on a new host run deploy/init-env.sh first, then put the SECRET_KEY of the old server in it (or use --secret-key)"
+[ -f .env ] || die "no .env in $NIK_DIR: on a new host run deploy/init-env.sh first, then put the SECRET_KEY of the old server where it keeps the keys (or use --secret-key)"
+
+# Where the keys of this stack are kept: the secrets directory .env names, or .env itself.
+secrets_dir=$(sed -n 's/^NIK_SECRETS_DIR=//p' .env | tail -n 1)
+case "$secrets_dir" in
+  "" | /* | ?:*) ;;
+  *) secrets_dir="$NIK_DIR/${secrets_dir#./}" ;;
+esac
 
 # The file: one of the host (its folder is mounted read-only for the restore),
 # or the name of a backup in the backup directory of the stack.
@@ -156,8 +167,16 @@ fi
 if [ "$WITH_KEY" -eq 1 ]; then
   log "reading the SECRET_KEY the backup holds"
   key=$(tool secret-key "$target" | sed -n 's/^SECRET_KEY=//p' | tail -n 1)
-  [ -n "$key" ] || die "the backup gave no SECRET_KEY: .env was not changed"
-  if [ "$(sed -n 's/^SECRET_KEY=//p' .env | tail -n 1)" = "$key" ]; then
+  [ -n "$key" ] || die "the backup gave no SECRET_KEY: nothing was changed"
+  if [ -n "$secrets_dir" ]; then
+    if [ "$(tr -d '\r\n' <"$secrets_dir/secret_key" 2>/dev/null || true)" = "$key" ]; then
+      log "$secrets_dir already holds that SECRET_KEY"
+    else
+      (umask 077 && cp "$secrets_dir/secret_key" "$secrets_dir/secret_key.before-restore")
+      printf '%s\n' "$key" >"$secrets_dir/secret_key"
+      log "SECRET_KEY of the backup written to $secrets_dir/secret_key (the key as it was: secret_key.before-restore beside it, to remove once all is well)"
+    fi
+  elif [ "$(sed -n 's/^SECRET_KEY=//p' .env | tail -n 1)" = "$key" ]; then
     log ".env already holds that SECRET_KEY"
   else
     (umask 077 && cp .env .env.before-restore)
@@ -218,5 +237,6 @@ done
 case "$answer" in
   *'"ok"'*) log "the server answers. Sign in and check what the lines above name." ;;
   *upgrade-stopped*) die "the server started but stopped its upgrade of the restored database: $COMPOSE logs api" ;;
+  *'"stopped"'*) die "the server did not start: a key is missing or is not the right one. $COMPOSE logs api says which" ;;
   *) die "the server does not answer yet: $COMPOSE ps, $COMPOSE logs api" ;;
 esac

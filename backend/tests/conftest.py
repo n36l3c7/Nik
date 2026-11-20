@@ -67,6 +67,16 @@ def make_key(admin_client, **body):
 
 
 @pytest.fixture(autouse=True)
+def store_as_new():
+    """What a process remembers of the encryption of the store (whether files in clear are still
+    allowed, how far the conversion walked) is of the database of the test before."""
+    from app import store_seal
+
+    store_seal.forget()
+    store_seal._cursor[0] = 0
+
+
+@pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     """No test reaches a source of threat intelligence, nor anything else: a look-up is a connector
     command, and the way out of every command and every playbook (app/automation/egress.py) is closed

@@ -21,7 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
 from ..automation import triggers as automation_triggers
-from ..core import audit
+from ..core import audit, store
 from ..core.config import settings
 from ..core.db import after_commit, get_db
 from ..core.files import attachment_headers, read_upload, safe_name
@@ -148,6 +148,8 @@ def _attachment(parsed: dict[str, Any], path: str) -> dict[str, Any]:
 def _parsed(sha256: str) -> dict[str, Any]:
     try:
         return parse_mail(read_mail(sha256))
+    except store.SealError:
+        raise  # a damaged file says so itself (main.py)
     except (OSError, MailError) as exc:
         raise HTTPException(status_code=404, detail="The stored message cannot be read") from exc
 
@@ -341,6 +343,8 @@ async def reanalyse_mail(
     row = _mail_or_404(db, sha256)
     try:
         result = await run_in_threadpool(_analyse, db, read_mail(sha256))
+    except store.SealError:
+        raise
     except (OSError, MailError) as exc:
         raise HTTPException(status_code=422, detail=f"The stored message cannot be analysed: {exc}") from exc
     analysed_again(db, row, result)

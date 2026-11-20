@@ -43,6 +43,7 @@
           <li><a href="#quick-start-with-docker-podman">Quick start with Docker / Podman</a></li>
           <li><a href="#production-deployment">Production deployment</a></li>
           <li><a href="#docker-podman-in-production">Docker / Podman in production: TLS, start on boot</a></li>
+          <li><a href="#keys-of-the-server">Keys of the server: where they are kept, changing one</a></li>
           <li><a href="#backups">Backups: what they hold, where they go, how they are tested</a></li>
           <li><a href="#backup-second-host">The copy off the server: SFTP to a second host</a></li>
           <li><a href="#restore-a-backup">Restoring</a></li>
@@ -67,7 +68,7 @@
         The fastest way to run the whole stack — nginx (static SPA + <code>/api</code> reverse proxy), the FastAPI
         backend and PostgreSQL — is the bundled Compose file:
       </p>
-      <pre><code class="language-bash">deploy/init-env.sh            # writes .env with fresh random secrets
+      <pre><code class="language-bash">deploy/init-env.sh            # writes .env, and the secrets as files in ./secrets
 docker compose up -d --build  # build the images and start the whole stack
 </code></pre>
       <p>
@@ -76,9 +77,11 @@ docker compose up -d --build  # build the images and start the whole stack
         migrated by the <code>api</code> container at every start.
       </p>
       <p>
-        The stack does not start without its secrets (<code>DB_PASSWORD</code>, <code>SECRET_KEY</code> and one token
-        per analysis worker) and refuses the values printed in <code>.env.example</code>, which are public.
-        <code>deploy/init-env.sh</code> generates them; it is safe to run again.
+        The stack does not start without its secrets (<code>DB_PASSWORD</code>, <code>SECRET_KEY</code>,
+        <code>STORE_KEY</code> and one token per analysis worker) and refuses the values printed in
+        <code>.env.example</code>, which are public. <code>deploy/init-env.sh</code> generates them, each into a file of
+        <code>./secrets</code> (<a href="#keys-of-the-server">Keys of the server</a>); it is safe to run again. Keep a
+        copy of that directory away from the server.
       </p>
       <blockquote>
         <p>
@@ -169,6 +172,166 @@ podman-compose up -d --build  # or: podman compose up -d --build
         <code>--uninstall</code>. Before 6.7 it also installed a nightly <code>nik-backup.timer</code>; the server takes
         its backups itself now, and the script removes that timer where an earlier run left it.
       </p>
+      <h3 id="keys-of-the-server">Keys of the server</h3>
+      <p>
+        The stack has two keys that encrypt, a database password and a token for each worker.
+        <a href="security.html#keys">The security guide</a> says what each protects and which container holds it;
+        <strong>Settings → System → Keys</strong> shows where each one comes from on this server and when it last
+        changed. This is the operator's side.
+      </p>
+      <h4 id="keys-where">Where they are kept</h4>
+      <p>
+        <strong>A new install keeps them in files.</strong> <code>deploy/init-env.sh</code> makes
+        <code>./secrets</code> beside <code>docker-compose.yml</code>, a directory only you can enter, with one file for
+        each secret, and writes <code>NIK_SECRETS_DIR=./secrets</code> in <code>.env</code>, which then holds no secret
+        (the lines <code>SECRET_KEY=</code>, <code>DB_PASSWORD=</code>… stay, empty: Compose asks for them by name).
+        Each container is given the files it uses and no other, read-only, under <code>/run/secrets</code>. Nothing else
+        is needed: <code>podman compose up -d --build</code> as before.
+      </p>
+      <ul>
+        <li>
+          The directory is mode 700 and the files in it 644: what protects them is the directory. The containers run as
+          users that are nobody on the host, and neither Docker nor rootless Podman changes who owns a mounted file, so
+          a file only its owner could read would be unreadable to the server. Create the directory as the user that runs
+          the stack.
+        </li>
+        <li>
+          To keep it elsewhere, set <code>NIK_SECRETS_DIR</code> to an absolute path: another disk than the data, a
+          volume that is unlocked at boot, a mount of another machine. A store key that sits on the disk it protects
+          does not protect a host that is stolen whole.
+        </li>
+        <li>
+          <strong>Keep a copy of the directory away from the server.</strong> <code>SECRET_KEY</code> with the backups
+          (the secrets inside a backup are under it), <code>STORE_KEY</code> apart from them. If the store key is lost
+          with the host nothing is lost with it: a backup holds the files themselves, under its passphrase.
+        </li>
+        <li>
+          The files are mounted with the option <code>z</code>, which gives them the SELinux label a container needs to
+          read them. A directory outside the folder of Nik may need it once by hand:
+          <code>chcon -Rt container_file_t /srv/nik-secrets</code>.
+        </li>
+        <li>
+          <code>podman secret</code> / <code>docker secret</code> work too, with a Compose override that mounts each
+          secret at the same <code>/run/secrets/&lt;name&gt;</code>: the server reads whatever file
+          <code>&lt;NAME&gt;_FILE</code> names. The Compose file does not use <code>secrets:</code> itself because
+          external secrets exist only under Podman, and file secrets are mounted without the SELinux label there.
+        </li>
+      </ul>
+      <p>
+        <strong>A server from before 6.8 keeps them in <code>.env</code></strong
+        >, and goes on working that way: the Compose file mounts the empty files of <code>deploy/no-secrets</code> in
+        the place of each secret, an empty file counts as none, and the values come from the environment as before. The
+        administrators are told once, in Nik, that the keys are in the environment. To take them out:
+      </p>
+      <pre><code class="language-bash">deploy/secrets.sh status      # where each secret is; never a value
+deploy/secrets.sh move        # from .env into ./secrets
+</code></pre>
+      <p>
+        <code>move</code> writes each secret into a file, keeps the <code>.env</code> as it was in
+        <code>.env.before-secrets</code>, writes an <code>.env</code> that names the directory and holds no secret,
+        makes the containers again on it (about a minute) and checks that the server answers and reads its keys from the
+        files. If it does not, it puts the <code>.env</code> back and starts the stack on it again: nothing was moved.
+        It can be run twice. At the end <code>.env.before-secrets</code> still holds every secret in clear:
+        <strong>destroy it (<code>shred -u</code>) or lock it away</strong> once you have seen the server work. A secret
+        must never be in both places: the server refuses to start and says which one is given twice.
+      </p>
+      <h4 id="keys-rotate">Changing a key</h4>
+      <p>
+        Ask for it in <strong>Settings → System → Keys → Rotate…</strong> (a signed-in administrator, with the password
+        again and a code when the account has a second factor): the dialog counts what will be put under the new key and
+        shows the command. Then, on the server, within a day:
+      </p>
+      <pre><code class="language-bash">deploy/secrets.sh rotate secret-key     # or: rotate store-key
+</code></pre>
+      <ol>
+        <li>
+          The running server makes the new key; the script writes it straight where the keys are kept (it is never on a
+          screen) and keeps the key in use beside it as the earlier key.
+        </li>
+        <li>
+          It restarts the containers that hold the key: <code>api</code> and <code>automation</code> for
+          <code>SECRET_KEY</code>, <code>api</code> alone for <code>STORE_KEY</code>.
+          <strong>Nik does not answer for the time of that restart</strong>, about a minute.
+        </li>
+        <li>
+          The server puts everything under the new key and reads it back with the new key alone. The script waits and
+          shows how far it is; the Keys page shows the same. For <code>SECRET_KEY</code> this takes seconds. For
+          <code>STORE_KEY</code> only the head of each file is rewritten and written to the disk, then each file is
+          opened once with the new key: the time goes with the number of files, not with their size.
+        </li>
+        <li>
+          Once the server says the change is <em>verified</em>, the script moves the earlier key into
+          <code>secrets/retired/</code>, which nothing reads, restarts the same containers once more so that they forget
+          it, and says what to do with that file: keep the earlier <code>SECRET_KEY</code> with the backups taken before
+          the change (their secrets are under it) and destroy it when they are gone; destroy the earlier
+          <code>STORE_KEY</code> unless you keep copies of the store volume made before.
+        </li>
+      </ol>
+      <p>
+        Stopped at any step, it is run again and goes on: until the change is verified the server holds both keys and
+        everything is readable. If the server says it could not put something under the new key, the script stops, shows
+        what, and leaves the earlier key in place. Run when nobody asked in Nik, it says so and asks before going on
+        (<code>--yes</code> answers for it). On a server that keeps its keys in <code>.env</code> it edits
+        <code>.env</code> instead and makes the containers again. <code>deploy/secrets.sh rotate tokens</code> writes
+        new tokens for the workers and restarts the stack; the database password is changed in PostgreSQL first (<code
+          >ALTER ROLE nik PASSWORD '…'</code
+        >), then where the keys are kept.
+      </p>
+      <h4 id="keys-stopped">"Nik did not start": a key is missing or is not the right one</h4>
+      <p>
+        When a key is missing, is still an example value, is given both as a file and in <code>.env</code>, sits in a
+        file the server cannot read, or when <code>STORE_KEY</code> is not the key the store is sealed under, the
+        <code>api</code> container does not exit and does not start either: it answers every request with the sentence
+        that says what is wrong, the page shows it, and the same lines are in <code>podman compose logs api</code>.
+        Nothing is written meanwhile. Set it right and start again:
+      </p>
+      <ul>
+        <li><em>is not set</em>: <code>deploy/init-env.sh</code> writes what is missing and changes nothing else;</li>
+        <li>
+          <em>is given twice</em>: remove the value from <code>.env</code> (or run <code>deploy/secrets.sh move</code>,
+          which does it for all of them);
+        </li>
+        <li>
+          <em>cannot be read</em>: the file must exist and be readable by everybody inside a directory only you can
+          enter (<code>chmod 700 secrets; chmod 644 secrets/*</code>);
+        </li>
+        <li>
+          <em>is not the key the store is sealed under</em>: the message gives the fingerprint of the key the store
+          expects and of the one given. Put back the store key this server had. A server restored from a backup never
+          meets this: its files were sealed under its own key as they were written.
+        </li>
+      </ul>
+      <h4 id="store-conversion">The store of a server from before 6.8</h4>
+      <p>
+        Its files are in clear. At the first start with a store key the server begins to seal them in the background,
+        one at a time (each is read, sealed beside itself, read back, compared, and only then put in the place of the
+        clear one), while it is used as before: both forms are read, and new files are sealed as they arrive.
+        <strong>Settings → System → Storage</strong> shows how many files and bytes are done, how long is left, and a
+        <em>Pause</em>; the administrators are told when it has ended, or when a file is stuck. It needs the room of the
+        largest file, never a second copy of the store, and goes on where it was after a restart.
+      </p>
+      <ul>
+        <li>
+          It reads at most <code>STORE_SEAL_MBPS</code> megabytes a second (40 unless set in <code>.env</code>;
+          <code>0</code> is as fast as the disk goes): about half a minute for each gigabyte at 40.
+        </li>
+        <li>
+          Until it has ended, the files it has not reached are in clear on the disk, as they were before the upgrade.
+        </li>
+        <li>
+          A file there is no room for, or that cannot be read, is listed on the Storage page and tried again every ten
+          minutes. Once the store is sealed, a file put back by hand from a copy made before 6.8 is refused until
+          <em>Check again</em> on that page has sealed it.
+        </li>
+      </ul>
+      <h4 id="work-volumes">The work volumes</h4>
+      <p>
+        No worker mounts the store any more. The packet capture worker has a volume of its own,
+        <code>pcap-work</code>, as the document worker has <code>pst-work</code>: a capture larger than
+        <code>PCAP_MEMORY_FILE_MB</code> (64) is kept there, in clear, while it is open, and both volumes are emptied
+        when their worker starts. They hold nothing to back up. To keep even a large capture off the disk, replace the
+        volume with a tmpfs in a Compose override and give the worker the memory for it.
+      </p>
       <h3 id="backups">Backups</h3>
       <p>
         <strong
@@ -193,7 +356,9 @@ podman-compose up -d --build  # or: podman compose up -d --build
         </li>
         <li>
           <strong>the store of files</strong>, whole: samples (<strong>live malware</strong>), e-mails, captures,
-          mailboxes, screenshots, added rule files;
+          mailboxes, screenshots, added rule files. On the disk they are sealed under the store key; in the backup they
+          are the files themselves, under the backup passphrase like everything else, so a backup is read with its
+          passphrase alone;
         </li>
         <li>
           <strong>a manifest</strong>: the version of Nik, the revision of the database, when it was taken, the number
@@ -204,12 +369,13 @@ podman-compose up -d --build  # or: podman compose up -d --build
       <p><strong>Not in a backup</strong>, to keep somewhere else:</p>
       <ul>
         <li>
-          <code>.env</code>, and in it <code>SECRET_KEY</code>. Without the <code>SECRET_KEY</code> the backup was made
-          under, a restored server works, but the stored secrets (keys of instances, credentials, TLS key logs) cannot
-          be read and have to be entered again. The screen can put the key <em>inside</em> the encrypted backup (<strong
-            >Include SECRET_KEY</strong
-          >, off by default): then a backup and its passphrase are enough to bring everything back, and are also enough,
-          for whoever holds both, to read every stored secret. It is never written anywhere in clear;
+          <code>.env</code> and the secrets directory, and in them <code>SECRET_KEY</code>. Without the
+          <code>SECRET_KEY</code> the backup was made under, a restored server works, but the stored secrets (keys of
+          instances, credentials, TLS key logs) cannot be read and have to be entered again. The store key is not needed
+          to restore: the server that restores seals the files under its own. The screen can put the key
+          <em>inside</em> the encrypted backup (<strong>Include SECRET_KEY</strong>, off by default): then a backup and
+          its passphrase are enough to bring everything back, and are also enough, for whoever holds both, to read every
+          stored secret. It is never written anywhere in clear;
         </li>
         <li>the TLS certificate and its key (the <code>web-certs</code> volume, or the files you mounted);</li>
         <li>your Compose overrides and anything else you added to the deployment.</li>
@@ -352,8 +518,11 @@ deploy/restore.sh --inspect nik-20261120-023000            # only read it and sa
         unless you add <code>--replace</code>, which replaces both with what the backup holds. The database arrives in
         one transaction. Then it starts the stack, checks that the server answers, and says what to look at.
         <code>--database-only</code> leaves the files alone; <code>--no-start</code> leaves the stack stopped;
-        <code>--secret-key</code> first writes the <code>SECRET_KEY</code> a backup holds into
-        <code>.env</code> (keeping the file as it was in <code>.env.before-restore</code>).
+        <code>--secret-key</code> first writes the <code>SECRET_KEY</code> a backup holds where the keys of the stack
+        are kept: into the secrets directory (keeping the key as it was beside it, as
+        <code>secret_key.before-restore</code>), or into <code>.env</code> on a server that keeps them there (keeping
+        the file as it was in <code>.env.before-restore</code>). Every file of the store is sealed under the store key
+        of this server as it is written.
       </p>
       <p>
         <strong>Versions.</strong> A backup made by the version that is installed, or by an earlier one, is restored as
@@ -365,7 +534,8 @@ deploy/restore.sh --inspect nik-20261120-023000            # only read it and sa
       <p>
         What you need: the second host with Docker or Podman and git, the backups it received
         (<code>/srv/nik-backups/incoming</code>), the backup passphrase, and the <code>SECRET_KEY</code> of the first
-        host (from wherever you keep its <code>.env</code>; or inside the backups, if you chose to include it).
+        host (from wherever you keep the copy of its secrets; or inside the backups, if you chose to include it). The
+        store key of the first host is <strong>not</strong> needed: the second host makes its own.
       </p>
       <ol>
         <li>
@@ -377,10 +547,11 @@ git checkout v6.7.0
 </code></pre>
         </li>
         <li>
-          Make the <code>.env</code> of this host, then put the old <code>SECRET_KEY</code> in it (skip the edit if the
-          backup holds the key: step 3 writes it):
+          Make the settings and the secrets of this host (a store key of its own among them), then put the old
+          <code>SECRET_KEY</code> in its file (skip that if the backup holds the key: step 3 writes it):
           <pre><code class="language-bash">deploy/init-env.sh
-$EDITOR .env        # SECRET_KEY=&lt;the one of the first host&gt;; TLS_HOSTNAME, ports
+$EDITOR secrets/secret_key     # the SECRET_KEY of the first host, on one line
+$EDITOR .env                   # TLS_HOSTNAME, ports
 </code></pre>
         </li>
         <li>
@@ -526,16 +697,22 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           tag the snapshot names when the folder is a git clone with nothing uncommitted (otherwise it tells you exactly
           which version to put there, and leaves the stack stopped), starts the stack and checks that the server
           answers. <code>--no-checkout</code> never touches the code. Running it twice does no harm.
+          <strong>Back to a version before 6.8</strong>, which reads its store in clear and its secrets in
+          <code>.env</code>, it does two things more, with the code that is still there: it unseals every file of the
+          store (one at a time, each compared before it takes the place of the sealed one; if one cannot be opened it
+          stops before the database is touched and says which), and it puts the secrets back into <code>.env</code> if
+          they had been moved to files.
         </li>
         <li>
           Sign in and look at the latest incidents.
           <strong>What was written after the upgrade is not in the snapshot</strong>: it is lost. Everybody signs in
-          again: a database that is put back keeps no session. The files of the store are untouched; no release so far
-          changes a file that is there, and a rollback refuses a snapshot whose upgrade did.
+          again: a database that is put back keeps no session. What the files of the store hold is untouched: no release
+          so far changes it, and a rollback refuses a snapshot whose upgrade did. (6.8 seals them, and a rollback to an
+          earlier version unseals them: the same bytes either way.)
         </li>
         <li>
-          A snapshot taken while no passphrase was set is read with the <code>SECRET_KEY</code> of <code>.env</code>;
-          otherwise the rollback asks for the backup passphrase.
+          A snapshot taken while no passphrase was set is read with the <code>SECRET_KEY</code> of the server; otherwise
+          the rollback asks for the backup passphrase.
         </li>
       </ol>
       <h4 id="upgrading-to-43">Upgrading to 4.3</h4>

@@ -25,8 +25,16 @@ if [ "$(id -u)" = "0" ]; then
     exec setpriv --reuid=nik --regid=nik --init-groups --no-new-privs "$0" "$@"
 fi
 
-# Refuses to start with secrets that are missing or publicly known.
-python -m app.preflight
+# Refuses to start with secrets that are missing, publicly known, given twice
+# or unreadable. The API container does not exit on that (it would only
+# restart, and the page would show nothing): it stays up and answers every
+# request with what is wrong (app/stopped.py). The automation container
+# shares this image and serves nothing: it exits, and tries again.
+if [ "${NIK_SKIP_MIGRATIONS:-}" != "1" ]; then
+    python -m app.preflight --serve
+else
+    python -m app.preflight
+fi
 
 # The migrations (app/backups/upgrade.py). On a database that is already at
 # this version it does nothing; on a new one it creates the schema. When a
@@ -39,6 +47,10 @@ python -m app.preflight
 if [ "${NIK_SKIP_MIGRATIONS:-}" != "1" ]; then
     echo "entrypoint: bringing the database to this version (snapshot, rehearsal, migrations)…" >&2
     python -m app.backups.upgrade
+    # The store key against the store it is given: a key that is not the one the
+    # files are sealed under would write files nobody can read beside files it
+    # cannot open. The server stays up and says so instead of starting.
+    python -m app.preflight --store
 fi
 
 exec "$@"

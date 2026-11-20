@@ -1330,6 +1330,110 @@ test('Storage shows how full the disk is and what fills it', async () => {
   await expect(settings).toBeHidden()
 })
 
+test('the store is encrypted: Storage says so, the disk holds no file in clear, a download is what was uploaded', async () => {
+  // A capture goes in through the API, as an upload does.
+  const fixture = readFileSync(new URL('./fixtures/phish.pcapng', import.meta.url))
+  const incidentId = lastIncident.split('/').pop()
+  const uploaded = await page.request.post(`/api/incidents/${incidentId}/captures`, {
+    multipart: { file: { name: 'sealed.pcapng', mimeType: 'application/octet-stream', buffer: fixture } },
+  })
+  expect(uploaded.status()).toBe(201)
+  const captureId = (await uploaded.json()).capture.id
+
+  // On the disk of the server it is sealed: nothing of the capture can be read there.
+  const stored = readFileSync(`../backend/.e2e-samples/_captures/${captureId}/capture.pcapng`)
+  expect(stored.subarray(0, 8).toString('latin1')).toBe('NIKSEAL1')
+  expect(stored.length).toBeGreaterThan(fixture.length)
+  expect(fixture.includes('login-paypa1.example')).toBe(true)
+  expect(stored.includes('login-paypa1.example')).toBe(false)
+  expect(stored.includes(fixture.subarray(0, 64))).toBe(false)
+
+  // What comes back is the capture, byte for byte; a range of it is served without the rest.
+  const whole = await page.request.get(`/api/captures/${captureId}/file`)
+  expect(whole.status()).toBe(200)
+  expect((await whole.body()).equals(fixture)).toBe(true)
+  const part = await page.request.get(`/api/captures/${captureId}/file`, { headers: { Range: 'bytes=100-199' } })
+  expect(part.status()).toBe(206)
+  expect((await part.body()).equals(fixture.subarray(100, 200))).toBe(true)
+  expect((await page.request.delete(`/api/incidents/${incidentId}/captures/${captureId}`)).status()).toBe(204)
+
+  // The screen says the whole store is encrypted, and since when (a new server: from its first start).
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Storage').click()
+  const encryption = settings.getByRole('region', { name: 'Encryption of the store' })
+  await expect(encryption).toContainText('Every file of the store is encrypted since', { timeout: 30_000 })
+  await expect(encryption).toContainText('Encrypted')
+  await expect(encryption).toContainText(/store key [0-9a-f]{4}-[0-9a-f]{4}/)
+  await expect(encryption.getByRole('button', { name: 'Check again' })).toBeVisible()
+  await expect(encryption.getByRole('button', { name: 'Pause' })).toHaveCount(0)
+  await expect(encryption.getByRole('list', { name: 'Damaged files' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(settings).toBeHidden()
+})
+
+test('Keys lists the keys of the server without a value, and a change of key is asked for from the screen', async () => {
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Keys', { exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/system\/keys$/)
+
+  const encrypting = settings.getByRole('list', { name: 'Keys that encrypt' })
+  await expect(encrypting.getByRole('listitem')).toHaveCount(3)
+  const secretKey = encrypting.getByRole('listitem', { name: 'Secret key' })
+  const storeKey = encrypting.getByRole('listitem', { name: 'Store key' })
+  // A key is spoken of by its fingerprint; the test server has no key given to it, and the page says so.
+  await expect(secretKey).toContainText(/fingerprint [0-9a-f]{4}-[0-9a-f]{4}/)
+  await expect(storeKey).toContainText(/fingerprint [0-9a-f]{4}-[0-9a-f]{4}/)
+  await expect(storeKey).toContainText('Held by: api')
+  await expect(secretKey).toContainText('Held by: api, automation')
+  await expect(storeKey).toContainText('from not set')
+  await expect(encrypting.getByRole('listitem', { name: 'Backup passphrase' })).toContainText(/set|not set/)
+  // The keys the server runs with in development are known to everybody: none of them is on the page.
+  await expect(settings).not.toContainText('dev-insecure')
+  const others = settings.getByRole('list', { name: 'Passwords and tokens' })
+  await expect(others.getByRole('listitem')).toHaveCount(8)
+  await expect(others.getByRole('listitem', { name: 'Database password' })).toContainText('ALTER ROLE nik PASSWORD')
+  await expect(settings.getByText('The store of files', { exact: true })).toBeVisible()
+
+  // Asking for the store key to be changed: what it touches, who asks, then the command for the server.
+  await storeKey.getByRole('button', { name: 'Rotate…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Change the store key' })
+  await expect(dialog.getByRole('list', { name: 'What will be put under the new key' })).toContainText(
+    /file of the store|Nothing is stored under this key yet/,
+  )
+  await expect(dialog).toContainText('never shown')
+  const ask = dialog.getByRole('button', { name: 'Ask for the change' })
+  await expect(ask).toBeDisabled()
+  await dialog.getByLabel('Your password').fill('not the password')
+  await ask.click()
+  await expect(dialog.getByRole('alert')).toContainText('The current password is not correct')
+  await dialog.getByLabel('Your password').fill(ADMIN.password)
+  await ask.click()
+  await expect(dialog.getByRole('status')).toContainText('The change was asked for')
+  await expect(dialog).toContainText('deploy/secrets.sh rotate store-key')
+  await expect(dialog).toContainText('The container api restarts twice')
+  await dialog.getByRole('button', { name: 'Done' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(storeKey).toContainText('change asked for')
+  await expect(secretKey).not.toContainText('change asked for')
+
+  // The request is in the audit log, and can be withdrawn.
+  const audit = await (await page.request.get('/api/audit?q=STORE_KEY')).json()
+  expect(audit.entries.some((entry) => entry.action === 'key.rotate.request' && entry.target === 'STORE_KEY')).toBe(
+    true,
+  )
+  await storeKey.getByRole('button', { name: 'How to change it…' }).click()
+  await expect(dialog).toContainText('deploy/secrets.sh rotate store-key')
+  await dialog.getByRole('button', { name: 'Withdraw the request' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(storeKey).not.toContainText('change asked for')
+  await expect(storeKey.getByRole('button', { name: 'Rotate…' })).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(settings).toBeHidden()
+})
+
 test('Workers lists every worker of the server and says which are not configured', async () => {
   await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })

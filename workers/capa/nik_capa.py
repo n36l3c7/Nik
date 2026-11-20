@@ -43,11 +43,11 @@ def run_capa(path: str, timeout: float, extra_rules: Iterable[str] = ()) -> Dict
     ``extra_rules`` are rule files (admin rules) matched with the bundled set.
     """
     if not os.path.isfile(path):
-        raise CapaError("The sample is not in the store.")
+        raise CapaError("The sample was not given to the worker.")
     if not os.access(path, os.R_OK):
         raise CapaError(
-            "capa cannot read the sample (permission denied): the file in the store is not world-readable. "
-            "Restart the api service, which repairs the store's permissions."
+            "capa cannot read the sample it was given (permission denied): the work directory of the worker "
+            "(/tmp) is not writable by its user."
         )
     command = [CAPA, "-r", RULES]
     for rule in extra_rules:

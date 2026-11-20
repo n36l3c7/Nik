@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.core import store as sealed_store
 from app.core.config import settings
 from app.workers import analyzer
 from tests.conftest import make_key
@@ -68,7 +69,8 @@ def test_flirt_signatures_are_validated_stored_and_passed_to_the_worker(admin: T
     sig = upload.json()
     assert sig["name"] == "tokio 1.38" and sig["kind"] == "sig" and sig["size"] == len(SIG)
     stored = Path(settings.SAMPLE_STORE) / "_flirt" / f"{sig['id']}.sig"
-    assert stored.read_bytes() == SIG
+    # On the disk it is sealed, like every file of the store.
+    assert sealed_store.read_bytes(stored) == SIG and SIG not in stored.read_bytes()
 
     pat = admin.post("/api/flirt-signatures", data={"name": "helpers"}, files={"file": ("h.pat", PAT)}).json()
     for name, content in (("bad.sig", b"not a signature"), ("bad.pat", b"hello\n"), ("x.exe", SIG)):

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, HardDrive, RefreshCw } from 'lucide-react'
+import { AlertCircle, HardDrive, Lock, Pause, Play, RefreshCw, ScanSearch } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
 import { formatRelative } from '../../../lib/time.js'
-import { Button, StatCard, Wait } from '../../ui/index.js'
+import { formatDateTime } from '../../../lib/time.js'
+import { Badge, Button, StatCard, TransferBar, Wait } from '../../ui/index.js'
 import { expiryText, undatedText } from '../../../domain/artifactExpiry.js'
+import { encryptionStatus } from '../../../domain/keys.js'
 
 /*
  * Storage settings section (admin only): the disk that holds Nik's files,
@@ -31,6 +33,160 @@ const percent = (bytes, total) => {
   const value = share(bytes, total)
   if (value <= 0) return '—'
   return value < 0.1 ? '<0.1%' : `${value.toFixed(1)}%`
+}
+
+/**
+ * The encryption of the store: whether every file is sealed and since when; while the files of a
+ * server from before 6.8 are being sealed, how far that is, with its pause; the files found damaged.
+ */
+function Encryption() {
+  const [status, setStatus] = useState(null)
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async (background = false) => {
+    try {
+      setStatus(await api.get('/storage/encryption', background ? { background: true } : undefined))
+      setError(null)
+    } catch (failure) {
+      setError(failure.message)
+    }
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const shown = status ? encryptionStatus(status, formatBytes, (iso) => formatDateTime(Date.parse(iso))) : null
+  // While the server works the panel is read again, so the bar follows it to its end.
+  const working = Boolean(shown?.working)
+  useEffect(() => {
+    if (!working) return undefined
+    const timer = setInterval(() => load(true), 3000)
+    return () => clearInterval(timer)
+  }, [working, load])
+
+  const act = async (action) => {
+    setBusy(true)
+    try {
+      setStatus(await api.post('/storage/encryption', { action }))
+      setError(null)
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!status && !error) return <Wait>Reading the encryption of the store…</Wait>
+  const stuck = status?.stuck ?? []
+  const damaged = status?.damaged ?? []
+  return (
+    <section aria-label="Encryption of the store" className="space-y-2 border border-line bg-panel px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Lock className="h-4 w-4 text-accent" aria-hidden="true" />
+        <h3 className="text-sm font-medium text-fg">Encryption of the store</h3>
+        {shown && <Badge color={shown.color}>{shown.title}</Badge>}
+        {status?.keyFingerprint && (
+          <span className="text-xs text-fg-muted">
+            store key <span className="font-mono text-fg">{status.keyFingerprint}</span>
+          </span>
+        )}
+        <span className="ml-auto flex gap-2">
+          {status?.state === 'converting' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Pause}
+              waiting={busy}
+              disabled={busy}
+              onClick={() => act('pause')}
+            >
+              Pause
+            </Button>
+          )}
+          {status?.state === 'paused' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Play}
+              waiting={busy}
+              disabled={busy}
+              onClick={() => act('resume')}
+            >
+              Go on
+            </Button>
+          )}
+          {status?.state === 'sealed' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ScanSearch}
+              waiting={busy}
+              disabled={busy}
+              onClick={() => act('check')}
+              title="Walk the whole store again: a file found in clear is encrypted"
+            >
+              Check again
+            </Button>
+          )}
+        </span>
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-high">
+          {error}
+        </p>
+      )}
+      {shown && (
+        <div role="status" className="space-y-1">
+          {shown.lines.map((line) => (
+            <p key={line} className="max-w-prose text-sm text-fg-muted">
+              {line}
+            </p>
+          ))}
+        </div>
+      )}
+      {shown?.percent != null && <TransferBar label="Encrypting the store of files" percent={shown.percent} />}
+      {status && status.state !== 'sealed' && (
+        <p className="max-w-prose text-xs text-fg-muted">
+          Every file is read, encrypted beside itself, read back and compared before it takes the place of the one in
+          clear: one at a time, so the room needed is that of the largest file. Nik is used as before meanwhile.
+        </p>
+      )}
+      {stuck.length > 0 && (
+        <ul
+          aria-label="Files that could not be encrypted"
+          className="divide-y divide-line-soft border border-high-line"
+        >
+          {stuck.map((item) => (
+            <li key={item.name} className="px-3 py-1.5 text-xs">
+              <span className="font-mono text-fg">{item.name}</span>
+              <span className="block text-fg-muted">{item.reason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {damaged.length > 0 && (
+        <div className="space-y-1">
+          <p role="alert" className="text-sm text-high">
+            {damaged.length === 1
+              ? 'A file of the store is damaged'
+              : `${damaged.length} files of the store are damaged`}
+            : what is on the disk is not what Nik wrote, and it is not served. Put it back from a backup.
+          </p>
+          <ul aria-label="Damaged files" className="divide-y divide-line-soft border border-high-line">
+            {damaged.map((item) => (
+              <li key={item.name} className="px-3 py-1.5 text-xs">
+                <span className="font-mono text-fg">{item.name}</span>
+                <span className="block text-fg-muted">
+                  {formatDateTime(Date.parse(item.at))}: {item.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
 }
 
 export default function StorageSection({ onOpenArtifact }) {
@@ -84,6 +240,8 @@ export default function StorageSection({ onOpenArtifact }) {
           {loading ? 'Measuring…' : 'Measure again'}
         </Button>
       </div>
+
+      <Encryption />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard

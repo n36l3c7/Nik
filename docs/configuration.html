@@ -84,8 +84,54 @@
               <td><code>SECRET_KEY_PREVIOUS</code></td>
               <td>—</td>
               <td>
-                Old values of <code>SECRET_KEY</code>, comma-separated, set for one start after changing it: what they
-                encrypted is still read and is re-encrypted with the new key.
+                Earlier values of <code>SECRET_KEY</code>, separated by commas or lines, kept while it is being changed:
+                what they encrypted is still read, is re-encrypted with the new key and read back.
+                <code>deploy/secrets.sh rotate secret-key</code> sets and removes it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>STORE_KEY</code></td>
+              <td><code>dev-insecure-store-key-change-me</code></td>
+              <td>
+                Seals every file of the store on the disk. It is in no database and in no backup. The default is for
+                development: the container refuses it, and any value shorter than 32 characters; without a store key the
+                server stays up and says so instead of starting.
+              </td>
+            </tr>
+            <tr>
+              <td><code>STORE_KEY_PREVIOUS</code></td>
+              <td>—</td>
+              <td>
+                Earlier store keys, kept while the store key is being changed: files under them are still read, and
+                their keys are put under the new one. <code>deploy/secrets.sh rotate store-key</code> sets and removes
+                it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>&lt;NAME&gt;_FILE</code></td>
+              <td>—</td>
+              <td>
+                For every secret (<code>SECRET_KEY</code>, <code>STORE_KEY</code>, their <code>_PREVIOUS</code>,
+                <code>DB_PASSWORD</code>, the <code>*_TOKEN</code> of the workers, <code>METRICS_TOKEN</code>): a file
+                that holds it, read in place of the variable (a mounted secret). An empty file counts as none; a secret
+                given both ways, or in a file that cannot be read, stops the server with a sentence that says which. The
+                workers read their token the same way.
+              </td>
+            </tr>
+            <tr>
+              <td><code>STORE_SEAL_MBPS</code></td>
+              <td><code>40</code></td>
+              <td>
+                How fast the store of a server from before 6.8 is sealed, in megabytes read a second (<code>0</code>: as
+                fast as the disk goes).
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_NO_STORE_KEY</code>, <code>NIK_STORE_API_URL</code></td>
+              <td>—</td>
+              <td>
+                Set by the Compose file for the automation container: it holds neither the store nor its key
+                (<code>1</code>) and asks the backend at this address for the files a step needs.
               </td>
             </tr>
             <tr>
@@ -124,9 +170,9 @@
               <td><code>SAMPLE_STORE</code></td>
               <td><code>./samples</code></td>
               <td>
-                Directory of the raw malware samples, one file per SHA-256, never executed. Exclude it from the server's
-                antivirus and include it in backups: the database holds only the analysis results. The Compose stack
-                mounts a named volume here.
+                Directory of the files Nik keeps (samples, one per SHA-256, never executed; e-mails, captures,
+                mailboxes), each sealed under <code>STORE_KEY</code>. The database holds only the analysis results. The
+                Compose stack mounts a named volume here, in the backend alone.
               </td>
             </tr>
             <tr>
@@ -369,9 +415,12 @@
       <h2 id="compose">Compose</h2>
       <p>
         Variables of the root <code>.env</code>, read by <code>docker-compose.yml</code>. Create the file with
-        <code>deploy/init-env.sh</code>: it copies <code>.env.example</code> and replaces every placeholder secret with
-        a random value. The variables marked <em>required</em> have no default: Compose stops without them, and the
-        containers refuse the example values.
+        <code>deploy/init-env.sh</code>: it copies <code>.env.example</code> and makes every secret, each a random
+        value. On a new install the secrets go into files of the directory <code>NIK_SECRETS_DIR</code> names and their
+        lines stay in <code>.env</code>, empty; a server from before 6.8 keeps the values here until
+        <code>deploy/secrets.sh move</code> is run. The variables marked <em>required</em> have no default: Compose
+        stops when one is not named at all, and the containers refuse a secret that is missing from both places or is an
+        example value.
       </p>
       <div class="table-wrap">
         <table>
@@ -395,8 +444,38 @@
               <td><code>SECRET_KEY</code></td>
               <td><em>required</em></td>
               <td>
-                Encrypts the provider API keys and TLS key logs stored in the database. Keep it with the backups. To
-                change it, put the old value in <code>SECRET_KEY_PREVIOUS</code> for one start.
+                Encrypts the secrets stored in the database. Keep it with the backups. To change it:
+                <code>deploy/secrets.sh rotate secret-key</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>STORE_KEY</code></td>
+              <td><em>required</em></td>
+              <td>
+                Seals every file of the store. Only the <code>api</code> container is given it. Without it the server
+                stays up and says so instead of starting. To change it: <code>deploy/secrets.sh rotate store-key</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_SECRETS_DIR</code></td>
+              <td>—</td>
+              <td>
+                The directory that holds the secrets as files (<code>./secrets</code> on a new install), each mounted
+                into the containers that use it. Unset on a server that keeps its secrets in this file: the empty files
+                of <code>deploy/no-secrets</code> are mounted in their place.
+              </td>
+            </tr>
+            <tr>
+              <td><code>STORE_SEAL_MBPS</code></td>
+              <td><code>40</code></td>
+              <td>How fast a store from before 6.8 is sealed, in megabytes a second.</td>
+            </tr>
+            <tr>
+              <td><code>PCAP_MEMORY_FILE_MB</code></td>
+              <td><code>64</code></td>
+              <td>
+                The packet capture worker is sent the capture it reads: one of this size or less stays in its memory, a
+                larger one goes to its <code>pcap-work</code> volume while it is open.
               </td>
             </tr>
             <tr>
@@ -531,10 +610,11 @@
       </div>
       <div class="note">
         <strong>What the stack enforces.</strong> The backend runs as an unprivileged user on a read-only filesystem
-        with memory, CPU and process limits, like the workers. nginx serves HTTPS only and sends a
-        Content-Security-Policy, <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>,
-        <code>Referrer-Policy</code> and HSTS with every page. Rate limits and account lock-outs are counted per client
-        address, as nginx sees it. Container logs are rotated at 20 MB.
+        with memory, CPU and process limits, like the workers. It alone mounts the store of files and holds its key: the
+        workers are sent the file a job needs. nginx serves HTTPS only and sends a Content-Security-Policy,
+        <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, <code>Referrer-Policy</code> and HSTS with
+        every page. Rate limits and account lock-outs are counted per client address, as nginx sees it. Container logs
+        are rotated at 20 MB.
       </div>
 
       <h2 id="more-variables">Tuning and worker variables</h2>

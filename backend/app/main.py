@@ -23,7 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
-from . import artifact_jobs, urlscan_queue, worker_watch
+from . import artifact_jobs, key_rotation, store_seal, urlscan_queue, worker_watch
 from .artifacts import backfill as backfill_artifacts
 
 # Import models so their tables are registered on the shared metadata before
@@ -38,9 +38,9 @@ from .core.db import Base, SessionLocal, engine, get_db
 from .core.observability import metrics_response, observability_middleware, setup_logging
 from .core.ratelimit import limiter
 from .core.security import Refused
+from .core.store import SealError
 from .enrichment import worker as enrichment_worker
 from .iocs import backfill as backfill_iocs
-from .malware.samples import repair_store_permissions
 from .query import QueryError, QueryForbidden
 from .routers import (
     annotations,
@@ -84,6 +84,7 @@ from .routers import (
     search,
     settings,
     storage,
+    system_keys,
     tasks,
     urls,
     users,
@@ -94,6 +95,8 @@ from .routers import (
 from .routers import workers as worker_status
 
 setup_logging(app_settings.LOG_LEVEL)
+# The store asks this whether files in clear may still be there, and tells it of a damaged one.
+store_seal.install()
 
 API_DESCRIPTION = """
 Nik is a forensic analysis platform. This REST API lets external clients drive
@@ -155,6 +158,10 @@ TAGS_METADATA = [
         "name": "backup",
         "description": "The backups Nik takes by itself, and the export of content as one file (admins).",
     },
+    {
+        "name": "keys",
+        "description": "The keys of the server: where each comes from, what it protects, changing one (admins).",
+    },
     {"name": "health", "description": "Liveness probe."},
 ]
 
@@ -203,18 +210,15 @@ app.add_middleware(SlowAPIMiddleware)
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Create all tables when not using migrations, repair the sample store, index IOCs.
+    """Create all tables when not using migrations, index IOCs, start the loops of the process.
 
     In production run Alembic (``alembic upgrade head``, see backend/alembic).
-    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema. The
-    store pass makes samples saved by older releases readable by the workers.
+    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema.
     """
     if app_settings.RUN_CREATE_ALL:
         Base.metadata.create_all(bind=engine)
     # SECRET_KEY was changed: move what the old one encrypted to the new one.
     vault.reencrypt(SessionLocal)
-    # Samples stored by releases before 2.7.0 are 0o440: the workers could not read them.
-    repair_store_permissions()
     # Incidents saved before 2.12.0 have no indicator index yet.
     backfill_iocs(SessionLocal)
     # Samples, e-mails and captures stored before 2.19.0 have no artifact entry yet.
@@ -243,6 +247,9 @@ def on_startup() -> None:
     # The administrators are told when a worker stops answering (one process at a time, see worker_watch.py).
     if app_settings.API_BACKGROUND:
         worker_watch.start()
+        # A store from before 6.8 is sealed file by file, and a key that was changed is followed to
+        # its end (one process at a time, see store_seal.py and key_rotation.py).
+        key_rotation.start()
         # Backups are taken and tested here (one process at a time, see backups/scheduler.py).
         from .backups import scheduler as backup_scheduler
 
@@ -346,6 +353,13 @@ def _refused(_request: Request, error: Refused) -> JSONResponse:
     )
 
 
+@app.exception_handler(SealError)
+def _damaged_file(_request: Request, error: SealError) -> JSONResponse:
+    """A file of the store that does not open is never served as if it were fine: the sentence names
+    it and says why. The audit log and the administrators were told where it was found."""
+    return JSONResponse(status_code=500, content={"detail": str(error), "code": "file_damaged"})
+
+
 @app.exception_handler(QueryForbidden)
 def _query_forbidden(_request: Request, _error: QueryForbidden) -> JSONResponse:
     return JSONResponse(status_code=403, content={"detail": "You do not have the permission this needs"})
@@ -398,6 +412,8 @@ app.include_router(capa_rules.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(system_keys.router, prefix="/api")
+app.include_router(system_keys.internal, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")

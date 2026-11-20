@@ -179,7 +179,12 @@ class Store:
         """The bytes of a file of the store, as they are. Raises when they cannot be read."""
         try:
             data = read_sample(sha256)
-        except (OSError, ValueError):
+        except (OSError, ValueError) as error:
+            from ..core import store
+            from ..store_handover import NotServed
+
+            if isinstance(error, (store.SealError, NotServed)):
+                raise CommandError(str(error), retry=False) from None
             raise CommandError(f"The file {sha256[:12]}… could not be read from the store", retry=False) from None
         if len(data) > self.limit:
             raise CommandError(f"The file {sha256[:12]}… is larger than the limit of a sample", retry=False)

@@ -4,11 +4,28 @@
 #
 # Works with both `docker compose` and `podman-compose` (and `podman compose`).
 #
-#   deploy/init-env.sh                # writes .env with fresh random secrets
+#   deploy/init-env.sh                # writes .env and the secrets, each a fresh random value
 #   docker compose up -d --build      # or: podman-compose up -d --build
 #
-# The stack does not start without its secrets (the variables marked `:?`
-# below) and refuses the example values. The app is then reachable on
+# Where the secrets are. Each one reaches a container as a file under
+# /run/secrets, named to the process by <NAME>_FILE, and only the containers
+# that use it are given it. The files are in the directory NIK_SECRETS_DIR of
+# .env names (deploy/init-env.sh makes ./secrets on a new install): a secret
+# is then not in the environment of a container, where `inspect` shows it and
+# every process inherits it. A server that keeps its secrets in .env (every
+# install from before 6.8, until deploy/secrets.sh move is run) leaves
+# NIK_SECRETS_DIR unset: the empty files of deploy/no-secrets are mounted in
+# their place, an empty file counts as none, and the variables below carry the
+# values as before. A secret given in both places is refused.
+#
+# The files are mounted one by one as volumes with the option z (the SELinux
+# label a container needs to read them), which docker compose and podman
+# compose both understand; `secrets:` of Compose would mount the same files
+# without that label under podman.
+#
+# The stack does not start without its secrets (the variables marked `?`
+# below must at least be named in .env, empty when the value is in a file)
+# and refuses the example values. The app is then reachable on
 # https://localhost:8443 (self-signed certificate generated on first start —
 # the browser warning is expected); http://localhost:8080 only redirects
 # there. See the README for using a real certificate.
@@ -29,7 +46,10 @@ services:
     command: ["postgres"]
     environment:
       POSTGRES_USER: nik
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set, run deploy/init-env.sh}
+      # Read by the entrypoint from the file when it holds the password, and only to create
+      # the database the first time: a database that exists is started without it.
+      POSTGRES_PASSWORD: ${DB_PASSWORD?DB_PASSWORD is not set, run deploy/init-env.sh}
+      DB_PASSWORD_FILE: /run/secrets/db_password
       POSTGRES_DB: nik
       NIK_PG_UPGRADE: ${NIK_PG_UPGRADE:-}
     volumes:
@@ -39,6 +59,7 @@ services:
       # a rollback after deploy/upgrade-postgres.sh, empty on a new install.
       - db-data:/var/lib/postgresql-16:ro
       - ./deploy/db-entrypoint.sh:/usr/local/bin/nik-db-entrypoint.sh:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/db_password:/run/secrets/db_password:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nik -d nik"]
       interval: 5s
@@ -58,12 +79,24 @@ services:
       # Passed as separate parts: the backend assembles the URL itself with
       # proper escaping, so DB_PASSWORD may contain %, @, : and friends.
       DB_HOST: db
-      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set, run deploy/init-env.sh}
-      # Encrypts the provider API keys and TLS key logs stored in the database:
-      # keep it with the backups. SECRET_KEY_PREVIOUS (the old value, for one
-      # start) lets it be changed without losing them.
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set, run deploy/init-env.sh}
+      DB_PASSWORD: ${DB_PASSWORD?DB_PASSWORD is not set, run deploy/init-env.sh}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      # Encrypts the secrets stored in the database: keep it with the backups.
+      # SECRET_KEY_PREVIOUS (the old value) is kept while it is being changed:
+      # deploy/secrets.sh rotate secret-key does the whole change.
+      SECRET_KEY: ${SECRET_KEY?SECRET_KEY is not set, run deploy/init-env.sh}
+      SECRET_KEY_FILE: /run/secrets/secret_key
       SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
+      SECRET_KEY_PREVIOUS_FILE: /run/secrets/secret_key_previous
+      # Seals every file of the store. It is in no database and no backup holds it:
+      # keep a copy away from the server. Without it the server stays up and says so
+      # instead of starting. Only this container is given it.
+      STORE_KEY: ${STORE_KEY:-}
+      STORE_KEY_FILE: /run/secrets/store_key
+      STORE_KEY_PREVIOUS: ${STORE_KEY_PREVIOUS:-}
+      STORE_KEY_PREVIOUS_FILE: /run/secrets/store_key_previous
+      # How fast a store from before 6.8 is sealed, in megabytes a second (0: as fast as the disk).
+      STORE_SEAL_MBPS: ${STORE_SEAL_MBPS:-40}
       # The app is served over HTTPS only, so the session cookie is Secure.
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       # The client address is the one the web container writes in
@@ -76,29 +109,35 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-web}
       # Optional bearer token for /api/metrics (never published by nginx).
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      METRICS_TOKEN_FILE: /run/secrets/metrics_token
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
-      # Malware samples: raw files on a named volume (the database holds only
-      # their analysis). Exclude it from any antivirus on the host.
+      # The store of files: a named volume, every file sealed under STORE_KEY (the
+      # database holds only their analysis). No other container mounts it.
       SAMPLE_STORE: /app/samples
       SAMPLE_MAX_MB: ${SAMPLE_MAX_MB:-100}
       # Largest evidence file (browser database, event log, tool output).
       ARTIFACT_MAX_MB: ${ARTIFACT_MAX_MB:-500}
       # Disassembly worker (rizin), reachable only on the internal network.
       ANALYZER_URL: http://analyzer:8700
-      ANALYZER_TOKEN: ${ANALYZER_TOKEN:?ANALYZER_TOKEN is not set, run deploy/init-env.sh}
+      ANALYZER_TOKEN: ${ANALYZER_TOKEN?ANALYZER_TOKEN is not set, run deploy/init-env.sh}
+      ANALYZER_TOKEN_FILE: /run/secrets/analyzer_token
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
       # capa worker (capabilities, ATT&CK / MBC), same internal network.
       CAPA_URL: http://capa:8710
-      CAPA_TOKEN: ${CAPA_TOKEN:?CAPA_TOKEN is not set, run deploy/init-env.sh}
+      CAPA_TOKEN: ${CAPA_TOKEN?CAPA_TOKEN is not set, run deploy/init-env.sh}
+      CAPA_TOKEN_FILE: /run/secrets/capa_token
       CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
       # Mail attachment previews (documents) and the isolated browser.
       DOCVIEW_URL: http://docview:8720
-      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
+      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
+      DOCVIEW_TOKEN_FILE: /run/secrets/docview_token
       BROWSER_URL: http://browser:8730
-      BROWSER_TOKEN: ${BROWSER_TOKEN:?BROWSER_TOKEN is not set, run deploy/init-env.sh}
+      BROWSER_TOKEN: ${BROWSER_TOKEN?BROWSER_TOKEN is not set, run deploy/init-env.sh}
+      BROWSER_TOKEN_FILE: /run/secrets/browser_token
       # Packet captures (Network Analysis), read with Wireshark's engine.
       PCAP_URL: http://pcap:8740
-      PCAP_TOKEN: ${PCAP_TOKEN:?PCAP_TOKEN is not set, run deploy/init-env.sh}
+      PCAP_TOKEN: ${PCAP_TOKEN?PCAP_TOKEN is not set, run deploy/init-env.sh}
+      PCAP_TOKEN_FILE: /run/secrets/pcap_token
       PCAP_MAX_MB: ${PCAP_MAX_MB:-500}
       # Mailboxes (mbox, Maildir archive) and Outlook PST files, read as many e-mails.
       MAILBOX_MAX_MB: ${MAILBOX_MAX_MB:-2048}
@@ -108,7 +147,8 @@ services:
       AUTOMATION_MAX_ACTIVE_RUNS: ${AUTOMATION_MAX_ACTIVE_RUNS:-200}
       # The script sandbox: the backend reaches it to run the test of a script being written.
       SANDBOX_URL: http://sandbox:8750
-      SANDBOX_TOKEN: ${SANDBOX_TOKEN:?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TOKEN_FILE: /run/secrets/sandbox_token
       SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-10}
       SANDBOX_MAX_TIMEOUT: ${SANDBOX_MAX_TIMEOUT:-60}
       # Content packs. Where the catalogue is read from (set it empty for a Nik with no catalogue:
@@ -126,6 +166,18 @@ services:
       # The volume `backups`, or a directory of the host when NIK_BACKUP_DIR names one
       # (another disk than the data: /srv/nik-backups).
       - ${NIK_BACKUP_DIR:-backups}:/app/backups
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/db_password:/run/secrets/db_password:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key:/run/secrets/secret_key:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key_previous:/run/secrets/secret_key_previous:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/store_key:/run/secrets/store_key:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/store_key_previous:/run/secrets/store_key_previous:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/metrics_token:/run/secrets/metrics_token:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/analyzer_token:/run/secrets/analyzer_token:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/capa_token:/run/secrets/capa_token:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/docview_token:/run/secrets/docview_token:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/browser_token:/run/secrets/browser_token:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/pcap_token:/run/secrets/pcap_token:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/sandbox_token:/run/secrets/sandbox_token:ro,z
     networks: [default, analysis, browser-control, automation-internal]
     depends_on:
       db:
@@ -156,23 +208,31 @@ services:
   # command. It reads the database as the backend does and serves nothing. It is
   # the only container a playbook reaches the outside from (automation-egress):
   # the backend is not on that network. It runs unprivileged from the start, on
-  # a read-only filesystem, and reads the sample store read-only. It also sends
-  # the copy of each backup off the server, for the same reason.
+  # a read-only filesystem. It is the container with a way out, so it is given
+  # neither the store of files nor its key: a step that needs a file asks the
+  # backend for it (backend/app/store_handover.py). It also sends the copy of
+  # each backup off the server, for the same reason.
   automation:
     build: ./backend
     command: ["python", "-m", "app.automation.worker"]
     user: "10001:10001"
     environment:
       DB_HOST: db
-      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set, run deploy/init-env.sh}
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is not set, run deploy/init-env.sh}
+      DB_PASSWORD: ${DB_PASSWORD?DB_PASSWORD is not set, run deploy/init-env.sh}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      SECRET_KEY: ${SECRET_KEY?SECRET_KEY is not set, run deploy/init-env.sh}
+      SECRET_KEY_FILE: /run/secrets/secret_key
       SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
+      SECRET_KEY_PREVIOUS_FILE: /run/secrets/secret_key_previous
       # The backend applies the migrations; this container waits for it and applies none.
       NIK_SKIP_MIGRATIONS: "1"
-      SAMPLE_STORE: /app/samples
+      # No store key here, and no store: files are asked of the backend.
+      NIK_NO_STORE_KEY: "1"
+      NIK_STORE_API_URL: http://api:8000
       # The script sandbox, on its own internal network.
       SANDBOX_URL: http://sandbox:8750
-      SANDBOX_TOKEN: ${SANDBOX_TOKEN:?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TOKEN_FILE: /run/secrets/sandbox_token
       SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-10}
       SANDBOX_MAX_TIMEOUT: ${SANDBOX_MAX_TIMEOUT:-60}
       # How many steps run side by side, how many runs may be in progress at
@@ -185,10 +245,13 @@ services:
       NO_PROXY: ${AUTOMATION_NO_PROXY:-}
       BACKUP_DIR: /app/backups
     volumes:
-      - sample-store:/app/samples:ro
       # Read-only: this container sends the copy of each backup off the server (it is the one
       # with a way out) and never writes one.
       - ${NIK_BACKUP_DIR:-backups}:/app/backups:ro
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/db_password:/run/secrets/db_password:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key:/run/secrets/secret_key:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key_previous:/run/secrets/secret_key_previous:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/sandbox_token:/run/secrets/sandbox_token:ro,z
     networks: [default, automation-egress, automation-internal]
     depends_on:
       api:
@@ -212,10 +275,13 @@ services:
   sandbox:
     build: ./workers/sandbox
     environment:
-      SANDBOX_TOKEN: ${SANDBOX_TOKEN:?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN?SANDBOX_TOKEN is not set, run deploy/init-env.sh}
+      SANDBOX_TOKEN_FILE: /run/secrets/sandbox_token
       SANDBOX_TIMEOUT: ${SANDBOX_TIMEOUT:-10}
       SANDBOX_MAX_TIMEOUT: ${SANDBOX_MAX_TIMEOUT:-60}
       SANDBOX_MEMORY_MB: ${SANDBOX_MEMORY_MB:-256}
+    volumes:
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/sandbox_token:/run/secrets/sandbox_token:ro,z
     networks: [automation-internal]
     read_only: true
     tmpfs:
@@ -228,14 +294,16 @@ services:
     logging: *logging
     restart: unless-stopped
 
-  # Disassembles samples with rizin for the Code view. It reads the sample store
-  # read-only, has no internet access (internal network), no published port, a
-  # read-only filesystem and memory / CPU / time limits. Samples are read and
-  # disassembled, never executed.
+  # Disassembles samples with rizin for the Code view. It does not see the store
+  # of files, which is sealed: the backend gives it the sample a job needs, and
+  # it keeps it in /tmp (memory) while it is used. No internet access (internal
+  # network), no published port, a read-only filesystem and memory / CPU / time
+  # limits. Samples are read and disassembled, never executed.
   analyzer:
     build: ./workers/analyzer
     environment:
-      ANALYZER_TOKEN: ${ANALYZER_TOKEN:?ANALYZER_TOKEN is not set, run deploy/init-env.sh}
+      ANALYZER_TOKEN: ${ANALYZER_TOKEN?ANALYZER_TOKEN is not set, run deploy/init-env.sh}
+      ANALYZER_TOKEN_FILE: /run/secrets/analyzer_token
       ANALYZER_TIMEOUT: ${ANALYZER_TIMEOUT:-600}
       ANALYZER_DECOMPILE_SECONDS: ${ANALYZER_DECOMPILE_SECONDS:-300}
       ANALYZER_MAX_JOBS: ${ANALYZER_MAX_JOBS:-2}
@@ -245,7 +313,7 @@ services:
       ANALYZER_WARM_SESSIONS: ${ANALYZER_WARM_SESSIONS:-1}
       ANALYZER_WARM_IDLE: ${ANALYZER_WARM_IDLE:-600}
     volumes:
-      - sample-store:/samples:ro
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/analyzer_token:/run/secrets/analyzer_token:ro,z
     networks: [analysis]
     read_only: true
     tmpfs: [/tmp, /home/rizin]
@@ -259,15 +327,17 @@ services:
 
   # Runs Mandiant capa on samples for the Capabilities view, one at a time
   # (CPU-bound: minutes on large binaries). Same isolation as the analyzer:
-  # read-only sample store, internal network only, no published port,
-  # read-only filesystem, no capabilities, memory / CPU / time limits.
+  # given the sample for the time of one analysis (in /tmp, memory), internal
+  # network only, no published port, read-only filesystem, no capabilities,
+  # memory / CPU / time limits.
   capa:
     build: ./workers/capa
     environment:
-      CAPA_TOKEN: ${CAPA_TOKEN:?CAPA_TOKEN is not set, run deploy/init-env.sh}
+      CAPA_TOKEN: ${CAPA_TOKEN?CAPA_TOKEN is not set, run deploy/init-env.sh}
+      CAPA_TOKEN_FILE: /run/secrets/capa_token
       CAPA_TIMEOUT: ${CAPA_TIMEOUT:-1800}
     volumes:
-      - sample-store:/samples:ro
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/capa_token:/run/secrets/capa_token:ro,z
     networks: [analysis]
     read_only: true
     tmpfs: [/tmp]
@@ -286,12 +356,14 @@ services:
   docview:
     build: ./workers/docview
     environment:
-      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN:?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
+      DOCVIEW_TOKEN: ${DOCVIEW_TOKEN?DOCVIEW_TOKEN is not set, run deploy/init-env.sh}
+      DOCVIEW_TOKEN_FILE: /run/secrets/docview_token
       # A PST is converted here, on the `pst-work` volume (a disk, not memory): the worker checks
       # that it has room for the file and its mbox before it starts, and empties it afterwards.
       DOCVIEW_PST_MAX_MB: ${PST_MAX_MB:-4096}
     volumes:
       - pst-work:/work
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/docview_token:/run/secrets/docview_token:ro,z
     networks: [analysis]
     read_only: true
     tmpfs: [/tmp]
@@ -305,15 +377,22 @@ services:
 
   # Reads packet captures with Wireshark's engine (tshark for the summary,
   # sharkd for the packet list, protocol tree, Follow Stream and Export
-  # Objects). Read-only sample store, internal network only, no published
-  # port, read-only filesystem, no capabilities (it never captures),
+  # Objects). It does not see the store of files: the backend gives it the
+  # capture it reads. A small one stays in /tmp (memory); a larger one goes to
+  # the `pcap-work` volume, in clear, until its session is closed or idle, and
+  # the volume is emptied when the worker starts. Internal network only, no
+  # published port, read-only filesystem, no capabilities (it never captures),
   # memory / CPU limits.
   pcap:
     build: ./workers/pcap
     environment:
-      PCAP_TOKEN: ${PCAP_TOKEN:?PCAP_TOKEN is not set, run deploy/init-env.sh}
+      PCAP_TOKEN: ${PCAP_TOKEN?PCAP_TOKEN is not set, run deploy/init-env.sh}
+      PCAP_TOKEN_FILE: /run/secrets/pcap_token
+      # A capture of this size or less never touches a disk in the worker.
+      PCAP_MEMORY_FILE_MB: ${PCAP_MEMORY_FILE_MB:-64}
     volumes:
-      - sample-store:/samples:ro
+      - pcap-work:/work
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/pcap_token:/run/secrets/pcap_token:ro,z
     networks: [analysis]
     read_only: true
     tmpfs: [/tmp]
@@ -338,8 +417,11 @@ services:
   browser:
     build: ./workers/browser
     environment:
-      BROWSER_TOKEN: ${BROWSER_TOKEN:?BROWSER_TOKEN is not set, run deploy/init-env.sh}
+      BROWSER_TOKEN: ${BROWSER_TOKEN?BROWSER_TOKEN is not set, run deploy/init-env.sh}
+      BROWSER_TOKEN_FILE: /run/secrets/browser_token
       BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-3}
+    volumes:
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/browser_token:/run/secrets/browser_token:ro,z
     networks: [browser-control, browser-egress]
     read_only: true
     tmpfs: [/tmp]
@@ -396,6 +478,8 @@ volumes:
   backups:
   # Where the document worker converts a PST: holds a file only while one is being converted.
   pst-work:
+  # Where the packet capture worker keeps a capture too large for memory, while it reads it.
+  pcap-work:
   web-certs:
 
 networks:

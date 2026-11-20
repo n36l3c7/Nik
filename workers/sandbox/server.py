@@ -19,7 +19,27 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import runner
 
-TOKEN = os.environ.get("SANDBOX_TOKEN", "")
+
+def secret(name: str) -> str:
+    """The secret called ``name``: the content of the file ``<name>_FILE`` names when it holds
+    something (a mounted secret), else the variable itself. Never both."""
+    value = os.environ.get(name, "")
+    path = os.environ.get(f"{name}_FILE", "").strip()
+    if not path:
+        return value
+    try:
+        with open(path, encoding="utf-8") as handle:
+            held = handle.read(65536).strip("\r\n")
+    except OSError as error:
+        raise SystemExit(
+            f"{name}_FILE names {path}, which cannot be read ({error.strerror}): refusing to start."
+        ) from None
+    if held and value:
+        raise SystemExit(f"{name} is given twice, in the file named by {name}_FILE and in the environment: keep one.")
+    return held or value
+
+
+TOKEN = secret("SANDBOX_TOKEN")
 PORT = int(os.environ.get("SANDBOX_PORT", "8750"))
 MAX_JOBS = int(os.environ.get("SANDBOX_MAX_JOBS", "4"))
 MAX_BODY = 2 * 1024 * 1024

@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.models import IntegrationKey
 
-GOOD = {"SECRET_KEY": "k" * 40}
+GOOD = {"SECRET_KEY": "k" * 40, "STORE_KEY": "s" * 40}
 
 
 def test_preflight_accepts_generated_secrets():
@@ -28,7 +28,7 @@ def test_preflight_accepts_generated_secrets():
     ["", "dev-insecure-change-me", "please-change-this-secret", "change-this-to-a-long-random-string", "tiny-key"],
 )
 def test_preflight_refuses_missing_public_and_short_secret_keys(secret):
-    found = preflight.problems({"SECRET_KEY": secret})
+    found = preflight.problems({**GOOD, "SECRET_KEY": secret})
     assert [name for name, _reason in found] == ["SECRET_KEY"]
     # The message names the variable and the reason, never the value.
     line = preflight.describe(*found[0])
@@ -49,6 +49,7 @@ def test_preflight_refuses_example_worker_tokens_and_says_which():
 
 def test_preflight_main_exits_with_the_list(monkeypatch, capsys):
     monkeypatch.setenv("SECRET_KEY", "please-change-this-secret")
+    monkeypatch.setenv("STORE_KEY", "s" * 40)
     for name in preflight.WORKERS:
         monkeypatch.delenv(f"{name}_URL", raising=False)
     with pytest.raises(SystemExit) as stop:

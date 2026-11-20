@@ -21,6 +21,8 @@ import pytest
 import sqlalchemy as sa
 
 from app.backups import config, container, database, restore, runner, upgrade
+from app.core import sealed
+from app.core import store as sealed_store
 from app.core.config import settings
 from app.core.db import SessionLocal, engine
 from app.core.models import Setting, User
@@ -321,8 +323,10 @@ def test_a_backup_is_restored_on_an_empty_server(elsewhere, capsys):
         assert conn.execute(sa.text("SELECT count(*) FROM sessions")).scalar() == 0
         assert conn.execute(sa.text("SELECT count(*) FROM users")).scalar() == 1
     other.dispose()
+    # Every file came back sealed under the store key of this server, and holds what it held.
+    assert all(path.read_bytes().startswith(sealed.MAGIC) for path in target_store.rglob("*") if path.is_file())
     restored = {
-        path.relative_to(target_store).as_posix(): path.read_bytes()
+        path.relative_to(target_store).as_posix(): sealed_store.read_bytes(path)
         for path in target_store.rglob("*")
         if path.is_file()
     }

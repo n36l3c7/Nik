@@ -1,7 +1,9 @@
 """Mailboxes: a file of many e-mails kept as one artifact.
 
 Three formats, one store. Whatever is uploaded ends as an mbox in
-``SAMPLE_STORE/_mailboxes/<id>/mailbox.mbox``:
+``SAMPLE_STORE/_mailboxes/<id>/mailbox.mbox``, sealed like every file of the
+store (``core/store.py``): the upload, the archive of a Maildir and the mbox
+are read through it and are never in clear on the disk of the server.
 
 - an **mbox** is kept as it is;
 - a **Maildir** arrives as a zip or tar archive (``cur/``, ``new/``): its
@@ -20,9 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 import re
-import shutil
 import tarfile
 import zipfile
 from email import policy
@@ -34,6 +34,7 @@ from typing import Any, BinaryIO, Iterable, Iterator
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .core import store
 from .core.config import settings
 from .core.models import Mail, Mailbox, MailboxMessage
 
@@ -67,7 +68,7 @@ def mbox_path(mailbox_id: str) -> Path:
 
 def remove(mailbox_id: str) -> None:
     if _ID_RE.fullmatch(mailbox_id or ""):
-        shutil.rmtree(Path(settings.SAMPLE_STORE) / "_mailboxes" / mailbox_id, ignore_errors=True)
+        store.remove_tree(Path(settings.SAMPLE_STORE) / "_mailboxes" / mailbox_id)
 
 
 def detect(head: bytes, name: str = "") -> str | None:
@@ -95,15 +96,22 @@ def _maildir_members(path: Path) -> Iterator[tuple[str, BinaryIO, int]]:
         parts = name.replace("\\", "/").split("/")
         return len(parts) >= 2 and parts[-2] in ("cur", "new") and bool(parts[-1])
 
-    if zipfile.is_zipfile(path):
-        with zipfile.ZipFile(path) as archive:
+    with store.open(path) as handle:
+        zipped = zipfile.is_zipfile(handle)
+        handle.seek(0)
+        yield from _archive_members(handle, zipped, wanted)
+
+
+def _archive_members(handle: BinaryIO, zipped: bool, wanted) -> Iterator[tuple[str, BinaryIO, int]]:
+    if zipped:
+        with zipfile.ZipFile(handle) as archive:
             for info in archive.infolist():
                 if not info.is_dir() and wanted(info.filename):
                     with archive.open(info) as stream:
                         yield info.filename, stream, info.file_size
         return
     try:
-        with tarfile.open(path, "r:*") as archive:
+        with tarfile.open(fileobj=handle, mode="r:*") as archive:
             for member in archive:
                 if member.isfile() and wanted(member.name):
                     stream = archive.extractfile(member)
@@ -118,7 +126,7 @@ def maildir_to_mbox(archive: Path, target: Path, limit_bytes: int, progress=None
     (``From `` lines of a body are escaped, as mboxrd does). Returns how many.
     ``progress(bytes written, messages)`` is told how far it is."""
     count = written = 0
-    with open(target, "wb") as out:
+    with store.writing(target) as out:
         for _name, stream, size in _maildir_members(archive):
             if size > settings.SAMPLE_MAX_MB * 1024 * 1024:
                 continue
@@ -153,7 +161,7 @@ def iter_messages(path: Path) -> Iterator[dict[str, Any]]:
     """Each message of the mbox, read in one pass: ``offset`` and ``length``
     of its bytes in the file (after its ``From `` line), its ``headers``
     (bytes), its ``sha256`` and whether it carries an attachment."""
-    with open(path, "rb") as handle:
+    with store.open(path) as handle:
         position = 0
         start: int | None = None
         end = 0
@@ -205,7 +213,7 @@ def iter_messages(path: Path) -> Iterator[dict[str, Any]]:
 
 def read_message(path: Path, offset: int, length: int) -> bytes:
     """The bytes of one message, as ``iter_messages`` hashed them."""
-    with open(path, "rb") as handle:
+    with store.open(path) as handle:
         handle.seek(offset)
         raw = handle.read(length)
     return b"".join(_unescape(line) for line in io.BytesIO(raw))
@@ -421,6 +429,6 @@ def select_messages(
 
 def store_size(mailbox_id: str) -> int:
     try:
-        return os.path.getsize(mbox_path(mailbox_id))
-    except OSError:
+        return store.size(mbox_path(mailbox_id))
+    except (OSError, store.SealError):
         return 0

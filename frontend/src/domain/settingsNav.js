@@ -242,7 +242,15 @@ export const SETTINGS_GROUPS = [
         slug: 'storage',
         label: 'Storage',
         permission: 'admin',
-        keywords: 'disk space free largest files mailboxes captures',
+        keywords: 'disk space free largest files mailboxes captures encryption encrypted at rest sealed store',
+      },
+      {
+        id: 'keys',
+        slug: 'keys',
+        label: 'Keys',
+        permission: 'admin',
+        keywords:
+          'secret key store key rotate rotation fingerprint secrets env environment files passphrase tokens encryption',
       },
       {
         id: 'workers',

@@ -799,17 +799,233 @@
       <h2 id="secrets">Secrets and backups</h2>
       <ul>
         <li>
-          The stack does not start without <code>DB_PASSWORD</code>, <code>SECRET_KEY</code> and a token per worker, and
-          refuses the example values. <code>deploy/init-env.sh</code> generates them. Keep a copy of <code>.env</code>
-          somewhere that is neither the server nor the place its backups go.
+          The stack does not start without <code>DB_PASSWORD</code>, <code>SECRET_KEY</code>, <code>STORE_KEY</code> and
+          a token per worker, and refuses the example values. <code>deploy/init-env.sh</code> generates them. Keep a
+          copy of them somewhere that is neither the server nor the place its backups go.
         </li>
         <li>
           <code>SECRET_KEY</code> encrypts the credentials of the instances of connectors (the keys of the
           threat-intelligence sources among them), the <a href="#stored-credentials">stored credentials</a> they name,
-          the secrets of the accounts' second factors and the TLS key logs stored in the database. Changing it with
-          <code>SECRET_KEY_PREVIOUS</code> set re-encrypts all of them, the keys an instance holds beside its first
-          included, and the backup passphrase with them. It lives in <code>.env</code>, which is <strong>not</strong> in
-          a backup unless an administrator chose to put the key inside (below).
+          the secrets of the accounts' second factors, the backup passphrase and the TLS key logs stored in the
+          database. It is <strong>not</strong> in a backup unless an administrator chose to put the key inside (below).
+        </li>
+        <li>
+          <code>STORE_KEY</code> seals every file of the store (<a href="#store-encryption">below</a>). It is in no
+          database, is not derived from <code>SECRET_KEY</code>, and is in no backup.
+        </li>
+      </ul>
+
+      <h3 id="store-encryption">The store of files, encrypted</h3>
+      <p>
+        The evidence (samples, e-mails, captures and the logs of browser sessions, mailboxes, rendered previews,
+        screenshots, signature files) is encrypted on the disk. Whoever takes the disk, a copy of the volume or a copy
+        of the database reads none of it without the store key.
+      </p>
+      <ul>
+        <li>
+          <strong>How.</strong> Each file is encrypted with a key of its own, drawn at random when the file is written,
+          with AES-256-GCM in chunks of 64 KB. That key is kept in the head of the file, wrapped with a key derived from
+          <code>STORE_KEY</code> (HKDF-SHA256, then AES-256-GCM). Reading the middle of a file decrypts the chunks that
+          hold it and no other, so a download, a range of a capture or a message of a mailbox never needs the whole file
+          in memory. Nothing is Nik's own invention: the primitives are those of the <code>cryptography</code> package.
+        </li>
+        <li>
+          <strong>A file that was changed is not served.</strong> Every chunk is authenticated with its position, with
+          whether it is the last, and with the <em>name</em> of the file (its path inside the store). A byte changed, a
+          chunk moved or left out, a file cut short or added to, and a file put in the place of another all fail the
+          same check. The answer is then an error that names the file (<code>"code": "file_damaged"</code>), never half
+          of it; a line goes to the audit log (<code>store.damaged</code>) and every administrator is told, once for
+          each file. A backup that meets such a file fails and says which, instead of leaving it out.
+        </li>
+        <li>
+          <strong>What whoever has the disk still learns.</strong> How many files there are, of which kind (the folders
+          and the suffixes are in clear: <code>.bin</code>, <code>.mail</code>, <code>_captures/</code>,
+          <code>_mailboxes/</code>), how large each is to the byte (a sealed file is as large as what it holds plus 152
+          bytes and 16 for every 64 KB), when each was written, and the SHA-256 of every sample and e-mail, which is its
+          file name: enough to look a known sample up in a public database, not to read an unknown one. The identifiers
+          of captures and mailboxes are random. The <strong>database is not encrypted at rest</strong> by Nik: the
+          incidents, the results of the analyses (strings, indicators, the text of e-mails) and the audit log are in
+          PostgreSQL in clear, with the stored secrets alone encrypted under <code>SECRET_KEY</code>. Encrypt the disk
+          of the host as well if the database must be covered too.
+        </li>
+        <li>
+          <strong>The key must not sit on the disk it protects.</strong> A stolen volume, a copy of the store, a backup
+          of the database give nothing. A stolen <em>host</em> gives everything if the store key is in a file on the
+          same disk. Point <code>NIK_SECRETS_DIR</code> at a place that does not travel with the data (another volume,
+          one that is unlocked at boot, a mount of another machine) when the whole host is what you fear losing.
+        </li>
+        <li>
+          <strong>Who holds the store key: the backend, and nobody else.</strong> The analysis workers parse hostile
+          files and are the likeliest thing to be subverted, so none of them mounts the store or is given its key. The
+          backend decrypts the file a job needs and sends it; the worker keeps it in memory (<code>/tmp</code>, a tmpfs)
+          while it is used, and names the files it lacks when it is asked about one it does not hold. The automation
+          worker, the one container with a way out, mounts no store either: a step that needs a file asks the backend
+          for it, proving with a short-lived HMAC under a key derived from <code>SECRET_KEY</code> that the request
+          comes from a process of this server. A subverted worker can still ask for files one at a time while it runs;
+          it cannot read the store at rest and has no key to carry away.
+        </li>
+        <li>
+          <strong>What is in clear, where, and for how long.</strong>
+          <ul>
+            <li>
+              In the memory of a worker: the sample being analysed (the analyzer keeps it up to 15 minutes after its
+              last use, for the decompilations on demand; capa until its analysis ends), a capture of 64 MB or less
+              while its session is open.
+            </li>
+            <li>
+              On the <code>pcap-work</code> volume, a disk: a capture larger than <code>PCAP_MEMORY_FILE_MB</code>, from
+              the moment it is opened until it is closed or has been idle for 15 minutes, and at the latest until the
+              worker starts again (it empties the volume when it starts). A host that loses power while such a capture
+              is open keeps it in clear until then.
+            </li>
+            <li>
+              On the <code>pst-work</code> volume, a disk: an Outlook PST and the mailbox made from it, for the time of
+              the conversion (minutes), emptied the same way.
+            </li>
+            <li>
+              In <code>/tmp</code> of the backend, which is memory: an upload while it arrives, before it is sealed. No
+              upload, no export and no import is written to the disk of the store in clear, temporary files included. A
+              host with swap may write memory to its disk: encrypt the swap, or have none.
+            </li>
+            <li>
+              In the database: nothing of a file. The bytes a playbook hands to the backend to be kept cross the
+              database for a few seconds, encrypted under a key derived from <code>SECRET_KEY</code>.
+            </li>
+            <li>In the logs: file names and sizes, never content, never a key.</li>
+          </ul>
+        </li>
+        <li>
+          <strong>Deleting.</strong> A deleted file is removed from the disk, and its key with it: the key was in the
+          head of the file and nowhere else. This is not a promise that the blocks are unrecoverable: a filesystem or an
+          SSD may keep them, with the wrapped key, until they are reused. What a copy of the disk taken later holds of a
+          deleted file can be read only with the store key of that day; changing the store key afterwards does not reach
+          copies made before.
+        </li>
+        <li>
+          <strong>A store from before 6.8</strong> is sealed in the background, file by file, while the server is used;
+          the Storage screen shows how far it is. Until it ends the old files are in clear on the disk, as they were.
+          Once it has ended, a file found in clear is not one Nik wrote and is refused like a damaged one.
+        </li>
+        <li>
+          <strong>A wrong or missing store key does not start a server.</strong> The backend compares the key it is
+          given with the one the store is sealed under before it serves anything. When they differ, or the key is
+          missing, it stays up and answers every request with a sentence that says so, and writes no file.
+        </li>
+        <li>
+          <strong>Exports are not sealed.</strong> An export of artifacts is made for another server to read: it is a
+          zip, and with the files an AES zip under the password everybody knows. While it is put together or taken apart
+          on the server it is a sealed file like any other; once downloaded, what protects it is who holds it.
+        </li>
+      </ul>
+
+      <h3 id="keys">Where each secret is, and which container holds it</h3>
+      <p>
+        On a new install every secret is a file in a directory only the operator can enter
+        (<code>NIK_SECRETS_DIR</code>, <code>./secrets</code>), mounted one by one into the containers that use it as
+        <code>/run/secrets/&lt;name&gt;</code> and named to the process by <code>&lt;NAME&gt;_FILE</code>. A secret is
+        then not in the environment of a container: <code>inspect</code> does not show it, it is not in
+        <code>/proc/&lt;pid&gt;/environ</code>, and the processes the server starts do not inherit it. A server from
+        before 6.8 keeps its secrets in <code>.env</code> until <code>deploy/secrets.sh move</code> is run; it works as
+        before and <em>Settings → Keys</em> says so. A secret given in both places is refused.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Secret</th>
+              <th>What it protects</th>
+              <th>Containers that are given it</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>SECRET_KEY</code></td>
+              <td>The secrets stored in the database; the hand-over of files to the automation worker</td>
+              <td><code>api</code>, <code>automation</code></td>
+            </tr>
+            <tr>
+              <td><code>STORE_KEY</code></td>
+              <td>Every file of the store</td>
+              <td><code>api</code></td>
+            </tr>
+            <tr>
+              <td><code>DB_PASSWORD</code></td>
+              <td>The connection to PostgreSQL</td>
+              <td>
+                <code>api</code>, <code>automation</code>, <code>db</code> (read once, to create the database; a
+                database that exists is started without it)
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>ANALYZER_TOKEN</code>, <code>CAPA_TOKEN</code>, <code>DOCVIEW_TOKEN</code>,
+                <code>BROWSER_TOKEN</code>, <code>PCAP_TOKEN</code>
+              </td>
+              <td>What the backend says to one worker</td>
+              <td><code>api</code> and that worker</td>
+            </tr>
+            <tr>
+              <td><code>SANDBOX_TOKEN</code></td>
+              <td>What is said to the script sandbox</td>
+              <td><code>api</code>, <code>automation</code>, <code>sandbox</code></td>
+            </tr>
+            <tr>
+              <td><code>METRICS_TOKEN</code> (optional)</td>
+              <td>Who reads <code>/api/metrics</code></td>
+              <td><code>api</code></td>
+            </tr>
+            <tr>
+              <td>Backup passphrase</td>
+              <td>Every backup</td>
+              <td>None as a file: it is in the database, under <code>SECRET_KEY</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Session tokens are random and depend on no key. The <code>web</code> container holds no secret. What the files
+        of the secrets directory are protected by is the directory (mode 700): the files themselves are readable by the
+        users the containers run as, which is the only form both Docker and rootless Podman mount without changing who
+        owns them.
+      </p>
+
+      <h3 id="key-rotation">Changing a key</h3>
+      <ul>
+        <li>
+          <strong>Asked for in Nik, carried out on the host.</strong> In <em>Settings → Keys</em> a signed-in
+          administrator asks for <code>SECRET_KEY</code> or <code>STORE_KEY</code> to be changed, giving the password
+          again and a code when the account has a second factor (an API key cannot). The page says what will be put
+          under the new key and which command to run. The server cannot write where its own keys are kept, so
+          <code>deploy/secrets.sh rotate …</code> does that on the host: the new key is made by the running server and
+          piped straight into its place, never shown on a screen or in a log. Run without a request, the script says
+          that nobody asked and waits for the operator to confirm.
+        </li>
+        <li>
+          <strong>Both keys are held until the new one is proven.</strong> The key in use is kept beside the new one
+          (<code>&lt;NAME&gt;_PREVIOUS</code>). The server puts everything under the new key (every secret of the
+          database, the snapshots taken before upgrades while no backup passphrase was set; or the head of every file of
+          the store, never its content), then reads all of it back <em>with the new key alone</em>. Only then is the
+          change verified, written to the audit log and told to the administrators, and only then does the script take
+          the earlier key away. Stopped anywhere, the change goes on at the next start; nothing is ever readable under
+          neither key.
+        </li>
+        <li>
+          <strong>What a change of <code>SECRET_KEY</code> does not reach.</strong> Backups taken before it hold their
+          secrets under the earlier key: keep that key with them (the script puts it in a file that nothing reads, and
+          says where). Open sessions go on. The copy off the server of a snapshot that was written again is sent again.
+        </li>
+        <li>
+          <strong>What a change of <code>STORE_KEY</code> does not reach.</strong> A copy of the store made before the
+          change opens with the earlier key: changing the key protects against a key that leaked only for who gets the
+          disk afterwards. No backup of Nik depends on the store key.
+        </li>
+        <li>
+          <strong>The backup passphrase</strong> is changed on the same page (or in Backup). Earlier backups keep the
+          passphrase they were made with; the server remembers the earlier ones to test them.
+        </li>
+        <li>
+          A key is spoken of by its <strong>fingerprint</strong>, eight characters derived from it through two hashes:
+          two people check they speak of the same key without either seeing it. No route returns a key or a part of one.
         </li>
       </ul>
       <h3 id="backup-security">Backups</h3>
@@ -824,22 +1040,32 @@
         </li>
         <li>
           <strong>The passphrase is not <code>SECRET_KEY</code>.</strong> A backup must be readable on a host that never
-          had this server's <code>.env</code>, by someone who was given the passphrase and nothing else. It is kept in
-          the database encrypted under <code>SECRET_KEY</code>, so that the scheduled backups can run; no route returns
-          it and it is not in the audit log. Whoever can read both the database and <code>.env</code> can therefore read
-          the backups too, as they can read everything else. When it is changed, earlier backups keep the passphrase
-          they were made with.
+          had this server's keys, by someone who was given the passphrase and nothing else. It is kept in the database
+          encrypted under <code>SECRET_KEY</code>, so that the scheduled backups can run; no route returns it and it is
+          not in the audit log. Whoever can read both the database and <code>SECRET_KEY</code> can therefore read the
+          backups too, as they can read everything else. When it is changed, earlier backups keep the passphrase they
+          were made with.
+        </li>
+        <li>
+          <strong>A backup does not depend on the store key.</strong> On the disk the files of the store are sealed
+          under <code>STORE_KEY</code>; in a backup they are the files themselves, decrypted as they are read and
+          encrypted again under the passphrase with everything else. A backup is therefore read with its passphrase
+          alone, on a host that never had the store key, which may be lost with the server: that is what a backup is
+          for. A restore seals each file again as it is written, under the store key of the server that restores, so the
+          files are in clear on neither disk. The restore test still proves every file against its checksum, and a
+          backup taken before 6.8 is the same thing and restores the same way.
         </li>
         <li>
           <strong>The snapshot before an upgrade</strong> is encrypted the same way; while no passphrase is set (the
           first upgrade from 6.6) its key is derived from <code>SECRET_KEY</code>, so it is still never in clear, and is
-          as protected as <code>.env</code> is.
+          as protected as that key is. When <code>SECRET_KEY</code> is changed such a snapshot is written again under
+          the new key.
         </li>
         <li>
           <strong>Including <code>SECRET_KEY</code> in the backups</strong> (off by default) trades one risk for
-          another, and the screen says so: without it, losing <code>.env</code> means entering every stored secret again
-          after a restore; with it, a backup and its passphrase are enough to read every stored secret. The key is
-          written only inside the encrypted file.
+          another, and the screen says so: without it, losing the key means entering every stored secret again after a
+          restore; with it, a backup and its passphrase are enough to read every stored secret. The key is written only
+          inside the encrypted file. The store key is never put in a backup: nothing in one needs it.
         </li>
         <li>
           <strong>The backend still has no way out.</strong> The copy off the server is sent by the automation
@@ -880,7 +1106,8 @@
         </li>
         <li>
           What an anonymous request is told when an upgrade was stopped is one fixed sentence; the reason, which may
-          quote the database, stays in the log of the container.
+          quote the database, stays in the log of the container. When a key is missing or is not the right one the
+          sentence names the variable and what is wrong with it, never a value.
         </li>
       </ul>
 
@@ -955,6 +1182,23 @@
         <li>
           A backup is as recent as the schedule: what was written since the last one is lost with the server. There is
           no continuous archiving of the database yet.
+        </li>
+        <li>
+          The store of files is encrypted at rest; the database is not. What the analyses found in a file (strings,
+          indicators, the text of an e-mail) is in PostgreSQL in clear, and so are the names, the sizes and the SHA-256
+          of the files. Encrypt the disk of the host to cover them.
+        </li>
+        <li>
+          The store key protects against whoever has the disk and not the key. Kept in a file on the same disk, it
+          protects a volume that is copied or a disk that is thrown away, not a host that is stolen whole.
+        </li>
+        <li>
+          A capture larger than <code>PCAP_MEMORY_FILE_MB</code> and a PST being converted are in clear on a work volume
+          while they are read. A sample being analysed is in the memory of its worker.
+        </li>
+        <li>
+          There is no client for an external secrets manager: a key comes from a file or from the environment. The place
+          a key is read from is one small class in <code>backend/app/core/keys.py</code>, so one can be added.
         </li>
         <li>
           The database part of a backup is Nik's own (tables, constraints, indexes, sequences, rows), not a

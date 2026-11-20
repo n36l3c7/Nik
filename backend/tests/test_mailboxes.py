@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import mailboxes
+from app.core import store as sealed_store
 from tests.test_mail import no_dns  # noqa: F401 - a fixture
 
 
@@ -239,8 +240,8 @@ def test_a_maildir_archive_and_a_pst_end_as_the_same_mailbox(admin: TestClient, 
     seen = {}
 
     def convert(source, target, progress=None):
-        seen["head"] = Path(source).read_bytes()[:4]
-        Path(target).write_bytes(mbox(MESSAGES[:2]))
+        seen["head"] = sealed_store.read_bytes(source)[:4]
+        sealed_store.write(target, mbox(MESSAGES[:2]))
 
     monkeypatch.setattr(previews, "convert_pst", convert)
     pst = _upload(admin, b"!BDN" + b"\x00" * 600, "archive.pst")
@@ -299,7 +300,7 @@ def test_reading_a_mailbox_says_how_far_it_is(admin: TestClient, monkeypatch):
     told: list[tuple[int, int]] = []
     with SessionLocal() as db:
         row = db.get(Mailbox, box["id"])
-        size = mailboxes.mbox_path(row.id).stat().st_size
+        size = sealed_store.size(mailboxes.mbox_path(row.id))
         mailboxes.index(db, row, progress=lambda read, count: told.append((read, count)))
         db.rollback()
     # A note for each message, going forward, ending at the end of the file.
@@ -363,7 +364,7 @@ def test_a_pst_is_sent_and_its_mbox_received_in_pieces_that_are_counted(monkeypa
         previews.convert_pst(source, target, progress=lambda done, total: told.append((done, total)))
     finally:
         httpd.shutdown()
-    assert target.read_bytes() == answer
+    assert sealed_store.read_bytes(target) == answer
     size = source.stat().st_size
     # First the PST as it is sent (the mbox is taken to be as large), then the mbox as it comes back.
     assert told[0][1] == size * 2 and any(done == size for done, _total in told)
