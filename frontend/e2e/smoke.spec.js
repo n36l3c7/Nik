@@ -3761,7 +3761,7 @@ test('the mappers and the classifier are set in the instance, tried on a sample,
   // Their page left the menu: the address it had opens the connectors, where the instances are.
   await expect(sections.getByText('Classifiers and mappers', { exact: true })).toHaveCount(0)
   await page.evaluate(() => {
-    window.history.pushState({}, '', '/settings/automation/classifiers-and-mappers')
+    window.history.replaceState({}, '', '/settings/automation/classifiers-and-mappers')
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
   const row = settings
@@ -3920,7 +3920,7 @@ test('fetching is set in the instance: how often, the look-back, why it fails, R
   // Its page left the menu: the address it had opens the connectors, and typing its name finds them.
   await expect(sections.getByText('Fetch status', { exact: true })).toHaveCount(0)
   await page.evaluate(() => {
-    window.history.pushState({}, '', '/settings/automation/fetch-status')
+    window.history.replaceState({}, '', '/settings/automation/fetch-status')
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
   const row = settings

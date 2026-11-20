@@ -20,6 +20,8 @@ export const isIncidentsPath = (pathname) => /^\/incidents\/?$/.test(String(path
 export const LIST_COLUMNS = [
   { key: 'number', label: '#', name: 'Number', kind: 'number' },
   { key: 'name', label: 'Title', kind: 'text' },
+  // The tags of the incident: its field `labels`, which the light row carries as `tags`.
+  { key: 'labels', label: 'Tags', kind: 'text' },
   { key: 'type', label: 'Type', kind: 'text' },
   { key: 'severity', label: 'Severity', kind: 'severity' },
   { key: 'status', label: 'Status', kind: 'status' },
@@ -33,7 +35,17 @@ export const LIST_COLUMNS = [
   { key: 'source', label: 'Source', kind: 'text' },
 ]
 
-export const DEFAULT_COLUMNS = ['number', 'name', 'type', 'severity', 'status', 'owner', 'created', 'modified']
+export const DEFAULT_COLUMNS = [
+  'number',
+  'name',
+  'labels',
+  'type',
+  'severity',
+  'status',
+  'owner',
+  'created',
+  'modified',
+]
 export const DEFAULT_SORT = { key: 'modified', dir: 'desc' }
 export const COLUMNS_MAX = 30
 /** How many rows are drawn at first, and how many more each time more are asked for. */
@@ -149,6 +161,8 @@ export function cellText(row, column, { types = [] } = {}) {
       return formatNumber(row.number)
     case 'name':
       return row.name ?? ''
+    case 'labels':
+      return list(row.tags).join(', ')
     case 'type':
       return typeName(types, row.type)
     case 'severity':

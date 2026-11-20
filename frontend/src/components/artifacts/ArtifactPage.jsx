@@ -1,12 +1,12 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, Download, FolderOpen, FolderPlus, Link2, Plus, Tag, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Boxes, Download, FolderOpen, FolderPlus, Link2, Plus, Tag, Trash2 } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { getTabById } from '../../config/tabs.js'
 import { artifactKind, parseTags, standaloneIncident, verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatDateTime, anyToMs } from '../../lib/time.js'
-import { AsciiSkull, Badge, Button, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
+import { AsciiSkull, Badge, Button, Chip, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import AsIndicator from './AsIndicator.jsx'
@@ -29,38 +29,6 @@ import ArtifactRuns from '../automation/ArtifactRuns.jsx'
  */
 
 const RELATION_LABELS = { attachment: 'attachment', extracted: 'extracted object', session: 'browser session' }
-
-function Chip({ children, onRemove, removeLabel, onClick, onMenu }) {
-  return (
-    <span
-      onContextMenu={onMenu}
-      className="inline-flex items-center border border-line bg-canvas font-mono text-xs text-fg"
-    >
-      {onClick ? (
-        <button
-          type="button"
-          onClick={onClick}
-          className="px-2 py-0.5 hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          {children}
-        </button>
-      ) : (
-        <span className="px-2 py-0.5">{children}</span>
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          aria-label={removeLabel}
-          title={removeLabel}
-          onClick={onRemove}
-          className="border-l border-line px-1 py-0.5 text-fg-muted hover:bg-high-soft hover:text-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <X className="h-3 w-3" aria-hidden="true" />
-        </button>
-      )}
-    </span>
-  )
-}
 
 function Row({ label, children }) {
   return (
