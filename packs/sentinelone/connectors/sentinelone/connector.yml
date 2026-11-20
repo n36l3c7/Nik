@@ -390,10 +390,12 @@ commands:
       activity_id: "{{ steps.uploaded.response.data[0].id }}"
     sample: { artifact: "", name: "", sha256: "", size: 0, type: "", activity_id: "" }
 
+  # The reference says the files come as an archive opened with the password. That the archive is a zip is
+  # known from the integrations published for other products, which open it as one.
   # The number of the activity (80) is not in the reference, which says to read it from the list of
   # activity types: it is the number that the integrations published for other products wait for.
   - name: fetch-agent-files
-    description: "Have an agent upload up to 10 files of its endpoint (10 MB in all) as an archive protected by the password given, wait for it (15 minutes at most) and keep it as an artifact."
+    description: "Have an agent upload up to 10 files of its endpoint (10 MB in all) as a zip protected by the password given, wait for it (15 minutes at most), keep it as an artifact and unpack it: each file inside becomes an artifact too."
     changes_outside: true
     idempotent: false
     timeout: 120
@@ -435,7 +437,7 @@ commands:
           method: GET
           path: "/agents/{{ args.agent_id }}/uploads/{{ steps.uploaded.response.data[0].id }}"
           answer: file
-          # unpack: { format: zip, password: "{{ args.password }}" }
+          unpack: { format: zip, password: "{{ args.password }}" }
         error: { message: "{{ response.errors[0].detail }}" }
     outputs:
       artifact: "{{ steps.download.response.artifact }}"
@@ -444,19 +446,20 @@ commands:
       size: "{{ steps.download.response.size }}"
       type: "{{ steps.download.response.type }}"
       activity_id: "{{ steps.uploaded.response.data[0].id }}"
-    sample: { artifact: "", name: "", sha256: "", size: 0, type: "", activity_id: "" }
+      files: "{{ steps.download.response.files }}"
+      count: "{{ steps.download.response.count }}"
+      skipped: "{{ steps.download.response.skipped }}"
+    sample: { artifact: "", name: "", sha256: "", size: 0, type: "", activity_id: "", files: [], count: 0, skipped: [] }
 
   - name: download-agent-upload
-    description: "Keep as an artifact something an agent uploaded to the console (its logs, fetched files, a threat file), by the id of the activity that announced it."
+    description: "Keep as an artifact something an agent uploaded to the console (its logs, fetched files, a threat file), by the id of the activity that announced it. It is kept as it came: nik.unpack-artifact opens it when it is an archive, with the password the request that asked for it set."
     arguments:
       - { name: agent_id, type: text, required: true, description: "The id of the agent" }
       - { name: activity_id, type: text, required: true, description: "The id of the activity that says the upload arrived (get-activities)" }
-      - { name: password, type: text, description: "The password of the archive, when the request that asked for it set one" }
     request:
       method: GET
       path: "/agents/{{ if(args.agent_id, args.agent_id, args.agent_id.is_needed) }}/uploads/{{ if(args.activity_id, args.activity_id, args.activity_id.is_needed) }}"
       answer: file
-      # unpack: { format: zip, password: "{{ args.password }}" }
     error: { message: "{{ response.errors[0].detail }}" }
     outputs:
       artifact: "{{ response.artifact }}"
@@ -1066,9 +1069,10 @@ commands:
 
   # The reference gives the request that asks (POST /threats/fetch-file) and the address an upload is read
   # from; the number of the activity that announces the upload (86) is the one that the integrations
-  # published for other products wait for.
+  # published for other products wait for. The reference calls the password a file encryption password and
+  # does not name the format: the upload is the zip those same integrations open.
   - name: fetch-threat-file
-    description: "Have the agent upload the file of a threat as an archive protected by the password given, wait for it (15 minutes at most) and keep it as an artifact. The endpoint must be reachable."
+    description: "Have the agent upload the file of a threat as a zip protected by the password given, wait for it (15 minutes at most), keep it as an artifact and unpack it: the file inside becomes an artifact too. The endpoint must be reachable."
     changes_outside: true
     idempotent: false
     timeout: 120
@@ -1110,7 +1114,7 @@ commands:
           method: GET
           path: "/agents/{{ steps.uploaded.response.data[0].agentId }}/uploads/{{ steps.uploaded.response.data[0].id }}"
           answer: file
-          # unpack: { format: zip, password: "{{ args.password }}" }
+          unpack: { format: zip, password: "{{ args.password }}" }
         error: { message: "{{ response.errors[0].detail }}" }
     outputs:
       artifact: "{{ steps.download.response.artifact }}"
@@ -1120,7 +1124,10 @@ commands:
       type: "{{ steps.download.response.type }}"
       agent_id: "{{ steps.uploaded.response.data[0].agentId }}"
       activity_id: "{{ steps.uploaded.response.data[0].id }}"
-    sample: { artifact: "", name: "", sha256: "", size: 0, type: "", agent_id: "", activity_id: "" }
+      files: "{{ steps.download.response.files }}"
+      count: "{{ steps.download.response.count }}"
+      skipped: "{{ steps.download.response.skipped }}"
+    sample: { artifact: "", name: "", sha256: "", size: 0, type: "", agent_id: "", activity_id: "", files: [], count: 0, skipped: [] }
 
   - name: get-threat-cloud-link
     description: "Where the file of a threat can be downloaded from, when the console keeps it in its cloud: the link and the name of the file."
@@ -1138,10 +1145,9 @@ commands:
   # (a connector reaches its own instance and the hosts it lists by name): the link itself is what
   # get-threat-cloud-link gives.
   - name: download-threat-from-cloud
-    description: "Keep as an artifact the file of a threat that the console holds in its cloud. Only when the link the console gives is on the console itself: get-threat-cloud-link gives the link otherwise."
+    description: "Keep as an artifact the file of a threat that the console holds in its cloud, as it came. It follows the link only when the link is on the console itself. When it is on another host: get-threat-cloud-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: threat_id, type: text, required: true, description: "The id of the threat" }
-      - { name: password, type: text, description: "The password of the archive, when the console protects it with one" }
     steps:
       - name: link
         request: { method: GET, path: "/threats/{{ if(args.threat_id, args.threat_id, args.threat_id.is_needed) }}/download-from-cloud" }
@@ -1151,7 +1157,6 @@ commands:
           method: GET
           path: "{{ steps.link.response.data.downloadUrl }}"
           answer: file
-          # unpack: { format: zip, password: "{{ args.password }}" }
           save_as: { name: "{{ steps.link.response.data.fileName }}" }
         error: { message: "{{ response.errors[0].detail }}" }
     outputs:
@@ -2215,10 +2220,9 @@ commands:
 
   # The link is followed when it is on the host of the console: see download-threat-from-cloud.
   - name: download-event-file
-    description: "Keep as an artifact the file of the source process of a Deep Visibility event. Only when the link the console gives is on the console itself: get-event-file-link gives the link otherwise."
+    description: "Keep as an artifact the file of the source process of a Deep Visibility event, as it came. It follows the link only when the link is on the console itself. When it is on another host: get-event-file-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: download_token, type: text, required: true, description: "The download token the event carries" }
-      - { name: password, type: text, description: "The password of the archive, when the console protects it with one" }
     steps:
       - name: link
         request:
@@ -2231,7 +2235,6 @@ commands:
           method: GET
           path: "{{ steps.link.response.data.downloadUrl }}"
           answer: file
-          # unpack: { format: zip, password: "{{ args.password }}" }
           save_as: { name: "{{ steps.link.response.data.fileName }}" }
         error: { message: "{{ response.errors[0].detail }}" }
     outputs:
@@ -2789,10 +2792,9 @@ commands:
 
   # The link is followed when it is on the host of the console: see download-threat-from-cloud.
   - name: download-script-result
-    description: "Keep as an artifact the output of a finished script task. Only when the link the console gives is on the console itself: get-script-results gives the link otherwise."
+    description: "Keep as an artifact the output of a finished script task, as it came (the password the run set, if any, is what opens it). It follows the link only when the link is on the console itself. When it is on another host: get-script-results gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: task_id, type: text, required: true, description: "The id of the task (get-script-tasks)" }
-      - { name: password, type: text, description: "The password the run protected its output with, if it set one" }
     steps:
       - name: link
         request:
@@ -2805,7 +2807,6 @@ commands:
           method: GET
           path: "{{ steps.link.response.data.downloadLinks[0].downloadUrl }}"
           answer: file
-          # unpack: { format: zip, password: "{{ args.password }}" }
           save_as: { name: "{{ steps.link.response.data.downloadLinks[0].fileName }}" }
         error: { message: "{{ response.errors[0].detail }}" }
     outputs:
@@ -3225,10 +3226,9 @@ commands:
 
   # The link is followed when it is on the host of the console: see download-threat-from-cloud.
   - name: download-forensic-collection
-    description: "Keep as an artifact the archive a collection task uploaded. Only when the link the console gives is on the console itself: get-forensic-collection-link gives the link otherwise."
+    description: "Keep as an artifact what a collection task uploaded, as it came (the password the collection set, if any, is what opens it). It follows the link only when the link is on the console itself. When it is on another host: get-forensic-collection-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive."
     arguments:
       - { name: task_id, type: text, required: true, description: "The id of the task of one endpoint (get-script-tasks)" }
-      - { name: password, type: text, description: "The password the collection protected its archive with, if it set one" }
     steps:
       - name: result
         request:
@@ -3253,7 +3253,6 @@ commands:
           method: GET
           path: "{{ steps.link.response.data.downloadUrl }}"
           answer: file
-          # unpack: { format: zip, password: "{{ args.password }}" }
           save_as: { name: "{{ steps.link.response.data.fileName }}" }
         error: { message: "{{ response.errors[0].detail }}" }
     outputs:

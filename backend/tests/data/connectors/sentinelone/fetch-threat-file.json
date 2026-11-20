@@ -115,7 +115,7 @@
       },
       "response": {
         "status": 200,
-        "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA==",
+        "base64": "UEsDBBQAAQBjAL1WdF0AAAAARwAAACsAAAALAAsAZHJvcHBlci5leGUBmQcAAgBBRQMIAJZZft4lnkd1voEclacGs7tR7A1f9w3HQeUUC+8lR38++tTfjZMtrnyHgeCCrgEE9aCJ8oG+ri4KzUUNzijqLXgYtPwMHIvHUEsBAhQDFAABAGMAvVZ0XQAAAABHAAAAKwAAAAsACwAAAAAAAAAAAIABAAAAAGRyb3BwZXIuZXhlAZkHAAIAQUUDCABQSwUGAAAAAAEAAQBEAAAAewAAAAAA",
         "headers": {
           "content-disposition": "attachment; filename=\"dropper.exe.zip\""
         }
@@ -126,16 +126,32 @@
     {
       "name": "dropper.exe.zip",
       "type": "application/octet-stream",
-      "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA=="
+      "base64": "UEsDBBQAAQBjAL1WdF0AAAAARwAAACsAAAALAAsAZHJvcHBlci5leGUBmQcAAgBBRQMIAJZZft4lnkd1voEclacGs7tR7A1f9w3HQeUUC+8lR38++tTfjZMtrnyHgeCCrgEE9aCJ8oG+ri4KzUUNzijqLXgYtPwMHIvHUEsBAhQDFAABAGMAvVZ0XQAAAABHAAAAKwAAAAsACwAAAAAAAAAAAIABAAAAAGRyb3BwZXIuZXhlAZkHAAIAQUUDCABQSwUGAAAAAAEAAQBEAAAAewAAAAAA"
+    },
+    {
+      "name": "dropper.exe",
+      "type": "",
+      "text": "not a real sample: a harmless line of text\n"
     }
   ],
   "outputs": {
     "artifact": "artifact:dropper.exe.zip",
     "name": "dropper.exe.zip",
     "sha256": "sha256:dropper.exe.zip",
-    "size": 58,
+    "size": 213,
     "type": "application/octet-stream",
     "agent_id": "1234567890123456789",
-    "activity_id": "8800000000000000007"
+    "activity_id": "8800000000000000007",
+    "files": [
+      {
+        "name": "dropper.exe",
+        "type": "",
+        "size": 43,
+        "sha256": "sha256:dropper.exe",
+        "artifact": "artifact:dropper.exe"
+      }
+    ],
+    "count": 1,
+    "skipped": []
   }
 }

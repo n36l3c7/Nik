@@ -16,8 +16,9 @@ other connector, **SentinelOne SIEM**: they take the token another way.
 
 The API token of a **service user** of the console (Settings, Users, Service Users), sent as
 `Authorization: ApiToken …`. Its role decides what the commands may do: give it what the playbooks need and no
-more. "Test the instance" reads the version of the console (`GET /system/info`), which needs a valid token and no
-permission on endpoints.
+more. An instance can take the token from a stored credential (Settings, Automation, Credentials) instead of
+holding it itself. "Test the instance" reads the version of the console (`GET /system/info`), which needs a valid
+token and no permission on endpoints.
 
 ## A command that acts always names what it acts on
 
@@ -40,28 +41,52 @@ These commands keep a file as an artifact of the incident the playbook works on,
 
 | Command | What it keeps | How it gets it |
 | --- | --- | --- |
-| `fetch-threat-file` | the file of a threat, in an archive protected by the password given | asks the agent, waits for the upload (15 minutes at most), downloads it from the console |
-| `fetch-agent-files` | up to 10 files of an endpoint (10 MB in all), in an archive protected by the password given | the same |
+| `fetch-threat-file` | the file of a threat, in a zip protected by the password given, **unpacked** | asks the agent, waits for the upload (15 minutes at most), downloads it from the console |
+| `fetch-agent-files` | up to 10 files of an endpoint (10 MB in all), in a zip protected by the password given, **unpacked** | the same |
 | `fetch-agent-logs` | the logs of an agent | the same; the number of the activity that announces the upload is an argument |
 | `download-agent-upload` | any upload of an agent, by the id of its activity | one download from the console |
 | `download-threat-from-cloud` | the file of a threat the console holds in its cloud | asks for a link, then follows it |
 | `download-event-file` | the file of the source process of a Deep Visibility event | asks for a link, then follows it |
 | `download-script-result` | the output of a finished script task | asks for a link, then follows it |
-| `download-forensic-collection` | the archive of a forensic collection | reads the task, asks for a link, then follows it |
+| `download-forensic-collection` | what a forensic collection uploaded | reads the task, asks for a link, then follows it |
 | `export-agents`, `export-threats`, `export-activities`, `export-blocklist`, `export-exclusions`, `export-unified-exclusions`, `export-threat-events`, `export-threat-timeline`, `export-mitigation-report` | the list as the console exports it (CSV, or JSON for the unified exclusions) | one request |
 
-The password of a fetched archive is an argument and is never written in the connector. For files fetched from
-an endpoint the console wants 10 characters or more, with upper and lower case letters, digits and symbols.
+### Unpacking
 
-Waiting for an upload, the command first looks at the newest upload the console already has for that threat or
-that agent, and takes only one that came after: an archive fetched last week, with another password, is not
-mistaken for this one.
+The two fetches ask the agent for an archive protected by a password that the request itself sets, so the same
+password opens it: the archive is kept as it came, and **each file inside it becomes an artifact of the incident
+too**. The commands give `files` (each with its name in the archive, `type`, `size`, `sha256`, `artifact`),
+`count`, and `skipped` (what was left out, and why). Nothing inside is run or opened: it is unpacked in memory
+and written to the store. An upload that is not a zip, or that the password does not open, fails the step and
+keeps nothing, so that it can be tried again; `download-agent-upload` then keeps the same upload as it is, by
+the id of its activity.
 
-**A link on another host is not followed.** The four `download-…` commands that ask the console for a link follow
-it when it is on the console itself. A connector of Nik reaches its own instance and the hosts its file lists by
-name, and SentinelOne's reference names no host for these links: when the link is on a storage host, the command
-fails and says which host it was. `get-threat-cloud-link`, `get-event-file-link`, `get-script-results` and
-`get-forensic-collection-link` give the link itself.
+The password is a required argument, is never written in the connector, and is treated as a secret: it is in no
+record of the step. For files fetched from an endpoint the console wants 10 characters or more, with upper and
+lower case letters, digits and symbols; use the same for the file of a threat.
+
+The other commands do not unpack: the reference does not say what the console hands over there (the output of a
+script, a collection, a file from the cloud may or may not be an archive), and a command that unpacked something
+that is not a zip would fail and keep nothing. They keep the file as it came, and the node `nik.unpack-artifact`
+opens it when it is an archive, with the password the run or the collection set.
+
+Waiting for an upload, a fetch first looks at the newest upload the console already has for that threat or that
+agent, and takes only one that came after: an archive fetched last week, with another password, is not mistaken
+for this one.
+
+### Files that come from another host
+
+`download-threat-from-cloud`, `download-event-file`, `download-script-result` and `download-forensic-collection`
+ask the console for a link and follow it when it is on the console itself. A connector reaches its own instance
+and the hosts its file lists by name, and SentinelOne's reference names no host for these links: when the link is
+on a storage host, the command fails and says which host it was, and the token goes nowhere. A playbook then does
+it in three nodes:
+
+1. the command that gives the link: `get-threat-cloud-link`, `get-event-file-link`, `get-script-results` or
+   `get-forensic-collection-link`;
+2. `nik.download-file` with that link. The host must be among those the playbook may reach, and no credentials
+   are sent with the request, which is what a link that carries its own signature wants;
+3. `nik.unpack-artifact` on the artifact it kept, when it is an archive.
 
 ## What a threat comes in as
 
@@ -99,8 +124,8 @@ Admin, IR Team and IT; marking an agent as up to date is not open to the SOC rol
 | `abort-agent-scan` | Stop the full disk scan that is running on an endpoint. | Changes |
 | `request-agent-logs` | Ask an agent to upload its logs to the console. They arrive later as an upload of the agent: get-activities finds it, download-agent-upload keeps it. | Changes |
 | `fetch-agent-logs` | Ask an agent for its logs, wait until it has uploaded them (15 minutes at most) and keep the archive as an artifact. | Changes · File |
-| `fetch-agent-files` | Have an agent upload up to 10 files of its endpoint (10 MB in all) as an archive protected by the password given, wait for it (15 minutes at most) and keep it as an artifact. | Changes · File |
-| `download-agent-upload` | Keep as an artifact something an agent uploaded to the console (its logs, fetched files, a threat file), by the id of the activity that announced it. | File |
+| `fetch-agent-files` | Have an agent upload up to 10 files of its endpoint (10 MB in all) as a zip protected by the password given, wait for it (15 minutes at most), keep it as an artifact and unpack it: each file inside becomes an artifact too. | Changes · File |
+| `download-agent-upload` | Keep as an artifact something an agent uploaded to the console (its logs, fetched files, a threat file), by the id of the activity that announced it. It is kept as it came: nik.unpack-artifact opens it when it is an archive, with the password the request that asked for it set. | File |
 | `refresh-agent-firewall-rules` | Have an agent read its Firewall Control rules from the console now, instead of at its next cycle. | Changes |
 | `set-agent-firewall-logging` | Say where an agent writes the connections Firewall Control blocks: to its local log, to the activities of the console, or both. | Changes |
 | `broadcast-message` | Show a message to the person at the endpoint (Windows and macOS). | Changes |
@@ -143,9 +168,9 @@ threats the token may mitigate are counted in `affected`.
 | `add-threat-to-blocklist` | Put the SHA-1 of the file of a threat in the blocklist, for the group, the site or the account of its endpoint, or for everyone: agents there stop the file from running. | Changes |
 | `add-threat-to-exclusions` | Make an exclusion from a threat: agents stop raising it. An exclusion is a hole in the protection: only for what is surely harmless, as narrow as it can be. | Changes |
 | `get-exclusion-options` | The kinds of exclusion that can be made from a threat (a path, the hash of its file…). |  |
-| `fetch-threat-file` | Have the agent upload the file of a threat as an archive protected by the password given, wait for it (15 minutes at most) and keep it as an artifact. The endpoint must be reachable. | Changes · File |
+| `fetch-threat-file` | Have the agent upload the file of a threat as a zip protected by the password given, wait for it (15 minutes at most), keep it as an artifact and unpack it: the file inside becomes an artifact too. The endpoint must be reachable. | Changes · File |
 | `get-threat-cloud-link` | Where the file of a threat can be downloaded from, when the console keeps it in its cloud: the link and the name of the file. |  |
-| `download-threat-from-cloud` | Keep as an artifact the file of a threat that the console holds in its cloud. Only when the link the console gives is on the console itself: get-threat-cloud-link gives the link otherwise. | File |
+| `download-threat-from-cloud` | Keep as an artifact the file of a threat that the console holds in its cloud, as it came. It follows the link only when the link is on the console itself. When it is on another host: get-threat-cloud-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive. | File |
 | `get-threat-events` | What the agent recorded around a threat: the processes, files, connections and registry changes of its storyline. |  |
 | `export-threat-events` | The events around a threat as the file the console exports, kept as an artifact. | File |
 | `get-threat-timeline` | What happened to a threat, in order: detection, what the agent did, what people did. |  |
@@ -211,7 +236,7 @@ The token needs: Deep Visibility (the Complete licence) and its permission to se
 | --- | --- | --- |
 | `search-deep-visibility` | Run a Deep Visibility query (S1QL 1.0) over a time range and read its events. SentinelOne marks this API as deprecated: run-query of the SentinelOne SIEM connector is the one that replaces it. |  |
 | `get-event-file-link` | Where the file of the source process of a Deep Visibility event can be downloaded from: the link and the name of the file. |  |
-| `download-event-file` | Keep as an artifact the file of the source process of a Deep Visibility event. Only when the link the console gives is on the console itself: get-event-file-link gives the link otherwise. | File |
+| `download-event-file` | Keep as an artifact the file of the source process of a Deep Visibility event, as it came. It follows the link only when the link is on the console itself. When it is on another host: get-event-file-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive. | File |
 | `get-saved-filters` | The filters of endpoints people saved in the console: the id of one can be the filterId of run-agent-action. |  |
 
 ### Custom detection rules (10)
@@ -243,7 +268,7 @@ runs. A run may need the approval of a second person (the guardrails of the cons
 | `run-script` | Run a script of the library on endpoints, with the rights of the agent (the system). It answers at once with the id of the task: get-script-tasks follows it, download-script-result keeps its output. | Changes |
 | `get-script-tasks` | How the tasks of a run of a script are doing, one for each endpoint: created, pending, in progress, completed, failed. |  |
 | `get-script-results` | Where the output of finished script tasks can be downloaded from: a link and a file name for each task. |  |
-| `download-script-result` | Keep as an artifact the output of a finished script task. Only when the link the console gives is on the console itself: get-script-results gives the link otherwise. | File |
+| `download-script-result` | Keep as an artifact the output of a finished script task, as it came (the password the run set, if any, is what opens it). It follows the link only when the link is on the console itself. When it is on another host: get-script-results gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive. | File |
 | `upload-script` | Add a script Nik holds as an artifact to the script library, for a scope. The console takes a new script as a file only: its text alone is accepted just to copy an existing one. | Changes |
 | `get-pending-script-runs` | The runs of scripts that wait for a second person to approve them in the console. |  |
 | `review-pending-script-run` | Approve or decline a run of a script that waits for approval. Approved, the script runs on its endpoints. | Changes |
@@ -266,7 +291,7 @@ The token needs: Remote Ops Forensics: viewing profiles, starting collections, r
 | `get-forensic-collection` | What a collection task gave: the state of each artifact, and what describes the collected file once it is uploaded. |  |
 | `find-forensic-collection` | Whether a collected file exists for a storyline of an agent (a collection the policy started by itself on a threat), and what describes it. |  |
 | `get-forensic-collection-link` | A link, valid for a short time, to download a collected file, from what describes it (get-forensic-collection, find-forensic-collection). |  |
-| `download-forensic-collection` | Keep as an artifact the archive a collection task uploaded. Only when the link the console gives is on the console itself: get-forensic-collection-link gives the link otherwise. | File |
+| `download-forensic-collection` | Keep as an artifact what a collection task uploaded, as it came (the password the collection set, if any, is what opens it). It follows the link only when the link is on the console itself. When it is on another host: get-forensic-collection-link gives the link, nik.download-file fetches it (the host must be among those the playbook may reach; no credentials go with it), and nik.unpack-artifact opens it when it is an archive. | File |
 | `schedule-forensic-collection` | Have agents collect the artifacts of a profile at a later time, once or again and again. | Changes |
 
 ### Threat intelligence (5)
@@ -381,6 +406,9 @@ Left out because the reference does not say enough to write them:
 - **Which activity announces an upload.** It gives the address an upload is read from and says to look the number
   up in the list of activity types. `fetch-threat-file` waits for 86 and `fetch-agent-files` for 80, the numbers
   the integrations of other products wait for; both are arguments. `fetch-agent-logs` asks for the number.
+- **That a fetched archive is a zip.** It says the fetched files come as an archive opened with the password,
+  and calls the password of a threat file a file encryption password; the format is the one the integrations of
+  other products open.
 - **Whether an answer is one object or a list.** Creating a blocklist entry, an exclusion or an indicator is read
   as a list; the tags of `tag-agent` are sent as a list.
 - **Two answers**: moving agents to a group, and starting a forensic collection (it says 202 and no body).

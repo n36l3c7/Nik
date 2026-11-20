@@ -17,6 +17,7 @@ import pytest
 from app.automation import connector_runtime as rt
 from app.automation import egress
 from tests import vendor
+from tests.stores import zip_of
 from tests.test_shipped_connectors import DATA, Held, _connection
 
 CONNECTORS = {connector.id: connector for _text, connector in vendor.connectors()}
@@ -25,6 +26,9 @@ SIEM = CONNECTORS["sentinelone-sdl"]
 HOST = "acme.sentinelone.net"
 AGENT = "1234567890123456789"
 THREAT = "5555555555555555555"
+PASSWORD = "Nik-Fetch-2026!x"
+# What an agent uploads for a fetch: a zip protected with the password the request set.
+ARCHIVE = zip_of({"dropper.exe": b"not a real sample: a harmless line of text\n"}, PASSWORD)
 
 # How a template stops a command: the three ways the file writes "this may not be empty".
 GUARD = re.compile(r"args\.(\w+)\.(at_least_one|is_needed|every_field_filled)")
@@ -209,7 +213,7 @@ def test_every_list_of_the_console_is_read_by_cursor_within_the_limit_of_the_ref
         assert 1 <= limit.default <= 1000, command.name
 
 
-def _uploads(new_after: int):
+def _uploads(new_after: int, body: bytes = ARCHIVE):
     """The console of a fetch: the activity that announces the upload is there from the ``new_after``-th look."""
     looks = {"count": 0}
 
@@ -220,7 +224,7 @@ def _uploads(new_after: int):
             new = {"id": "8800000000000000007", "agentId": AGENT, "threatId": THREAT}
             return 200, {"data": [new if looks["count"] > new_after else old]}
         if "/uploads/" in request["path"]:
-            return 200, b"PK\x03\x04 the archive"
+            return 200, body
         return 200, {"data": {"affected": 1}}
 
     return answer
@@ -248,8 +252,16 @@ def test_a_file_that_was_uploaded_before_is_not_taken_for_the_one_asked_for():
     ]  # fmt: skip
     assert wire.sent[1]["json"] == {"data": {"password": "Nik-Fetch-2026!x"}, "filter": {"ids": [THREAT]}}
     assert wire.sent[-1]["path"] == f"/web/api/v2.1/agents/{AGENT}/uploads/8800000000000000007"
-    assert [item["data"] for item in held.kept] == [b"PK\x03\x04 the archive"]
-    assert answer.outputs["activity_id"] == "8800000000000000007" and answer.outputs["size"] == 16
+    # The archive is kept as it came, and the file inside it beside it.
+    assert [(item["name"], item["data"]) for item in held.kept] == [
+        ("8800000000000000007", ARCHIVE),
+        ("dropper.exe", b"not a real sample: a harmless line of text\n"),
+    ]
+    assert answer.outputs["activity_id"] == "8800000000000000007" and answer.outputs["size"] == len(ARCHIVE)
+    assert (answer.outputs["count"], answer.outputs["skipped"]) == (1, [])
+    assert [item["name"] for item in answer.outputs["files"]] == ["dropper.exe"]
+    # The password opens the archive and is shown nowhere in what the step gives or records.
+    assert PASSWORD not in json.dumps([answer.outputs, answer.records])
 
 
 @pytest.mark.parametrize(
@@ -299,29 +311,57 @@ def test_a_download_link_on_another_host_is_not_followed_and_the_token_stays_hom
     assert [sent["host"] for sent in wire.sent] == [HOST] and held.kept == []
 
 
-def test_the_commands_that_keep_an_archive_take_its_password_and_say_where_unpacking_goes():
-    """The archives SentinelOne makes are protected by the password the request sets: each command that
-    keeps one has the argument, and the line that says where the key of 6.6 that unpacks goes."""
-    text = vendor.REPO_PACKS.joinpath("sentinelone", "connectors", "sentinelone", "connector.yml").read_text(
-        encoding="utf-8"
-    )
-    blocks = re.split(r"\n  - name: ", text)
-    waiting = sorted(
-        block.split("\n", 1)[0]
-        for block in blocks
-        if '# unpack: { format: zip, password: "{{ args.password }}" }' in block
-    )
-    assert waiting == [
-        "download-agent-upload", "download-event-file", "download-forensic-collection", "download-script-result",
-        "download-threat-from-cloud", "fetch-agent-files", "fetch-threat-file",
-    ]  # fmt: skip
-    for name in waiting:
+def test_the_two_fetches_unpack_the_archive_with_the_password_they_set_and_the_other_files_are_kept_as_they_come():
+    """A fetch asks the agent for an archive protected by the password the request itself sets: the same
+    password opens it, and it is required. What the console hands over by a link or by the id of an
+    activity may be anything: it is kept as it came, and no command guesses that it is an archive."""
+    unpacking = [command.name for command in EDR.commands if command.unpacks]
+    assert unpacking == ["fetch-agent-files", "fetch-threat-file"]
+    for name in unpacking:
         command = EDR.command(name)
-        assert command.gives_file and any(argument.name == "password" for argument in command.arguments), name
-        # Where the console makes the archive itself, the password is required and has no default.
+        download = command.steps[-1].request
+        assert (download.answer, download.unpack.format) == ("file", "zip")
+        assert download.unpack.password == "{{ args.password }}"
         password = next(argument for argument in command.arguments if argument.name == "password")
-        assert password.default is None and password.required == name.startswith("fetch-"), name
-    assert "\n          answer: file\n          # unpack:" in text or "\n      answer: file\n      # unpack:" in text
+        assert password.required and password.default is None, name
+        assert {"files", "count", "skipped"} <= set(command.outputs), name
+    kept_as_they_come = [command.name for command in EDR.commands if command.gives_file and not command.unpacks]
+    assert {"download-agent-upload", "download-threat-from-cloud", "download-event-file", "download-script-result",
+            "download-forensic-collection", "fetch-agent-logs"} <= set(kept_as_they_come)  # fmt: skip
+    for name in kept_as_they_come:
+        assert all(argument.name != "password" for argument in EDR.command(name).arguments), name
+    # The four that follow a link say what a playbook does when the link is on another host.
+    for name in (
+        "download-threat-from-cloud",
+        "download-event-file",
+        "download-script-result",
+        "download-forensic-collection",
+    ):
+        said = EDR.command(name).description
+        assert "nik.download-file" in said and "nik.unpack-artifact" in said and "no credentials" in said, name
+
+
+@pytest.mark.parametrize(
+    ("password", "why"),
+    [
+        ("Another-Pass-2026!", "The password does not open the archive"),
+        (PASSWORD, "The file is not a zip archive"),
+    ],
+)
+def test_a_fetched_archive_that_cannot_be_opened_fails_the_step_and_keeps_nothing(password, why):
+    """The upload came with another password than the one asked with, or is not a zip at all."""
+    body = (
+        zip_of({"dropper.exe": b"a harmless line\n"}, "Nik-Fetch-2026!x") if "password" in why else b"MZ not an archive"
+    )
+    wire, held = Wire(_uploads(new_after=1, body=body)), Held({})
+    now = [1_800_000_000.0]
+    args = {"threat_id": THREAT, "password": password}
+    with pytest.raises(rt.CommandError, match=why):
+        answer = runtime(EDR, wire, clock=lambda: now[0], store=held).run("fetch-threat-file", args)
+        while not answer.done:
+            now[0] = answer.again_at
+            answer = runtime(EDR, wire, clock=lambda: now[0], store=held).run("fetch-threat-file", args, answer.state)
+    assert held.kept == []
 
 
 def test_the_fetch_asks_from_the_moment_itself_in_the_order_of_creation():

@@ -15,6 +15,12 @@ connector, **SentinelOne EDR**: they are part of the Management API, which takes
 The API token of a **service user** of the console (Settings, Users, Service Users), sent as a bearer token, as
 the reference asks for the Data Lake. Its scope is an account or a site: the Data Lake refuses a token of global
 scope. It needs the permission to search events, and to view and update alerts.
+An instance can take the token from a stored credential (Settings, Automation, Credentials) instead of holding it
+itself.
+
+No command of this connector keeps a file. The files of an endpoint (the file of a threat, fetched files, the
+output of a script, a forensic collection) are commands of SentinelOne EDR, which unpacks the archives the agents
+upload with the password the request set.
 
 ## Commands
 

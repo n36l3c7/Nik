@@ -264,6 +264,39 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-66">Upgrading to 6.6</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. Migrations
+        <code>0046_credentials</code> and <code>0047_playbook_files</code> add three tables and change nothing that is
+        stored. The compose file is unchanged.
+      </p>
+      <ul>
+        <li>
+          <strong>Look-ups that were sent before may now be held.</strong> <em>Check now</em>, the checks in bulk and
+          the automatic look-ups no longer send a value that carries an e-mail address, a name under your
+          organisation's own domains (or a private address inside a link), or an allowlisted name inside a longer
+          value: the indicator reads <em>held</em> until an administrator opens the class in
+          <em>Settings → Threat intelligence → What the look-ups may send</em>. All classes are closed after the
+          upgrade; verdicts obtained before stay and are not refreshed while the indicator is held;
+        </li>
+        <li>
+          update Nik first, then the packs: SentinelOne EDR and SIEM 1.1.0 and Shodan, Google Safe Browsing and
+          GreyNoise 1.1.1 need Nik 6.6. Stored keys are kept, and no command, argument or output of SentinelOne was
+          renamed;
+        </li>
+        <li>
+          a SentinelOne action whose id comes out empty now fails before it is sent, where it used to be sent with an
+          empty target;
+        </li>
+        <li>
+          a connector command that keeps a file, the Mail connector's <code>get-attachments</code> and the message a
+          fetch keeps as evidence now work with the automation worker's read-only store: nothing to do;
+        </li>
+        <li>
+          the rail entry of Settings is named <em>Platform settings</em> and an entry of the rail no longer closes its
+          page: scripts that drive the interface follow.
+        </li>
+      </ul>
       <h4 id="upgrading-to-65">Upgrading to 6.5</h4>
       <p>
         <code>git pull</code> and <code>docker compose up -d --build</code>. Migration
