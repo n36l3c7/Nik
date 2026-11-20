@@ -1,0 +1,34 @@
+{
+  "args": {
+    "rule_id": "6200000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/cloud-detection/rules/disable",
+        "json": {
+          "filter": {
+            "ids": [
+              "6200000000000000001"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

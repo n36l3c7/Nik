@@ -1,0 +1,80 @@
+{
+  "args": {
+    "value": "3395856ce81f2b7382dee72602f798b642f14140",
+    "tenant": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/restrictions",
+        "query": {
+          "value": "3395856ce81f2b7382dee72602f798b642f14140",
+          "tenant": true,
+          "type": "black_hash",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "4100000000000000001",
+              "type": "black_hash",
+              "value": "3395856ce81f2b7382dee72602f798b642f14140",
+              "sha256Value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+              "osType": "windows",
+              "description": "Dropper of incident INC-2026-0417",
+              "source": "user",
+              "scopeName": "Milan",
+              "scope": {
+                "siteIds": [
+                  "2222222222222222222"
+                ]
+              },
+              "userName": "nik-service",
+              "createdAt": "2026-11-16T08:45:00.000000Z",
+              "updatedAt": "2026-11-16T08:45:00.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "items": [
+      {
+        "id": "4100000000000000001",
+        "type": "black_hash",
+        "value": "3395856ce81f2b7382dee72602f798b642f14140",
+        "sha256Value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+        "osType": "windows",
+        "description": "Dropper of incident INC-2026-0417",
+        "source": "user",
+        "scopeName": "Milan",
+        "scope": {
+          "siteIds": [
+            "2222222222222222222"
+          ]
+        },
+        "userName": "nik-service",
+        "createdAt": "2026-11-16T08:45:00.000000Z",
+        "updatedAt": "2026-11-16T08:45:00.000000Z"
+      }
+    ],
+    "ids": [
+      "4100000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

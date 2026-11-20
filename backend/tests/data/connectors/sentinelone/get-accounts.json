@@ -1,0 +1,61 @@
+{
+  "args": {
+    "name": "ACME"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/accounts",
+        "query": {
+          "name__contains": "ACME",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "1111111111111111111",
+              "name": "ACME",
+              "state": "active",
+              "accountType": "Paid",
+              "numberOfSites": 3,
+              "activeAgents": 412,
+              "createdAt": "2024-02-01T09:00:00.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "accounts": [
+      {
+        "id": "1111111111111111111",
+        "name": "ACME",
+        "state": "active",
+        "accountType": "Paid",
+        "numberOfSites": 3,
+        "activeAgents": 412,
+        "createdAt": "2024-02-01T09:00:00.000000Z"
+      }
+    ],
+    "ids": [
+      "1111111111111111111"
+    ],
+    "account_id": "1111111111111111111",
+    "name": "ACME",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

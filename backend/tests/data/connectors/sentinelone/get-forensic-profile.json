@@ -1,0 +1,90 @@
+{
+  "args": {
+    "profile_id": "7600000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-ops/forensics/collection-profiles/7600000000000000001",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "7600000000000000001",
+            "name": "Triage (Windows)",
+            "description": "Event logs, prefetch, registry hives, browser history",
+            "type": "bundled",
+            "isBundled": true,
+            "osTypes": [
+              "windows"
+            ],
+            "scopeLevel": "tenant",
+            "scopeId": "0",
+            "scopeName": "Global",
+            "scopePath": "Global",
+            "version": "3",
+            "creator": "SentinelOne",
+            "updater": "SentinelOne",
+            "createdAt": "2026-01-10T00:00:00.000000Z",
+            "artifacts": [
+              {
+                "artifactType": "WindowsEventLogs",
+                "parameters": {}
+              },
+              {
+                "artifactType": "Prefetch",
+                "parameters": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "profile": {
+      "id": "7600000000000000001",
+      "name": "Triage (Windows)",
+      "description": "Event logs, prefetch, registry hives, browser history",
+      "type": "bundled",
+      "isBundled": true,
+      "osTypes": [
+        "windows"
+      ],
+      "scopeLevel": "tenant",
+      "scopeId": "0",
+      "scopeName": "Global",
+      "scopePath": "Global",
+      "version": "3",
+      "creator": "SentinelOne",
+      "updater": "SentinelOne",
+      "createdAt": "2026-01-10T00:00:00.000000Z",
+      "artifacts": [
+        {
+          "artifactType": "WindowsEventLogs",
+          "parameters": {}
+        },
+        {
+          "artifactType": "Prefetch",
+          "parameters": {}
+        }
+      ]
+    },
+    "name": "Triage (Windows)",
+    "artifacts": [
+      {
+        "artifactType": "WindowsEventLogs",
+        "parameters": {}
+      },
+      {
+        "artifactType": "Prefetch",
+        "parameters": {}
+      }
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "args": {
+    "bundle": {
+      "type": "bundle",
+      "id": "bundle--5d0092c5-5f74-4287-9642-33f4c354e56d",
+      "objects": [
+        {
+          "type": "indicator",
+          "spec_version": "2.1",
+          "id": "indicator--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f",
+          "pattern_type": "stix",
+          "pattern": "[ipv4-addr:value = '198.51.100.77']",
+          "valid_from": "2026-11-20T10:40:00Z"
+        }
+      ]
+    },
+    "account_ids": [
+      "1111111111111111111"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threat-intelligence/iocs/stix",
+        "json": {
+          "bundle": {
+            "type": "bundle",
+            "id": "bundle--5d0092c5-5f74-4287-9642-33f4c354e56d",
+            "objects": [
+              {
+                "type": "indicator",
+                "spec_version": "2.1",
+                "id": "indicator--8e2e2d2b-17d4-4cbf-938f-98ee46b3cd3f",
+                "pattern_type": "stix",
+                "pattern": "[ipv4-addr:value = '198.51.100.77']",
+                "valid_from": "2026-11-20T10:40:00Z"
+              }
+            ]
+          },
+          "filter": {
+            "accountIds": [
+              "1111111111111111111"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "uuid": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+              "type": "IPV4",
+              "value": "198.51.100.77",
+              "source": "Nik",
+              "method": "EQUALS",
+              "name": "C2 of incident INC-2026-0417",
+              "description": "Seen in the dropper's configuration",
+              "externalId": "INC-2026-0417",
+              "validUntil": "2027-02-18T00:00:00.000000Z",
+              "creationTime": "2026-11-20T10:40:00.000000Z",
+              "scope": "account",
+              "scopeId": "1111111111111111111"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "uuids": [
+      "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+    ],
+    "iocs": [
+      {
+        "uuid": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "type": "IPV4",
+        "value": "198.51.100.77",
+        "source": "Nik",
+        "method": "EQUALS",
+        "name": "C2 of incident INC-2026-0417",
+        "description": "Seen in the dropper's configuration",
+        "externalId": "INC-2026-0417",
+        "validUntil": "2027-02-18T00:00:00.000000Z",
+        "creationTime": "2026-11-20T10:40:00.000000Z",
+        "scope": "account",
+        "scopeId": "1111111111111111111"
+      }
+    ]
+  }
+}

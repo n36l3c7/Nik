@@ -1,7 +1,10 @@
 {
   "args": {
     "hash": "3395856ce81f2b7382dee72602f798b642f14140",
-    "description": "Dropper of INC-2026-0412"
+    "description": "Dropper of incident INC-2026-0417",
+    "site_ids": [
+      "2222222222222222222"
+    ]
   },
   "exchanges": [
     {
@@ -13,11 +16,13 @@
             "value": "3395856ce81f2b7382dee72602f798b642f14140",
             "type": "black_hash",
             "osType": "windows",
-            "description": "Dropper of INC-2026-0412",
+            "description": "Dropper of incident INC-2026-0417",
             "source": "Nik"
           },
           "filter": {
-            "tenant": true
+            "siteIds": [
+              "2222222222222222222"
+            ]
           }
         },
         "headers": {
@@ -29,10 +34,22 @@
         "json": {
           "data": [
             {
-              "id": "9876543210987654321",
-              "value": "3395856ce81f2b7382dee72602f798b642f14140",
+              "id": "4100000000000000001",
               "type": "black_hash",
-              "osType": "windows"
+              "value": "3395856ce81f2b7382dee72602f798b642f14140",
+              "sha256Value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+              "osType": "windows",
+              "description": "Dropper of incident INC-2026-0417",
+              "source": "user",
+              "scopeName": "Milan",
+              "scope": {
+                "siteIds": [
+                  "2222222222222222222"
+                ]
+              },
+              "userName": "nik-service",
+              "createdAt": "2026-11-16T08:45:00.000000Z",
+              "updatedAt": "2026-11-16T08:45:00.000000Z"
             }
           ]
         }
@@ -41,7 +58,7 @@
   ],
   "outputs": {
     "ids": [
-      "9876543210987654321"
+      "4100000000000000001"
     ]
   }
 }

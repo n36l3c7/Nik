@@ -1,0 +1,40 @@
+{
+  "args": {
+    "agent_id": "1234567890123456789",
+    "site_id": "2222222222222222222",
+    "signature": "c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+    "signature_type": "SHA256",
+    "uploaded_at": "2026-11-20T10:31:12.000000Z"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-ops/forensics/collection-file-url",
+        "query": {
+          "agentId": "1234567890123456789",
+          "siteId": "2222222222222222222",
+          "signature": "c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+          "signatureType": "SHA256",
+          "uploadedTimestamp": "2026-11-20T10:31:12.000000Z"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "downloadUrl": "https://acme.sentinelone.net/web/api/v2.1/remote-ops/forensics/files/c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+            "fileName": "WKS-FINANCE-01_triage.zip"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "download_url": "https://acme.sentinelone.net/web/api/v2.1/remote-ops/forensics/files/c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+    "file_name": "WKS-FINANCE-01_triage.zip"
+  }
+}

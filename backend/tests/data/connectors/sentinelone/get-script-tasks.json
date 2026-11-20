@@ -1,0 +1,71 @@
+{
+  "args": {
+    "parent_task_id": "7300000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-scripts/status",
+        "query": {
+          "parentTaskId": "7300000000000000001",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "7300000000000000002",
+              "parentTaskId": "7300000000000000001",
+              "status": "completed",
+              "detailedStatus": "Execution completed successfully",
+              "statusCode": 0,
+              "agentId": "1234567890123456789",
+              "agentComputerName": "WKS-FINANCE-01",
+              "description": "Browser history for INC-2026-0417",
+              "siteId": "2222222222222222222",
+              "createdAt": "2026-11-20T10:10:00.000000Z",
+              "updatedAt": "2026-11-20T10:12:30.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tasks": [
+      {
+        "id": "7300000000000000002",
+        "parentTaskId": "7300000000000000001",
+        "status": "completed",
+        "detailedStatus": "Execution completed successfully",
+        "statusCode": 0,
+        "agentId": "1234567890123456789",
+        "agentComputerName": "WKS-FINANCE-01",
+        "description": "Browser history for INC-2026-0417",
+        "siteId": "2222222222222222222",
+        "createdAt": "2026-11-20T10:10:00.000000Z",
+        "updatedAt": "2026-11-20T10:12:30.000000Z"
+      }
+    ],
+    "ids": [
+      "7300000000000000002"
+    ],
+    "task_id": "7300000000000000002",
+    "status": "completed",
+    "detailed_status": "Execution completed successfully",
+    "agent_id": "1234567890123456789",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "args": {
+    "tag_id": "7777777777777777001",
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/agents/actions/manage-tags",
+        "json": {
+          "filter": {
+            "ids": [
+              "1234567890123456789"
+            ]
+          },
+          "data": [
+            {
+              "operation": "add",
+              "tagId": "7777777777777777001"
+            }
+          ]
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/5555555555555555555/download-from-cloud",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "downloadUrl": "https://acme.sentinelone.net/web/api/v2.1/threats/files/5555555555555555555/b1946ac92492d2347c6235b4d2611184",
+            "fileName": "dropper.exe.zip"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/files/5555555555555555555/b1946ac92492d2347c6235b4d2611184",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA=="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "dropper.exe.zip",
+      "type": "application/octet-stream",
+      "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA=="
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:dropper.exe.zip",
+    "name": "dropper.exe.zip",
+    "sha256": "sha256:dropper.exe.zip",
+    "size": 58,
+    "type": "application/octet-stream",
+    "download_url": "https://acme.sentinelone.net/web/api/v2.1/threats/files/5555555555555555555/b1946ac92492d2347c6235b4d2611184"
+  }
+}

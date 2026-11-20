@@ -1,0 +1,47 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-ops/forensics/artifact-types",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "artifactType": "Prefetch",
+              "name": "Prefetch files",
+              "category": "Execution",
+              "osTypes": [
+                "windows"
+              ],
+              "version": 1
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "types": [
+      {
+        "artifactType": "Prefetch",
+        "name": "Prefetch files",
+        "category": "Execution",
+        "osTypes": [
+          "windows"
+        ],
+        "version": 1
+      }
+    ],
+    "names": [
+      "Prefetch"
+    ],
+    "count": 1
+  }
+}

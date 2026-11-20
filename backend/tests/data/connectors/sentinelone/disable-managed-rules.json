@@ -1,0 +1,38 @@
+{
+  "args": {
+    "rule_ids": [
+      "6300000000000000001"
+    ],
+    "scope_level": "site",
+    "scope_id": "2222222222222222222"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/detection-library/platform-rules/disable",
+        "json": {
+          "platformRuleIds": [
+            "6300000000000000001"
+          ],
+          "scopeLevel": "site",
+          "scopeId": "2222222222222222222"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "args": {
+    "script_id": "7200000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-scripts/script-content",
+        "query": {
+          "scriptId": "7200000000000000001"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "scriptContent": "Get-ChildItem \"$env:LOCALAPPDATA\\Microsoft\\Edge\\User Data\\Default\\History\""
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "content": "Get-ChildItem \"$env:LOCALAPPDATA\\Microsoft\\Edge\\User Data\\Default\\History\""
+  }
+}

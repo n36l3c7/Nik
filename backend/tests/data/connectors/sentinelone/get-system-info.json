@@ -1,0 +1,32 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/system/info",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "version": "S-26.1.2",
+            "build": "26.1.2#110",
+            "release": "S",
+            "patch": "2",
+            "latestAgentVersion": "24.2.3.471"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "version": "S-26.1.2",
+    "build": "26.1.2#110",
+    "release": "S",
+    "latest_agent_version": "24.2.3.471"
+  }
+}

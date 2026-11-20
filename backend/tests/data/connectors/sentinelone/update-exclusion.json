@@ -1,0 +1,75 @@
+{
+  "args": {
+    "exclusion_id": "4200000000000000001",
+    "type": "path",
+    "value": "C:\\ERP\\bin\\",
+    "description": "ERP, checked with the vendor",
+    "mode": "suppress",
+    "path_exclusion_type": "subfolders"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/exclusions",
+        "json": {
+          "data": {
+            "id": "4200000000000000001",
+            "type": "path",
+            "value": "C:\\ERP\\bin\\",
+            "osType": "windows",
+            "description": "ERP, checked with the vendor",
+            "mode": "suppress",
+            "pathExclusionType": "subfolders",
+            "source": "Nik"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "4200000000000000001",
+            "type": "path",
+            "value": "C:\\ERP\\bin\\",
+            "osType": "windows",
+            "mode": "suppress",
+            "pathExclusionType": "subfolders",
+            "description": "ERP, checked with the vendor",
+            "source": "user",
+            "scopeName": "Milan",
+            "scope": {
+              "siteIds": [
+                "2222222222222222222"
+              ]
+            },
+            "createdAt": "2026-10-02T09:00:00.000000Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "exclusion_id": "4200000000000000001",
+    "exclusion": {
+      "id": "4200000000000000001",
+      "type": "path",
+      "value": "C:\\ERP\\bin\\",
+      "osType": "windows",
+      "mode": "suppress",
+      "pathExclusionType": "subfolders",
+      "description": "ERP, checked with the vendor",
+      "source": "user",
+      "scopeName": "Milan",
+      "scope": {
+        "siteIds": [
+          "2222222222222222222"
+        ]
+      },
+      "createdAt": "2026-10-02T09:00:00.000000Z"
+    }
+  }
+}

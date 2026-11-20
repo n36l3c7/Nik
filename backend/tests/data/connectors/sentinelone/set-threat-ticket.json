@@ -1,0 +1,38 @@
+{
+  "args": {
+    "ticket_id": "INC-2026-0417",
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/external-ticket-id",
+        "json": {
+          "filter": {
+            "ids": [
+              "5555555555555555555"
+            ]
+          },
+          "data": {
+            "externalTicketId": "INC-2026-0417"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

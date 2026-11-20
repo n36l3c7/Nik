@@ -1,0 +1,141 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555",
+    "password": "Nik-Fetch-2026!x"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities",
+        "query": {
+          "threatIds": "5555555555555555555",
+          "activityTypes": 86,
+          "sortBy": "createdAt",
+          "sortOrder": "desc",
+          "limit": 1
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": []
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/fetch-file",
+        "json": {
+          "data": {
+            "password": "Nik-Fetch-2026!x"
+          },
+          "filter": {
+            "ids": [
+              "5555555555555555555"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities",
+        "query": {
+          "threatIds": "5555555555555555555",
+          "activityTypes": 86,
+          "sortBy": "createdAt",
+          "sortOrder": "desc",
+          "limit": 1
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": []
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities",
+        "query": {
+          "threatIds": "5555555555555555555",
+          "activityTypes": 86,
+          "sortBy": "createdAt",
+          "sortOrder": "desc",
+          "limit": 1
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8800000000000000007",
+              "agentId": "1234567890123456789",
+              "threatId": "5555555555555555555",
+              "activityType": 86,
+              "createdAt": "2026-11-20T10:05:40.000000Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/agents/1234567890123456789/uploads/8800000000000000007",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA==",
+        "headers": {
+          "content-disposition": "attachment; filename=\"dropper.exe.zip\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "dropper.exe.zip",
+      "type": "application/octet-stream",
+      "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA=="
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:dropper.exe.zip",
+    "name": "dropper.exe.zip",
+    "sha256": "sha256:dropper.exe.zip",
+    "size": 58,
+    "type": "application/octet-stream",
+    "agent_id": "1234567890123456789",
+    "activity_id": "8800000000000000007"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "args": {
+    "type": "path",
+    "value": "C:\\"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/exclusions/validate",
+        "json": {
+          "data": {
+            "exclusionType": "path",
+            "value": "C:\\",
+            "osType": "windows"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "status": "Not Recommended",
+            "details": {
+              "reason": "The path is too broad"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "status": "Not Recommended",
+    "details": {
+      "reason": "The path is too broad"
+    }
+  }
+}

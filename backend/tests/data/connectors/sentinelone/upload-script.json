@@ -1,0 +1,93 @@
+{
+  "args": {
+    "file": "store:top-processes.ps1",
+    "script_name": "Top processes",
+    "script_type": "dataCollection",
+    "scope_level": "site",
+    "scope_id": "2222222222222222222",
+    "os_types": [
+      "windows"
+    ],
+    "description": "The 20 processes that use the most CPU"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/remote-scripts",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        },
+        "body_has": [
+          "name=\"scriptName\"",
+          "name=\"scriptType\"",
+          "name=\"scopeLevel\"",
+          "name=\"scopeId\"",
+          "name=\"osTypes\"",
+          "name=\"inputRequired\"",
+          "name=\"scriptDescription\""
+        ],
+        "files": [
+          {
+            "field": "file",
+            "name": "top-processes.ps1",
+            "text": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 20\n"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "7200000000000000009",
+            "scriptName": "Top processes",
+            "scriptType": "dataCollection",
+            "osTypes": [
+              "windows"
+            ],
+            "inputRequired": false,
+            "inputInstructions": "",
+            "inputExample": "",
+            "version": "1.0.0",
+            "scopeLevel": "sentinel",
+            "fileName": "top-processes.ps1",
+            "scriptRuntimeTimeoutSeconds": 3600,
+            "createdByUserId": "4400000000000000001",
+            "supportedDestinations": [
+              "SentinelCloud",
+              "Local"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "store": {
+    "top-processes.ps1": {
+      "text": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 20\n"
+    }
+  },
+  "outputs": {
+    "script_id": "7200000000000000009",
+    "script": {
+      "id": "7200000000000000009",
+      "scriptName": "Top processes",
+      "scriptType": "dataCollection",
+      "osTypes": [
+        "windows"
+      ],
+      "inputRequired": false,
+      "inputInstructions": "",
+      "inputExample": "",
+      "version": "1.0.0",
+      "scopeLevel": "sentinel",
+      "fileName": "top-processes.ps1",
+      "scriptRuntimeTimeoutSeconds": 3600,
+      "createdByUserId": "4400000000000000001",
+      "supportedDestinations": [
+        "SentinelCloud",
+        "Local"
+      ]
+    }
+  }
+}

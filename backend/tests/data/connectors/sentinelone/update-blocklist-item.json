@@ -1,0 +1,69 @@
+{
+  "args": {
+    "item_id": "4100000000000000001",
+    "description": "Dropper, confirmed by the sandbox"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/restrictions",
+        "json": {
+          "data": {
+            "id": "4100000000000000001",
+            "type": "black_hash",
+            "osType": "windows",
+            "description": "Dropper, confirmed by the sandbox"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "4100000000000000001",
+            "type": "black_hash",
+            "value": "3395856ce81f2b7382dee72602f798b642f14140",
+            "sha256Value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+            "osType": "windows",
+            "description": "Dropper, confirmed by the sandbox",
+            "source": "user",
+            "scopeName": "Milan",
+            "scope": {
+              "siteIds": [
+                "2222222222222222222"
+              ]
+            },
+            "userName": "nik-service",
+            "createdAt": "2026-11-16T08:45:00.000000Z",
+            "updatedAt": "2026-11-16T08:45:00.000000Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "item_id": "4100000000000000001",
+    "item": {
+      "id": "4100000000000000001",
+      "type": "black_hash",
+      "value": "3395856ce81f2b7382dee72602f798b642f14140",
+      "sha256Value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+      "osType": "windows",
+      "description": "Dropper, confirmed by the sandbox",
+      "source": "user",
+      "scopeName": "Milan",
+      "scope": {
+        "siteIds": [
+          "2222222222222222222"
+        ]
+      },
+      "userName": "nik-service",
+      "createdAt": "2026-11-16T08:45:00.000000Z",
+      "updatedAt": "2026-11-16T08:45:00.000000Z"
+    }
+  }
+}

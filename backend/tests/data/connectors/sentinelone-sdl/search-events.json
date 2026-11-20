@@ -1,0 +1,111 @@
+{
+  "args": {
+    "filter": "event.type = 'Process Creation' and endpoint.name = 'WKS-FINANCE-01'",
+    "start_time": "4h",
+    "limit": 50,
+    "account_ids": [
+      "1111111111111111111"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/sdl/v2/api/queries",
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789"
+        },
+        "json": {
+          "queryType": "LOG",
+          "tenant": true,
+          "startTime": "4h",
+          "accountIds": [
+            "1111111111111111111"
+          ],
+          "queryPriority": "LOW",
+          "log": {
+            "filter": "event.type = 'Process Creation' and endpoint.name = 'WKS-FINANCE-01'",
+            "limit": 50,
+            "ascending": false
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "lrq-91",
+          "stepsCompleted": 0,
+          "stepsTotal": 2,
+          "data": null
+        },
+        "headers": {
+          "x-dataset-query-forward-tag": "srv-04"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/sdl/v2/api/queries/lrq-91",
+        "query": {
+          "lastStepSeen": 0
+        },
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789",
+          "X-Dataset-Query-Forward-Tag": "srv-04"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": "lrq-91",
+          "stepsCompleted": 2,
+          "stepsTotal": 2,
+          "data": {
+            "matches": [
+              {
+                "timestamp": "1794818400000000000",
+                "attributes": {
+                  "event.type": "Process Creation",
+                  "endpoint.name": "WKS-FINANCE-01",
+                  "src.process.name": "powershell.exe"
+                }
+              }
+            ],
+            "cursor": "c-2f9a"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/sdl/v2/api/queries/lrq-91",
+        "headers": {
+          "Authorization": "Bearer s1-console-token-0123456789",
+          "X-Dataset-Query-Forward-Tag": "srv-04"
+        }
+      },
+      "response": {
+        "status": 204,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "data": {
+      "matches": [
+        {
+          "timestamp": "1794818400000000000",
+          "attributes": {
+            "event.type": "Process Creation",
+            "endpoint.name": "WKS-FINANCE-01",
+            "src.process.name": "powershell.exe"
+          }
+        }
+      ],
+      "cursor": "c-2f9a"
+    },
+    "query_id": "lrq-91"
+  }
+}

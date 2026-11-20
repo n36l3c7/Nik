@@ -1,0 +1,27 @@
+{
+  "args": {
+    "hash": "3395856ce81f2b7382dee72602f798b642f14140"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/hashes/3395856ce81f2b7382dee72602f798b642f14140/verdict",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "verdict": "malicious"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "verdict": "malicious"
+  }
+}

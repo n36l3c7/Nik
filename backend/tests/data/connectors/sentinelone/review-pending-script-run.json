@@ -1,0 +1,33 @@
+{
+  "args": {
+    "pending_execution_id": "7400000000000000001",
+    "action": "approve"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/remote-scripts/pending-executions/7400000000000000001",
+        "json": {
+          "data": {
+            "action": "approve"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "success": true
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

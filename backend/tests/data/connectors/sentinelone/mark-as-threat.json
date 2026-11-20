@@ -1,0 +1,40 @@
+{
+  "args": {
+    "storyline": "A1B2C3D4E5F60718",
+    "agent_id": "1234567890123456789",
+    "status": "malicious"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/dv-mark-as-threat",
+        "json": {
+          "data": {
+            "status": "malicious",
+            "events": [
+              {
+                "storyline": "A1B2C3D4E5F60718",
+                "agentId": "1234567890123456789"
+              }
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/export/threats/5555555555555555555/explore/events",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "Event Type,Process Name,Created At\nProcess Creation,dropper.exe,2026-11-16T08:30:04.900000Z\n",
+        "headers": {
+          "content-disposition": "attachment; filename=\"threat-events.csv\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "threat-events.csv",
+      "type": "text/plain",
+      "text": "Event Type,Process Name,Created At\nProcess Creation,dropper.exe,2026-11-16T08:30:04.900000Z\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:threat-events.csv",
+    "name": "threat-events.csv",
+    "sha256": "sha256:threat-events.csv",
+    "size": 92,
+    "type": "text/plain"
+  }
+}

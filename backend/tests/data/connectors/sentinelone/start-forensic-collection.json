@@ -1,0 +1,43 @@
+{
+  "args": {
+    "profile_id": "7600000000000000001",
+    "description": "Triage for INC-2026-0417",
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/remote-ops/forensics/start-collection",
+        "json": {
+          "filter": {
+            "ids": [
+              "1234567890123456789"
+            ]
+          },
+          "data": {
+            "collectionProfileId": "7600000000000000001",
+            "destination": {},
+            "description": "Triage for INC-2026-0417"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 202,
+        "json": {
+          "data": {
+            "affected": 1,
+            "parentTaskId": "7700000000000000001"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "parent_task_id": "7700000000000000001",
+    "affected": 1
+  }
+}

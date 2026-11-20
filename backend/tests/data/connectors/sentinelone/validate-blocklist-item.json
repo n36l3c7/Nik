@@ -1,0 +1,35 @@
+{
+  "args": {
+    "hash": "3395856ce81f2b7382dee72602f798b642f14140"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/restrictions/validate",
+        "json": {
+          "data": {
+            "value": "3395856ce81f2b7382dee72602f798b642f14140",
+            "osType": "windows"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "status": "Recommended",
+            "details": {}
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "status": "Recommended",
+    "details": {}
+  }
+}

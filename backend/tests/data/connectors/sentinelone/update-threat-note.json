@@ -1,0 +1,42 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555",
+    "note_id": "6600000000000000001",
+    "text": "Contained; the file is a known dropper."
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/threats/5555555555555555555/notes/6600000000000000001",
+        "json": {
+          "data": {
+            "text": "Contained; the file is a known dropper."
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "6600000000000000001",
+            "text": "Contained; the file is a known dropper.",
+            "creator": "nik-service",
+            "creatorId": "4400000000000000001",
+            "edited": true,
+            "createdAt": "2026-11-16T08:40:00.000000Z",
+            "updatedAt": "2026-11-16T09:00:00.000000Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "note_id": "6600000000000000001",
+    "text": "Contained; the file is a known dropper.",
+    "updated_at": "2026-11-16T09:00:00.000000Z"
+  }
+}

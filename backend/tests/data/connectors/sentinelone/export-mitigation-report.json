@@ -1,0 +1,37 @@
+{
+  "args": {
+    "report_id": "7100000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/mitigation-report/7100000000000000001",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "Type,Path,Status\nfile,C:\\Users\\m.rossi\\Downloads\\dropper.exe,quarantined\n",
+        "headers": {
+          "content-disposition": "attachment; filename=\"mitigation-report.csv\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "mitigation-report.csv",
+      "type": "text/plain",
+      "text": "Type,Path,Status\nfile,C:\\Users\\m.rossi\\Downloads\\dropper.exe,quarantined\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:mitigation-report.csv",
+    "name": "mitigation-report.csv",
+    "sha256": "sha256:mitigation-report.csv",
+    "size": 73,
+    "type": "text/plain"
+  }
+}

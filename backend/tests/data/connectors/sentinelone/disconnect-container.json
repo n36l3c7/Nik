@@ -1,0 +1,38 @@
+{
+  "args": {
+    "container_id": "c0ffee1234567890",
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/actions/container-network-disconnect",
+        "json": {
+          "filter": {
+            "ids": [
+              "5555555555555555555"
+            ]
+          },
+          "data": {
+            "containerId": "c0ffee1234567890"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "success": true
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

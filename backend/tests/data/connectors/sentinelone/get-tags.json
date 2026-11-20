@@ -1,0 +1,57 @@
+{
+  "args": {
+    "type": "firewall"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/tags",
+        "query": {
+          "type": "firewall",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8100000000000000001",
+              "name": "Block during incident",
+              "type": "firewall",
+              "scope": "site",
+              "scopeId": "2222222222222222222",
+              "linkedRules": 2
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tags": [
+      {
+        "id": "8100000000000000001",
+        "name": "Block during incident",
+        "type": "firewall",
+        "scope": "site",
+        "scopeId": "2222222222222222222",
+        "linkedRules": 2
+      }
+    ],
+    "ids": [
+      "8100000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

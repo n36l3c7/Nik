@@ -1,0 +1,56 @@
+{
+  "args": {
+    "download_token": "dvtok-7f3a9c"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/dv/fetch-file",
+        "query": {
+          "downloadToken": "dvtok-7f3a9c"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "downloadUrl": "https://acme.sentinelone.net/web/api/v2.1/dv/files/0a1b2c3d4e5f",
+            "fileName": "powershell.exe.zip"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/dv/files/0a1b2c3d4e5f",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA=="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "powershell.exe.zip",
+      "type": "application/octet-stream",
+      "base64": "UEsDBBQACQAgYW4gYXJjaGl2ZSB0aGUgY29uc29sZSBwcm90ZWN0cyB3aXRoIHRoZSBwYXNzd29yZA=="
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:powershell.exe.zip",
+    "name": "powershell.exe.zip",
+    "sha256": "sha256:powershell.exe.zip",
+    "size": 58,
+    "type": "application/octet-stream",
+    "download_url": "https://acme.sentinelone.net/web/api/v2.1/dv/files/0a1b2c3d4e5f"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "args": {
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/unified-exclusions",
+        "query": {
+          "siteIds": "2222222222222222222",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "4300000000000000001",
+              "exclusionName": "ERP binaries",
+              "type": "path",
+              "value": "C:\\ERP\\bin\\",
+              "osType": "windows",
+              "scopePath": "Global / ACME / Milan",
+              "hits30d": 12
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "exclusions": [
+      {
+        "id": "4300000000000000001",
+        "exclusionName": "ERP binaries",
+        "type": "path",
+        "value": "C:\\ERP\\bin\\",
+        "osType": "windows",
+        "scopePath": "Global / ACME / Milan",
+        "hits30d": 12
+      }
+    ],
+    "ids": [
+      "4300000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

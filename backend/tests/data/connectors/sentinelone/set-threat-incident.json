@@ -1,0 +1,40 @@
+{
+  "args": {
+    "incident_status": "resolved",
+    "analyst_verdict": "true_positive",
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/threats/incident",
+        "json": {
+          "filter": {
+            "ids": [
+              "5555555555555555555"
+            ]
+          },
+          "data": {
+            "incidentStatus": "resolved",
+            "analystVerdict": "true_positive"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}
