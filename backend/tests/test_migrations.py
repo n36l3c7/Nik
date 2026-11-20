@@ -1177,3 +1177,74 @@ def test_migration_0047_adds_what_a_playbook_asks_about_a_file(tmp_path, monkeyp
     with engine.connect() as conn:
         assert not set(PLAYBOOK_FILE_TABLES) & set(sa.inspect(conn).get_table_names())
         assert conn.execute(sa.text("SELECT count(*) FROM samples")).scalar() == 1
+
+
+def test_migration_0049_adds_the_second_factor_and_keeps_the_open_sessions(tmp_path, monkeypatch):
+    from app.core.models import TWO_FACTOR_COLUMNS, TWO_FACTOR_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE users (id VARCHAR PRIMARY KEY, username VARCHAR NOT NULL UNIQUE,"
+                " password_hash VARCHAR NOT NULL, roles JSON NOT NULL, session_epoch INTEGER NOT NULL DEFAULT 0,"
+                " created_at VARCHAR NOT NULL, created_by VARCHAR, disabled BOOLEAN NOT NULL DEFAULT 0,"
+                " failed_logins INTEGER NOT NULL DEFAULT 0, locked_until VARCHAR)"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "CREATE TABLE sessions (token VARCHAR PRIMARY KEY,"
+                " user_id VARCHAR NOT NULL REFERENCES users (id) ON DELETE CASCADE,"
+                " created_at VARCHAR NOT NULL, expires_at VARCHAR NOT NULL)"
+            )
+        )
+        conn.execute(
+            sa.text("INSERT INTO users VALUES ('u1', 'anna', 'hash', '[\"analyst\"]', 0, 't', NULL, 0, 3, NULL)")
+        )
+        for token in ("one", "two"):
+            conn.execute(
+                sa.text("INSERT INTO sessions VALUES (:token, 'u1', '2026-11-20T08:00:00+00:00', :ends)"),
+                {"token": token, "ends": "2026-11-20T20:00:00+00:00"},
+            )
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0047_playbook_files")
+    command.upgrade(cfg, "0049_two_factor")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(TWO_FACTOR_TABLES) <= set(inspector.get_table_names())
+        for table, added in TWO_FACTOR_COLUMNS.items():
+            assert set(added) <= {column["name"] for column in inspector.get_columns(table)}, table
+        factor = {column["name"] for column in inspector.get_columns("user_factors")}
+        assert factor == {"id", "user_id", "kind", "secret", "data", "created_at", "confirmed_at", "last_step"}
+        # The sessions that were open stay open: a name each, and a last use that is the upgrade.
+        rows = conn.execute(sa.text("SELECT token, public_id, last_used_at, expires_at FROM sessions")).all()
+        assert len(rows) == 2 and len({row[1] for row in rows}) == 2
+        assert all(row[1] and row[2] and row[3] == "2026-11-20T20:00:00+00:00" for row in rows)
+        named = {row[0]: row[1] for row in rows}
+        # The account is as it was: no factor, nothing it is told, nothing asked of it.
+        user = conn.execute(sa.text("SELECT username, password_hash, signin_addresses, signin_notice FROM users")).one()
+        assert tuple(user) == ("anna", "hash", None, None)
+        assert conn.execute(sa.text("SELECT count(*) FROM user_factors")).scalar() == 0
+    command.stamp(cfg, "0047_playbook_files")
+    command.upgrade(cfg, "0049_two_factor")  # again: everything is there, and the sessions keep their names
+    with engine.connect() as conn:
+        again = dict(conn.execute(sa.text("SELECT token, public_id FROM sessions")).all())
+        assert again == named
+    command.downgrade(cfg, "0047_playbook_files")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(TWO_FACTOR_TABLES) & set(inspector.get_table_names())
+        assert {column["name"] for column in inspector.get_columns("sessions")} == {
+            "token",
+            "user_id",
+            "created_at",
+            "expires_at",
+        }
+        assert "signin_notice" not in {column["name"] for column in inspector.get_columns("users")}
+        assert conn.execute(sa.text("SELECT count(*) FROM sessions")).scalar() == 2
+        assert conn.execute(sa.text("SELECT failed_logins FROM users")).scalar() == 3

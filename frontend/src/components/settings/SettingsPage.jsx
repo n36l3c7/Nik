@@ -35,6 +35,7 @@ import { useLayer } from '../../lib/layers.js'
 import DetectionRulesSection from './sections/DetectionRulesSection.jsx'
 import BusinessHoursSection from './sections/BusinessHoursSection.jsx'
 import AccountsSection from './sections/AccountsSection.jsx'
+import SignInPolicySection from './sections/SignInPolicySection.jsx'
 import ApiKeysSection from './sections/ApiKeysSection.jsx'
 import AuditLogSection from './sections/AuditLogSection.jsx'
 import AutomationNetworkSection from './sections/AutomationNetworkSection.jsx'
@@ -101,6 +102,7 @@ const SECTION_VIEWS = {
   automationSwitch: { icon: OctagonX, Component: AutomationSwitchSection },
   account: { icon: UserCog, Component: MyAccountSection },
   accounts: { icon: Users, Component: AccountsSection },
+  signin: { icon: ShieldCheck, Component: SignInPolicySection },
   apikeys: { icon: KeyRound, Component: ApiKeysSection },
   storage: { icon: HardDrive, Component: StorageSection },
   workers: { icon: ServerCog, Component: WorkersSection },

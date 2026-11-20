@@ -1,7 +1,7 @@
 """Encryption of the secrets stored in the database.
 
-The threat-intelligence API keys and the TLS key logs of captures are
-encrypted with Fernet (AES-128-CBC + HMAC-SHA256) under a key derived from
+The threat-intelligence API keys, the TLS key logs of captures and the
+secrets of the second factors of accounts are encrypted with Fernet (AES-128-CBC + HMAC-SHA256) under a key derived from
 ``SECRET_KEY`` with HKDF, so a database dump or a backup alone does not reveal
 them. ``SECRET_KEY`` must therefore be kept with the backups: without it the
 stored secrets are unreadable and have to be entered again.
@@ -118,6 +118,14 @@ def reencrypt(session_factory) -> int:
                 row.keylog = token
                 moved += 1
         moved += _rotate_automation(db)
+        # The secrets of the second factors: without this, a changed key would lock their owners out.
+        from .models import UserFactor
+
+        for row in db.scalars(select(UserFactor)):
+            token = _rotated(row.secret)
+            if token:
+                row.secret = token
+                moved += 1
         db.commit()
     if moved:
         _logger.info("re-encrypted %d stored secret(s) with the current SECRET_KEY", moved)

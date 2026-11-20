@@ -56,8 +56,15 @@ class User(Base):
     # A disabled account keeps its history but cannot sign in.
     disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     # Wrong passwords in a row, and until when the account is locked because of them.
+    # Not read since 6.7: failed sign-ins are counted in ``signin_attempts`` (app/signin.py).
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     locked_until: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # The addresses the account last signed in from (a short list): a run of
+    # wrong passwords from elsewhere does not make these wait.
+    signin_addresses: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Something the person is told once, at their next sign-in ("reset": an
+    # administrator reset their second factor).
+    signin_notice: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
 
 class Session(Base):
@@ -68,7 +75,77 @@ class Session(Base):
     token: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
+    # When it ends whatever happens: its creation plus the lifetime of that day.
     expires_at: Mapped[str] = mapped_column(String, nullable=False)
+    # What the lists of sessions name it by: the token itself never leaves the cookie.
+    public_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    # The last request the person caused (the page's own polling does not count).
+    last_used_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Where it was opened from and with what, as the server saw them.
+    address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(400), nullable=True)
+
+
+class UserFactor(Base):
+    """A second factor of an account.
+
+    ``kind`` says what it is: ``totp`` (a code from an authenticator app) is
+    the only one today. ``secret`` is encrypted with the vault; ``data`` is
+    for what another kind would keep. A factor counts once it is confirmed.
+    """
+
+    __tablename__ = "user_factors"
+    __table_args__ = (Index("ix_user_factors_user", "user_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="totp")
+    secret: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    data: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    confirmed_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # The time step of the last code that was accepted: neither it nor an older one is taken again.
+    last_step: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+
+class RecoveryCode(Base):
+    """One of the single-use codes that stand in for a second factor; kept hashed like a password."""
+
+    __tablename__ = "recovery_codes"
+    __table_args__ = (Index("ix_recovery_codes_user", "user_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    used_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class SigninTicket(Base):
+    """What the right password gives an account that has a second factor: the
+    right to try the second step for a few minutes, and nothing else."""
+
+    __tablename__ = "signin_tickets"
+
+    # SHA-256 of the token the browser holds in a cookie of its own.
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class SigninAttempt(Base):
+    """Failed sign-ins in a row for one account or from one address, and until when it waits."""
+
+    __tablename__ = "signin_attempts"
+
+    # "<what>:<account or address>", see app/signin.py.
+    key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_failure_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    wait_until: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # The administrators were told of this run of failures.
+    told: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 # JSONB on PostgreSQL, so that a field can be searched through an index; plain JSON elsewhere.
@@ -1665,6 +1742,13 @@ class ArtifactJobPart(Base):
     seq: Mapped[int] = mapped_column(Integer, primary_key=True)
     data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
+
+# Created by migration 0049_two_factor where missing, in this order; the columns it adds.
+TWO_FACTOR_TABLES = ("user_factors", "recovery_codes", "signin_tickets", "signin_attempts")
+TWO_FACTOR_COLUMNS = {
+    "users": ("signin_addresses", "signin_notice"),
+    "sessions": ("public_id", "last_used_at", "address", "user_agent"),
+}
 
 # Created by migration 0047_playbook_files where missing, in this order.
 PLAYBOOK_FILE_TABLES = ("artifact_jobs", "artifact_job_parts")

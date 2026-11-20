@@ -11,10 +11,13 @@ from __future__ import annotations
 import os
 
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
+from .client_address import limiter_key
+
+# Counted by the client's address as the server knows it: the one a trusted
+# proxy names, the connection's own otherwise (core/client_address.py).
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=limiter_key,
     default_limits=[os.getenv("RATE_LIMIT_DEFAULT", "600/minute")],
     storage_uri=os.getenv("RATE_LIMIT_STORAGE_URI", "memory://"),
     headers_enabled=True,

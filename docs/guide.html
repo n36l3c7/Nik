@@ -63,6 +63,8 @@
           <li><a href="#automations">Automations</a></li>
           <li><a href="#settings">Settings</a></li>
           <li><a href="#accounts">Accounts</a></li>
+          <li><a href="#second-factor">Second factor and sessions</a></li>
+          <li><a href="#sign-in-policy">Sign-in and sessions (admins)</a></li>
         </ol>
       </nav>
 
@@ -76,6 +78,23 @@
         <img src="img/sign-in.png" alt="The sign-in screen" width="1600" height="1000" loading="lazy" />
         <figcaption>The sign-in screen. The banner shows whether the server is reachable.</figcaption>
       </figure>
+      <p>
+        An account that has a <a href="#second-factor">second factor</a> signs in in two steps: the password, then the
+        six-digit code its authenticator app shows at that moment. The link
+        <strong>Use a recovery code instead</strong> takes one of the recovery codes in its place, for the day the phone
+        is not there. An account whose role must have a second factor and has none yet is taken to the set-up right
+        after its password, before the app opens.
+      </p>
+      <p>
+        Wrong passwords and wrong codes cost time: after five in a row the next attempt waits thirty seconds, then twice
+        as long after each further failure, up to fifteen minutes. The page says how long. Nothing is locked for good,
+        and the count goes back to nothing with a good sign-in.
+      </p>
+      <p>
+        A session ends when nothing was done in it for a while, and in any case some hours after the sign-in. A minute
+        before, Nik says so and offers <strong>Stay signed in</strong>. When a session does end, what is on screen
+        stays: a dialog asks for the password (and the code) again, and what was not saved yet is saved then.
+      </p>
 
       <h2 id="incidents">Incidents</h2>
       <p>
@@ -1870,12 +1889,23 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             </tr>
             <tr>
               <td>My account</td>
-              <td>Who you are signed in as, your roles, and a form to change your password.</td>
+              <td>
+                Who you are signed in as, your roles, your password, your
+                <a href="#second-factor">second factor</a> and where your account is signed in now.
+              </td>
             </tr>
             <tr>
               <td>Accounts and roles · API keys</td>
               <td>
-                The accounts and their roles; keys for scripts and integrations, with roles of their own (admins).
+                The accounts and their roles, which of them have a second factor, their sessions; keys for scripts and
+                integrations, with roles of their own (admins).
+              </td>
+            </tr>
+            <tr>
+              <td>Sign-in and sessions <em>(admins)</em></td>
+              <td>
+                The <a href="#sign-in-policy">sign-in policy</a>: which roles must have a second factor, how long a
+                session lives, what failed sign-ins cost, where administrators may sign in from.
               </td>
             </tr>
             <tr>
@@ -1927,10 +1957,13 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           (notes, flags, audit entries) keeps the name it had.
         </li>
         <li>
-          <strong>Roles</strong>: one or more, ticked in the list; see <a href="#roles">Roles</a> below. They take
-          effect at the account's next click, without signing in again.
+          <strong>Roles</strong>: one or more, ticked in the list; see <a href="#roles">Roles</a> below. Other roles
+          sign the account out everywhere: the person signs in again, with the new ones.
         </li>
-        <li><strong>New password</strong>: for someone who forgot theirs. It signs the account out everywhere.</li>
+        <li>
+          <strong>New password</strong>: for someone who forgot theirs. It signs the account out everywhere, and ends
+          the wait its failed sign-ins had earned it.
+        </li>
         <li>
           <strong>Disabled</strong>: the account cannot sign in and is signed out at once; everything it did stays. Use
           it instead of deleting when somebody leaves the team.
@@ -1939,9 +1972,100 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <p>
         There is always at least one admin that can sign in: you cannot take the Admin role away from yourself, disable
         or delete yourself, nor do so to the last admin. Everyone changes their own password under
-        <strong>My account</strong>, which ends the account's other sessions. After ten wrong passwords in a row an
-        account is locked for five minutes; an admin's password reset unlocks it.
+        <strong>My account</strong>, which ends the account's other sessions.
       </p>
+      <p>
+        Each row says what the account has as a second factor: <em>Second factor</em>, <em>No second factor</em>, or
+        <em>Second factor required</em> for an account whose role must have one and has not set it up yet (it is asked
+        to at its next sign-in, and can do nothing else before). Two more buttons on the row, also in its right-click
+        menu:
+      </p>
+      <ul>
+        <li>
+          <strong>Sessions</strong>: where the account is signed in now (the browser, the address, since when, last
+          used), with <strong>End</strong> on each and one button for all. A session that is ended is refused at its
+          next request: the person is asked to sign in again.
+        </li>
+        <li>
+          <strong>Reset the second factor</strong>: for somebody who lost the phone and the recovery codes. The factor
+          and its codes are taken away and the account is signed out; it signs in with its password, is told what
+          happened, and sets a factor up again. Make sure it is them who asks. You cannot reset your own: sign in with a
+          recovery code and turn it off under <strong>My account</strong>.
+        </li>
+      </ul>
+
+      <h3 id="second-factor">Second factor and sessions</h3>
+      <p>
+        Under <strong>My account</strong>, <strong>Set up a second factor…</strong> protects your account with a code
+        from an authenticator app (any app that makes six-digit codes that change every thirty seconds), asked after
+        your password at every sign-in.
+      </p>
+      <ol>
+        <li>
+          Scan the QR code with the app, or type the secret shown beside it. The code is drawn in your browser; the
+          secret is shown only now.
+        </li>
+        <li>Type the code the app shows, and <strong>Turn it on</strong>. Only then is the second factor on.</li>
+        <li>
+          Keep the ten <strong>recovery codes</strong> that are shown next: <strong>Copy</strong> or
+          <strong>Download</strong> them, and store them where your password is not. Each signs you in once when the
+          phone is not there. They are shown once; Nik tells you how many are left each time you use one.
+        </li>
+      </ol>
+      <p>
+        <strong>New recovery codes…</strong> makes ten new ones and ends the old ones.
+        <strong>Turn it off…</strong> takes the second factor away. Both, and a change of your password, ask again who
+        you are: your password and a current code (or a recovery code). Turning the second factor on or off signs your
+        account out everywhere else. If your role must have a second factor, turning it off leads straight back to
+        setting one up.
+      </p>
+      <p>
+        If you lost the phone and the codes, an admin resets your second factor from <strong>Accounts</strong>. Nik does
+        not remember a browser: the code is asked at every sign-in, on purpose, because a copied browser profile is
+        exactly what a second factor is there for.
+      </p>
+      <p>
+        <strong>Sessions</strong>, on the same page, lists where your account is signed in now: this browser and the
+        others, with the address each came from, when it began and when it was last used. <strong>End</strong> closes
+        one at once, <strong>End all the others</strong> every one but yours. End a session you do not recognise, then
+        change your password.
+      </p>
+
+      <h3 id="sign-in-policy">Sign-in and sessions (admins)</h3>
+      <p>
+        <strong>Settings → Sign-in and sessions</strong> holds the rules of signing in, in one form with one
+        <strong>Save</strong>. No role is asked for a second factor and no network is listed until it is set here.
+      </p>
+      <ul>
+        <li>
+          <strong>Second factor</strong>: the roles whose accounts must have one (Admin is the one recommended). The
+          form says which accounts have none and will be asked. It takes effect at once: such an account, signed in or
+          not, can do nothing but set its second factor up, and what it had on screen stays underneath. If you are one
+          of them, your own set-up opens as soon as you save. API keys are never asked for a code.
+        </li>
+        <li>
+          <strong>Sessions</strong>: after how long without use a session ends, for everybody and for administrators
+          (eight hours for both at first; thirty minutes is recommended for administrators), and how long it lasts at
+          most (twelve hours). What the page asks by itself, such as lists that refresh, does not count as use; somebody
+          typing a long note does. A shorter time applies to the sessions that are open.
+        </li>
+        <li>
+          <strong>Failed sign-ins</strong>: after how many failures in a row an attempt waits, how long the first wait
+          is and the longest one, and after how many failures the administrators get a notice (one per run of failures;
+          the audit log has them grouped). Failures are counted per account and per address, wrong codes apart from
+          wrong passwords. The addresses an account last signed in from are not made to wait by somebody else's guesses
+          at its password.
+        </li>
+        <li>
+          <strong>Administrators' networks</strong>: when networks are listed (<code>10.20.0.0/16</code>,
+          <code>2001:db8:aa::/48</code>, a single address), accounts and API keys that hold the Admin role are accepted
+          only from them; from elsewhere the sign-in says so, after the password and the code were right, and an open
+          session is refused until it is back on a listed network. The page shows the address the server sees you at. A
+          list that does not hold it is not saved unless you insist, and Nik says what will happen. Where the server
+          cannot know the addresses of its clients, the page says so and why, and the list is refused: see the
+          <a href="deployment.html#sign-in-and-sessions">deployment guide</a>.
+        </li>
+      </ul>
       <h3 id="roles">Roles</h3>
       <p>
         A role is a tag on an account. An account holds one or more, and may do what they grant

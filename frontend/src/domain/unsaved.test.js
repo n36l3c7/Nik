@@ -76,6 +76,11 @@ test('the question names what is unsaved', () => {
   assert.equal(sentenceText(editor), 'The playbook Phishing triage has changes that are not saved.')
   assert.equal(sentenceText(dialog), 'The new task has changes that are not saved.')
   assert.equal(sentenceText({ id: 'x' }), 'This form has changes that are not saved.')
+  // What is not a change that was typed says its own sentence.
+  assert.equal(
+    sentenceText({ id: 'y', what: 'Codes', sentence: 'The codes are shown only now. ' }),
+    'The codes are shown only now.',
+  )
 })
 
 test('"Save and leave" needs every surface to know how to save', async () => {

@@ -37,6 +37,7 @@ from .core.config import settings as app_settings
 from .core.db import Base, SessionLocal, engine, get_db
 from .core.observability import metrics_response, observability_middleware, setup_logging
 from .core.ratelimit import limiter
+from .core.security import Refused
 from .enrichment import worker as enrichment_worker
 from .iocs import backfill as backfill_iocs
 from .malware.samples import repair_store_permissions
@@ -143,7 +144,10 @@ TAGS_METADATA = [
         "name": "api-keys",
         "description": "Manage API keys (admin session or admin key). Set each key's roles and expiry.",
     },
-    {"name": "auth", "description": "Session login/logout (browser)."},
+    {
+        "name": "auth",
+        "description": "Signing in and out (browser), the second factor, the sessions, the sign-in policy.",
+    },
     {"name": "users", "description": "User management (admin session or admin key)."},
     {"name": "audit", "description": "Global audit log (the audit.read permission)."},
     {"name": "backup", "description": "Full platform export/restore (admin session or admin key)."},
@@ -162,6 +166,30 @@ app = FastAPI(
 
 # Request ids + structured access logs + Prometheus metrics.
 app.middleware("http")(observability_middleware)
+
+# What a browser sends on behalf of another site is refused before anything
+# else looks at it. The session cookie is SameSite=Lax, which already keeps it
+# out of another site's requests that change something; this does not depend
+# on the cookie, and also covers a page of a sibling host of the same site.
+# Browsers say where a request comes from in Sec-Fetch-Site; a client that is
+# not a browser (an API key, a webhook) does not send it and is not concerned.
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_HOOKS = "/api/automation/hooks/"
+
+
+@app.middleware("http")
+async def same_origin_only(request: Request, call_next):
+    path = request.url.path
+    # A webhook is called with its own secret address, by whatever the sender is.
+    if request.method not in _SAFE_METHODS and path.startswith("/api/") and not path.startswith(_HOOKS):
+        site = request.headers.get("sec-fetch-site")
+        if site is not None and site not in ("same-origin", "none"):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "This request was sent by another site and is refused", "code": "cross_site"},
+            )
+    return await call_next(request)
+
 
 # Per-IP rate limiting (blanket default; login adds a stricter limit).
 app.state.limiter = limiter
@@ -297,6 +325,14 @@ def metrics(request: Request):
 def _query_error(_request: Request, error: QueryError) -> JSONResponse:
     """A query that cannot be read: where, and why, in fixed sentences."""
     return JSONResponse(status_code=422, content={"detail": error.message, "query": error.as_dict()})
+
+
+@app.exception_handler(Refused)
+def _refused(_request: Request, error: Refused) -> JSONResponse:
+    """A refusal the interface tells apart by its code (a second factor to set up, a network not allowed)."""
+    return JSONResponse(
+        status_code=error.status_code, content={"detail": error.detail, "code": error.code}, headers=error.headers
+    )
 
 
 @app.exception_handler(QueryForbidden)

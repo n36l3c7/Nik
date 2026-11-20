@@ -148,16 +148,16 @@ setLeaveGuard((path, go) => !free({ path }, go))
 /**
  * Enter the list while `dirty`.
  * @param {boolean} dirty  true while what is on screen differs from what was loaded
- * @param {{ what?: string, name?: string, save?: () => Promise<unknown>, stays?: (path: string) => boolean,
- *   sent?: boolean }} options  (domain/unsaved.js says what each is)
+ * @param {{ what?: string, name?: string, sentence?: string, save?: () => Promise<unknown>,
+ *   stays?: (path: string) => boolean, sent?: boolean }} options  (domain/unsaved.js says what each is)
  * @returns {{ leave: (action: () => void) => void, leaveOthers: (action: () => void) => void }}
  *   `leave` asks about this surface alone before `action` (its dialog is closed); `leaveOthers` about
  *   every other one (this one is being saved, and what it makes takes the place of what is open)
  */
-export function useUnsavedChanges(dirty, { what, name, save, stays, sent = false } = {}) {
+export function useUnsavedChanges(dirty, { what, name, sentence, save, stays, sent = false } = {}) {
   const id = useId()
   const latest = useRef({})
-  latest.current = { what, name, save, stays }
+  latest.current = { what, name, sentence, save, stays }
   const canSave = typeof save === 'function'
   const canStay = typeof stays === 'function'
   useEffect(() => {
@@ -172,6 +172,9 @@ export function useUnsavedChanges(dirty, { what, name, save, stays, sent = false
         },
         get name() {
           return latest.current.name
+        },
+        get sentence() {
+          return latest.current.sentence
         },
         save: canSave ? () => latest.current.save?.() : undefined,
         stays: canStay ? (path) => latest.current.stays?.(path) : undefined,

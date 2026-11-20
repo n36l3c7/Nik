@@ -66,6 +66,7 @@ import { useNavigation } from './context/NavigationContext.jsx'
 import { detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import SessionExpiredDialog from './components/auth/SessionExpiredDialog.jsx'
+import SessionGuards, { RequiredEnrolmentScreen } from './components/auth/SessionGuards.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 import { useAutomation } from './context/AutomationContext.jsx'
 import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
@@ -166,7 +167,7 @@ function UnreachableScreen({ error, onRetry }) {
 }
 
 export default function App() {
-  const { hasUsers, isAuthenticated, authReady, serverError, retry, logout, can } = useAuth()
+  const { hasUsers, isAuthenticated, enrolling, authReady, serverError, retry, logout, can } = useAuth()
   // What the roles of the signed-in account allow: the shell shows what it can use.
   const canRead = can('read')
   const canWrite = can('write')
@@ -686,6 +687,15 @@ export default function App() {
 
   // ---- Auth gate ----
   if (!hasUsers) return <FirstRunSetup />
+  // An account that must set its second factor up does that before the app is shown.
+  if (enrolling) {
+    return (
+      <>
+        <RequiredEnrolmentScreen />
+        <SessionExpiredDialog />
+      </>
+    )
+  }
   if (!isAuthenticated) return <LoginScreen />
 
   const openCreateModal = () => {
@@ -1233,6 +1243,7 @@ export default function App() {
 
       <KeyboardShortcuts open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <SessionExpiredDialog unsavedChanges={unsavedChanges} unsaved={unsavedList} />
+      <SessionGuards />
       <PastePrompt
         pasted={pasted}
         busy={pastedBusy}

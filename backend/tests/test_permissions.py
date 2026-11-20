@@ -77,9 +77,11 @@ def test_an_account_takes_several_roles_and_they_add_up(admin: TestClient):
     assert session.get("/api/audit").status_code == 403
     assert session.get("/api/users").status_code == 403
 
-    # A role given or taken away takes effect at the next request, on the same session.
+    # A role given or taken away ends the sessions of the account: the person signs in again, with the new ones.
     res = admin.patch(f"/api/users/{anna['id']}", json={"roles": ["viewer", "audit"]})
     assert res.json()["user"]["roles"] == ["viewer", "audit"]
+    assert session.get("/api/audit").status_code == 401
+    session = _signed_in("anna")
     assert session.get("/api/audit").status_code == 200
     assert session.post("/api/yara-rules", json=rule).status_code == 403
     assert session.post("/api/incidents", json={"id": "i1", "data": {}}).status_code == 403

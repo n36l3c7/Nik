@@ -200,13 +200,29 @@ export const SETTINGS_GROUPS = [
     id: 'access',
     label: 'Access',
     sections: [
-      { id: 'account', slug: 'my-account', label: 'My account', permission: null, keywords: 'password roles me' },
+      {
+        id: 'account',
+        slug: 'my-account',
+        label: 'My account',
+        permission: null,
+        keywords:
+          'password roles me second factor two-factor 2fa mfa totp authenticator app code recovery codes sessions signed in devices browsers',
+      },
       {
         id: 'accounts',
         slug: 'accounts',
         label: 'Accounts and roles',
         permission: 'admin',
-        keywords: 'users people permissions disable admin analyst viewer',
+        keywords: 'users people permissions disable admin analyst viewer reset second factor sessions sign out',
+      },
+      {
+        id: 'signin',
+        slug: 'sign-in-and-sessions',
+        label: 'Sign-in and sessions',
+        permission: 'admin',
+        keywords:
+          'policy login second factor two-factor 2fa mfa required roles idle timeout lifetime expire attempts failed wait lockout ' +
+          'brute force administrators networks cidr allowlist ip address trusted proxies forwarded',
       },
       {
         id: 'apikeys',

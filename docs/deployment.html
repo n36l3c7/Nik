@@ -49,6 +49,7 @@
           <li><a href="#upgrading-to-41">Upgrading to 4.1</a></li>
           <li><a href="#automation-containers">The automation containers</a></li>
           <li><a href="#worker-watch">When a worker is down</a></li>
+          <li><a href="#sign-in-and-sessions">Sign-in: the client's address, and getting back in</a></li>
           <li><a href="#upgrading-to-30">Upgrading to 3.0</a></li>
           <li><a href="#upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18</a></li>
           <li><a href="#manual-deployment-on-rhel">Manual deployment on RHEL</a></li>
@@ -733,6 +734,95 @@ podman compose up -d --build
           <code>podman compose logs -f &lt;service&gt;</code>.
         </li>
       </ul>
+      <h4 id="sign-in-and-sessions">Sign-in: the client's address, and getting back in</h4>
+      <p>
+        The rules of signing in are an admin's, under <strong>Settings → Sign-in and sessions</strong> (the
+        <a href="guide.html#sign-in-policy">guide</a> has them, <a href="security.html#second-factor">Security</a> how
+        they hold). Two things about them are the operator's.
+      </p>
+      <p>
+        <strong>The client's address.</strong> The waits after failed sign-ins are counted per address, and
+        administrators can be held to listed networks: both need the backend to know where a request comes from. The
+        browser talks to the <code>web</code> container, which passes the request on and writes the address it saw in
+        <code>X-Forwarded-For</code>. The backend believes that header only from the proxies named in
+        <code>TRUSTED_PROXIES</code> (host names, addresses or networks; <code>web</code> in the Compose file, looked up
+        again every half minute), and ignores it from anybody else. <code>FORWARDED_ALLOW_IPS</code> stays empty, as the
+        Compose file has it: with <code>*</code> gunicorn would rewrite the address from the header for whoever sends
+        it. If you keep a Compose override or an <code>.env</code> that sets it, remove it.
+      </p>
+      <p>What the web container itself sees depends on the container runtime:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Set-up</th>
+              <th>The address the backend gets</th>
+              <th>Per-address waits, administrators' networks</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Docker Engine on Linux, as root (the default)</td>
+              <td>
+                The client's own, for clients on other machines. A browser on the server itself arrives from the gateway
+                of the container network.
+              </td>
+              <td>Work.</td>
+            </tr>
+            <tr>
+              <td>Podman as root</td>
+              <td>The client's own, as with Docker Engine.</td>
+              <td>Work.</td>
+            </tr>
+            <tr>
+              <td>Rootless podman (and rootless Docker)</td>
+              <td>
+                One address for everybody, an address of the container network: published ports are forwarded by a
+                process of the user (<code>rootlessport</code>), which opens a new connection to the container.
+              </td>
+              <td>
+                Do not work. The policy page says so and refuses a list of networks; failures are counted per account
+                only.
+              </td>
+            </tr>
+            <tr>
+              <td>Docker Desktop (Windows, macOS)</td>
+              <td>One address for everybody, the gateway of the container network.</td>
+              <td>Do not work, as above.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The policy page shows the address the server sees you at, and says when that address is one of the server's own
+        container network rather than yours: look at it from another machine before listing networks. Under rootless
+        podman the way to give the backend real addresses is to run the stack with podman as root. A reverse proxy on
+        the host in front of the published port does not help as the stack is: the web container replaces
+        <code>X-Forwarded-For</code> with the address it saw itself, on purpose, so what that proxy wrote is lost. Where
+        the addresses cannot be known, leave the administrators' networks empty and rely on the second factor.
+      </p>
+      <p>
+        In a <a href="#manual-deployment-on-rhel">manual deployment</a>, where nginx and the backend share the host,
+        there is nothing to set: with <code>FORWARDED_ALLOW_IPS</code> unset, gunicorn believes the header from
+        <code>127.0.0.1</code>, which is that nginx and nobody else. Do not set it to <code>*</code>.
+      </p>
+      <p>
+        <strong>Getting back in.</strong> Somebody who lost the phone uses a recovery code; without the codes, an admin
+        resets their second factor under <strong>Accounts</strong>. For the last administrator who lost everything, and
+        for a list of networks that leaves no administrator in, there are two commands, run on the server in the
+        backend's container. Whoever can run them already holds the database and the secret key, so nothing is asked;
+        each writes what it did in the audit log, under the name <code>server console</code>.
+      </p>
+      <pre><code class="language-bash"># Take the second factor of an account away: it signs in with its password and sets one up again.
+podman compose exec api python -m app.account reset-second-factor &lt;username&gt;
+
+# Empty the list of the administrators' networks: administrators sign in from anywhere again.
+podman compose exec api python -m app.account clear-admin-networks</code></pre>
+      <p>
+        The first one ends the sessions of the account and removes its recovery codes; the password is not touched and
+        still has to be right. Changing <code>SECRET_KEY</code> without <code>SECRET_KEY_PREVIOUS</code> makes every
+        second factor unreadable, like the other stored secrets: the accounts are then reset with the same command.
+      </p>
       <h4 id="upgrading-to-30">Upgrading to 3.0</h4>
       <p>
         Release 3.0 makes the safe configuration the only one: the stack no longer starts with secrets that are missing

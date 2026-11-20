@@ -66,9 +66,14 @@ services:
       SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
       # The app is served over HTTPS only, so the session cookie is Secure.
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
-      # The client address comes from nginx (X-Forwarded-For), the only thing
-      # that reaches this port: rate limits and lock-outs are per client.
-      FORWARDED_ALLOW_IPS: "*"
+      # The client address is the one the web container writes in
+      # X-Forwarded-For, believed from that container only: the backend checks
+      # itself who the connection comes from (TRUSTED_PROXIES: host names,
+      # addresses or networks), so gunicorn must not rewrite addresses for
+      # whoever sends the header (FORWARDED_ALLOW_IPS stays empty). The waits
+      # after failed sign-ins and the administrators' networks go by it.
+      FORWARDED_ALLOW_IPS: ""
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-web}
       # Optional bearer token for /api/metrics (never published by nginx).
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}

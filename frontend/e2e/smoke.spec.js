@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
-import { buildSamplePe, phishingEml } from './helpers.js'
+import { buildSamplePe, nextCode, phishingEml } from './helpers.js'
 import { crossings } from '../src/domain/automation/layout.js'
 
 /*
@@ -2341,6 +2341,273 @@ test('roles are tags: an account sees and does what its roles grant together', a
       .click()
     await expect(accounts.getByRole('listitem').filter({ hasText: name })).toHaveCount(0)
   }
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+})
+
+test('a second factor: set up under My account, asked at the sign-in, a wrong code, a recovery code, turned off', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000)
+  const created = await page.request.post('/api/users', {
+    data: { username: 'tess', password: 'tess-secret', roles: ['analyst'] },
+  })
+  expect(created.status()).toBe(201)
+  expect((await created.json()).user.secondFactor).toBe(false)
+
+  const other = await (await browser.newContext({ acceptDownloads: true })).newPage()
+  const signIn = async () => {
+    await other.fill('#login-username', 'tess')
+    await other.fill('#login-password', 'tess-secret')
+    await other.click('button[type=submit]')
+  }
+  const signOut = async () => {
+    await other.getByRole('button', { name: /^Account: tess/ }).click()
+    await other.getByRole('menu').getByRole('menuitem', { name: 'Sign out' }).click()
+    await expect(other.locator('#login-username')).toBeVisible()
+  }
+  await other.goto('/')
+  await signIn()
+  // No second factor yet: the password is the whole sign-in.
+  await other.getByRole('button', { name: 'Platform settings' }).click()
+  const theirs = other.getByRole('region', { name: 'Settings' })
+  await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('My account').click()
+
+  // Set up: the QR code and the secret, a first code from the "app", then the recovery codes, once.
+  await theirs.getByRole('button', { name: 'Set up a second factor…' }).click()
+  const setup = other.getByRole('dialog', { name: 'Set up a second factor' })
+  await expect(setup.getByRole('img', { name: 'QR code to scan with the authenticator app' })).toBeVisible()
+  const secret = (await setup.getByLabel('Secret', { exact: true }).innerText()).replace(/\s/g, '')
+  expect(secret).toMatch(/^[A-Z2-7]{32}$/)
+  const first = setup.locator('#second-factor-first-code')
+  await expect(first).toHaveAttribute('inputmode', 'numeric')
+  await expect(first).toHaveAttribute('autocomplete', 'one-time-code')
+  await expect(setup.getByRole('button', { name: 'Turn it on' })).toBeDisabled()
+  await first.fill('000000')
+  await setup.getByRole('button', { name: 'Turn it on' }).click()
+  await expect(setup.getByRole('alert')).toContainText('That code is not right')
+  // Pasted with the space an app shows in it: the field keeps the digits.
+  const code = await nextCode(secret)
+  await first.fill(`${code.slice(0, 3)} ${code.slice(3)}`)
+  await expect(first).toHaveValue(code)
+  await setup.getByRole('button', { name: 'Turn it on' }).click()
+  await expect(setup.getByText('Your second factor is on.')).toBeVisible()
+  const codes = await setup.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem').allTextContents()
+  expect(codes).toHaveLength(10)
+  expect(codes[0]).toMatch(/^[a-z2-9]{4}(-[a-z2-9]{4}){3}$/)
+  // They are shown only now: leaving before they were copied or downloaded asks first.
+  await other.keyboard.press('Escape')
+  const leaving = other.getByRole('dialog', { name: 'Leave without saving?' })
+  await expect(leaving).toContainText('Your recovery codes were neither copied nor downloaded')
+  await leaving.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(setup.getByRole('list', { name: 'Recovery codes' })).toBeVisible()
+  const [download] = await Promise.all([
+    other.waitForEvent('download'),
+    setup.getByRole('button', { name: 'Download' }).click(),
+  ])
+  expect(download.suggestedFilename()).toBe('nik-recovery-codes-tess.txt')
+  await expect(setup.getByRole('status').filter({ hasText: 'Downloaded.' })).toBeVisible()
+  await setup.getByRole('button', { name: 'Done' }).click()
+  await expect(setup).toHaveCount(0)
+  await expect(theirs.getByText('An authenticator app, since')).toBeVisible()
+  await expect(theirs.getByText('10 recovery codes left.')).toBeVisible()
+  // The session went on under a new id, and is the only one of the account.
+  const mine = theirs.getByRole('list', { name: 'Your sessions' }).getByRole('listitem')
+  await expect(mine).toHaveCount(1)
+  await expect(mine).toContainText('This browser')
+  await theirs.getByRole('button', { name: 'Close settings' }).click()
+
+  // Signing in: the password, then the code. A wrong one is refused; the right one is taken.
+  await signOut()
+  await signIn()
+  await expect(other.getByRole('heading', { name: 'second step' })).toBeVisible()
+  expect((await other.request.get('/api/auth/me')).status()).toBe(401) // the password alone gave nothing
+  await other.locator('#login-code').fill('000000')
+  await other.getByRole('button', { name: 'Continue' }).click()
+  await expect(other.getByRole('alert')).toContainText('That code is not right')
+  await other.locator('#login-code').fill(await nextCode(secret))
+  await other.getByRole('button', { name: 'Continue' }).click()
+  await expect(other.getByRole('button', { name: 'Platform settings' })).toBeVisible()
+
+  // A recovery code, by its link: it is spent, and the person is told how many are left.
+  await signOut()
+  await signIn()
+  await other.getByRole('button', { name: 'Use a recovery code instead' }).click()
+  await other.locator('#login-recovery-code').fill(codes[0])
+  await other.getByRole('button', { name: 'Continue' }).click()
+  const used = other.getByRole('dialog', { name: 'Recovery code used' })
+  await expect(used).toContainText('You have 9 left')
+  await used.getByRole('button', { name: 'OK' }).click()
+
+  // Turned off: the password and a code are asked again (here, another recovery code).
+  await other.getByRole('button', { name: 'Platform settings' }).click()
+  await theirs.getByRole('navigation', { name: 'Settings sections' }).getByText('My account').click()
+  await expect(theirs.getByText('9 recovery codes left.')).toBeVisible()
+  await theirs.getByRole('button', { name: 'Turn it off…' }).click()
+  const off = other.getByRole('dialog', { name: 'Turn the second factor off' })
+  await off.locator('#confirm-identity-password').fill('tess-secret')
+  await expect(off.getByRole('button', { name: 'Turn it off' })).toBeDisabled()
+  await off.getByRole('button', { name: 'Use a recovery code instead' }).click()
+  await off.locator('#confirm-identity-recovery').fill(codes[0])
+  await off.getByRole('button', { name: 'Turn it off' }).click()
+  await expect(off.getByRole('alert')).toContainText('used already')
+  await off.locator('#confirm-identity-recovery').fill(codes[1])
+  await off.getByRole('button', { name: 'Turn it off' }).click()
+  await expect(off).toHaveCount(0)
+  await expect(theirs.getByRole('button', { name: 'Set up a second factor…' })).toBeVisible()
+  await other.context().close()
+
+  // What happened is in the audit log, failed codes included.
+  const entries = (await (await page.request.get('/api/audit?q=tess')).json()).entries.map((entry) => entry.action)
+  for (const action of ['auth.factor.on', 'auth.code.failed', 'auth.recovery.used', 'auth.factor.off']) {
+    expect(entries).toContain(action)
+  }
+})
+
+test('a session that is not used warns before it ends, and goes on when asked', async () => {
+  test.setTimeout(150_000)
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Sign-in and sessions').click()
+  // Nothing is asked of anybody until it is set here.
+  for (const role of ['Analyst', 'Admin']) {
+    await expect(settings.getByRole('checkbox', { name: new RegExp(`^${role}`) })).not.toBeChecked()
+  }
+  await expect(settings.locator('#policy-adminNetworks')).toHaveValue('')
+  await expect(settings.getByLabel('Your address as the server sees it')).toHaveText('127.0.0.1')
+  const idle = settings.locator('#policy-idleMinutesAdmin')
+  await expect(idle).toHaveValue('480')
+  const save = settings.getByRole('button', { name: 'Save', exact: true })
+  await expect(save).toBeDisabled()
+  // A value the server would refuse is said in the form, and cannot be saved.
+  await idle.fill('soon')
+  await expect(settings.getByText('A whole number from 0 to 10080')).toBeVisible()
+  await expect(save).toBeDisabled()
+  // The shortest there is: a minute without doing anything, with a warning half a minute before.
+  await idle.fill('1')
+  await save.click()
+  await expect(settings.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+
+  // Nothing is touched: the lists of the page go on refreshing by themselves, and do not count.
+  const warning = page.getByRole('dialog', { name: 'Your session is about to end' })
+  await expect(warning).toBeVisible({ timeout: 70_000 })
+  await expect(warning).toContainText('Nothing was done here for a while')
+  await expect(warning.getByRole('timer')).toHaveText(/^0:\d\d$/)
+  expect(
+    (await (await page.request.get('/api/auth/session', { headers: { 'X-Nik-Background': '1' } })).json()).idleLeft,
+  ).toBeLessThanOrEqual(30)
+  await warning.getByRole('button', { name: 'Stay signed in' }).click()
+  await expect(warning).toHaveCount(0)
+
+  // Back to what it was, and the session is as good as new.
+  await idle.fill('480')
+  await save.click()
+  await expect(settings.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+  const state = await (await page.request.get('/api/auth/session')).json()
+  expect(state.idleSeconds).toBe(480 * 60)
+  expect(state.idleLeft).toBeGreaterThan(470 * 60)
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+})
+
+test('a role must have a second factor: its account is led to set one up; an admin sees its sessions, ends one, resets the factor', async ({
+  browser,
+}) => {
+  test.setTimeout(150_000)
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await sections.getByText('Sign-in and sessions').click()
+  const analysts = settings.getByRole('checkbox', { name: /^Analyst/ })
+  const save = settings.getByRole('button', { name: 'Save', exact: true })
+  await analysts.check()
+  // Who will be asked is said before it is saved.
+  await expect(settings.getByRole('status').filter({ hasText: 'will be asked to set one up' })).toContainText('tess')
+  await save.click()
+  await expect(settings.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+  await sections.getByText('Accounts').click()
+  const accounts = settings.getByRole('list', { name: 'Accounts' })
+  const tess = accounts.getByRole('listitem').filter({ hasText: 'tess' })
+  await expect(tess).toContainText('Second factor required')
+  await expect(accounts.getByRole('listitem').filter({ hasText: 'You' })).toContainText('No second factor')
+
+  // The account signs in and lands on the set-up, not on the app: nothing else answers.
+  const other = await (await browser.newContext({ acceptDownloads: true })).newPage()
+  await other.goto('/')
+  await other.fill('#login-username', 'tess')
+  await other.fill('#login-password', 'tess-secret')
+  await other.click('button[type=submit]')
+  await expect(other.getByRole('heading', { name: 'second factor' })).toBeVisible()
+  await expect(other.getByText('Your role requires a second factor')).toBeVisible()
+  await expect(other.getByRole('button', { name: 'Platform settings' })).toHaveCount(0)
+  const refused = await other.request.get('/api/incidents')
+  expect(refused.status()).toBe(403)
+  expect((await refused.json()).code).toBe('second_factor_required')
+  const secret = (await other.getByLabel('Secret', { exact: true }).innerText()).replace(/\s/g, '')
+  await other.locator('#second-factor-first-code').fill(await nextCode(secret))
+  await other.getByRole('button', { name: 'Turn it on' }).click()
+  await expect(other.getByRole('list', { name: 'Recovery codes' }).getByRole('listitem')).toHaveCount(10)
+  // Still not the app: it opens when the codes were read.
+  await expect(other.getByRole('button', { name: 'Platform settings' })).toHaveCount(0)
+  await Promise.all([other.waitForEvent('download'), other.getByRole('button', { name: 'Download' }).click()])
+  await other.getByRole('button', { name: 'Open Nik' }).click()
+  await expect(other.getByRole('button', { name: 'Platform settings' })).toBeVisible()
+  expect((await other.request.get('/api/incidents')).status()).toBe(200)
+
+  // The admin sees it has one now, sees where it is signed in, and ends that session.
+  await sections.getByText('My account').click()
+  await sections.getByText('Accounts').click()
+  await expect(tess).not.toContainText('required')
+  await expect(tess).toContainText('Second factor')
+  await tess.getByRole('button', { name: 'Sessions of tess' }).click()
+  const theirSessions = page.getByRole('dialog', { name: 'Sessions of tess' })
+  const open = theirSessions.getByRole('list', { name: 'Sessions of tess' }).getByRole('listitem')
+  await expect(open).toHaveCount(1)
+  await expect(open).toContainText('Chrome')
+  await expect(open).toContainText('127.0.0.1')
+  await open.getByRole('button', { name: /^End:/ }).click()
+  await expect(theirSessions.getByText('No open session.')).toBeVisible()
+  await theirSessions.getByRole('button', { name: 'Close' }).last().click()
+
+  // Ended at once: the next thing the account does asks to sign in again, with the code this time.
+  await other.getByRole('button', { name: 'Platform settings' }).click()
+  const expired = other.getByRole('dialog', { name: 'Session expired' })
+  await expired.getByLabel('Password of tess').fill('tess-secret')
+  await expired.getByRole('button', { name: 'Sign in again' }).click()
+  await expired.locator('#session-expired-code').fill(await nextCode(secret))
+  await expired.getByRole('button', { name: 'Continue' }).click()
+  await expect(expired).toHaveCount(0)
+  expect((await other.request.get('/api/incidents')).status()).toBe(200)
+
+  // Somebody who lost the device: the admin resets the factor (never their own), and the account sets one up again.
+  await expect(
+    accounts
+      .getByRole('listitem')
+      .filter({ hasText: 'You' })
+      .getByRole('button', { name: /^Reset the second factor of/ }),
+  ).toBeDisabled()
+  await tess.getByRole('button', { name: 'Reset the second factor of tess' }).click()
+  const reset = page.getByRole('dialog', { name: 'Reset the second factor of tess' })
+  await expect(reset).toContainText('asked to set a second factor up again before anything else')
+  await reset.getByRole('button', { name: 'Reset it' }).click()
+  await expect(reset).toHaveCount(0)
+  await expect(tess).toContainText('Second factor required')
+  await other.reload()
+  await other.fill('#login-username', 'tess')
+  await other.fill('#login-password', 'tess-secret')
+  await other.click('button[type=submit]')
+  await expect(other.getByText('Your second factor was reset, and your role requires one.')).toBeVisible()
+  await other.context().close()
+
+  // Leave things as they were: no role is asked for a second factor, and the account is gone.
+  await sections.getByText('Sign-in and sessions').click()
+  await analysts.uncheck()
+  await save.click()
+  await expect(settings.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+  await sections.getByText('Accounts').click()
+  await tess.getByRole('button', { name: 'Delete user tess' }).click()
+  await expect(tess).toHaveCount(0)
+  const said = (await (await page.request.get('/api/audit?q=tess')).json()).entries.map((entry) => entry.action)
+  expect(said).toContain('auth.factor.reset')
+  expect(said).toContain('auth.session.end')
   await settings.getByRole('button', { name: 'Close settings' }).click()
 })
 
